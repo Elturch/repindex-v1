@@ -17,6 +17,7 @@ import { AIFilter } from "@/components/layout/Header";
 import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
 import { cn } from "@/lib/utils";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
+import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -159,7 +160,7 @@ export function Dashboard() {
               onClick={() => setAIFilter("ChatGPT")}
               className="flex items-center gap-2"
             >
-              <Brain className="h-4 w-4" />
+              <ChatGPTIcon className="h-4 w-4" />
               ChatGPT
             </Button>
             <Button
