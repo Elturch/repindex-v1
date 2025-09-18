@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AIFilter } from "@/components/layout/Header";
 import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
 import { cn } from "@/lib/utils";
+import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -141,7 +142,7 @@ export function Dashboard() {
               onClick={() => setAIFilter("PERPLEXITY")}
               className="flex items-center gap-2"
             >
-              <Brain className="h-4 w-4" />
+              <PerplexityIcon className="h-4 w-4" />
               Perplexity
             </Button>
             <Button
