@@ -7,14 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, List, Grid, AlertCircle } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const [aiFilter, setAIFilter] = useState<AIFilter>("all");
+  const [dateFrom, setDateFrom] = useState<Date>();
+  const [dateTo, setDateTo] = useState<Date>();
   const navigate = useNavigate();
   const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter);
 
@@ -56,6 +62,24 @@ export function Dashboard() {
     { key: "mpi", label: "MPI", scoreKey: "mpi_score", categoryKey: "mpi_categoria" },
   ];
 
+  // Filter data by date range
+  const filteredPariRuns = pariRuns?.filter((run) => {
+    if (!dateFrom && !dateTo) return true;
+    
+    const runFromDate = run.period_from ? new Date(run.period_from) : null;
+    const runToDate = run.period_to ? new Date(run.period_to) : null;
+    
+    if (dateFrom && runFromDate && runFromDate < dateFrom) return false;
+    if (dateTo && runToDate && runToDate > dateTo) return false;
+    
+    return true;
+  });
+
+  const clearDateFilters = () => {
+    setDateFrom(undefined);
+    setDateTo(undefined);
+  };
+
   if (isLoading) {
     return (
       <Layout 
@@ -95,7 +119,7 @@ export function Dashboard() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Índice Reputacional</h1>
             <p className="text-muted-foreground">
-              {pariRuns?.length || 0} empresas analizadas
+              {filteredPariRuns?.length || 0} empresas analizadas
               {aiFilter !== "all" && (
                 <span className="ml-2">(filtrado por {aiFilter})</span>
               )}
@@ -122,6 +146,76 @@ export function Dashboard() {
           </div>
         </div>
 
+        {/* Date Filters */}
+        <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Filtrar por período:</span>
+            
+            {/* From Date */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "justify-start text-left font-normal",
+                    !dateFrom && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {dateFrom ? format(dateFrom, "dd/MM/yyyy") : "Desde"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateFrom}
+                  onSelect={setDateFrom}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+
+            {/* To Date */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "justify-start text-left font-normal",
+                    !dateTo && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {dateTo ? format(dateTo, "dd/MM/yyyy") : "Hasta"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateTo}
+                  onSelect={setDateTo}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+
+            {(dateFrom || dateTo) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearDateFilters}
+                className="h-8 w-8 p-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+
         {error && (
           <div className="flex items-center justify-center py-8">
             <div className="flex items-center gap-2 text-destructive">
@@ -131,13 +225,13 @@ export function Dashboard() {
           </div>
         )}
 
-        {!isLoading && !error && (!pariRuns || pariRuns.length === 0) && (
+        {!isLoading && !error && (!filteredPariRuns || filteredPariRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery ? "No companies found matching your search." : "No reputational data available."}
+            {searchQuery || dateFrom || dateTo ? "No companies found matching your filters." : "No reputational data available."}
           </div>
         )}
 
-        {!isLoading && !error && pariRuns && pariRuns.length > 0 && (
+        {!isLoading && !error && filteredPariRuns && filteredPariRuns.length > 0 && (
           <>
             {viewMode === "list" && (
               <div className="rounded-md border overflow-x-auto">
@@ -151,13 +245,12 @@ export function Dashboard() {
                           {metric.label}
                         </TableHead>
                       ))}
-                      <TableHead className="w-32">Período</TableHead>
                       <TableHead className="w-24">Modelo</TableHead>
                       <TableHead className="w-24">Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pariRuns.map((pariRun) => (
+                    {filteredPariRuns.map((pariRun) => (
                       <TableRow 
                         key={pariRun.id} 
                         className="cursor-pointer hover:bg-muted/50"
@@ -189,9 +282,6 @@ export function Dashboard() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className="text-sm">
-                          {formatDateRange(pariRun.period_from, pariRun.period_to)}
-                        </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="text-xs">
                             {pariRun.model_name || "N/A"}
@@ -209,7 +299,7 @@ export function Dashboard() {
 
             {viewMode === "cards" && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {pariRuns.map((pariRun) => (
+                {filteredPariRuns.map((pariRun) => (
                   <Card 
                     key={pariRun.id} 
                     className="cursor-pointer hover:shadow-md transition-shadow"
@@ -250,14 +340,12 @@ export function Dashboard() {
                         </div>
                         
                         <div className="flex items-center justify-between text-sm text-muted-foreground border-t pt-2">
-                          <span>{formatDateRange(pariRun.period_from, pariRun.period_to)}</span>
                           <Badge variant="secondary" className="text-xs">
                             {pariRun.model_name || "N/A"}
                           </Badge>
-                        </div>
-                        
-                        <div className="text-xs text-muted-foreground text-center">
-                          {new Date(pariRun.created_at).toLocaleDateString()}
+                          <span className="text-xs">
+                            {new Date(pariRun.created_at).toLocaleDateString()}
+                          </span>
                         </div>
                       </div>
                     </CardContent>
