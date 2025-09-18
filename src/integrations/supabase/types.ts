@@ -14,6 +14,282 @@ export type Database = {
   }
   public: {
     Tables: {
+      by_metric: {
+        Row: {
+          contrib_points_chatgpt: number
+          contrib_points_delta: number
+          contrib_points_perplexity: number
+          contrib_share_chatgpt: number
+          contrib_share_perplexity: number
+          evaluation_id: string
+          id: number
+          label: string
+          metric: string
+          score_chatgpt: number
+          score_delta_abs: number
+          score_delta_pct: number
+          score_perplexity: number
+          weight: number
+        }
+        Insert: {
+          contrib_points_chatgpt: number
+          contrib_points_delta: number
+          contrib_points_perplexity: number
+          contrib_share_chatgpt: number
+          contrib_share_perplexity: number
+          evaluation_id: string
+          id?: number
+          label: string
+          metric: string
+          score_chatgpt: number
+          score_delta_abs: number
+          score_delta_pct: number
+          score_perplexity: number
+          weight: number
+        }
+        Update: {
+          contrib_points_chatgpt?: number
+          contrib_points_delta?: number
+          contrib_points_perplexity?: number
+          contrib_share_chatgpt?: number
+          contrib_share_perplexity?: number
+          evaluation_id?: string
+          id?: number
+          label?: string
+          metric?: string
+          score_chatgpt?: number
+          score_delta_abs?: number
+          score_delta_pct?: number
+          score_perplexity?: number
+          weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "by_metric_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "by_metric_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contadores: {
+        Row: {
+          citation_density: number
+          evaluation_id: string
+          flags: string[]
+          id: number
+          model_key: string
+          num_citas: number
+          num_fechas: number
+          palabras: number
+          temporal_alignment: number
+        }
+        Insert: {
+          citation_density: number
+          evaluation_id: string
+          flags?: string[]
+          id?: number
+          model_key: string
+          num_citas: number
+          num_fechas: number
+          palabras: number
+          temporal_alignment: number
+        }
+        Update: {
+          citation_density?: number
+          evaluation_id?: string
+          flags?: string[]
+          id?: number
+          model_key?: string
+          num_citas?: number
+          num_fechas?: number
+          palabras?: number
+          temporal_alignment?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contadores_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contadores_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      evaluation: {
+        Row: {
+          composite_chatgpt: number | null
+          composite_cosine_weighted: string | null
+          composite_delta_abs: number | null
+          composite_delta_pct: number | null
+          composite_perplexity: number | null
+          composite_winner: string | null
+          created_at: string
+          ejemplo_simulado: boolean
+          id: string
+          metrics_won_chatgpt: number | null
+          metrics_won_perplexity: number | null
+          metrics_won_ties: number | null
+          period_from: string | null
+          period_to: string | null
+          raw: Json | null
+          similarity_note: string | null
+          target_name: string
+          target_type: string
+          ticker: string | null
+          tz: string | null
+        }
+        Insert: {
+          composite_chatgpt?: number | null
+          composite_cosine_weighted?: string | null
+          composite_delta_abs?: number | null
+          composite_delta_pct?: number | null
+          composite_perplexity?: number | null
+          composite_winner?: string | null
+          created_at?: string
+          ejemplo_simulado: boolean
+          id?: string
+          metrics_won_chatgpt?: number | null
+          metrics_won_perplexity?: number | null
+          metrics_won_ties?: number | null
+          period_from?: string | null
+          period_to?: string | null
+          raw?: Json | null
+          similarity_note?: string | null
+          target_name: string
+          target_type: string
+          ticker?: string | null
+          tz?: string | null
+        }
+        Update: {
+          composite_chatgpt?: number | null
+          composite_cosine_weighted?: string | null
+          composite_delta_abs?: number | null
+          composite_delta_pct?: number | null
+          composite_perplexity?: number | null
+          composite_winner?: string | null
+          created_at?: string
+          ejemplo_simulado?: boolean
+          id?: string
+          metrics_won_chatgpt?: number | null
+          metrics_won_perplexity?: number | null
+          metrics_won_ties?: number | null
+          period_from?: string | null
+          period_to?: string | null
+          raw?: Json | null
+          similarity_note?: string | null
+          target_name?: string
+          target_type?: string
+          ticker?: string | null
+          tz?: string | null
+        }
+        Relationships: []
+      }
+      executive_notes: {
+        Row: {
+          evaluation_id: string
+          id: number
+          note: string
+          position: number
+        }
+        Insert: {
+          evaluation_id: string
+          id?: number
+          note: string
+          position: number
+        }
+        Update: {
+          evaluation_id?: string
+          id?: number
+          note?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "executive_notes_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "executive_notes_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_weight_scheme: {
+        Row: {
+          CLR: number
+          ES: number
+          evaluation_id: string
+          GIP: number
+          KGI: number
+          LNS: number
+          MPI: number
+          RM: number
+          SAM: number
+          total: number
+        }
+        Insert: {
+          CLR: number
+          ES: number
+          evaluation_id: string
+          GIP: number
+          KGI: number
+          LNS: number
+          MPI: number
+          RM: number
+          SAM: number
+          total: number
+        }
+        Update: {
+          CLR?: number
+          ES?: number
+          evaluation_id?: string
+          GIP?: number
+          KGI?: number
+          LNS?: number
+          MPI?: number
+          RM?: number
+          SAM?: number
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_weight_scheme_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: true
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_weight_scheme_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: true
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pari_runs: {
         Row: {
           citation_density: number | null
@@ -155,6 +431,42 @@ export type Database = {
         }
         Relationships: []
       }
+      recommendations_tactical: {
+        Row: {
+          evaluation_id: string
+          id: number
+          position: number
+          recommendation: string
+        }
+        Insert: {
+          evaluation_id: string
+          id?: number
+          position: number
+          recommendation: string
+        }
+        Update: {
+          evaluation_id?: string
+          id?: number
+          position?: number
+          recommendation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommendations_tactical_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommendations_tactical_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       repindex_root_issuers: {
         Row: {
           created_at: string | null
@@ -218,9 +530,160 @@ export type Database = {
         }
         Relationships: []
       }
+      source_models: {
+        Row: {
+          evaluation_id: string
+          id: number
+          model_key: string
+          model_name: string
+          run_key: string
+        }
+        Insert: {
+          evaluation_id: string
+          id?: number
+          model_key: string
+          model_name: string
+          run_key: string
+        }
+        Update: {
+          evaluation_id?: string
+          id?: number
+          model_key?: string
+          model_name?: string
+          run_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "source_models_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "source_models_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      top_drivers: {
+        Row: {
+          delta_contrib_abs: number
+          direction: string
+          evaluation_id: string
+          id: number
+          label: string
+          metric: string
+        }
+        Insert: {
+          delta_contrib_abs: number
+          direction: string
+          evaluation_id: string
+          id?: number
+          label: string
+          metric: string
+        }
+        Update: {
+          delta_contrib_abs?: number
+          direction?: string
+          evaluation_id?: string
+          id?: number
+          label?: string
+          metric?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "top_drivers_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "evaluation"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "top_drivers_evaluation_id_fkey"
+            columns: ["evaluation_id"]
+            isOneToOne: false
+            referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      v_evaluation_composite: {
+        Row: {
+          composite_chatgpt: number | null
+          composite_cosine_weighted: string | null
+          composite_delta_abs: number | null
+          composite_delta_pct: number | null
+          composite_perplexity: number | null
+          composite_winner: string | null
+          created_at: string | null
+          id: string | null
+          metrics_won_chatgpt: number | null
+          metrics_won_perplexity: number | null
+          metrics_won_ties: number | null
+          period_from: string | null
+          period_to: string | null
+          similarity_note: string | null
+          target_name: string | null
+          target_type: string | null
+          ticker: string | null
+          tz: string | null
+        }
+        Insert: {
+          composite_chatgpt?: number | null
+          composite_cosine_weighted?: string | null
+          composite_delta_abs?: number | null
+          composite_delta_pct?: number | null
+          composite_perplexity?: number | null
+          composite_winner?: string | null
+          created_at?: string | null
+          id?: string | null
+          metrics_won_chatgpt?: number | null
+          metrics_won_perplexity?: number | null
+          metrics_won_ties?: number | null
+          period_from?: string | null
+          period_to?: string | null
+          similarity_note?: string | null
+          target_name?: string | null
+          target_type?: string | null
+          ticker?: string | null
+          tz?: string | null
+        }
+        Update: {
+          composite_chatgpt?: number | null
+          composite_cosine_weighted?: string | null
+          composite_delta_abs?: number | null
+          composite_delta_pct?: number | null
+          composite_perplexity?: number | null
+          composite_winner?: string | null
+          created_at?: string | null
+          id?: string | null
+          metrics_won_chatgpt?: number | null
+          metrics_won_perplexity?: number | null
+          metrics_won_ties?: number | null
+          period_from?: string | null
+          period_to?: string | null
+          similarity_note?: string | null
+          target_name?: string | null
+          target_type?: string | null
+          ticker?: string | null
+          tz?: string | null
+        }
+        Relationships: []
+      }
+      v_weight_scheme_unpivot: {
+        Row: {
+          evaluation_id: string | null
+          metric: string | null
+          weight: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
