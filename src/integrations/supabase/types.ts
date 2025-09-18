@@ -330,12 +330,14 @@ export type Database = {
           sam_categoria: string | null
           sam_peso: number | null
           sam_score: number | null
+          subscores: Json | null
           target_name: string
           target_type: string | null
           temporal_alignment: number | null
           ticker: string | null
           tz: string | null
           updated_at: string
+          weights: Json | null
         }
         Insert: {
           citation_density?: number | null
@@ -376,12 +378,14 @@ export type Database = {
           sam_categoria?: string | null
           sam_peso?: number | null
           sam_score?: number | null
+          subscores?: Json | null
           target_name: string
           target_type?: string | null
           temporal_alignment?: number | null
           ticker?: string | null
           tz?: string | null
           updated_at?: string
+          weights?: Json | null
         }
         Update: {
           citation_density?: number | null
@@ -422,12 +426,14 @@ export type Database = {
           sam_categoria?: string | null
           sam_peso?: number | null
           sam_score?: number | null
+          subscores?: Json | null
           target_name?: string
           target_type?: string | null
           temporal_alignment?: number | null
           ticker?: string | null
           tz?: string | null
           updated_at?: string
+          weights?: Json | null
         }
         Relationships: []
       }
