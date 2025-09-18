@@ -288,7 +288,6 @@ export function Dashboard() {
                           {metric.label}
                         </TableHead>
                       ))}
-                      <TableHead className="w-32">Flags de Calidad</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -324,19 +323,6 @@ export function Dashboard() {
                             </TableCell>
                           );
                         })}
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {Array.isArray(pariRun.flags) && pariRun.flags.length > 0 ? (
-                              pariRun.flags.map((flag, index) => (
-                                <Badge key={index} variant="outline" className="text-xs">
-                                  {normalizeFlag(flag)}
-                                </Badge>
-                              ))
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Sin flags</span>
-                            )}
-                          </div>
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
