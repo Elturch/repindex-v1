@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatsPanel } from "@/components/ui/stats-panel";
+import { AIResponseDialog } from "@/components/ui/ai-response-dialog";
 import { AlertCircle, CheckCircle, ArrowLeft } from "lucide-react";
 
 export function PariRunDetail() {
@@ -285,6 +286,13 @@ export function PariRunDetail() {
                 </CardContent>
               </Card>
             )}
+
+            {/* AI Response Button */}
+            <AIResponseDialog 
+              modelName={pariRun.model_name}
+              chatgptResponse={pariRun["res-gpt-bruto"]}
+              perplexityResponse={pariRun["res-perplex-bruto"]}
+            />
           </div>
         </div>
       </div>
