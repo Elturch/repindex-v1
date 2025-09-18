@@ -57,6 +57,23 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // RepIndex specific colors
+        chatgpt: {
+          DEFAULT: "hsl(var(--chatgpt))",
+          foreground: "hsl(var(--chatgpt-foreground))",
+        },
+        perplexity: {
+          DEFAULT: "hsl(var(--perplexity))",
+          foreground: "hsl(var(--perplexity-foreground))",
+        },
+        neutral: {
+          DEFAULT: "hsl(var(--neutral))",
+          foreground: "hsl(var(--neutral-foreground))",
+        },
+        excellent: "hsl(var(--excellent))",
+        good: "hsl(var(--good))",
+        "needs-improvement": "hsl(var(--needs-improvement))",
+        insufficient: "hsl(var(--insufficient))",
       },
       borderRadius: {
         lg: "var(--radius)",
