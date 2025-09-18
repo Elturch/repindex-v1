@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays } from "lucide-react";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
 import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
@@ -20,12 +20,12 @@ import { cn } from "@/lib/utils";
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
-  const [aiFilter, setAIFilter] = useState<AIFilter>("all");
+  const [aiFilter, setAIFilter] = useState<AIFilter>("ChatGPT");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [weekFilter, setWeekFilter] = useState<string>("all");
   const navigate = useNavigate();
   
-  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter, companyFilter, weekFilter);
+  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter);
   const { data: companies, isLoading: companiesLoading } = useCompanies();
 
   const handleRowClick = (pariRunId: string) => {
@@ -97,9 +97,7 @@ export function Dashboard() {
     return (
       <Layout 
         title="RepIndex - Índice Reputacional IBEX 35" 
-        onSearch={setSearchQuery} 
-        onAIFilterChange={setAIFilter}
-        aiFilter={aiFilter}
+        onSearch={setSearchQuery}
       >
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -122,18 +120,51 @@ export function Dashboard() {
   return (
     <Layout 
       title="RepIndex - Índice Reputacional IBEX 35" 
-      onSearch={setSearchQuery} 
-      onAIFilterChange={setAIFilter}
-      aiFilter={aiFilter}
+      onSearch={setSearchQuery}
     >
       <div className="space-y-6">
+        {/* AI Model Selector - Prominent */}
+        <div className="flex items-center justify-center">
+          <div className="flex items-center bg-muted/50 p-1 rounded-lg">
+            <Button
+              variant={aiFilter === "ChatGPT" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setAIFilter("ChatGPT")}
+              className="flex items-center gap-2"
+            >
+              <Brain className="h-4 w-4" />
+              ChatGPT
+            </Button>
+            <Button
+              variant={aiFilter === "PERPLEXITY" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setAIFilter("PERPLEXITY")}
+              className="flex items-center gap-2"
+            >
+              <Brain className="h-4 w-4" />
+              Perplexity
+            </Button>
+            <Button
+              variant={aiFilter === "comparison" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setAIFilter("comparison")}
+              className="flex items-center gap-2"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Comparación
+            </Button>
+          </div>
+        </div>
+
         {/* Header with controls */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Índice Reputacional</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter}
+            </h1>
             <p className="text-muted-foreground">
               {pariRuns?.length || 0} empresas analizadas
-              {(aiFilter !== "all" || companyFilter !== "all" || weekFilter !== "all") && (
+              {(companyFilter !== "all" || weekFilter !== "all") && (
                 <span className="ml-2">(con filtros aplicados)</span>
               )}
             </p>
@@ -224,11 +255,13 @@ export function Dashboard() {
 
         {!isLoading && !error && (!pariRuns || pariRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || companyFilter !== "all" || weekFilter !== "all" ? "No companies found matching your filters." : "No reputational data available."}
+            {searchQuery || companyFilter !== "all" || weekFilter !== "all" ? "No companies found matching your filters." : 
+             aiFilter === "comparison" ? "No data available for comparison view yet." : 
+             `No reputational data available for ${aiFilter}.`}
           </div>
         )}
 
-        {!isLoading && !error && pariRuns && pariRuns.length > 0 && (
+        {!isLoading && !error && pariRuns && pariRuns.length > 0 && aiFilter !== "comparison" && (
           <>
             {viewMode === "list" && (
               <div className="rounded-md border overflow-x-auto">
@@ -351,6 +384,20 @@ export function Dashboard() {
               </div>
             )}
           </>
+        )}
+
+        {/* Comparison View - Coming Soon */}
+        {!isLoading && !error && aiFilter === "comparison" && (
+          <div className="text-center py-12">
+            <div className="max-w-md mx-auto space-y-4">
+              <BarChart3 className="h-16 w-16 text-muted-foreground mx-auto" />
+              <h3 className="text-2xl font-semibold">Vista de Comparación</h3>
+              <p className="text-muted-foreground">
+                La vista de comparación entre ChatGPT y Perplexity estará disponible próximamente. 
+                Esta funcionalidad permitirá ver los resultados de ambos modelos lado a lado.
+              </p>
+            </div>
+          </div>
         )}
       </div>
     </Layout>
