@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-export type AIFilter = "all" | "chatgpt" | "perplexity";
+export type AIFilter = "all" | string;
 
 interface HeaderProps {
   title?: string;
@@ -61,19 +61,8 @@ export function Header({ title = "RepIndex", onSearch, onAIFilterChange, aiFilte
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="z-50 bg-background border-border shadow-lg">
-                <SelectItem value="all">Ambos</SelectItem>
-                <SelectItem value="chatgpt">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-chatgpt rounded-full"></div>
-                    <span>ChatGPT</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="perplexity">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-perplexity rounded-full"></div>
-                    <span>Perplexity</span>
-                  </div>
-                </SelectItem>
+                <SelectItem value="all">Todos los modelos</SelectItem>
+                {/* Dynamic options would be loaded from actual model names in database */}
               </SelectContent>
             </Select>
           </div>
