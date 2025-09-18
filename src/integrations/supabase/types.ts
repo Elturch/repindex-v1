@@ -160,6 +160,8 @@ export type Database = {
           created_at: string | null
           exclude_terms: Json
           geography: string[]
+          ibex_family_category: string | null
+          ibex_family_code: string | null
           ibex_status: string
           include_terms: Json
           issuer_id: string
@@ -168,12 +170,18 @@ export type Database = {
           notes: string | null
           prueba: string | null
           sample_query: string
+          sector_category: string | null
+          source_hint: string | null
+          source_segment_detail: string | null
+          status: string | null
           ticker: string
         }
         Insert: {
           created_at?: string | null
           exclude_terms?: Json
           geography?: string[]
+          ibex_family_category?: string | null
+          ibex_family_code?: string | null
           ibex_status: string
           include_terms: Json
           issuer_id: string
@@ -182,12 +190,18 @@ export type Database = {
           notes?: string | null
           prueba?: string | null
           sample_query: string
+          sector_category?: string | null
+          source_hint?: string | null
+          source_segment_detail?: string | null
+          status?: string | null
           ticker: string
         }
         Update: {
           created_at?: string | null
           exclude_terms?: Json
           geography?: string[]
+          ibex_family_category?: string | null
+          ibex_family_code?: string | null
           ibex_status?: string
           include_terms?: Json
           issuer_id?: string
@@ -196,6 +210,10 @@ export type Database = {
           notes?: string | null
           prueba?: string | null
           sample_query?: string
+          sector_category?: string | null
+          source_hint?: string | null
+          source_segment_detail?: string | null
+          status?: string | null
           ticker?: string
         }
         Relationships: []
