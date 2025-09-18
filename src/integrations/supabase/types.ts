@@ -166,6 +166,7 @@ export type Database = {
           issuer_name: string
           languages: string[]
           notes: string | null
+          prueba: string | null
           sample_query: string
           ticker: string
         }
@@ -179,6 +180,7 @@ export type Database = {
           issuer_name: string
           languages?: string[]
           notes?: string | null
+          prueba?: string | null
           sample_query: string
           ticker: string
         }
@@ -192,6 +194,7 @@ export type Database = {
           issuer_name?: string
           languages?: string[]
           notes?: string | null
+          prueba?: string | null
           sample_query?: string
           ticker?: string
         }
