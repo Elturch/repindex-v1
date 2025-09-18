@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { usePariRuns } from "@/hooks/usePariRuns";
+import { useCompanies } from "@/hooks/useCompanies";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,20 +10,23 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
-import { format } from "date-fns";
+import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const [aiFilter, setAIFilter] = useState<AIFilter>("all");
-  const [dateFrom, setDateFrom] = useState<Date>();
-  const [dateTo, setDateTo] = useState<Date>();
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [weekFilter, setWeekFilter] = useState<string>("all");
   const navigate = useNavigate();
-  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter);
+  
+  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter, companyFilter, weekFilter);
+  const { data: companies, isLoading: companiesLoading } = useCompanies();
 
   const handleRowClick = (pariRunId: string) => {
     navigate(`/pari-run/${pariRunId}`);
@@ -62,22 +66,31 @@ export function Dashboard() {
     { key: "mpi", label: "MPI", scoreKey: "mpi_score", categoryKey: "mpi_categoria" },
   ];
 
-  // Filter data by date range
-  const filteredPariRuns = pariRuns?.filter((run) => {
-    if (!dateFrom && !dateTo) return true;
+  // Generate week options based on available data
+  const weekOptions = useMemo(() => {
+    if (!pariRuns) return [];
     
-    const runFromDate = run.period_from ? new Date(run.period_from) : null;
-    const runToDate = run.period_to ? new Date(run.period_to) : null;
+    const weeks = new Set<string>();
+    pariRuns.forEach(run => {
+      if (run.period_from) {
+        const weekStart = startOfWeek(new Date(run.period_from), { weekStartsOn: 1 });
+        weeks.add(format(weekStart, 'yyyy-MM-dd'));
+      }
+    });
     
-    if (dateFrom && runFromDate && runFromDate < dateFrom) return false;
-    if (dateTo && runToDate && runToDate > dateTo) return false;
-    
-    return true;
-  });
+    return Array.from(weeks).sort().reverse().map(weekStart => {
+      const start = new Date(weekStart);
+      const end = addWeeks(start, 1);
+      return {
+        value: weekStart,
+        label: `${format(start, 'dd/MM')} - ${format(addWeeks(start, 1), 'dd/MM/yyyy')}`
+      };
+    });
+  }, [pariRuns]);
 
-  const clearDateFilters = () => {
-    setDateFrom(undefined);
-    setDateTo(undefined);
+  const clearFilters = () => {
+    setCompanyFilter("all");
+    setWeekFilter("all");
   };
 
   if (isLoading) {
@@ -119,9 +132,9 @@ export function Dashboard() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Índice Reputacional</h1>
             <p className="text-muted-foreground">
-              {filteredPariRuns?.length || 0} empresas analizadas
-              {aiFilter !== "all" && (
-                <span className="ml-2">(filtrado por {aiFilter})</span>
+              {pariRuns?.length || 0} empresas analizadas
+              {(aiFilter !== "all" || companyFilter !== "all" || weekFilter !== "all") && (
+                <span className="ml-2">(con filtros aplicados)</span>
               )}
             </p>
           </div>
@@ -146,68 +159,52 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Date Filters */}
-        <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/50 rounded-lg">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Filtrar por período:</span>
+            <span className="text-sm font-medium">Filtros:</span>
             
-            {/* From Date */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    "justify-start text-left font-normal",
-                    !dateFrom && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateFrom ? format(dateFrom, "dd/MM/yyyy") : "Desde"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateFrom}
-                  onSelect={setDateFrom}
-                  initialFocus
-                  className={cn("p-3 pointer-events-auto")}
-                />
-              </PopoverContent>
-            </Popover>
+            {/* Company Filter */}
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las empresas</SelectItem>
+                  {companies?.map((company) => (
+                    <SelectItem key={company.issuer_id} value={company.issuer_name}>
+                      {company.issuer_name} ({company.ticker})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            {/* To Date */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn(
-                    "justify-start text-left font-normal",
-                    !dateTo && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateTo ? format(dateTo, "dd/MM/yyyy") : "Hasta"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateTo}
-                  onSelect={setDateTo}
-                  initialFocus
-                  className={cn("p-3 pointer-events-auto")}
-                />
-              </PopoverContent>
-            </Popover>
+            {/* Week Filter */}
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              <Select value={weekFilter} onValueChange={setWeekFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar semana" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las semanas</SelectItem>
+                  {weekOptions.map((week) => (
+                    <SelectItem key={week.value} value={week.value}>
+                      {week.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            {(dateFrom || dateTo) && (
+            {(companyFilter !== "all" || weekFilter !== "all") && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={clearDateFilters}
+                onClick={clearFilters}
                 className="h-8 w-8 p-0"
               >
                 <X className="h-4 w-4" />
@@ -225,13 +222,13 @@ export function Dashboard() {
           </div>
         )}
 
-        {!isLoading && !error && (!filteredPariRuns || filteredPariRuns.length === 0) && (
+        {!isLoading && !error && (!pariRuns || pariRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || dateFrom || dateTo ? "No companies found matching your filters." : "No reputational data available."}
+            {searchQuery || companyFilter !== "all" || weekFilter !== "all" ? "No companies found matching your filters." : "No reputational data available."}
           </div>
         )}
 
-        {!isLoading && !error && filteredPariRuns && filteredPariRuns.length > 0 && (
+        {!isLoading && !error && pariRuns && pariRuns.length > 0 && (
           <>
             {viewMode === "list" && (
               <div className="rounded-md border overflow-x-auto">
@@ -250,7 +247,7 @@ export function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredPariRuns.map((pariRun) => (
+                    {pariRuns.map((pariRun) => (
                       <TableRow 
                         key={pariRun.id} 
                         className="cursor-pointer hover:bg-muted/50"
@@ -299,7 +296,7 @@ export function Dashboard() {
 
             {viewMode === "cards" && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {filteredPariRuns.map((pariRun) => (
+                {pariRuns.map((pariRun) => (
                   <Card 
                     key={pariRun.id} 
                     className="cursor-pointer hover:shadow-md transition-shadow"

@@ -46,9 +46,14 @@ export interface PariRun {
   flags?: any;
 }
 
-export function usePariRuns(searchQuery?: string, modelFilter?: string) {
+export function usePariRuns(
+  searchQuery?: string, 
+  modelFilter?: string, 
+  companyFilter?: string,
+  weekFilter?: string
+) {
   return useQuery({
-    queryKey: ["pari-runs", searchQuery, modelFilter],
+    queryKey: ["pari-runs", searchQuery, modelFilter, companyFilter, weekFilter],
     queryFn: async () => {
       let query = supabase
         .from("pari_runs")
@@ -61,6 +66,20 @@ export function usePariRuns(searchQuery?: string, modelFilter?: string) {
 
       if (modelFilter && modelFilter !== "all") {
         query = query.eq("model_name", modelFilter);
+      }
+
+      if (companyFilter && companyFilter !== "all") {
+        query = query.eq("target_name", companyFilter);
+      }
+
+      if (weekFilter && weekFilter !== "all") {
+        // Filter by week range (assuming weekFilter is in format "YYYY-MM-DD")
+        const weekStart = new Date(weekFilter);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6); // Add 6 days for a week
+        
+        query = query.gte("period_from", weekStart.toISOString().split('T')[0])
+                    .lte("period_to", weekEnd.toISOString().split('T')[0]);
       }
 
       const { data, error } = await query;
