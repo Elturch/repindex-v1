@@ -1,16 +1,18 @@
 import React from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { usePariRun } from "@/hooks/usePariRuns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatsPanel } from "@/components/ui/stats-panel";
-import { AlertCircle, CheckCircle } from "lucide-react";
+import { AlertCircle, CheckCircle, ArrowLeft } from "lucide-react";
 
 export function PariRunDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: pariRun, isLoading, error } = usePariRun(id!);
 
   const formatDateRange = (from?: string, to?: string) => {
@@ -72,6 +74,19 @@ export function PariRunDetail() {
   return (
     <Layout title="RepIndex - Detalle">
       <div className="space-y-6">
+        {/* Back Button */}
+        <div className="flex items-center gap-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/")}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver al Dashboard
+          </Button>
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
