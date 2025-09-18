@@ -95,12 +95,9 @@ export function Dashboard() {
   };
 
   if (isLoading) {
-    return (
-      <Layout 
-        title="RepIndex - Índice Reputacional IBEX 35" 
-        onSearch={setSearchQuery}
-      >
-        <div className="space-y-6">
+  return (
+    <Layout title="Repindex.ai">
+      <div className="space-y-6">
           <div className="flex items-center justify-between">
             <Skeleton className="h-10 w-64" />
             <div className="flex gap-2">
@@ -118,12 +115,9 @@ export function Dashboard() {
     );
   }
 
-  return (
-    <Layout 
-      title="RepIndex - Índice Reputacional IBEX 35" 
-      onSearch={setSearchQuery}
-    >
-      <div className="space-y-6">
+    return (
+      <Layout title="Repindex.ai">
+        <div className="space-y-6">
         {/* AI Model Selector - Prominent */}
         <div className="flex items-center justify-center">
           <div className="flex items-center bg-muted/50 p-1 rounded-lg">
