@@ -136,8 +136,22 @@ export function Dashboard() {
     return (
       <Layout title="Repindex.ai">
         <div className="space-y-6">
-        {/* AI Model Selector - Prominent */}
-        <div className="flex items-center justify-center">
+        {/* Title */}
+        <div className="text-center">
+          <h1 className="text-2xl font-bold tracking-tight">
+            Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {pariRuns?.length || 0} empresas analizadas
+            {(companyFilter !== "all" || weekFilter !== "all") && (
+              <span className="ml-2">(con filtros aplicados)</span>
+            )}
+          </p>
+        </div>
+
+        {/* Controls - AI Selector and View Mode */}
+        <div className="flex items-center justify-between">
+          {/* AI Model Selector */}
           <div className="flex items-center bg-muted/50 p-1 rounded-lg">
             <Button
               variant={aiFilter === "ChatGPT" ? "default" : "ghost"}
@@ -167,37 +181,25 @@ export function Dashboard() {
               Comparación
             </Button>
           </div>
-        </div>
 
-        {/* Header with controls */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter}
-            </h1>
-            <p className="text-muted-foreground">
-              {pariRuns?.length || 0} empresas analizadas
-              {(companyFilter !== "all" || weekFilter !== "all") && (
-                <span className="ml-2">(con filtros aplicados)</span>
-              )}
-            </p>
-          </div>
-          
-          <div className="flex items-center space-x-2">
+          {/* View Mode Selector */}
+          <div className="flex items-center bg-muted/50 p-1 rounded-lg">
             <Button
-              variant={viewMode === "list" ? "default" : "outline"}
+              variant={viewMode === "list" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("list")}
+              className="flex items-center gap-2"
             >
-              <List className="h-4 w-4 mr-2" />
+              <List className="h-4 w-4" />
               Lista
             </Button>
             <Button
-              variant={viewMode === "cards" ? "default" : "outline"}
+              variant={viewMode === "cards" ? "default" : "ghost"}
               size="sm"
               onClick={() => setViewMode("cards")}
+              className="flex items-center gap-2"
             >
-              <Grid className="h-4 w-4 mr-2" />
+              <Grid className="h-4 w-4" />
               Cards
             </Button>
           </div>
