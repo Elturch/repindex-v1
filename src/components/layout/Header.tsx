@@ -1,16 +1,21 @@
-import { Search, Sun, Moon } from "lucide-react";
+import { Search, Sun, Moon, Filter } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+
+export type AIFilter = "all" | "chatgpt" | "perplexity";
 
 interface HeaderProps {
   title?: string;
   onSearch?: (query: string) => void;
+  onAIFilterChange?: (filter: AIFilter) => void;
+  aiFilter?: AIFilter;
   className?: string;
 }
 
-export function Header({ title = "RepIndex", onSearch, className }: HeaderProps) {
+export function Header({ title = "RepIndex", onSearch, onAIFilterChange, aiFilter = "all", className }: HeaderProps) {
   const { theme, setTheme } = useTheme();
 
   const toggleTheme = () => {
@@ -35,7 +40,7 @@ export function Header({ title = "RepIndex", onSearch, className }: HeaderProps)
           </div>
         </div>
 
-        {/* Search Bar */}
+        {/* Search Bar and Filters */}
         <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
           <div className="w-full flex-1 md:w-auto md:flex-none">
             <div className="relative">
@@ -46,6 +51,31 @@ export function Header({ title = "RepIndex", onSearch, className }: HeaderProps)
                 onChange={(e) => onSearch?.(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* AI Filter */}
+          <div className="flex items-center space-x-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={aiFilter} onValueChange={(value: AIFilter) => onAIFilterChange?.(value)}>
+              <SelectTrigger className="w-[140px] bg-background border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-50 bg-background border-border shadow-lg">
+                <SelectItem value="all">Ambos</SelectItem>
+                <SelectItem value="chatgpt">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-chatgpt rounded-full"></div>
+                    <span>ChatGPT</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="perplexity">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-perplexity rounded-full"></div>
+                    <span>Perplexity</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Theme Toggle */}

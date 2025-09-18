@@ -1,9 +1,11 @@
-import { useParams, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
+import { AIFilter } from "@/components/layout/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MetricCard } from "@/components/ui/metric-card";
+import { MetricCardFiltered } from "@/components/ui/metric-card-filtered";
 import { StatsPanel } from "@/components/ui/stats-panel";
 import { WinnerBadge } from "@/components/ui/winner-badge";
 import { useEvaluation } from "@/hooks/useEvaluations";
@@ -20,6 +22,15 @@ import { es } from "date-fns/locale";
 
 export function EvaluationDetail() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const [aiFilter, setAIFilter] = useState<AIFilter>("all");
+  
+  useEffect(() => {
+    const filterParam = searchParams.get("filter") as AIFilter;
+    if (filterParam && ["all", "chatgpt", "perplexity"].includes(filterParam)) {
+      setAIFilter(filterParam);
+    }
+  }, [searchParams]);
   
   const { data: evaluation, isLoading: evaluationLoading } = useEvaluation(id!);
   const { data: metrics, isLoading: metricsLoading } = useEvaluationMetrics(id!);
@@ -32,7 +43,7 @@ export function EvaluationDetail() {
 
   if (isLoading) {
     return (
-      <Layout>
+      <Layout onAIFilterChange={setAIFilter} aiFilter={aiFilter}>
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -45,7 +56,7 @@ export function EvaluationDetail() {
 
   if (!evaluation) {
     return (
-      <Layout>
+      <Layout onAIFilterChange={setAIFilter} aiFilter={aiFilter}>
         <div className="text-center py-8">
           <p className="text-destructive">Evaluación no encontrada</p>
           <Button asChild className="mt-4">
@@ -70,7 +81,7 @@ export function EvaluationDetail() {
   const counter = counters?.[0]; // Assuming one counter per evaluation
 
   return (
-    <Layout>
+    <Layout onAIFilterChange={setAIFilter} aiFilter={aiFilter}>
       <div className="space-y-6">
         {/* Breadcrumb and Header */}
         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
@@ -107,15 +118,27 @@ export function EvaluationDetail() {
           </div>
 
           <div className="text-right">
-            <WinnerBadge 
-              winner={evaluation.composite_winner as "ChatGPT" | "Perplexity" | "Tie" | null}
-              className="text-lg px-4 py-2"
-            />
-            {evaluation.composite_delta_pct && (
+            {aiFilter === "all" && (
+              <WinnerBadge 
+                winner={evaluation.composite_winner as "ChatGPT" | "Perplexity" | "Tie" | null}
+                className="text-lg px-4 py-2"
+              />
+            )}
+            {aiFilter === "all" && evaluation.composite_delta_pct && (
               <div className="mt-2">
                 <Badge variant={evaluation.composite_delta_pct > 0 ? "default" : "secondary"} className="text-sm">
                   Diferencia: {evaluation.composite_delta_pct > 0 ? "+" : ""}{evaluation.composite_delta_pct.toFixed(1)}%
                 </Badge>
+              </div>
+            )}
+            {aiFilter !== "all" && (
+              <div className="text-center">
+                <div className={`text-2xl font-bold ${aiFilter === "chatgpt" ? "text-chatgpt" : "text-perplexity"}`}>
+                  {aiFilter === "chatgpt" ? evaluation.composite_chatgpt : evaluation.composite_perplexity}
+                </div>
+                <p className="text-sm text-muted-foreground capitalize">
+                  Puntuación {aiFilter}
+                </p>
               </div>
             )}
           </div>
@@ -136,13 +159,14 @@ export function EvaluationDetail() {
                 {metrics && metrics.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {metrics.map((metric) => (
-                      <MetricCard
+                      <MetricCardFiltered
                         key={metric.id}
                         label={metric.label}
                         scoreChatGPT={metric.score_chatgpt}
                         scorePerplexity={metric.score_perplexity}
                         deltaPercent={metric.score_delta_pct}
                         deltaAbs={metric.score_delta_abs}
+                        aiFilter={aiFilter}
                       />
                     ))}
                   </div>

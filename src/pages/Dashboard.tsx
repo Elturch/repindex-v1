@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
+import { AIFilter } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,17 +15,31 @@ import { es } from "date-fns/locale";
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
+  const [aiFilter, setAIFilter] = useState<AIFilter>("all");
   const navigate = useNavigate();
   
   const { data: evaluations, isLoading, error } = useEvaluations(searchQuery);
 
   const handleRowClick = (evaluationId: string) => {
-    navigate(`/evaluation/${evaluationId}`);
+    navigate(`/evaluation/${evaluationId}?filter=${aiFilter}`);
   };
+
+  // Filter evaluations based on AI filter
+  const filteredEvaluations = evaluations?.filter(evaluation => {
+    if (aiFilter === "all") return true;
+    if (aiFilter === "chatgpt") return evaluation.composite_winner === "ChatGPT";
+    if (aiFilter === "perplexity") return evaluation.composite_winner === "Perplexity";
+    return true;
+  }) || [];
 
   if (isLoading) {
     return (
-      <Layout title="RepIndex Dashboard" onSearch={setSearchQuery}>
+      <Layout 
+        title="RepIndex Dashboard" 
+        onSearch={setSearchQuery}
+        onAIFilterChange={setAIFilter}
+        aiFilter={aiFilter}
+      >
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
@@ -37,7 +52,12 @@ export function Dashboard() {
 
   if (error) {
     return (
-      <Layout title="RepIndex Dashboard" onSearch={setSearchQuery}>
+      <Layout 
+        title="RepIndex Dashboard" 
+        onSearch={setSearchQuery}
+        onAIFilterChange={setAIFilter}
+        aiFilter={aiFilter}
+      >
         <div className="text-center py-8">
           <p className="text-destructive">Error al cargar las evaluaciones</p>
         </div>
@@ -57,14 +77,24 @@ export function Dashboard() {
   };
 
   return (
-    <Layout title="RepIndex Dashboard" onSearch={setSearchQuery}>
+    <Layout 
+      title="RepIndex Dashboard" 
+      onSearch={setSearchQuery}
+      onAIFilterChange={setAIFilter}
+      aiFilter={aiFilter}
+    >
       <div className="space-y-6">
         {/* Header with controls */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
             <p className="text-muted-foreground">
-              {evaluations?.length || 0} evaluaciones encontradas
+              {filteredEvaluations.length} evaluaciones encontradas
+              {aiFilter !== "all" && (
+                <span className="ml-2">
+                  (filtrado por {aiFilter === "chatgpt" ? "ChatGPT" : "Perplexity"})
+                </span>
+              )}
             </p>
           </div>
           
@@ -89,14 +119,14 @@ export function Dashboard() {
         </div>
 
         {/* Content */}
-        {!evaluations || evaluations.length === 0 ? (
+        {!filteredEvaluations || filteredEvaluations.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">
               <TrendingUp className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">No hay evaluaciones</h3>
               <p className="text-muted-foreground text-center">
-                {searchQuery 
-                  ? "No se encontraron evaluaciones que coincidan con tu búsqueda."
+                {searchQuery || aiFilter !== "all"
+                  ? "No se encontraron evaluaciones que coincidan con los filtros aplicados."
                   : "Aún no hay evaluaciones en el sistema."
                 }
               </p>
@@ -118,7 +148,7 @@ export function Dashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {evaluations.map((evaluation) => (
+                {filteredEvaluations.map((evaluation) => (
                   <TableRow
                     key={evaluation.id}
                     className="cursor-pointer hover:bg-muted/50"
@@ -134,12 +164,12 @@ export function Dashboard() {
                       {formatDateRange(evaluation.period_from, evaluation.period_to)}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="font-bold text-chatgpt">
+                      <span className={`font-bold ${aiFilter === "perplexity" ? "text-muted-foreground" : "text-chatgpt"}`}>
                         {evaluation.composite_chatgpt || "—"}
                       </span>
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="font-bold text-perplexity">
+                      <span className={`font-bold ${aiFilter === "chatgpt" ? "text-muted-foreground" : "text-perplexity"}`}>
                         {evaluation.composite_perplexity || "—"}
                       </span>
                     </TableCell>
@@ -165,7 +195,7 @@ export function Dashboard() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {evaluations.map((evaluation) => (
+            {filteredEvaluations.map((evaluation) => (
               <Card
                 key={evaluation.id}
                 className="cursor-pointer hover:shadow-md transition-shadow"
@@ -184,13 +214,13 @@ export function Dashboard() {
                 <CardContent className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">ChatGPT</span>
-                    <span className="font-bold text-chatgpt text-xl">
+                    <span className={`font-bold text-xl ${aiFilter === "perplexity" ? "text-muted-foreground" : "text-chatgpt"}`}>
                       {evaluation.composite_chatgpt || "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Perplexity</span>
-                    <span className="font-bold text-perplexity text-xl">
+                    <span className={`font-bold text-xl ${aiFilter === "chatgpt" ? "text-muted-foreground" : "text-perplexity"}`}>
                       {evaluation.composite_perplexity || "—"}
                     </span>
                   </div>
