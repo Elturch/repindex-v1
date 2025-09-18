@@ -270,8 +270,7 @@ export function Dashboard() {
                           {metric.label}
                         </TableHead>
                       ))}
-                      <TableHead className="w-24">Modelo</TableHead>
-                      <TableHead className="w-24">Fecha</TableHead>
+                      <TableHead className="w-32">Flags de Calidad</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -308,12 +307,17 @@ export function Dashboard() {
                           );
                         })}
                         <TableCell>
-                          <Badge variant="secondary" className="text-xs">
-                            {pariRun.model_name || "N/A"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {new Date(pariRun.created_at).toLocaleDateString()}
+                          <div className="flex flex-wrap gap-1">
+                            {Array.isArray(pariRun.flags) && pariRun.flags.length > 0 ? (
+                              pariRun.flags.map((flag, index) => (
+                                <Badge key={index} variant="outline" className="text-xs">
+                                  {flag}
+                                </Badge>
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Sin flags</span>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
