@@ -155,6 +155,48 @@ export type Database = {
         }
         Relationships: []
       }
+      repindex_root_issuers: {
+        Row: {
+          created_at: string | null
+          exclude_terms: Json
+          geography: string[]
+          ibex_status: string
+          include_terms: Json
+          issuer_id: string
+          issuer_name: string
+          languages: string[]
+          notes: string | null
+          sample_query: string
+          ticker: string
+        }
+        Insert: {
+          created_at?: string | null
+          exclude_terms?: Json
+          geography?: string[]
+          ibex_status: string
+          include_terms: Json
+          issuer_id: string
+          issuer_name: string
+          languages?: string[]
+          notes?: string | null
+          sample_query: string
+          ticker: string
+        }
+        Update: {
+          created_at?: string | null
+          exclude_terms?: Json
+          geography?: string[]
+          ibex_status?: string
+          include_terms?: Json
+          issuer_id?: string
+          issuer_name?: string
+          languages?: string[]
+          notes?: string | null
+          sample_query?: string
+          ticker?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
