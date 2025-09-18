@@ -322,6 +322,8 @@ export type Database = {
           period_from: string | null
           period_to: string | null
           puntos_clave: Json | null
+          "res-gpt-bruto": string | null
+          "res-perplex-bruto": string | null
           resumen: string | null
           rm_categoria: string | null
           rm_peso: number | null
@@ -370,6 +372,8 @@ export type Database = {
           period_from?: string | null
           period_to?: string | null
           puntos_clave?: Json | null
+          "res-gpt-bruto"?: string | null
+          "res-perplex-bruto"?: string | null
           resumen?: string | null
           rm_categoria?: string | null
           rm_peso?: number | null
@@ -418,6 +422,8 @@ export type Database = {
           period_from?: string | null
           period_to?: string | null
           puntos_clave?: Json | null
+          "res-gpt-bruto"?: string | null
+          "res-perplex-bruto"?: string | null
           resumen?: string | null
           rm_categoria?: string | null
           rm_peso?: number | null

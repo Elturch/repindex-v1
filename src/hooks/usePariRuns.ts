@@ -44,6 +44,8 @@ export interface PariRun {
   temporal_alignment?: number;
   citation_density?: number;
   flags?: any;
+  "res-gpt-bruto"?: string;
+  "res-perplex-bruto"?: string;
 }
 
 export function usePariRuns(
