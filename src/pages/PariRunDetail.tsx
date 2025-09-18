@@ -2,10 +2,12 @@ import React from "react";
 import { useParams } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { usePariRun } from "@/hooks/usePariRuns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle } from "lucide-react";
+import { MetricCard } from "@/components/ui/metric-card";
+import { StatsPanel } from "@/components/ui/stats-panel";
+import { AlertCircle, CheckCircle } from "lucide-react";
 
 export function PariRunDetail() {
   const { id } = useParams<{ id: string }>();
@@ -50,6 +52,7 @@ export function PariRunDetail() {
   }
 
   const metrics = [
+    { key: 'pari', label: 'PARI', score: pariRun.pari_score, peso: 100, categoria: pariRun.pari_score >= 70 ? 'Bueno' : pariRun.pari_score >= 40 ? 'Mejorable' : 'Insuficiente' },
     { key: 'lns', label: 'LNS', score: pariRun.lns_score, peso: pariRun.lns_peso, categoria: pariRun.lns_categoria },
     { key: 'es', label: 'ES', score: pariRun.es_score, peso: pariRun.es_peso, categoria: pariRun.es_categoria },
     { key: 'sam', label: 'SAM', score: pariRun.sam_score, peso: pariRun.sam_peso, categoria: pariRun.sam_categoria },
@@ -59,6 +62,12 @@ export function PariRunDetail() {
     { key: 'kgi', label: 'KGI', score: pariRun.kgi_score, peso: pariRun.kgi_peso, categoria: pariRun.kgi_categoria },
     { key: 'mpi', label: 'MPI', score: pariRun.mpi_score, peso: pariRun.mpi_peso, categoria: pariRun.mpi_categoria },
   ];
+
+  // Extract flags from JSONB
+  const flags = Array.isArray(pariRun.flags) ? pariRun.flags : [];
+
+  // Parse puntos_clave if it's an array
+  const puntosClave = Array.isArray(pariRun.puntos_clave) ? pariRun.puntos_clave : [];
 
   return (
     <Layout title="RepIndex - Detalle">
@@ -94,111 +103,97 @@ export function PariRunDetail() {
           </Badge>
         </div>
 
-        {/* Metrics Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {metrics.map((metric) => (
-            <Card key={metric.key}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">{metric.label}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="text-2xl font-bold">
-                    {metric.score || 0}
+        {/* Metrics Grid with Color Coding */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {metrics.map((metric) => {
+            // Determine color class based on categoria
+            let colorClass = "";
+            let bgClass = "";
+            if (metric.categoria === "Bueno") {
+              colorClass = "text-good";
+              bgClass = "bg-good/10 border-good/20";
+            } else if (metric.categoria === "Mejorable") {
+              colorClass = "text-needs-improvement";
+              bgClass = "bg-needs-improvement/10 border-needs-improvement/20";
+            } else if (metric.categoria === "Insuficiente") {
+              colorClass = "text-insufficient";
+              bgClass = "bg-insufficient/10 border-insufficient/20";
+            }
+
+            return (
+              <Card key={metric.key} className={`${bgClass} transition-colors`}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">{metric.label}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className={`text-2xl font-bold ${colorClass}`}>
+                      {metric.score || 0}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Peso: {metric.peso || 0}%
+                    </div>
+                    {metric.categoria && (
+                      <Badge 
+                        variant="outline" 
+                        className={`text-xs ${colorClass} border-current`}
+                      >
+                        {metric.categoria}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    Peso: {metric.peso || 0}%
-                  </div>
-                  {metric.categoria && (
-                    <Badge variant="outline" className="text-xs">
-                      {metric.categoria}
-                    </Badge>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
 
-        {/* Summary and Key Points */}
+        {/* Statistics Panel */}
+        <StatsPanel
+          palabras={pariRun.palabras || 0}
+          numFechas={pariRun.num_fechas || 0}
+          numCitas={pariRun.num_citas || 0}
+          temporalAlignment={pariRun.temporal_alignment || 0}
+          citationDensity={pariRun.citation_density || 0}
+          flags={flags}
+        />
+
+        {/* Summary */}
         {pariRun.resumen && (
           <Card>
             <CardHeader>
-              <CardTitle>Resumen Ejecutivo</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-primary" />
+                Resumen Ejecutivo
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-relaxed">{pariRun.resumen}</p>
+              <p className="text-sm leading-relaxed text-foreground">{pariRun.resumen}</p>
             </CardContent>
           </Card>
         )}
 
-        {pariRun.puntos_clave && (
+        {/* Key Points */}
+        {puntosClave.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Puntos Clave</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-primary" />
+                Puntos Clave
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-sm">
-                {typeof pariRun.puntos_clave === 'string' 
-                  ? pariRun.puntos_clave
-                  : JSON.stringify(pariRun.puntos_clave, null, 2)
-                }
-              </div>
+              <ul className="space-y-3">
+                {puntosClave.map((punto, index) => (
+                  <li key={index} className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
+                    <span className="text-sm leading-relaxed text-foreground">{punto}</span>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         )}
-
-        {/* Statistics */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Palabras</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pariRun.palabras || 0}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Fechas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pariRun.num_fechas || 0}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Citas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pariRun.num_citas || 0}</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Alineación Temporal</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {pariRun.temporal_alignment ? (pariRun.temporal_alignment * 100).toFixed(1) + '%' : '0%'}
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Densidad de Citas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {pariRun.citation_density ? (pariRun.citation_density * 100).toFixed(1) + '%' : '0%'}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </Layout>
   );
