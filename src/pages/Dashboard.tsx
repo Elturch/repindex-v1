@@ -368,13 +368,16 @@ export function Dashboard() {
                           })}
                         </div>
                         
-                        <div className="flex items-center justify-between text-sm text-muted-foreground border-t pt-2">
-                          <Badge variant="secondary" className="text-xs">
-                            {pariRun.model_name || "N/A"}
-                          </Badge>
-                          <span className="text-xs">
-                            {new Date(pariRun.created_at).toLocaleDateString()}
-                          </span>
+                        {/* Quality Flags */}
+                        <div className="border-t pt-2">
+                          <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
+                          <div className="text-sm">
+                            {Array.isArray(pariRun.flags) && pariRun.flags.length > 0 ? (
+                              pariRun.flags.join(", ")
+                            ) : (
+                              <span className="text-muted-foreground">Sin flags</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </CardContent>
