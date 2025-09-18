@@ -94,6 +94,24 @@ export function Dashboard() {
     setWeekFilter("all");
   };
 
+  // Function to normalize flag names to user-friendly format
+  const normalizeFlag = (flag: string) => {
+    const flagMap: { [key: string]: string } = {
+      "datos_antiguos": "Datos Antiguos",
+      "dudas_no_aclaradas": "Dudas No Aclaradas",
+      "cutoff_disclaimer": "Limitación de Fecha de Corte",
+      "low_quality_sources": "Fuentes de Baja Calidad",
+      "incomplete_data": "Datos Incompletos",
+      "temporal_mismatch": "Desajuste Temporal",
+      "insufficient_evidence": "Evidencia Insuficiente",
+      "conflicting_sources": "Fuentes Conflictivas",
+      "language_barriers": "Barreras de Idioma",
+      "regional_bias": "Sesgo Regional"
+    };
+    
+    return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
   if (isLoading) {
   return (
     <Layout title="Repindex.ai">
@@ -311,7 +329,7 @@ export function Dashboard() {
                             {Array.isArray(pariRun.flags) && pariRun.flags.length > 0 ? (
                               pariRun.flags.map((flag, index) => (
                                 <Badge key={index} variant="outline" className="text-xs">
-                                  {flag}
+                                  {normalizeFlag(flag)}
                                 </Badge>
                               ))
                             ) : (
@@ -373,7 +391,7 @@ export function Dashboard() {
                           <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
                           <div className="text-sm">
                             {Array.isArray(pariRun.flags) && pariRun.flags.length > 0 ? (
-                              pariRun.flags.join(", ")
+                              pariRun.flags.map(flag => normalizeFlag(flag)).join(", ")
                             ) : (
                               <span className="text-muted-foreground">Sin flags</span>
                             )}
