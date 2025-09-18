@@ -9,12 +9,18 @@ interface AIResponseDialogProps {
   modelName?: string;
   chatgptResponse?: string;
   perplexityResponse?: string;
+  createdAt?: string;
+  periodFrom?: string;
+  periodTo?: string;
 }
 
 export function AIResponseDialog({ 
   modelName, 
   chatgptResponse, 
-  perplexityResponse 
+  perplexityResponse,
+  createdAt,
+  periodFrom,
+  periodTo
 }: AIResponseDialogProps) {
   const isChatGPT = modelName?.toLowerCase().includes('chatgpt') || modelName?.toLowerCase().includes('gpt');
   const isPerplexity = modelName?.toLowerCase().includes('perplexity');
@@ -46,6 +52,16 @@ export function AIResponseDialog({
     return null;
   }
 
+  const formatDateRange = (from?: string, to?: string) => {
+    if (!from && !to) return "N/A";
+    if (!to) return from ? new Date(from).toLocaleDateString() : "N/A";
+    if (!from) return to ? new Date(to).toLocaleDateString() : "N/A";
+    
+    const fromDate = new Date(from).toLocaleDateString();
+    const toDate = new Date(to).toLocaleDateString();
+    return `${fromDate} - ${toDate}`;
+  };
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -63,6 +79,21 @@ export function AIResponseDialog({
         </DialogHeader>
         <ScrollArea className="h-full max-h-[60vh] pr-4">
           <div className="space-y-4">
+            {/* Date Information */}
+            <div className="bg-muted/50 p-3 rounded-lg space-y-2 text-sm">
+              {createdAt && (
+                <div>
+                  <span className="font-medium text-muted-foreground">Fecha de análisis: </span>
+                  <span>{new Date(createdAt).toLocaleString()}</span>
+                </div>
+              )}
+              <div>
+                <span className="font-medium text-muted-foreground">Período analizado: </span>
+                <span>{formatDateRange(periodFrom, periodTo)}</span>
+              </div>
+            </div>
+            
+            {/* AI Response Content */}
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans">
                 {responseContent}

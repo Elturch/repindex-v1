@@ -292,6 +292,9 @@ export function PariRunDetail() {
               modelName={pariRun.model_name}
               chatgptResponse={pariRun["res-gpt-bruto"]}
               perplexityResponse={pariRun["res-perplex-bruto"]}
+              createdAt={pariRun.created_at}
+              periodFrom={pariRun.period_from}
+              periodTo={pariRun.period_to}
             />
           </div>
         </div>
