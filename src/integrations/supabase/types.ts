@@ -300,6 +300,7 @@ export type Database = {
           es_categoria: string | null
           es_peso: number | null
           es_score: number | null
+          explicacion: string[] | null
           flags: Json | null
           gip_categoria: string | null
           gip_peso: number | null
@@ -350,6 +351,7 @@ export type Database = {
           es_categoria?: string | null
           es_peso?: number | null
           es_score?: number | null
+          explicacion?: string[] | null
           flags?: Json | null
           gip_categoria?: string | null
           gip_peso?: number | null
@@ -400,6 +402,7 @@ export type Database = {
           es_categoria?: string | null
           es_peso?: number | null
           es_score?: number | null
+          explicacion?: string[] | null
           flags?: Json | null
           gip_categoria?: string | null
           gip_peso?: number | null
