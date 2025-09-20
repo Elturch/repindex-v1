@@ -484,6 +484,7 @@ export type Database = {
       }
       repindex_root_issuers: {
         Row: {
+          counter: number
           created_at: string | null
           exclude_terms: Json
           geography: string[]
@@ -504,6 +505,7 @@ export type Database = {
           ticker: string
         }
         Insert: {
+          counter?: number
           created_at?: string | null
           exclude_terms?: Json
           geography?: string[]
@@ -524,6 +526,7 @@ export type Database = {
           ticker: string
         }
         Update: {
+          counter?: number
           created_at?: string | null
           exclude_terms?: Json
           geography?: string[]
