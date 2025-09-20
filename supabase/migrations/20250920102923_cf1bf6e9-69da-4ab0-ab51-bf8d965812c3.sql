@@ -1,0 +1,28 @@
+-- Simple update to mark IBEX 35 companies with 'sí' in prueba column
+-- Since the table already exists with data, let's just update the prueba column properly
+
+-- Mark all IBEX 35 companies with 'sí'
+UPDATE public.repindex_root_issuers 
+SET prueba = 'sí' 
+WHERE ibex_family_code = 'IBEX-35';
+
+-- Also mark companies that are publicly traded based on the Numbers document
+UPDATE public.repindex_root_issuers 
+SET prueba = 'sí' 
+WHERE ticker IN (
+  'SAN', 'BBVA', 'IBE', 'TEF', 'REP', 'CABK', 'MAP', 'ELE', 'NTGY',
+  'ANA', 'FER', 'AENA', 'ACS', 'PUIG', 'ITX', 'CLNX', 'GRF', 'AMS',
+  'RED', 'ANE', 'BKT', 'SAB', 'UNI', 'IAG', 'COL', 'MRL', 'GEST',
+  'CIE', 'SCYR', 'TRE', 'ACX', 'MTS', 'VDR', 'VIS', 'ROVI', 'FAE',
+  'PHA', 'ALM', 'PSG', 'CASH', 'MEL', 'CAT', 'LDA', 'APPS', 'EBR',
+  'A3M', 'VOC', 'PRISA', 'DOM', 'OHLA', 'ENO', 'ENG', 'ENC', 'ECR',
+  'EIDF', 'SLR', 'SLT', 'GRE', 'ADX', 'HLZ', 'ART2', 'TUB', 'TRR',
+  'CAF', 'TLG', 'GAM', 'URB', 'LAR', 'CAST', 'ARM', 'LOG', 'RJF',
+  'RT4', 'RTC', 'ALTR', 'LLYC', 'AIRON', 'ALT', 'AMP', 'ART', 'ATR',
+  'AZK', 'BKY', 'BIL', 'CBAV', 'CLE', 'CEVA'
+);
+
+-- Ensure all other companies are marked with 'no' if not already set
+UPDATE public.repindex_root_issuers 
+SET prueba = 'no' 
+WHERE prueba IS NULL OR prueba = '';
