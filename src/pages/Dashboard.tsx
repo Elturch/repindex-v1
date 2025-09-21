@@ -291,9 +291,6 @@ export function Dashboard() {
                           {metric.label}
                         </TableHead>
                       ))}
-                      <TableHead className="w-32">Respuesta GPT</TableHead>
-                      <TableHead className="w-32">Respuesta Perplexity</TableHead>
-                      <TableHead className="w-20">Fase</TableHead>
                       <TableHead className="w-32">Ibex Family Code</TableHead>
                       <TableHead className="w-32">Sector Category</TableHead>
                     </TableRow>
@@ -331,25 +328,6 @@ export function Dashboard() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className="max-w-32">
-                          <div className="truncate text-sm" title={pariRun["20_res_gpt_bruto"] || "N/A"}>
-                            {pariRun["20_res_gpt_bruto"] ? 
-                              `${pariRun["20_res_gpt_bruto"].substring(0, 50)}...` : 
-                              "N/A"}
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-32">
-                          <div className="truncate text-sm" title={pariRun["21_res_perplex_bruto"] || "N/A"}>
-                            {pariRun["21_res_perplex_bruto"] ? 
-                              `${pariRun["21_res_perplex_bruto"].substring(0, 50)}...` : 
-                              "N/A"}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {pariRun["47_fase"] || pariRun["04_target_type"] || "N/A"}
-                          </Badge>
-                        </TableCell>
                         <TableCell className="text-sm">
                           {pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}
                         </TableCell>
