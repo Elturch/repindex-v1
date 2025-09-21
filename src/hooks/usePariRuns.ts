@@ -51,6 +51,10 @@ export interface PariRun {
   "44_mpi_score"?: number;
   "45_mpi_peso"?: number;
   "46_mpi_categoria"?: string;
+  repindex_root_issuers?: {
+    ibex_family_code?: string;
+    sector_category?: string;
+  };
 }
 
 export function usePariRuns(
@@ -64,7 +68,10 @@ export function usePariRuns(
     queryFn: async () => {
       let query = supabase
         .from("pari_runs")
-        .select("*")
+        .select(`
+          *,
+          repindex_root_issuers!left(ibex_family_code, sector_category)
+        `)
         .order("09_pari_score", { ascending: false });
 
       if (searchQuery) {
