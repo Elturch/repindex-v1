@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { Dashboard } from "./pages/Dashboard";
 import { PariRunDetail } from "./pages/PariRunDetail";
+import InsertPariResults from "./pages/InsertPariResults";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/pari-run/:id" element={<PariRunDetail />} />
+            <Route path="/insert-pari" element={<InsertPariResults />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
