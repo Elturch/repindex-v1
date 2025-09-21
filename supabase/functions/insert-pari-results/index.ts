@@ -68,10 +68,7 @@ serve(async (req) => {
     results.forEach((result, index) => {
       const errors: string[] = []
       
-      // Validate required fields
-      if (!result.meta?.run_id) {
-        errors.push('meta.run_id is required and cannot be null or empty')
-      }
+      // Validate required fields (run_id ya no es requerido, se genera automáticamente)
       if (!result.meta?.target_name) {
         errors.push('meta.target_name is required and cannot be null or empty')
       }
@@ -155,8 +152,7 @@ serve(async (req) => {
         }
       })
 
-      const insertData = {
-        "01_run_id": result.meta.run_id,
+      const insertData: Record<string, any> = {
         "02_model_name": result.meta.model_name,
         "03_target_name": result.meta.target_name,
         "04_target_type": result.meta.target_type,
@@ -180,6 +176,11 @@ serve(async (req) => {
         "22_explicacion": result.relato_mini.explicacion || null,
         "47_fase": result.meta.fase || result.meta.target_type || null,
         ...metricsMap
+      }
+
+      // Solo añadir 01_run_id si existe en los datos, sino usar el valor por defecto de la DB
+      if (result.meta.run_id) {
+        insertData["01_run_id"] = result.meta.run_id
       }
 
       const { data, error } = await supabaseClient

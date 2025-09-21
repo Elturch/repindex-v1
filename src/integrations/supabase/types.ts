@@ -344,7 +344,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          "01_run_id": string
+          "01_run_id"?: string
           "02_model_name"?: string | null
           "03_target_name": string
           "04_target_type"?: string | null
