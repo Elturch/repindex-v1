@@ -172,15 +172,6 @@ export function Dashboard() {
               <PerplexityIcon className="h-4 w-4" />
               Perplexity
             </Button>
-            <Button
-              variant={aiFilter === "comparison" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setAIFilter("comparison")}
-              className="flex items-center gap-2"
-            >
-              <BarChart3 className="h-4 w-4" />
-              Comparación
-            </Button>
           </div>
 
           {/* View Mode Selector */}
