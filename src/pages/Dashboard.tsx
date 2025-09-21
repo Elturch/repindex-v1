@@ -347,7 +347,7 @@ export function Dashboard() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {pariRun["04_target_type"] || "N/A"}
+                            {pariRun["47_fase"] || pariRun["04_target_type"] || "N/A"}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm">

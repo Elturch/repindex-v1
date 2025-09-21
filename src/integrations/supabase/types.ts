@@ -338,6 +338,7 @@ export type Database = {
           "44_mpi_score": number | null
           "45_mpi_peso": number | null
           "46_mpi_categoria": string | null
+          "47_fase": string | null
           created_at: string
           id: string
           updated_at: string
@@ -389,6 +390,7 @@ export type Database = {
           "44_mpi_score"?: number | null
           "45_mpi_peso"?: number | null
           "46_mpi_categoria"?: string | null
+          "47_fase"?: string | null
           created_at?: string
           id?: string
           updated_at?: string
@@ -440,6 +442,7 @@ export type Database = {
           "44_mpi_score"?: number | null
           "45_mpi_peso"?: number | null
           "46_mpi_categoria"?: string | null
+          "47_fase"?: string | null
           created_at?: string
           id?: string
           updated_at?: string

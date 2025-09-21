@@ -51,10 +51,11 @@ export interface PariRun {
   "44_mpi_score"?: number;
   "45_mpi_peso"?: number;
   "46_mpi_categoria"?: string;
+  "47_fase"?: string;
   repindex_root_issuers?: {
     ibex_family_code?: string;
     sector_category?: string;
-  };
+  } | null;
 }
 
 export function usePariRuns(
@@ -66,24 +67,22 @@ export function usePariRuns(
   return useQuery({
     queryKey: ["pari-runs", searchQuery, modelFilter, companyFilter, weekFilter],
     queryFn: async () => {
-      let query = supabase
+      // First get pari_runs data
+      let pariQuery = supabase
         .from("pari_runs")
-        .select(`
-          *,
-          repindex_root_issuers!left(ibex_family_code, sector_category)
-        `)
+        .select("*")
         .order("09_pari_score", { ascending: false });
 
       if (searchQuery) {
-        query = query.ilike("03_target_name", `%${searchQuery}%`);
+        pariQuery = pariQuery.ilike("03_target_name", `%${searchQuery}%`);
       }
 
       if (modelFilter && modelFilter !== "all") {
-        query = query.eq("02_model_name", modelFilter);
+        pariQuery = pariQuery.eq("02_model_name", modelFilter);
       }
 
       if (companyFilter && companyFilter !== "all") {
-        query = query.eq("03_target_name", companyFilter);
+        pariQuery = pariQuery.eq("03_target_name", companyFilter);
       }
 
       if (weekFilter && weekFilter !== "all") {
@@ -92,17 +91,46 @@ export function usePariRuns(
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 6); // Add 6 days for a week
         
-        query = query.gte("06_period_from", weekStart.toISOString().split('T')[0])
-                    .lte("07_period_to", weekEnd.toISOString().split('T')[0]);
+        pariQuery = pariQuery.gte("06_period_from", weekStart.toISOString().split('T')[0])
+                            .lte("07_period_to", weekEnd.toISOString().split('T')[0]);
       }
 
-      const { data, error } = await query;
+      const { data: pariData, error: pariError } = await pariQuery;
 
-      if (error) {
-        throw error;
+      if (pariError) {
+        throw pariError;
       }
 
-      return data as PariRun[];
+      // Get repindex data to join with pari_runs
+      const { data: repindexData, error: repindexError } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker, ibex_family_code, sector_category");
+
+      if (repindexError) {
+        console.error("Error fetching repindex data:", repindexError);
+        // Continue without repindex data if error
+      }
+
+      // Create a map for quick lookup
+      const repindexMap = new Map();
+      if (repindexData) {
+        repindexData.forEach(item => {
+          repindexMap.set(item.ticker, {
+            ibex_family_code: item.ibex_family_code,
+            sector_category: item.sector_category
+          });
+        });
+      }
+
+      // Join the data
+      const joinedData = pariData?.map(pariRun => ({
+        ...pariRun,
+        repindex_root_issuers: pariRun["05_ticker"] ? 
+          repindexMap.get(pariRun["05_ticker"]) || null : 
+          null
+      }));
+
+      return joinedData as PariRun[];
     },
     enabled: true,
   });
