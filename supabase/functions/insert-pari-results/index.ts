@@ -21,6 +21,9 @@ interface PariResult {
   relato_mini: {
     resumen: string
     puntos_clave: string[]
+    explicacion?: string[]
+    'res-gpt-bruto'?: string
+    'res-perplex-bruto'?: string
   }
   tabla: {
     pari: number
@@ -89,6 +92,9 @@ serve(async (req) => {
         flags: result.tabla.flags,
         weights: result.meta.weights,
         subscores: result.tabla.subscores,
+        explicacion: result.relato_mini.explicacion || null,
+        'res-gpt-bruto': result.relato_mini['res-gpt-bruto'] || null,
+        'res-perplex-bruto': result.relato_mini['res-perplex-bruto'] || null,
         ...metricsMap
       }
 
