@@ -292,157 +292,157 @@ export type Database = {
       }
       pari_runs: {
         Row: {
-          citation_density: number | null
-          clr_categoria: string | null
-          clr_peso: number | null
-          clr_score: number | null
+          "01_run_id": string
+          "02_model_name": string | null
+          "03_target_name": string
+          "04_target_type": string | null
+          "05_ticker": string | null
+          "06_period_from": string | null
+          "07_period_to": string | null
+          "08_tz": string | null
+          "09_pari_score": number | null
+          "10_resumen": string | null
+          "11_puntos_clave": Json | null
+          "12_palabras": number | null
+          "13_num_fechas": number | null
+          "14_num_citas": number | null
+          "15_temporal_alignment": number | null
+          "16_citation_density": number | null
+          "17_flags": Json | null
+          "18_subscores": Json | null
+          "19_weights": Json | null
+          "20_res_gpt_bruto": string | null
+          "21_res_perplex_bruto": string | null
+          "22_explicacion": string[] | null
+          "23_lns_score": number | null
+          "24_lns_peso": number | null
+          "25_lns_categoria": string | null
+          "26_es_score": number | null
+          "27_es_peso": number | null
+          "28_es_categoria": string | null
+          "29_sam_score": number | null
+          "30_sam_peso": number | null
+          "31_sam_categoria": string | null
+          "32_rm_score": number | null
+          "33_rm_peso": number | null
+          "34_rm_categoria": string | null
+          "35_clr_score": number | null
+          "36_clr_peso": number | null
+          "37_clr_categoria": string | null
+          "38_gip_score": number | null
+          "39_gip_peso": number | null
+          "40_gip_categoria": string | null
+          "41_kgi_score": number | null
+          "42_kgi_peso": number | null
+          "43_kgi_categoria": string | null
+          "44_mpi_score": number | null
+          "45_mpi_peso": number | null
+          "46_mpi_categoria": string | null
           created_at: string
-          es_categoria: string | null
-          es_peso: number | null
-          es_score: number | null
-          explicacion: string[] | null
-          flags: Json | null
-          gip_categoria: string | null
-          gip_peso: number | null
-          gip_score: number | null
           id: string
-          kgi_categoria: string | null
-          kgi_peso: number | null
-          kgi_score: number | null
-          lns_categoria: string | null
-          lns_peso: number | null
-          lns_score: number | null
-          model_name: string | null
-          mpi_categoria: string | null
-          mpi_peso: number | null
-          mpi_score: number | null
-          num_citas: number | null
-          num_fechas: number | null
-          palabras: number | null
-          pari_score: number | null
-          period_from: string | null
-          period_to: string | null
-          puntos_clave: Json | null
-          "res-gpt-bruto": string | null
-          "res-perplex-bruto": string | null
-          resumen: string | null
-          rm_categoria: string | null
-          rm_peso: number | null
-          rm_score: number | null
-          run_id: string
-          sam_categoria: string | null
-          sam_peso: number | null
-          sam_score: number | null
-          subscores: Json | null
-          target_name: string
-          target_type: string | null
-          temporal_alignment: number | null
-          ticker: string | null
-          tz: string | null
           updated_at: string
-          weights: Json | null
         }
         Insert: {
-          citation_density?: number | null
-          clr_categoria?: string | null
-          clr_peso?: number | null
-          clr_score?: number | null
+          "01_run_id": string
+          "02_model_name"?: string | null
+          "03_target_name": string
+          "04_target_type"?: string | null
+          "05_ticker"?: string | null
+          "06_period_from"?: string | null
+          "07_period_to"?: string | null
+          "08_tz"?: string | null
+          "09_pari_score"?: number | null
+          "10_resumen"?: string | null
+          "11_puntos_clave"?: Json | null
+          "12_palabras"?: number | null
+          "13_num_fechas"?: number | null
+          "14_num_citas"?: number | null
+          "15_temporal_alignment"?: number | null
+          "16_citation_density"?: number | null
+          "17_flags"?: Json | null
+          "18_subscores"?: Json | null
+          "19_weights"?: Json | null
+          "20_res_gpt_bruto"?: string | null
+          "21_res_perplex_bruto"?: string | null
+          "22_explicacion"?: string[] | null
+          "23_lns_score"?: number | null
+          "24_lns_peso"?: number | null
+          "25_lns_categoria"?: string | null
+          "26_es_score"?: number | null
+          "27_es_peso"?: number | null
+          "28_es_categoria"?: string | null
+          "29_sam_score"?: number | null
+          "30_sam_peso"?: number | null
+          "31_sam_categoria"?: string | null
+          "32_rm_score"?: number | null
+          "33_rm_peso"?: number | null
+          "34_rm_categoria"?: string | null
+          "35_clr_score"?: number | null
+          "36_clr_peso"?: number | null
+          "37_clr_categoria"?: string | null
+          "38_gip_score"?: number | null
+          "39_gip_peso"?: number | null
+          "40_gip_categoria"?: string | null
+          "41_kgi_score"?: number | null
+          "42_kgi_peso"?: number | null
+          "43_kgi_categoria"?: string | null
+          "44_mpi_score"?: number | null
+          "45_mpi_peso"?: number | null
+          "46_mpi_categoria"?: string | null
           created_at?: string
-          es_categoria?: string | null
-          es_peso?: number | null
-          es_score?: number | null
-          explicacion?: string[] | null
-          flags?: Json | null
-          gip_categoria?: string | null
-          gip_peso?: number | null
-          gip_score?: number | null
           id?: string
-          kgi_categoria?: string | null
-          kgi_peso?: number | null
-          kgi_score?: number | null
-          lns_categoria?: string | null
-          lns_peso?: number | null
-          lns_score?: number | null
-          model_name?: string | null
-          mpi_categoria?: string | null
-          mpi_peso?: number | null
-          mpi_score?: number | null
-          num_citas?: number | null
-          num_fechas?: number | null
-          palabras?: number | null
-          pari_score?: number | null
-          period_from?: string | null
-          period_to?: string | null
-          puntos_clave?: Json | null
-          "res-gpt-bruto"?: string | null
-          "res-perplex-bruto"?: string | null
-          resumen?: string | null
-          rm_categoria?: string | null
-          rm_peso?: number | null
-          rm_score?: number | null
-          run_id: string
-          sam_categoria?: string | null
-          sam_peso?: number | null
-          sam_score?: number | null
-          subscores?: Json | null
-          target_name: string
-          target_type?: string | null
-          temporal_alignment?: number | null
-          ticker?: string | null
-          tz?: string | null
           updated_at?: string
-          weights?: Json | null
         }
         Update: {
-          citation_density?: number | null
-          clr_categoria?: string | null
-          clr_peso?: number | null
-          clr_score?: number | null
+          "01_run_id"?: string
+          "02_model_name"?: string | null
+          "03_target_name"?: string
+          "04_target_type"?: string | null
+          "05_ticker"?: string | null
+          "06_period_from"?: string | null
+          "07_period_to"?: string | null
+          "08_tz"?: string | null
+          "09_pari_score"?: number | null
+          "10_resumen"?: string | null
+          "11_puntos_clave"?: Json | null
+          "12_palabras"?: number | null
+          "13_num_fechas"?: number | null
+          "14_num_citas"?: number | null
+          "15_temporal_alignment"?: number | null
+          "16_citation_density"?: number | null
+          "17_flags"?: Json | null
+          "18_subscores"?: Json | null
+          "19_weights"?: Json | null
+          "20_res_gpt_bruto"?: string | null
+          "21_res_perplex_bruto"?: string | null
+          "22_explicacion"?: string[] | null
+          "23_lns_score"?: number | null
+          "24_lns_peso"?: number | null
+          "25_lns_categoria"?: string | null
+          "26_es_score"?: number | null
+          "27_es_peso"?: number | null
+          "28_es_categoria"?: string | null
+          "29_sam_score"?: number | null
+          "30_sam_peso"?: number | null
+          "31_sam_categoria"?: string | null
+          "32_rm_score"?: number | null
+          "33_rm_peso"?: number | null
+          "34_rm_categoria"?: string | null
+          "35_clr_score"?: number | null
+          "36_clr_peso"?: number | null
+          "37_clr_categoria"?: string | null
+          "38_gip_score"?: number | null
+          "39_gip_peso"?: number | null
+          "40_gip_categoria"?: string | null
+          "41_kgi_score"?: number | null
+          "42_kgi_peso"?: number | null
+          "43_kgi_categoria"?: string | null
+          "44_mpi_score"?: number | null
+          "45_mpi_peso"?: number | null
+          "46_mpi_categoria"?: string | null
           created_at?: string
-          es_categoria?: string | null
-          es_peso?: number | null
-          es_score?: number | null
-          explicacion?: string[] | null
-          flags?: Json | null
-          gip_categoria?: string | null
-          gip_peso?: number | null
-          gip_score?: number | null
           id?: string
-          kgi_categoria?: string | null
-          kgi_peso?: number | null
-          kgi_score?: number | null
-          lns_categoria?: string | null
-          lns_peso?: number | null
-          lns_score?: number | null
-          model_name?: string | null
-          mpi_categoria?: string | null
-          mpi_peso?: number | null
-          mpi_score?: number | null
-          num_citas?: number | null
-          num_fechas?: number | null
-          palabras?: number | null
-          pari_score?: number | null
-          period_from?: string | null
-          period_to?: string | null
-          puntos_clave?: Json | null
-          "res-gpt-bruto"?: string | null
-          "res-perplex-bruto"?: string | null
-          resumen?: string | null
-          rm_categoria?: string | null
-          rm_peso?: number | null
-          rm_score?: number | null
-          run_id?: string
-          sam_categoria?: string | null
-          sam_peso?: number | null
-          sam_score?: number | null
-          subscores?: Json | null
-          target_name?: string
-          target_type?: string | null
-          temporal_alignment?: number | null
-          ticker?: string | null
-          tz?: string | null
           updated_at?: string
-          weights?: Json | null
         }
         Relationships: []
       }

@@ -55,22 +55,22 @@ export function PariRunDetail() {
   }
 
   const metrics = [
-    { key: 'pari', label: 'Índice PARI', fullName: 'Public Attention Reputational Index', score: pariRun.pari_score, peso: 100, categoria: pariRun.pari_score >= 70 ? 'Bueno' : pariRun.pari_score >= 40 ? 'Mejorable' : 'Insuficiente' },
-    { key: 'lns', label: 'Calidad de la Narrativa', fullName: 'LLM Narrative Score', score: pariRun.lns_score, peso: pariRun.lns_peso, categoria: pariRun.lns_categoria },
-    { key: 'es', label: 'Fortaleza de Evidencia', fullName: 'Evidence Strength', score: pariRun.es_score, peso: pariRun.es_peso, categoria: pariRun.es_categoria },
-    { key: 'sam', label: 'Autoridad de Fuentes', fullName: 'Source Authority Mix', score: pariRun.sam_score, peso: pariRun.sam_peso, categoria: pariRun.sam_categoria },
-    { key: 'rm', label: 'Actualidad y Empuje', fullName: 'Recency & Momentum', score: pariRun.rm_score, peso: pariRun.rm_peso, categoria: pariRun.rm_categoria },
-    { key: 'clr', label: 'Controversia y Riesgo Legal', fullName: 'Controversy & Legal Risk', score: pariRun.clr_score, peso: pariRun.clr_peso, categoria: pariRun.clr_categoria },
-    { key: 'gip', label: 'Independencia de Gobierno', fullName: 'Governance Independence Perception', score: pariRun.gip_score, peso: pariRun.gip_peso, categoria: pariRun.gip_categoria },
-    { key: 'kgi', label: 'Integridad del Grafo', fullName: 'Knowledge Graph Integrity', score: pariRun.kgi_score, peso: pariRun.kgi_peso, categoria: pariRun.kgi_categoria },
-    { key: 'mpi', label: 'Impacto de Mercado', fullName: 'Market/Performance Impact', score: pariRun.mpi_score, peso: pariRun.mpi_peso, categoria: pariRun.mpi_categoria },
+    { key: 'pari', label: 'Índice PARI', fullName: 'Public Attention Reputational Index', score: pariRun["09_pari_score"], peso: 100, categoria: pariRun["09_pari_score"] >= 70 ? 'Bueno' : pariRun["09_pari_score"] >= 40 ? 'Mejorable' : 'Insuficiente' },
+    { key: 'lns', label: 'Calidad de la Narrativa', fullName: 'LLM Narrative Score', score: pariRun["23_lns_score"], peso: pariRun["24_lns_peso"], categoria: pariRun["25_lns_categoria"] },
+    { key: 'es', label: 'Fortaleza de Evidencia', fullName: 'Evidence Strength', score: pariRun["26_es_score"], peso: pariRun["27_es_peso"], categoria: pariRun["28_es_categoria"] },
+    { key: 'sam', label: 'Autoridad de Fuentes', fullName: 'Source Authority Mix', score: pariRun["29_sam_score"], peso: pariRun["30_sam_peso"], categoria: pariRun["31_sam_categoria"] },
+    { key: 'rm', label: 'Actualidad y Empuje', fullName: 'Recency & Momentum', score: pariRun["32_rm_score"], peso: pariRun["33_rm_peso"], categoria: pariRun["34_rm_categoria"] },
+    { key: 'clr', label: 'Controversia y Riesgo Legal', fullName: 'Controversy & Legal Risk', score: pariRun["35_clr_score"], peso: pariRun["36_clr_peso"], categoria: pariRun["37_clr_categoria"] },
+    { key: 'gip', label: 'Independencia de Gobierno', fullName: 'Governance Independence Perception', score: pariRun["38_gip_score"], peso: pariRun["39_gip_peso"], categoria: pariRun["40_gip_categoria"] },
+    { key: 'kgi', label: 'Integridad del Grafo', fullName: 'Knowledge Graph Integrity', score: pariRun["41_kgi_score"], peso: pariRun["42_kgi_peso"], categoria: pariRun["43_kgi_categoria"] },
+    { key: 'mpi', label: 'Impacto de Mercado', fullName: 'Market/Performance Impact', score: pariRun["44_mpi_score"], peso: pariRun["45_mpi_peso"], categoria: pariRun["46_mpi_categoria"] },
   ];
 
   // Extract flags from JSONB
-  const flags = Array.isArray(pariRun.flags) ? pariRun.flags : [];
+  const flags = Array.isArray(pariRun["17_flags"]) ? pariRun["17_flags"] : [];
 
   // Parse puntos_clave if it's an array
-  const puntosClave = Array.isArray(pariRun.puntos_clave) ? pariRun.puntos_clave : [];
+  const puntosClave = Array.isArray(pariRun["11_puntos_clave"]) ? pariRun["11_puntos_clave"] : [];
 
   // Function to normalize flag names
   const normalizeFlag = (flag: string) => {
@@ -105,7 +105,7 @@ export function PariRunDetail() {
             Volver
           </Button>
           <Badge variant="secondary" className="text-sm">
-            {pariRun.model_name || "N/A"}
+            {pariRun["02_model_name"] || "N/A"}
           </Badge>
         </div>
 
@@ -113,18 +113,18 @@ export function PariRunDetail() {
         <div className="flex items-center justify-between bg-muted/50 p-4 rounded-lg">
           <div>
             <h1 className="text-2xl font-bold">
-              {pariRun.target_name}
-              {pariRun.ticker && (
-                <span className="text-lg text-muted-foreground ml-2">({pariRun.ticker})</span>
+              {pariRun["03_target_name"]}
+              {pariRun["05_ticker"] && (
+                <span className="text-lg text-muted-foreground ml-2">({pariRun["05_ticker"]})</span>
               )}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {formatDateRange(pariRun.period_from, pariRun.period_to)}
+              {formatDateRange(pariRun["06_period_from"], pariRun["07_period_to"])}
             </p>
           </div>
           <div className="text-right">
             <div className="text-4xl font-bold text-primary">
-              {pariRun.pari_score || 0}
+              {pariRun["09_pari_score"] || 0}
             </div>
             <div className="text-sm text-muted-foreground">PARI Score</div>
           </div>
@@ -199,7 +199,7 @@ export function PariRunDetail() {
             </Card>
 
             {/* Summary and Key Points - Compact */}
-            {pariRun.resumen && (
+            {pariRun["10_resumen"] && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -208,7 +208,7 @@ export function PariRunDetail() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm leading-relaxed">{pariRun.resumen}</p>
+                  <p className="text-sm leading-relaxed">{pariRun["10_resumen"]}</p>
                 </CardContent>
               </Card>
             )}
@@ -247,24 +247,24 @@ export function PariRunDetail() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-muted-foreground">Palabras</div>
-                    <div className="font-semibold">{pariRun.palabras || 0}</div>
+                    <div className="font-semibold">{pariRun["12_palabras"] || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Fechas</div>
-                    <div className="font-semibold">{pariRun.num_fechas || 0}</div>
+                    <div className="font-semibold">{pariRun["13_num_fechas"] || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Citas</div>
-                    <div className="font-semibold">{pariRun.num_citas || 0}</div>
+                    <div className="font-semibold">{pariRun["14_num_citas"] || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Alineación</div>
-                    <div className="font-semibold">{((pariRun.temporal_alignment || 0) * 100).toFixed(1)}%</div>
+                    <div className="font-semibold">{((pariRun["15_temporal_alignment"] || 0) * 100).toFixed(1)}%</div>
                   </div>
                 </div>
                 <div>
                   <div className="text-muted-foreground text-sm">Densidad de Citas</div>
-                  <div className="font-semibold">{((pariRun.citation_density || 0) * 100).toFixed(2)}%</div>
+                  <div className="font-semibold">{((pariRun["16_citation_density"] || 0) * 100).toFixed(2)}%</div>
                 </div>
               </CardContent>
             </Card>
@@ -289,12 +289,12 @@ export function PariRunDetail() {
 
             {/* AI Response Button */}
             <AIResponseDialog 
-              modelName={pariRun.model_name}
-              chatgptResponse={pariRun["res-gpt-bruto"]}
-              perplexityResponse={pariRun["res-perplex-bruto"]}
+              modelName={pariRun["02_model_name"]}
+              chatgptResponse={pariRun["20_res_gpt_bruto"]}
+              perplexityResponse={pariRun["21_res_perplex_bruto"]}
               createdAt={pariRun.created_at}
-              periodFrom={pariRun.period_from}
-              periodTo={pariRun.period_to}
+              periodFrom={pariRun["06_period_from"]}
+              periodTo={pariRun["07_period_to"]}
             />
           </div>
         </div>

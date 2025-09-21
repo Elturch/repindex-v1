@@ -4,49 +4,53 @@ import { supabase } from "@/integrations/supabase/client";
 export interface PariRun {
   id: string;
   created_at: string;
-  target_name: string;
-  target_type?: string;
-  ticker?: string;
-  period_from?: string;
-  period_to?: string;
-  tz?: string;
-  pari_score?: number;
-  model_name?: string;
-  lns_score?: number;
-  lns_peso?: number;
-  lns_categoria?: string;
-  es_score?: number;
-  es_peso?: number;
-  es_categoria?: string;
-  sam_score?: number;
-  sam_peso?: number;
-  sam_categoria?: string;
-  rm_score?: number;
-  rm_peso?: number;
-  rm_categoria?: string;
-  clr_score?: number;
-  clr_peso?: number;
-  clr_categoria?: string;
-  gip_score?: number;
-  gip_peso?: number;
-  gip_categoria?: string;
-  kgi_score?: number;
-  kgi_peso?: number;
-  kgi_categoria?: string;
-  mpi_score?: number;
-  mpi_peso?: number;
-  mpi_categoria?: string;
-  resumen?: string;
-  puntos_clave?: any;
-  palabras?: number;
-  num_fechas?: number;
-  num_citas?: number;
-  temporal_alignment?: number;
-  citation_density?: number;
-  flags?: any;
-  explicacion?: string[];
-  "res-gpt-bruto"?: string;
-  "res-perplex-bruto"?: string;
+  updated_at: string;
+  "01_run_id": string;
+  "02_model_name"?: string;
+  "03_target_name": string;
+  "04_target_type"?: string;
+  "05_ticker"?: string;
+  "06_period_from"?: string;
+  "07_period_to"?: string;
+  "08_tz"?: string;
+  "09_pari_score"?: number;
+  "10_resumen"?: string;
+  "11_puntos_clave"?: any;
+  "12_palabras"?: number;
+  "13_num_fechas"?: number;
+  "14_num_citas"?: number;
+  "15_temporal_alignment"?: number;
+  "16_citation_density"?: number;
+  "17_flags"?: any;
+  "18_subscores"?: any;
+  "19_weights"?: any;
+  "20_res_gpt_bruto"?: string;
+  "21_res_perplex_bruto"?: string;
+  "22_explicacion"?: string[];
+  "23_lns_score"?: number;
+  "24_lns_peso"?: number;
+  "25_lns_categoria"?: string;
+  "26_es_score"?: number;
+  "27_es_peso"?: number;
+  "28_es_categoria"?: string;
+  "29_sam_score"?: number;
+  "30_sam_peso"?: number;
+  "31_sam_categoria"?: string;
+  "32_rm_score"?: number;
+  "33_rm_peso"?: number;
+  "34_rm_categoria"?: string;
+  "35_clr_score"?: number;
+  "36_clr_peso"?: number;
+  "37_clr_categoria"?: string;
+  "38_gip_score"?: number;
+  "39_gip_peso"?: number;
+  "40_gip_categoria"?: string;
+  "41_kgi_score"?: number;
+  "42_kgi_peso"?: number;
+  "43_kgi_categoria"?: string;
+  "44_mpi_score"?: number;
+  "45_mpi_peso"?: number;
+  "46_mpi_categoria"?: string;
 }
 
 export function usePariRuns(
@@ -61,18 +65,18 @@ export function usePariRuns(
       let query = supabase
         .from("pari_runs")
         .select("*")
-        .order("pari_score", { ascending: false });
+        .order("09_pari_score", { ascending: false });
 
       if (searchQuery) {
-        query = query.ilike("target_name", `%${searchQuery}%`);
+        query = query.ilike("03_target_name", `%${searchQuery}%`);
       }
 
       if (modelFilter && modelFilter !== "all") {
-        query = query.eq("model_name", modelFilter);
+        query = query.eq("02_model_name", modelFilter);
       }
 
       if (companyFilter && companyFilter !== "all") {
-        query = query.eq("target_name", companyFilter);
+        query = query.eq("03_target_name", companyFilter);
       }
 
       if (weekFilter && weekFilter !== "all") {
@@ -81,8 +85,8 @@ export function usePariRuns(
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 6); // Add 6 days for a week
         
-        query = query.gte("period_from", weekStart.toISOString().split('T')[0])
-                    .lte("period_to", weekEnd.toISOString().split('T')[0]);
+        query = query.gte("06_period_from", weekStart.toISOString().split('T')[0])
+                    .lte("07_period_to", weekEnd.toISOString().split('T')[0]);
       }
 
       const { data, error } = await query;

@@ -58,14 +58,14 @@ export function Dashboard() {
   };
 
   const metrics = [
-    { key: "lns", label: "LNS", scoreKey: "lns_score", categoryKey: "lns_categoria" },
-    { key: "es", label: "ES", scoreKey: "es_score", categoryKey: "es_categoria" },
-    { key: "sam", label: "SAM", scoreKey: "sam_score", categoryKey: "sam_categoria" },
-    { key: "rm", label: "RM", scoreKey: "rm_score", categoryKey: "rm_categoria" },
-    { key: "clr", label: "CLR", scoreKey: "clr_score", categoryKey: "clr_categoria" },
-    { key: "gip", label: "GIP", scoreKey: "gip_score", categoryKey: "gip_categoria" },
-    { key: "kgi", label: "KGI", scoreKey: "kgi_score", categoryKey: "kgi_categoria" },
-    { key: "mpi", label: "MPI", scoreKey: "mpi_score", categoryKey: "mpi_categoria" },
+    { key: "lns", label: "LNS", scoreKey: "23_lns_score", categoryKey: "25_lns_categoria" },
+    { key: "es", label: "ES", scoreKey: "26_es_score", categoryKey: "28_es_categoria" },
+    { key: "sam", label: "SAM", scoreKey: "29_sam_score", categoryKey: "31_sam_categoria" },
+    { key: "rm", label: "RM", scoreKey: "32_rm_score", categoryKey: "34_rm_categoria" },
+    { key: "clr", label: "CLR", scoreKey: "35_clr_score", categoryKey: "37_clr_categoria" },
+    { key: "gip", label: "GIP", scoreKey: "38_gip_score", categoryKey: "40_gip_categoria" },
+    { key: "kgi", label: "KGI", scoreKey: "41_kgi_score", categoryKey: "43_kgi_categoria" },
+    { key: "mpi", label: "MPI", scoreKey: "44_mpi_score", categoryKey: "46_mpi_categoria" },
   ];
 
   // Generate week options based on available data
@@ -74,8 +74,8 @@ export function Dashboard() {
     
     const weeks = new Set<string>();
     pariRuns.forEach(run => {
-      if (run.period_from) {
-        const weekStart = startOfWeek(new Date(run.period_from), { weekStartsOn: 1 });
+      if (run["06_period_from"]) {
+        const weekStart = startOfWeek(new Date(run["06_period_from"]), { weekStartsOn: 1 });
         weeks.add(format(weekStart, 'yyyy-MM-dd'));
       }
     });
@@ -302,16 +302,16 @@ export function Dashboard() {
                       >
                         <TableCell>
                           <div>
-                            <div className="font-medium">{pariRun.target_name}</div>
-                            {pariRun.ticker && (
-                              <div className="text-sm text-muted-foreground">{pariRun.ticker}</div>
+                            <div className="font-medium">{pariRun["03_target_name"]}</div>
+                            {pariRun["05_ticker"] && (
+                              <div className="text-sm text-muted-foreground">{pariRun["05_ticker"]}</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             <span className="text-xl font-bold text-primary">
-                              {pariRun.pari_score || 0}
+                              {pariRun["09_pari_score"] || 0}
                             </span>
                           </div>
                         </TableCell>
@@ -344,14 +344,14 @@ export function Dashboard() {
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{pariRun.target_name}</CardTitle>
-                          {pariRun.ticker && (
-                            <CardDescription>{pariRun.ticker}</CardDescription>
+                          <CardTitle className="text-lg">{pariRun["03_target_name"]}</CardTitle>
+                          {pariRun["05_ticker"] && (
+                            <CardDescription>{pariRun["05_ticker"]}</CardDescription>
                           )}
                         </div>
                         <div className="text-right">
                           <div className="text-3xl font-bold text-primary">
-                            {pariRun.pari_score || 0}
+                            {pariRun["09_pari_score"] || 0}
                           </div>
                           <div className="text-sm text-muted-foreground">PARI Score</div>
                         </div>
@@ -379,8 +379,8 @@ export function Dashboard() {
                         <div className="border-t pt-2">
                           <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
                           <div className="text-sm">
-                            {Array.isArray(pariRun.flags) && pariRun.flags.length > 0 ? (
-                              pariRun.flags.map(flag => normalizeFlag(flag)).join(", ")
+                            {Array.isArray(pariRun["17_flags"]) && pariRun["17_flags"].length > 0 ? (
+                              pariRun["17_flags"].map(flag => normalizeFlag(flag)).join(", ")
                             ) : (
                               <span className="text-muted-foreground">Sin flags</span>
                             )}
