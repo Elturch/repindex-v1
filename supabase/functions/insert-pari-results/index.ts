@@ -58,8 +58,50 @@ serve(async (req) => {
     )
 
     const { results } = await req.json() as { results: PariResult[] }
+    
+    console.log(`Processing ${results.length} PARI results`)
 
-    const insertPromises = results.map(async (result) => {
+    // Validate and filter results before processing
+    const validResults: PariResult[] = []
+    const invalidResults: { index: number, errors: string[] }[] = []
+
+    results.forEach((result, index) => {
+      const errors: string[] = []
+      
+      // Validate required fields
+      if (!result.meta?.run_id) {
+        errors.push('meta.run_id is required and cannot be null or empty')
+      }
+      if (!result.meta?.target_name) {
+        errors.push('meta.target_name is required and cannot be null or empty')
+      }
+      
+      if (errors.length > 0) {
+        console.error(`Validation failed for result ${index}:`, errors)
+        console.error(`Result data:`, JSON.stringify(result, null, 2))
+        invalidResults.push({ index, errors })
+      } else {
+        validResults.push(result)
+      }
+    })
+
+    if (invalidResults.length > 0) {
+      console.error(`Found ${invalidResults.length} invalid results out of ${results.length}`)
+      return new Response(
+        JSON.stringify({ 
+          error: 'Validation failed for some results',
+          invalid_results: invalidResults,
+          success: false 
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
+    const insertPromises = validResults.map(async (result, originalIndex) => {
+      console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)
       // Map subscores to individual metric columns
       const metricsMap: Record<string, any> = {}
       
