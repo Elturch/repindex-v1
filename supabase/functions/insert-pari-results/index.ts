@@ -68,31 +68,25 @@ serve(async (req) => {
       return trimmed.length > 0 ? trimmed : null
     }
 
-    // Validate and filter results before processing
+    // Validate and filter results before processing - allow empty target_name
     const validResults: PariResult[] = []
     const invalidResults: { index: number, errors: string[] }[] = []
 
     results.forEach((result, index) => {
       const errors: string[] = []
       
-      // Normalize critical fields
+      // Normalize target_name but allow it to be null/empty
       const normalizedTargetName = normalizeString(result.meta?.target_name)
       
-      // Validate required fields with detailed logging
-      if (!normalizedTargetName) {
-        errors.push(`meta.target_name is required and cannot be null, empty, or whitespace-only. Received: ${JSON.stringify(result.meta?.target_name)}`)
-        console.error(`Invalid target_name for result ${index}:`, {
-          original_value: result.meta?.target_name,
-          type: typeof result.meta?.target_name,
-          normalized: normalizedTargetName
-        })
-      }
+      // Log the normalization for debugging
+      console.log(`Result ${index}: normalized target_name from "${result.meta?.target_name}" to "${normalizedTargetName}"`)
       
       // Apply normalization to the result data
-      if (normalizedTargetName && result.meta) {
+      if (result.meta) {
         result.meta.target_name = normalizedTargetName
       }
       
+      // No strict validation - allow all results through
       if (errors.length > 0) {
         console.error(`Validation failed for result ${index}:`, errors)
         console.error(`Result metadata:`, JSON.stringify(result.meta, null, 2))

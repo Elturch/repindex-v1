@@ -294,7 +294,7 @@ export type Database = {
         Row: {
           "01_run_id": string
           "02_model_name": string | null
-          "03_target_name": string
+          "03_target_name": string | null
           "04_target_type": string | null
           "05_ticker": string | null
           "06_period_from": string | null
@@ -346,7 +346,7 @@ export type Database = {
         Insert: {
           "01_run_id"?: string
           "02_model_name"?: string | null
-          "03_target_name": string
+          "03_target_name"?: string | null
           "04_target_type"?: string | null
           "05_ticker"?: string | null
           "06_period_from"?: string | null
@@ -398,7 +398,7 @@ export type Database = {
         Update: {
           "01_run_id"?: string
           "02_model_name"?: string | null
-          "03_target_name"?: string
+          "03_target_name"?: string | null
           "04_target_type"?: string | null
           "05_ticker"?: string | null
           "06_period_from"?: string | null
