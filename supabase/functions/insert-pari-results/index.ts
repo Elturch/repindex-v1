@@ -68,22 +68,39 @@ serve(async (req) => {
       return trimmed.length > 0 ? trimmed : null
     }
 
-    // Helper function to intelligently convert text to array
-    const convertToArray = (value: any): string[] | null => {
-      if (value === null || value === undefined) return null
-      
-      // If it's already an array, validate and return it
-      if (Array.isArray(value)) {
-        console.log('Value is already an array:', value)
-        return value.map(item => String(item)).filter(item => item.trim().length > 0)
-      }
-      
-      // If it's a string, convert it intelligently to array
-      if (typeof value === 'string') {
-        const text = value.trim()
+    // Helper function to safely convert any value to array for PostgreSQL
+    const convertToArray = (value: any, fieldName?: string): string[] | null => {
+      try {
+        if (value === null || value === undefined) return null
+        
+        console.log(`Processing ${fieldName || 'field'}:`, typeof value, 'value preview:', String(value).substring(0, 100))
+        
+        // If it's already an array, validate and sanitize it
+        if (Array.isArray(value)) {
+          console.log(`${fieldName} is already an array with ${value.length} items`)
+          const sanitized = value
+            .map(item => {
+              if (item === null || item === undefined) return ''
+              return String(item).trim()
+            })
+            .filter(item => item.length > 0)
+            // Remove any problematic characters that could break PostgreSQL array literals
+            .map(item => item.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''))
+          
+          return sanitized.length > 0 ? sanitized : null
+        }
+        
+        // Convert to string and sanitize
+        let text = String(value).trim()
         if (text.length === 0) return null
         
-        console.log('Converting string to array:', text.substring(0, 100) + '...')
+        // Remove problematic characters that could break PostgreSQL
+        text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        
+        // Remove any PostgreSQL array literal syntax if present
+        text = text.replace(/^\{|\}$/g, '')
+        
+        console.log(`Converting ${fieldName} string to array:`, text.substring(0, 100) + '...')
         
         // Try different splitting strategies
         let result: string[] = []
@@ -95,36 +112,48 @@ serve(async (req) => {
             .filter(item => item.length > 0)
             .map(item => item.endsWith('.') ? item : item + '.')
         }
-        // Strategy 2: Split by ";\n" or similar patterns
+        // Strategy 2: Split by comma followed by space (common array format)
+        else if (text.includes(', ')) {
+          result = text.split(', ')
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+        }
+        // Strategy 3: Split by semicolon patterns
         else if (text.includes(';\n') || text.includes(';')) {
           result = text.split(/[;\n]+/)
             .map(item => item.trim())
             .filter(item => item.length > 0)
         }
-        // Strategy 3: Split by double newlines
+        // Strategy 4: Split by double newlines
         else if (text.includes('\n\n')) {
           result = text.split('\n\n')
             .map(item => item.trim())
             .filter(item => item.length > 0)
         }
-        // Strategy 4: Split by single newlines if text is long
+        // Strategy 5: Split by single newlines if text is long
         else if (text.includes('\n') && text.length > 200) {
           result = text.split('\n')
             .map(item => item.trim())
             .filter(item => item.length > 0)
         }
-        // Strategy 5: If no clear separators, treat as single item
+        // Strategy 6: If no clear separators, treat as single item
         else {
           result = [text]
         }
         
-        console.log(`Converted to array with ${result.length} items:`, result.slice(0, 3))
+        // Final sanitization of each item
+        result = result.map(item => 
+          item.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
+        ).filter(item => item.length > 0)
+        
+        console.log(`Successfully converted ${fieldName} to array with ${result.length} items`)
         return result.length > 0 ? result : null
+        
+      } catch (error) {
+        console.error(`Error converting ${fieldName} to array:`, error, 'Original value:', value)
+        // Return null instead of crashing
+        return null
       }
-      
-      // For other types, convert to string and try again
-      console.log('Converting non-string/non-array value:', typeof value, value)
-      return convertToArray(String(value))
     }
 
     // Validate and filter results before processing - allow empty target_name
@@ -249,12 +278,12 @@ serve(async (req) => {
         "14_num_citas": result.tabla.contadores.num_citas,
         "15_temporal_alignment": result.tabla.contadores.temporal_alignment,
         "16_citation_density": result.tabla.contadores.citation_density,
-        "17_flags": convertToArray(result.tabla.flags),
+        "17_flags": convertToArray(result.tabla.flags, "17_flags"),
         "18_subscores": result.tabla.subscores,
         "19_weights": result.meta.weights,
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
-        "22_explicacion": convertToArray(result.relato_mini.explicacion),
+        "22_explicacion": convertToArray(result.relato_mini.explicacion, "22_explicacion"),
         "47_fase": result.meta.fase || result.meta.target_type || null,
         ...metricsMap
       }
@@ -264,12 +293,20 @@ serve(async (req) => {
         insertData["01_run_id"] = result.meta.run_id
       }
 
+      // Log the data being inserted for debugging
+      console.log('Inserting data for target:', insertData["03_target_name"] || insertData["01_run_id"])
+      console.log('Array fields - flags:', insertData["17_flags"], 'explicacion:', insertData["22_explicacion"])
+      
       const { data, error } = await supabaseClient
         .from('pari_runs')
         .insert(insertData)
         .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('Database insertion error:', error)
+        console.error('Failed data:', insertData)
+        throw error
+      }
       return data
     })
 
