@@ -103,17 +103,25 @@ serve(async (req) => {
     })
 
     if (invalidResults.length > 0) {
-      console.error(`Found ${invalidResults.length} invalid results out of ${results.length}`)
+      console.error(`Found ${invalidResults.length} invalid results:`, invalidResults)
+      
+      // Create detailed error message for the first few failures
+      const errorDetails = invalidResults.slice(0, 3).map(invalid => 
+        `Registro ${invalid.index + 1}: ${invalid.errors.join(', ')}`
+      ).join('\n')
+      
+      const errorMessage = `${invalidResults.length} resultados fallaron la validación:\n${errorDetails}${invalidResults.length > 3 ? `\n... y ${invalidResults.length - 3} más` : ''}`
+      
       return new Response(
         JSON.stringify({ 
-          error: 'Validation failed for some results',
+          error: errorMessage,
           invalid_results: invalidResults,
-          success: false 
+          message: `${invalidResults.length} results failed validation` 
         }),
         { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        },
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
       )
     }
 
