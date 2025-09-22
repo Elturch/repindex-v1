@@ -7,7 +7,7 @@ export interface PariRun {
   updated_at: string;
   "01_run_id": string;
   "02_model_name"?: string;
-  "03_target_name": string;
+  "03_target_name"?: string;
   "04_target_type"?: string;
   "05_ticker"?: string;
   "06_period_from"?: string;
@@ -71,6 +71,7 @@ export function usePariRuns(
       let pariQuery = supabase
         .from("pari_runs")
         .select("*")
+        .order("created_at", { ascending: false })
         .order("09_pari_score", { ascending: false });
 
       if (searchQuery) {

@@ -22,7 +22,7 @@ import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
-  const [aiFilter, setAIFilter] = useState<AIFilter>("ChatGPT");
+  const [aiFilter, setAIFilter] = useState<AIFilter>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [weekFilter, setWeekFilter] = useState<string>("all");
   const navigate = useNavigate();
@@ -295,9 +295,12 @@ export function Dashboard() {
                       >
                         <TableCell>
                           <div>
-                            <div className="font-medium">{pariRun["03_target_name"]}</div>
+                            <div className="font-medium">{pariRun["03_target_name"] || "Sin nombre"}</div>
                             {pariRun["05_ticker"] && (
                               <div className="text-sm text-muted-foreground">{pariRun["05_ticker"]}</div>
+                            )}
+                            {!pariRun["03_target_name"] && pariRun["01_run_id"] && (
+                              <div className="text-xs text-muted-foreground">ID: {pariRun["01_run_id"]}</div>
                             )}
                           </div>
                         </TableCell>
@@ -343,9 +346,12 @@ export function Dashboard() {
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{pariRun["03_target_name"]}</CardTitle>
+                          <CardTitle className="text-lg">{pariRun["03_target_name"] || "Sin nombre"}</CardTitle>
                           {pariRun["05_ticker"] && (
                             <CardDescription>{pariRun["05_ticker"]}</CardDescription>
+                          )}
+                          {!pariRun["03_target_name"] && pariRun["01_run_id"] && (
+                            <CardDescription className="text-xs">ID: {pariRun["01_run_id"]}</CardDescription>
                           )}
                         </div>
                         <div className="text-right">
