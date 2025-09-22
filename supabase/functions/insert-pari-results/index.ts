@@ -61,6 +61,13 @@ serve(async (req) => {
     
     console.log(`Processing ${results.length} PARI results`)
 
+    // Helper function to normalize and validate strings
+    const normalizeString = (value: any): string | null => {
+      if (value === null || value === undefined) return null
+      const trimmed = String(value).trim()
+      return trimmed.length > 0 ? trimmed : null
+    }
+
     // Validate and filter results before processing
     const validResults: PariResult[] = []
     const invalidResults: { index: number, errors: string[] }[] = []
@@ -68,14 +75,27 @@ serve(async (req) => {
     results.forEach((result, index) => {
       const errors: string[] = []
       
-      // Validate required fields (run_id ya no es requerido, se genera automáticamente)
-      if (!result.meta?.target_name) {
-        errors.push('meta.target_name is required and cannot be null or empty')
+      // Normalize critical fields
+      const normalizedTargetName = normalizeString(result.meta?.target_name)
+      
+      // Validate required fields with detailed logging
+      if (!normalizedTargetName) {
+        errors.push(`meta.target_name is required and cannot be null, empty, or whitespace-only. Received: ${JSON.stringify(result.meta?.target_name)}`)
+        console.error(`Invalid target_name for result ${index}:`, {
+          original_value: result.meta?.target_name,
+          type: typeof result.meta?.target_name,
+          normalized: normalizedTargetName
+        })
+      }
+      
+      // Apply normalization to the result data
+      if (normalizedTargetName && result.meta) {
+        result.meta.target_name = normalizedTargetName
       }
       
       if (errors.length > 0) {
         console.error(`Validation failed for result ${index}:`, errors)
-        console.error(`Result data:`, JSON.stringify(result, null, 2))
+        console.error(`Result metadata:`, JSON.stringify(result.meta, null, 2))
         invalidResults.push({ index, errors })
       } else {
         validResults.push(result)
