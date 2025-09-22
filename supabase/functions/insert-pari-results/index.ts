@@ -68,6 +68,65 @@ serve(async (req) => {
       return trimmed.length > 0 ? trimmed : null
     }
 
+    // Helper function to intelligently convert text to array
+    const convertToArray = (value: any): string[] | null => {
+      if (value === null || value === undefined) return null
+      
+      // If it's already an array, validate and return it
+      if (Array.isArray(value)) {
+        console.log('Value is already an array:', value)
+        return value.map(item => String(item)).filter(item => item.trim().length > 0)
+      }
+      
+      // If it's a string, convert it intelligently to array
+      if (typeof value === 'string') {
+        const text = value.trim()
+        if (text.length === 0) return null
+        
+        console.log('Converting string to array:', text.substring(0, 100) + '...')
+        
+        // Try different splitting strategies
+        let result: string[] = []
+        
+        // Strategy 1: Split by ". " (sentence endings)
+        if (text.includes('. ')) {
+          result = text.split('. ')
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+            .map(item => item.endsWith('.') ? item : item + '.')
+        }
+        // Strategy 2: Split by ";\n" or similar patterns
+        else if (text.includes(';\n') || text.includes(';')) {
+          result = text.split(/[;\n]+/)
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+        }
+        // Strategy 3: Split by double newlines
+        else if (text.includes('\n\n')) {
+          result = text.split('\n\n')
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+        }
+        // Strategy 4: Split by single newlines if text is long
+        else if (text.includes('\n') && text.length > 200) {
+          result = text.split('\n')
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+        }
+        // Strategy 5: If no clear separators, treat as single item
+        else {
+          result = [text]
+        }
+        
+        console.log(`Converted to array with ${result.length} items:`, result.slice(0, 3))
+        return result.length > 0 ? result : null
+      }
+      
+      // For other types, convert to string and try again
+      console.log('Converting non-string/non-array value:', typeof value, value)
+      return convertToArray(String(value))
+    }
+
     // Validate and filter results before processing - allow empty target_name
     const validResults: PariResult[] = []
     const invalidResults: { index: number, errors: string[] }[] = []
@@ -190,12 +249,12 @@ serve(async (req) => {
         "14_num_citas": result.tabla.contadores.num_citas,
         "15_temporal_alignment": result.tabla.contadores.temporal_alignment,
         "16_citation_density": result.tabla.contadores.citation_density,
-        "17_flags": result.tabla.flags,
+        "17_flags": convertToArray(result.tabla.flags),
         "18_subscores": result.tabla.subscores,
         "19_weights": result.meta.weights,
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
-        "22_explicacion": result.relato_mini.explicacion || null,
+        "22_explicacion": convertToArray(result.relato_mini.explicacion),
         "47_fase": result.meta.fase || result.meta.target_type || null,
         ...metricsMap
       }
