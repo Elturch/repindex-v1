@@ -283,7 +283,7 @@ serve(async (req) => {
         "19_weights": result.meta.weights,
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
-        "22_explicacion": convertToArray(result.relato_mini.explicacion, "22_explicacion"),
+        "22_explicacion": result.relato_mini.explicacion || null,
         "47_fase": result.meta.fase || result.meta.target_type || null,
         ...metricsMap
       }

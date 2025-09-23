@@ -26,7 +26,7 @@ export interface PariRun {
   "19_weights"?: any;
   "20_res_gpt_bruto"?: string;
   "21_res_perplex_bruto"?: string;
-  "22_explicacion"?: string[];
+  "22_explicacion"?: string;
   "23_lns_score"?: number;
   "24_lns_peso"?: number;
   "25_lns_categoria"?: string;
