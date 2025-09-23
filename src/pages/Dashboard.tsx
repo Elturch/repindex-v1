@@ -305,8 +305,10 @@ export function Dashboard() {
                         <TableCell>
                           <div>
                             <div className="font-medium">{pariRun["03_target_name"] || "Sin nombre"}</div>
-                            {pariRun["05_ticker"] && (
-                              <div className="text-sm text-muted-foreground">{pariRun["05_ticker"]}</div>
+                            {(pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]) && (
+                              <div className="text-sm text-muted-foreground">
+                                {pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]}
+                              </div>
                             )}
                             {!pariRun["03_target_name"] && pariRun["01_run_id"] && (
                               <div className="text-xs text-muted-foreground">ID: {pariRun["01_run_id"]}</div>
@@ -356,8 +358,10 @@ export function Dashboard() {
                       <div className="flex items-start justify-between">
                         <div>
                           <CardTitle className="text-lg">{pariRun["03_target_name"] || "Sin nombre"}</CardTitle>
-                          {pariRun["05_ticker"] && (
-                            <CardDescription>{pariRun["05_ticker"]}</CardDescription>
+                          {(pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]) && (
+                            <CardDescription>
+                              {pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]}
+                            </CardDescription>
                           )}
                           {!pariRun["03_target_name"] && pariRun["01_run_id"] && (
                             <CardDescription className="text-xs">ID: {pariRun["01_run_id"]}</CardDescription>
@@ -387,6 +391,18 @@ export function Dashboard() {
                               </div>
                             );
                           })}
+                        </div>
+                        
+                        {/* Company Info */}
+                        <div className="border-t pt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-muted-foreground">IBEX Family:</span>
+                            <span>{pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
+                          </div>
+                          <div className="flex justify-between text-xs mb-2">
+                            <span className="text-muted-foreground">Sector:</span>
+                            <span>{pariRun.repindex_root_issuers?.sector_category || "N/A"}</span>
+                          </div>
                         </div>
                         
                         {/* Quality Flags */}

@@ -53,6 +53,7 @@ export interface PariRun {
   "46_mpi_categoria"?: string;
   "47_fase"?: string;
   repindex_root_issuers?: {
+    ticker?: string;
     ibex_family_code?: string;
     sector_category?: string;
   } | null;
@@ -117,6 +118,7 @@ export function usePariRuns(
       if (repindexData) {
         repindexData.forEach(item => {
           repindexMap.set(item.ticker, {
+            ticker: item.ticker,
             ibex_family_code: item.ibex_family_code,
             sector_category: item.sector_category
           });
@@ -151,7 +153,27 @@ export function usePariRun(id: string) {
         throw error;
       }
 
-      return data as PariRun;
+      // Get repindex data to join with pari_run
+      if (data["05_ticker"]) {
+        const { data: repindexData, error: repindexError } = await supabase
+          .from("repindex_root_issuers")
+          .select("ticker, ibex_family_code, sector_category")
+          .eq("ticker", data["05_ticker"])
+          .single();
+
+        if (!repindexError && repindexData) {
+          return {
+            ...data,
+            repindex_root_issuers: {
+              ticker: repindexData.ticker,
+              ibex_family_code: repindexData.ibex_family_code,
+              sector_category: repindexData.sector_category
+            }
+          } as PariRun;
+        }
+      }
+
+      return { ...data, repindex_root_issuers: null } as PariRun;
     },
     enabled: !!id,
   });

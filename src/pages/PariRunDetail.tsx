@@ -114,13 +114,21 @@ export function PariRunDetail() {
           <div>
             <h1 className="text-2xl font-bold">
               {pariRun["03_target_name"]}
-              {pariRun["05_ticker"] && (
-                <span className="text-lg text-muted-foreground ml-2">({pariRun["05_ticker"]})</span>
+              {(pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]) && (
+                <span className="text-lg text-muted-foreground ml-2">
+                  ({pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]})
+                </span>
               )}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              {formatDateRange(pariRun["06_period_from"], pariRun["07_period_to"])}
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">
+                {formatDateRange(pariRun["06_period_from"], pariRun["07_period_to"])}
+              </p>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>IBEX Family: {pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
+                <span>Sector: {pariRun.repindex_root_issuers?.sector_category || "N/A"}</span>
+              </div>
+            </div>
           </div>
           <div className="text-right">
             <div className="text-4xl font-bold text-primary">
