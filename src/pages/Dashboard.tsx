@@ -140,7 +140,7 @@ export function Dashboard() {
         {/* Title */}
         <div className="text-center">
           <h1 className="text-2xl font-bold tracking-tight">
-            Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter}
+            Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter === "all" ? "Todos" : aiFilter}
           </h1>
           <p className="text-sm text-muted-foreground">
             {pariRuns?.length || 0} empresas analizadas
@@ -154,6 +154,15 @@ export function Dashboard() {
         <div className="flex items-center justify-between">
           {/* AI Model Selector */}
           <div className="flex items-center bg-muted/50 p-1 rounded-lg">
+            <Button
+              variant={aiFilter === "all" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setAIFilter("all")}
+              className="flex items-center gap-2"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Todos
+            </Button>
             <Button
               variant={aiFilter === "ChatGPT" ? "default" : "ghost"}
               size="sm"
