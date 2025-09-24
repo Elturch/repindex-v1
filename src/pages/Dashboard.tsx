@@ -173,9 +173,9 @@ export function Dashboard() {
               ChatGPT
             </Button>
             <Button
-              variant={aiFilter === "PERPLEXITY" ? "default" : "ghost"}
+              variant={aiFilter === "Perplexity" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setAIFilter("PERPLEXITY")}
+              onClick={() => setAIFilter("Perplexity")}
               className="flex items-center gap-2"
             >
               <PerplexityIcon className="h-4 w-4" />

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GlossaryDialog } from "@/components/ui/glossary-dialog";
 
-export type AIFilter = "all" | "ChatGPT" | "PERPLEXITY" | "comparison";
+export type AIFilter = "all" | "ChatGPT" | "Perplexity" | "comparison";
 
 interface HeaderProps {
   title?: string;
