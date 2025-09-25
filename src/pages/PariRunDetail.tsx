@@ -66,11 +66,23 @@ export function PariRunDetail() {
     { key: 'mpi', label: 'Impacto de Mercado', fullName: 'Market/Performance Impact', score: pariRun["44_mpi_score"], peso: pariRun["45_mpi_peso"], categoria: pariRun["46_mpi_categoria"] },
   ];
 
-  // Extract flags from JSONB
-  const flags = Array.isArray(pariRun["17_flags"]) ? pariRun["17_flags"] : [];
+  // Extract flags from JSONB - handle both strings and arrays
+  const parseFlags = (flagsData: any): string[] => {
+    if (!flagsData) return [];
+    if (Array.isArray(flagsData)) return flagsData;
+    if (typeof flagsData === 'string') return [flagsData];
+    return [];
+  };
+  const flags = parseFlags(pariRun["17_flags"]);
 
-  // Parse puntos_clave if it's an array
-  const puntosClave = Array.isArray(pariRun["11_puntos_clave"]) ? pariRun["11_puntos_clave"] : [];
+  // Parse puntos_clave - handle both strings and arrays
+  const parsePuntosClave = (puntosData: any): string[] => {
+    if (!puntosData) return [];
+    if (Array.isArray(puntosData)) return puntosData;
+    if (typeof puntosData === 'string') return [puntosData];
+    return [];
+  };
+  const puntosClave = parsePuntosClave(pariRun["11_puntos_clave"]);
 
   // Function to normalize flag names
   const normalizeFlag = (flag: string) => {

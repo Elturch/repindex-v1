@@ -419,12 +419,24 @@ export function Dashboard() {
                         {/* Quality Flags */}
                         <div className="border-t pt-2">
                           <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
-                          <div className="text-sm">
-                            {Array.isArray(pariRun["17_flags"]) && pariRun["17_flags"].length > 0 ? (
-                              pariRun["17_flags"].map(flag => normalizeFlag(flag)).join(", ")
-                            ) : (
-                              <span className="text-muted-foreground">Sin flags</span>
-                            )}
+                          <div className="flex flex-wrap gap-1">
+                            {(() => {
+                              // Parse flags - handle both strings and arrays
+                              const flagsData = pariRun["17_flags"];
+                              const flags = !flagsData ? [] : 
+                                           Array.isArray(flagsData) ? flagsData : 
+                                           typeof flagsData === 'string' ? [flagsData] : [];
+                              
+                              return flags.length > 0 ? (
+                                flags.map((flag, index) => (
+                                  <Badge key={index} variant="outline" className="text-xs">
+                                    {normalizeFlag(flag)}
+                                  </Badge>
+                                ))
+                              ) : (
+                                <span className="text-xs text-muted-foreground">Sin flags</span>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
