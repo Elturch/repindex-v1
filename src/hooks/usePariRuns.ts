@@ -147,10 +147,14 @@ export function usePariRun(id: string) {
         .from("pari_runs")
         .select("*")
         .eq("id", id)
-        .single();
+        .maybeSingle();
 
       if (error) {
         throw error;
+      }
+
+      if (!data) {
+        throw new Error("PARI run not found");
       }
 
       // Get repindex data to join with pari_run
@@ -159,7 +163,7 @@ export function usePariRun(id: string) {
           .from("repindex_root_issuers")
           .select("ticker, ibex_family_code, sector_category")
           .eq("ticker", data["05_ticker"])
-          .single();
+          .maybeSingle();
 
         if (!repindexError && repindexData) {
           return {
