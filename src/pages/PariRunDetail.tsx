@@ -241,6 +241,32 @@ export function PariRunDetail() {
                 </CardContent>
               </Card>
             )}
+
+            {/* AI Responses Section */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Análisis IA</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <AIResponseDialog 
+                  modelName={pariRun["02_model_name"]}
+                  chatgptResponse={pariRun["20_res_gpt_bruto"]}
+                  perplexityResponse={pariRun["21_res_perplex_bruto"]}
+                  createdAt={pariRun.created_at}
+                  periodFrom={pariRun["06_period_from"]}
+                  periodTo={pariRun["07_period_to"]}
+                />
+                
+                {pariRun["22_explicacion"] && (
+                  <AIResponseDialog 
+                    explanationResponse={pariRun["22_explicacion"]}
+                    createdAt={pariRun.created_at}
+                    periodFrom={pariRun["06_period_from"]}
+                    periodTo={pariRun["07_period_to"]}
+                  />
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Right Column - Stats and Flags */}
@@ -295,26 +321,6 @@ export function PariRunDetail() {
               </Card>
             )}
 
-            {/* AI Response Buttons */}
-            <div className="space-y-2">
-              <AIResponseDialog 
-                modelName={pariRun["02_model_name"]}
-                chatgptResponse={pariRun["20_res_gpt_bruto"]}
-                perplexityResponse={pariRun["21_res_perplex_bruto"]}
-                createdAt={pariRun.created_at}
-                periodFrom={pariRun["06_period_from"]}
-                periodTo={pariRun["07_period_to"]}
-              />
-              
-              {pariRun["22_explicacion"] && (
-                <AIResponseDialog 
-                  explanationResponse={pariRun["22_explicacion"]}
-                  createdAt={pariRun.created_at}
-                  periodFrom={pariRun["06_period_from"]}
-                  periodTo={pariRun["07_period_to"]}
-                />
-              )}
-            </div>
           </div>
         </div>
       </div>
