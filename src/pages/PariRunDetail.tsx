@@ -112,6 +112,33 @@ export function PariRunDetail() {
     return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // Function to check if content is duplicate (similar or identical)
+  const isDuplicateContent = (...contents: (string | undefined | null)[]): boolean => {
+    const validContents = contents.filter(Boolean).map(c => c!.trim().toLowerCase());
+    if (validContents.length < 2) return false;
+    
+    // Check if any two contents are very similar (same content with minor differences)
+    for (let i = 0; i < validContents.length; i++) {
+      for (let j = i + 1; j < validContents.length; j++) {
+        const content1 = validContents[i];
+        const content2 = validContents[j];
+        
+        // Direct match
+        if (content1 === content2) return true;
+        
+        // Similar content (one is contained in the other with high similarity)
+        const shorter = content1.length < content2.length ? content1 : content2;
+        const longer = content1.length >= content2.length ? content1 : content2;
+        
+        if (shorter.length > 50 && longer.includes(shorter.substring(0, Math.min(100, shorter.length)))) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  };
+
   return (
     <Layout title="Repindex.ai">
       <div className="space-y-4">
@@ -314,25 +341,49 @@ export function PariRunDetail() {
                 <CardTitle className="text-lg">Análisis IA</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <AIResponseDialog 
-                  modelName={pariRun["02_model_name"]}
-                  chatgptResponse={pariRun["20_res_gpt_bruto"]}
-                  perplexityResponse={pariRun["21_res_perplex_bruto"]}
-                  explanationResponse={pariRun["22_explicacion"]}
-                  detailedExplanations={pariRun["23_explicaciones_detalladas"]}
-                  createdAt={pariRun.created_at}
-                  periodFrom={pariRun["06_period_from"]}
-                  periodTo={pariRun["07_period_to"]}
-                />
+                {/* Model-specific response (ChatGPT/Perplexity) */}
+                {(pariRun["20_res_gpt_bruto"] || pariRun["21_res_perplex_bruto"]) && (
+                  <AIResponseDialog 
+                    modelName={pariRun["02_model_name"]}
+                    chatgptResponse={pariRun["20_res_gpt_bruto"]}
+                    perplexityResponse={pariRun["21_res_perplex_bruto"]}
+                    createdAt={pariRun.created_at}
+                    periodFrom={pariRun["06_period_from"]}
+                    periodTo={pariRun["07_period_to"]}
+                  />
+                )}
                 
-                {/* Explanation Button */}
-                {pariRun["22_explicacion"] && (
+                {/* Methodological explanation - only show if different from model response */}
+                {pariRun["22_explicacion"] && !isDuplicateContent(
+                  pariRun["22_explicacion"], 
+                  pariRun["20_res_gpt_bruto"], 
+                  pariRun["21_res_perplex_bruto"]
+                ) && (
                   <AIResponseDialog 
                     explanationResponse={pariRun["22_explicacion"]}
                     createdAt={pariRun.created_at}
                     periodFrom={pariRun["06_period_from"]}
                     periodTo={pariRun["07_period_to"]}
-                    buttonText="Ver Explicación Completa"
+                    buttonText="Ver Explicación Metodológica"
+                  />
+                )}
+
+                {/* Detailed explanations - only if different from above */}
+                {pariRun["23_explicaciones_detalladas"] && 
+                 Array.isArray(pariRun["23_explicaciones_detalladas"]) && 
+                 pariRun["23_explicaciones_detalladas"].length > 0 &&
+                 !isDuplicateContent(
+                   pariRun["23_explicaciones_detalladas"].join('\n'), 
+                   pariRun["22_explicacion"], 
+                   pariRun["20_res_gpt_bruto"], 
+                   pariRun["21_res_perplex_bruto"]
+                 ) && (
+                  <AIResponseDialog 
+                    detailedExplanations={pariRun["23_explicaciones_detalladas"]}
+                    createdAt={pariRun.created_at}
+                    periodFrom={pariRun["06_period_from"]}
+                    periodTo={pariRun["07_period_to"]}
+                    buttonText="Ver Análisis Detallado por Métrica"
                   />
                 )}
               </CardContent>

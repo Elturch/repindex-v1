@@ -30,37 +30,42 @@ export default function AIResponseDialog({
 }: AIResponseDialogProps) {
   const isChatGPT = modelName?.toLowerCase().includes('chatgpt') || modelName?.toLowerCase().includes('gpt');
   const isPerplexity = modelName?.toLowerCase().includes('perplexity');
-  const isExplanation = explanationResponse && !chatgptResponse && !perplexityResponse;
-  const hasDetailedExplanations = detailedExplanations && detailedExplanations.length > 0;
   
-  // Determine which response to show based on model or available content
+  // Determine response content with clear priority and no ambiguous fallbacks
   let responseContent = "";
   let displayButtonText = buttonText || "Ver Respuesta IA";
   let Icon = null;
 
-  if (hasDetailedExplanations) {
-    responseContent = detailedExplanations.join('\n\n');
-    displayButtonText = buttonText || "Así ha determinado las notas la IA";
-    Icon = null;
-  } else if (isExplanation) {
-    responseContent = explanationResponse;
-    displayButtonText = buttonText || "Así ha determinado las notas la IA";
-    Icon = null;
-  } else if (isChatGPT && chatgptResponse) {
+  // Priority 1: If buttonText is provided, this is likely a specific request
+  if (buttonText) {
+    if (detailedExplanations && detailedExplanations.length > 0) {
+      responseContent = detailedExplanations.join('\n\n');
+      displayButtonText = buttonText;
+      Icon = null;
+    } else if (explanationResponse) {
+      responseContent = explanationResponse;
+      displayButtonText = buttonText;
+      Icon = null;
+    }
+  } 
+  // Priority 2: Model-specific responses (only if no custom buttonText)
+  else if (isChatGPT && chatgptResponse) {
     responseContent = chatgptResponse;
-    displayButtonText = buttonText || "Así contestó ChatGPT";
+    displayButtonText = "Así contestó ChatGPT";
     Icon = ChatGPTIcon;
   } else if (isPerplexity && perplexityResponse) {
     responseContent = perplexityResponse;
-    displayButtonText = buttonText || "Así contestó Perplexity";
+    displayButtonText = "Así contestó Perplexity";
     Icon = PerplexityIcon;
-  } else if (chatgptResponse) {
+  } 
+  // Priority 3: Generic model responses (fallback for model-specific)
+  else if (chatgptResponse && !buttonText) {
     responseContent = chatgptResponse;
-    displayButtonText = buttonText || "Así contestó ChatGPT";
+    displayButtonText = "Respuesta IA - ChatGPT";
     Icon = ChatGPTIcon;
-  } else if (perplexityResponse) {
+  } else if (perplexityResponse && !buttonText) {
     responseContent = perplexityResponse;
-    displayButtonText = buttonText || "Así contestó Perplexity";
+    displayButtonText = "Respuesta IA - Perplexity";
     Icon = PerplexityIcon;
   }
 
