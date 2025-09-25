@@ -61,6 +61,53 @@ serve(async (req) => {
     
     console.log(`Processing ${results.length} PARI results`)
 
+    // Company name to ticker mapping function
+    const mapCompanyNameToTicker = (targetName: string | null): string | null => {
+      if (!targetName) return null
+      
+      const name = targetName.toLowerCase()
+      
+      // Mapping based on repindex_root_issuers data
+      if (name.includes('acciona energía') || name.includes('acciona energia')) return 'ANE.MC'
+      if (name.includes('acciona')) return 'ANA.MC'
+      if (name.includes('acerinox')) return 'ACX.MC'
+      if (name.includes('acs')) return 'ACS.MC'
+      if (name.includes('aena')) return 'AENA.MC'
+      if (name.includes('amadeus')) return 'AMS.MC'
+      if (name.includes('arcelormittal')) return 'MTS.MC'
+      if (name.includes('banco sabadell') || name.includes('sabadell')) return 'SAB.MC'
+      if (name.includes('banco santander') || name.includes('santander')) return 'SAN.MC'
+      if (name.includes('bankinter')) return 'BKT.MC'
+      if (name.includes('bbva')) return 'BBVA.MC'
+      if (name.includes('caixabank')) return 'CABK.MC'
+      if (name.includes('cellnex')) return 'CLNX.MC'
+      if (name.includes('colonial')) return 'COL.MC'
+      if (name.includes('enagás') || name.includes('enagas')) return 'ENG.MC'
+      if (name.includes('endesa')) return 'ELE.MC'
+      if (name.includes('ferrovial')) return 'FER.MC'
+      if (name.includes('fluidra')) return 'FDR.MC'
+      if (name.includes('grifols')) return 'GRF.MC'
+      if (name.includes('iag') || name.includes('international airlines')) return 'IAG.MC'
+      if (name.includes('iberdrola')) return 'IBE.MC'
+      if (name.includes('inditex')) return 'ITX.MC'
+      if (name.includes('indra')) return 'IDR.MC'
+      if (name.includes('logista')) return 'LOG.MC'
+      if (name.includes('mapfre')) return 'MAP.MC'
+      if (name.includes('merlin properties') || name.includes('merlin')) return 'MRL.MC'
+      if (name.includes('naturgy')) return 'NTGY.MC'
+      if (name.includes('puig')) return 'PUIG.MC'
+      if (name.includes('redeia') || name.includes('ree')) return 'RED.MC'
+      if (name.includes('repsol')) return 'REP.MC'
+      if (name.includes('laboratorios rovi') || name.includes('rovi')) return 'ROVI.MC'
+      if (name.includes('sacyr')) return 'SCYR.MC'
+      if (name.includes('solaria')) return 'SLR.MC'
+      if (name.includes('telefónica') || name.includes('telefonica')) return 'TEF.MC'
+      if (name.includes('unicaja')) return 'UNI.MC'
+      
+      console.log(`Warning: No ticker mapping found for company: ${targetName}`)
+      return null
+    }
+
     // Helper function to normalize and validate strings
     const normalizeString = (value: any): string | null => {
       if (value === null || value === undefined) return null
@@ -171,7 +218,7 @@ serve(async (req) => {
       
       // Apply normalization to the result data
       if (result.meta) {
-        result.meta.target_name = normalizedTargetName
+        result.meta.target_name = normalizedTargetName || result.meta.target_name
       }
       
       // No strict validation - allow all results through
@@ -266,7 +313,7 @@ serve(async (req) => {
         "02_model_name": result.meta.model_name,
         "03_target_name": result.meta.target_name,
         "04_target_type": result.meta.target_type,
-        "05_ticker": result.meta.ticker,
+        "05_ticker": mapCompanyNameToTicker(result.meta.target_name) || result.meta.ticker,
         "06_period_from": result.meta.period_from,
         "07_period_to": result.meta.period_to,
         "08_tz": result.meta.tz,
@@ -284,7 +331,7 @@ serve(async (req) => {
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
         "22_explicacion": result.relato_mini.explicacion || null,
-        "47_fase": result.meta.fase || result.meta.target_type || null,
+        "47_fase": result.meta.target_type || null,
         ...metricsMap
       }
 
@@ -328,7 +375,7 @@ serve(async (req) => {
     console.error('Error inserting PARI results:', error)
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
         success: false 
       }),
       { 
