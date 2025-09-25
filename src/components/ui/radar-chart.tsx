@@ -33,6 +33,13 @@ const kpiLabels = {
   mpi: "MPI"
 };
 
+// Function to determine score category and color
+const getScoreCategory = (score: number) => {
+  if (score >= 70) return { category: 'good', color: 'hsl(var(--good))' };
+  if (score >= 40) return { category: 'needs-improvement', color: 'hsl(var(--needs-improvement))' };
+  return { category: 'insufficient', color: 'hsl(var(--insufficient))' };
+};
+
 export function RadarChartComparison({ 
   companyData, 
   marketAverages, 
@@ -96,6 +103,22 @@ export function RadarChartComparison({
             <span className="text-muted-foreground">Promedio Mercado</span>
           </div>
         </div>
+        
+        {/* Color legend for KPI categories */}
+        <div className="flex flex-wrap gap-4 text-xs mt-3 pt-3 border-t border-border/30">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-good"></div>
+            <span className="text-muted-foreground">≥70 pts</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-needs-improvement"></div>
+            <span className="text-muted-foreground">40-69 pts</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-insufficient"></div>
+            <span className="text-muted-foreground">&lt;40 pts</span>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="h-[450px] sm:h-[500px] w-full">
@@ -136,11 +159,24 @@ export function RadarChartComparison({
                 fill="hsl(var(--primary))"
                 fillOpacity={0.15}
                 strokeWidth={3}
-                dot={{ 
-                  r: 5, 
-                  fill: "hsl(var(--primary))",
-                  stroke: "hsl(var(--background))",
-                  strokeWidth: 2
+                dot={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  const score = payload?.empresa || 0;
+                  const { color } = getScoreCategory(score);
+                  return (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={6}
+                      fill={color}
+                      stroke="hsl(var(--background))"
+                      strokeWidth={2.5}
+                      style={{
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.15))',
+                        transition: 'all 0.2s ease'
+                      }}
+                    />
+                  );
                 }}
               />
               <Radar
