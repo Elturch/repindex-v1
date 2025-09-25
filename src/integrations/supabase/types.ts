@@ -511,6 +511,7 @@ export type Database = {
           counter: number
           created_at: string | null
           exclude_terms: Json
+          fase: number | null
           geography: string[]
           ibex_family_category: string | null
           ibex_family_code: string | null
@@ -532,6 +533,7 @@ export type Database = {
           counter?: number
           created_at?: string | null
           exclude_terms?: Json
+          fase?: number | null
           geography?: string[]
           ibex_family_category?: string | null
           ibex_family_code?: string | null
@@ -553,6 +555,7 @@ export type Database = {
           counter?: number
           created_at?: string | null
           exclude_terms?: Json
+          fase?: number | null
           geography?: string[]
           ibex_family_category?: string | null
           ibex_family_code?: string | null
