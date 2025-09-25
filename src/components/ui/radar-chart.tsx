@@ -35,17 +35,13 @@ const kpiLabels = {
 
 // Function to determine score category and color
 const getScoreCategory = (score: number) => {
-  console.log('getScoreCategory called with score:', score);
-  let result;
   if (score >= 70) {
-    result = { category: 'good', color: '#22c55e' }; // Green
+    return { category: 'good', color: '#22c55e' }; // Green
   } else if (score >= 40) {
-    result = { category: 'needs-improvement', color: '#f59e0b' }; // Orange
+    return { category: 'needs-improvement', color: '#f59e0b' }; // Orange
   } else {
-    result = { category: 'insufficient', color: '#ef4444' }; // Red
+    return { category: 'insufficient', color: '#ef4444' }; // Red
   }
-  console.log('getScoreCategory result:', result);
-  return result;
 };
 
 export function RadarChartComparison({ 
@@ -64,9 +60,6 @@ export function RadarChartComparison({
       mercado: Math.round(marketAverages[key]?.[modelName] || 0),
     };
   });
-
-  console.log('RadarChart - companyData:', companyData);
-  console.log('RadarChart - radarData:', radarData);
 
   // Check if we have market data
   const hasMarketData = Object.values(marketAverages).some(modelData => 
@@ -173,11 +166,8 @@ export function RadarChartComparison({
                 strokeWidth={3}
                 dot={(props: any) => {
                   const { cx, cy, payload } = props;
-                  console.log('Dot function - payload:', payload);
-                  const score = payload?.empresa || 0;
-                  console.log('Dot function - score:', score);
+                  const score = payload?.payload?.empresa || 0;
                   const { color } = getScoreCategory(score);
-                  console.log('Dot function - color:', color);
                   return (
                     <circle
                       cx={cx}
