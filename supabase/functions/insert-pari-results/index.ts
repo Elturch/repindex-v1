@@ -256,6 +256,15 @@ serve(async (req) => {
 
     const insertPromises = validResults.map(async (result, originalIndex) => {
       console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)
+      
+      // Log ticker mapping for debugging
+      const mappedTicker = mapCompanyNameToTicker(result.meta.target_name);
+      if (!mappedTicker) {
+        console.warn(`No ticker found for company: "${result.meta.target_name}". Original ticker field: "${result.meta.ticker}"`);
+      } else {
+        console.log(`Mapped "${result.meta.target_name}" to ticker: "${mappedTicker}"`);
+      }
+      
       // Map subscores to individual metric columns
       const metricsMap: Record<string, any> = {}
       
