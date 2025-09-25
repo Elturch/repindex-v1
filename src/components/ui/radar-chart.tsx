@@ -35,9 +35,9 @@ const kpiLabels = {
 
 // Function to determine score category and color
 const getScoreCategory = (score: number) => {
-  if (score >= 70) return { category: 'good', color: 'hsl(var(--good))' };
-  if (score >= 40) return { category: 'needs-improvement', color: 'hsl(var(--needs-improvement))' };
-  return { category: 'insufficient', color: 'hsl(var(--insufficient))' };
+  if (score >= 70) return { category: 'good', color: '#4285f4' }; // Blue from --good: 221 83% 53%
+  if (score >= 40) return { category: 'needs-improvement', color: '#ff9800' }; // Orange from --needs-improvement: 43 96% 56%
+  return { category: 'insufficient', color: '#f44336' }; // Red from --insufficient: 0 84% 60%
 };
 
 export function RadarChartComparison({ 
@@ -49,9 +49,10 @@ export function RadarChartComparison({
   // Prepare data for radar chart
   const radarData = Object.keys(kpiLabels).map((key) => {
     const kpi = key as keyof typeof kpiLabels;
+    const empresaScore = Math.round(companyData[kpi] || 0);
     return {
       kpi: kpiLabels[kpi],
-      empresa: Math.round(companyData[kpi] || 0),
+      empresa: empresaScore,
       mercado: Math.round(marketAverages[key]?.[modelName] || 0),
     };
   });
