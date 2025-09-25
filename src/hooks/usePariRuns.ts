@@ -73,8 +73,8 @@ export function usePariRuns(
       let pariQuery = supabase
         .from("pari_runs")
         .select("*")
-        .order("created_at", { ascending: false })
-        .order("09_pari_score", { ascending: false });
+        .order("09_pari_score", { ascending: false })
+        .order("created_at", { ascending: false });
 
       if (searchQuery) {
         pariQuery = pariQuery.ilike("03_target_name", `%${searchQuery}%`);
