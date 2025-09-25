@@ -1,20 +1,30 @@
-import React from "react";
+import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { usePariRun } from "@/hooks/usePariRuns";
+import { useMarketAverages } from "@/hooks/useMarketAverages";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatsPanel } from "@/components/ui/stats-panel";
+import { RadarChartComparison } from "@/components/ui/radar-chart";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
-import { AlertCircle, CheckCircle, ArrowLeft } from "lucide-react";
+import { AlertCircle, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 export function PariRunDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: pariRun, isLoading, error } = usePariRun(id!);
+  const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(true);
+  
+  // Fetch market averages for the same period
+  const { data: marketAverages } = useMarketAverages(
+    pariRun?.["06_period_from"], 
+    pariRun?.["07_period_to"]
+  );
 
   const formatDateRange = (from?: string, to?: string) => {
     if (!from && !to) return "N/A";
@@ -164,70 +174,103 @@ export function PariRunDetail() {
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           
-          {/* Left Column - Metrics */}
+          {/* Left Column - Radar Chart + Metrics */}
           <div className="lg:col-span-2 space-y-4">
             
-            {/* Metrics Table - Compact */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Métricas Detalladas</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-3 font-medium">Métrica</th>
-                        <th className="text-center p-3 font-medium w-20">Score</th>
-                        <th className="text-center p-3 font-medium w-20">Peso</th>
-                        <th className="text-center p-3 font-medium w-24">Categoría</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {metrics.map((metric) => {
-                        let colorClass = "";
-                        let bgClass = "";
-                        if (metric.categoria === "Bueno") {
-                          colorClass = "text-good";
-                          bgClass = "bg-good/10";
-                        } else if (metric.categoria === "Mejorable") {
-                          colorClass = "text-needs-improvement";
-                          bgClass = "bg-needs-improvement/10";
-                        } else if (metric.categoria === "Insuficiente") {
-                          colorClass = "text-insufficient";
-                          bgClass = "bg-insufficient/10";
-                        }
-
-                        return (
-                          <tr key={metric.key} className={`border-b hover:bg-muted/50 ${bgClass}`}>
-                            <td className="p-3">
-                              <div>
-                                <div className="font-medium">{metric.label}</div>
-                                <div className="text-xs text-muted-foreground">{metric.fullName}</div>
-                              </div>
-                            </td>
-                            <td className={`p-3 text-center font-bold ${colorClass}`}>
-                              {metric.score || 0}
-                            </td>
-                            <td className="p-3 text-center text-muted-foreground">
-                              {metric.peso}%
-                            </td>
-                            <td className="p-3 text-center">
-                              <Badge 
-                                variant="outline" 
-                                className={`text-xs ${colorClass} border-current`}
-                              >
-                                {metric.categoria}
-                              </Badge>
-                            </td>
+            {/* Radar Chart - Main Visual Element */}
+            {pariRun && marketAverages && (
+              <RadarChartComparison
+                companyData={{
+                  pari: pariRun["09_pari_score"] || 0,
+                  lns: pariRun["23_lns_score"] || 0,
+                  es: pariRun["26_es_score"] || 0,
+                  sam: pariRun["29_sam_score"] || 0,
+                  rm: pariRun["32_rm_score"] || 0,
+                  clr: pariRun["35_clr_score"] || 0,
+                  gip: pariRun["38_gip_score"] || 0,
+                  kgi: pariRun["41_kgi_score"] || 0,
+                  mpi: pariRun["44_mpi_score"] || 0,
+                }}
+                marketAverages={marketAverages}
+                companyName={pariRun["03_target_name"] || "Empresa"}
+                modelName={pariRun["02_model_name"] || ""}
+              />
+            )}
+            
+            {/* Collapsible Metrics Table */}
+            <Collapsible open={!isMetricsCollapsed} onOpenChange={(open) => setIsMetricsCollapsed(!open)}>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="w-full justify-between p-3 h-auto">
+                      <CardTitle className="text-lg">Métricas Detalladas</CardTitle>
+                      {isMetricsCollapsed ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronUp className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                </CardHeader>
+                <CollapsibleContent>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-3 font-medium">Métrica</th>
+                            <th className="text-center p-3 font-medium w-20">Score</th>
+                            <th className="text-center p-3 font-medium w-20">Peso</th>
+                            <th className="text-center p-3 font-medium w-24">Categoría</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
+                        </thead>
+                        <tbody>
+                          {metrics.map((metric) => {
+                            let colorClass = "";
+                            let bgClass = "";
+                            if (metric.categoria === "Bueno") {
+                              colorClass = "text-good";
+                              bgClass = "bg-good/10";
+                            } else if (metric.categoria === "Mejorable") {
+                              colorClass = "text-needs-improvement";
+                              bgClass = "bg-needs-improvement/10";
+                            } else if (metric.categoria === "Insuficiente") {
+                              colorClass = "text-insufficient";
+                              bgClass = "bg-insufficient/10";
+                            }
+
+                            return (
+                              <tr key={metric.key} className={`border-b hover:bg-muted/50 ${bgClass}`}>
+                                <td className="p-3">
+                                  <div>
+                                    <div className="font-medium">{metric.label}</div>
+                                    <div className="text-xs text-muted-foreground">{metric.fullName}</div>
+                                  </div>
+                                </td>
+                                <td className={`p-3 text-center font-bold ${colorClass}`}>
+                                  {metric.score || 0}
+                                </td>
+                                <td className="p-3 text-center text-muted-foreground">
+                                  {metric.peso}%
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`text-xs ${colorClass} border-current`}
+                                  >
+                                    {metric.categoria}
+                                  </Badge>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
 
             {/* Summary and Key Points - Compact */}
             {pariRun["10_resumen"] && (
