@@ -12,6 +12,8 @@ import { StatsPanel } from "@/components/ui/stats-panel";
 import { RadarChartComparison } from "@/components/ui/radar-chart";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
+import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
+import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { AlertCircle, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 export function PariRunDetail() {
@@ -341,30 +343,42 @@ export function PariRunDetail() {
                 <CardTitle className="text-lg">Análisis IA</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Model-specific response (ChatGPT/Perplexity) */}
-                {(pariRun["20_res_gpt_bruto"] || pariRun["21_res_perplex_bruto"]) && (
-                  <AIResponseDialog 
-                    modelName={pariRun["02_model_name"]}
-                    chatgptResponse={pariRun["20_res_gpt_bruto"]}
-                    perplexityResponse={pariRun["21_res_perplex_bruto"]}
+                {/* ChatGPT Response */}
+                {pariRun["20_res_gpt_bruto"] && (
+                  <AIResponseDialog
+                    title="Así contestó ChatGPT"
+                    content={pariRun["20_res_gpt_bruto"]}
+                    icon={ChatGPTIcon}
                     createdAt={pariRun.created_at}
                     periodFrom={pariRun["06_period_from"]}
                     periodTo={pariRun["07_period_to"]}
                   />
                 )}
                 
-                {/* Methodological explanation - only show if different from model response */}
+                {/* Perplexity Response */}
+                {pariRun["21_res_perplex_bruto"] && (
+                  <AIResponseDialog
+                    title="Así contestó Perplexity"
+                    content={pariRun["21_res_perplex_bruto"]}
+                    icon={PerplexityIcon}
+                    createdAt={pariRun.created_at}
+                    periodFrom={pariRun["06_period_from"]}
+                    periodTo={pariRun["07_period_to"]}
+                  />
+                )}
+                
+                {/* Methodological explanation - only show if different from model responses */}
                 {pariRun["22_explicacion"] && !isDuplicateContent(
                   pariRun["22_explicacion"], 
                   pariRun["20_res_gpt_bruto"], 
                   pariRun["21_res_perplex_bruto"]
                 ) && (
-                  <AIResponseDialog 
-                    explanationResponse={pariRun["22_explicacion"]}
+                  <AIResponseDialog
+                    title="Ver Explicación Metodológica"
+                    content={pariRun["22_explicacion"]}
                     createdAt={pariRun.created_at}
                     periodFrom={pariRun["06_period_from"]}
                     periodTo={pariRun["07_period_to"]}
-                    buttonText="Ver Explicación Metodológica"
                   />
                 )}
 
@@ -378,12 +392,12 @@ export function PariRunDetail() {
                    pariRun["20_res_gpt_bruto"], 
                    pariRun["21_res_perplex_bruto"]
                  ) && (
-                  <AIResponseDialog 
-                    detailedExplanations={pariRun["23_explicaciones_detalladas"]}
+                  <AIResponseDialog
+                    title="Ver Análisis Detallado por Métrica"
+                    content={pariRun["23_explicaciones_detalladas"].join('\n\n')}
                     createdAt={pariRun.created_at}
                     periodFrom={pariRun["06_period_from"]}
                     periodTo={pariRun["07_period_to"]}
-                    buttonText="Ver Análisis Detallado por Métrica"
                   />
                 )}
               </CardContent>
