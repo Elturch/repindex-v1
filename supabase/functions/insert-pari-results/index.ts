@@ -61,13 +61,34 @@ serve(async (req) => {
     
     console.log(`Processing ${results.length} PARI results`)
 
-    // Company name to ticker mapping function
-    const mapCompanyNameToTicker = (targetName: string | null): string | null => {
-      if (!targetName) return null
+    // Company name to ticker mapping function - enhanced with better fallbacks
+    const mapCompanyNameToTicker = (targetName: string | null, originalTicker?: string | null): string | null => {
+      if (!targetName) return originalTicker && originalTicker !== '{TICKER}' ? originalTicker : null
       
-      const name = targetName.toLowerCase()
+      const name = targetName.toLowerCase().trim()
+      console.log(`Mapping company name: "${targetName}" (normalized: "${name}")`)
       
-      // Mapping based on repindex_root_issuers data
+      // Exact matches first (more precise)
+      const exactMappings: Record<string, string> = {
+        'acciona': 'ANA',
+        'acs': 'ACS', 
+        'banco santander': 'SAN',
+        'bankinter': 'BKT',
+        'bbva': 'BBVA',
+        'ferrovial': 'FER',
+        'banco sabadell': 'SAB',
+        'caixabank': 'CABK',
+        'mapfre': 'MAP',
+        'unicaja banco': 'UNI'
+      }
+      
+      // Check exact matches first
+      if (exactMappings[name]) {
+        console.log(`Exact match found: "${name}" -> "${exactMappings[name]}"`)
+        return exactMappings[name]
+      }
+      
+      // Partial matches for longer company names
       if (name.includes('acciona energía') || name.includes('acciona energia')) return 'ANE'
       if (name.includes('acciona')) return 'ANA'
       if (name.includes('acerinox')) return 'ACX'
@@ -104,8 +125,14 @@ serve(async (req) => {
       if (name.includes('telefónica') || name.includes('telefonica')) return 'TEF'
       if (name.includes('unicaja')) return 'UNI'
       
-      console.log(`Warning: No ticker mapping found for company: ${targetName}`)
-      return null
+      // If original ticker exists and is not placeholder, use it
+      if (originalTicker && originalTicker !== '{TICKER}' && originalTicker.trim().length > 0) {
+        console.log(`Using original ticker: "${originalTicker}" for company: "${targetName}"`)
+        return originalTicker.trim()
+      }
+      
+      console.error(`❌ CRITICAL: No ticker mapping found for company: "${targetName}". This will cause JOIN failures!`)
+      return null // Never return placeholder
     }
 
     // Helper function to normalize and validate strings
@@ -276,11 +303,12 @@ serve(async (req) => {
       console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)
       
       // Log ticker mapping for debugging
-      const mappedTicker = mapCompanyNameToTicker(result.meta.target_name);
+      const mappedTicker = mapCompanyNameToTicker(result.meta.target_name, result.meta.ticker);
       if (!mappedTicker) {
-        console.warn(`No ticker found for company: "${result.meta.target_name}". Original ticker field: "${result.meta.ticker}"`);
+        console.error(`❌ CRITICAL: No ticker found for company: "${result.meta.target_name}". Original ticker: "${result.meta.ticker}". This record will be SKIPPED to prevent data corruption.`);
+        throw new Error(`No ticker mapping available for company: "${result.meta.target_name}"`);
       } else {
-        console.log(`Mapped "${result.meta.target_name}" to ticker: "${mappedTicker}"`);
+        console.log(`✅ Successfully mapped "${result.meta.target_name}" to ticker: "${mappedTicker}"`);
       }
       
       // Map subscores to individual metric columns
@@ -345,7 +373,7 @@ serve(async (req) => {
         "02_model_name": result.meta.model_name,
         "03_target_name": result.meta.target_name,
         "04_target_type": result.meta.target_type,
-        "05_ticker": mapCompanyNameToTicker(result.meta.target_name),
+        "05_ticker": mappedTicker,
         "06_period_from": result.meta.period_from,
         "07_period_to": result.meta.period_to,
         "08_tz": result.meta.tz,
