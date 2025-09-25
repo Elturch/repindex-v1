@@ -14,9 +14,10 @@ interface AIResponseDialogProps {
   createdAt?: string;
   periodFrom?: string;
   periodTo?: string;
+  buttonText?: string;
 }
 
-export function AIResponseDialog({ 
+export default function AIResponseDialog({ 
   modelName, 
   chatgptResponse, 
   perplexityResponse,
@@ -24,7 +25,8 @@ export function AIResponseDialog({
   detailedExplanations,
   createdAt,
   periodFrom,
-  periodTo
+  periodTo,
+  buttonText
 }: AIResponseDialogProps) {
   const isChatGPT = modelName?.toLowerCase().includes('chatgpt') || modelName?.toLowerCase().includes('gpt');
   const isPerplexity = modelName?.toLowerCase().includes('perplexity');
@@ -33,32 +35,32 @@ export function AIResponseDialog({
   
   // Determine which response to show based on model or available content
   let responseContent = "";
-  let buttonText = "Ver Respuesta IA";
+  let displayButtonText = buttonText || "Ver Respuesta IA";
   let Icon = null;
 
   if (hasDetailedExplanations) {
     responseContent = detailedExplanations.join('\n\n');
-    buttonText = "Así ha determinado las notas la IA";
+    displayButtonText = buttonText || "Así ha determinado las notas la IA";
     Icon = null;
   } else if (isExplanation) {
     responseContent = explanationResponse;
-    buttonText = "Así ha determinado las notas la IA";
+    displayButtonText = buttonText || "Así ha determinado las notas la IA";
     Icon = null;
   } else if (isChatGPT && chatgptResponse) {
     responseContent = chatgptResponse;
-    buttonText = "Así contestó ChatGPT";
+    displayButtonText = buttonText || "Así contestó ChatGPT";
     Icon = ChatGPTIcon;
   } else if (isPerplexity && perplexityResponse) {
     responseContent = perplexityResponse;
-    buttonText = "Así contestó Perplexity";
+    displayButtonText = buttonText || "Así contestó Perplexity";
     Icon = PerplexityIcon;
   } else if (chatgptResponse) {
     responseContent = chatgptResponse;
-    buttonText = "Así contestó ChatGPT";
+    displayButtonText = buttonText || "Así contestó ChatGPT";
     Icon = ChatGPTIcon;
   } else if (perplexityResponse) {
     responseContent = perplexityResponse;
-    buttonText = "Así contestó Perplexity";
+    displayButtonText = buttonText || "Así contestó Perplexity";
     Icon = PerplexityIcon;
   }
 
@@ -81,14 +83,14 @@ export function AIResponseDialog({
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="w-full">
           {Icon && <Icon className="mr-2 h-4 w-4" />}
-          {buttonText}
+          {displayButtonText}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {Icon && <Icon className="h-5 w-5" />}
-            {buttonText}
+            {displayButtonText}
           </DialogTitle>
         </DialogHeader>
         <ScrollArea className="h-full max-h-[60vh] pr-4">
