@@ -115,6 +115,24 @@ serve(async (req) => {
       return trimmed.length > 0 ? trimmed : null
     }
 
+    // Helper function to process explanation fields (convert arrays to strings)
+    const processExplanationField = (value: any): string | null => {
+      if (value === null || value === undefined) return null
+      
+      // If it's an array, join with line breaks
+      if (Array.isArray(value)) {
+        const filtered = value
+          .filter(item => item !== null && item !== undefined)
+          .map(item => String(item).trim())
+          .filter(item => item.length > 0)
+        return filtered.length > 0 ? filtered.join('\n') : null
+      }
+      
+      // If it's a string, return as is
+      const stringValue = String(value).trim()
+      return stringValue.length > 0 ? stringValue : null
+    }
+
     // Helper function to safely convert any value to array for PostgreSQL
     const convertToArray = (value: any, fieldName?: string): string[] | null => {
       try {
@@ -333,7 +351,9 @@ serve(async (req) => {
         "08_tz": result.meta.tz,
         "09_pari_score": result.tabla.pari,
         "10_resumen": result.relato_mini.resumen,
-        "11_puntos_clave": result.relato_mini.puntos_clave,
+        "11_puntos_clave": Array.isArray(result.relato_mini.puntos_clave) 
+          ? result.relato_mini.puntos_clave 
+          : result.relato_mini.puntos_clave,
         "12_palabras": result.tabla.contadores.palabras,
         "13_num_fechas": result.tabla.contadores.num_fechas,
         "14_num_citas": result.tabla.contadores.num_citas,
@@ -344,7 +364,7 @@ serve(async (req) => {
         "19_weights": result.meta.weights,
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
-        "22_explicacion": result.relato_mini.explicacion || null,
+        "22_explicacion": processExplanationField(result.relato_mini.explicacion),
         "23_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
         "47_fase": result.meta.target_type || null,
         ...metricsMap
