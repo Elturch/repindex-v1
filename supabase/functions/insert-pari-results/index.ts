@@ -313,7 +313,7 @@ serve(async (req) => {
         "02_model_name": result.meta.model_name,
         "03_target_name": result.meta.target_name,
         "04_target_type": result.meta.target_type,
-        "05_ticker": mapCompanyNameToTicker(result.meta.target_name) || result.meta.ticker,
+        "05_ticker": mapCompanyNameToTicker(result.meta.target_name),
         "06_period_from": result.meta.period_from,
         "07_period_to": result.meta.period_to,
         "08_tz": result.meta.tz,
