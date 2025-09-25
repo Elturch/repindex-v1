@@ -35,9 +35,17 @@ const kpiLabels = {
 
 // Function to determine score category and color
 const getScoreCategory = (score: number) => {
-  if (score >= 70) return { category: 'good', color: '#4285f4' }; // Blue from --good: 221 83% 53%
-  if (score >= 40) return { category: 'needs-improvement', color: '#ff9800' }; // Orange from --needs-improvement: 43 96% 56%
-  return { category: 'insufficient', color: '#f44336' }; // Red from --insufficient: 0 84% 60%
+  console.log('getScoreCategory called with score:', score);
+  let result;
+  if (score >= 70) {
+    result = { category: 'good', color: '#22c55e' }; // Green
+  } else if (score >= 40) {
+    result = { category: 'needs-improvement', color: '#f59e0b' }; // Orange
+  } else {
+    result = { category: 'insufficient', color: '#ef4444' }; // Red
+  }
+  console.log('getScoreCategory result:', result);
+  return result;
 };
 
 export function RadarChartComparison({ 
@@ -56,6 +64,9 @@ export function RadarChartComparison({
       mercado: Math.round(marketAverages[key]?.[modelName] || 0),
     };
   });
+
+  console.log('RadarChart - companyData:', companyData);
+  console.log('RadarChart - radarData:', radarData);
 
   // Check if we have market data
   const hasMarketData = Object.values(marketAverages).some(modelData => 
@@ -108,15 +119,15 @@ export function RadarChartComparison({
         {/* Color legend for KPI categories */}
         <div className="flex flex-wrap gap-4 text-xs mt-3 pt-3 border-t border-border/30">
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-good"></div>
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#22c55e' }}></div>
             <span className="text-muted-foreground">≥70 pts</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-needs-improvement"></div>
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }}></div>
             <span className="text-muted-foreground">40-69 pts</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-insufficient"></div>
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#ef4444' }}></div>
             <span className="text-muted-foreground">&lt;40 pts</span>
           </div>
         </div>
@@ -162,8 +173,11 @@ export function RadarChartComparison({
                 strokeWidth={3}
                 dot={(props: any) => {
                   const { cx, cy, payload } = props;
+                  console.log('Dot function - payload:', payload);
                   const score = payload?.empresa || 0;
+                  console.log('Dot function - score:', score);
                   const { color } = getScoreCategory(score);
+                  console.log('Dot function - color:', color);
                   return (
                     <circle
                       cx={cx}
