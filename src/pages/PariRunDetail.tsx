@@ -275,19 +275,12 @@ export function PariRunDetail() {
                   modelName={pariRun["02_model_name"]}
                   chatgptResponse={pariRun["20_res_gpt_bruto"]}
                   perplexityResponse={pariRun["21_res_perplex_bruto"]}
+                  explanationResponse={pariRun["22_explicacion"]}
+                  detailedExplanations={pariRun["23_explicaciones_detalladas"]}
                   createdAt={pariRun.created_at}
                   periodFrom={pariRun["06_period_from"]}
                   periodTo={pariRun["07_period_to"]}
                 />
-                
-                {pariRun["22_explicacion"] && (
-                  <AIResponseDialog 
-                    explanationResponse={pariRun["22_explicacion"]}
-                    createdAt={pariRun.created_at}
-                    periodFrom={pariRun["06_period_from"]}
-                    periodTo={pariRun["07_period_to"]}
-                  />
-                )}
               </CardContent>
             </Card>
           </div>

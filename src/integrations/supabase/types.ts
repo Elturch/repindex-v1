@@ -335,6 +335,7 @@ export type Database = {
           "20_res_gpt_bruto": string | null
           "21_res_perplex_bruto": string | null
           "22_explicacion": string | null
+          "23_explicaciones_detalladas": Json | null
           "23_lns_score": number | null
           "24_lns_peso": number | null
           "25_lns_categoria": string | null
@@ -387,6 +388,7 @@ export type Database = {
           "20_res_gpt_bruto"?: string | null
           "21_res_perplex_bruto"?: string | null
           "22_explicacion"?: string | null
+          "23_explicaciones_detalladas"?: Json | null
           "23_lns_score"?: number | null
           "24_lns_peso"?: number | null
           "25_lns_categoria"?: string | null
@@ -439,6 +441,7 @@ export type Database = {
           "20_res_gpt_bruto"?: string | null
           "21_res_perplex_bruto"?: string | null
           "22_explicacion"?: string | null
+          "23_explicaciones_detalladas"?: Json | null
           "23_lns_score"?: number | null
           "24_lns_peso"?: number | null
           "25_lns_categoria"?: string | null

@@ -318,6 +318,11 @@ serve(async (req) => {
         }
       })
 
+      // Extract detailed explanations from subscores
+      const detailedExplanations = result.tabla.subscores
+        .map(subscore => subscore.explicacion)
+        .filter(explicacion => explicacion && explicacion.trim().length > 0)
+
       const insertData: Record<string, any> = {
         "02_model_name": result.meta.model_name,
         "03_target_name": result.meta.target_name,
@@ -340,6 +345,7 @@ serve(async (req) => {
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
         "22_explicacion": result.relato_mini.explicacion || null,
+        "23_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
         "47_fase": result.meta.target_type || null,
         ...metricsMap
       }

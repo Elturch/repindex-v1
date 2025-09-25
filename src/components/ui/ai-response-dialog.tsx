@@ -10,6 +10,7 @@ interface AIResponseDialogProps {
   chatgptResponse?: string;
   perplexityResponse?: string;
   explanationResponse?: string;
+  detailedExplanations?: string[];
   createdAt?: string;
   periodFrom?: string;
   periodTo?: string;
@@ -20,6 +21,7 @@ export function AIResponseDialog({
   chatgptResponse, 
   perplexityResponse,
   explanationResponse,
+  detailedExplanations,
   createdAt,
   periodFrom,
   periodTo
@@ -27,13 +29,18 @@ export function AIResponseDialog({
   const isChatGPT = modelName?.toLowerCase().includes('chatgpt') || modelName?.toLowerCase().includes('gpt');
   const isPerplexity = modelName?.toLowerCase().includes('perplexity');
   const isExplanation = explanationResponse && !chatgptResponse && !perplexityResponse;
+  const hasDetailedExplanations = detailedExplanations && detailedExplanations.length > 0;
   
   // Determine which response to show based on model or available content
   let responseContent = "";
   let buttonText = "Ver Respuesta IA";
   let Icon = null;
 
-  if (isExplanation) {
+  if (hasDetailedExplanations) {
+    responseContent = detailedExplanations.join('\n\n');
+    buttonText = "Así ha determinado las notas la IA";
+    Icon = null;
+  } else if (isExplanation) {
     responseContent = explanationResponse;
     buttonText = "Así ha determinado las notas la IA";
     Icon = null;
