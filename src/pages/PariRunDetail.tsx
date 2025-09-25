@@ -138,6 +138,17 @@ export function PariRunDetail() {
           </div>
         </div>
 
+        {/* Data Update Information */}
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 text-sm">
+            <CheckCircle className="h-4 w-4" />
+            <span>
+              <strong>Actualización Semanal:</strong> Este análisis forma parte del proceso automático que se ejecuta cada domingo, 
+              garantizando la solidez y actualización constante de los datos reputacionales.
+            </span>
+          </div>
+        </div>
+
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           
