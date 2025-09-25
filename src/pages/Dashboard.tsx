@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { usePariRuns } from "@/hooks/usePariRuns";
 import { useCompanies } from "@/hooks/useCompanies";
+import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3 } from "lucide-react";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
 import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
@@ -25,10 +26,12 @@ export function Dashboard() {
   const [aiFilter, setAIFilter] = useState<AIFilter>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [weekFilter, setWeekFilter] = useState<string>("all");
+  const [sectorFilter, setSectorFilter] = useState<string>("all");
   const navigate = useNavigate();
   
-  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter);
+  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter);
   const { data: companies, isLoading: companiesLoading } = useCompanies();
+  const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
 
   const handleRowClick = (pariRunId: string) => {
     navigate(`/pari-run/${pariRunId}`);
@@ -93,6 +96,7 @@ export function Dashboard() {
   const clearFilters = () => {
     setCompanyFilter("all");
     setWeekFilter("all");
+    setSectorFilter("all");
   };
 
   // Function to normalize flag names to user-friendly format
@@ -144,7 +148,7 @@ export function Dashboard() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {pariRuns?.length || 0} empresas analizadas
-            {(companyFilter !== "all" || weekFilter !== "all") && (
+            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
           </p>
@@ -229,7 +233,7 @@ export function Dashboard() {
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Seleccionar empresa" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-background border z-50">
                   <SelectItem value="all">Todas las empresas</SelectItem>
                   {companies?.map((company) => (
                     <SelectItem key={company.issuer_id} value={company.issuer_name}>
@@ -247,7 +251,7 @@ export function Dashboard() {
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Seleccionar semana" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-background border z-50">
                   <SelectItem value="all">Todas las semanas</SelectItem>
                   {weekOptions.map((week) => (
                     <SelectItem key={week.value} value={week.value}>
@@ -258,7 +262,25 @@ export function Dashboard() {
               </Select>
             </div>
 
-            {(companyFilter !== "all" || weekFilter !== "all") && (
+            {/* Sector Filter */}
+            <div className="flex items-center gap-2">
+              <Factory className="h-4 w-4 text-muted-foreground" />
+              <Select value={sectorFilter} onValueChange={setSectorFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar sector" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-50">
+                  <SelectItem value="all">Todos los sectores</SelectItem>
+                  {sectorCategories?.map((sector) => (
+                    <SelectItem key={sector.sector_category} value={sector.sector_category}>
+                      {sector.sector_category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all") && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -282,7 +304,7 @@ export function Dashboard() {
 
         {!isLoading && !error && (!pariRuns || pariRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || companyFilter !== "all" || weekFilter !== "all" ? "No companies found matching your filters." : 
+            {searchQuery || companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" ? "No companies found matching your filters." : 
              aiFilter === "comparison" ? "No data available for comparison view yet." : 
              `No reputational data available for ${aiFilter}.`}
           </div>
