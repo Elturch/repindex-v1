@@ -362,6 +362,7 @@ export type Database = {
           "46_mpi_categoria": string | null
           "47_fase": string | null
           "48_precio_accion": string | null
+          "49_reputacion_vs_precio": string | null
           created_at: string
           id: string
           updated_at: string
@@ -416,6 +417,7 @@ export type Database = {
           "46_mpi_categoria"?: string | null
           "47_fase"?: string | null
           "48_precio_accion"?: string | null
+          "49_reputacion_vs_precio"?: string | null
           created_at?: string
           id?: string
           updated_at?: string
@@ -470,6 +472,7 @@ export type Database = {
           "46_mpi_categoria"?: string | null
           "47_fase"?: string | null
           "48_precio_accion"?: string | null
+          "49_reputacion_vs_precio"?: string | null
           created_at?: string
           id?: string
           updated_at?: string
