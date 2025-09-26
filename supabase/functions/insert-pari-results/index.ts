@@ -88,42 +88,52 @@ serve(async (req) => {
         return exactMappings[name]
       }
       
-      // Partial matches for longer company names
+      // Partial matches for longer company names - Enhanced with more variations
       if (name.includes('acciona energía') || name.includes('acciona energia')) return 'ANE'
       if (name.includes('acciona')) return 'ANA'
       if (name.includes('acerinox')) return 'ACX'
       if (name.includes('acs')) return 'ACS'
       if (name.includes('aena')) return 'AENA'
       if (name.includes('amadeus')) return 'AMS'
-      if (name.includes('arcelormittal')) return 'MTS'
+      if (name.includes('arcelormittal') || name.includes('arcelor mittal')) return 'MTS'
       if (name.includes('banco sabadell') || name.includes('sabadell')) return 'SAB'
       if (name.includes('banco santander') || name.includes('santander')) return 'SAN'
       if (name.includes('bankinter')) return 'BKT'
       if (name.includes('bbva')) return 'BBVA'
-      if (name.includes('caixabank')) return 'CABK'
+      if (name.includes('caixabank') || name.includes('la caixa')) return 'CABK'
       if (name.includes('cellnex')) return 'CLNX'
-      if (name.includes('colonial')) return 'COL'
+      if (name.includes('colonial') || name.includes('inmobiliaria colonial')) return 'COL'
       if (name.includes('enagás') || name.includes('enagas')) return 'ENG'
       if (name.includes('endesa')) return 'ELE'
       if (name.includes('ferrovial')) return 'FER'
       if (name.includes('fluidra')) return 'FDR'
       if (name.includes('grifols')) return 'GRF'
-      if (name.includes('iag') || name.includes('international airlines')) return 'IAG'
+      if (name.includes('iag') || name.includes('international airlines') || name.includes('iberia')) return 'IAG'
       if (name.includes('iberdrola')) return 'IBE'
-      if (name.includes('inditex')) return 'ITX'
+      if (name.includes('inditex') || name.includes('zara')) return 'ITX'
       if (name.includes('indra')) return 'IDR'
       if (name.includes('logista')) return 'LOG'
       if (name.includes('mapfre')) return 'MAP'
       if (name.includes('merlin properties') || name.includes('merlin')) return 'MRL'
-      if (name.includes('naturgy')) return 'NTGY'
+      if (name.includes('naturgy') || name.includes('gas natural')) return 'NTGY'
       if (name.includes('puig')) return 'PUIG'
-      if (name.includes('redeia') || name.includes('ree')) return 'REE'
+      if (name.includes('redeia') || name.includes('ree') || name.includes('red eléctrica')) return 'REE'
       if (name.includes('repsol')) return 'REP'
       if (name.includes('laboratorios rovi') || name.includes('rovi')) return 'ROVI'
       if (name.includes('sacyr')) return 'SCYR'
       if (name.includes('solaria')) return 'SLR'
-      if (name.includes('telefónica') || name.includes('telefonica')) return 'TEF'
+      if (name.includes('telefónica') || name.includes('telefonica') || name.includes('movistar')) return 'TEF'
       if (name.includes('unicaja')) return 'UNI'
+      
+      // Additional common Spanish company mappings
+      if (name.includes('vidrala')) return 'VID'
+      if (name.includes('viscofan')) return 'VIS'
+      if (name.includes('prosegur')) return 'PSG'
+      if (name.includes('mediaset') || name.includes('telecinco')) return 'TL5'
+      if (name.includes('almirall')) return 'ALM'
+      if (name.includes('cie automotive') || name.includes('cie')) return 'CIE'
+      if (name.includes('applus')) return 'APPS'
+      if (name.includes('técnicas reunidas') || name.includes('tecnicas reunidas')) return 'TRE'
       
       // If original ticker exists and is not placeholder, use it
       if (originalTicker && originalTicker !== '{TICKER}' && originalTicker.trim().length > 0) {
@@ -305,8 +315,17 @@ serve(async (req) => {
       // Log ticker mapping for debugging
       const mappedTicker = mapCompanyNameToTicker(result.meta.target_name, result.meta.ticker);
       if (!mappedTicker) {
-        console.error(`❌ CRITICAL: No ticker found for company: "${result.meta.target_name}". Original ticker: "${result.meta.ticker}". This record will be SKIPPED to prevent data corruption.`);
-        throw new Error(`No ticker mapping available for company: "${result.meta.target_name}"`);
+        const errorMsg = `❌ CRITICAL: No ticker found for company: "${result.meta.target_name}". Original ticker: "${result.meta.ticker}". This record will be SKIPPED to prevent constraint violation.`;
+        console.error(errorMsg);
+        
+        // Return a rejected promise with detailed error info instead of throwing
+        return Promise.reject({
+          error: 'TICKER_MAPPING_FAILED',
+          message: errorMsg,
+          company: result.meta.target_name,
+          originalTicker: result.meta.ticker,
+          runId: result.meta.run_id
+        });
       } else {
         console.log(`✅ Successfully mapped "${result.meta.target_name}" to ticker: "${mappedTicker}"`);
       }
@@ -420,17 +439,49 @@ serve(async (req) => {
       return data
     })
 
-    const insertedData = await Promise.all(insertPromises)
+    // Use Promise.allSettled to handle failures gracefully
+    const insertResults = await Promise.allSettled(insertPromises)
+    
+    const successfulInserts: any[] = []
+    const failedInserts: any[] = []
+    
+    insertResults.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        successfulInserts.push(result.value)
+      } else {
+        console.error(`Failed to insert result ${index}:`, result.reason)
+        failedInserts.push({
+          index,
+          error: result.reason,
+          company: validResults[index]?.meta?.target_name || 'Unknown'
+        })
+      }
+    })
+    
+    console.log(`Insertion summary: ${successfulInserts.length} successful, ${failedInserts.length} failed`)
+    
+    // Log details about failed inserts
+    if (failedInserts.length > 0) {
+      console.error('Failed inserts details:', failedInserts)
+    }
 
+    // Return response with both successful and failed inserts
+    const responseData = {
+      success: successfulInserts.length > 0,
+      inserted_count: successfulInserts.length,
+      failed_count: failedInserts.length,
+      data: successfulInserts.flat(),
+      failures: failedInserts.length > 0 ? failedInserts : undefined
+    }
+    
+    // Return 207 (Multi-Status) if there were partial failures, 200 if all successful
+    const statusCode = failedInserts.length > 0 ? 207 : 200
+    
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        inserted_count: insertedData.length,
-        data: insertedData.flat()
-      }),
+      JSON.stringify(responseData),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+        status: statusCode,
       },
     )
 
