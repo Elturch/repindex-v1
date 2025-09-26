@@ -61,88 +61,123 @@ serve(async (req) => {
     
     console.log(`Processing ${results.length} PARI results`)
 
-    // Company name to ticker mapping function - enhanced with better fallbacks
-    const mapCompanyNameToTicker = (targetName: string | null, originalTicker?: string | null): string | null => {
+    // Company name to ticker mapping function - queries database automatically
+    const mapCompanyNameToTicker = async (targetName: string | null, originalTicker?: string | null): Promise<string | null> => {
       if (!targetName) return originalTicker && originalTicker !== '{TICKER}' ? originalTicker : null
       
       const name = targetName.toLowerCase().trim()
-      console.log(`Mapping company name: "${targetName}" (normalized: "${name}")`)
+      console.log(`🔍 Querying database for company: "${targetName}" (normalized: "${name}")`)
       
-      // Exact matches first (more precise)
-      const exactMappings: Record<string, string> = {
-        'acciona': 'ANA',
-        'acs': 'ACS', 
-        'banco santander': 'SAN',
-        'bankinter': 'BKT',
-        'bbva': 'BBVA',
-        'ferrovial': 'FER',
-        'banco sabadell': 'SAB',
-        'caixabank': 'CABK',
-        'mapfre': 'MAP',
-        'unicaja banco': 'UNI'
+      try {
+        // First, try exact match on issuer_name
+        let { data: companies, error } = await supabaseClient
+          .from('repindex_root_issuers')
+          .select('ticker, issuer_name')
+          .ilike('issuer_name', targetName)
+          .limit(5)
+        
+        if (error) {
+          console.error('❌ Database query error:', error)
+          throw error
+        }
+        
+        console.log(`📊 Database query returned ${companies?.length || 0} results for "${targetName}"`)
+        
+        if (companies && companies.length > 0) {
+          const exactMatch = companies.find(c => c.issuer_name.toLowerCase() === name)
+          if (exactMatch) {
+            console.log(`✅ Exact database match: "${targetName}" -> "${exactMatch.ticker}"`)
+            return exactMatch.ticker
+          }
+          
+          // If no exact match, take the first result
+          console.log(`✅ Database fuzzy match: "${targetName}" -> "${companies[0].ticker}" (matched: "${companies[0].issuer_name}")`)
+          return companies[0].ticker
+        }
+        
+        // If no matches, try partial matching with LIKE patterns
+        console.log(`🔄 No exact matches, trying partial matching for: "${targetName}"`)
+        
+        const searchTerms = [
+          `%${name}%`,
+          `${name}%`,
+          `%${name}`
+        ]
+        
+        for (const searchTerm of searchTerms) {
+          const { data: partialMatches, error: partialError } = await supabaseClient
+            .from('repindex_root_issuers')
+            .select('ticker, issuer_name')
+            .ilike('issuer_name', searchTerm)
+            .limit(3)
+          
+          if (partialError) {
+            console.error('❌ Partial search error:', partialError)
+            continue
+          }
+          
+          if (partialMatches && partialMatches.length > 0) {
+            console.log(`✅ Partial database match: "${targetName}" -> "${partialMatches[0].ticker}" (matched: "${partialMatches[0].issuer_name}")`)
+            return partialMatches[0].ticker
+          }
+        }
+        
+        // If still no matches, try with individual words
+        const words = name.split(/\s+/).filter(word => word.length > 2)
+        if (words.length > 0) {
+          console.log(`🔄 Trying word-based search for: ${words.join(', ')}`)
+          
+          for (const word of words) {
+            const { data: wordMatches, error: wordError } = await supabaseClient
+              .from('repindex_root_issuers')
+              .select('ticker, issuer_name')
+              .ilike('issuer_name', `%${word}%`)
+              .limit(3)
+            
+            if (wordError) {
+              console.error('❌ Word search error:', wordError)
+              continue
+            }
+            
+            if (wordMatches && wordMatches.length > 0) {
+              console.log(`✅ Word-based match: "${targetName}" -> "${wordMatches[0].ticker}" (matched on "${word}" -> "${wordMatches[0].issuer_name}")`)
+              return wordMatches[0].ticker
+            }
+          }
+        }
+        
+        // If original ticker exists and is not placeholder, use it
+        if (originalTicker && originalTicker !== '{TICKER}' && originalTicker.trim().length > 0) {
+          console.log(`⚠️  Using original ticker as fallback: "${originalTicker}" for company: "${targetName}"`)
+          return originalTicker.trim()
+        }
+        
+        // Final fallback: log all available companies for debugging
+        console.error(`❌ CRITICAL: No ticker mapping found for company: "${targetName}". Checking database contents...`)
+        
+        const { data: allCompanies, error: listError } = await supabaseClient
+          .from('repindex_root_issuers')
+          .select('ticker, issuer_name')
+          .limit(10)
+        
+        if (!listError && allCompanies) {
+          console.log('📋 Available companies in database (first 10):')
+          allCompanies.forEach(c => console.log(`  - "${c.issuer_name}" -> ${c.ticker}`))
+        }
+        
+        return null
+        
+      } catch (error) {
+        console.error(`❌ Error in mapCompanyNameToTicker for "${targetName}":`, error)
+        
+        // If original ticker exists and is not placeholder, use it as emergency fallback
+        if (originalTicker && originalTicker !== '{TICKER}' && originalTicker.trim().length > 0) {
+          console.log(`🆘 Emergency fallback to original ticker: "${originalTicker}" for company: "${targetName}"`)
+          return originalTicker.trim()
+        }
+        
+        return null
       }
-      
-      // Check exact matches first
-      if (exactMappings[name]) {
-        console.log(`Exact match found: "${name}" -> "${exactMappings[name]}"`)
-        return exactMappings[name]
-      }
-      
-      // Partial matches for longer company names - Enhanced with more variations
-      if (name.includes('acciona energía') || name.includes('acciona energia')) return 'ANE'
-      if (name.includes('acciona')) return 'ANA'
-      if (name.includes('acerinox')) return 'ACX'
-      if (name.includes('acs')) return 'ACS'
-      if (name.includes('aena')) return 'AENA'
-      if (name.includes('amadeus')) return 'AMS'
-      if (name.includes('arcelormittal') || name.includes('arcelor mittal')) return 'MTS'
-      if (name.includes('banco sabadell') || name.includes('sabadell')) return 'SAB'
-      if (name.includes('banco santander') || name.includes('santander')) return 'SAN'
-      if (name.includes('bankinter')) return 'BKT'
-      if (name.includes('bbva')) return 'BBVA'
-      if (name.includes('caixabank') || name.includes('la caixa')) return 'CABK'
-      if (name.includes('cellnex')) return 'CLNX'
-      if (name.includes('colonial') || name.includes('inmobiliaria colonial')) return 'COL'
-      if (name.includes('enagás') || name.includes('enagas')) return 'ENG'
-      if (name.includes('endesa')) return 'ELE'
-      if (name.includes('ferrovial')) return 'FER'
-      if (name.includes('fluidra')) return 'FDR'
-      if (name.includes('grifols')) return 'GRF'
-      if (name.includes('iag') || name.includes('international airlines') || name.includes('iberia')) return 'IAG'
-      if (name.includes('iberdrola')) return 'IBE'
-      if (name.includes('inditex') || name.includes('zara')) return 'ITX'
-      if (name.includes('indra')) return 'IDR'
-      if (name.includes('logista')) return 'LOG'
-      if (name.includes('mapfre')) return 'MAP'
-      if (name.includes('merlin properties') || name.includes('merlin')) return 'MRL'
-      if (name.includes('naturgy') || name.includes('gas natural')) return 'NTGY'
-      if (name.includes('puig')) return 'PUIG'
-      if (name.includes('redeia') || name.includes('ree') || name.includes('red eléctrica')) return 'REE'
-      if (name.includes('repsol')) return 'REP'
-      if (name.includes('laboratorios rovi') || name.includes('rovi')) return 'ROVI'
-      if (name.includes('sacyr')) return 'SCYR'
-      if (name.includes('solaria')) return 'SLR'
-      if (name.includes('telefónica') || name.includes('telefonica') || name.includes('movistar')) return 'TEF'
-      if (name.includes('unicaja')) return 'UNI'
-      
-      // Additional common Spanish company mappings
-      if (name.includes('vidrala')) return 'VID'
-      if (name.includes('viscofan')) return 'VIS'
-      if (name.includes('prosegur')) return 'PSG'
-      if (name.includes('mediaset') || name.includes('telecinco')) return 'TL5'
-      if (name.includes('almirall')) return 'ALM'
-      if (name.includes('cie automotive') || name.includes('cie')) return 'CIE'
-      if (name.includes('applus')) return 'APPS'
-      if (name.includes('técnicas reunidas') || name.includes('tecnicas reunidas')) return 'TRE'
-      
-      // If original ticker exists and is not placeholder, use it
-      if (originalTicker && originalTicker !== '{TICKER}' && originalTicker.trim().length > 0) {
-        console.log(`Using original ticker: "${originalTicker}" for company: "${targetName}"`)
-        return originalTicker.trim()
-      }
-      
-      console.error(`❌ CRITICAL: No ticker mapping found for company: "${targetName}". This will cause JOIN failures!`)
-      return null // Never return placeholder
     }
 
     // Helper function to normalize and validate strings
@@ -313,7 +348,7 @@ serve(async (req) => {
       console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)
       
       // Log ticker mapping for debugging
-      const mappedTicker = mapCompanyNameToTicker(result.meta.target_name, result.meta.ticker);
+      const mappedTicker = await mapCompanyNameToTicker(result.meta.target_name, result.meta.ticker);
       if (!mappedTicker) {
         const errorMsg = `❌ CRITICAL: No ticker found for company: "${result.meta.target_name}". Original ticker: "${result.meta.ticker}". This record will be SKIPPED to prevent constraint violation.`;
         console.error(errorMsg);
