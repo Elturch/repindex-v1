@@ -343,8 +343,8 @@ export function PariRunDetail() {
                 <CardTitle className="text-lg">Análisis IA</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* ChatGPT Response */}
-                {pariRun["20_res_gpt_bruto"] && (
+                {/* Show only the AI response for the corresponding model */}
+                {pariRun["02_model_name"] === "ChatGPT" && pariRun["20_res_gpt_bruto"] && (
                   <AIResponseDialog
                     title="Así contestó ChatGPT"
                     content={pariRun["20_res_gpt_bruto"]}
@@ -355,8 +355,7 @@ export function PariRunDetail() {
                   />
                 )}
                 
-                {/* Perplexity Response */}
-                {pariRun["21_res_perplex_bruto"] && (
+                {pariRun["02_model_name"] === "Perplexity" && pariRun["21_res_perplex_bruto"] && (
                   <AIResponseDialog
                     title="Así contestó Perplexity"
                     content={pariRun["21_res_perplex_bruto"]}
