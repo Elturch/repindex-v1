@@ -363,6 +363,7 @@ export type Database = {
           "47_fase": string | null
           "48_precio_accion": string | null
           "49_reputacion_vs_precio": string | null
+          "50_precio_accion_interanual": string | null
           created_at: string
           id: string
           updated_at: string
@@ -418,6 +419,7 @@ export type Database = {
           "47_fase"?: string | null
           "48_precio_accion"?: string | null
           "49_reputacion_vs_precio"?: string | null
+          "50_precio_accion_interanual"?: string | null
           created_at?: string
           id?: string
           updated_at?: string
@@ -473,6 +475,7 @@ export type Database = {
           "47_fase"?: string | null
           "48_precio_accion"?: string | null
           "49_reputacion_vs_precio"?: string | null
+          "50_precio_accion_interanual"?: string | null
           created_at?: string
           id?: string
           updated_at?: string
