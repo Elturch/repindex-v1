@@ -511,6 +511,7 @@ export type Database = {
       }
       repindex_root_issuers: {
         Row: {
+          cotiza_en_bolsa: boolean
           counter: number
           created_at: string | null
           exclude_terms: Json
@@ -533,6 +534,7 @@ export type Database = {
           ticker: string
         }
         Insert: {
+          cotiza_en_bolsa?: boolean
           counter?: number
           created_at?: string | null
           exclude_terms?: Json
@@ -555,6 +557,7 @@ export type Database = {
           ticker: string
         }
         Update: {
+          cotiza_en_bolsa?: boolean
           counter?: number
           created_at?: string | null
           exclude_terms?: Json
