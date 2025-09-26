@@ -343,13 +343,6 @@ export function PariRunDetail() {
                 <CardTitle className="text-lg">Análisis IA</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Debug information - temporary */}
-                <div className="bg-yellow-100 p-2 text-xs">
-                  <div>Model: {pariRun["02_model_name"]}</div>
-                  <div>ChatGPT Content Length: {pariRun["20_res_gpt_bruto"] ? pariRun["20_res_gpt_bruto"].length : "null/undefined"}</div>
-                  <div>Perplexity Content Length: {pariRun["21_res_perplex_bruto"] ? pariRun["21_res_perplex_bruto"].length : "null/undefined"}</div>
-                </div>
-                
                 {/* Show only the AI response for the corresponding model */}
                 {pariRun["02_model_name"] === "ChatGPT" && pariRun["20_res_gpt_bruto"] !== null && (
                   <AIResponseDialog
