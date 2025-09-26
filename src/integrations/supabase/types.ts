@@ -662,6 +662,45 @@ export type Database = {
           },
         ]
       }
+      trading_status_audit: {
+        Row: {
+          audited_at: string | null
+          audited_by: string | null
+          id: number
+          issuer_id: string
+          issuer_name: string
+          new_status: boolean | null
+          previous_status: boolean | null
+          reason: string | null
+          source: string | null
+          ticker: string
+        }
+        Insert: {
+          audited_at?: string | null
+          audited_by?: string | null
+          id?: number
+          issuer_id: string
+          issuer_name: string
+          new_status?: boolean | null
+          previous_status?: boolean | null
+          reason?: string | null
+          source?: string | null
+          ticker: string
+        }
+        Update: {
+          audited_at?: string | null
+          audited_by?: string | null
+          id?: number
+          issuer_id?: string
+          issuer_name?: string
+          new_status?: boolean | null
+          previous_status?: boolean | null
+          reason?: string | null
+          source?: string | null
+          ticker?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       v_evaluation_composite: {
