@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
+import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 import { AlertCircle, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 export function PariRunDetail() {
@@ -182,23 +183,41 @@ export function PariRunDetail() {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-4xl font-bold text-primary">
-              {pariRun["09_pari_score"] || 0}
-            </div>
-            <div className="text-sm text-muted-foreground">PARI Score</div>
+            {pariRun.isDataInvalid ? (
+              <WeeklyReadingError 
+                reason="RM = 0"
+                variant="inline"
+                className="flex-col items-end"
+              />
+            ) : (
+              <>
+                <div className="text-4xl font-bold text-primary">
+                  {pariRun["09_pari_score"] || 0}
+                </div>
+                <div className="text-sm text-muted-foreground">PARI Score</div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Data Update Information */}
-        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 text-sm">
-            <CheckCircle className="h-4 w-4" />
-            <span>
-              <strong>Actualización Semanal:</strong> Este análisis forma parte del proceso automático que se ejecuta cada domingo, 
-              garantizando la solidez y actualización constante de los datos reputacionales.
-            </span>
+        {/* Data Status Information */}
+        {pariRun.isDataInvalid ? (
+          <WeeklyReadingError
+            reason={pariRun.dataInvalidReason}
+            companyName={pariRun["03_target_name"]}
+            variant="card"
+          />
+        ) : (
+          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 text-sm">
+              <CheckCircle className="h-4 w-4" />
+              <span>
+                <strong>Actualización Semanal:</strong> Este análisis forma parte del proceso automático que se ejecuta cada domingo, 
+                garantizando la solidez y actualización constante de los datos reputacionales.
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -268,15 +287,20 @@ export function PariRunDetail() {
                               bgClass = "bg-insufficient/10";
                             }
 
+                            const isDataInvalid = pariRun.isDataInvalid;
+                            const rowOpacity = isDataInvalid ? 'opacity-50' : '';
+                            const adjustedColorClass = isDataInvalid ? 'text-muted-foreground' : colorClass;
+                            const adjustedBgClass = isDataInvalid ? 'bg-muted/10' : bgClass;
+
                             return (
-                              <tr key={metric.key} className={`border-b hover:bg-muted/50 ${bgClass}`}>
+                              <tr key={metric.key} className={`border-b hover:bg-muted/50 ${adjustedBgClass} ${rowOpacity}`}>
                                 <td className="p-3">
                                   <div>
                                     <div className="font-medium">{metric.label}</div>
                                     <div className="text-xs text-muted-foreground">{metric.fullName}</div>
                                   </div>
                                 </td>
-                                <td className={`p-3 text-center font-bold ${colorClass}`}>
+                                <td className={`p-3 text-center font-bold ${adjustedColorClass}`}>
                                   {metric.score || 0}
                                 </td>
                                 <td className="p-3 text-center text-muted-foreground">
@@ -285,7 +309,7 @@ export function PariRunDetail() {
                                 <td className="p-3 text-center">
                                   <Badge 
                                     variant="outline" 
-                                    className={`text-xs ${colorClass} border-current`}
+                                    className={`text-xs ${isDataInvalid ? 'text-muted-foreground border-muted' : `${colorClass} border-current`}`}
                                   >
                                     {metric.categoria}
                                   </Badge>

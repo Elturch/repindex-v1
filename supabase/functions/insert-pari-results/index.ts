@@ -347,6 +347,12 @@ serve(async (req) => {
     const insertPromises = validResults.map(async (result, originalIndex) => {
       console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)
       
+      // Check for RM = 0 condition early for logging
+      const rmScore = result.tabla.subscores.find(s => s.label_en_sigla.toLowerCase().includes('rm'))?.score || 0;
+      if (rmScore === 0) {
+        console.warn(`⚠️  WEEKLY READING ERROR: RM score is 0 for company "${result.meta.target_name}" (run_id: ${result.meta.run_id}). This indicates lack of recent information and will mark data as invalid.`);
+      }
+      
       // Log ticker mapping for debugging
       const mappedTicker = await mapCompanyNameToTicker(result.meta.target_name, result.meta.ticker);
       if (!mappedTicker) {

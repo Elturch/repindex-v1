@@ -12,13 +12,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory } from "lucide-react";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
 import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
 import { cn } from "@/lib/utils";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
+import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -349,18 +350,31 @@ export function Dashboard() {
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <span className="text-xl font-bold text-primary">
-                              {pariRun["09_pari_score"] || 0}
-                            </span>
-                          </div>
+                          {pariRun.isDataInvalid ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <AlertTriangle className="h-4 w-4 text-destructive" />
+                              <span className="text-sm text-destructive font-medium">
+                                Datos Obsoletos
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="text-xl font-bold text-primary">
+                                {pariRun["09_pari_score"] || 0}
+                              </span>
+                            </div>
+                          )}
                         </TableCell>
                         {metrics.map((metric) => {
                           const score = (pariRun as any)[metric.scoreKey];
                           const categoria = (pariRun as any)[metric.categoryKey];
+                          const isInvalid = pariRun.isDataInvalid;
+                          
                           return (
                             <TableCell key={metric.key} className="text-center">
-                              <div className={`px-2 py-1 rounded text-sm font-medium ${getCategoryColor(categoria)}`}>
+                              <div className={`px-2 py-1 rounded text-sm font-medium ${
+                                isInvalid ? 'bg-muted/20 text-muted-foreground' : getCategoryColor(categoria)
+                              }`}>
                                 {score || 0}
                               </div>
                             </TableCell>
@@ -400,69 +414,89 @@ export function Dashboard() {
                             <CardDescription className="text-xs">ID: {pariRun["01_run_id"]}</CardDescription>
                           )}
                         </div>
-                        <div className="text-right">
-                          <div className="text-3xl font-bold text-primary">
-                            {pariRun["09_pari_score"] || 0}
-                          </div>
-                          <div className="text-sm text-muted-foreground">PARI Score</div>
-                        </div>
+                         <div className="text-right">
+                           {pariRun.isDataInvalid ? (
+                             <div className="flex flex-col items-end gap-1">
+                               <div className="flex items-center gap-1 text-destructive">
+                                 <AlertTriangle className="h-4 w-4" />
+                                 <span className="text-sm font-medium">Obsoleto</span>
+                               </div>
+                               <div className="text-xs text-muted-foreground">Sin datos recientes</div>
+                             </div>
+                           ) : (
+                             <>
+                               <div className="text-3xl font-bold text-primary">
+                                 {pariRun["09_pari_score"] || 0}
+                               </div>
+                               <div className="text-sm text-muted-foreground">PARI Score</div>
+                             </>
+                           )}
+                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="space-y-3">
-                        {/* Metrics Grid */}
-                        <div className="grid grid-cols-4 gap-2">
-                          {metrics.map((metric) => {
-                            const score = (pariRun as any)[metric.scoreKey];
-                            const categoria = (pariRun as any)[metric.categoryKey];
-                            return (
-                              <div key={metric.key} className="text-center">
-                                <div className="text-xs text-muted-foreground mb-1">{metric.label}</div>
-                                <div className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(categoria)}`}>
-                                  {score || 0}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        
-                        {/* Company Info */}
-                        <div className="border-t pt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span className="text-muted-foreground">IBEX Family:</span>
-                            <span>{pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
-                          </div>
-                          <div className="flex justify-between text-xs mb-2">
-                            <span className="text-muted-foreground">Sector:</span>
-                            <span>{pariRun.repindex_root_issuers?.sector_category || "N/A"}</span>
-                          </div>
-                        </div>
-                        
-                        {/* Quality Flags */}
-                        <div className="border-t pt-2">
-                          <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
-                          <div className="flex flex-wrap gap-1">
-                            {(() => {
-                              // Parse flags - handle both strings and arrays
-                              const flagsData = pariRun["17_flags"];
-                              const flags = !flagsData ? [] : 
-                                           Array.isArray(flagsData) ? flagsData : 
-                                           typeof flagsData === 'string' ? [flagsData] : [];
-                              
-                              return flags.length > 0 ? (
-                                flags.map((flag, index) => (
-                                  <Badge key={index} variant="outline" className="text-xs">
-                                    {normalizeFlag(flag)}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <span className="text-xs text-muted-foreground">Sin flags</span>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
+                     <CardContent className="pt-0">
+                       {pariRun.isDataInvalid ? (
+                         <WeeklyReadingError 
+                           reason={pariRun.dataInvalidReason}
+                           variant="banner"
+                           className="text-center"
+                         />
+                       ) : (
+                         <div className="space-y-3">
+                           {/* Metrics Grid */}
+                           <div className="grid grid-cols-4 gap-2">
+                             {metrics.map((metric) => {
+                               const score = (pariRun as any)[metric.scoreKey];
+                               const categoria = (pariRun as any)[metric.categoryKey];
+                               return (
+                                 <div key={metric.key} className="text-center">
+                                   <div className="text-xs text-muted-foreground mb-1">{metric.label}</div>
+                                   <div className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(categoria)}`}>
+                                     {score || 0}
+                                   </div>
+                                 </div>
+                               );
+                             })}
+                           </div>
+                           
+                           {/* Company Info */}
+                           <div className="border-t pt-2">
+                             <div className="flex justify-between text-xs mb-1">
+                               <span className="text-muted-foreground">IBEX Family:</span>
+                               <span>{pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
+                             </div>
+                             <div className="flex justify-between text-xs mb-2">
+                               <span className="text-muted-foreground">Sector:</span>
+                               <span>{pariRun.repindex_root_issuers?.sector_category || "N/A"}</span>
+                             </div>
+                           </div>
+                           
+                           {/* Quality Flags */}
+                           <div className="border-t pt-2">
+                             <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
+                             <div className="flex flex-wrap gap-1">
+                               {(() => {
+                                 // Parse flags - handle both strings and arrays
+                                 const flagsData = pariRun["17_flags"];
+                                 const flags = !flagsData ? [] : 
+                                              Array.isArray(flagsData) ? flagsData : 
+                                              typeof flagsData === 'string' ? [flagsData] : [];
+                                 
+                                 return flags.length > 0 ? (
+                                   flags.map((flag, index) => (
+                                     <Badge key={index} variant="outline" className="text-xs">
+                                       {normalizeFlag(flag)}
+                                     </Badge>
+                                   ))
+                                 ) : (
+                                   <span className="text-xs text-muted-foreground">Sin flags</span>
+                                 );
+                               })()}
+                             </div>
+                           </div>
+                         </div>
+                       )}
+                     </CardContent>
                   </Card>
                 ))}
               </div>

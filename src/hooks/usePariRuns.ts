@@ -52,6 +52,9 @@ export interface PariRun {
   "45_mpi_peso"?: number;
   "46_mpi_categoria"?: string;
   "47_fase"?: string;
+  // Computed validation flags
+  isDataInvalid?: boolean;
+  dataInvalidReason?: string;
   repindex_root_issuers?: {
     ticker?: string;
     ibex_family_code?: string;
@@ -126,13 +129,19 @@ export function usePariRuns(
         });
       }
 
-      // Join the data
-      const joinedData = pariData?.map(pariRun => ({
-        ...pariRun,
-        repindex_root_issuers: pariRun["05_ticker"] ? 
-          repindexMap.get(pariRun["05_ticker"]) || null : 
-          null
-      }));
+      // Join the data and add validation flags
+      const joinedData = pariData?.map(pariRun => {
+        const isRmZero = pariRun["32_rm_score"] === 0;
+        
+        return {
+          ...pariRun,
+          repindex_root_issuers: pariRun["05_ticker"] ? 
+            repindexMap.get(pariRun["05_ticker"]) || null : 
+            null,
+          isDataInvalid: isRmZero,
+          dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined
+        };
+      });
 
       // Apply sector filter after joining the data
       let filteredData = joinedData;
@@ -166,7 +175,9 @@ export function usePariRun(id: string) {
         throw new Error("PARI run not found");
       }
 
-      // Get repindex data to join with pari_run
+      // Get repindex data to join with pari_run and add validation flags
+      const isRmZero = data["32_rm_score"] === 0;
+      
       if (data["05_ticker"]) {
         const { data: repindexData, error: repindexError } = await supabase
           .from("repindex_root_issuers")
@@ -181,12 +192,19 @@ export function usePariRun(id: string) {
               ticker: repindexData.ticker,
               ibex_family_code: repindexData.ibex_family_code,
               sector_category: repindexData.sector_category
-            }
+            },
+            isDataInvalid: isRmZero,
+            dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined
           } as PariRun;
         }
       }
 
-      return { ...data, repindex_root_issuers: null } as PariRun;
+      return { 
+        ...data, 
+        repindex_root_issuers: null,
+        isDataInvalid: isRmZero,
+        dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined
+      } as PariRun;
     },
     enabled: !!id,
   });
