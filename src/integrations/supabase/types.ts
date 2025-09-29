@@ -335,9 +335,11 @@ export type Database = {
           "20_res_gpt_bruto": string | null
           "21_res_perplex_bruto": string | null
           "22_explicacion": string | null
-          "23_explicaciones_detalladas": Json | null
+          "22_res_gemini_bruto": string | null
           "23_lns_score": number | null
+          "23_res_deepseek_bruto": string | null
           "24_lns_peso": number | null
+          "25_explicaciones_detalladas": Json | null
           "25_lns_categoria": string | null
           "26_es_score": number | null
           "27_es_peso": number | null
@@ -392,9 +394,11 @@ export type Database = {
           "20_res_gpt_bruto"?: string | null
           "21_res_perplex_bruto"?: string | null
           "22_explicacion"?: string | null
-          "23_explicaciones_detalladas"?: Json | null
+          "22_res_gemini_bruto"?: string | null
           "23_lns_score"?: number | null
+          "23_res_deepseek_bruto"?: string | null
           "24_lns_peso"?: number | null
+          "25_explicaciones_detalladas"?: Json | null
           "25_lns_categoria"?: string | null
           "26_es_score"?: number | null
           "27_es_peso"?: number | null
@@ -449,9 +453,11 @@ export type Database = {
           "20_res_gpt_bruto"?: string | null
           "21_res_perplex_bruto"?: string | null
           "22_explicacion"?: string | null
-          "23_explicaciones_detalladas"?: Json | null
+          "22_res_gemini_bruto"?: string | null
           "23_lns_score"?: number | null
+          "23_res_deepseek_bruto"?: string | null
           "24_lns_peso"?: number | null
+          "25_explicaciones_detalladas"?: Json | null
           "25_lns_categoria"?: string | null
           "26_es_score"?: number | null
           "27_es_peso"?: number | null
