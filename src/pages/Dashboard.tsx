@@ -118,6 +118,34 @@ export function Dashboard() {
     return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // Helper function to get AI model information
+  const getModelInfo = (modelName: string) => {
+    const normalizedModel = modelName?.toLowerCase() || '';
+    
+    if (normalizedModel.includes('chatgpt') || normalizedModel.includes('gpt')) {
+      return {
+        name: 'ChatGPT',
+        abbreviation: 'GPT',
+        icon: ChatGPTIcon,
+        colorClass: 'text-emerald-600 dark:text-emerald-400'
+      };
+    } else if (normalizedModel.includes('perplexity')) {
+      return {
+        name: 'Perplexity', 
+        abbreviation: 'PPX',
+        icon: PerplexityIcon,
+        colorClass: 'text-blue-600 dark:text-blue-400'
+      };
+    }
+    
+    return {
+      name: 'Desconocido',
+      abbreviation: 'N/A',
+      icon: Brain,
+      colorClass: 'text-muted-foreground'
+    };
+  };
+
   if (isLoading) {
   return (
     <Layout title="Repindex.ai">
@@ -319,6 +347,9 @@ export function Dashboard() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-48">Empresa</TableHead>
+                      {aiFilter === "all" && (
+                        <TableHead className="text-center w-24">Modelo IA</TableHead>
+                      )}
                       <TableHead className="text-center">PARI</TableHead>
                       {metrics.map((metric) => (
                         <TableHead key={metric.key} className="text-center w-16">
@@ -349,6 +380,22 @@ export function Dashboard() {
                             )}
                           </div>
                         </TableCell>
+                        {aiFilter === "all" && (
+                          <TableCell className="text-center">
+                            {(() => {
+                              const modelInfo = getModelInfo(pariRun["02_model_name"] || '');
+                              const ModelIcon = modelInfo.icon;
+                              return (
+                                <div className="flex items-center justify-center gap-1">
+                                  <ModelIcon className={cn("h-4 w-4", modelInfo.colorClass)} />
+                                  <span className={cn("text-xs font-medium", modelInfo.colorClass)}>
+                                    {modelInfo.name}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
+                        )}
                         <TableCell className="text-center">
                           {pariRun.isDataInvalid ? (
                             <div className="flex items-center justify-center gap-1">
@@ -414,7 +461,23 @@ export function Dashboard() {
                             <CardDescription className="text-xs">ID: {pariRun["01_run_id"]}</CardDescription>
                           )}
                         </div>
-                         <div className="text-right">
+                         <div className="text-right relative">
+                           {/* AI Model Badge for "all" view */}
+                           {aiFilter === "all" && (
+                             <div className="absolute -top-2 -right-2">
+                               {(() => {
+                                 const modelInfo = getModelInfo(pariRun["02_model_name"] || '');
+                                 const ModelIcon = modelInfo.icon;
+                                 return (
+                                   <Badge variant="outline" className={cn("text-xs px-2 py-1", modelInfo.colorClass)}>
+                                     <ModelIcon className="h-3 w-3 mr-1" />
+                                     {modelInfo.abbreviation}
+                                   </Badge>
+                                 );
+                               })()}
+                             </div>
+                           )}
+                           
                            {pariRun.isDataInvalid ? (
                              <div className="flex flex-col items-end gap-1">
                                <div className="flex items-center gap-1 text-destructive">
