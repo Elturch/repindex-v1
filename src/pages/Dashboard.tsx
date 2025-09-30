@@ -19,6 +19,8 @@ import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-
 import { cn } from "@/lib/utils";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
+import { GeminiIcon } from "@/components/ui/gemini-icon";
+import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 
 export function Dashboard() {
@@ -129,12 +131,26 @@ export function Dashboard() {
         icon: ChatGPTIcon,
         colorClass: 'text-emerald-600 dark:text-emerald-400'
       };
+    } else if (normalizedModel.includes('gemini')) {
+      return {
+        name: 'Google Gemini',
+        abbreviation: 'GMN',
+        icon: GeminiIcon,
+        colorClass: 'text-[hsl(var(--gemini))]'
+      };
     } else if (normalizedModel.includes('perplexity')) {
       return {
         name: 'Perplexity', 
         abbreviation: 'PPX',
         icon: PerplexityIcon,
         colorClass: 'text-blue-600 dark:text-blue-400'
+      };
+    } else if (normalizedModel.includes('deepseek')) {
+      return {
+        name: 'Deepseek',
+        abbreviation: 'DSK',
+        icon: DeepseekIcon,
+        colorClass: 'text-[hsl(var(--deepseek))]'
       };
     }
     
@@ -217,6 +233,15 @@ export function Dashboard() {
               ChatGPT
             </Button>
             <Button
+              variant={aiFilter === "Google Gemini" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setAIFilter("Google Gemini")}
+              className="flex items-center gap-2"
+            >
+              <GeminiIcon className="h-4 w-4" />
+              Google Gemini
+            </Button>
+            <Button
               variant={aiFilter === "Perplexity" ? "default" : "ghost"}
               size="sm"
               onClick={() => setAIFilter("Perplexity")}
@@ -224,6 +249,15 @@ export function Dashboard() {
             >
               <PerplexityIcon className="h-4 w-4" />
               Perplexity
+            </Button>
+            <Button
+              variant={aiFilter === "Deepseek" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setAIFilter("Deepseek")}
+              className="flex items-center gap-2"
+            >
+              <DeepseekIcon className="h-4 w-4" />
+              Deepseek
             </Button>
           </div>
 

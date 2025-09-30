@@ -13,7 +13,9 @@ import { RadarChartComparison } from "@/components/ui/radar-chart";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
+import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
+import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 import { AlertCircle, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -140,6 +142,45 @@ export function PariRunDetail() {
     }
     
     return false;
+  };
+
+  // Get all AI responses in the specified order: ChatGPT, Google Gemini, Perplexity, Deepseek
+  const getAIResponses = () => {
+    const responses = [];
+    
+    if (pariRun["20_res_gpt_bruto"]) {
+      responses.push({
+        model: "ChatGPT",
+        content: pariRun["20_res_gpt_bruto"],
+        icon: ChatGPTIcon
+      });
+    }
+    
+    if (pariRun["22_res_gemini_bruto"]) {
+      responses.push({
+        model: "Google Gemini",
+        content: pariRun["22_res_gemini_bruto"],
+        icon: GeminiIcon
+      });
+    }
+    
+    if (pariRun["21_res_perplex_bruto"]) {
+      responses.push({
+        model: "Perplexity",
+        content: pariRun["21_res_perplex_bruto"],
+        icon: PerplexityIcon
+      });
+    }
+    
+    if (pariRun["23_res_deepseek_bruto"]) {
+      responses.push({
+        model: "Deepseek",
+        content: pariRun["23_res_deepseek_bruto"],
+        icon: DeepseekIcon
+      });
+    }
+    
+    return responses;
   };
 
   return (
@@ -374,34 +415,45 @@ export function PariRunDetail() {
                 <CardTitle className="text-lg">Análisis IA</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Show only the AI response for the corresponding model */}
-                {pariRun["02_model_name"] === "ChatGPT" && pariRun["20_res_gpt_bruto"] !== null && (
-                  <AIResponseDialog
-                    title="Así contestó ChatGPT"
-                    content={pariRun["20_res_gpt_bruto"]}
-                    icon={ChatGPTIcon}
-                    createdAt={pariRun.created_at}
-                    periodFrom={pariRun["06_period_from"]}
-                    periodTo={pariRun["07_period_to"]}
-                  />
-                )}
-                
-                {pariRun["02_model_name"] === "Perplexity" && pariRun["21_res_perplex_bruto"] && (
-                  <AIResponseDialog
-                    title="Así contestó Perplexity"
-                    content={pariRun["21_res_perplex_bruto"]}
-                    icon={PerplexityIcon}
-                    createdAt={pariRun.created_at}
-                    periodFrom={pariRun["06_period_from"]}
-                    periodTo={pariRun["07_period_to"]}
-                  />
-                )}
+                {/* Show AI responses dynamically based on what's available */}
+                {(() => {
+                  const responses = getAIResponses();
+                  const currentModel = pariRun["02_model_name"];
+                  
+                  return responses.map((response, index) => {
+                    // Check if this is a duplicate of a previous response
+                    const isDuplicate = responses
+                      .slice(0, index)
+                      .some(prevResp => isDuplicateContent(prevResp.content, response.content));
+                    
+                    if (isDuplicate) return null;
+                    
+                    const isPrimary = response.model === currentModel;
+                    const title = isPrimary 
+                      ? `Así contestó ${response.model}`
+                      : `Respuesta ${response.model} (comparación)`;
+                    
+                    return (
+                      <AIResponseDialog
+                        key={response.model}
+                        title={title}
+                        content={response.content}
+                        icon={response.icon}
+                        createdAt={pariRun.created_at}
+                        periodFrom={pariRun["06_period_from"]}
+                        periodTo={pariRun["07_period_to"]}
+                      />
+                    );
+                  });
+                })()}
                 
                 {/* Methodological explanation - only show if different from model responses */}
                 {pariRun["22_explicacion"] && !isDuplicateContent(
                   pariRun["22_explicacion"], 
                   pariRun["20_res_gpt_bruto"], 
-                  pariRun["21_res_perplex_bruto"]
+                  pariRun["22_res_gemini_bruto"],
+                  pariRun["21_res_perplex_bruto"],
+                  pariRun["23_res_deepseek_bruto"]
                 ) && (
                   <AIResponseDialog
                     title="Ver Explicación Metodológica"
@@ -412,19 +464,21 @@ export function PariRunDetail() {
                   />
                 )}
 
-                {/* Detailed explanations - only if different from above */}
-                {pariRun["23_explicaciones_detalladas"] && 
-                 Array.isArray(pariRun["23_explicaciones_detalladas"]) && 
-                 pariRun["23_explicaciones_detalladas"].length > 0 &&
+                {/* Detailed explanations - BUG FIX: Changed from 23_ to 25_ */}
+                {pariRun["25_explicaciones_detalladas"] && 
+                 Array.isArray(pariRun["25_explicaciones_detalladas"]) && 
+                 pariRun["25_explicaciones_detalladas"].length > 0 &&
                  !isDuplicateContent(
-                   pariRun["23_explicaciones_detalladas"].join('\n'), 
+                   pariRun["25_explicaciones_detalladas"].join('\n'), 
                    pariRun["22_explicacion"], 
                    pariRun["20_res_gpt_bruto"], 
-                   pariRun["21_res_perplex_bruto"]
+                   pariRun["22_res_gemini_bruto"],
+                   pariRun["21_res_perplex_bruto"],
+                   pariRun["23_res_deepseek_bruto"]
                  ) && (
                   <AIResponseDialog
                     title="Ver Análisis Detallado por Métrica"
-                    content={pariRun["23_explicaciones_detalladas"].join('\n\n')}
+                    content={pariRun["25_explicaciones_detalladas"].join('\n\n')}
                     createdAt={pariRun.created_at}
                     periodFrom={pariRun["06_period_from"]}
                     periodTo={pariRun["07_period_to"]}

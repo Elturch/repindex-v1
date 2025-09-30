@@ -47,8 +47,12 @@ All colors MUST be HSL.
     /* RepIndex specific colors */
     --chatgpt: 158 64% 52%;
     --chatgpt-foreground: 0 0% 100%;
+    --gemini: 217 89% 61%;
+    --gemini-foreground: 0 0% 100%;
     --perplexity: 221 83% 53%;
     --perplexity-foreground: 0 0% 100%;
+    --deepseek: 219 95% 64%;
+    --deepseek-foreground: 0 0% 100%;
     --neutral: 215 16% 47%;
     --neutral-foreground: 0 0% 100%;
     --excellent: 158 64% 52%;
@@ -98,8 +102,12 @@ All colors MUST be HSL.
     /* RepIndex specific colors - dark mode */
     --chatgpt: 158 64% 52%;
     --chatgpt-foreground: 0 0% 100%;
+    --gemini: 217 89% 61%;
+    --gemini-foreground: 0 0% 100%;
     --perplexity: 221 83% 53%;
     --perplexity-foreground: 0 0% 100%;
+    --deepseek: 219 95% 64%;
+    --deepseek-foreground: 0 0% 100%;
     --neutral: 215 16% 47%;
     --neutral-foreground: 0 0% 100%;
     --excellent: 158 64% 52%;

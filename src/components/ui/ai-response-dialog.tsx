@@ -3,7 +3,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
+import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
+import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 
 interface AIResponseDialogProps {
   title: string;
