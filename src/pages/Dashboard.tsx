@@ -376,7 +376,7 @@ export function Dashboard() {
         {!isLoading && !error && pariRuns && pariRuns.length > 0 && aiFilter !== "comparison" && (
           <>
             {viewMode === "list" && (
-              <div className="rounded-md border overflow-x-auto">
+              <div className="rounded-md border overflow-x-auto shadow-card">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -398,7 +398,7 @@ export function Dashboard() {
                     {pariRuns.map((pariRun) => (
                       <TableRow 
                         key={pariRun.id} 
-                        className="cursor-pointer hover:bg-muted/50"
+                        className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
                         onClick={() => handleRowClick(pariRun.id)}
                       >
                         <TableCell>
@@ -484,7 +484,7 @@ export function Dashboard() {
                 {pariRuns.map((pariRun) => (
                   <Card 
                     key={pariRun.id} 
-                    className="cursor-pointer hover:shadow-md transition-shadow"
+                    className="cursor-pointer shadow-card hover:shadow-card-hover transition-all duration-200"
                     onClick={() => handleRowClick(pariRun.id)}
                   >
                     <CardHeader className="pb-3">
