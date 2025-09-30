@@ -1,6 +1,6 @@
 import React from "react";
 import { cn } from "@/lib/utils";
-import deepseekLogo from "@/assets/deepseek-logo.jpeg";
+import deepseekLogo from "@/assets/deepseek-logo.png";
 
 interface DeepseekIconProps {
   className?: string;
@@ -14,7 +14,7 @@ export function DeepseekIcon({ className, size = 16 }: DeepseekIconProps) {
       alt="Deepseek"
       width={size}
       height={size}
-      className={cn("rounded-sm object-contain", className)}
+      className={cn("object-contain", className)}
     />
   );
 }
