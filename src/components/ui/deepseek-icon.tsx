@@ -8,12 +8,15 @@ interface DeepseekIconProps {
 }
 
 export function DeepseekIcon({ className, size = 16 }: DeepseekIconProps) {
+  // Increase size by 25% to match other icons' visual weight
+  const adjustedSize = Math.round(size * 1.25);
+  
   return (
     <img
       src={deepseekLogo}
       alt="Deepseek"
-      width={size}
-      height={size}
+      width={adjustedSize}
+      height={adjustedSize}
       className={cn("object-contain", className)}
     />
   );
