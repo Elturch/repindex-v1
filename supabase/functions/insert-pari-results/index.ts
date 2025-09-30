@@ -417,21 +417,28 @@ serve(async (req) => {
               break
             case 'mpi':
               // Check if MPI score is "no aplica" or similar text (handle both score and categoria fields)
-              const mpiScoreStr = String(subscore.score).toLowerCase().trim();
+              const mpiScoreRaw = subscore.score;
+              const mpiScoreStr = String(mpiScoreRaw).toLowerCase().trim();
               const mpiCategoria = subscore.categoria?.toLowerCase().trim() || '';
-              const isMpiNoAplicaScore = mpiScoreStr === 'no_aplica' || mpiScoreStr === 'no aplica' || mpiScoreStr === 'n/a' || mpiScoreStr === 'na';
-              const isMpiNoAplicaCategoria = mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na';
+              
+              // Check for "no aplica" patterns in both score and categoria
+              const noAplicaPatterns = ['no_aplica', 'no aplica', 'n/a', 'na', 'no-aplica', 'noapplica'];
+              const isMpiNoAplicaScore = noAplicaPatterns.some(pattern => mpiScoreStr.includes(pattern)) || 
+                                         isNaN(Number(mpiScoreRaw));
+              const isMpiNoAplicaCategoria = noAplicaPatterns.some(pattern => mpiCategoria.includes(pattern));
               const isMpiNoAplica = isMpiNoAplicaScore || isMpiNoAplicaCategoria;
               
               if (isMpiNoAplica) {
-                console.log(`⚠️  MPI "no aplica" detected in ${isMpiNoAplicaScore ? 'score' : 'categoria'} field for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
+                console.log(`⚠️  MPI "no aplica" detected (score: "${mpiScoreRaw}", categoria: "${subscore.categoria}") for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
                 metricsMap["44_mpi_score"] = 0;
-                metricsMap["45_mpi_peso"] = subscore.peso; // Keep original weight for reference
-                metricsMap["46_mpi_categoria"] = isMpiNoAplicaScore ? 'no aplica' : subscore.categoria; // Normalize categoria if detected in score
+                metricsMap["45_mpi_peso"] = subscore.peso || 0; // Keep original weight for reference
+                metricsMap["46_mpi_categoria"] = 'no aplica'; // Always normalize to consistent format
               } else {
-                metricsMap["44_mpi_score"] = subscore.score;
-                metricsMap["45_mpi_peso"] = subscore.peso;
-                metricsMap["46_mpi_categoria"] = subscore.categoria;
+                // Parse score as number to ensure it's an integer
+                const parsedScore = Number(subscore.score);
+                metricsMap["44_mpi_score"] = isNaN(parsedScore) ? 0 : Math.round(parsedScore);
+                metricsMap["45_mpi_peso"] = subscore.peso || 0;
+                metricsMap["46_mpi_categoria"] = subscore.categoria || null;
               }
               break
           }
