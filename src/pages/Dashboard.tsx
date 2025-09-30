@@ -500,10 +500,10 @@ export function Dashboard() {
                             <CardDescription className="text-xs">ID: {pariRun["01_run_id"]}</CardDescription>
                           )}
                         </div>
-                         <div className="text-right relative">
+                        <div className="text-right relative">
                            {/* AI Model Badge for "all" view */}
                            {aiFilter === "all" && (
-                             <div className="absolute -top-2 -right-2">
+                             <div className="mb-2">
                                {(() => {
                                  const modelInfo = getModelInfo(pariRun["02_model_name"] || '');
                                  const ModelIcon = modelInfo.icon;
