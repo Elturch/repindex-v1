@@ -14,6 +14,60 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_consolidation_reports: {
+        Row: {
+          common_media_sources: Json
+          company_name: string
+          consensus_score: number | null
+          created_at: string
+          divergences: Json
+          full_analysis: string | null
+          id: string
+          main_coincidences: Json
+          media_ranking: Json
+          models_analyzed: string[]
+          temporal_patterns: Json
+          ticker: string | null
+          total_sources_found: number | null
+          week_end: string
+          week_start: string
+        }
+        Insert: {
+          common_media_sources?: Json
+          company_name: string
+          consensus_score?: number | null
+          created_at?: string
+          divergences?: Json
+          full_analysis?: string | null
+          id?: string
+          main_coincidences?: Json
+          media_ranking?: Json
+          models_analyzed?: string[]
+          temporal_patterns?: Json
+          ticker?: string | null
+          total_sources_found?: number | null
+          week_end: string
+          week_start: string
+        }
+        Update: {
+          common_media_sources?: Json
+          company_name?: string
+          consensus_score?: number | null
+          created_at?: string
+          divergences?: Json
+          full_analysis?: string | null
+          id?: string
+          main_coincidences?: Json
+          media_ranking?: Json
+          models_analyzed?: string[]
+          temporal_patterns?: Json
+          ticker?: string | null
+          total_sources_found?: number | null
+          week_end?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       by_metric: {
         Row: {
           contrib_points_chatgpt: number

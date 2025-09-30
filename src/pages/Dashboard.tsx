@@ -4,6 +4,7 @@ import { Layout } from "@/components/layout/Layout";
 import { usePariRuns } from "@/hooks/usePariRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
+import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -613,18 +614,9 @@ export function Dashboard() {
           </>
         )}
 
-        {/* Comparison View - Coming Soon */}
+        {/* Comparison View - AI Consolidation Analysis */}
         {!isLoading && !error && aiFilter === "comparison" && (
-          <div className="text-center py-12">
-            <div className="max-w-md mx-auto space-y-4">
-              <BarChart3 className="h-16 w-16 text-muted-foreground mx-auto" />
-              <h3 className="text-2xl font-semibold">Vista de Comparación</h3>
-              <p className="text-muted-foreground">
-                La vista de comparación entre ChatGPT y Perplexity estará disponible próximamente. 
-                Esta funcionalidad permitirá ver los resultados de ambos modelos lado a lado.
-              </p>
-            </div>
-          </div>
+          <ConsolidationAnalysis />
         )}
       </div>
     </Layout>

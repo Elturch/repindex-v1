@@ -1,1 +1,7 @@
 project_id = "jzkjykmrwisijiqlwuua"
+
+[functions.insert-pari-results]
+verify_jwt = false
+
+[functions.ai-consolidation-analysis]
+verify_jwt = false
