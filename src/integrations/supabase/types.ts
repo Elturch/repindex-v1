@@ -366,6 +366,8 @@ export type Database = {
           "48_precio_accion": string | null
           "49_reputacion_vs_precio": string | null
           "50_precio_accion_interanual": string | null
+          "51_pari_score_adjusted": number | null
+          "52_mpi_excluded": boolean | null
           "59_precio_minimo_52_semanas": string | null
           created_at: string
           id: string
@@ -425,6 +427,8 @@ export type Database = {
           "48_precio_accion"?: string | null
           "49_reputacion_vs_precio"?: string | null
           "50_precio_accion_interanual"?: string | null
+          "51_pari_score_adjusted"?: number | null
+          "52_mpi_excluded"?: boolean | null
           "59_precio_minimo_52_semanas"?: string | null
           created_at?: string
           id?: string
@@ -484,6 +488,8 @@ export type Database = {
           "48_precio_accion"?: string | null
           "49_reputacion_vs_precio"?: string | null
           "50_precio_accion_interanual"?: string | null
+          "51_pari_score_adjusted"?: number | null
+          "52_mpi_excluded"?: boolean | null
           "59_precio_minimo_52_semanas"?: string | null
           created_at?: string
           id?: string

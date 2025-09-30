@@ -416,13 +416,65 @@ serve(async (req) => {
               metricsMap["43_kgi_categoria"] = subscore.categoria
               break
             case 'mpi':
-              metricsMap["44_mpi_score"] = subscore.score
-              metricsMap["45_mpi_peso"] = subscore.peso
-              metricsMap["46_mpi_categoria"] = subscore.categoria
+              // Check if MPI is "no aplica" (case-insensitive)
+              const mpiCategoria = subscore.categoria?.toLowerCase().trim() || '';
+              const isMpiNoAplica = mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na';
+              
+              if (isMpiNoAplica) {
+                console.log(`⚠️  MPI "no aplica" detected for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
+                metricsMap["44_mpi_score"] = 0;
+                metricsMap["45_mpi_peso"] = subscore.peso; // Keep original weight for reference
+                metricsMap["46_mpi_categoria"] = subscore.categoria; // Keep original text
+              } else {
+                metricsMap["44_mpi_score"] = subscore.score;
+                metricsMap["45_mpi_peso"] = subscore.peso;
+                metricsMap["46_mpi_categoria"] = subscore.categoria;
+              }
               break
           }
         }
       })
+
+      // Check if MPI "no aplica" and recalculate PARI if necessary
+      const mpiCategoria = metricsMap["46_mpi_categoria"]?.toLowerCase().trim() || '';
+      const isMpiNoAplica = mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na';
+      
+      let adjustedPariScore: number | null = null;
+      let mpiExcluded = false;
+      
+      if (isMpiNoAplica) {
+        console.log(`🔄 Recalculating PARI score without MPI for company "${result.meta.target_name}"`);
+        
+        // Extract all metric scores and weights (excluding MPI)
+        const metrics = [
+          { score: metricsMap["23_lns_score"], peso: metricsMap["24_lns_peso"] },
+          { score: metricsMap["26_es_score"], peso: metricsMap["27_es_peso"] },
+          { score: metricsMap["29_sam_score"], peso: metricsMap["30_sam_peso"] },
+          { score: metricsMap["32_rm_score"], peso: metricsMap["33_rm_peso"] },
+          { score: metricsMap["35_clr_score"], peso: metricsMap["36_clr_peso"] },
+          { score: metricsMap["38_gip_score"], peso: metricsMap["39_gip_peso"] },
+          { score: metricsMap["41_kgi_score"], peso: metricsMap["42_kgi_peso"] }
+        ];
+        
+        // Calculate total weight without MPI
+        const totalWeightWithoutMpi = metrics.reduce((sum, m) => sum + (m.peso || 0), 0);
+        
+        if (totalWeightWithoutMpi > 0) {
+          // Calculate weighted average without MPI
+          const weightedSum = metrics.reduce((sum, m) => {
+            const score = m.score ?? 0;
+            const peso = m.peso ?? 0;
+            return sum + (score * peso);
+          }, 0);
+          
+          adjustedPariScore = Math.round(weightedSum / totalWeightWithoutMpi);
+          mpiExcluded = true;
+          
+          console.log(`✅ Adjusted PARI score (without MPI): ${adjustedPariScore} (original: ${result.tabla.pari})`);
+        } else {
+          console.warn(`⚠️  Could not calculate adjusted PARI - total weight is 0`);
+        }
+      }
 
       // Extract detailed explanations from subscores
       const detailedExplanations = result.tabla.subscores
@@ -453,8 +505,10 @@ serve(async (req) => {
         "20_res_gpt_bruto": result.relato_mini['res-gpt-bruto'] || null,
         "21_res_perplex_bruto": result.relato_mini['res-perplex-bruto'] || null,
         "22_explicacion": processExplanationField(result.relato_mini.explicacion),
-        "23_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
+        "25_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
         "47_fase": result.meta.target_type || null,
+        "51_pari_score_adjusted": adjustedPariScore,
+        "52_mpi_excluded": mpiExcluded,
         ...metricsMap
       }
 

@@ -405,10 +405,15 @@ export function Dashboard() {
                               </span>
                             </div>
                           ) : (
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex flex-col items-center justify-center gap-1">
                               <span className="text-xl font-bold text-primary">
-                                {pariRun["09_pari_score"] || 0}
+                                {pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0}
                               </span>
+                              {pariRun["52_mpi_excluded"] && (
+                                <span className="text-[10px] text-muted-foreground italic">
+                                  (sin MPI)
+                                </span>
+                              )}
                             </div>
                           )}
                         </TableCell>
@@ -478,22 +483,29 @@ export function Dashboard() {
                              </div>
                            )}
                            
-                           {pariRun.isDataInvalid ? (
-                             <div className="flex flex-col items-end gap-1">
-                               <div className="flex items-center gap-1 text-destructive">
-                                 <AlertTriangle className="h-4 w-4" />
-                                 <span className="text-sm font-medium">Obsoleto</span>
-                               </div>
-                               <div className="text-xs text-muted-foreground">Sin datos recientes</div>
-                             </div>
-                           ) : (
-                             <>
-                               <div className="text-3xl font-bold text-primary">
-                                 {pariRun["09_pari_score"] || 0}
-                               </div>
-                               <div className="text-sm text-muted-foreground">PARI Score</div>
-                             </>
-                           )}
+                            {pariRun.isDataInvalid ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="flex items-center gap-1 text-destructive">
+                                  <AlertTriangle className="h-4 w-4" />
+                                  <span className="text-sm font-medium">Obsoleto</span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">Sin datos recientes</div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex flex-col items-center">
+                                  <div className="text-3xl font-bold text-primary">
+                                    {pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">PARI Score</div>
+                                  {pariRun["52_mpi_excluded"] && (
+                                    <div className="text-xs text-muted-foreground italic mt-1">
+                                      (MPI no aplicable)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
                          </div>
                       </div>
                     </CardHeader>

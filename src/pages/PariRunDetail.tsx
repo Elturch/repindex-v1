@@ -68,7 +68,7 @@ export function PariRunDetail() {
   }
 
   const metrics = [
-    { key: 'pari', label: 'Índice PARI', fullName: 'Public Attention Reputational Index', score: pariRun["09_pari_score"], peso: 100, categoria: pariRun["09_pari_score"] >= 70 ? 'Bueno' : pariRun["09_pari_score"] >= 40 ? 'Mejorable' : 'Insuficiente' },
+    { key: 'pari', label: 'Índice PARI', fullName: 'Public Attention Reputational Index', score: pariRun.displayPariScore ?? pariRun["09_pari_score"], peso: 100, categoria: (pariRun.displayPariScore ?? pariRun["09_pari_score"]) >= 70 ? 'Bueno' : (pariRun.displayPariScore ?? pariRun["09_pari_score"]) >= 40 ? 'Mejorable' : 'Insuficiente' },
     { key: 'lns', label: 'Calidad de la Narrativa', fullName: 'LLM Narrative Score', score: pariRun["23_lns_score"], peso: pariRun["24_lns_peso"], categoria: pariRun["25_lns_categoria"] },
     { key: 'es', label: 'Fortaleza de Evidencia', fullName: 'Evidence Strength', score: pariRun["26_es_score"], peso: pariRun["27_es_peso"], categoria: pariRun["28_es_categoria"] },
     { key: 'sam', label: 'Autoridad de Fuentes', fullName: 'Source Authority Mix', score: pariRun["29_sam_score"], peso: pariRun["30_sam_peso"], categoria: pariRun["31_sam_categoria"] },
@@ -191,10 +191,17 @@ export function PariRunDetail() {
               />
             ) : (
               <>
-                <div className="text-4xl font-bold text-primary">
-                  {pariRun["09_pari_score"] || 0}
+                <div className="flex flex-col items-end">
+                  <div className="text-4xl font-bold text-primary">
+                    {pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0}
+                  </div>
+                  <div className="text-sm text-muted-foreground">PARI Score</div>
+                  {pariRun["52_mpi_excluded"] && (
+                    <div className="text-xs text-muted-foreground italic mt-1">
+                      (MPI no aplicable)
+                    </div>
+                  )}
                 </div>
-                <div className="text-sm text-muted-foreground">PARI Score</div>
               </>
             )}
           </div>
@@ -229,7 +236,7 @@ export function PariRunDetail() {
             {pariRun && marketAverages && (
               <RadarChartComparison
                 companyData={{
-                  pari: pariRun["09_pari_score"] || 0,
+                  pari: pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0,
                   lns: pariRun["23_lns_score"] || 0,
                   es: pariRun["26_es_score"] || 0,
                   sam: pariRun["29_sam_score"] || 0,

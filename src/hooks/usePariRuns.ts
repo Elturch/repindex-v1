@@ -52,9 +52,12 @@ export interface PariRun {
   "45_mpi_peso"?: number;
   "46_mpi_categoria"?: string;
   "47_fase"?: string;
+  "51_pari_score_adjusted"?: number;
+  "52_mpi_excluded"?: boolean;
   // Computed validation flags
   isDataInvalid?: boolean;
   dataInvalidReason?: string;
+  displayPariScore?: number; // Computed: adjusted score if MPI excluded, otherwise original
   repindex_root_issuers?: {
     ticker?: string;
     ibex_family_code?: string;
@@ -132,6 +135,13 @@ export function usePariRuns(
       // Join the data and add validation flags
       const joinedData = pariData?.map(pariRun => {
         const isRmZero = pariRun["32_rm_score"] === 0;
+        const mpiExcluded = pariRun["52_mpi_excluded"] === true;
+        const adjustedScore = pariRun["51_pari_score_adjusted"];
+        
+        // Use adjusted score if MPI was excluded, otherwise use original
+        const displayPariScore = mpiExcluded && adjustedScore !== null && adjustedScore !== undefined
+          ? adjustedScore
+          : pariRun["09_pari_score"];
         
         return {
           ...pariRun,
@@ -139,7 +149,8 @@ export function usePariRuns(
             repindexMap.get(pariRun["05_ticker"]) || null : 
             null,
           isDataInvalid: isRmZero,
-          dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined
+          dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined,
+          displayPariScore
         };
       });
 
@@ -177,6 +188,13 @@ export function usePariRun(id: string) {
 
       // Get repindex data to join with pari_run and add validation flags
       const isRmZero = data["32_rm_score"] === 0;
+      const mpiExcluded = data["52_mpi_excluded"] === true;
+      const adjustedScore = data["51_pari_score_adjusted"];
+      
+      // Use adjusted score if MPI was excluded, otherwise use original
+      const displayPariScore = mpiExcluded && adjustedScore !== null && adjustedScore !== undefined
+        ? adjustedScore
+        : data["09_pari_score"];
       
       if (data["05_ticker"]) {
         const { data: repindexData, error: repindexError } = await supabase
@@ -194,7 +212,8 @@ export function usePariRun(id: string) {
               sector_category: repindexData.sector_category
             },
             isDataInvalid: isRmZero,
-            dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined
+            dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined,
+            displayPariScore
           } as PariRun;
         }
       }
@@ -203,7 +222,8 @@ export function usePariRun(id: string) {
         ...data, 
         repindex_root_issuers: null,
         isDataInvalid: isRmZero,
-        dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined
+        dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined,
+        displayPariScore
       } as PariRun;
     },
     enabled: !!id,
