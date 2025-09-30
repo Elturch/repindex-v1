@@ -416,15 +416,18 @@ serve(async (req) => {
               metricsMap["43_kgi_categoria"] = subscore.categoria
               break
             case 'mpi':
-              // Check if MPI is "no aplica" (case-insensitive)
+              // Check if MPI score is "no aplica" or similar text (handle both score and categoria fields)
+              const mpiScoreStr = String(subscore.score).toLowerCase().trim();
               const mpiCategoria = subscore.categoria?.toLowerCase().trim() || '';
-              const isMpiNoAplica = mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na';
+              const isMpiNoAplicaScore = mpiScoreStr === 'no_aplica' || mpiScoreStr === 'no aplica' || mpiScoreStr === 'n/a' || mpiScoreStr === 'na';
+              const isMpiNoAplicaCategoria = mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na';
+              const isMpiNoAplica = isMpiNoAplicaScore || isMpiNoAplicaCategoria;
               
               if (isMpiNoAplica) {
-                console.log(`⚠️  MPI "no aplica" detected for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
+                console.log(`⚠️  MPI "no aplica" detected in ${isMpiNoAplicaScore ? 'score' : 'categoria'} field for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
                 metricsMap["44_mpi_score"] = 0;
                 metricsMap["45_mpi_peso"] = subscore.peso; // Keep original weight for reference
-                metricsMap["46_mpi_categoria"] = subscore.categoria; // Keep original text
+                metricsMap["46_mpi_categoria"] = isMpiNoAplicaScore ? 'no aplica' : subscore.categoria; // Normalize categoria if detected in score
               } else {
                 metricsMap["44_mpi_score"] = subscore.score;
                 metricsMap["45_mpi_peso"] = subscore.peso;
@@ -436,8 +439,9 @@ serve(async (req) => {
       })
 
       // Check if MPI "no aplica" and recalculate PARI if necessary
+      const mpiScore = metricsMap["44_mpi_score"];
       const mpiCategoria = metricsMap["46_mpi_categoria"]?.toLowerCase().trim() || '';
-      const isMpiNoAplica = mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na';
+      const isMpiNoAplica = mpiScore === 0 && (mpiCategoria === 'no aplica' || mpiCategoria === 'n/a' || mpiCategoria === 'na');
       
       let adjustedPariScore: number | null = null;
       let mpiExcluded = false;
