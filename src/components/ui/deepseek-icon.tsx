@@ -8,8 +8,8 @@ interface DeepseekIconProps {
 }
 
 export function DeepseekIcon({ className, size = 16 }: DeepseekIconProps) {
-  // Double the size to match other icons' visual weight
-  const adjustedSize = size * 2;
+  // Triple the size to fill the frame like other icons
+  const adjustedSize = size * 3;
   
   return (
     <img
