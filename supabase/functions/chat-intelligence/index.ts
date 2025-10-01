@@ -152,33 +152,33 @@ serve(async (req) => {
 
     switch (analysisType) {
       case 'consenso':
-        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. Analiza los datos y encuentra consensos entre los diferentes modelos de IA (ChatGPT, Gemini, Perplexity, Deepseek).';
-        userPrompt = `Basándote en los datos siguientes, identifica los puntos de CONSENSO entre los modelos de IA sobre ${company}:\n\n${context}`;
+        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. Analiza paso a paso los datos y encuentra patrones de consenso entre los diferentes modelos de IA (ChatGPT, Gemini, Perplexity, Deepseek). Utiliza razonamiento estructurado para identificar coincidencias significativas.';
+        userPrompt = `Basándote en los datos siguientes, identifica los puntos de CONSENSO entre los modelos de IA sobre ${company}. Analiza sistemáticamente cada modelo y sus evaluaciones:\n\n${context}`;
         break;
 
       case 'discrepancias':
-        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. Analiza los datos y encuentra discrepancias significativas entre los diferentes modelos.';
-        userPrompt = `Basándote en los datos siguientes, identifica las DISCREPANCIAS más importantes entre los modelos de IA sobre ${company}:\n\n${context}`;
+        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. Analiza paso a paso los datos y encuentra discrepancias significativas entre los diferentes modelos. Usa razonamiento multi-paso para identificar las diferencias más relevantes y sus posibles causas.';
+        userPrompt = `Basándote en los datos siguientes, identifica las DISCREPANCIAS más importantes entre los modelos de IA sobre ${company}. Analiza las razones potenciales de cada discrepancia:\n\n${context}`;
         break;
 
       case 'fortalezas':
-        systemPrompt = 'Eres un analista experto en reputación corporativa. Identifica fortalezas basándote en lo que dicen los modelos de IA.';
-        userPrompt = `Basándote en los datos siguientes, identifica las FORTALEZAS de ${company} según los diferentes modelos de IA:\n\n${context}`;
+        systemPrompt = 'Eres un analista experto en reputación corporativa. Identifica fortalezas mediante análisis estructurado de lo que dicen los modelos de IA. Evalúa la consistencia y evidencia de cada fortaleza identificada.';
+        userPrompt = `Basándote en los datos siguientes, identifica las FORTALEZAS de ${company} según los diferentes modelos de IA. Analiza el respaldo que cada modelo proporciona:\n\n${context}`;
         break;
 
       case 'debilidades':
-        systemPrompt = 'Eres un analista experto en reputación corporativa. Identifica debilidades y áreas de mejora basándote en lo que dicen los modelos de IA.';
-        userPrompt = `Basándote en los datos siguientes, identifica las DEBILIDADES de ${company} según los diferentes modelos de IA:\n\n${context}`;
+        systemPrompt = 'Eres un analista experto en reputación corporativa. Identifica debilidades y áreas de mejora mediante análisis crítico y estructurado de lo que dicen los modelos de IA. Evalúa la gravedad y consistencia de cada debilidad.';
+        userPrompt = `Basándote en los datos siguientes, identifica las DEBILIDADES de ${company} según los diferentes modelos de IA. Analiza la frecuencia y severidad de cada problema:\n\n${context}`;
         break;
 
       case 'metricas':
-        systemPrompt = 'Eres un analista experto en métricas de reputación. Analiza las métricas LNS, ES, SAM, RM, CLR, GIP, KGI, MPI.';
-        userPrompt = `Basándote en los datos siguientes, analiza las MÉTRICAS de reputación de ${company} y compara cómo las evalúan los diferentes modelos de IA:\n\n${context}`;
+        systemPrompt = 'Eres un analista experto en métricas de reputación. Analiza paso a paso las métricas LNS, ES, SAM, RM, CLR, GIP, KGI, MPI. Compara sistemáticamente cómo cada modelo evalúa cada métrica y razona sobre las diferencias encontradas.';
+        userPrompt = `Basándote en los datos siguientes, analiza las MÉTRICAS de reputación de ${company} y compara cómo las evalúan los diferentes modelos de IA. Proporciona análisis detallado métrica por métrica:\n\n${context}`;
         break;
 
       default:
-        systemPrompt = 'Eres un asistente experto en análisis de reputación corporativa y comparación entre modelos de IA.';
-        userPrompt = `Analiza los siguientes datos sobre ${company}:\n\n${context}`;
+        systemPrompt = 'Eres un asistente experto en análisis de reputación corporativa y comparación entre modelos de IA. Utiliza razonamiento estructurado y análisis multi-paso para proporcionar insights profundos.';
+        userPrompt = `Analiza de forma sistemática los siguientes datos sobre ${company}:\n\n${context}`;
     }
 
     // Call OpenAI
@@ -195,10 +195,9 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'o3-2025-04-16',
         messages,
-        temperature: 0.7,
-        max_tokens: 1500,
+        max_completion_tokens: 1500,
       }),
     });
 
@@ -218,7 +217,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'o3-2025-04-16',
         messages: [
           {
             role: 'system',
@@ -229,8 +228,7 @@ serve(async (req) => {
             content: `Análisis previo: ${aiResponse}\n\nGenera 3 preguntas de seguimiento relevantes.`,
           },
         ],
-        temperature: 0.8,
-        max_tokens: 200,
+        max_completion_tokens: 200,
       }),
     });
 
