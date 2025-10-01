@@ -283,22 +283,21 @@ export default function ChatIntelligence() {
                           className={`max-w-[80%] rounded-lg p-4 ${
                             message.role === 'user'
                               ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
+                              : 'bg-card border border-border'
                           }`}
                         >
-                          <div className="whitespace-pre-wrap">{message.content}</div>
+                          <div className="whitespace-pre-wrap text-foreground">{message.content}</div>
                           
                           {message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
-                            <div className="mt-4 pt-4 border-t border-border/50">
-                              <p className="text-xs font-medium mb-2 opacity-70">Preguntas sugeridas:</p>
+                            <div className="mt-4 pt-4 border-t border-border">
+                              <p className="text-xs font-semibold mb-3 text-foreground">Preguntas sugeridas:</p>
                               <div className="space-y-2">
                                 {message.suggestedQuestions.map((question, qIdx) => (
                                   <Button
                                     key={qIdx}
-                                    variant="ghost"
+                                    variant="outline"
                                     size="sm"
-                                    className="w-full justify-start text-left h-auto py-2 text-xs"
-                                    onClick={() => handleSuggestedQuestion(question)}
+                                    className="w-full justify-start text-left h-auto py-3 px-3 hover:bg-accent"
                                   >
                                     {question}
                                   </Button>
