@@ -7,6 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { Dashboard } from "./pages/Dashboard";
 import { PariRunDetail } from "./pages/PariRunDetail";
 import InsertPariResults from "./pages/InsertPariResults";
+import ChatIntelligence from "./pages/ChatIntelligence";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/chat" element={<ChatIntelligence />} />
             <Route path="/pari-run/:id" element={<PariRunDetail />} />
             <Route path="/insert-pari" element={<InsertPariResults />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

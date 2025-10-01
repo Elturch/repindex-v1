@@ -1,5 +1,6 @@
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, MessageCircle, LayoutDashboard } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GlossaryDialog } from "@/components/ui/glossary-dialog";
@@ -13,6 +14,8 @@ interface HeaderProps {
 
 export function Header({ title = "Repindex.ai", className }: HeaderProps) {
   const { theme, setTheme } = useTheme();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
@@ -36,6 +39,27 @@ export function Header({ title = "Repindex.ai", className }: HeaderProps) {
 
         {/* Right side buttons */}
         <div className="flex items-center space-x-2">
+          {/* Navigation Buttons */}
+          <Button
+            variant={location.pathname === "/" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => navigate("/")}
+            className="flex items-center gap-2"
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </Button>
+          
+          <Button
+            variant={location.pathname === "/chat" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => navigate("/chat")}
+            className="flex items-center gap-2"
+          >
+            <MessageCircle className="h-4 w-4" />
+            Chat IA
+          </Button>
+          
           <GlossaryDialog />
           
           {/* Theme Toggle */}
