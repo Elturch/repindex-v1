@@ -70,10 +70,11 @@ export function usePariRuns(
   modelFilter?: string, 
   companyFilter?: string,
   weekFilter?: string,
-  sectorFilter?: string
+  sectorFilter?: string,
+  ibexFamilyFilter?: string
 ) {
   return useQuery({
-    queryKey: ["pari-runs", searchQuery, modelFilter, companyFilter, weekFilter, sectorFilter],
+    queryKey: ["pari-runs", searchQuery, modelFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter],
     queryFn: async () => {
       // First get pari_runs data
       let pariQuery = supabase
@@ -159,6 +160,13 @@ export function usePariRuns(
       if (sectorFilter && sectorFilter !== "all") {
         filteredData = joinedData?.filter(pariRun => 
           pariRun.repindex_root_issuers?.sector_category === sectorFilter
+        );
+      }
+
+      // Apply ibex family filter
+      if (ibexFamilyFilter && ibexFamilyFilter !== "all") {
+        filteredData = filteredData?.filter(pariRun => 
+          pariRun.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter
         );
       }
 

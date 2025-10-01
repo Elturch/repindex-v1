@@ -4,6 +4,7 @@ import { Layout } from "@/components/layout/Layout";
 import { usePariRuns } from "@/hooks/usePariRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
+import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,11 +32,13 @@ export function Dashboard() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [weekFilter, setWeekFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
+  const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
   const navigate = useNavigate();
   
-  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter);
+  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter);
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
+  const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
 
   const handleRowClick = (pariRunId: string) => {
     navigate(`/pari-run/${pariRunId}`);
@@ -101,6 +104,7 @@ export function Dashboard() {
     setCompanyFilter("all");
     setWeekFilter("all");
     setSectorFilter("all");
+    setIbexFamilyFilter("all");
   };
 
   // Function to normalize flag names to user-friendly format
@@ -194,7 +198,7 @@ export function Dashboard() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {pariRuns?.length || 0} empresas analizadas
-            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all") && (
+            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
           </p>
@@ -344,7 +348,25 @@ export function Dashboard() {
               </Select>
             </div>
 
-            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all") && (
+            {/* Ibex Family Filter */}
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <Select value={ibexFamilyFilter} onValueChange={setIbexFamilyFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar IBEX Family" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-50">
+                  <SelectItem value="all">Todas las familias IBEX</SelectItem>
+                  {ibexFamilyCategories?.map((ibex) => (
+                    <SelectItem key={ibex.ibex_family_code} value={ibex.ibex_family_code}>
+                      {ibex.ibex_family_code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all") && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -368,7 +390,7 @@ export function Dashboard() {
 
         {!isLoading && !error && (!pariRuns || pariRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" ? "No companies found matching your filters." : 
+            {searchQuery || companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" ? "No companies found matching your filters." : 
              aiFilter === "comparison" ? "No data available for comparison view yet." : 
              `No reputational data available for ${aiFilter}.`}
           </div>
