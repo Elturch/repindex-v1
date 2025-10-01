@@ -6,7 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw } from "lucide-react";
+import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw, Download } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompanies } from "@/hooks/useCompanies";
 import { usePariRuns } from "@/hooks/usePariRuns";
 import { format, addDays } from "date-fns";
@@ -153,6 +160,136 @@ export default function ChatIntelligence() {
     }
   };
 
+  const generateFileName = (extension: string) => {
+    const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm');
+    const company = selectedCompany ? selectedCompany.replace(/\s+/g, '_') : 'conversacion';
+    return `${company}_chat_${timestamp}.${extension}`;
+  };
+
+  const downloadAsTxt = () => {
+    const metadata = `Chat Inteligente - Repindex.ai\n` +
+      `Fecha: ${format(new Date(), 'dd/MM/yyyy HH:mm')}\n` +
+      `Empresa: ${selectedCompany || 'No seleccionada'}\n` +
+      `Semana: ${selectedWeek === "all" ? "Todas las semanas" : selectedWeek}\n` +
+      `Tipo de análisis: ${analysisTypes.find(t => t.value === analysisType)?.label || 'No seleccionado'}\n` +
+      `${'='.repeat(70)}\n\n`;
+
+    const conversation = messages.map(msg => {
+      const role = msg.role === 'user' ? 'USUARIO' : 'ASISTENTE IA';
+      const content = msg.content;
+      const questions = msg.suggestedQuestions?.length 
+        ? `\n\nPreguntas sugeridas:\n${msg.suggestedQuestions.map(q => `  • ${q}`).join('\n')}`
+        : '';
+      return `[${role}]\n${content}${questions}\n${'-'.repeat(70)}\n`;
+    }).join('\n');
+
+    const blob = new Blob([metadata + conversation], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = generateFileName('txt');
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Conversación exportada",
+      description: "Archivo TXT descargado exitosamente",
+    });
+  };
+
+  const downloadAsJson = () => {
+    const exportData = {
+      metadata: {
+        exportDate: new Date().toISOString(),
+        company: selectedCompany,
+        week: selectedWeek,
+        analysisType: analysisTypes.find(t => t.value === analysisType)?.label,
+      },
+      messages: messages,
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = generateFileName('json');
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Conversación exportada",
+      description: "Archivo JSON descargado exitosamente",
+    });
+  };
+
+  const downloadAsHtml = () => {
+    const metadata = `
+      <div style="background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <h2 style="margin: 0 0 10px 0; color: #333;">Chat Inteligente - Repindex.ai</h2>
+        <p style="margin: 5px 0; color: #666;"><strong>Fecha:</strong> ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
+        <p style="margin: 5px 0; color: #666;"><strong>Empresa:</strong> ${selectedCompany || 'No seleccionada'}</p>
+        <p style="margin: 5px 0; color: #666;"><strong>Semana:</strong> ${selectedWeek === "all" ? "Todas las semanas" : selectedWeek}</p>
+        <p style="margin: 5px 0; color: #666;"><strong>Tipo de análisis:</strong> ${analysisTypes.find(t => t.value === analysisType)?.label || 'No seleccionado'}</p>
+      </div>
+    `;
+
+    const conversation = messages.map(msg => {
+      const isUser = msg.role === 'user';
+      const bgColor = isUser ? '#3b82f6' : '#ffffff';
+      const textColor = isUser ? '#ffffff' : '#333333';
+      const alignment = isUser ? 'flex-end' : 'flex-start';
+      const role = isUser ? 'Usuario' : 'Asistente IA';
+      
+      const questions = msg.suggestedQuestions?.length
+        ? `<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
+            <p style="font-weight: bold; font-size: 12px; margin-bottom: 10px;">Preguntas sugeridas:</p>
+            ${msg.suggestedQuestions.map(q => `<p style="font-size: 13px; margin: 5px 0;">• ${q}</p>`).join('')}
+           </div>`
+        : '';
+
+      return `
+        <div style="display: flex; justify-content: ${alignment}; margin-bottom: 20px;">
+          <div style="max-width: 80%; background: ${bgColor}; color: ${textColor}; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <p style="font-weight: bold; font-size: 11px; opacity: 0.8; margin-bottom: 8px;">${role}</p>
+            <div style="white-space: pre-wrap;">${msg.content.replace(/\n/g, '<br>')}</div>
+            ${questions}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Conversación - ${selectedCompany || 'Chat'}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+            @media print { body { margin: 20px; } }
+          </style>
+        </head>
+        <body>
+          ${metadata}
+          ${conversation}
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = generateFileName('html');
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Conversación exportada",
+      description: "Archivo HTML descargado exitosamente",
+    });
+  };
+
   return (
     <Layout title="Repindex.ai">
       <div className="space-y-6">
@@ -279,13 +416,48 @@ export default function ChatIntelligence() {
           {/* Chat Area */}
           <Card className="lg:col-span-3 shadow-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageCircle className="h-5 w-5" />
-                Conversación
-              </CardTitle>
-              <CardDescription>
-                Análisis inteligente basado en comparaciones entre IAs
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageCircle className="h-5 w-5" />
+                    Conversación
+                  </CardTitle>
+                  <CardDescription>
+                    Análisis inteligente basado en comparaciones entre IAs
+                  </CardDescription>
+                </div>
+                
+                {messages.length > 0 && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-2">
+                              <Download className="h-4 w-4" />
+                              Exportar
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-background border z-50">
+                            <DropdownMenuItem onClick={downloadAsTxt}>
+                              Descargar como TXT
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={downloadAsJson}>
+                              Descargar como JSON
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={downloadAsHtml}>
+                              Descargar como HTML
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Guardar conversación para imprimir o compartir</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[600px] pr-4">
