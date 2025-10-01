@@ -7,6 +7,7 @@ export interface Company {
   ticker: string;
   status?: string;
   sector_category?: string;
+  ibex_family_code?: string;
 }
 
 export function useCompanies() {
@@ -15,7 +16,7 @@ export function useCompanies() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("repindex_root_issuers")
-        .select("issuer_id, issuer_name, ticker, status, sector_category")
+        .select("issuer_id, issuer_name, ticker, status, sector_category, ibex_family_code")
         .order("issuer_name");
 
       if (error) {

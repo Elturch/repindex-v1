@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw, Download } from "lucide-react";
+import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw, Download, BarChart3 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompanies } from "@/hooks/useCompanies";
 import { usePariRuns } from "@/hooks/usePariRuns";
+import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { format, addDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +30,7 @@ interface Message {
 export default function ChatIntelligence() {
   const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
+  const [selectedIbexFamily, setSelectedIbexFamily] = useState<string>("all");
   const [analysisType, setAnalysisType] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -37,13 +39,16 @@ export default function ChatIntelligence() {
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: pariRuns } = usePariRuns();
+  const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
   const { toast } = useToast();
 
-  // Filter companies based on search
-  const filteredCompanies = companies?.filter(company =>
-    company.issuer_name.toLowerCase().includes(companySearch.toLowerCase()) ||
-    company.ticker.toLowerCase().includes(companySearch.toLowerCase())
-  );
+  // Filter companies based on search and ibex family
+  const filteredCompanies = companies?.filter(company => {
+    const matchesSearch = company.issuer_name.toLowerCase().includes(companySearch.toLowerCase()) ||
+      company.ticker.toLowerCase().includes(companySearch.toLowerCase());
+    const matchesIbexFamily = selectedIbexFamily === "all" || company.ibex_family_code === selectedIbexFamily;
+    return matchesSearch && matchesIbexFamily;
+  });
 
   // Generate week options using real period_from dates
   const weekOptions = pariRuns ? Array.from(
@@ -305,9 +310,27 @@ export default function ChatIntelligence() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-muted/50 rounded-lg">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium">Selección:</span>
             
+            {/* Ibex Family Filter */}
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedIbexFamily} onValueChange={setSelectedIbexFamily}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="IBEX Family" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-50">
+                  <SelectItem value="all">Todas las familias IBEX</SelectItem>
+                  {ibexFamilyCategories?.map((ibex) => (
+                    <SelectItem key={ibex.ibex_family_code} value={ibex.ibex_family_code}>
+                      {ibex.ibex_family_code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Company Filter */}
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4 text-muted-foreground" />
