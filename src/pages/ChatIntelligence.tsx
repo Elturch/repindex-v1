@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw } from "lucide-react";
 import { useCompanies } from "@/hooks/useCompanies";
 import { usePariRuns } from "@/hooks/usePariRuns";
-import { format, startOfWeek, addWeeks } from "date-fns";
+import { format, addDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -38,24 +38,21 @@ export default function ChatIntelligence() {
     company.ticker.toLowerCase().includes(companySearch.toLowerCase())
   );
 
-  // Generate week options
+  // Generate week options using real period_from dates
   const weekOptions = pariRuns ? Array.from(
     new Set(
       pariRuns
         .filter(run => run["06_period_from"])
-        .map(run => {
-          const weekStart = startOfWeek(new Date(run["06_period_from"]!), { weekStartsOn: 1 });
-          return format(weekStart, 'yyyy-MM-dd');
-        })
+        .map(run => format(new Date(run["06_period_from"]!), 'yyyy-MM-dd'))
     )
   )
     .sort()
     .reverse()
-    .map(weekStart => {
-      const start = new Date(weekStart);
+    .map(dateStr => {
+      const date = new Date(dateStr);
       return {
-        value: weekStart,
-        label: `${format(start, 'dd/MM')} - ${format(addWeeks(start, 1), 'dd/MM/yyyy')}`
+        value: dateStr,
+        label: `${format(date, 'dd/MM/yyyy')} - ${format(addDays(date, 6), 'dd/MM/yyyy')}`
       };
     }) : [];
 
