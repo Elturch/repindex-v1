@@ -391,8 +391,8 @@ export function Dashboard() {
                           {metric.label}
                         </TableHead>
                       ))}
-                      <TableHead className="w-32">Ibex Family Code</TableHead>
-                      <TableHead className="w-32">Sector Category</TableHead>
+                      <TableHead className="w-40">Ibex Family Code</TableHead>
+                      <TableHead className="min-w-48">Sector Category</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -470,7 +470,7 @@ export function Dashboard() {
                         <TableCell className="text-sm">
                           {pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="text-sm whitespace-normal">
                           {pariRun.repindex_root_issuers?.sector_category || "N/A"}
                         </TableCell>
                       </TableRow>
