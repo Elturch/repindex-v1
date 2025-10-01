@@ -46,12 +46,96 @@ interface PariResult {
   }
 }
 
-// Helper function to safely convert any value to an integer, with a default fallback
-function ensureInteger(value: any, defaultValue: number = 0): number {
-  if (value === null || value === undefined) return defaultValue;
+// Helper function to safely convert any value to an integer, with robust validation
+function ensureInteger(value: any, defaultValue: number = 0, fieldName?: string): number {
+  // Log the incoming value for debugging
+  if (fieldName) {
+    console.log(`[ensureInteger] Processing ${fieldName}:`, typeof value, JSON.stringify(value));
+  }
+  
+  // Handle null/undefined
+  if (value === null || value === undefined) {
+    if (fieldName) console.log(`[ensureInteger] ${fieldName}: null/undefined -> ${defaultValue}`);
+    return defaultValue;
+  }
+  
+  // Handle string values
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    
+    // Handle empty strings
+    if (trimmed === '') {
+      if (fieldName) console.log(`[ensureInteger] ${fieldName}: empty string -> ${defaultValue}`);
+      return defaultValue;
+    }
+    
+    // Handle special text patterns
+    const lowerTrimmed = trimmed.toLowerCase();
+    const specialPatterns = ['no_aplica', 'no aplica', 'n/a', 'na', 'no-aplica', 'noapplica', 'nc', 'null', 'undefined', 'none'];
+    if (specialPatterns.some(pattern => lowerTrimmed.includes(pattern))) {
+      if (fieldName) console.warn(`[ensureInteger] ${fieldName}: special pattern detected "${value}" -> ${defaultValue}`);
+      return defaultValue;
+    }
+    
+    // Try to extract numeric part from mixed text
+    const numericMatch = trimmed.match(/-?\d+\.?\d*/);
+    if (numericMatch) {
+      const extracted = parseFloat(numericMatch[0]);
+      if (!isNaN(extracted)) {
+        const result = Math.round(extracted);
+        if (fieldName && trimmed !== numericMatch[0]) {
+          console.warn(`[ensureInteger] ${fieldName}: extracted number from text "${value}" -> ${result}`);
+        }
+        return result;
+      }
+    }
+  }
+  
+  // Handle number values
+  if (typeof value === 'number') {
+    if (isNaN(value) || !isFinite(value)) {
+      if (fieldName) console.warn(`[ensureInteger] ${fieldName}: invalid number (NaN/Infinity) -> ${defaultValue}`);
+      return defaultValue;
+    }
+    return Math.round(value);
+  }
+  
+  // Try to convert to number
   const parsed = Number(value);
-  if (isNaN(parsed)) return defaultValue;
-  return Math.round(parsed);
+  if (isNaN(parsed) || !isFinite(parsed)) {
+    if (fieldName) console.warn(`[ensureInteger] ${fieldName}: conversion failed "${value}" (${typeof value}) -> ${defaultValue}`);
+    return defaultValue;
+  }
+  
+  const result = Math.round(parsed);
+  if (fieldName) {
+    console.log(`[ensureInteger] ${fieldName}: successfully converted "${value}" -> ${result}`);
+  }
+  return result;
+}
+
+// Helper function to validate all numeric fields before insertion
+function validateNumericFields(data: Record<string, any>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const numericFields = [
+    '09_pari_score', '12_palabras', '13_num_fechas', '14_num_citas',
+    '23_lns_score', '24_lns_peso', '26_es_score', '27_es_peso',
+    '29_sam_score', '30_sam_peso', '32_rm_score', '33_rm_peso',
+    '35_clr_score', '36_clr_peso', '38_gip_score', '39_gip_peso',
+    '41_kgi_score', '42_kgi_peso', '44_mpi_score', '45_mpi_peso',
+    '51_pari_score_adjusted'
+  ];
+  
+  numericFields.forEach(field => {
+    const value = data[field];
+    if (value !== null && value !== undefined) {
+      if (typeof value !== 'number' || isNaN(value) || !isFinite(value)) {
+        errors.push(`${field} is not a valid number: ${JSON.stringify(value)} (type: ${typeof value})`);
+      }
+    }
+  });
+  
+  return { valid: errors.length === 0, errors };
 }
 
 serve(async (req) => {
@@ -389,41 +473,49 @@ serve(async (req) => {
           // Map to numbered columns based on metric type
           switch(metricLower) {
             case 'lns':
-              metricsMap["23_lns_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["24_lns_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["23_lns_score"] = ensureInteger(subscore.score, 0, "23_lns_score")
+              metricsMap["24_lns_peso"] = ensureInteger(subscore.peso, 0, "24_lns_peso")
               metricsMap["25_lns_categoria"] = subscore.categoria
               break
             case 'es':
-              metricsMap["26_es_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["27_es_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["26_es_score"] = ensureInteger(subscore.score, 0, "26_es_score")
+              metricsMap["27_es_peso"] = ensureInteger(subscore.peso, 0, "27_es_peso")
               metricsMap["28_es_categoria"] = subscore.categoria
               break
             case 'sam':
-              metricsMap["29_sam_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["30_sam_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["29_sam_score"] = ensureInteger(subscore.score, 0, "29_sam_score")
+              metricsMap["30_sam_peso"] = ensureInteger(subscore.peso, 0, "30_sam_peso")
               metricsMap["31_sam_categoria"] = subscore.categoria
               break
             case 'rm':
-              metricsMap["32_rm_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["33_rm_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["32_rm_score"] = ensureInteger(subscore.score, 0, "32_rm_score")
+              metricsMap["33_rm_peso"] = ensureInteger(subscore.peso, 0, "33_rm_peso")
               metricsMap["34_rm_categoria"] = subscore.categoria
               break
             case 'clr':
-              metricsMap["35_clr_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["36_clr_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["35_clr_score"] = ensureInteger(subscore.score, 0, "35_clr_score")
+              metricsMap["36_clr_peso"] = ensureInteger(subscore.peso, 0, "36_clr_peso")
               metricsMap["37_clr_categoria"] = subscore.categoria
               break
             case 'gip':
-              metricsMap["38_gip_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["39_gip_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["38_gip_score"] = ensureInteger(subscore.score, 0, "38_gip_score")
+              metricsMap["39_gip_peso"] = ensureInteger(subscore.peso, 0, "39_gip_peso")
               metricsMap["40_gip_categoria"] = subscore.categoria
               break
             case 'kgi':
-              metricsMap["41_kgi_score"] = ensureInteger(subscore.score, 0)
-              metricsMap["42_kgi_peso"] = ensureInteger(subscore.peso, 0)
+              metricsMap["41_kgi_score"] = ensureInteger(subscore.score, 0, "41_kgi_score")
+              metricsMap["42_kgi_peso"] = ensureInteger(subscore.peso, 0, "42_kgi_peso")
               metricsMap["43_kgi_categoria"] = subscore.categoria
               break
             case 'mpi':
+              console.log(`🔍 [MPI Processing] Raw data for company "${result.meta.target_name}":`, {
+                score: subscore.score,
+                scoreType: typeof subscore.score,
+                peso: subscore.peso,
+                pesoType: typeof subscore.peso,
+                categoria: subscore.categoria
+              });
+              
               // Check if MPI score is "no aplica" or similar text
               const mpiScoreRaw = subscore.score;
               const mpiScoreStr = String(mpiScoreRaw).toLowerCase().trim();
@@ -436,22 +528,29 @@ serve(async (req) => {
               const isMpiNoAplica = isMpiNoAplicaScore || isMpiNoAplicaCategoria;
               
               if (isMpiNoAplica) {
-                console.log(`⚠️  MPI "no aplica" detected (score: "${mpiScoreRaw}", categoria: "${subscore.categoria}") for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
+                console.log(`⚠️  [MPI] "no aplica" detected (score: "${mpiScoreRaw}", categoria: "${subscore.categoria}") for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
                 metricsMap["44_mpi_score"] = 0;
-                metricsMap["45_mpi_peso"] = ensureInteger(subscore.peso, 0);
+                metricsMap["45_mpi_peso"] = ensureInteger(subscore.peso, 0, "45_mpi_peso");
                 metricsMap["46_mpi_categoria"] = 'no aplica';
                 metricsMap["52_mpi_excluded"] = true;
               } else {
                 // Try to parse score as number, default to 0 if invalid
-                const parsedScore = ensureInteger(mpiScoreRaw, 0);
+                const parsedScore = ensureInteger(mpiScoreRaw, 0, "44_mpi_score");
                 if (parsedScore === 0 && mpiScoreRaw !== 0 && mpiScoreRaw !== '0') {
-                  console.warn(`⚠️  Invalid MPI score received: "${mpiScoreRaw}" for company "${result.meta.target_name}". Converting to 0.`);
+                  console.warn(`⚠️  [MPI] Invalid MPI score received: "${mpiScoreRaw}" (type: ${typeof mpiScoreRaw}) for company "${result.meta.target_name}". Converting to 0.`);
                 }
                 metricsMap["44_mpi_score"] = parsedScore;
-                metricsMap["45_mpi_peso"] = ensureInteger(subscore.peso, 0);
+                metricsMap["45_mpi_peso"] = ensureInteger(subscore.peso, 0, "45_mpi_peso");
                 metricsMap["46_mpi_categoria"] = subscore.categoria;
                 metricsMap["52_mpi_excluded"] = false;
               }
+              
+              console.log(`✅ [MPI] Final values:`, {
+                "44_mpi_score": metricsMap["44_mpi_score"],
+                "45_mpi_peso": metricsMap["45_mpi_peso"],
+                "46_mpi_categoria": metricsMap["46_mpi_categoria"],
+                "52_mpi_excluded": metricsMap["52_mpi_excluded"]
+              });
               break
           }
         }
@@ -512,14 +611,14 @@ serve(async (req) => {
         "06_period_from": result.meta.period_from,
         "07_period_to": result.meta.period_to,
         "08_tz": result.meta.tz,
-        "09_pari_score": ensureInteger(result.tabla.pari, 0),
+        "09_pari_score": ensureInteger(result.tabla.pari, 0, "09_pari_score"),
         "10_resumen": result.relato_mini.resumen,
         "11_puntos_clave": Array.isArray(result.relato_mini.puntos_clave) 
           ? result.relato_mini.puntos_clave 
           : result.relato_mini.puntos_clave,
-        "12_palabras": ensureInteger(result.tabla.contadores.palabras, 0),
-        "13_num_fechas": ensureInteger(result.tabla.contadores.num_fechas, 0),
-        "14_num_citas": ensureInteger(result.tabla.contadores.num_citas, 0),
+        "12_palabras": ensureInteger(result.tabla.contadores.palabras, 0, "12_palabras"),
+        "13_num_fechas": ensureInteger(result.tabla.contadores.num_fechas, 0, "13_num_fechas"),
+        "14_num_citas": ensureInteger(result.tabla.contadores.num_citas, 0, "14_num_citas"),
         "15_temporal_alignment": result.tabla.contadores.temporal_alignment,
         "16_citation_density": result.tabla.contadores.citation_density,
         "17_flags": convertToArray(result.tabla.flags, "17_flags"),
@@ -530,10 +629,29 @@ serve(async (req) => {
         "22_explicacion": processExplanationField(result.relato_mini.explicacion),
         "25_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
         "47_fase": result.meta.target_type || null,
-        "51_pari_score_adjusted": adjustedPariScore !== null ? ensureInteger(adjustedPariScore, 0) : null,
+        "51_pari_score_adjusted": adjustedPariScore !== null ? ensureInteger(adjustedPariScore, 0, "51_pari_score_adjusted") : null,
         "52_mpi_excluded": mpiExcluded,
         ...metricsMap
       }
+      
+      // Validate all numeric fields before insertion
+      const validation = validateNumericFields(insertData);
+      if (!validation.valid) {
+        const errorMsg = `❌ VALIDATION FAILED for "${result.meta.target_name}" (run_id: ${result.meta.run_id}):\n${validation.errors.join('\n')}`;
+        console.error(errorMsg);
+        console.error('Full insertData:', JSON.stringify(insertData, null, 2));
+        
+        return Promise.reject({
+          error: 'NUMERIC_VALIDATION_FAILED',
+          message: errorMsg,
+          validationErrors: validation.errors,
+          company: result.meta.target_name,
+          runId: result.meta.run_id,
+          insertData: insertData
+        });
+      }
+      
+      console.log(`✅ [Validation] All numeric fields validated for "${result.meta.target_name}"`)
 
       // Solo añadir 01_run_id si existe en los datos, sino usar el valor por defecto de la DB
       if (result.meta.run_id) {
@@ -550,10 +668,25 @@ serve(async (req) => {
         .select()
 
       if (error) {
-        console.error('Database insertion error:', error)
-        console.error('Failed data:', insertData)
-        throw error
+        console.error('❌ [DB ERROR] Database insertion error for:', result.meta.target_name);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error hint:', error.hint);
+        console.error('Failed insertData:', JSON.stringify(insertData, null, 2));
+        
+        // Check for specific error types
+        if (error.message?.includes('invalid input syntax for type integer')) {
+          const match = error.message.match(/column "([^"]+)"/);
+          const columnName = match ? match[1] : 'unknown';
+          console.error(`❌ [DB ERROR] INTEGER TYPE ERROR detected in column: ${columnName}`);
+          console.error(`Value that failed: ${JSON.stringify(insertData[columnName])}`);
+        }
+        
+        throw error;
       }
+      
+      console.log(`✅ [DB] Successfully inserted data for "${result.meta.target_name}"`);
       return data
     })
 
