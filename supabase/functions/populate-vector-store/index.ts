@@ -98,18 +98,36 @@ serve(async (req) => {
       
       if (run["11_puntos_clave"]) {
         try {
-          const puntosClave = typeof run["11_puntos_clave"] === 'string' 
-            ? JSON.parse(run["11_puntos_clave"]) 
-            : run["11_puntos_clave"];
+          let puntosClave: string[] = [];
           
-          if (Array.isArray(puntosClave) && puntosClave.length > 0) {
+          if (typeof run["11_puntos_clave"] === 'string') {
+            // Try to parse as JSON first
+            try {
+              puntosClave = JSON.parse(run["11_puntos_clave"]);
+            } catch {
+              // If not JSON, split by comma and newline, or use as single item
+              const text = run["11_puntos_clave"];
+              if (text.includes(',')) {
+                puntosClave = text.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+              } else if (text.includes('\n')) {
+                puntosClave = text.split('\n').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+              } else {
+                puntosClave = [text];
+              }
+            }
+          } else if (Array.isArray(run["11_puntos_clave"])) {
+            puntosClave = run["11_puntos_clave"];
+          }
+          
+          if (puntosClave.length > 0) {
             content += `Puntos Clave:\n`;
             puntosClave.forEach((punto: string, idx: number) => {
               content += `${idx + 1}. ${punto}\n`;
             });
           }
         } catch (e) {
-          console.error('Error parsing puntos_clave:', e);
+          console.error('Error processing puntos_clave for run', run.id, ':', e);
+          // Continue without puntos_clave rather than failing
         }
       }
 
