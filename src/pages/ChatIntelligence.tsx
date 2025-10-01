@@ -20,7 +20,7 @@ interface Message {
 
 export default function ChatIntelligence() {
   const [selectedCompany, setSelectedCompany] = useState<string>("");
-  const [selectedWeek, setSelectedWeek] = useState<string>("");
+  const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [analysisType, setAnalysisType] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -103,7 +103,7 @@ export default function ChatIntelligence() {
 
     const userMessage: Message = {
       role: 'user',
-      content: `Análisis: ${analysisTypes.find(t => t.value === analysisType)?.label} para ${selectedCompany}${selectedWeek ? ` (semana ${selectedWeek})` : ''}`,
+      content: `Análisis: ${analysisTypes.find(t => t.value === analysisType)?.label} para ${selectedCompany}${selectedWeek && selectedWeek !== "all" ? ` (semana ${selectedWeek})` : ''}`,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -112,7 +112,7 @@ export default function ChatIntelligence() {
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
           company: selectedCompany,
-          week: selectedWeek,
+          week: selectedWeek === "all" ? null : selectedWeek,
           analysisType,
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
         },
@@ -230,7 +230,7 @@ export default function ChatIntelligence() {
                     <SelectValue placeholder="Todas las semanas" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todas las semanas</SelectItem>
+                    <SelectItem value="all">Todas las semanas</SelectItem>
                     {weekOptions.map((week) => (
                       <SelectItem key={week.value} value={week.value}>
                         {week.label}
