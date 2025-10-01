@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageCircle, AlertCircle, Building2, CalendarDays } from "lucide-react";
+import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw } from "lucide-react";
 import { useCompanies } from "@/hooks/useCompanies";
 import { usePariRuns } from "@/hooks/usePariRuns";
 import { format, startOfWeek, addWeeks } from "date-fns";
@@ -24,6 +24,7 @@ export default function ChatIntelligence() {
   const [analysisType, setAnalysisType] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: pariRuns } = usePariRuns();
@@ -121,6 +122,32 @@ export default function ChatIntelligence() {
     });
   };
 
+  const handleInitializeVectorStore = async () => {
+    setIsInitializing(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('populate-vector-store', {
+        body: { clean: true },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Base de datos actualizada",
+        description: `${data.documents_created} documentos creados con éxito`,
+      });
+    } catch (error) {
+      console.error('Error initializing vector store:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al inicializar",
+        variant: "destructive",
+      });
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
   return (
     <Layout title="Repindex.ai">
       <div className="space-y-6">
@@ -135,7 +162,7 @@ export default function ChatIntelligence() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/50 rounded-lg">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-muted/50 rounded-lg">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">Selección:</span>
             
@@ -174,6 +201,27 @@ export default function ChatIntelligence() {
               </Select>
             </div>
           </div>
+
+          {/* Initialize DB Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleInitializeVectorStore}
+            disabled={isInitializing}
+            className="gap-2"
+          >
+            {isInitializing ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Actualizando...
+              </>
+            ) : (
+              <>
+                <Database className="h-4 w-4" />
+                Actualizar Base de Datos
+              </>
+            )}
+          </Button>
         </div>
 
         <div className="grid lg:grid-cols-4 gap-6">

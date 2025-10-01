@@ -23,43 +23,71 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY not configured');
     }
 
-    // Get all pari_runs with company info
+    // Parse request body for clean option
+    const body = await req.json().catch(() => ({}));
+    const shouldClean = body.clean === true;
+
+    // Clean existing documents if requested
+    if (shouldClean) {
+      console.log('Cleaning existing documents...');
+      const { error: deleteError } = await supabaseClient
+        .from('documents')
+        .delete()
+        .neq('id', 0); // Delete all
+      
+      if (deleteError) {
+        console.error('Error cleaning documents:', deleteError);
+      } else {
+        console.log('Documents cleaned successfully');
+      }
+    }
+
+    // Get all pari_runs with resumen
     const { data: pariRuns, error: pariError } = await supabaseClient
       .from('pari_runs')
-      .select(`
-        *,
-        repindex_root_issuers (
-          issuer_name,
-          ticker,
-          sector_category,
-          ibex_family_code
-        )
-      `)
+      .select('*')
       .not('10_resumen', 'is', null);
 
     if (pariError) throw pariError;
 
     console.log(`Processing ${pariRuns?.length || 0} pari_runs...`);
 
+    // Get all issuers data to join manually
+    const { data: issuers, error: issuersError } = await supabaseClient
+      .from('repindex_root_issuers')
+      .select('ticker, issuer_name, sector_category, ibex_family_code');
+
+    if (issuersError) throw issuersError;
+
+    // Create a map for quick lookup
+    const issuersMap = new Map(
+      issuers?.map(issuer => [issuer.ticker, issuer]) || []
+    );
+
     let documentsCreated = 0;
     let documentsSkipped = 0;
 
     for (const run of pariRuns || []) {
-      // Check if document already exists
-      const { data: existing } = await supabaseClient
-        .from('documents')
-        .select('id')
-        .eq('metadata->>pari_run_id', run.id)
-        .single();
+      // Check if document already exists (skip if clean wasn't requested)
+      if (!shouldClean) {
+        const { data: existing } = await supabaseClient
+          .from('documents')
+          .select('id')
+          .eq('metadata->>pari_run_id', run.id)
+          .maybeSingle();
 
-      if (existing) {
-        documentsSkipped++;
-        continue;
+        if (existing) {
+          documentsSkipped++;
+          continue;
+        }
       }
+
+      // Get issuer data from map
+      const issuerData = issuersMap.get(run["05_ticker"]);
 
       // Build content from resumen and puntos_clave
       let content = `Empresa: ${run["03_target_name"] || "N/A"}\n`;
-      content += `Ticker: ${run.repindex_root_issuers?.ticker || run["05_ticker"] || "N/A"}\n`;
+      content += `Ticker: ${run["05_ticker"] || "N/A"}\n`;
       content += `Modelo IA: ${run["02_model_name"] || "N/A"}\n`;
       content += `Período: ${run["06_period_from"]} - ${run["07_period_to"]}\n`;
       content += `PARI Score: ${run["09_pari_score"] || "N/A"}\n\n`;
@@ -110,13 +138,13 @@ serve(async (req) => {
       const metadata = {
         pari_run_id: run.id,
         company_name: run["03_target_name"],
-        ticker: run.repindex_root_issuers?.ticker || run["05_ticker"],
+        ticker: run["05_ticker"],
         ai_model: run["02_model_name"],
         week_start: run["06_period_from"],
         week_end: run["07_period_to"],
         pari_score: run["09_pari_score"],
-        sector_category: run.repindex_root_issuers?.sector_category,
-        ibex_family_code: run.repindex_root_issuers?.ibex_family_code,
+        sector_category: issuerData?.sector_category,
+        ibex_family_code: issuerData?.ibex_family_code,
         scores: {
           lns: run["23_lns_score"],
           es: run["26_es_score"],
