@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageCircle, Sparkles, AlertCircle, Database } from "lucide-react";
+import { MessageCircle, AlertCircle, Building2, CalendarDays } from "lucide-react";
 import { useCompanies } from "@/hooks/useCompanies";
 import { usePariRuns } from "@/hooks/usePariRuns";
 import { format, startOfWeek, addWeeks } from "date-fns";
@@ -24,7 +24,6 @@ export default function ChatIntelligence() {
   const [analysisType, setAnalysisType] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [vectorStoreStatus, setVectorStoreStatus] = useState<'unknown' | 'populating' | 'ready'>('unknown');
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: pariRuns } = usePariRuns();
@@ -58,36 +57,6 @@ export default function ChatIntelligence() {
     { value: 'debilidades', label: '⚠️ Debilidades', description: '¿Qué necesita mejorar?' },
     { value: 'metricas', label: '📊 Análisis de Métricas', description: 'Comparación de LNS, ES, SAM, etc.' },
   ];
-
-  const handlePopulateVectorStore = async () => {
-    setVectorStoreStatus('populating');
-    toast({
-      title: "Poblando Vector Store",
-      description: "Esto puede tardar unos minutos...",
-    });
-
-    try {
-      const { data, error } = await supabase.functions.invoke('populate-vector-store', {
-        body: {},
-      });
-
-      if (error) throw error;
-
-      setVectorStoreStatus('ready');
-      toast({
-        title: "Vector Store Poblado",
-        description: `${data.documents_created} documentos creados, ${data.documents_skipped} ya existían.`,
-      });
-    } catch (error) {
-      console.error('Error populating vector store:', error);
-      setVectorStoreStatus('unknown');
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error poblando el vector store",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleStartAnalysis = async () => {
     if (!selectedCompany || !analysisType) {
@@ -153,118 +122,86 @@ export default function ChatIntelligence() {
   };
 
   return (
-    <Layout title="Chat Inteligente IA">
+    <Layout title="Repindex.ai">
       <div className="space-y-6">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight flex items-center justify-center gap-2">
-            <Sparkles className="h-8 w-8 text-primary" />
-            Chat Inteligente: Comparaciones entre IAs
+          <h1 className="text-2xl font-bold tracking-tight">
+            Chat Inteligente - Comparaciones entre IAs
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Descubre insights únicos comparando cómo diferentes IAs perciben la reputación corporativa
+          <p className="text-sm text-muted-foreground">
+            Descubre insights únicos comparando modelos de IA
           </p>
         </div>
 
-        {/* Vector Store Status */}
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Vector Store
-            </CardTitle>
-            <CardDescription>
-              Base de datos vectorial para búsquedas semánticas
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {vectorStoreStatus === 'unknown' && (
-              <Button onClick={handlePopulateVectorStore} className="w-full">
-                Poblar Vector Store con Datos
-              </Button>
-            )}
-            {vectorStoreStatus === 'populating' && (
-              <div className="flex items-center justify-center gap-2">
-                <Skeleton className="h-4 w-4 rounded-full" />
-                <span className="text-sm text-muted-foreground">Poblando vector store...</span>
-              </div>
-            )}
-            {vectorStoreStatus === 'ready' && (
-              <div className="text-sm text-green-600 dark:text-green-400">
-                ✓ Vector store listo
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Selection Panel */}
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle>Configuración</CardTitle>
-              <CardDescription>Selecciona empresa y tipo de análisis</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Company Selector */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Empresa</label>
-                <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona empresa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {companies?.map((company) => (
-                      <SelectItem key={company.issuer_id} value={company.issuer_name}>
-                        {company.issuer_name} ({company.ticker})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Week Selector (Optional) */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Semana (Opcional)</label>
-                <Select value={selectedWeek} onValueChange={setSelectedWeek}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Todas las semanas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas las semanas</SelectItem>
-                    {weekOptions.map((week) => (
-                      <SelectItem key={week.value} value={week.value}>
-                        {week.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Analysis Type */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Tipo de Análisis</label>
-                <div className="space-y-2">
-                  {analysisTypes.map((type) => (
-                    <Button
-                      key={type.value}
-                      variant={analysisType === type.value ? "default" : "outline"}
-                      className="w-full justify-start text-left h-auto py-3"
-                      onClick={() => setAnalysisType(type.value)}
-                    >
-                      <div>
-                        <div className="font-medium">{type.label}</div>
-                        <div className="text-xs text-muted-foreground">{type.description}</div>
-                      </div>
-                    </Button>
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/50 rounded-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Selección:</span>
+            
+            {/* Company Filter */}
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar empresa" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-50">
+                  {companies?.map((company) => (
+                    <SelectItem key={company.issuer_id} value={company.issuer_name}>
+                      {company.issuer_name} ({company.ticker})
+                    </SelectItem>
                   ))}
-                </div>
-              </div>
+                </SelectContent>
+              </Select>
+            </div>
 
-              {/* Start Analysis Button */}
+            {/* Week Filter */}
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              <Select value={selectedWeek} onValueChange={setSelectedWeek}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Seleccionar semana" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-50">
+                  <SelectItem value="all">Todas las semanas</SelectItem>
+                  {weekOptions.map((week) => (
+                    <SelectItem key={week.value} value={week.value}>
+                      {week.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-4 gap-6">
+          {/* Analysis Type Selection */}
+          <Card className="lg:col-span-1 shadow-card">
+            <CardHeader>
+              <CardTitle className="text-lg">Tipo de Análisis</CardTitle>
+              <CardDescription>Selecciona el tipo de comparación</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {analysisTypes.map((type) => (
+                <Button
+                  key={type.value}
+                  variant={analysisType === type.value ? "default" : "outline"}
+                  className="w-full justify-start text-left h-auto py-3"
+                  onClick={() => setAnalysisType(type.value)}
+                >
+                  <div>
+                    <div className="font-medium text-sm">{type.label}</div>
+                    <div className="text-xs text-muted-foreground">{type.description}</div>
+                  </div>
+                </Button>
+              ))}
+              
               <Button
                 onClick={handleStartAnalysis}
                 disabled={!selectedCompany || !analysisType || isLoading}
-                className="w-full"
+                className="w-full mt-4"
                 size="lg"
               >
                 {isLoading ? "Analizando..." : "Iniciar Análisis"}
@@ -273,7 +210,7 @@ export default function ChatIntelligence() {
           </Card>
 
           {/* Chat Area */}
-          <Card className="lg:col-span-2">
+          <Card className="lg:col-span-3 shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessageCircle className="h-5 w-5" />
