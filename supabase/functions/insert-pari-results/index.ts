@@ -46,6 +46,14 @@ interface PariResult {
   }
 }
 
+// Helper function to safely convert any value to an integer, with a default fallback
+function ensureInteger(value: any, defaultValue: number = 0): number {
+  if (value === null || value === undefined) return defaultValue;
+  const parsed = Number(value);
+  if (isNaN(parsed)) return defaultValue;
+  return Math.round(parsed);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -381,47 +389,47 @@ serve(async (req) => {
           // Map to numbered columns based on metric type
           switch(metricLower) {
             case 'lns':
-              metricsMap["23_lns_score"] = subscore.score
-              metricsMap["24_lns_peso"] = subscore.peso
+              metricsMap["23_lns_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["24_lns_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["25_lns_categoria"] = subscore.categoria
               break
             case 'es':
-              metricsMap["26_es_score"] = subscore.score
-              metricsMap["27_es_peso"] = subscore.peso
+              metricsMap["26_es_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["27_es_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["28_es_categoria"] = subscore.categoria
               break
             case 'sam':
-              metricsMap["29_sam_score"] = subscore.score
-              metricsMap["30_sam_peso"] = subscore.peso
+              metricsMap["29_sam_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["30_sam_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["31_sam_categoria"] = subscore.categoria
               break
             case 'rm':
-              metricsMap["32_rm_score"] = subscore.score
-              metricsMap["33_rm_peso"] = subscore.peso
+              metricsMap["32_rm_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["33_rm_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["34_rm_categoria"] = subscore.categoria
               break
             case 'clr':
-              metricsMap["35_clr_score"] = subscore.score
-              metricsMap["36_clr_peso"] = subscore.peso
+              metricsMap["35_clr_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["36_clr_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["37_clr_categoria"] = subscore.categoria
               break
             case 'gip':
-              metricsMap["38_gip_score"] = subscore.score
-              metricsMap["39_gip_peso"] = subscore.peso
+              metricsMap["38_gip_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["39_gip_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["40_gip_categoria"] = subscore.categoria
               break
             case 'kgi':
-              metricsMap["41_kgi_score"] = subscore.score
-              metricsMap["42_kgi_peso"] = subscore.peso
+              metricsMap["41_kgi_score"] = ensureInteger(subscore.score, 0)
+              metricsMap["42_kgi_peso"] = ensureInteger(subscore.peso, 0)
               metricsMap["43_kgi_categoria"] = subscore.categoria
               break
             case 'mpi':
-              // Check if MPI score is "no aplica" or similar text ONLY (don't treat invalid numbers as "no aplica")
+              // Check if MPI score is "no aplica" or similar text
               const mpiScoreRaw = subscore.score;
               const mpiScoreStr = String(mpiScoreRaw).toLowerCase().trim();
               const mpiCategoria = subscore.categoria?.toLowerCase().trim() || '';
               
-              // Check for "no aplica" text patterns only
+              // Check for "no aplica" text patterns
               const noAplicaPatterns = ['no_aplica', 'no aplica', 'n/a', 'na', 'no-aplica', 'noapplica'];
               const isMpiNoAplicaScore = noAplicaPatterns.some(pattern => mpiScoreStr.includes(pattern));
               const isMpiNoAplicaCategoria = noAplicaPatterns.some(pattern => mpiCategoria.includes(pattern));
@@ -430,18 +438,17 @@ serve(async (req) => {
               if (isMpiNoAplica) {
                 console.log(`⚠️  MPI "no aplica" detected (score: "${mpiScoreRaw}", categoria: "${subscore.categoria}") for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
                 metricsMap["44_mpi_score"] = 0;
-                metricsMap["45_mpi_peso"] = subscore.peso || 0;
+                metricsMap["45_mpi_peso"] = ensureInteger(subscore.peso, 0);
                 metricsMap["46_mpi_categoria"] = 'no aplica';
                 metricsMap["52_mpi_excluded"] = true;
               } else {
-                // Parse score as number
-                const parsedScore = Number(mpiScoreRaw);
-                if (isNaN(parsedScore)) {
-                  console.error(`❌ Invalid MPI score received: "${mpiScoreRaw}" for company "${result.meta.target_name}". Expected a number or "no aplica" pattern.`);
-                  throw new Error(`Invalid MPI score: "${mpiScoreRaw}". Expected a number or "no aplica".`);
+                // Try to parse score as number, default to 0 if invalid
+                const parsedScore = ensureInteger(mpiScoreRaw, 0);
+                if (parsedScore === 0 && mpiScoreRaw !== 0 && mpiScoreRaw !== '0') {
+                  console.warn(`⚠️  Invalid MPI score received: "${mpiScoreRaw}" for company "${result.meta.target_name}". Converting to 0.`);
                 }
-                metricsMap["44_mpi_score"] = Math.round(parsedScore);
-                metricsMap["45_mpi_peso"] = subscore.peso;
+                metricsMap["44_mpi_score"] = parsedScore;
+                metricsMap["45_mpi_peso"] = ensureInteger(subscore.peso, 0);
                 metricsMap["46_mpi_categoria"] = subscore.categoria;
                 metricsMap["52_mpi_excluded"] = false;
               }
@@ -505,14 +512,14 @@ serve(async (req) => {
         "06_period_from": result.meta.period_from,
         "07_period_to": result.meta.period_to,
         "08_tz": result.meta.tz,
-        "09_pari_score": result.tabla.pari,
+        "09_pari_score": ensureInteger(result.tabla.pari, 0),
         "10_resumen": result.relato_mini.resumen,
         "11_puntos_clave": Array.isArray(result.relato_mini.puntos_clave) 
           ? result.relato_mini.puntos_clave 
           : result.relato_mini.puntos_clave,
-        "12_palabras": result.tabla.contadores.palabras,
-        "13_num_fechas": result.tabla.contadores.num_fechas,
-        "14_num_citas": result.tabla.contadores.num_citas,
+        "12_palabras": ensureInteger(result.tabla.contadores.palabras, 0),
+        "13_num_fechas": ensureInteger(result.tabla.contadores.num_fechas, 0),
+        "14_num_citas": ensureInteger(result.tabla.contadores.num_citas, 0),
         "15_temporal_alignment": result.tabla.contadores.temporal_alignment,
         "16_citation_density": result.tabla.contadores.citation_density,
         "17_flags": convertToArray(result.tabla.flags, "17_flags"),
@@ -523,7 +530,7 @@ serve(async (req) => {
         "22_explicacion": processExplanationField(result.relato_mini.explicacion),
         "25_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
         "47_fase": result.meta.target_type || null,
-        "51_pari_score_adjusted": adjustedPariScore,
+        "51_pari_score_adjusted": adjustedPariScore !== null ? ensureInteger(adjustedPariScore, 0) : null,
         "52_mpi_excluded": mpiExcluded,
         ...metricsMap
       }
