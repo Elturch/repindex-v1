@@ -83,12 +83,17 @@ serve(async (req) => {
       console.log('Documents after company filter:', filteredDocuments.length);
     }
 
-    // Further filter by week if specified
+    // Further filter by week if specified (flexible: accepts dates within same week)
     if (week && filteredDocuments.length > 0) {
-      filteredDocuments = filteredDocuments.filter((doc: any) => 
-        doc.metadata?.week_start === week
-      );
-      console.log('Documents after week filter:', filteredDocuments.length);
+      const searchDate = new Date(week);
+      filteredDocuments = filteredDocuments.filter((doc: any) => {
+        if (!doc.metadata?.week_start) return false;
+        const docDate = new Date(doc.metadata.week_start);
+        // Accept if within 6 days (same week)
+        const diffInDays = Math.abs((docDate.getTime() - searchDate.getTime()) / (1000 * 60 * 60 * 24));
+        return diffInDays <= 6;
+      });
+      console.log('Documents after week filter (flexible):', filteredDocuments.length);
     }
 
     // Limit to top 10 most relevant
