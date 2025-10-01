@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw } from "lucide-react";
@@ -25,10 +26,17 @@ export default function ChatIntelligence() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [companySearch, setCompanySearch] = useState("");
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: pariRuns } = usePariRuns();
   const { toast } = useToast();
+
+  // Filter companies based on search
+  const filteredCompanies = companies?.filter(company =>
+    company.issuer_name.toLowerCase().includes(companySearch.toLowerCase()) ||
+    company.ticker.toLowerCase().includes(companySearch.toLowerCase())
+  );
 
   // Generate week options
   const weekOptions = pariRuns ? Array.from(
@@ -174,11 +182,25 @@ export default function ChatIntelligence() {
                   <SelectValue placeholder="Seleccionar empresa" />
                 </SelectTrigger>
                 <SelectContent className="bg-background border z-50">
-                  {companies?.map((company) => (
-                    <SelectItem key={company.issuer_id} value={company.issuer_name}>
-                      {company.issuer_name} ({company.ticker})
-                    </SelectItem>
-                  ))}
+                  <div className="px-2 py-1.5 sticky top-0 bg-background">
+                    <Input
+                      placeholder="Buscar empresa..."
+                      value={companySearch}
+                      onChange={(e) => setCompanySearch(e.target.value)}
+                      className="h-8"
+                    />
+                  </div>
+                  {filteredCompanies && filteredCompanies.length > 0 ? (
+                    filteredCompanies.map((company) => (
+                      <SelectItem key={company.issuer_id} value={company.issuer_name}>
+                        {company.issuer_name} ({company.ticker})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                      No se encontraron empresas
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
