@@ -416,29 +416,34 @@ serve(async (req) => {
               metricsMap["43_kgi_categoria"] = subscore.categoria
               break
             case 'mpi':
-              // Check if MPI score is "no aplica" or similar text (handle both score and categoria fields)
+              // Check if MPI score is "no aplica" or similar text ONLY (don't treat invalid numbers as "no aplica")
               const mpiScoreRaw = subscore.score;
               const mpiScoreStr = String(mpiScoreRaw).toLowerCase().trim();
               const mpiCategoria = subscore.categoria?.toLowerCase().trim() || '';
               
-              // Check for "no aplica" patterns in both score and categoria
+              // Check for "no aplica" text patterns only
               const noAplicaPatterns = ['no_aplica', 'no aplica', 'n/a', 'na', 'no-aplica', 'noapplica'];
-              const isMpiNoAplicaScore = noAplicaPatterns.some(pattern => mpiScoreStr.includes(pattern)) || 
-                                         isNaN(Number(mpiScoreRaw));
+              const isMpiNoAplicaScore = noAplicaPatterns.some(pattern => mpiScoreStr.includes(pattern));
               const isMpiNoAplicaCategoria = noAplicaPatterns.some(pattern => mpiCategoria.includes(pattern));
               const isMpiNoAplica = isMpiNoAplicaScore || isMpiNoAplicaCategoria;
               
               if (isMpiNoAplica) {
                 console.log(`⚠️  MPI "no aplica" detected (score: "${mpiScoreRaw}", categoria: "${subscore.categoria}") for company "${result.meta.target_name}". Setting MPI score to 0 and will recalculate PARI.`);
                 metricsMap["44_mpi_score"] = 0;
-                metricsMap["45_mpi_peso"] = subscore.peso || 0; // Keep original weight for reference
-                metricsMap["46_mpi_categoria"] = 'no aplica'; // Always normalize to consistent format
-              } else {
-                // Parse score as number to ensure it's an integer
-                const parsedScore = Number(subscore.score);
-                metricsMap["44_mpi_score"] = isNaN(parsedScore) ? 0 : Math.round(parsedScore);
                 metricsMap["45_mpi_peso"] = subscore.peso || 0;
-                metricsMap["46_mpi_categoria"] = subscore.categoria || null;
+                metricsMap["46_mpi_categoria"] = 'no aplica';
+                metricsMap["52_mpi_excluded"] = true;
+              } else {
+                // Parse score as number
+                const parsedScore = Number(mpiScoreRaw);
+                if (isNaN(parsedScore)) {
+                  console.error(`❌ Invalid MPI score received: "${mpiScoreRaw}" for company "${result.meta.target_name}". Expected a number or "no aplica" pattern.`);
+                  throw new Error(`Invalid MPI score: "${mpiScoreRaw}". Expected a number or "no aplica".`);
+                }
+                metricsMap["44_mpi_score"] = Math.round(parsedScore);
+                metricsMap["45_mpi_peso"] = subscore.peso;
+                metricsMap["46_mpi_categoria"] = subscore.categoria;
+                metricsMap["52_mpi_excluded"] = false;
               }
               break
           }
