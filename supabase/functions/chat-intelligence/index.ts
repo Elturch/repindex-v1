@@ -29,6 +29,10 @@ serve(async (req) => {
     let searchQuery = `${company}`;
     if (week) searchQuery += ` semana ${week}`;
 
+    console.log('Search query:', searchQuery);
+    console.log('Company filter:', company);
+    console.log('Week filter:', week);
+
     // Generate embedding for search query
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
@@ -42,18 +46,53 @@ serve(async (req) => {
       }),
     });
 
+    if (!embeddingResponse.ok) {
+      const errorText = await embeddingResponse.text();
+      console.error('Embedding API error:', errorText);
+      throw new Error(`Failed to generate embedding: ${errorText}`);
+    }
+
     const embeddingData = await embeddingResponse.json();
     const queryEmbedding = embeddingData.data[0].embedding;
 
-    // Search vector store
+    console.log('Generated embedding, length:', queryEmbedding.length);
+
+    // Search vector store (without filter, we'll filter in JS)
     const { data: documents, error: searchError } = await supabaseClient
       .rpc('match_documents', {
         query_embedding: queryEmbedding,
-        match_count: 10,
-        filter: company ? { company_name: company } : {},
+        match_count: 20, // Get more results to filter client-side
       });
 
-    if (searchError) throw searchError;
+    if (searchError) {
+      console.error('Vector search error:', searchError);
+      throw searchError;
+    }
+
+    console.log('Documents found before filtering:', documents?.length || 0);
+    if (documents && documents.length > 0) {
+      console.log('First document metadata:', JSON.stringify(documents[0].metadata, null, 2));
+    }
+
+    // Filter documents by company name (case-insensitive)
+    let filteredDocuments = documents || [];
+    if (company && filteredDocuments.length > 0) {
+      filteredDocuments = filteredDocuments.filter((doc: any) => 
+        doc.metadata?.company_name?.toLowerCase() === company.toLowerCase()
+      );
+      console.log('Documents after company filter:', filteredDocuments.length);
+    }
+
+    // Further filter by week if specified
+    if (week && filteredDocuments.length > 0) {
+      filteredDocuments = filteredDocuments.filter((doc: any) => 
+        doc.metadata?.week_start === week
+      );
+      console.log('Documents after week filter:', filteredDocuments.length);
+    }
+
+    // Limit to top 10 most relevant
+    filteredDocuments = filteredDocuments.slice(0, 10);
 
     // Get structured data for the company
     let structuredData = null;
@@ -78,15 +117,21 @@ serve(async (req) => {
     // Build context for AI
     let context = '';
     
-    if (documents && documents.length > 0) {
+    console.log('Building context with', filteredDocuments.length, 'documents');
+    
+    if (filteredDocuments && filteredDocuments.length > 0) {
       context += 'Documentos vectorizados relevantes:\n\n';
-      documents.forEach((doc: any, idx: number) => {
+      filteredDocuments.forEach((doc: any, idx: number) => {
         context += `Documento ${idx + 1}:\n`;
         context += `Empresa: ${doc.metadata.company_name}\n`;
         context += `Modelo IA: ${doc.metadata.ai_model}\n`;
         context += `PARI Score: ${doc.metadata.pari_score}\n`;
+        context += `Semana: ${doc.metadata.week_start}\n`;
         context += `Contenido: ${doc.content.substring(0, 500)}...\n\n`;
       });
+    } else {
+      console.warn('No documents found for company:', company);
+      context += `ADVERTENCIA: No se encontraron documentos en el vector store para ${company}.\n\n`;
     }
 
     if (structuredData && structuredData.length > 0) {
@@ -94,7 +139,12 @@ serve(async (req) => {
       structuredData.forEach((run: any) => {
         context += `- ${run['02_model_name']}: PARI ${run['09_pari_score']}\n`;
       });
+    } else {
+      console.warn('No structured data found for company:', company, 'week:', week);
     }
+
+    console.log('Final context length:', context.length);
+    console.log('Context preview:', context.substring(0, 200));
 
     // Generate AI response based on analysis type
     let systemPrompt = '';
@@ -203,7 +253,7 @@ serve(async (req) => {
       JSON.stringify({
         response: aiResponse,
         suggestedQuestions,
-        documentsFound: documents?.length || 0,
+        documentsFound: filteredDocuments?.length || 0,
         structuredDataFound: structuredData?.length || 0,
       }),
       {
