@@ -20,15 +20,10 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
-    
     if (!openAIApiKey) {
-      throw new Error('OPENAI_API_KEY not configured for embeddings');
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     // Build search query based on context
@@ -204,32 +199,24 @@ serve(async (req) => {
       { role: 'user', content: userPrompt },
     ];
 
-    console.log('Calling Lovable AI Gateway...');
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    console.log('Calling OpenAI API (o3-2025-04-16)...');
+    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'o3-2025-04-16',
         messages,
-        max_tokens: 1500,
+        max_completion_tokens: 16000,
       }),
     });
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('Lovable AI Gateway error:', errorText);
-      
-      if (aiResponse.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again later.');
-      }
-      if (aiResponse.status === 402) {
-        throw new Error('Payment required. Please add credits to your Lovable AI workspace.');
-      }
-      
-      throw new Error(`AI Gateway error: ${errorText}`);
+      console.error('OpenAI API error:', errorText);
+      throw new Error(`OpenAI API error: ${errorText}`);
     }
 
     const aiData = await aiResponse.json();
@@ -237,15 +224,15 @@ serve(async (req) => {
     console.log('AI response received, length:', responseContent?.length || 0);
 
     // Generate suggested follow-up questions
-    console.log('Generating follow-up questions...');
-    const followUpResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    console.log('Generating follow-up questions (gpt-4o-mini)...');
+    const followUpResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
