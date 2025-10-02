@@ -20,9 +20,15 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured');
+    }
+    
     if (!openAIApiKey) {
-      throw new Error('OPENAI_API_KEY not configured');
+      throw new Error('OPENAI_API_KEY not configured for embeddings');
     }
 
     // Build search query based on context
@@ -102,7 +108,7 @@ serve(async (req) => {
     // Get structured data for the company
     let structuredData = null;
     if (company && week) {
-      const { data: pariRuns } = await supabaseClient
+      const { data: pariRuns, error: pariError } = await supabaseClient
         .from('pari_runs')
         .select(`
           *,
@@ -113,10 +119,15 @@ serve(async (req) => {
           )
         `)
         .eq('03_target_name', company)
-        .gte('06_period_from', week)
-        .lte('07_period_to', week);
+        .lte('06_period_from', week)
+        .gte('07_period_to', week);
 
-      structuredData = pariRuns;
+      if (pariError) {
+        console.error('Error fetching pari_runs:', pariError);
+      } else {
+        structuredData = pariRuns;
+        console.log('Structured data found:', structuredData?.length || 0, 'runs');
+      }
     }
 
     // Build context for AI
@@ -186,43 +197,55 @@ serve(async (req) => {
         userPrompt = `Analiza de forma sistemática los siguientes datos sobre ${company}:\n\n${context}`;
     }
 
-    // Call OpenAI
+    // Call Lovable AI Gateway
     const messages = [
       { role: 'system', content: systemPrompt },
       ...(conversationHistory || []),
       { role: 'user', content: userPrompt },
     ];
 
-    const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    console.log('Calling Lovable AI Gateway...');
+    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Authorization': `Bearer ${lovableApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'o3-2025-04-16',
+        model: 'google/gemini-2.5-flash',
         messages,
-        max_completion_tokens: 1500,
+        max_tokens: 1500,
       }),
     });
 
-    if (!openAIResponse.ok) {
-      const errorText = await openAIResponse.text();
-      throw new Error(`OpenAI API error: ${errorText}`);
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('Lovable AI Gateway error:', errorText);
+      
+      if (aiResponse.status === 429) {
+        throw new Error('Rate limit exceeded. Please try again later.');
+      }
+      if (aiResponse.status === 402) {
+        throw new Error('Payment required. Please add credits to your Lovable AI workspace.');
+      }
+      
+      throw new Error(`AI Gateway error: ${errorText}`);
     }
 
-    const aiData = await openAIResponse.json();
-    const aiResponse = aiData.choices[0].message.content;
+    const aiData = await aiResponse.json();
+    const responseContent = aiData.choices[0].message.content;
+    console.log('AI response received, length:', responseContent?.length || 0);
 
     // Generate suggested follow-up questions
-    const followUpResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    console.log('Generating follow-up questions...');
+    const followUpResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
+        'Authorization': `Bearer ${lovableApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'o3-2025-04-16',
+        model: 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'system',
@@ -230,21 +253,32 @@ serve(async (req) => {
           },
           {
             role: 'user',
-            content: `Análisis previo: ${aiResponse}\n\nGenera 3 preguntas de seguimiento relevantes.`,
+            content: `Análisis previo: ${responseContent}\n\nGenera 3 preguntas de seguimiento relevantes.`,
           },
         ],
-        max_completion_tokens: 200,
+        max_tokens: 200,
       }),
     });
 
-    const followUpData = await followUpResponse.json();
     let suggestedQuestions = [];
     
-    try {
-      const questionsText = followUpData.choices[0].message.content;
-      suggestedQuestions = JSON.parse(questionsText);
-    } catch (e) {
-      // Fallback questions
+    if (followUpResponse.ok) {
+      try {
+        const followUpData = await followUpResponse.json();
+        const questionsText = followUpData.choices[0].message.content;
+        suggestedQuestions = JSON.parse(questionsText);
+        console.log('Follow-up questions generated:', suggestedQuestions.length);
+      } catch (e) {
+        console.warn('Error parsing follow-up questions:', e);
+        // Fallback questions
+        suggestedQuestions = [
+          '¿Qué modelo es más optimista?',
+          '¿Dónde hay más consenso?',
+          '¿Qué métricas destacan?',
+        ];
+      }
+    } else {
+      console.warn('Follow-up questions generation failed, using fallback');
       suggestedQuestions = [
         '¿Qué modelo es más optimista?',
         '¿Dónde hay más consenso?',
@@ -254,7 +288,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        response: aiResponse,
+        response: responseContent,
         suggestedQuestions,
         documentsFound: filteredDocuments?.length || 0,
         structuredDataFound: structuredData?.length || 0,
