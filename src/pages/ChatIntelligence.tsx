@@ -131,12 +131,59 @@ export default function ChatIntelligence() {
     }
   };
 
-  const handleSuggestedQuestion = (question: string) => {
-    // This would trigger a new analysis with the suggested question
-    toast({
-      title: "Próximamente",
-      description: "Preguntas de seguimiento en desarrollo",
-    });
+  const handleSuggestedQuestion = async (question: string) => {
+    if (!selectedCompany) {
+      toast({
+        title: "Error",
+        description: "No hay empresa seleccionada",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    const userMessage: Message = {
+      role: 'user',
+      content: question,
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-intelligence', {
+        body: {
+          company: selectedCompany,
+          week: selectedWeek === "all" ? null : selectedWeek,
+          analysisType: analysisType || 'consenso', // Use current analysis type or default
+          conversationHistory: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
+        },
+      });
+
+      if (error) throw error;
+
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: data.response,
+        suggestedQuestions: data.suggestedQuestions,
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+
+      toast({
+        title: "Análisis completado",
+        description: `${data.documentsFound} documentos analizados`,
+      });
+    } catch (error) {
+      console.error('Error in follow-up question:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error en el análisis",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleInitializeVectorStore = async () => {
@@ -512,6 +559,8 @@ export default function ChatIntelligence() {
                                     variant="outline"
                                     size="sm"
                                     className="w-full justify-start text-left h-auto py-3 px-3 hover:bg-accent"
+                                    onClick={() => handleSuggestedQuestion(question)}
+                                    disabled={isLoading}
                                   >
                                     {question}
                                   </Button>
