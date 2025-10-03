@@ -187,19 +187,38 @@ serve(async (req) => {
         userPrompt = `Basándote en los datos siguientes, analiza las MÉTRICAS de reputación de ${company} y compara cómo las evalúan los diferentes modelos de IA. Proporciona análisis detallado métrica por métrica:\n\n${context}`;
         break;
 
+      case 'profundo':
+        systemPrompt = 'Eres un analista experto con capacidades de razonamiento avanzado multi-paso. Utiliza cadenas de pensamiento explícitas para analizar profundamente los datos. Examina sistemáticamente cada aspecto, considera múltiples perspectivas, evalúa evidencia contradictoria, y proporciona conclusiones bien fundamentadas con razonamiento detallado.';
+        userPrompt = `Realiza un ANÁLISIS PROFUNDO Y EXHAUSTIVO de ${company}. Utiliza razonamiento multi-paso para:
+1. Analizar detalladamente cada modelo de IA y sus evaluaciones
+2. Identificar patrones subyacentes y relaciones causa-efecto
+3. Evaluar la calidad y consistencia de la evidencia
+4. Considerar implicaciones estratégicas a corto y largo plazo
+5. Proporcionar recomendaciones fundamentadas
+
+Datos disponibles:\n\n${context}`;
+        break;
+
       default:
         systemPrompt = 'Eres un asistente experto en análisis de reputación corporativa y comparación entre modelos de IA. Utiliza razonamiento estructurado y análisis multi-paso para proporcionar insights profundos.';
         userPrompt = `Analiza de forma sistemática los siguientes datos sobre ${company}:\n\n${context}`;
     }
 
-    // Call Lovable AI Gateway
+    // Determine model and tokens based on analysis type
+    const isDeepAnalysis = analysisType === 'profundo';
+    const modelToUse = isDeepAnalysis ? 'o3-2025-04-16' : 'o4-mini-2025-04-16';
+    const maxTokens = isDeepAnalysis ? 8000 : 4000;
+
+    console.log(`Using model: ${modelToUse} (deep analysis: ${isDeepAnalysis}, tokens: ${maxTokens})`);
+
+    // Call OpenAI API
     const messages = [
       { role: 'system', content: systemPrompt },
       ...(conversationHistory || []),
       { role: 'user', content: userPrompt },
     ];
 
-    console.log('Calling OpenAI API (o3-2025-04-16)...');
+    console.log(`Calling OpenAI API with ${modelToUse}...`);
     const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -207,9 +226,9 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'o3-2025-04-16',
+        model: modelToUse,
         messages,
-        max_completion_tokens: 16000,
+        max_completion_tokens: maxTokens,
       }),
     });
 

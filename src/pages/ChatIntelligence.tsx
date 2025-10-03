@@ -74,6 +74,7 @@ export default function ChatIntelligence() {
     { value: 'fortalezas', label: '💪 Fortalezas', description: '¿Qué destaca positivamente?' },
     { value: 'debilidades', label: '⚠️ Debilidades', description: '¿Qué necesita mejorar?' },
     { value: 'metricas', label: '📊 Análisis de Métricas', description: 'Comparación de LNS, ES, SAM, etc.' },
+    { value: 'profundo', label: '🧠 Análisis Profundo', description: 'Razonamiento avanzado multi-paso (tarda más)' },
   ];
 
   const handleStartAnalysis = async () => {
