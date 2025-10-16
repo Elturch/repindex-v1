@@ -197,7 +197,7 @@ export function Dashboard() {
             Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter === "all" ? "Todos" : aiFilter}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {pariRuns?.length || 0} empresas analizadas
+            {rixRuns?.length || 0} empresas analizadas
             {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
@@ -419,28 +419,28 @@ export function Dashboard() {
                   </TableHeader>
                   <TableBody>
                     {rixRuns.map((rixRun) => (
-                      <TableRow 
-                        key={pariRun.id} 
+                      <TableRow
+                        key={rixRun.id}
                         className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
-                        onClick={() => handleRowClick(pariRun.id)}
+                        onClick={() => handleRowClick(rixRun.id)}
                       >
                         <TableCell>
                           <div>
-                            <div className="font-medium">{pariRun["03_target_name"] || "Sin nombre"}</div>
-                            {(pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]) && (
+                            <div className="font-medium">{rixRun["03_target_name"] || "Sin nombre"}</div>
+                            {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
                               <div className="text-sm text-muted-foreground">
-                                {pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]}
+                                {rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]}
                               </div>
                             )}
-                            {!pariRun["03_target_name"] && pariRun["01_run_id"] && (
-                              <div className="text-xs text-muted-foreground">ID: {pariRun["01_run_id"]}</div>
+                            {!rixRun["03_target_name"] && rixRun["01_run_id"] && (
+                              <div className="text-xs text-muted-foreground">ID: {rixRun["01_run_id"]}</div>
                             )}
                           </div>
                         </TableCell>
                         {aiFilter === "all" && (
                           <TableCell className="text-center">
                             {(() => {
-                              const modelInfo = getModelInfo(pariRun["02_model_name"] || '');
+                              const modelInfo = getModelInfo(rixRun["02_model_name"] || '');
                               const ModelIcon = modelInfo.icon;
                               return (
                                 <div className="flex items-center justify-center gap-1">
@@ -454,7 +454,7 @@ export function Dashboard() {
                           </TableCell>
                         )}
                         <TableCell className="text-center">
-                          {pariRun.isDataInvalid ? (
+                          {rixRun.isDataInvalid ? (
                             <div className="flex items-center justify-center gap-1">
                               <AlertTriangle className="h-4 w-4 text-destructive" />
                               <span className="text-sm text-destructive font-medium">
@@ -464,20 +464,20 @@ export function Dashboard() {
                           ) : (
                             <div className="flex flex-col items-center justify-center gap-1">
                               <span className="text-xl font-bold text-primary">
-                                {pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0}
+                                {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
                               </span>
-                              {pariRun["52_mpi_excluded"] && (
+                              {rixRun["52_cxm_excluded"] && (
                                 <span className="text-[10px] text-muted-foreground italic">
-                                  (sin MPI)
+                                  (sin CXM)
                                 </span>
                               )}
                             </div>
                           )}
                         </TableCell>
                         {metrics.map((metric) => {
-                          const score = (pariRun as any)[metric.scoreKey];
-                          const categoria = (pariRun as any)[metric.categoryKey];
-                          const isInvalid = pariRun.isDataInvalid;
+                          const score = (rixRun as any)[metric.scoreKey];
+                          const categoria = (rixRun as any)[metric.categoryKey];
+                          const isInvalid = rixRun.isDataInvalid;
                           
                           return (
                             <TableCell key={metric.key} className="text-center">
@@ -490,10 +490,10 @@ export function Dashboard() {
                           );
                         })}
                         <TableCell className="text-sm">
-                          {pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}
+                          {rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}
                         </TableCell>
                         <TableCell className="text-sm whitespace-normal">
-                          {pariRun.repindex_root_issuers?.sector_category || "N/A"}
+                          {rixRun.repindex_root_issuers?.sector_category || "N/A"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -506,21 +506,21 @@ export function Dashboard() {
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {rixRuns.map((rixRun) => (
                   <Card 
-                    key={pariRun.id} 
+                    key={rixRun.id} 
                     className="cursor-pointer shadow-card hover:shadow-card-hover transition-all duration-200"
-                    onClick={() => handleRowClick(pariRun.id)}
+                    onClick={() => handleRowClick(rixRun.id)}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{pariRun["03_target_name"] || "Sin nombre"}</CardTitle>
-                          {(pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]) && (
+                          <CardTitle className="text-lg">{rixRun["03_target_name"] || "Sin nombre"}</CardTitle>
+                          {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
                             <CardDescription>
-                              {pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]}
+                              {rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]}
                             </CardDescription>
                           )}
-                          {!pariRun["03_target_name"] && pariRun["01_run_id"] && (
-                            <CardDescription className="text-xs">ID: {pariRun["01_run_id"]}</CardDescription>
+                          {!rixRun["03_target_name"] && rixRun["01_run_id"] && (
+                            <CardDescription className="text-xs">ID: {rixRun["01_run_id"]}</CardDescription>
                           )}
                         </div>
                         <div className="text-right relative">
@@ -528,7 +528,7 @@ export function Dashboard() {
                            {aiFilter === "all" && (
                              <div className="mb-2">
                                {(() => {
-                                 const modelInfo = getModelInfo(pariRun["02_model_name"] || '');
+                                 const modelInfo = getModelInfo(rixRun["02_model_name"] || '');
                                  const ModelIcon = modelInfo.icon;
                                  return (
                                    <Badge variant="outline" className={cn("text-xs px-2 py-1", modelInfo.colorClass)}>
@@ -540,7 +540,7 @@ export function Dashboard() {
                              </div>
                            )}
                            
-                            {pariRun.isDataInvalid ? (
+                            {rixRun.isDataInvalid ? (
                               <div className="flex flex-col items-end gap-1">
                                 <div className="flex items-center gap-1 text-destructive">
                                   <AlertTriangle className="h-4 w-4" />
@@ -552,12 +552,12 @@ export function Dashboard() {
                               <>
                                 <div className="flex flex-col items-center">
                                   <div className="text-3xl font-bold text-primary">
-                                    {pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0}
+                                    {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
                                   </div>
-                                  <div className="text-sm text-muted-foreground">PARI Score</div>
-                                  {pariRun["52_mpi_excluded"] && (
+                                  <div className="text-sm text-muted-foreground">RIX Score</div>
+                                  {rixRun["52_cxm_excluded"] && (
                                     <div className="text-xs text-muted-foreground italic mt-1">
-                                      (MPI no aplicable)
+                                      (CXM no aplicable)
                                     </div>
                                   )}
                                 </div>
@@ -567,9 +567,9 @@ export function Dashboard() {
                       </div>
                     </CardHeader>
                      <CardContent className="pt-0">
-                       {pariRun.isDataInvalid ? (
+                       {rixRun.isDataInvalid ? (
                          <WeeklyReadingError 
-                           reason={pariRun.dataInvalidReason}
+                           reason={rixRun.dataInvalidReason}
                            variant="banner"
                            className="text-center"
                          />
@@ -578,8 +578,8 @@ export function Dashboard() {
                            {/* Metrics Grid */}
                            <div className="grid grid-cols-4 gap-2">
                              {metrics.map((metric) => {
-                               const score = (pariRun as any)[metric.scoreKey];
-                               const categoria = (pariRun as any)[metric.categoryKey];
+                               const score = (rixRun as any)[metric.scoreKey];
+                               const categoria = (rixRun as any)[metric.categoryKey];
                                return (
                                  <div key={metric.key} className="text-center">
                                    <div className="text-xs text-muted-foreground mb-1">{metric.label}</div>
@@ -595,11 +595,11 @@ export function Dashboard() {
                            <div className="border-t pt-2">
                              <div className="flex justify-between text-xs mb-1">
                                <span className="text-muted-foreground">IBEX Family:</span>
-                               <span>{pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
+                               <span>{rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
                              </div>
                              <div className="flex justify-between text-xs mb-2">
                                <span className="text-muted-foreground">Sector:</span>
-                               <span>{pariRun.repindex_root_issuers?.sector_category || "N/A"}</span>
+                               <span>{rixRun.repindex_root_issuers?.sector_category || "N/A"}</span>
                              </div>
                            </div>
                            
@@ -609,7 +609,7 @@ export function Dashboard() {
                              <div className="flex flex-wrap gap-1">
                                {(() => {
                                  // Parse flags - handle both strings and arrays
-                                 const flagsData = pariRun["17_flags"];
+                                 const flagsData = rixRun["17_flags"];
                                  const flags = !flagsData ? [] : 
                                               Array.isArray(flagsData) ? flagsData : 
                                               typeof flagsData === 'string' ? [flagsData] : [];

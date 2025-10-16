@@ -198,7 +198,7 @@ export function RixRunDetail() {
             Volver
           </Button>
           <Badge variant="secondary" className="text-sm">
-            {pariRun["02_model_name"] || "N/A"}
+            {rixRun["02_model_name"] || "N/A"}
           </Badge>
         </div>
 
@@ -206,27 +206,27 @@ export function RixRunDetail() {
         <div className="flex items-center justify-between bg-muted/50 p-4 rounded-lg">
           <div>
             <h1 className="text-2xl font-bold">
-              {pariRun["03_target_name"]}
-              {(pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]) && (
+              {rixRun["03_target_name"]}
+              {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
                 <span className="text-lg text-muted-foreground ml-2">
-                  ({pariRun.repindex_root_issuers?.ticker || pariRun["05_ticker"]})
+                  ({rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]})
                 </span>
               )}
             </h1>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">
-                {formatDateRange(pariRun["06_period_from"], pariRun["07_period_to"])}
+                {formatDateRange(rixRun["06_period_from"], rixRun["07_period_to"])}
               </p>
               <div className="flex gap-4 text-xs text-muted-foreground">
-                <span>IBEX Family: {pariRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
-                <span>Sector: {pariRun.repindex_root_issuers?.sector_category || "N/A"}</span>
+                <span>IBEX Family: {rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
+                <span>Sector: {rixRun.repindex_root_issuers?.sector_category || "N/A"}</span>
               </div>
             </div>
           </div>
           <div className="text-right">
-            {pariRun.isDataInvalid ? (
+            {rixRun.isDataInvalid ? (
               <WeeklyReadingError 
-                reason="RM = 0"
+                reason="RMM = 0"
                 variant="inline"
                 className="flex-col items-end"
               />
@@ -234,12 +234,12 @@ export function RixRunDetail() {
               <>
                 <div className="flex flex-col items-end">
                   <div className="text-4xl font-bold text-primary">
-                    {pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0}
+                    {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
                   </div>
-                  <div className="text-sm text-muted-foreground">PARI Score</div>
-                  {pariRun["52_mpi_excluded"] && (
+                  <div className="text-sm text-muted-foreground">RIX Score</div>
+                  {rixRun["52_cxm_excluded"] && (
                     <div className="text-xs text-muted-foreground italic mt-1">
-                      (MPI no aplicable)
+                      (CXM no aplicable)
                     </div>
                   )}
                 </div>
@@ -249,10 +249,10 @@ export function RixRunDetail() {
         </div>
 
         {/* Data Status Information */}
-        {pariRun.isDataInvalid ? (
+        {rixRun.isDataInvalid ? (
           <WeeklyReadingError
-            reason={pariRun.dataInvalidReason}
-            companyName={pariRun["03_target_name"]}
+            reason={rixRun.dataInvalidReason}
+            companyName={rixRun["03_target_name"]}
             variant="card"
           />
         ) : (
@@ -274,22 +274,22 @@ export function RixRunDetail() {
           <div className="lg:col-span-2 space-y-4">
             
             {/* Radar Chart - Main Visual Element */}
-            {pariRun && marketAverages && (
+            {rixRun && marketAverages && (
               <RadarChartComparison
                 companyData={{
-                  pari: pariRun.displayPariScore ?? pariRun["09_pari_score"] ?? 0,
-                  lns: pariRun["23_lns_score"] || 0,
-                  es: pariRun["26_es_score"] || 0,
-                  sam: pariRun["29_sam_score"] || 0,
-                  rm: pariRun["32_rm_score"] || 0,
-                  clr: pariRun["35_clr_score"] || 0,
-                  gip: pariRun["38_gip_score"] || 0,
-                  kgi: pariRun["41_kgi_score"] || 0,
-                  mpi: pariRun["44_mpi_score"] || 0,
+                  rix: rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0,
+                  nvm: rixRun["23_nvm_score"] || 0,
+                  drm: rixRun["26_drm_score"] || 0,
+                  sim: rixRun["29_sim_score"] || 0,
+                  rmm: rixRun["32_rmm_score"] || 0,
+                  cem: rixRun["35_cem_score"] || 0,
+                  gam: rixRun["38_gam_score"] || 0,
+                  dcm: rixRun["41_dcm_score"] || 0,
+                  cxm: rixRun["44_cxm_score"] || 0,
                 }}
                 marketAverages={marketAverages}
-                companyName={pariRun["03_target_name"] || "Empresa"}
-                modelName={pariRun["02_model_name"] || ""}
+                companyName={rixRun["03_target_name"] || "Empresa"}
+                modelName={rixRun["02_model_name"] || ""}
               />
             )}
             
@@ -335,7 +335,7 @@ export function RixRunDetail() {
                               bgClass = "bg-insufficient/10";
                             }
 
-                            const isDataInvalid = pariRun.isDataInvalid;
+                            const isDataInvalid = rixRun.isDataInvalid;
                             const rowOpacity = isDataInvalid ? 'opacity-50' : '';
                             const adjustedColorClass = isDataInvalid ? 'text-muted-foreground' : colorClass;
                             const adjustedBgClass = isDataInvalid ? 'bg-muted/10' : bgClass;
@@ -374,7 +374,7 @@ export function RixRunDetail() {
             </Collapsible>
 
             {/* Summary and Key Points - Compact */}
-            {pariRun["10_resumen"] && (
+            {rixRun["10_resumen"] && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -383,7 +383,7 @@ export function RixRunDetail() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm leading-relaxed">{pariRun["10_resumen"]}</p>
+                  <p className="text-sm leading-relaxed">{rixRun["10_resumen"]}</p>
                 </CardContent>
               </Card>
             )}
@@ -418,7 +418,7 @@ export function RixRunDetail() {
                 {/* Show AI responses dynamically based on what's available */}
                 {(() => {
                   const responses = getAIResponses();
-                  const currentModel = pariRun["02_model_name"];
+                  const currentModel = rixRun["02_model_name"];
                   
                   return responses.map((response, index) => {
                     // Check if this is a duplicate of a previous response
@@ -439,49 +439,49 @@ export function RixRunDetail() {
                         title={title}
                         content={response.content}
                         icon={response.icon}
-                        createdAt={pariRun.created_at}
-                        periodFrom={pariRun["06_period_from"]}
-                        periodTo={pariRun["07_period_to"]}
+                        createdAt={rixRun.created_at}
+                        periodFrom={rixRun["06_period_from"]}
+                        periodTo={rixRun["07_period_to"]}
                       />
                     );
                   });
                 })()}
                 
                 {/* Methodological explanation - only show if different from model responses */}
-                {pariRun["22_explicacion"] && !isDuplicateContent(
-                  pariRun["22_explicacion"], 
-                  pariRun["20_res_gpt_bruto"], 
-                  pariRun["22_res_gemini_bruto"],
-                  pariRun["21_res_perplex_bruto"],
-                  pariRun["23_res_deepseek_bruto"]
+                {rixRun["22_explicacion"] && !isDuplicateContent(
+                  rixRun["22_explicacion"], 
+                  rixRun["20_res_gpt_bruto"], 
+                  rixRun["22_res_gemini_bruto"],
+                  rixRun["21_res_perplex_bruto"],
+                  rixRun["23_res_deepseek_bruto"]
                 ) && (
                   <AIResponseDialog
                     title="Ver Explicación Metodológica"
-                    content={pariRun["22_explicacion"]}
-                    createdAt={pariRun.created_at}
-                    periodFrom={pariRun["06_period_from"]}
-                    periodTo={pariRun["07_period_to"]}
+                    content={rixRun["22_explicacion"]}
+                    createdAt={rixRun.created_at}
+                    periodFrom={rixRun["06_period_from"]}
+                    periodTo={rixRun["07_period_to"]}
                   />
                 )}
 
                 {/* Detailed explanations - BUG FIX: Changed from 23_ to 25_ */}
-                {pariRun["25_explicaciones_detalladas"] && 
-                 Array.isArray(pariRun["25_explicaciones_detalladas"]) && 
-                 pariRun["25_explicaciones_detalladas"].length > 0 &&
+                {rixRun["25_explicaciones_detalladas"] && 
+                 Array.isArray(rixRun["25_explicaciones_detalladas"]) && 
+                 rixRun["25_explicaciones_detalladas"].length > 0 &&
                  !isDuplicateContent(
-                   pariRun["25_explicaciones_detalladas"].join('\n'), 
-                   pariRun["22_explicacion"], 
-                   pariRun["20_res_gpt_bruto"], 
-                   pariRun["22_res_gemini_bruto"],
-                   pariRun["21_res_perplex_bruto"],
-                   pariRun["23_res_deepseek_bruto"]
+                   rixRun["25_explicaciones_detalladas"].join('\n'), 
+                   rixRun["22_explicacion"], 
+                   rixRun["20_res_gpt_bruto"], 
+                   rixRun["22_res_gemini_bruto"],
+                   rixRun["21_res_perplex_bruto"],
+                   rixRun["23_res_deepseek_bruto"]
                  ) && (
                   <AIResponseDialog
                     title="Ver Análisis Detallado por Métrica"
-                    content={pariRun["25_explicaciones_detalladas"].join('\n\n')}
-                    createdAt={pariRun.created_at}
-                    periodFrom={pariRun["06_period_from"]}
-                    periodTo={pariRun["07_period_to"]}
+                    content={rixRun["25_explicaciones_detalladas"].join('\n\n')}
+                    createdAt={rixRun.created_at}
+                    periodFrom={rixRun["06_period_from"]}
+                    periodTo={rixRun["07_period_to"]}
                   />
                 )}
               </CardContent>
@@ -500,24 +500,24 @@ export function RixRunDetail() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-muted-foreground">Palabras</div>
-                    <div className="font-semibold">{pariRun["12_palabras"] || 0}</div>
+                    <div className="font-semibold">{rixRun["12_palabras"] || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Fechas</div>
-                    <div className="font-semibold">{pariRun["13_num_fechas"] || 0}</div>
+                    <div className="font-semibold">{rixRun["13_num_fechas"] || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Citas</div>
-                    <div className="font-semibold">{pariRun["14_num_citas"] || 0}</div>
+                    <div className="font-semibold">{rixRun["14_num_citas"] || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Alineación</div>
-                    <div className="font-semibold">{((pariRun["15_temporal_alignment"] || 0) * 100).toFixed(1)}%</div>
+                    <div className="font-semibold">{((rixRun["15_temporal_alignment"] || 0) * 100).toFixed(1)}%</div>
                   </div>
                 </div>
                 <div>
                   <div className="text-muted-foreground text-sm">Densidad de Citas</div>
-                  <div className="font-semibold">{((pariRun["16_citation_density"] || 0) * 100).toFixed(2)}%</div>
+                  <div className="font-semibold">{((rixRun["16_citation_density"] || 0) * 100).toFixed(2)}%</div>
                 </div>
               </CardContent>
             </Card>
