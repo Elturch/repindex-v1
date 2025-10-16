@@ -5,49 +5,49 @@ import { BookOpen } from "lucide-react";
 
 const glossaryData = [
   {
-    acronym: "PARI",
-    fullName: "Public Attention Reputational Index",
-    description: "Índice general que mide la atención pública y reputación de la empresa basado en la combinación ponderada de todas las métricas."
+    acronym: "RIX",
+    fullName: "Reputation Index",
+    description: "Índice general que mide la reputación de la empresa (antes PARI - Public Attention Reputational Index)."
   },
   {
-    acronym: "LNS",
-    fullName: "LLM Narrative Score",
-    description: "Calidad de la narrativa - Evalúa la coherencia y calidad del discurso público de la empresa según análisis de modelos de lenguaje."
+    acronym: "NVM",
+    fullName: "Narrative Value Metric",
+    description: "Calidad de la narrativa - Evalúa la coherencia y calidad del discurso público de la empresa según análisis de modelos de lenguaje (antes LNS)."
   },
   {
-    acronym: "ES",
-    fullName: "Evidence Strength",
-    description: "Fortaleza de evidencia - Mide la solidez y verificabilidad de las afirmaciones y datos presentados por la empresa."
+    acronym: "DRM",
+    fullName: "Data Reliability Metric",
+    description: "Fortaleza de evidencia - Mide la solidez y verificabilidad de las afirmaciones y datos presentados por la empresa (antes ES)."
   },
   {
-    acronym: "SAM",
-    fullName: "Source Authority Mix",
-    description: "Mezcla de autoridad de fuentes - Evalúa la diversidad y credibilidad de las fuentes que mencionan a la empresa."
+    acronym: "SIM",
+    fullName: "Source Integrity Metric",
+    description: "Autoridad de fuentes - Evalúa la diversidad y credibilidad de las fuentes que mencionan a la empresa (antes SAM)."
   },
   {
-    acronym: "RM",
-    fullName: "Recency & Momentum",
-    description: "Actualidad y empuje - Mide la relevancia temporal y el impulso de las menciones recientes de la empresa."
+    acronym: "RMM",
+    fullName: "Reputational Momentum Metric",
+    description: "Actualidad y empuje - Mide la relevancia temporal y el impulso de las menciones recientes de la empresa (antes RM)."
   },
   {
-    acronym: "CLR",
-    fullName: "Controversy & Legal Risk",
-    description: "Controversia y riesgo legal - Evalúa el nivel de controversias y riesgos legales asociados con la empresa (puntuación inversa)."
+    acronym: "CEM",
+    fullName: "Controversy Exposure Metric",
+    description: "Controversia y riesgo - Evalúa el nivel de controversias y riesgos asociados con la empresa (puntuación inversa, antes CLR)."
   },
   {
-    acronym: "GIP",
-    fullName: "Governance Independence Perception",
-    description: "Percepción de independencia de gobierno - Mide cómo se percibe la independencia de la empresa respecto a influencias gubernamentales."
+    acronym: "GAM",
+    fullName: "Governance Autonomy Metric",
+    description: "Independencia de gobierno - Mide cómo se percibe la autonomía de la empresa respecto a influencias gubernamentales (antes GIP)."
   },
   {
-    acronym: "KGI",
-    fullName: "Knowledge Graph Integrity",
-    description: "Integridad del grafo de conocimiento - Evalúa la consistencia y coherencia de la información sobre la empresa en diferentes fuentes."
+    acronym: "DCM",
+    fullName: "Data Consistency Metric",
+    description: "Integridad del grafo de conocimiento - Evalúa la consistencia y coherencia de la información sobre la empresa en diferentes fuentes (antes KGI)."
   },
   {
-    acronym: "MPI",
-    fullName: "Market/Performance Impact",
-    description: "Impacto de mercado/ejecución - Mide el impacto percibido de la empresa en el mercado y su capacidad de ejecución."
+    acronym: "CXM",
+    fullName: "Corporate Execution Metric",
+    description: "Ejecución corporativa - Mide la capacidad de ejecución y el impacto percibido de la empresa en el mercado (antes MPI)."
   }
 ];
 
@@ -70,10 +70,10 @@ export function GlossaryDialog() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-primary" />
-            Glosario de Métricas PARI
+            Glosario de Métricas RIX
           </DialogTitle>
           <DialogDescription>
-            Definiciones de todas las métricas utilizadas en el análisis reputacional PARI
+            Definiciones de todas las métricas utilizadas en el análisis reputacional RIX
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2 mt-4">

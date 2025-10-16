@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompanies } from "@/hooks/useCompanies";
-import { usePariRuns } from "@/hooks/usePariRuns";
+import { useRixRuns } from "@/hooks/useRixRuns";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { format, addDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,7 +38,7 @@ export default function ChatIntelligence() {
   const [companySearch, setCompanySearch] = useState("");
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
-  const { data: pariRuns } = usePariRuns();
+  const { data: rixRuns } = useRixRuns();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
   const { toast } = useToast();
 
@@ -51,9 +51,9 @@ export default function ChatIntelligence() {
   });
 
   // Generate week options using real period_from dates
-  const weekOptions = pariRuns ? Array.from(
+  const weekOptions = rixRuns ? Array.from(
     new Set(
-      pariRuns
+      rixRuns
         .filter(run => run["06_period_from"])
         .map(run => format(new Date(run["06_period_from"]!), 'yyyy-MM-dd'))
     )
@@ -73,7 +73,7 @@ export default function ChatIntelligence() {
     { value: 'discrepancias', label: '⚡ Discrepancias', description: '¿Dónde difieren las IAs?' },
     { value: 'fortalezas', label: '💪 Fortalezas', description: '¿Qué destaca positivamente?' },
     { value: 'debilidades', label: '⚠️ Debilidades', description: '¿Qué necesita mejorar?' },
-    { value: 'metricas', label: '📊 Análisis de Métricas', description: 'Comparación de LNS, ES, SAM, etc.' },
+    { value: 'metricas', label: '📊 Análisis de Métricas', description: 'Comparación de NVM, DRM, SIM, etc.' },
     { value: 'profundo', label: '🧠 Análisis Profundo', description: 'Razonamiento avanzado multi-paso (tarda más)' },
   ];
 

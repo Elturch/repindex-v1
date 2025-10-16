@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
-const InsertPariResults = () => {
+const InsertRixResults = () => {
   const [jsonData, setJsonData] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -73,7 +73,7 @@ const InsertPariResults = () => {
       }
 
       // Call the edge function
-      const { data, error } = await supabase.functions.invoke('insert-pari-results', {
+      const { data, error } = await supabase.functions.invoke('insert-rix-results', {
         body: { results }
       });
 
@@ -112,7 +112,7 @@ const InsertPariResults = () => {
     <div className="container mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Insertar Resultados PARI</CardTitle>
+          <CardTitle>Insertar Resultados RIX</CardTitle>
           <CardDescription>
             Pega los resultados JSON (uno por línea) para insertarlos en la base de datos.
             Asegúrate de reemplazar los placeholders como {'{RUN_ID}'}, {'{MODEL_NAME}'}, etc.
@@ -168,4 +168,4 @@ const InsertPariResults = () => {
   );
 };
 
-export default InsertPariResults;
+export default InsertRixResults;

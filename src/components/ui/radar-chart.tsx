@@ -6,15 +6,15 @@ import { MarketAverages } from "@/hooks/useMarketAverages";
 
 interface RadarChartComparisonProps {
   companyData: {
-    pari: number;
-    lns: number;
-    es: number;
-    sam: number;
-    rm: number;
-    clr: number;
-    gip: number;
-    kgi: number;
-    mpi: number;
+    rix: number;
+    nvm: number;
+    drm: number;
+    sim: number;
+    rmm: number;
+    cem: number;
+    gam: number;
+    dcm: number;
+    cxm: number;
   };
   marketAverages: MarketAverages;
   companyName: string;
@@ -22,15 +22,15 @@ interface RadarChartComparisonProps {
 }
 
 const kpiLabels = {
-  pari: "PARI",
-  lns: "LNS",
-  es: "ES", 
-  sam: "SAM",
-  rm: "RM",
-  clr: "CLR",
-  gip: "GIP",
-  kgi: "KGI",
-  mpi: "MPI"
+  rix: "RIX",
+  nvm: "NVM",
+  drm: "DRM", 
+  sim: "SIM",
+  rmm: "RMM",
+  cem: "CEM",
+  gam: "GAM",
+  dcm: "DCM",
+  cxm: "CXM"
 };
 
 // Function to determine score category and color
@@ -221,7 +221,7 @@ export function RadarChartComparison({
               </div>
             </div>
             <div className="text-center p-3 rounded-lg bg-primary/5 border border-primary/20">
-              <div className="text-muted-foreground text-xs">PARI vs Mercado</div>
+              <div className="text-muted-foreground text-xs">RIX vs Mercado</div>
               <div className={`font-bold text-lg mt-1 ${radarData[0]?.empresa > radarData[0]?.mercado ? 'text-good' : 'text-needs-improvement'}`}>
                 {radarData[0]?.empresa > radarData[0]?.mercado ? '+' : ''}
                 {Math.round((radarData[0]?.empresa || 0) - (radarData[0]?.mercado || 0))}pts

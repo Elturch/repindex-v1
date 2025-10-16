@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
-import { usePariRuns } from "@/hooks/usePariRuns";
+import { useRixRuns } from "@/hooks/useRixRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
@@ -35,13 +35,13 @@ export function Dashboard() {
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
   const navigate = useNavigate();
   
-  const { data: pariRuns, isLoading, error } = usePariRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter);
+  const { data: rixRuns, isLoading, error } = useRixRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter);
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
 
-  const handleRowClick = (pariRunId: string) => {
-    navigate(`/pari-run/${pariRunId}`);
+  const handleRowClick = (rixRunId: string) => {
+    navigate(`/rix-run/${rixRunId}`);
   };
 
   const formatDateRange = (from?: string, to?: string) => {
@@ -68,22 +68,22 @@ export function Dashboard() {
   };
 
   const metrics = [
-    { key: "lns", label: "LNS", scoreKey: "23_lns_score", categoryKey: "25_lns_categoria" },
-    { key: "es", label: "ES", scoreKey: "26_es_score", categoryKey: "28_es_categoria" },
-    { key: "sam", label: "SAM", scoreKey: "29_sam_score", categoryKey: "31_sam_categoria" },
-    { key: "rm", label: "RM", scoreKey: "32_rm_score", categoryKey: "34_rm_categoria" },
-    { key: "clr", label: "CLR", scoreKey: "35_clr_score", categoryKey: "37_clr_categoria" },
-    { key: "gip", label: "GIP", scoreKey: "38_gip_score", categoryKey: "40_gip_categoria" },
-    { key: "kgi", label: "KGI", scoreKey: "41_kgi_score", categoryKey: "43_kgi_categoria" },
-    { key: "mpi", label: "MPI", scoreKey: "44_mpi_score", categoryKey: "46_mpi_categoria" },
+    { key: "nvm", label: "NVM", scoreKey: "23_nvm_score", categoryKey: "25_nvm_categoria" },
+    { key: "drm", label: "DRM", scoreKey: "26_drm_score", categoryKey: "28_drm_categoria" },
+    { key: "sim", label: "SIM", scoreKey: "29_sim_score", categoryKey: "31_sim_categoria" },
+    { key: "rmm", label: "RMM", scoreKey: "32_rmm_score", categoryKey: "34_rmm_categoria" },
+    { key: "cem", label: "CEM", scoreKey: "35_cem_score", categoryKey: "37_cem_categoria" },
+    { key: "gam", label: "GAM", scoreKey: "38_gam_score", categoryKey: "40_gam_categoria" },
+    { key: "dcm", label: "DCM", scoreKey: "41_dcm_score", categoryKey: "43_dcm_categoria" },
+    { key: "cxm", label: "CXM", scoreKey: "44_cxm_score", categoryKey: "46_cxm_categoria" },
   ];
 
   // Generate week options based on available data
   const weekOptions = useMemo(() => {
-    if (!pariRuns) return [];
+    if (!rixRuns) return [];
     
     const weeks = new Set<string>();
-    pariRuns.forEach(run => {
+    rixRuns.forEach(run => {
       if (run["06_period_from"]) {
         const weekStart = startOfWeek(new Date(run["06_period_from"]), { weekStartsOn: 1 });
         weeks.add(format(weekStart, 'yyyy-MM-dd'));
@@ -98,7 +98,7 @@ export function Dashboard() {
         label: `${format(start, 'dd/MM')} - ${format(addWeeks(start, 1), 'dd/MM/yyyy')}`
       };
     });
-  }, [pariRuns]);
+  }, [rixRuns]);
 
   const clearFilters = () => {
     setCompanyFilter("all");
@@ -209,7 +209,7 @@ export function Dashboard() {
           <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
             <CalendarDays className="h-4 w-4" />
             <span className="text-sm font-medium">
-              Actualización de Datos: Los análisis PARI se ejecutan automáticamente cada domingo, 
+              Actualización de Datos: Los análisis RIX se ejecutan automáticamente cada domingo, 
               garantizando información actualizada semanalmente y asegurando la solidez y confiabilidad de los datos reputacionales.
             </span>
           </div>
@@ -383,12 +383,12 @@ export function Dashboard() {
           <div className="flex items-center justify-center py-8">
             <div className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
-              <span>Error loading PARI runs</span>
+              <span>Error loading RIX runs</span>
             </div>
           </div>
         )}
 
-        {!isLoading && !error && (!pariRuns || pariRuns.length === 0) && (
+        {!isLoading && !error && (!rixRuns || rixRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
             {searchQuery || companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" ? "No companies found matching your filters." : 
              aiFilter === "comparison" ? "No data available for comparison view yet." : 
@@ -396,7 +396,7 @@ export function Dashboard() {
           </div>
         )}
 
-        {!isLoading && !error && pariRuns && pariRuns.length > 0 && aiFilter !== "comparison" && (
+        {!isLoading && !error && rixRuns && rixRuns.length > 0 && aiFilter !== "comparison" && (
           <>
             {viewMode === "list" && (
               <div className="rounded-md border overflow-x-auto shadow-card">
@@ -407,7 +407,7 @@ export function Dashboard() {
                       {aiFilter === "all" && (
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
                       )}
-                      <TableHead className="text-center">PARI</TableHead>
+                      <TableHead className="text-center">RIX</TableHead>
                       {metrics.map((metric) => (
                         <TableHead key={metric.key} className="text-center w-16">
                           {metric.label}
@@ -418,7 +418,7 @@ export function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pariRuns.map((pariRun) => (
+                    {rixRuns.map((rixRun) => (
                       <TableRow 
                         key={pariRun.id} 
                         className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
@@ -504,7 +504,7 @@ export function Dashboard() {
 
             {viewMode === "cards" && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {pariRuns.map((pariRun) => (
+                {rixRuns.map((rixRun) => (
                   <Card 
                     key={pariRun.id} 
                     className="cursor-pointer shadow-card hover:shadow-card-hover transition-all duration-200"

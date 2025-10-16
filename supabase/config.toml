@@ -1,6 +1,6 @@
 project_id = "jzkjykmrwisijiqlwuua"
 
-[functions.insert-pari-results]
+[functions.insert-rix-results]
 verify_jwt = false
 
 [functions.ai-consolidation-analysis]

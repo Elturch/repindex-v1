@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
-import { usePariRun } from "@/hooks/usePariRuns";
+import { useRixRun } from "@/hooks/useRixRuns";
 import { useMarketAverages } from "@/hooks/useMarketAverages";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,16 +19,16 @@ import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 import { AlertCircle, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
-export function PariRunDetail() {
+export function RixRunDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: pariRun, isLoading, error } = usePariRun(id!);
+  const { data: rixRun, isLoading, error } = useRixRun(id!);
   const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(true);
   
   // Fetch market averages for the same period
   const { data: marketAverages } = useMarketAverages(
-    pariRun?.["06_period_from"], 
-    pariRun?.["07_period_to"]
+    rixRun?.["06_period_from"], 
+    rixRun?.["07_period_to"]
   );
 
   const formatDateRange = (from?: string, to?: string) => {
@@ -56,7 +56,7 @@ export function PariRunDetail() {
     );
   }
 
-  if (error || !pariRun) {
+  if (error || !rixRun) {
     return (
       <Layout title="RepIndex - Detalle">
         <div className="flex items-center justify-center py-8">
@@ -70,15 +70,15 @@ export function PariRunDetail() {
   }
 
   const metrics = [
-    { key: 'pari', label: 'Índice PARI', fullName: 'Public Attention Reputational Index', score: pariRun.displayPariScore ?? pariRun["09_pari_score"], peso: 100, categoria: (pariRun.displayPariScore ?? pariRun["09_pari_score"]) >= 70 ? 'Bueno' : (pariRun.displayPariScore ?? pariRun["09_pari_score"]) >= 40 ? 'Mejorable' : 'Insuficiente' },
-    { key: 'lns', label: 'Calidad de la Narrativa', fullName: 'LLM Narrative Score', score: pariRun["23_lns_score"], peso: pariRun["24_lns_peso"], categoria: pariRun["25_lns_categoria"] },
-    { key: 'es', label: 'Fortaleza de Evidencia', fullName: 'Evidence Strength', score: pariRun["26_es_score"], peso: pariRun["27_es_peso"], categoria: pariRun["28_es_categoria"] },
-    { key: 'sam', label: 'Autoridad de Fuentes', fullName: 'Source Authority Mix', score: pariRun["29_sam_score"], peso: pariRun["30_sam_peso"], categoria: pariRun["31_sam_categoria"] },
-    { key: 'rm', label: 'Actualidad y Empuje', fullName: 'Recency & Momentum', score: pariRun["32_rm_score"], peso: pariRun["33_rm_peso"], categoria: pariRun["34_rm_categoria"] },
-    { key: 'clr', label: 'Controversia y Riesgo Legal', fullName: 'Controversy & Legal Risk', score: pariRun["35_clr_score"], peso: pariRun["36_clr_peso"], categoria: pariRun["37_clr_categoria"] },
-    { key: 'gip', label: 'Independencia de Gobierno', fullName: 'Governance Independence Perception', score: pariRun["38_gip_score"], peso: pariRun["39_gip_peso"], categoria: pariRun["40_gip_categoria"] },
-    { key: 'kgi', label: 'Integridad del Grafo', fullName: 'Knowledge Graph Integrity', score: pariRun["41_kgi_score"], peso: pariRun["42_kgi_peso"], categoria: pariRun["43_kgi_categoria"] },
-    { key: 'mpi', label: 'Impacto de Mercado', fullName: 'Market/Performance Impact', score: pariRun["44_mpi_score"], peso: pariRun["45_mpi_peso"], categoria: pariRun["46_mpi_categoria"] },
+    { key: 'rix', label: 'Índice RIX', fullName: 'Reputation Index', score: rixRun.displayRixScore ?? rixRun["09_rix_score"], peso: 100, categoria: (rixRun.displayRixScore ?? rixRun["09_rix_score"]) >= 70 ? 'Bueno' : (rixRun.displayRixScore ?? rixRun["09_rix_score"]) >= 40 ? 'Mejorable' : 'Insuficiente' },
+    { key: 'nvm', label: 'Calidad de la Narrativa', fullName: 'Narrative Value Metric', score: rixRun["23_nvm_score"], peso: rixRun["24_nvm_peso"], categoria: rixRun["25_nvm_categoria"] },
+    { key: 'drm', label: 'Fortaleza de Evidencia', fullName: 'Data Reliability Metric', score: rixRun["26_drm_score"], peso: rixRun["27_drm_peso"], categoria: rixRun["28_drm_categoria"] },
+    { key: 'sim', label: 'Autoridad de Fuentes', fullName: 'Source Integrity Metric', score: rixRun["29_sim_score"], peso: rixRun["30_sim_peso"], categoria: rixRun["31_sim_categoria"] },
+    { key: 'rmm', label: 'Actualidad y Empuje', fullName: 'Reputational Momentum Metric', score: rixRun["32_rmm_score"], peso: rixRun["33_rmm_peso"], categoria: rixRun["34_rmm_categoria"] },
+    { key: 'cem', label: 'Controversia y Riesgo', fullName: 'Controversy Exposure Metric', score: rixRun["35_cem_score"], peso: rixRun["36_cem_peso"], categoria: rixRun["37_cem_categoria"] },
+    { key: 'gam', label: 'Independencia de Gobierno', fullName: 'Governance Autonomy Metric', score: rixRun["38_gam_score"], peso: rixRun["39_gam_peso"], categoria: rixRun["40_gam_categoria"] },
+    { key: 'dcm', label: 'Integridad del Grafo', fullName: 'Data Consistency Metric', score: rixRun["41_dcm_score"], peso: rixRun["42_dcm_peso"], categoria: rixRun["43_dcm_categoria"] },
+    { key: 'cxm', label: 'Ejecución Corporativa', fullName: 'Corporate Execution Metric', score: rixRun["44_cxm_score"], peso: rixRun["45_cxm_peso"], categoria: rixRun["46_cxm_categoria"] },
   ];
 
   // Extract flags from JSONB - handle both strings and arrays
@@ -88,7 +88,7 @@ export function PariRunDetail() {
     if (typeof flagsData === 'string') return [flagsData];
     return [];
   };
-  const flags = parseFlags(pariRun["17_flags"]);
+  const flags = parseFlags(rixRun["17_flags"]);
 
   // Parse puntos_clave - handle both strings and arrays
   const parsePuntosClave = (puntosData: any): string[] => {
@@ -97,7 +97,7 @@ export function PariRunDetail() {
     if (typeof puntosData === 'string') return [puntosData];
     return [];
   };
-  const puntosClave = parsePuntosClave(pariRun["11_puntos_clave"]);
+  const puntosClave = parsePuntosClave(rixRun["11_puntos_clave"]);
 
   // Function to normalize flag names
   const normalizeFlag = (flag: string) => {
@@ -148,34 +148,34 @@ export function PariRunDetail() {
   const getAIResponses = () => {
     const responses = [];
     
-    if (pariRun["20_res_gpt_bruto"]) {
+    if (rixRun["20_res_gpt_bruto"]) {
       responses.push({
         model: "ChatGPT",
-        content: pariRun["20_res_gpt_bruto"],
+        content: rixRun["20_res_gpt_bruto"],
         icon: ChatGPTIcon
       });
     }
     
-    if (pariRun["22_res_gemini_bruto"]) {
+    if (rixRun["22_res_gemini_bruto"]) {
       responses.push({
         model: "Google Gemini",
-        content: pariRun["22_res_gemini_bruto"],
+        content: rixRun["22_res_gemini_bruto"],
         icon: GeminiIcon
       });
     }
     
-    if (pariRun["21_res_perplex_bruto"]) {
+    if (rixRun["21_res_perplex_bruto"]) {
       responses.push({
         model: "Perplexity",
-        content: pariRun["21_res_perplex_bruto"],
+        content: rixRun["21_res_perplex_bruto"],
         icon: PerplexityIcon
       });
     }
     
-    if (pariRun["23_res_deepseek_bruto"]) {
+    if (rixRun["23_res_deepseek_bruto"]) {
       responses.push({
         model: "Deepseek",
-        content: pariRun["23_res_deepseek_bruto"],
+        content: rixRun["23_res_deepseek_bruto"],
         icon: DeepseekIcon
       });
     }

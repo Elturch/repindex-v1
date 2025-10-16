@@ -68,7 +68,7 @@ export default function ConsolidationAnalysis() {
     queryKey: ['available-weeks'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('pari_runs')
+        .from('rix_runs')
         .select('"06_period_from", "07_period_to"')
         .order('"06_period_from"', { ascending: false });
 

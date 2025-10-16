@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export interface PariRun {
+export interface RixRun {
   id: string;
   created_at: string;
   updated_at: string;
@@ -13,7 +13,7 @@ export interface PariRun {
   "06_period_from"?: string;
   "07_period_to"?: string;
   "08_tz"?: string;
-  "09_pari_score"?: number;
+  "09_rix_score"?: number;
   "10_resumen"?: string;
   "11_puntos_clave"?: any;
   "12_palabras"?: number;
@@ -27,37 +27,37 @@ export interface PariRun {
   "20_res_gpt_bruto"?: string;
   "21_res_perplex_bruto"?: string;
   "22_explicacion"?: string;
-  "23_lns_score"?: number;
-  "24_lns_peso"?: number;
-  "25_lns_categoria"?: string;
-  "26_es_score"?: number;
-  "27_es_peso"?: number;
-  "28_es_categoria"?: string;
-  "29_sam_score"?: number;
-  "30_sam_peso"?: number;
-  "31_sam_categoria"?: string;
-  "32_rm_score"?: number;
-  "33_rm_peso"?: number;
-  "34_rm_categoria"?: string;
-  "35_clr_score"?: number;
-  "36_clr_peso"?: number;
-  "37_clr_categoria"?: string;
-  "38_gip_score"?: number;
-  "39_gip_peso"?: number;
-  "40_gip_categoria"?: string;
-  "41_kgi_score"?: number;
-  "42_kgi_peso"?: number;
-  "43_kgi_categoria"?: string;
-  "44_mpi_score"?: number;
-  "45_mpi_peso"?: number;
-  "46_mpi_categoria"?: string;
+  "23_nvm_score"?: number;
+  "24_nvm_peso"?: number;
+  "25_nvm_categoria"?: string;
+  "26_drm_score"?: number;
+  "27_drm_peso"?: number;
+  "28_drm_categoria"?: string;
+  "29_sim_score"?: number;
+  "30_sim_peso"?: number;
+  "31_sim_categoria"?: string;
+  "32_rmm_score"?: number;
+  "33_rmm_peso"?: number;
+  "34_rmm_categoria"?: string;
+  "35_cem_score"?: number;
+  "36_cem_peso"?: number;
+  "37_cem_categoria"?: string;
+  "38_gam_score"?: number;
+  "39_gam_peso"?: number;
+  "40_gam_categoria"?: string;
+  "41_dcm_score"?: number;
+  "42_dcm_peso"?: number;
+  "43_dcm_categoria"?: string;
+  "44_cxm_score"?: number;
+  "45_cxm_peso"?: number;
+  "46_cxm_categoria"?: string;
   "47_fase"?: string;
-  "51_pari_score_adjusted"?: number;
-  "52_mpi_excluded"?: boolean;
+  "51_rix_score_adjusted"?: number;
+  "52_cxm_excluded"?: boolean;
   // Computed validation flags
   isDataInvalid?: boolean;
   dataInvalidReason?: string;
-  displayPariScore?: number; // Computed: adjusted score if MPI excluded, otherwise original
+  displayRixScore?: number; // Computed: adjusted score if CXM excluded, otherwise original
   repindex_root_issuers?: {
     ticker?: string;
     ibex_family_code?: string;
@@ -65,7 +65,7 @@ export interface PariRun {
   } | null;
 }
 
-export function usePariRuns(
+export function useRixRuns(
   searchQuery?: string, 
   modelFilter?: string, 
   companyFilter?: string,
@@ -74,25 +74,25 @@ export function usePariRuns(
   ibexFamilyFilter?: string
 ) {
   return useQuery({
-    queryKey: ["pari-runs", searchQuery, modelFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter],
+    queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter],
     queryFn: async () => {
-      // First get pari_runs data
-      let pariQuery = supabase
-        .from("pari_runs")
+      // First get rix_runs data
+      let rixQuery = supabase
+        .from("rix_runs")
         .select("*")
-        .order("09_pari_score", { ascending: false })
+        .order("09_rix_score", { ascending: false })
         .order("created_at", { ascending: false });
 
       if (searchQuery) {
-        pariQuery = pariQuery.ilike("03_target_name", `%${searchQuery}%`);
+        rixQuery = rixQuery.ilike("03_target_name", `%${searchQuery}%`);
       }
 
       if (modelFilter && modelFilter !== "all") {
-        pariQuery = pariQuery.eq("02_model_name", modelFilter);
+        rixQuery = rixQuery.eq("02_model_name", modelFilter);
       }
 
       if (companyFilter && companyFilter !== "all") {
-        pariQuery = pariQuery.eq("03_target_name", companyFilter);
+        rixQuery = rixQuery.eq("03_target_name", companyFilter);
       }
 
       if (weekFilter && weekFilter !== "all") {
@@ -101,17 +101,17 @@ export function usePariRuns(
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 6); // Add 6 days for a week
         
-        pariQuery = pariQuery.gte("06_period_from", weekStart.toISOString().split('T')[0])
+        rixQuery = rixQuery.gte("06_period_from", weekStart.toISOString().split('T')[0])
                             .lte("07_period_to", weekEnd.toISOString().split('T')[0]);
       }
 
-      const { data: pariData, error: pariError } = await pariQuery;
+      const { data: rixData, error: rixError } = await rixQuery;
 
-      if (pariError) {
-        throw pariError;
+      if (rixError) {
+        throw rixError;
       }
 
-      // Get repindex data to join with pari_runs
+      // Get repindex data to join with rix_runs
       const { data: repindexData, error: repindexError } = await supabase
         .from("repindex_root_issuers")
         .select("ticker, ibex_family_code, sector_category");
@@ -134,54 +134,54 @@ export function usePariRuns(
       }
 
       // Join the data and add validation flags
-      const joinedData = pariData?.map(pariRun => {
-        const isRmZero = pariRun["32_rm_score"] === 0;
-        const mpiExcluded = pariRun["52_mpi_excluded"] === true;
-        const adjustedScore = pariRun["51_pari_score_adjusted"];
+      const joinedData = rixData?.map(rixRun => {
+        const isRmmZero = rixRun["32_rmm_score"] === 0;
+        const cxmExcluded = rixRun["52_cxm_excluded"] === true;
+        const adjustedScore = rixRun["51_rix_score_adjusted"];
         
-        // Use adjusted score if MPI was excluded, otherwise use original
-        const displayPariScore = mpiExcluded && adjustedScore !== null && adjustedScore !== undefined
+        // Use adjusted score if CXM was excluded, otherwise use original
+        const displayRixScore = cxmExcluded && adjustedScore !== null && adjustedScore !== undefined
           ? adjustedScore
-          : pariRun["09_pari_score"];
+          : rixRun["09_rix_score"];
         
         return {
-          ...pariRun,
-          repindex_root_issuers: pariRun["05_ticker"] ? 
-            repindexMap.get(pariRun["05_ticker"]) || null : 
+          ...rixRun,
+          repindex_root_issuers: rixRun["05_ticker"] ? 
+            repindexMap.get(rixRun["05_ticker"]) || null : 
             null,
-          isDataInvalid: isRmZero,
-          dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined,
-          displayPariScore
+          isDataInvalid: isRmmZero,
+          dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
+          displayRixScore
         };
       });
 
       // Apply sector filter after joining the data
       let filteredData = joinedData;
       if (sectorFilter && sectorFilter !== "all") {
-        filteredData = joinedData?.filter(pariRun => 
-          pariRun.repindex_root_issuers?.sector_category === sectorFilter
+        filteredData = joinedData?.filter(rixRun => 
+          rixRun.repindex_root_issuers?.sector_category === sectorFilter
         );
       }
 
       // Apply ibex family filter
       if (ibexFamilyFilter && ibexFamilyFilter !== "all") {
-        filteredData = filteredData?.filter(pariRun => 
-          pariRun.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter
+        filteredData = filteredData?.filter(rixRun => 
+          rixRun.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter
         );
       }
 
-      return filteredData as PariRun[];
+      return filteredData as RixRun[];
     },
     enabled: true,
   });
 }
 
-export function usePariRun(id: string) {
+export function useRixRun(id: string) {
   return useQuery({
-    queryKey: ["pari-run", id],
+    queryKey: ["rix-run", id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("pari_runs")
+        .from("rix_runs")
         .select("*")
         .eq("id", id)
         .maybeSingle();
@@ -191,18 +191,18 @@ export function usePariRun(id: string) {
       }
 
       if (!data) {
-        throw new Error("PARI run not found");
+        throw new Error("RIX run not found");
       }
 
-      // Get repindex data to join with pari_run and add validation flags
-      const isRmZero = data["32_rm_score"] === 0;
-      const mpiExcluded = data["52_mpi_excluded"] === true;
-      const adjustedScore = data["51_pari_score_adjusted"];
+      // Get repindex data to join with rix_run and add validation flags
+      const isRmmZero = data["32_rmm_score"] === 0;
+      const cxmExcluded = data["52_cxm_excluded"] === true;
+      const adjustedScore = data["51_rix_score_adjusted"];
       
-      // Use adjusted score if MPI was excluded, otherwise use original
-      const displayPariScore = mpiExcluded && adjustedScore !== null && adjustedScore !== undefined
+      // Use adjusted score if CXM was excluded, otherwise use original
+      const displayRixScore = cxmExcluded && adjustedScore !== null && adjustedScore !== undefined
         ? adjustedScore
-        : data["09_pari_score"];
+        : data["09_rix_score"];
       
       if (data["05_ticker"]) {
         const { data: repindexData, error: repindexError } = await supabase
@@ -219,20 +219,20 @@ export function usePariRun(id: string) {
               ibex_family_code: repindexData.ibex_family_code,
               sector_category: repindexData.sector_category
             },
-            isDataInvalid: isRmZero,
-            dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined,
-            displayPariScore
-          } as PariRun;
+            isDataInvalid: isRmmZero,
+            dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
+            displayRixScore
+          } as RixRun;
         }
       }
 
       return { 
         ...data, 
         repindex_root_issuers: null,
-        isDataInvalid: isRmZero,
-        dataInvalidReason: isRmZero ? "Sin información reciente disponible (RM=0)" : undefined,
-        displayPariScore
-      } as PariRun;
+        isDataInvalid: isRmmZero,
+        dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
+        displayRixScore
+      } as RixRun;
     },
     enabled: !!id,
   });

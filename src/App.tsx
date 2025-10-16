@@ -5,8 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { Dashboard } from "./pages/Dashboard";
-import { PariRunDetail } from "./pages/PariRunDetail";
-import InsertPariResults from "./pages/InsertPariResults";
+import { RixRunDetail } from "./pages/RixRunDetail";
+import InsertRixResults from "./pages/InsertRixResults";
 import ChatIntelligence from "./pages/ChatIntelligence";
 import NotFound from "./pages/NotFound";
 
@@ -22,8 +22,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/chat" element={<ChatIntelligence />} />
-            <Route path="/pari-run/:id" element={<PariRunDetail />} />
-            <Route path="/insert-pari" element={<InsertPariResults />} />
+            <Route path="/rix-run/:id" element={<RixRunDetail />} />
+            <Route path="/insert-rix" element={<InsertRixResults />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

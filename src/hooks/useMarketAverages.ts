@@ -16,18 +16,18 @@ export function useMarketAverages(periodFrom?: string, periodTo?: string) {
       }
 
       const { data, error } = await supabase
-        .from("pari_runs")
+        .from("rix_runs")
         .select(`
           02_model_name,
-          09_pari_score,
-          23_lns_score,
-          26_es_score,
-          29_sam_score,
-          32_rm_score,
-          35_clr_score,
-          38_gip_score,
-          41_kgi_score,
-          44_mpi_score
+          09_rix_score,
+          23_nvm_score,
+          26_drm_score,
+          29_sim_score,
+          32_rmm_score,
+          35_cem_score,
+          38_gam_score,
+          41_dcm_score,
+          44_cxm_score
         `)
         .gte("06_period_from", periodFrom)
         .lte("07_period_to", periodTo);
@@ -49,15 +49,15 @@ export function useMarketAverages(periodFrom?: string, periodTo?: string) {
 
       const averages: MarketAverages = {};
       const kpiFields = [
-        { key: "pari", field: "09_pari_score" },
-        { key: "lns", field: "23_lns_score" },
-        { key: "es", field: "26_es_score" },
-        { key: "sam", field: "29_sam_score" },
-        { key: "rm", field: "32_rm_score" },
-        { key: "clr", field: "35_clr_score" },
-        { key: "gip", field: "38_gip_score" },
-        { key: "kgi", field: "41_kgi_score" },
-        { key: "mpi", field: "44_mpi_score" },
+        { key: "rix", field: "09_rix_score" },
+        { key: "nvm", field: "23_nvm_score" },
+        { key: "drm", field: "26_drm_score" },
+        { key: "sim", field: "29_sim_score" },
+        { key: "rmm", field: "32_rmm_score" },
+        { key: "cem", field: "35_cem_score" },
+        { key: "gam", field: "38_gam_score" },
+        { key: "dcm", field: "41_dcm_score" },
+        { key: "cxm", field: "44_cxm_score" },
       ];
 
       kpiFields.forEach(({ key, field }) => {
