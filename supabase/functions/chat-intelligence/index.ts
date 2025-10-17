@@ -87,6 +87,8 @@ serve(async (req) => {
     // Further filter by week if specified (flexible: accepts dates within same week)
     if (week && filteredDocuments.length > 0) {
       const searchDate = new Date(week);
+      const beforeFilter = filteredDocuments.length;
+      
       filteredDocuments = filteredDocuments.filter((doc: any) => {
         if (!doc.metadata?.week_start) return false;
         const docDate = new Date(doc.metadata.week_start);
@@ -94,7 +96,18 @@ serve(async (req) => {
         const diffInDays = Math.abs((docDate.getTime() - searchDate.getTime()) / (1000 * 60 * 60 * 24));
         return diffInDays <= 6;
       });
-      console.log('Documents after week filter (flexible):', filteredDocuments.length);
+      
+      console.log(`Documents after week filter (flexible): ${filteredDocuments.length} (from ${beforeFilter})`);
+      
+      // Log available weeks if no matches found
+      if (filteredDocuments.length === 0 && beforeFilter > 0) {
+        const availableWeeks = [...new Set(
+          documents
+            .filter((d: any) => d.metadata?.company_name?.toLowerCase() === company.toLowerCase())
+            .map((d: any) => d.metadata.week_start)
+        )].sort().reverse();
+        console.warn(`No data found for week ${week}. Available weeks for ${company}:`, availableWeeks);
+      }
     }
 
     // Limit to top 10 most relevant
@@ -103,8 +116,8 @@ serve(async (req) => {
     // Get structured data for the company
     let structuredData = null;
     if (company && week) {
-      const { data: pariRuns, error: pariError } = await supabaseClient
-        .from('pari_runs')
+      const { data: rixRuns, error: rixError } = await supabaseClient
+        .from('rix_runs')
         .select(`
           *,
           repindex_root_issuers (
@@ -117,10 +130,10 @@ serve(async (req) => {
         .lte('06_period_from', week)
         .gte('07_period_to', week);
 
-      if (pariError) {
-        console.error('Error fetching pari_runs:', pariError);
+      if (rixError) {
+        console.error('Error fetching rix_runs:', rixError);
       } else {
-        structuredData = pariRuns;
+        structuredData = rixRuns;
         console.log('Structured data found:', structuredData?.length || 0, 'runs');
       }
     }
@@ -136,19 +149,28 @@ serve(async (req) => {
         context += `Documento ${idx + 1}:\n`;
         context += `Empresa: ${doc.metadata.company_name}\n`;
         context += `Modelo IA: ${doc.metadata.ai_model}\n`;
-        context += `PARI Score: ${doc.metadata.pari_score}\n`;
-        context += `Semana: ${doc.metadata.week_start}\n`;
+        context += `RIX Score: ${doc.metadata.rix_score}\n`;
+        context += `Semana: ${doc.metadata.week_start} - ${doc.metadata.week_end}\n`;
         context += `Contenido: ${doc.content.substring(0, 500)}...\n\n`;
       });
     } else {
-      console.warn('No documents found for company:', company);
-      context += `ADVERTENCIA: No se encontraron documentos en el vector store para ${company}.\n\n`;
+      console.warn('No documents found for company:', company, 'week:', week);
+      
+      // Enhanced warning message with explicit instructions
+      const weekInfo = week ? ` para la semana ${week}` : '';
+      context += `⚠️ ADVERTENCIA CRÍTICA ⚠️\n\n`;
+      context += `No se encontraron documentos en el vector store para ${company}${weekInfo}.\n\n`;
+      context += `INSTRUCCIONES PARA LA IA:\n`;
+      context += `1. NO inventes datos ni análisis que no estén en el contexto proporcionado\n`;
+      context += `2. Informa claramente al usuario que no hay datos disponibles para esta consulta\n`;
+      context += `3. Si hay semanas alternativas con datos, sugiere al usuario revisar esas semanas\n`;
+      context += `4. Explica que el análisis NO puede realizarse sin datos del vector store\n\n`;
     }
 
     if (structuredData && structuredData.length > 0) {
       context += '\nDatos estructurados disponibles:\n';
       structuredData.forEach((run: any) => {
-        context += `- ${run['02_model_name']}: PARI ${run['09_pari_score']}\n`;
+        context += `- ${run['02_model_name']}: RIX ${run['09_rix_score']}\n`;
       });
     } else {
       console.warn('No structured data found for company:', company, 'week:', week);
@@ -163,32 +185,32 @@ serve(async (req) => {
 
     switch (analysisType) {
       case 'consenso':
-        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. Analiza paso a paso los datos y encuentra patrones de consenso entre los diferentes modelos de IA (ChatGPT, Gemini, Perplexity, Deepseek). Utiliza razonamiento estructurado para identificar coincidencias significativas.';
+        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente que no puedes realizar el análisis. NUNCA inventes o asumas datos que no estén presentes. Analiza paso a paso los datos y encuentra patrones de consenso entre los diferentes modelos de IA (ChatGPT, Gemini, Perplexity, Deepseek). Utiliza razonamiento estructurado para identificar coincidencias significativas.';
         userPrompt = `Basándote en los datos siguientes, identifica los puntos de CONSENSO entre los modelos de IA sobre ${company}. Analiza sistemáticamente cada modelo y sus evaluaciones:\n\n${context}`;
         break;
 
       case 'discrepancias':
-        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. Analiza paso a paso los datos y encuentra discrepancias significativas entre los diferentes modelos. Usa razonamiento multi-paso para identificar las diferencias más relevantes y sus posibles causas.';
+        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente. NUNCA inventes datos. Analiza paso a paso los datos y encuentra discrepancias significativas entre los diferentes modelos. Usa razonamiento multi-paso para identificar las diferencias más relevantes y sus posibles causas.';
         userPrompt = `Basándote en los datos siguientes, identifica las DISCREPANCIAS más importantes entre los modelos de IA sobre ${company}. Analiza las razones potenciales de cada discrepancia:\n\n${context}`;
         break;
 
       case 'fortalezas':
-        systemPrompt = 'Eres un analista experto en reputación corporativa. Identifica fortalezas mediante análisis estructurado de lo que dicen los modelos de IA. Evalúa la consistencia y evidencia de cada fortaleza identificada.';
+        systemPrompt = 'Eres un analista experto en reputación corporativa. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente. NUNCA inventes datos. Identifica fortalezas mediante análisis estructurado de lo que dicen los modelos de IA. Evalúa la consistencia y evidencia de cada fortaleza identificada.';
         userPrompt = `Basándote en los datos siguientes, identifica las FORTALEZAS de ${company} según los diferentes modelos de IA. Analiza el respaldo que cada modelo proporciona:\n\n${context}`;
         break;
 
       case 'debilidades':
-        systemPrompt = 'Eres un analista experto en reputación corporativa. Identifica debilidades y áreas de mejora mediante análisis crítico y estructurado de lo que dicen los modelos de IA. Evalúa la gravedad y consistencia de cada debilidad.';
+        systemPrompt = 'Eres un analista experto en reputación corporativa. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente. NUNCA inventes datos. Identifica debilidades y áreas de mejora mediante análisis crítico y estructurado de lo que dicen los modelos de IA. Evalúa la gravedad y consistencia de cada debilidad.';
         userPrompt = `Basándote en los datos siguientes, identifica las DEBILIDADES de ${company} según los diferentes modelos de IA. Analiza la frecuencia y severidad de cada problema:\n\n${context}`;
         break;
 
       case 'metricas':
-        systemPrompt = 'Eres un analista experto en métricas de reputación. Analiza paso a paso las métricas LNS, ES, SAM, RM, CLR, GIP, KGI, MPI. Compara sistemáticamente cómo cada modelo evalúa cada métrica y razona sobre las diferencias encontradas.';
-        userPrompt = `Basándote en los datos siguientes, analiza las MÉTRICAS de reputación de ${company} y compara cómo las evalúan los diferentes modelos de IA. Proporciona análisis detallado métrica por métrica:\n\n${context}`;
+        systemPrompt = 'Eres un analista experto en métricas de reputación. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente. NUNCA inventes datos. Analiza paso a paso las métricas NVM (Noticias y Volumen Mediático), DRM (Diversidad y Reputación de Medios), SIM (Sentimiento e Impacto Mediático), RMM (Reconocimiento y Métricas de Marca), CEM (Comunicación y Engagement), GAM (Gobierno y Accountability), DCM (Desempeño y Competitividad), CXM (Cumplimiento y eXcelencia operativa). Compara sistemáticamente cómo cada modelo evalúa cada métrica y razona sobre las diferencias encontradas.';
+        userPrompt = `Basándote en los datos siguientes, analiza las MÉTRICAS de reputación RIX de ${company} y compara cómo las evalúan los diferentes modelos de IA. Proporciona análisis detallado métrica por métrica:\n\n${context}`;
         break;
 
       case 'profundo':
-        systemPrompt = 'Eres un analista experto con capacidades de razonamiento avanzado multi-paso. Utiliza cadenas de pensamiento explícitas para analizar profundamente los datos. Examina sistemáticamente cada aspecto, considera múltiples perspectivas, evalúa evidencia contradictoria, y proporciona conclusiones bien fundamentadas con razonamiento detallado.';
+        systemPrompt = 'Eres un analista experto con capacidades de razonamiento avanzado multi-paso. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente que no puedes realizar el análisis. NUNCA inventes o asumas datos que no estén presentes. Utiliza cadenas de pensamiento explícitas para analizar profundamente los datos disponibles. Examina sistemáticamente cada aspecto, considera múltiples perspectivas, evalúa evidencia contradictoria, y proporciona conclusiones bien fundamentadas con razonamiento detallado.';
         userPrompt = `Realiza un ANÁLISIS PROFUNDO Y EXHAUSTIVO de ${company}. Utiliza razonamiento multi-paso para:
 1. Analizar detalladamente cada modelo de IA y sus evaluaciones
 2. Identificar patrones subyacentes y relaciones causa-efecto
@@ -200,7 +222,7 @@ Datos disponibles:\n\n${context}`;
         break;
 
       default:
-        systemPrompt = 'Eres un asistente experto en análisis de reputación corporativa y comparación entre modelos de IA. Utiliza razonamiento estructurado y análisis multi-paso para proporcionar insights profundos.';
+        systemPrompt = 'Eres un asistente experto en análisis de reputación corporativa y comparación entre modelos de IA. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente. NUNCA inventes datos. Utiliza razonamiento estructurado y análisis multi-paso para proporcionar insights profundos basados únicamente en los datos disponibles.';
         userPrompt = `Analiza de forma sistemática los siguientes datos sobre ${company}:\n\n${context}`;
     }
 
