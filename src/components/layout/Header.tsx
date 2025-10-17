@@ -28,14 +28,17 @@ export function Header({ title = "Repindex.ai", className }: HeaderProps) {
     )}>
       <div className="container flex h-16 max-w-screen-2xl items-center justify-between">
         {/* Logo and Title */}
-        <div className="flex items-center space-x-2">
+        <button 
+          onClick={() => navigate("/")}
+          className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
+        >
           <div className="flex h-8 w-8 items-center justify-center rounded bg-primary text-primary-foreground">
             <span className="text-sm font-bold">R</span>
           </div>
           <span className="font-bold text-lg">
             {title}
           </span>
-        </div>
+        </button>
 
         {/* Right side buttons */}
         <div className="flex items-center space-x-2">
