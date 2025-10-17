@@ -249,22 +249,12 @@ export function RixRunDetail() {
         </div>
 
         {/* Data Status Information */}
-        {rixRun.isDataInvalid ? (
+        {rixRun.isDataInvalid && (
           <WeeklyReadingError
             reason={rixRun.dataInvalidReason}
             companyName={rixRun["03_target_name"]}
             variant="card"
           />
-        ) : (
-          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 text-sm">
-              <CheckCircle className="h-4 w-4" />
-              <span>
-                <strong>Actualización Semanal:</strong> Este análisis forma parte del proceso automático que se ejecuta cada domingo, 
-                garantizando la solidez y actualización constante de los datos reputacionales.
-              </span>
-            </div>
-          </div>
         )}
 
         {/* Main Content Grid */}
