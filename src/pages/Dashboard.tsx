@@ -204,17 +204,6 @@ export function Dashboard() {
           </p>
         </div>
 
-        {/* Data Update Information */}
-        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
-            <CalendarDays className="h-4 w-4" />
-            <span className="text-sm font-medium">
-              Actualización de Datos: Los análisis RIX se ejecutan automáticamente cada domingo, 
-              garantizando información actualizada semanalmente y asegurando la solidez y confiabilidad de los datos reputacionales.
-            </span>
-          </div>
-        </div>
-
         {/* Controls - AI Selector and View Mode */}
         <div className="flex items-center justify-between">
           {/* AI Model Selector */}
