@@ -426,14 +426,14 @@ export function Dashboard() {
                       >
                         <TableCell>
                           <div>
-                            <div className="font-medium">{rixRun["03_target_name"] || "Sin nombre"}</div>
+                            <div className="font-medium text-sm">{rixRun["03_target_name"] || "Sin nombre"}</div>
                             {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
-                              <div className="text-sm text-muted-foreground">
+                              <div className="text-xs text-muted-foreground">
                                 {rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]}
                               </div>
                             )}
                             {!rixRun["03_target_name"] && rixRun["01_run_id"] && (
-                              <div className="text-xs text-muted-foreground">ID: {rixRun["01_run_id"]}</div>
+                              <div className="text-[10px] text-muted-foreground">ID: {rixRun["01_run_id"]}</div>
                             )}
                           </div>
                         </TableCell>
@@ -462,12 +462,12 @@ export function Dashboard() {
                               </span>
                             </div>
                           ) : (
-                            <div className="flex flex-col items-center justify-center gap-1">
-                              <span className="text-xl font-bold text-primary">
+                            <div className="flex flex-col items-center justify-center">
+                              <span className="text-lg font-bold text-primary">
                                 {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
                               </span>
                               {rixRun["52_cxm_excluded"] && (
-                                <span className="text-[10px] text-muted-foreground italic">
+                                <span className="text-[9px] text-muted-foreground italic">
                                   (sin CXM)
                                 </span>
                               )}
@@ -481,7 +481,7 @@ export function Dashboard() {
                           
                           return (
                             <TableCell key={metric.key} className="text-center">
-                              <div className={`px-2 py-1 rounded text-sm font-medium ${
+                              <div className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                                 isInvalid ? 'bg-muted/20 text-muted-foreground' : getCategoryColor(categoria)
                               }`}>
                                 {score || 0}
