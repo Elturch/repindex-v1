@@ -478,10 +478,10 @@ export function Dashboard() {
                             </TableCell>
                           );
                         })}
-                        <TableCell className="text-sm">
+                        <TableCell className="text-xs">
                           {rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}
                         </TableCell>
-                        <TableCell className="text-sm whitespace-normal">
+                        <TableCell className="text-xs whitespace-normal">
                           {rixRun.repindex_root_issuers?.sector_category || "N/A"}
                         </TableCell>
                       </TableRow>
