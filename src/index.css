@@ -40,9 +40,9 @@ All colors MUST be HSL.
 
     /* Elevation shadows for elegant relief */
     --shadow-subtle: 0 1px 2px 0 hsl(var(--foreground) / 0.03), 0 1px 3px 1px hsl(var(--foreground) / 0.02);
-    --shadow-soft: 0 2px 4px 0 hsl(var(--foreground) / 0.04), 0 1px 2px 0 hsl(var(--foreground) / 0.02), inset 0 1px 0 0 hsl(var(--background) / 0.6);
-    --shadow-medium: 0 4px 8px -2px hsl(var(--foreground) / 0.05), 0 2px 4px -1px hsl(var(--foreground) / 0.03), inset 0 1px 0 0 hsl(var(--background) / 0.8);
-    --shadow-elevated: 0 8px 16px -4px hsl(var(--foreground) / 0.06), 0 4px 8px -2px hsl(var(--foreground) / 0.04), inset 0 1px 0 0 hsl(var(--background));
+    --shadow-soft: 0 2px 8px -1px hsl(var(--foreground) / 0.08), 0 4px 12px -2px hsl(var(--foreground) / 0.05);
+    --shadow-medium: 0 4px 12px -2px hsl(var(--foreground) / 0.12), 0 8px 24px -4px hsl(var(--foreground) / 0.08);
+    --shadow-elevated: 0 8px 24px -4px hsl(var(--foreground) / 0.16), 0 16px 48px -8px hsl(var(--foreground) / 0.12);
 
     /* RepIndex specific colors */
     --chatgpt: 158 64% 52%;
@@ -75,8 +75,13 @@ All colors MUST be HSL.
     --background: 220 15% 8%;
     --foreground: 210 20% 96%;
 
-    --card: 220 18% 11%;
+    --card: 220 18% 12%;
     --card-foreground: 210 20% 96%;
+    
+    /* Enhanced shadows for dark mode with more depth */
+    --shadow-soft: 0 2px 8px -1px hsl(0 0% 0% / 0.3), 0 4px 12px -2px hsl(0 0% 0% / 0.2), 0 0 0 1px hsl(var(--border) / 0.3);
+    --shadow-medium: 0 4px 12px -2px hsl(0 0% 0% / 0.4), 0 8px 24px -4px hsl(0 0% 0% / 0.3), 0 0 0 1px hsl(var(--border) / 0.4);
+    --shadow-elevated: 0 8px 24px -4px hsl(0 0% 0% / 0.5), 0 16px 48px -8px hsl(0 0% 0% / 0.4), 0 0 0 1px hsl(var(--border) / 0.5);
 
     --popover: 220 18% 11%;
     --popover-foreground: 210 20% 96%;

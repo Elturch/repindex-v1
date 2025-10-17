@@ -507,7 +507,7 @@ export function Dashboard() {
                 {rixRuns.map((rixRun) => (
                   <Card 
                     key={rixRun.id} 
-                    className="cursor-pointer shadow-card hover:shadow-card-hover transition-all duration-200"
+                    className="cursor-pointer shadow-soft hover:shadow-medium border-border/50 transition-all duration-200 hover:-translate-y-0.5"
                     onClick={() => handleRowClick(rixRun.id)}
                   >
                     <CardHeader className="pb-3">
