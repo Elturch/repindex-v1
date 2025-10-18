@@ -55,14 +55,8 @@ export default function AIResponseDialog({
         </DialogHeader>
         <ScrollArea className="h-full max-h-[60vh] pr-4">
           <div className="space-y-4">
-            {/* Date Information */}
-            <div className="bg-muted/50 p-3 rounded-lg space-y-2 text-sm">
-              {createdAt && (
-                <div>
-                  <span className="font-medium text-muted-foreground">Fecha de análisis: </span>
-                  <span>{new Date(createdAt).toLocaleString()}</span>
-                </div>
-              )}
+            {/* Period Information */}
+            <div className="bg-muted/50 p-3 rounded-lg text-sm">
               <div>
                 <span className="font-medium text-muted-foreground">Período analizado: </span>
                 <span>{formatDateRange(periodFrom, periodTo)}</span>
