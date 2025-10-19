@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { fromZonedTime } from 'date-fns-tz';
-import { addDays } from 'date-fns';
+import { addDays, format } from 'date-fns';
 
 export interface RixRun {
   id: string;
@@ -60,6 +60,8 @@ export interface RixRun {
   isDataInvalid?: boolean;
   dataInvalidReason?: string;
   displayRixScore?: number; // Computed: adjusted score if CXM excluded, otherwise original
+  batchNumber?: number; // Sequential batch number
+  batchLabel?: string; // Formatted label like "Consulta #1: 12/10 - 19/10"
   repindex_root_issuers?: {
     ticker?: string;
     ibex_family_code?: string;
@@ -143,7 +145,17 @@ export function useRixRuns(
         });
       }
 
-      // Join the data and add validation flags
+      // First, identify unique periods and assign batch numbers
+      const periodMap = new Map<string, number>();
+      const uniquePeriods = [...new Set(
+        rixData?.map(run => run["06_period_from"]).filter(Boolean)
+      )].sort().reverse(); // Most recent first
+      
+      uniquePeriods.forEach((period, index) => {
+        if (period) periodMap.set(period, index + 1);
+      });
+
+      // Join the data and add validation flags + batch info
       const joinedData = rixData?.map(rixRun => {
         const isRmmZero = rixRun["32_rmm_score"] === 0;
         const cxmExcluded = rixRun["52_cxm_excluded"] === true;
@@ -154,6 +166,14 @@ export function useRixRuns(
           ? adjustedScore
           : rixRun["09_rix_score"];
         
+        // Calculate batch information
+        const periodFrom = rixRun["06_period_from"];
+        const periodTo = rixRun["07_period_to"];
+        const batchNum = periodFrom ? periodMap.get(periodFrom) : undefined;
+        const batchLabel = periodFrom && periodTo && batchNum
+          ? `Consulta #${batchNum}: ${format(new Date(periodFrom), 'dd/MM')} - ${format(new Date(periodTo), 'dd/MM')}`
+          : undefined;
+        
         return {
           ...rixRun,
           repindex_root_issuers: rixRun["05_ticker"] ? 
@@ -161,7 +181,9 @@ export function useRixRuns(
             null,
           isDataInvalid: isRmmZero,
           dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
-          displayRixScore
+          displayRixScore,
+          batchNumber: batchNum,
+          batchLabel
         };
       });
 

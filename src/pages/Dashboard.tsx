@@ -34,6 +34,7 @@ export function Dashboard() {
   const [weekFilter, setWeekFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
+  const [batchFilter, setBatchFilter] = useState<string>("all");
   const navigate = useNavigate();
   
   const { data: rixRuns, isLoading, error } = useRixRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter);
@@ -117,24 +118,48 @@ export function Dashboard() {
       });
   }, [rixRuns]);
 
+  // Generate batch options based on available data
+  const batchOptions = useMemo(() => {
+    if (!rixRuns) return [];
+    
+    const batches = new Map<number, string>();
+    rixRuns.forEach(run => {
+      if (run.batchNumber && run.batchLabel) {
+        batches.set(run.batchNumber, run.batchLabel);
+      }
+    });
+    
+    return Array.from(batches.entries())
+      .sort((a, b) => a[0] - b[0]) // Sort by batch number
+      .map(([num, label]) => ({ value: num.toString(), label }));
+  }, [rixRuns]);
+
   const clearFilters = () => {
     setCompanyFilter("all");
     setWeekFilter("all");
     setSectorFilter("all");
     setIbexFamilyFilter("all");
+    setBatchFilter("all");
   };
 
-  // Sort RIX runs to move invalid data to the end
+  // Sort RIX runs to move invalid data to the end and apply batch filter
   const sortedRixRuns = useMemo(() => {
     if (!rixRuns) return [];
     
-    return [...rixRuns].sort((a, b) => {
+    let filteredByBatch = rixRuns;
+    if (batchFilter && batchFilter !== "all") {
+      filteredByBatch = rixRuns.filter(run => 
+        run.batchNumber?.toString() === batchFilter
+      );
+    }
+    
+    return [...filteredByBatch].sort((a, b) => {
       // If one has invalid data and the other doesn't, move invalid to end
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
       return 0; // Keep original order for same validity status
     });
-  }, [rixRuns]);
+  }, [rixRuns, batchFilter]);
 
   // Function to normalize flag names to user-friendly format
   const normalizeFlag = (flag: string) => {
@@ -227,7 +252,7 @@ export function Dashboard() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {rixRuns?.length || 0} resultados analizados
-            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all") && (
+            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
           </p>
@@ -384,7 +409,25 @@ export function Dashboard() {
               </Select>
             </div>
 
-            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all") && (
+            {/* Batch Filter */}
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              <Select value={batchFilter} onValueChange={setBatchFilter}>
+                <SelectTrigger className="w-56">
+                  <SelectValue placeholder="Seleccionar consulta" />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-50">
+                  <SelectItem value="all">Todas las consultas</SelectItem>
+                  {batchOptions.map((batch) => (
+                    <SelectItem key={batch.value} value={batch.value}>
+                      {batch.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -422,6 +465,7 @@ export function Dashboard() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-48">Empresa</TableHead>
+                      <TableHead className="text-center w-24">Consulta</TableHead>
                       {aiFilter === "all" && (
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
                       )}
@@ -454,6 +498,15 @@ export function Dashboard() {
                               <div className="text-[10px] text-muted-foreground">ID: {rixRun["01_run_id"]}</div>
                             )}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {rixRun.batchNumber ? (
+                            <Badge variant="outline">
+                              #{rixRun.batchNumber}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
                         </TableCell>
                         {aiFilter === "all" && (
                           <TableCell className="text-center">
