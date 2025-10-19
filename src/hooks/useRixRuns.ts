@@ -148,14 +148,24 @@ export function useRixRuns(
         } else if (dayOfWeek === 6) {
           // Sábado: avanzar 1 día al domingo
           executionSunday = addDays(createdDateMadrid, 1);
-        } else {
+        } else if (dayOfWeek >= 1 && dayOfWeek <= 5) {
           // Lunes a viernes: retroceder al domingo anterior
           executionSunday = addDays(createdDateMadrid, -dayOfWeek);
+        } else {
+          // Fallback: usar la fecha actual
+          executionSunday = new Date(createdDateMadrid);
         }
         
         // Normalizar a la fecha (sin hora) para agrupar correctamente
         executionSunday.setHours(0, 0, 0, 0);
         const executionKey = format(executionSunday, 'yyyy-MM-dd');
+        
+        console.log('Batch grouping:', {
+          created_at: run.created_at,
+          target: run["03_target_name"],
+          dayOfWeek,
+          executionKey
+        });
         
         executionDates.add(executionKey);
       });
@@ -193,8 +203,10 @@ export function useRixRuns(
           executionSunday = new Date(createdDateMadrid);
         } else if (dayOfWeek === 6) {
           executionSunday = addDays(createdDateMadrid, 1);
-        } else {
+        } else if (dayOfWeek >= 1 && dayOfWeek <= 5) {
           executionSunday = addDays(createdDateMadrid, -dayOfWeek);
+        } else {
+          executionSunday = new Date(createdDateMadrid);
         }
         
         executionSunday.setHours(0, 0, 0, 0);
