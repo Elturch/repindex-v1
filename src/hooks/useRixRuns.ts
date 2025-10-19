@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { fromZonedTime } from 'date-fns-tz';
+import { addDays } from 'date-fns';
 
 export interface RixRun {
   id: string;
@@ -96,13 +98,19 @@ export function useRixRuns(
       }
 
       if (weekFilter && weekFilter !== "all") {
-        // Filter by week range (assuming weekFilter is in format "YYYY-MM-DD")
-        const weekStart = new Date(weekFilter);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 6); // Add 6 days for a week
+        const MADRID_TZ = 'Europe/Madrid';
         
-        rixQuery = rixQuery.gte("06_period_from", weekStart.toISOString().split('T')[0])
-                            .lte("07_period_to", weekEnd.toISOString().split('T')[0]);
+        // Parse the filter value as Madrid time (Sunday start of week)
+        const filterWeekStart = new Date(weekFilter);
+        const filterWeekEnd = addDays(filterWeekStart, 7); // Until next Sunday (exclusive)
+        
+        // Convert Madrid dates to UTC for database comparison
+        const filterWeekStartUTC = fromZonedTime(filterWeekStart, MADRID_TZ);
+        const filterWeekEndUTC = fromZonedTime(filterWeekEnd, MADRID_TZ);
+        
+        rixQuery = rixQuery
+          .gte('created_at', filterWeekStartUTC.toISOString())
+          .lt('created_at', filterWeekEndUTC.toISOString());
       }
 
       const { data: rixData, error: rixError } = await rixQuery;

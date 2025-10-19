@@ -17,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
-import { format, startOfWeek, addWeeks, subWeeks, isWithinInterval } from "date-fns";
+import { format, startOfWeek, addDays } from "date-fns";
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { cn } from "@/lib/utils";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
@@ -78,26 +79,36 @@ export function Dashboard() {
     { key: "cxm", label: "CXM", scoreKey: "44_cxm_score", categoryKey: "46_cxm_categoria" },
   ];
 
-  // Generate week options based on available data
+  // Generate week options based on available data (using Madrid timezone)
   const weekOptions = useMemo(() => {
     if (!rixRuns) return [];
     
-    const weeks = new Set<string>();
+    const MADRID_TZ = 'Europe/Madrid';
+    const weeks = new Map<string, Date>();
+    
     rixRuns.forEach(run => {
-      if (run["06_period_from"]) {
-        const weekStart = startOfWeek(new Date(run["06_period_from"]), { weekStartsOn: 1 });
-        weeks.add(format(weekStart, 'yyyy-MM-dd'));
+      // Convert UTC created_at to Madrid timezone
+      const createdDateUTC = new Date(run.created_at);
+      const createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
+      
+      // Get the week start (Sunday) in Madrid timezone
+      const weekStartMadrid = startOfWeek(createdDateMadrid, { weekStartsOn: 0 }); // 0 = Sunday
+      const weekKey = format(weekStartMadrid, 'yyyy-MM-dd');
+      
+      if (!weeks.has(weekKey)) {
+        weeks.set(weekKey, weekStartMadrid);
       }
     });
     
-    return Array.from(weeks).sort().reverse().map(weekStart => {
-      const start = new Date(weekStart);
-      const end = addWeeks(start, 1);
-      return {
-        value: weekStart,
-        label: `${format(start, 'dd/MM')} - ${format(addWeeks(start, 1), 'dd/MM/yyyy')}`
-      };
-    });
+    return Array.from(weeks.entries())
+      .sort((a, b) => b[0].localeCompare(a[0])) // Sort descending (most recent first)
+      .map(([key, weekStart]) => {
+        const weekEnd = addDays(weekStart, 6); // Saturday
+        return {
+          value: key,
+          label: `${format(weekStart, 'dd/MM/yyyy')} - ${format(weekEnd, 'dd/MM/yyyy')}`
+        };
+      });
   }, [rixRuns]);
 
   const clearFilters = () => {
