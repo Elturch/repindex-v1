@@ -465,7 +465,6 @@ export function Dashboard() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-48">Empresa</TableHead>
-                      <TableHead className="text-center w-24">Consulta</TableHead>
                       {aiFilter === "all" && (
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
                       )}
@@ -498,15 +497,6 @@ export function Dashboard() {
                               <div className="text-[10px] text-muted-foreground">ID: {rixRun["01_run_id"]}</div>
                             )}
                           </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {rixRun.batchNumber ? (
-                            <Badge variant="outline">
-                              #{rixRun.batchNumber}
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">N/A</span>
-                          )}
                         </TableCell>
                         {aiFilter === "all" && (
                           <TableCell className="text-center">
