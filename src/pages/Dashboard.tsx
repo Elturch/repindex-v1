@@ -414,10 +414,10 @@ export function Dashboard() {
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
               <Select value={batchFilter} onValueChange={setBatchFilter}>
                 <SelectTrigger className="w-56">
-                  <SelectValue placeholder="Seleccionar consulta" />
+                  <SelectValue placeholder="Fecha de análisis" />
                 </SelectTrigger>
                 <SelectContent className="bg-background border z-50">
-                  <SelectItem value="all">Todas las consultas</SelectItem>
+                  <SelectItem value="all">Todas las fechas</SelectItem>
                   {batchOptions.map((batch) => (
                     <SelectItem key={batch.value} value={batch.value}>
                       {batch.label}
