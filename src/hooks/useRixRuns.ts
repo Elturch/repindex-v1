@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { fromZonedTime } from 'date-fns-tz';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 import { addDays, format } from 'date-fns';
 
 export interface RixRun {
@@ -145,15 +145,42 @@ export function useRixRuns(
         });
       }
 
-      // First, identify unique periods and assign batch numbers
-      const periodMap = new Map<string, number>();
-      const uniquePeriods = [...new Set(
-        rixData?.map(run => run["06_period_from"]).filter(Boolean)
-      )].sort().reverse(); // Most recent first
+      // Agrupar por fecha de ejecución (domingo) en zona horaria de Madrid
+      const MADRID_TZ = 'Europe/Madrid';
+      const batchMap = new Map<string, { number: number; executionDate: Date }>();
       
-      uniquePeriods.forEach((period, index) => {
-        if (period) periodMap.set(period, index + 1);
+      // Identificar todas las fechas de ejecución únicas (domingos)
+      const executionDates = new Set<string>();
+      
+      rixData?.forEach(run => {
+        const createdDateUTC = new Date(run.created_at);
+        let createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
+        
+        // Si es domingo antes de las 06:00 AM, considerarlo como sábado
+        // (parte de la ejecución del sábado por la noche)
+        if (createdDateMadrid.getDay() === 0 && createdDateMadrid.getHours() < 6) {
+          createdDateMadrid = addDays(createdDateMadrid, -1);
+        }
+        
+        // Obtener la fecha del domingo más cercano
+        const dayOfWeek = createdDateMadrid.getDay();
+        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+        const executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+        const executionKey = format(executionSunday, 'yyyy-MM-dd');
+        
+        executionDates.add(executionKey);
       });
+      
+      // Asignar números de tanda ordenados (más antigua = #1)
+      let batchCounter = 1;
+      Array.from(executionDates)
+        .sort()
+        .forEach(dateKey => {
+          batchMap.set(dateKey, {
+            number: batchCounter++,
+            executionDate: new Date(dateKey)
+          });
+        });
 
       // Join the data and add validation flags + batch info
       const joinedData = rixData?.map(rixRun => {
@@ -166,12 +193,23 @@ export function useRixRuns(
           ? adjustedScore
           : rixRun["09_rix_score"];
         
-        // Calculate batch information
-        const periodFrom = rixRun["06_period_from"];
-        const periodTo = rixRun["07_period_to"];
-        const batchNum = periodFrom ? periodMap.get(periodFrom) : undefined;
-        const batchLabel = periodFrom && periodTo && batchNum
-          ? `Consulta #${batchNum}: ${format(new Date(periodFrom), 'dd/MM')} - ${format(new Date(periodTo), 'dd/MM')}`
+        // Calculate batch information based on execution date
+        const createdDateUTC = new Date(rixRun.created_at);
+        let createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
+        
+        if (createdDateMadrid.getDay() === 0 && createdDateMadrid.getHours() < 6) {
+          createdDateMadrid = addDays(createdDateMadrid, -1);
+        }
+        
+        const dayOfWeek = createdDateMadrid.getDay();
+        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+        const executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+        const executionKey = format(executionSunday, 'yyyy-MM-dd');
+        
+        const batch = batchMap.get(executionKey);
+        const batchNum = batch?.number;
+        const batchLabel = batch
+          ? `Consulta #${batch.number}: ${format(batch.executionDate, 'dd/MM/yyyy')}`
           : undefined;
         
         return {
