@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+
 import { addDays, format } from 'date-fns';
 
 export interface RixRun {
@@ -126,51 +126,27 @@ export function useRixRuns(
         });
       }
 
-      // Agrupar por fecha de ejecución (domingo) en zona horaria de Madrid
-      const MADRID_TZ = 'Europe/Madrid';
+      // Agrupar por fecha de ejecución (próximo domingo)
       const batchMap = new Map<string, { number: number; executionDate: Date }>();
-      
-      // Identificar todas las fechas de ejecución únicas (domingos)
       const executionDates = new Set<string>();
       
+      // Calcular el próximo domingo para cada registro
       rixData?.forEach(run => {
-        const createdDateUTC = new Date(run.created_at);
-        const createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
+        const createdDate = new Date(run.created_at);
+        const dayOfWeek = createdDate.getUTCDay(); // 0 = domingo, 6 = sábado
         
-        // Obtener el día de la semana (0 = domingo, 6 = sábado)
-        const dayOfWeek = createdDateMadrid.getDay();
+        // Calcular días hasta el próximo domingo (o mismo día si ya es domingo)
+        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+        const nextSunday = addDays(createdDate, daysUntilSunday);
         
-        // Calcular el domingo de referencia del fin de semana
-        let executionSunday: Date;
-        if (dayOfWeek === 0) {
-          // Ya es domingo, usar esa fecha
-          executionSunday = new Date(createdDateMadrid);
-        } else if (dayOfWeek === 6) {
-          // Sábado: avanzar 1 día al domingo
-          executionSunday = addDays(createdDateMadrid, 1);
-        } else if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-          // Lunes a viernes: retroceder al domingo anterior
-          executionSunday = addDays(createdDateMadrid, -dayOfWeek);
-        } else {
-          // Fallback: usar la fecha actual
-          executionSunday = new Date(createdDateMadrid);
-        }
-        
-        // Normalizar a la fecha (sin hora) para agrupar correctamente
-        executionSunday.setHours(0, 0, 0, 0);
-        const executionKey = format(executionSunday, 'yyyy-MM-dd');
-        
-        console.log('Batch grouping:', {
-          created_at: run.created_at,
-          target: run["03_target_name"],
-          dayOfWeek,
-          executionKey
-        });
+        // Normalizar a fecha sin hora
+        nextSunday.setUTCHours(0, 0, 0, 0);
+        const executionKey = format(nextSunday, 'yyyy-MM-dd');
         
         executionDates.add(executionKey);
       });
       
-      // Asignar números de tanda ordenados (más antigua = #1)
+      // Asignar números de tanda ordenados cronológicamente (más antigua = #1)
       let batchCounter = 1;
       Array.from(executionDates)
         .sort()
@@ -192,25 +168,13 @@ export function useRixRuns(
           ? adjustedScore
           : rixRun["09_rix_score"];
         
-        // Calculate batch information based on execution date
-        const createdDateUTC = new Date(rixRun.created_at);
-        const createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
-        
-        const dayOfWeek = createdDateMadrid.getDay();
-        
-        let executionSunday: Date;
-        if (dayOfWeek === 0) {
-          executionSunday = new Date(createdDateMadrid);
-        } else if (dayOfWeek === 6) {
-          executionSunday = addDays(createdDateMadrid, 1);
-        } else if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-          executionSunday = addDays(createdDateMadrid, -dayOfWeek);
-        } else {
-          executionSunday = new Date(createdDateMadrid);
-        }
-        
-        executionSunday.setHours(0, 0, 0, 0);
-        const executionKey = format(executionSunday, 'yyyy-MM-dd');
+        // Calculate batch information - next Sunday from creation date
+        const createdDate = new Date(rixRun.created_at);
+        const dayOfWeek = createdDate.getUTCDay();
+        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+        const nextSunday = addDays(createdDate, daysUntilSunday);
+        nextSunday.setUTCHours(0, 0, 0, 0);
+        const executionKey = format(nextSunday, 'yyyy-MM-dd');
         
         const batch = batchMap.get(executionKey);
         const batchNum = batch?.number;
