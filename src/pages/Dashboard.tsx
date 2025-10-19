@@ -226,7 +226,7 @@ export function Dashboard() {
             Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter === "all" ? "Todos" : aiFilter}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {rixRuns?.length || 0} empresas analizadas
+            {rixRuns?.length || 0} resultados analizados
             {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
