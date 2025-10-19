@@ -107,6 +107,18 @@ export function Dashboard() {
     setIbexFamilyFilter("all");
   };
 
+  // Sort RIX runs to move invalid data to the end
+  const sortedRixRuns = useMemo(() => {
+    if (!rixRuns) return [];
+    
+    return [...rixRuns].sort((a, b) => {
+      // If one has invalid data and the other doesn't, move invalid to end
+      if (a.isDataInvalid && !b.isDataInvalid) return 1;
+      if (!a.isDataInvalid && b.isDataInvalid) return -1;
+      return 0; // Keep original order for same validity status
+    });
+  }, [rixRuns]);
+
   // Function to normalize flag names to user-friendly format
   const normalizeFlag = (flag: string) => {
     const flagMap: { [key: string]: string } = {
@@ -407,7 +419,7 @@ export function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rixRuns.map((rixRun) => (
+                    {sortedRixRuns.map((rixRun) => (
                       <TableRow
                         key={rixRun.id}
                         className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
@@ -493,7 +505,7 @@ export function Dashboard() {
 
             {viewMode === "cards" && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {rixRuns.map((rixRun) => (
+                {sortedRixRuns.map((rixRun) => (
                   <Card 
                     key={rixRun.id} 
                     className="cursor-pointer shadow-soft hover:shadow-medium border-border/50 transition-all duration-200 hover:-translate-y-0.5"
