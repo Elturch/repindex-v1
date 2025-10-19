@@ -89,9 +89,15 @@ export function Dashboard() {
     rixRuns.forEach(run => {
       // Convert UTC created_at to Madrid timezone
       const createdDateUTC = new Date(run.created_at);
-      const createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
+      let createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
       
-      // Get the week start (Sunday) in Madrid timezone
+      // If execution is Sunday before 6 AM, treat it as Saturday (previous day)
+      // This ensures analyses running after midnight Saturday belong to that week
+      if (createdDateMadrid.getDay() === 0 && createdDateMadrid.getHours() < 6) {
+        createdDateMadrid = addDays(createdDateMadrid, -1); // Move back to Saturday
+      }
+      
+      // Get the week start (Sunday) in Madrid timezone based on adjusted date
       const weekStartMadrid = startOfWeek(createdDateMadrid, { weekStartsOn: 0 }); // 0 = Sunday
       const weekKey = format(weekStartMadrid, 'yyyy-MM-dd');
       

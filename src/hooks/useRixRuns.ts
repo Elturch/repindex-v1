@@ -102,7 +102,9 @@ export function useRixRuns(
         
         // Parse the filter value as Madrid time (Sunday start of week)
         const filterWeekStart = new Date(weekFilter);
-        const filterWeekEnd = addDays(filterWeekStart, 7); // Until next Sunday (exclusive)
+        // Week extends until Sunday 06:00 AM (7 days + 6 hours grace period)
+        const filterWeekEnd = addDays(filterWeekStart, 7);
+        filterWeekEnd.setHours(6, 0, 0, 0); // Sunday at 06:00 AM
         
         // Convert Madrid dates to UTC for database comparison
         const filterWeekStartUTC = fromZonedTime(filterWeekStart, MADRID_TZ);
