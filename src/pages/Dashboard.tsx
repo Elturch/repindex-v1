@@ -17,8 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
-import { format, startOfWeek, addDays } from "date-fns";
-import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { format, addDays } from "date-fns";
+import { toZonedTime } from 'date-fns-tz';
 import { cn } from "@/lib/utils";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
@@ -31,13 +31,12 @@ export function Dashboard() {
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const [aiFilter, setAIFilter] = useState<AIFilter>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
-  const [weekFilter, setWeekFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
   const [batchFilter, setBatchFilter] = useState<string>("all");
   const navigate = useNavigate();
   
-  const { data: rixRuns, isLoading, error } = useRixRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter);
+  const { data: rixRuns, isLoading, error } = useRixRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, sectorFilter, ibexFamilyFilter);
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
@@ -80,44 +79,6 @@ export function Dashboard() {
     { key: "cxm", label: "CXM", scoreKey: "44_cxm_score", categoryKey: "46_cxm_categoria" },
   ];
 
-  // Generate week options based on available data (using Madrid timezone)
-  const weekOptions = useMemo(() => {
-    if (!rixRuns) return [];
-    
-    const MADRID_TZ = 'Europe/Madrid';
-    const weeks = new Map<string, Date>();
-    
-    rixRuns.forEach(run => {
-      // Convert UTC created_at to Madrid timezone
-      const createdDateUTC = new Date(run.created_at);
-      let createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
-      
-      // If execution is Sunday before 6 AM, treat it as Saturday (previous day)
-      // This ensures analyses running after midnight Saturday belong to that week
-      if (createdDateMadrid.getDay() === 0 && createdDateMadrid.getHours() < 6) {
-        createdDateMadrid = addDays(createdDateMadrid, -1); // Move back to Saturday
-      }
-      
-      // Get the week start (Sunday) in Madrid timezone based on adjusted date
-      const weekStartMadrid = startOfWeek(createdDateMadrid, { weekStartsOn: 0 }); // 0 = Sunday
-      const weekKey = format(weekStartMadrid, 'yyyy-MM-dd');
-      
-      if (!weeks.has(weekKey)) {
-        weeks.set(weekKey, weekStartMadrid);
-      }
-    });
-    
-    return Array.from(weeks.entries())
-      .sort((a, b) => b[0].localeCompare(a[0])) // Sort descending (most recent first)
-      .map(([key, weekStart]) => {
-        const weekEnd = addDays(weekStart, 6); // Saturday
-        return {
-          value: key,
-          label: `${format(weekStart, 'dd/MM/yyyy')} - ${format(weekEnd, 'dd/MM/yyyy')}`
-        };
-      });
-  }, [rixRuns]);
-
   // Generate batch options based on available data
   const batchOptions = useMemo(() => {
     if (!rixRuns) return [];
@@ -136,7 +97,6 @@ export function Dashboard() {
 
   const clearFilters = () => {
     setCompanyFilter("all");
-    setWeekFilter("all");
     setSectorFilter("all");
     setIbexFamilyFilter("all");
     setBatchFilter("all");
@@ -252,7 +212,7 @@ export function Dashboard() {
           </h1>
           <p className="text-sm text-muted-foreground">
             {rixRuns?.length || 0} resultados analizados
-            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+            {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
           </p>
@@ -355,24 +315,6 @@ export function Dashboard() {
               </Select>
             </div>
 
-            {/* Week Filter */}
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
-              <Select value={weekFilter} onValueChange={setWeekFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Seleccionar semana" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border z-50">
-                  <SelectItem value="all">Todas las semanas</SelectItem>
-                  {weekOptions.map((week) => (
-                    <SelectItem key={week.value} value={week.value}>
-                      {week.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Sector Filter */}
             <div className="flex items-center gap-2">
               <Factory className="h-4 w-4 text-muted-foreground" />
@@ -427,7 +369,7 @@ export function Dashboard() {
               </Select>
             </div>
 
-            {(companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+            {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -451,7 +393,7 @@ export function Dashboard() {
 
         {!isLoading && !error && (!rixRuns || rixRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || companyFilter !== "all" || weekFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" ? "No companies found matching your filters." : 
+            {searchQuery || companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" ? "No companies found matching your filters." : 
              aiFilter === "comparison" ? "No data available for comparison view yet." : 
              `No reputational data available for ${aiFilter}.`}
           </div>

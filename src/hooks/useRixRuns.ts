@@ -73,12 +73,11 @@ export function useRixRuns(
   searchQuery?: string, 
   modelFilter?: string, 
   companyFilter?: string,
-  weekFilter?: string,
   sectorFilter?: string,
   ibexFamilyFilter?: string
 ) {
   return useQuery({
-    queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, weekFilter, sectorFilter, ibexFamilyFilter],
+    queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter],
     queryFn: async () => {
       // First get rix_runs data
       let rixQuery = supabase
@@ -97,24 +96,6 @@ export function useRixRuns(
 
       if (companyFilter && companyFilter !== "all") {
         rixQuery = rixQuery.eq("03_target_name", companyFilter);
-      }
-
-      if (weekFilter && weekFilter !== "all") {
-        const MADRID_TZ = 'Europe/Madrid';
-        
-        // Parse the filter value as Madrid time (Sunday start of week)
-        const filterWeekStart = new Date(weekFilter);
-        // Week extends until Sunday 06:00 AM (7 days + 6 hours grace period)
-        const filterWeekEnd = addDays(filterWeekStart, 7);
-        filterWeekEnd.setHours(6, 0, 0, 0); // Sunday at 06:00 AM
-        
-        // Convert Madrid dates to UTC for database comparison
-        const filterWeekStartUTC = fromZonedTime(filterWeekStart, MADRID_TZ);
-        const filterWeekEndUTC = fromZonedTime(filterWeekEnd, MADRID_TZ);
-        
-        rixQuery = rixQuery
-          .gte('created_at', filterWeekStartUTC.toISOString())
-          .lt('created_at', filterWeekEndUTC.toISOString());
       }
 
       const { data: rixData, error: rixError } = await rixQuery;
@@ -154,18 +135,28 @@ export function useRixRuns(
       
       rixData?.forEach(run => {
         const createdDateUTC = new Date(run.created_at);
-        let createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
+        const createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
         
-        // Si es domingo antes de las 06:00 AM, considerarlo como sábado
-        // (parte de la ejecución del sábado por la noche)
-        if (createdDateMadrid.getDay() === 0 && createdDateMadrid.getHours() < 6) {
-          createdDateMadrid = addDays(createdDateMadrid, -1);
+        // Obtener el día de la semana (0 = domingo, 6 = sábado)
+        const dayOfWeek = createdDateMadrid.getDay();
+        
+        // Si es sábado (6), avanzar al domingo siguiente
+        // Si es cualquier otro día, calcular el domingo de esa semana
+        let executionSunday: Date;
+        if (dayOfWeek === 6) {
+          // Sábado: avanzar 1 día al domingo
+          executionSunday = addDays(createdDateMadrid, 1);
+        } else if (dayOfWeek === 0) {
+          // Ya es domingo, usar esa fecha
+          executionSunday = createdDateMadrid;
+        } else {
+          // Otro día: calcular el domingo siguiente
+          const daysUntilSunday = 7 - dayOfWeek;
+          executionSunday = addDays(createdDateMadrid, daysUntilSunday);
         }
         
-        // Obtener la fecha del domingo más cercano
-        const dayOfWeek = createdDateMadrid.getDay();
-        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-        const executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+        // Normalizar a la fecha (sin hora) para agrupar correctamente
+        executionSunday.setHours(0, 0, 0, 0);
         const executionKey = format(executionSunday, 'yyyy-MM-dd');
         
         executionDates.add(executionKey);
@@ -195,15 +186,21 @@ export function useRixRuns(
         
         // Calculate batch information based on execution date
         const createdDateUTC = new Date(rixRun.created_at);
-        let createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
-        
-        if (createdDateMadrid.getDay() === 0 && createdDateMadrid.getHours() < 6) {
-          createdDateMadrid = addDays(createdDateMadrid, -1);
-        }
+        const createdDateMadrid = toZonedTime(createdDateUTC, MADRID_TZ);
         
         const dayOfWeek = createdDateMadrid.getDay();
-        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-        const executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+        
+        let executionSunday: Date;
+        if (dayOfWeek === 6) {
+          executionSunday = addDays(createdDateMadrid, 1);
+        } else if (dayOfWeek === 0) {
+          executionSunday = createdDateMadrid;
+        } else {
+          const daysUntilSunday = 7 - dayOfWeek;
+          executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+        }
+        
+        executionSunday.setHours(0, 0, 0, 0);
         const executionKey = format(executionSunday, 'yyyy-MM-dd');
         
         const batch = batchMap.get(executionKey);
