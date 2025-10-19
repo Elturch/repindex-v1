@@ -140,19 +140,17 @@ export function useRixRuns(
         // Obtener el día de la semana (0 = domingo, 6 = sábado)
         const dayOfWeek = createdDateMadrid.getDay();
         
-        // Si es sábado (6), avanzar al domingo siguiente
-        // Si es cualquier otro día, calcular el domingo de esa semana
+        // Calcular el domingo de referencia del fin de semana
         let executionSunday: Date;
-        if (dayOfWeek === 6) {
+        if (dayOfWeek === 0) {
+          // Ya es domingo, usar esa fecha
+          executionSunday = new Date(createdDateMadrid);
+        } else if (dayOfWeek === 6) {
           // Sábado: avanzar 1 día al domingo
           executionSunday = addDays(createdDateMadrid, 1);
-        } else if (dayOfWeek === 0) {
-          // Ya es domingo, usar esa fecha
-          executionSunday = createdDateMadrid;
         } else {
-          // Otro día: calcular el domingo siguiente
-          const daysUntilSunday = 7 - dayOfWeek;
-          executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+          // Lunes a viernes: retroceder al domingo anterior
+          executionSunday = addDays(createdDateMadrid, -dayOfWeek);
         }
         
         // Normalizar a la fecha (sin hora) para agrupar correctamente
@@ -191,13 +189,12 @@ export function useRixRuns(
         const dayOfWeek = createdDateMadrid.getDay();
         
         let executionSunday: Date;
-        if (dayOfWeek === 6) {
+        if (dayOfWeek === 0) {
+          executionSunday = new Date(createdDateMadrid);
+        } else if (dayOfWeek === 6) {
           executionSunday = addDays(createdDateMadrid, 1);
-        } else if (dayOfWeek === 0) {
-          executionSunday = createdDateMadrid;
         } else {
-          const daysUntilSunday = 7 - dayOfWeek;
-          executionSunday = addDays(createdDateMadrid, daysUntilSunday);
+          executionSunday = addDays(createdDateMadrid, -dayOfWeek);
         }
         
         executionSunday.setHours(0, 0, 0, 0);
