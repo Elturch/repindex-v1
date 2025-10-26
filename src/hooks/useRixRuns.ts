@@ -309,6 +309,25 @@ export function useRixRuns(
         };
       });
 
+      // Debug: verificar trends calculados
+      const withTrend = joinedData?.filter(r => r.trend !== undefined).length || 0;
+      const withoutTrend = joinedData?.filter(r => r.trend === undefined).length || 0;
+      const examplesWithoutTrend = joinedData?.filter(r => r.trend === undefined).slice(0, 5).map(r => ({
+        ticker: r["05_ticker"],
+        model: r["02_model_name"],
+        batch: r.batch_execution_date,
+        batchNum: r.batchNumber,
+        score: r.displayRixScore
+      }));
+
+      console.log('📊 Análisis de Trends:', {
+        total: joinedData?.length || 0,
+        conTrend: withTrend,
+        sinTrend: withoutTrend,
+        porcentajeConTrend: `${((withTrend / (joinedData?.length || 1)) * 100).toFixed(1)}%`,
+        ejemplosSinTrend: examplesWithoutTrend
+      });
+
       // Apply sector filter after joining the data
       let filteredData = joinedData;
       if (sectorFilter && sectorFilter !== "all") {
@@ -327,6 +346,8 @@ export function useRixRuns(
       return filteredData as RixRun[];
     },
     enabled: true,
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 }
 
