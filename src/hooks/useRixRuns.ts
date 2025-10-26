@@ -95,8 +95,8 @@ export function useRixRuns(
       const { data: rixData, error: rixError } = await supabase
         .from("rix_runs")
         .select("*")
-        .order("09_rix_score", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("batch_execution_date", { ascending: false })
+        .order("09_rix_score", { ascending: false });
 
       if (rixError) {
         throw rixError;

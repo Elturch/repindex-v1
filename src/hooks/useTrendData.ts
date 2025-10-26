@@ -28,7 +28,7 @@ export function useTrendData({
   return useQuery({
     queryKey: ["trend-data", ticker, ibexFamily, sector, numWeeks, modelFilter],
     queryFn: async () => {
-      // Get all rix_runs with joins to repindex for filtering
+      // Get all rix_runs with joins to repindex for filtering (most recent first)
       let query = supabase
         .from("rix_runs")
         .select(`
@@ -43,7 +43,7 @@ export function useTrendData({
           )
         `)
         .eq("02_model_name", modelFilter)
-        .order("batch_execution_date", { ascending: true });
+        .order("batch_execution_date", { ascending: false });
 
       // Apply filters
       if (ibexFamily && ibexFamily !== "all") {

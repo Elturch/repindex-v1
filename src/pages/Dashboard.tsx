@@ -79,7 +79,7 @@ export function Dashboard() {
     { key: "cxm", label: "CXM", scoreKey: "44_cxm_score", categoryKey: "46_cxm_categoria" },
   ];
 
-  // Generate batch options based on available data
+  // Generate batch options based on available data (most recent first)
   const batchOptions = useMemo(() => {
     if (!rixRuns) return [];
     
@@ -91,9 +91,17 @@ export function Dashboard() {
     });
     
     return Array.from(batches.entries())
-      .sort((a, b) => a[0] - b[0]) // Sort by batch number
+      .sort((a, b) => b[0] - a[0]) // Sort by batch number descending (most recent first)
       .map(([num, label]) => ({ value: num.toString(), label }));
   }, [rixRuns]);
+
+  // Auto-select the most recent batch when data is available
+  React.useEffect(() => {
+    if (batchOptions.length > 0 && batchFilter === "all") {
+      const latestBatch = batchOptions[batchOptions.length - 1].value;
+      setBatchFilter(latestBatch);
+    }
+  }, [batchOptions, batchFilter]);
 
   const clearFilters = () => {
     setCompanyFilter("all");
@@ -117,7 +125,13 @@ export function Dashboard() {
       // If one has invalid data and the other doesn't, move invalid to end
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
-      return 0; // Keep original order for same validity status
+      
+      // For same validity status, prioritize more recent batch_execution_date
+      if (batchFilter === "all" && a.batch_execution_date && b.batch_execution_date) {
+        return new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime();
+      }
+      
+      return 0; // Keep original order
     });
   }, [rixRuns, batchFilter]);
 
