@@ -64,6 +64,16 @@ export interface RixRun {
   batchLabel?: string; // Formatted label like "Consulta #1: 12/10 - 19/10"
   trend?: 'up' | 'down' | 'stable'; // Computed: comparison with previous batch
   previousRixScore?: number; // RIX score from previous batch for trend calculation
+  metricTrends?: {
+    nvm?: 'up' | 'down';
+    drm?: 'up' | 'down';
+    sim?: 'up' | 'down';
+    rmm?: 'up' | 'down';
+    cem?: 'up' | 'down';
+    gam?: 'up' | 'down';
+    dcm?: 'up' | 'down';
+    cxm?: 'up' | 'down';
+  };
   repindex_root_issuers?: {
     ticker?: string;
     ibex_family_code?: string;
@@ -154,8 +164,9 @@ export function useRixRuns(
           });
         });
 
-      // Create a map to find previous batch scores for trend calculation
+      // Create maps to find previous batch scores for trend calculation
       const previousBatchMap = new Map<string, number>(); // key: ticker_model, value: rix_score
+      const previousMetricsMap = new Map<string, any>(); // key: ticker_model, value: metrics object
       
       // Group runs by ticker and model, then find previous batch score
       const sortedBatches = Array.from(batchMap.entries())
@@ -173,7 +184,7 @@ export function useRixRuns(
           const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
           const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
           
-          // Find the score from previous batch
+          // Find the run from previous batch
           const previousRun = rixData.find(r => 
             r["05_ticker"] === run["05_ticker"] &&
             r["02_model_name"] === run["02_model_name"] &&
@@ -181,8 +192,23 @@ export function useRixRuns(
             format(new Date(r.batch_execution_date), 'yyyy-MM-dd') === previousBatchKey
           );
           
-          if (previousRun && previousRun["09_rix_score"] !== null && previousRun["09_rix_score"] !== undefined) {
-            previousBatchMap.set(mapKey, previousRun["09_rix_score"]);
+          if (previousRun) {
+            // Store RIX score
+            if (previousRun["09_rix_score"] !== null && previousRun["09_rix_score"] !== undefined) {
+              previousBatchMap.set(mapKey, previousRun["09_rix_score"]);
+            }
+            
+            // Store all metrics
+            previousMetricsMap.set(mapKey, {
+              nvm: previousRun["23_nvm_score"],
+              drm: previousRun["26_drm_score"],
+              sim: previousRun["29_sim_score"],
+              rmm: previousRun["32_rmm_score"],
+              cem: previousRun["35_cem_score"],
+              gam: previousRun["38_gam_score"],
+              dcm: previousRun["41_dcm_score"],
+              cxm: previousRun["44_cxm_score"],
+            });
           }
         }
       });
@@ -213,7 +239,7 @@ export function useRixRuns(
             : undefined;
         }
         
-        // Calculate trend
+        // Calculate trend for RIX score
         let trend: 'up' | 'down' | 'stable' | undefined;
         let previousRixScore: number | undefined;
         
@@ -236,6 +262,43 @@ export function useRixRuns(
           }
         }
         
+        // Calculate trends for all 8 metrics
+        let metricTrends: RixRun['metricTrends'] = {};
+        
+        if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey) {
+          const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
+          const previousMetrics = previousMetricsMap.get(mapKey);
+          
+          if (previousMetrics) {
+            const currentMetrics = {
+              nvm: rixRun["23_nvm_score"],
+              drm: rixRun["26_drm_score"],
+              sim: rixRun["29_sim_score"],
+              rmm: rixRun["32_rmm_score"],
+              cem: rixRun["35_cem_score"],
+              gam: rixRun["38_gam_score"],
+              dcm: rixRun["41_dcm_score"],
+              cxm: rixRun["44_cxm_score"],
+            };
+            
+            // Calculate trend for each metric
+            (Object.keys(currentMetrics) as Array<keyof typeof currentMetrics>).forEach(key => {
+              const current = currentMetrics[key];
+              const previous = previousMetrics[key];
+              
+              if (current !== null && current !== undefined && previous !== null && previous !== undefined) {
+                const delta = current - previous;
+                if (delta > 0) {
+                  metricTrends[key] = 'up';
+                } else if (delta < 0) {
+                  metricTrends[key] = 'down';
+                }
+                // If delta === 0, don't set a trend (undefined = no arrow)
+              }
+            });
+          }
+        }
+        
         return {
           ...rixRun,
           repindex_root_issuers: rixRun["05_ticker"] ? 
@@ -247,7 +310,8 @@ export function useRixRuns(
           batchNumber: batchNum,
           batchLabel,
           trend,
-          previousRixScore
+          previousRixScore,
+          metricTrends
         };
       });
 
