@@ -310,7 +310,7 @@ export function useRixRuns(
       });
 
       // Debug detallado: verificar construcción de mapKeys
-      console.log('🔍 DEBUG - Batches ordenados:', sortedBatches.map(([key, batch]) => key));
+      console.log('🔍 DEBUG - Batches ordenados:', sortedBatches.map(([key]) => key));
       console.log('🔍 DEBUG - Keys guardadas en Map (primeras 10):', 
         Array.from(previousBatchMap.keys()).slice(0, 10)
       );
@@ -318,7 +318,20 @@ export function useRixRuns(
       // Verificar trends calculados
       const withTrend = joinedData?.filter(r => r.trend !== undefined).length || 0;
       const withoutTrend = joinedData?.filter(r => r.trend === undefined).length || 0;
-      const examplesWithoutTrend = joinedData?.filter(r => r.trend === undefined).slice(0, 5).map(r => {
+      
+      // Separar por batch
+      const batch2025_10_19_sinTrend = joinedData?.filter(r => 
+        r.trend === undefined && r.batch_execution_date?.includes('2025-10-19')
+      ).length || 0;
+      
+      const batch2025_10_26_sinTrend = joinedData?.filter(r => 
+        r.trend === undefined && r.batch_execution_date?.includes('2025-10-26')
+      ).length || 0;
+      
+      // Ejemplos DEL BATCH MÁS RECIENTE sin trend (este es el problema)
+      const examplesNewBatchWithoutTrend = joinedData?.filter(r => 
+        r.trend === undefined && r.batch_execution_date?.includes('2025-10-26')
+      ).slice(0, 5).map(r => {
         const currentBatchIndex = sortedBatches.findIndex(([key]) => {
           const batchDate = new Date(r.batch_execution_date!);
           const execKey = format(batchDate, 'yyyy-MM-dd');
@@ -330,11 +343,11 @@ export function useRixRuns(
         return {
           ticker: r["05_ticker"],
           model: r["02_model_name"],
-          batch: r.batch_execution_date,
-          batchNum: r.batchNumber,
-          score: r.displayRixScore,
-          buscando: searchKey,
-          existe: searchKey ? previousBatchMap.has(searchKey) : false
+          currentBatchIndex,
+          previousBatchKey,
+          searchKey,
+          existeEnMap: searchKey ? previousBatchMap.has(searchKey) : false,
+          scoreEnMap: searchKey ? previousBatchMap.get(searchKey) : null
         };
       });
 
@@ -343,7 +356,9 @@ export function useRixRuns(
         conTrend: withTrend,
         sinTrend: withoutTrend,
         porcentajeConTrend: `${((withTrend / (joinedData?.length || 1)) * 100).toFixed(1)}%`,
-        ejemplosSinTrend: examplesWithoutTrend
+        batch_antiguo_sinTrend: batch2025_10_19_sinTrend + ' (normal, no hay batch anterior)',
+        batch_nuevo_sinTrend: batch2025_10_26_sinTrend + ' ⚠️ (PROBLEMA - debería tener trend)',
+        ejemplosBatchNuevoSinTrend: examplesNewBatchWithoutTrend
       });
 
       // Apply sector filter after joining the data
