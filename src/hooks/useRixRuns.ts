@@ -65,14 +65,14 @@ export interface RixRun {
   trend?: 'up' | 'down' | 'stable'; // Computed: comparison with previous batch
   previousRixScore?: number; // RIX score from previous batch for trend calculation
   metricTrends?: {
-    nvm?: 'up' | 'down';
-    drm?: 'up' | 'down';
-    sim?: 'up' | 'down';
-    rmm?: 'up' | 'down';
-    cem?: 'up' | 'down';
-    gam?: 'up' | 'down';
-    dcm?: 'up' | 'down';
-    cxm?: 'up' | 'down';
+    nvm?: 'up' | 'down' | 'stable';
+    drm?: 'up' | 'down' | 'stable';
+    sim?: 'up' | 'down' | 'stable';
+    rmm?: 'up' | 'down' | 'stable';
+    cem?: 'up' | 'down' | 'stable';
+    gam?: 'up' | 'down' | 'stable';
+    dcm?: 'up' | 'down' | 'stable';
+    cxm?: 'up' | 'down' | 'stable';
   };
   repindex_root_issuers?: {
     ticker?: string;
@@ -301,8 +301,10 @@ export function useRixRuns(
                   metricTrends[key] = 'up';
                 } else if (delta < 0) {
                   metricTrends[key] = 'down';
+                } else {
+                  // If delta === 0, mark as stable (shows horizontal arrow)
+                  metricTrends[key] = 'stable';
                 }
-                // If delta === 0, don't set a trend (undefined = no arrow)
               }
             });
             

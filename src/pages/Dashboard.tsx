@@ -469,12 +469,12 @@ export function Dashboard() {
                               <span className="text-lg font-bold text-primary">
                                 {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
                               </span>
-                              {rixRun.trend && rixRun.trend !== 'stable' && (
+                              {rixRun.trend && (
                                 <span className={cn(
                                   "text-sm",
-                                  rixRun.trend === "up" ? "text-good" : "text-insufficient"
+                                  rixRun.trend === "up" ? "text-good" : rixRun.trend === "down" ? "text-insufficient" : "text-muted-foreground"
                                 )}>
-                                  {rixRun.trend === "up" ? "↑" : "↓"}
+                                  {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
                                 </span>
                               )}
                               {rixRun["52_cxm_excluded"] && (
@@ -502,9 +502,9 @@ export function Dashboard() {
                                 {metricTrend && (
                                   <span className={cn(
                                     "text-xs",
-                                    metricTrend === "up" ? "text-good" : "text-insufficient"
+                                    metricTrend === "up" ? "text-good" : metricTrend === "down" ? "text-insufficient" : "text-muted-foreground"
                                   )}>
-                                    {metricTrend === "up" ? "↑" : "↓"}
+                                    {metricTrend === "up" ? "↑" : metricTrend === "down" ? "↓" : "→"}
                                   </span>
                                 )}
                               </div>
@@ -574,17 +574,17 @@ export function Dashboard() {
                                 <>
                                   <div className="flex flex-col items-center">
                                     <div className="flex items-center gap-1">
-                                      <div className="text-3xl font-bold text-primary">
-                                        {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
-                                      </div>
-                                      {rixRun.trend && rixRun.trend !== 'stable' && (
-                                        <span className={cn(
-                                          "text-2xl",
-                                          rixRun.trend === "up" ? "text-good" : "text-insufficient"
-                                        )}>
-                                          {rixRun.trend === "up" ? "↑" : "↓"}
-                                        </span>
-                                      )}
+                                       <div className="text-3xl font-bold text-primary">
+                                         {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
+                                       </div>
+                                       {rixRun.trend && (
+                                         <span className={cn(
+                                           "text-2xl",
+                                           rixRun.trend === "up" ? "text-good" : rixRun.trend === "down" ? "text-insufficient" : "text-muted-foreground"
+                                         )}>
+                                           {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
+                                         </span>
+                                       )}
                                     </div>
                                     <div className="text-sm text-muted-foreground">RIX Score</div>
                                     {rixRun["52_cxm_excluded"] && (
@@ -620,14 +620,14 @@ export function Dashboard() {
                                       <div className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(categoria)}`}>
                                         {score || 0}
                                       </div>
-                                      {metricTrend && (
-                                        <span className={cn(
-                                          "text-xs",
-                                          metricTrend === "up" ? "text-good" : "text-insufficient"
-                                        )}>
-                                          {metricTrend === "up" ? "↑" : "↓"}
-                                        </span>
-                                      )}
+                                       {metricTrend && (
+                                         <span className={cn(
+                                           "text-xs",
+                                           metricTrend === "up" ? "text-good" : metricTrend === "down" ? "text-insufficient" : "text-muted-foreground"
+                                         )}>
+                                           {metricTrend === "up" ? "↑" : metricTrend === "down" ? "↓" : "→"}
+                                         </span>
+                                       )}
                                     </div>
                                   </div>
                                 );
