@@ -219,34 +219,10 @@ export function useRixRuns(
           // Find the previous batch key for this rixRun
           const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
           
-          // Debug log for problematic companies
-          const debugTickers = ['PSG', 'LIB7', 'AZK', 'CAF', 'AIR', 'LOG', 'EROSKI', 'EXOLUM', 'GDOM', 'GCO'];
-          if (debugTickers.includes(rixRun["05_ticker"]) && rixRun["02_model_name"] === 'ChatGPT') {
-            console.log(`🔍 DEBUG ${rixRun["05_ticker"]} + ${rixRun["02_model_name"]}:`, {
-              executionKey,
-              currentBatchIndex,
-              sortedBatchesLength: sortedBatches.length,
-              sortedBatchKeys: sortedBatches.map(([k]) => k),
-              previousBatchMapSize: previousBatchMap.size,
-              currentScore: displayRixScore
-            });
-          }
-          
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
             const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
             previousRixScore = previousBatchMap.get(mapKey);
-            
-            // More debug for problematic companies
-            if (debugTickers.includes(rixRun["05_ticker"]) && rixRun["02_model_name"] === 'ChatGPT') {
-              console.log(`  → Previous lookup:`, {
-                previousBatchKey,
-                mapKey,
-                previousRixScore,
-                hasInMap: previousBatchMap.has(mapKey),
-                allKeysForTicker: Array.from(previousBatchMap.keys()).filter(k => k.startsWith(`${rixRun["05_ticker"]}_`))
-              });
-            }
           
             if (previousRixScore !== undefined) {
               // Use displayRixScore for the comparison to respect CXM exclusions
@@ -260,15 +236,7 @@ export function useRixRuns(
               } else {
                 trend = 'stable';
               }
-              
-              if (debugTickers.includes(rixRun["05_ticker"]) && rixRun["02_model_name"] === 'ChatGPT') {
-                console.log(`  ✅ Trend:`, { currentScore, previousRixScore, delta, trend });
-              }
-            } else if (debugTickers.includes(rixRun["05_ticker"]) && rixRun["02_model_name"] === 'ChatGPT') {
-              console.log(`  ❌ NO previousRixScore found!`);
             }
-          } else if (debugTickers.includes(rixRun["05_ticker"]) && rixRun["02_model_name"] === 'ChatGPT') {
-            console.log(`  ⚠️ currentBatchIndex is ${currentBatchIndex}, no previous batch`);
           }
         }
         

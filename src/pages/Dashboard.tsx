@@ -114,11 +114,22 @@ export function Dashboard() {
   const sortedRixRuns = useMemo(() => {
     if (!rixRuns) return [];
     
+    console.log('🔍 BATCH FILTER:', {
+      batchFilter,
+      totalRixRuns: rixRuns.length,
+      batchNumbers: [...new Set(rixRuns.map(r => r.batchNumber))].sort((a, b) => (b || 0) - (a || 0))
+    });
+    
     let filteredByBatch = rixRuns;
     if (batchFilter && batchFilter !== "all") {
       filteredByBatch = rixRuns.filter(run => 
         run.batchNumber?.toString() === batchFilter
       );
+      console.log('🔍 AFTER FILTER:', {
+        batchFilter,
+        filteredCount: filteredByBatch.length,
+        sampleTickers: filteredByBatch.slice(0, 5).map(r => `${r["05_ticker"]}-${r.batchNumber}`)
+      });
     }
     
     return [...filteredByBatch].sort((a, b) => {
