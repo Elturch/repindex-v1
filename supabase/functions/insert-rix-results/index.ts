@@ -436,6 +436,54 @@ serve(async (req) => {
       )
     }
 
+    // Calculate batch_execution_date based on Madrid timezone
+    // If today is Sunday in Madrid, use today; otherwise find next Sunday
+    const calculateBatchExecutionDate = (): string => {
+      const madridTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+      const dayOfWeek = madridTime.getDay(); // 0 = Sunday
+      
+      let batchDate: Date;
+      if (dayOfWeek === 0) {
+        // If it's Sunday in Madrid, use that day
+        batchDate = new Date(madridTime.setHours(0, 0, 0, 0));
+      } else {
+        // If not Sunday, calculate the next Sunday
+        const daysUntilSunday = 7 - dayOfWeek;
+        batchDate = new Date(madridTime);
+        batchDate.setDate(madridTime.getDate() + daysUntilSunday);
+        batchDate.setHours(0, 0, 0, 0);
+      }
+      
+      return batchDate.toISOString();
+    };
+    
+    const batchExecutionDate = calculateBatchExecutionDate();
+    console.log(`📅 Batch execution date calculated: ${batchExecutionDate}`);
+
+    // Calculate batch_execution_date based on Madrid timezone
+    // If today is Sunday in Madrid, use today; otherwise find next Sunday
+    const calculateBatchExecutionDate = (): string => {
+      const madridTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+      const dayOfWeek = madridTime.getDay(); // 0 = Sunday
+      
+      let batchDate: Date;
+      if (dayOfWeek === 0) {
+        // If it's Sunday in Madrid, use that day
+        batchDate = new Date(madridTime.setHours(0, 0, 0, 0));
+      } else {
+        // If not Sunday, calculate the next Sunday
+        const daysUntilSunday = 7 - dayOfWeek;
+        batchDate = new Date(madridTime);
+        batchDate.setDate(madridTime.getDate() + daysUntilSunday);
+        batchDate.setHours(0, 0, 0, 0);
+      }
+      
+      return batchDate.toISOString();
+    };
+    
+    const batchExecutionDate = calculateBatchExecutionDate();
+    console.log(`📅 Batch execution date calculated: ${batchExecutionDate}`);
+
     const insertPromises = validResults.map(async (result, originalIndex) => {
       console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)
       
@@ -611,6 +659,7 @@ serve(async (req) => {
         "06_period_from": result.meta.period_from,
         "07_period_to": result.meta.period_to,
         "08_tz": result.meta.tz,
+        "batch_execution_date": batchExecutionDate,
         "09_pari_score": ensureInteger(result.tabla.pari, 0, "09_pari_score"),
         "10_resumen": result.relato_mini.resumen,
         "11_puntos_clave": Array.isArray(result.relato_mini.puntos_clave) 

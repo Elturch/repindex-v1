@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-
-import { addDays, format } from 'date-fns';
+import { format } from 'date-fns';
 
 export interface RixRun {
   id: string;
@@ -126,42 +125,23 @@ export function useRixRuns(
         });
       }
 
-      // FECHA DE CORTE: Todos los datos antes del 20/10/2025 00:00 UTC se consideran Consulta #1
-      const CUTOFF_DATE = new Date('2025-10-20T00:00:00Z');
-      const HISTORICAL_BATCH_DATE = '2025-10-19'; // Domingo 19 de octubre
-      
-      // Agrupar por fecha de ejecución (próximo domingo)
+      // Group runs by batch_execution_date and assign batch numbers
       const batchMap = new Map<string, { number: number; executionDate: Date }>();
       const executionDates = new Set<string>();
       
-      // Calcular el próximo domingo para cada registro
       rixData?.forEach(run => {
-        const createdDate = new Date(run.created_at);
-        
-        // Si es anterior a la fecha de corte, usar la fecha histórica fija
-        if (createdDate < CUTOFF_DATE) {
-          executionDates.add(HISTORICAL_BATCH_DATE);
-          return;
+        if (run.batch_execution_date) {
+          const batchDate = new Date(run.batch_execution_date);
+          const executionKey = format(batchDate, 'yyyy-MM-dd');
+          executionDates.add(executionKey);
         }
-        
-        // Para datos nuevos (>= 20/10), calcular el próximo domingo normalmente
-        const dayOfWeek = createdDate.getUTCDay(); // 0 = domingo, 6 = sábado
-        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-        const nextSunday = addDays(createdDate, daysUntilSunday);
-        
-        // Normalizar a fecha sin hora
-        nextSunday.setUTCHours(0, 0, 0, 0);
-        const executionKey = format(nextSunday, 'yyyy-MM-dd');
-        
-        executionDates.add(executionKey);
       });
       
-      // Asignar números de tanda ordenados cronológicamente (más antigua = #1)
+      // Sort execution dates chronologically (descending - newest first) and assign batch numbers
       let batchCounter = 1;
       Array.from(executionDates)
-        .sort()
+        .sort((a, b) => b.localeCompare(a)) // Sort descending
         .forEach(dateKey => {
-          // Create UTC date to avoid timezone issues
           const [year, month, day] = dateKey.split('-').map(Number);
           const executionDate = new Date(Date.UTC(year, month - 1, day));
           
@@ -182,27 +162,20 @@ export function useRixRuns(
           ? adjustedScore
           : rixRun["09_rix_score"];
         
-        // Calculate batch information using same cutoff logic
-        const createdDate = new Date(rixRun.created_at);
-        let executionKey: string;
+        // Calculate batch information from batch_execution_date
+        let executionKey: string | undefined;
+        let batchNum: number | undefined;
+        let batchLabel: string | undefined;
         
-        if (createdDate < CUTOFF_DATE) {
-          // Datos históricos → Consulta #1
-          executionKey = HISTORICAL_BATCH_DATE;
-        } else {
-          // Datos nuevos → calcular próximo domingo
-          const dayOfWeek = createdDate.getUTCDay();
-          const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-          const nextSunday = addDays(createdDate, daysUntilSunday);
-          nextSunday.setUTCHours(0, 0, 0, 0);
-          executionKey = format(nextSunday, 'yyyy-MM-dd');
+        if (rixRun.batch_execution_date) {
+          const batchDate = new Date(rixRun.batch_execution_date);
+          executionKey = format(batchDate, 'yyyy-MM-dd');
+          const batch = batchMap.get(executionKey);
+          batchNum = batch?.number;
+          batchLabel = batch
+            ? `Consulta #${batch.number}: ${format(batch.executionDate, 'dd/MM/yyyy')}`
+            : undefined;
         }
-        
-        const batch = batchMap.get(executionKey);
-        const batchNum = batch?.number;
-        const batchLabel = batch
-          ? `Consulta #${batch.number}: ${format(batch.executionDate, 'dd/MM/yyyy')}`
-          : undefined;
         
         return {
           ...rixRun,
@@ -242,10 +215,6 @@ export function useRixRun(id: string) {
   return useQuery({
     queryKey: ["rix-run", id],
     queryFn: async () => {
-      // FECHA DE CORTE: Misma lógica que useRixRuns
-      const CUTOFF_DATE = new Date('2025-10-20T00:00:00Z');
-      const HISTORICAL_BATCH_DATE = '2025-10-19';
-      
       const { data, error } = await supabase
         .from("rix_runs")
         .select("*")
@@ -270,46 +239,36 @@ export function useRixRun(id: string) {
         ? adjustedScore
         : data["09_rix_score"];
       
-      // Calculate batch information using same cutoff logic
-      const createdDate = new Date(data.created_at);
-      let executionKey: string;
+      // Calculate batch information from batch_execution_date
+      let batchNumber: number | undefined;
+      let batchLabel: string | undefined;
       
-      if (createdDate < CUTOFF_DATE) {
-        executionKey = HISTORICAL_BATCH_DATE;
-      } else {
-        const dayOfWeek = createdDate.getUTCDay();
-        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-        const nextSunday = addDays(createdDate, daysUntilSunday);
-        nextSunday.setUTCHours(0, 0, 0, 0);
-        executionKey = format(nextSunday, 'yyyy-MM-dd');
+      if (data.batch_execution_date) {
+        const batchDate = new Date(data.batch_execution_date);
+        const executionKey = format(batchDate, 'yyyy-MM-dd');
+        
+        // Get all unique batch_execution_dates to calculate batch number
+        const { data: allRuns } = await supabase
+          .from("rix_runs")
+          .select("batch_execution_date")
+          .order('batch_execution_date', { ascending: false }); // Newest first
+        
+        const executionDates = new Set<string>();
+        allRuns?.forEach(run => {
+          if (run.batch_execution_date) {
+            const runBatchDate = new Date(run.batch_execution_date);
+            const runKey = format(runBatchDate, 'yyyy-MM-dd');
+            executionDates.add(runKey);
+          }
+        });
+        
+        const sortedDates = Array.from(executionDates).sort((a, b) => b.localeCompare(a)); // Descending
+        batchNumber = sortedDates.indexOf(executionKey) + 1;
+        
+        const [year, month, day] = executionKey.split('-').map(Number);
+        const executionDate = new Date(Date.UTC(year, month - 1, day));
+        batchLabel = `Consulta #${batchNumber}: ${format(executionDate, 'dd/MM/yyyy')}`;
       }
-      
-      // Get all execution dates to calculate batch number
-      const { data: allRuns } = await supabase
-        .from("rix_runs")
-        .select("created_at");
-      
-      const executionDates = new Set<string>();
-      allRuns?.forEach(run => {
-        const runDate = new Date(run.created_at);
-        if (runDate < CUTOFF_DATE) {
-          executionDates.add(HISTORICAL_BATCH_DATE);
-        } else {
-          const dow = runDate.getUTCDay();
-          const days = dow === 0 ? 0 : 7 - dow;
-          const sunday = addDays(runDate, days);
-          sunday.setUTCHours(0, 0, 0, 0);
-          executionDates.add(format(sunday, 'yyyy-MM-dd'));
-        }
-      });
-      
-      const sortedDates = Array.from(executionDates).sort();
-      const batchNumber = sortedDates.indexOf(executionKey) + 1;
-      
-      // Create UTC date to avoid timezone issues
-      const [year, month, day] = executionKey.split('-').map(Number);
-      const executionDate = new Date(Date.UTC(year, month - 1, day));
-      const batchLabel = `Consulta #${batchNumber}: ${format(executionDate, 'dd/MM/yyyy')}`;
       
       if (data["05_ticker"]) {
         const { data: repindexData, error: repindexError } = await supabase
