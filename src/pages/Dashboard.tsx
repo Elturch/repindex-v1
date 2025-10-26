@@ -411,6 +411,7 @@ export function Dashboard() {
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
                       )}
                       <TableHead className="text-center">RIX</TableHead>
+                      <TableHead className="text-center w-16">Tend.</TableHead>
                       {metrics.map((metric) => (
                         <TableHead key={metric.key} className="text-center w-16">
                           {metric.label}
@@ -475,6 +476,20 @@ export function Dashboard() {
                                 </span>
                               )}
                             </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {rixRun.trend ? (
+                            <span className={cn(
+                              "text-lg font-light",
+                              rixRun.trend === "up" ? "text-good" : 
+                              rixRun.trend === "down" ? "text-insufficient" : 
+                              "text-muted-foreground"
+                            )}>
+                              {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">—</span>
                           )}
                         </TableCell>
                         {metrics.map((metric) => {
@@ -543,29 +558,41 @@ export function Dashboard() {
                              </div>
                            )}
                            
-                            {rixRun.isDataInvalid ? (
-                              <div className="flex flex-col items-end gap-1">
-                                <div className="flex items-center gap-1 text-destructive">
-                                  <AlertTriangle className="h-4 w-4" />
-                                  <span className="text-sm font-medium">Obsoleto</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground">Sin datos recientes</div>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="flex flex-col items-center">
-                                  <div className="text-3xl font-bold text-primary">
-                                    {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">RIX Score</div>
-                                  {rixRun["52_cxm_excluded"] && (
-                                    <div className="text-xs text-muted-foreground italic mt-1">
-                                      (CXM no aplicable)
-                                    </div>
-                                  )}
-                                </div>
-                              </>
-                            )}
+                             {rixRun.isDataInvalid ? (
+                               <div className="flex flex-col items-end gap-1">
+                                 <div className="flex items-center gap-1 text-destructive">
+                                   <AlertTriangle className="h-4 w-4" />
+                                   <span className="text-sm font-medium">Obsoleto</span>
+                                 </div>
+                                 <div className="text-xs text-muted-foreground">Sin datos recientes</div>
+                               </div>
+                             ) : (
+                               <>
+                                 <div className="flex flex-col items-center">
+                                   <div className="flex items-center gap-2">
+                                     <div className="text-3xl font-bold text-primary">
+                                       {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
+                                     </div>
+                                     {rixRun.trend && (
+                                       <span className={cn(
+                                         "text-2xl font-light",
+                                         rixRun.trend === "up" ? "text-good" : 
+                                         rixRun.trend === "down" ? "text-insufficient" : 
+                                         "text-muted-foreground"
+                                       )}>
+                                         {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
+                                       </span>
+                                     )}
+                                   </div>
+                                   <div className="text-sm text-muted-foreground">RIX Score</div>
+                                   {rixRun["52_cxm_excluded"] && (
+                                     <div className="text-xs text-muted-foreground italic mt-1">
+                                       (CXM no aplicable)
+                                     </div>
+                                   )}
+                                 </div>
+                               </>
+                             )}
                          </div>
                       </div>
                     </CardHeader>

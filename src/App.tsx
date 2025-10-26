@@ -8,6 +8,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
 import InsertRixResults from "./pages/InsertRixResults";
 import ChatIntelligence from "./pages/ChatIntelligence";
+import { MarketEvolution } from "./pages/MarketEvolution";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/chat" element={<ChatIntelligence />} />
+            <Route path="/market-evolution" element={<MarketEvolution />} />
             <Route path="/rix-run/:id" element={<RixRunDetail />} />
             <Route path="/insert-rix" element={<InsertRixResults />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

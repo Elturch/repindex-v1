@@ -1,4 +1,4 @@
-import { Sun, Moon, MessageCircle, LayoutDashboard } from "lucide-react";
+import { Sun, Moon, MessageCircle, LayoutDashboard, TrendingUp } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,16 @@ export function Header({ title = "Repindex.ai", className }: HeaderProps) {
           >
             <MessageCircle className="h-4 w-4" />
             Chat IA
+          </Button>
+          
+          <Button
+            variant={location.pathname === "/market-evolution" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => navigate("/market-evolution")}
+            className="flex items-center gap-2"
+          >
+            <TrendingUp className="h-4 w-4" />
+            Evolución del Mercado
           </Button>
           
           <GlossaryDialog />

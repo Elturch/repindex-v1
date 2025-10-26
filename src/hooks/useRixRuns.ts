@@ -55,12 +55,15 @@ export interface RixRun {
   "47_fase"?: string;
   "51_rix_score_adjusted"?: number;
   "52_cxm_excluded"?: boolean;
+  batch_execution_date?: string;
   // Computed validation flags
   isDataInvalid?: boolean;
   dataInvalidReason?: string;
   displayRixScore?: number; // Computed: adjusted score if CXM excluded, otherwise original
   batchNumber?: number; // Sequential batch number
   batchLabel?: string; // Formatted label like "Consulta #1: 12/10 - 19/10"
+  trend?: 'up' | 'down' | 'stable'; // Computed: comparison with previous batch
+  previousRixScore?: number; // RIX score from previous batch for trend calculation
   repindex_root_issuers?: {
     ticker?: string;
     ibex_family_code?: string;
@@ -151,7 +154,40 @@ export function useRixRuns(
           });
         });
 
-      // Join the data and add validation flags + batch info
+      // Create a map to find previous batch scores for trend calculation
+      const previousBatchMap = new Map<string, number>(); // key: ticker_model, value: rix_score
+      
+      // Group runs by ticker and model, then find previous batch score
+      const sortedBatches = Array.from(batchMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0])); // Sort chronologically (oldest first)
+      
+      rixData?.forEach(run => {
+        if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
+        
+        const batchDate = new Date(run.batch_execution_date);
+        const executionKey = format(batchDate, 'yyyy-MM-dd');
+        const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+        
+        if (currentBatchIndex > 0) {
+          // There's a previous batch
+          const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
+          const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
+          
+          // Find the score from previous batch
+          const previousRun = rixData.find(r => 
+            r["05_ticker"] === run["05_ticker"] &&
+            r["02_model_name"] === run["02_model_name"] &&
+            r.batch_execution_date &&
+            format(new Date(r.batch_execution_date), 'yyyy-MM-dd') === previousBatchKey
+          );
+          
+          if (previousRun && previousRun["09_rix_score"] !== null && previousRun["09_rix_score"] !== undefined) {
+            previousBatchMap.set(mapKey, previousRun["09_rix_score"]);
+          }
+        }
+      });
+
+      // Join the data and add validation flags + batch info + trend
       const joinedData = rixData?.map(rixRun => {
         const isRmmZero = rixRun["32_rmm_score"] === 0;
         const cxmExcluded = rixRun["52_cxm_excluded"] === true;
@@ -177,6 +213,29 @@ export function useRixRuns(
             : undefined;
         }
         
+        // Calculate trend
+        let trend: 'up' | 'down' | 'stable' | undefined;
+        let previousRixScore: number | undefined;
+        
+        if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey && displayRixScore !== null && displayRixScore !== undefined) {
+          const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
+          previousRixScore = previousBatchMap.get(mapKey);
+          
+          if (previousRixScore !== undefined) {
+            const delta = displayRixScore - previousRixScore;
+            const deltaPercent = Math.abs((delta / previousRixScore) * 100);
+            
+            // Consider stable if change is less than 2%
+            if (deltaPercent < 2) {
+              trend = 'stable';
+            } else if (delta > 0) {
+              trend = 'up';
+            } else {
+              trend = 'down';
+            }
+          }
+        }
+        
         return {
           ...rixRun,
           repindex_root_issuers: rixRun["05_ticker"] ? 
@@ -186,7 +245,9 @@ export function useRixRuns(
           dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
           displayRixScore,
           batchNumber: batchNum,
-          batchLabel
+          batchLabel,
+          trend,
+          previousRixScore
         };
       });
 
