@@ -126,6 +126,10 @@ export function useRixRuns(
         });
       }
 
+      // FECHA DE CORTE: Todos los datos antes del 20/10/2025 00:00 UTC se consideran Consulta #1
+      const CUTOFF_DATE = new Date('2025-10-20T00:00:00Z');
+      const HISTORICAL_BATCH_DATE = '2025-10-19'; // Domingo 19 de octubre
+      
       // Agrupar por fecha de ejecución (próximo domingo)
       const batchMap = new Map<string, { number: number; executionDate: Date }>();
       const executionDates = new Set<string>();
@@ -133,9 +137,15 @@ export function useRixRuns(
       // Calcular el próximo domingo para cada registro
       rixData?.forEach(run => {
         const createdDate = new Date(run.created_at);
-        const dayOfWeek = createdDate.getUTCDay(); // 0 = domingo, 6 = sábado
         
-        // Calcular días hasta el próximo domingo (o mismo día si ya es domingo)
+        // Si es anterior a la fecha de corte, usar la fecha histórica fija
+        if (createdDate < CUTOFF_DATE) {
+          executionDates.add(HISTORICAL_BATCH_DATE);
+          return;
+        }
+        
+        // Para datos nuevos (>= 20/10), calcular el próximo domingo normalmente
+        const dayOfWeek = createdDate.getUTCDay(); // 0 = domingo, 6 = sábado
         const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
         const nextSunday = addDays(createdDate, daysUntilSunday);
         
@@ -168,13 +178,21 @@ export function useRixRuns(
           ? adjustedScore
           : rixRun["09_rix_score"];
         
-        // Calculate batch information - next Sunday from creation date
+        // Calculate batch information using same cutoff logic
         const createdDate = new Date(rixRun.created_at);
-        const dayOfWeek = createdDate.getUTCDay();
-        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-        const nextSunday = addDays(createdDate, daysUntilSunday);
-        nextSunday.setUTCHours(0, 0, 0, 0);
-        const executionKey = format(nextSunday, 'yyyy-MM-dd');
+        let executionKey: string;
+        
+        if (createdDate < CUTOFF_DATE) {
+          // Datos históricos → Consulta #1
+          executionKey = HISTORICAL_BATCH_DATE;
+        } else {
+          // Datos nuevos → calcular próximo domingo
+          const dayOfWeek = createdDate.getUTCDay();
+          const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+          const nextSunday = addDays(createdDate, daysUntilSunday);
+          nextSunday.setUTCHours(0, 0, 0, 0);
+          executionKey = format(nextSunday, 'yyyy-MM-dd');
+        }
         
         const batch = batchMap.get(executionKey);
         const batchNum = batch?.number;
@@ -220,6 +238,10 @@ export function useRixRun(id: string) {
   return useQuery({
     queryKey: ["rix-run", id],
     queryFn: async () => {
+      // FECHA DE CORTE: Misma lógica que useRixRuns
+      const CUTOFF_DATE = new Date('2025-10-20T00:00:00Z');
+      const HISTORICAL_BATCH_DATE = '2025-10-19';
+      
       const { data, error } = await supabase
         .from("rix_runs")
         .select("*")
@@ -244,6 +266,43 @@ export function useRixRun(id: string) {
         ? adjustedScore
         : data["09_rix_score"];
       
+      // Calculate batch information using same cutoff logic
+      const createdDate = new Date(data.created_at);
+      let executionKey: string;
+      
+      if (createdDate < CUTOFF_DATE) {
+        executionKey = HISTORICAL_BATCH_DATE;
+      } else {
+        const dayOfWeek = createdDate.getUTCDay();
+        const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+        const nextSunday = addDays(createdDate, daysUntilSunday);
+        nextSunday.setUTCHours(0, 0, 0, 0);
+        executionKey = format(nextSunday, 'yyyy-MM-dd');
+      }
+      
+      // Get all execution dates to calculate batch number
+      const { data: allRuns } = await supabase
+        .from("rix_runs")
+        .select("created_at");
+      
+      const executionDates = new Set<string>();
+      allRuns?.forEach(run => {
+        const runDate = new Date(run.created_at);
+        if (runDate < CUTOFF_DATE) {
+          executionDates.add(HISTORICAL_BATCH_DATE);
+        } else {
+          const dow = runDate.getUTCDay();
+          const days = dow === 0 ? 0 : 7 - dow;
+          const sunday = addDays(runDate, days);
+          sunday.setUTCHours(0, 0, 0, 0);
+          executionDates.add(format(sunday, 'yyyy-MM-dd'));
+        }
+      });
+      
+      const sortedDates = Array.from(executionDates).sort();
+      const batchNumber = sortedDates.indexOf(executionKey) + 1;
+      const batchLabel = `Consulta #${batchNumber}: ${format(new Date(executionKey), 'dd/MM/yyyy')}`;
+      
       if (data["05_ticker"]) {
         const { data: repindexData, error: repindexError } = await supabase
           .from("repindex_root_issuers")
@@ -261,7 +320,9 @@ export function useRixRun(id: string) {
             },
             isDataInvalid: isRmmZero,
             dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
-            displayRixScore
+            displayRixScore,
+            batchNumber,
+            batchLabel
           } as RixRun;
         }
       }
@@ -271,7 +332,9 @@ export function useRixRun(id: string) {
         repindex_root_issuers: null,
         isDataInvalid: isRmmZero,
         dataInvalidReason: isRmmZero ? "Sin información reciente disponible (RMM=0)" : undefined,
-        displayRixScore
+        displayRixScore,
+        batchNumber,
+        batchLabel
       } as RixRun;
     },
     enabled: !!id,
