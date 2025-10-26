@@ -136,10 +136,11 @@ export function useRixRuns(
         }
       });
       
-      // Sort execution dates chronologically (descending - newest first) and assign batch numbers
+      // Sort execution dates chronologically (ascending - oldest first) and assign batch numbers
+      // This way the most recent batch gets the highest number
       let batchCounter = 1;
       Array.from(executionDates)
-        .sort((a, b) => b.localeCompare(a)) // Sort descending
+        .sort((a, b) => a.localeCompare(b)) // Sort ascending (oldest first)
         .forEach(dateKey => {
           const [year, month, day] = dateKey.split('-').map(Number);
           const executionDate = new Date(Date.UTC(year, month - 1, day));
@@ -218,32 +219,10 @@ export function useRixRuns(
           // Find the previous batch key for this rixRun
           const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
           
-          // Debug logging for AMS + ChatGPT
-          if (rixRun["05_ticker"] === 'AMS' && rixRun["02_model_name"] === 'ChatGPT') {
-            console.log('🔍 AMS + ChatGPT Debug:', {
-              executionKey,
-              currentBatchIndex,
-              sortedBatches: sortedBatches.map(([k, v]) => k),
-              currentScore: displayRixScore,
-              rixScore: rixRun["09_rix_score"]
-            });
-          }
-          
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
             const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
             previousRixScore = previousBatchMap.get(mapKey);
-            
-            // More debug for AMS + ChatGPT
-            if (rixRun["05_ticker"] === 'AMS' && rixRun["02_model_name"] === 'ChatGPT') {
-              console.log('🔍 Previous batch lookup:', {
-                previousBatchKey,
-                mapKey,
-                previousRixScore,
-                hasInMap: previousBatchMap.has(mapKey),
-                mapSize: previousBatchMap.size
-              });
-            }
           
             if (previousRixScore !== undefined) {
               // Use displayRixScore for the comparison to respect CXM exclusions
@@ -256,11 +235,6 @@ export function useRixRuns(
                 trend = 'down';
               } else {
                 trend = 'stable';
-              }
-              
-              // Final debug for AMS + ChatGPT
-              if (rixRun["05_ticker"] === 'AMS' && rixRun["02_model_name"] === 'ChatGPT') {
-                console.log('✅ Trend calculated:', { currentScore, previousRixScore, delta, trend });
               }
             }
           }
