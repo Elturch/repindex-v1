@@ -165,52 +165,37 @@ export function useRixRuns(
         });
 
       // Create maps to find previous batch scores for trend calculation
-      const previousBatchMap = new Map<string, number>(); // key: ticker_model, value: rix_score
-      const previousMetricsMap = new Map<string, any>(); // key: ticker_model, value: metrics object
+      const previousBatchMap = new Map<string, number>(); // key: ticker_model_batchDate, value: rix_score
+      const previousMetricsMap = new Map<string, any>(); // key: ticker_model_batchDate, value: metrics object
       
       // Group runs by ticker and model, then find previous batch score
       const sortedBatches = Array.from(batchMap.entries())
         .sort((a, b) => a[0].localeCompare(b[0])); // Sort chronologically (oldest first)
       
+      // FIRST LOOP: Store ALL runs in maps (no filtering)
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
         const batchDate = new Date(run.batch_execution_date);
         const executionKey = format(batchDate, 'yyyy-MM-dd');
-        const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+        const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
         
-        if (currentBatchIndex > 0) {
-          // There's a previous batch
-          const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
-          const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${previousBatchKey}`;
-          
-          // Find the run from previous batch
-          const previousRun = rixData.find(r => 
-            r["05_ticker"] === run["05_ticker"] &&
-            r["02_model_name"] === run["02_model_name"] &&
-            r.batch_execution_date &&
-            format(new Date(r.batch_execution_date), 'yyyy-MM-dd') === previousBatchKey
-          );
-          
-          if (previousRun) {
-            // Store RIX score
-            if (previousRun["09_rix_score"] !== null && previousRun["09_rix_score"] !== undefined) {
-              previousBatchMap.set(mapKey, previousRun["09_rix_score"]);
-            }
-            
-            // Store all metrics
-            previousMetricsMap.set(mapKey, {
-              nvm: previousRun["23_nvm_score"],
-              drm: previousRun["26_drm_score"],
-              sim: previousRun["29_sim_score"],
-              rmm: previousRun["32_rmm_score"],
-              cem: previousRun["35_cem_score"],
-              gam: previousRun["38_gam_score"],
-              dcm: previousRun["41_dcm_score"],
-              cxm: previousRun["44_cxm_score"],
-            });
-          }
+        // Store RIX score
+        if (run["09_rix_score"] !== null && run["09_rix_score"] !== undefined) {
+          previousBatchMap.set(mapKey, run["09_rix_score"]);
         }
+        
+        // Store all metrics
+        previousMetricsMap.set(mapKey, {
+          nvm: run["23_nvm_score"],
+          drm: run["26_drm_score"],
+          sim: run["29_sim_score"],
+          rmm: run["32_rmm_score"],
+          cem: run["35_cem_score"],
+          gam: run["38_gam_score"],
+          dcm: run["41_dcm_score"],
+          cxm: run["44_cxm_score"],
+        });
       });
 
       // Join the data and add validation flags + batch info + trend
@@ -253,15 +238,13 @@ export function useRixRuns(
           
             if (previousRixScore !== undefined) {
               const delta = displayRixScore - previousRixScore;
-              const deltaPercent = Math.abs((delta / previousRixScore) * 100);
               
-              // Consider stable if change is less than 2%
-              if (deltaPercent < 2) {
-                trend = 'stable';
-              } else if (delta > 0) {
+              if (delta > 0) {
                 trend = 'up';
-              } else {
+              } else if (delta < 0) {
                 trend = 'down';
+              } else {
+                trend = 'stable';
               }
             }
           }
