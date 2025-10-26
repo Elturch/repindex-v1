@@ -309,16 +309,34 @@ export function useRixRuns(
         };
       });
 
-      // Debug: verificar trends calculados
+      // Debug detallado: verificar construcción de mapKeys
+      console.log('🔍 DEBUG - Batches ordenados:', sortedBatches.map(([key, batch]) => key));
+      console.log('🔍 DEBUG - Keys guardadas en Map (primeras 10):', 
+        Array.from(previousBatchMap.keys()).slice(0, 10)
+      );
+      
+      // Verificar trends calculados
       const withTrend = joinedData?.filter(r => r.trend !== undefined).length || 0;
       const withoutTrend = joinedData?.filter(r => r.trend === undefined).length || 0;
-      const examplesWithoutTrend = joinedData?.filter(r => r.trend === undefined).slice(0, 5).map(r => ({
-        ticker: r["05_ticker"],
-        model: r["02_model_name"],
-        batch: r.batch_execution_date,
-        batchNum: r.batchNumber,
-        score: r.displayRixScore
-      }));
+      const examplesWithoutTrend = joinedData?.filter(r => r.trend === undefined).slice(0, 5).map(r => {
+        const currentBatchIndex = sortedBatches.findIndex(([key]) => {
+          const batchDate = new Date(r.batch_execution_date!);
+          const execKey = format(batchDate, 'yyyy-MM-dd');
+          return key === execKey;
+        });
+        const previousBatchKey = currentBatchIndex > 0 ? sortedBatches[currentBatchIndex - 1][0] : null;
+        const searchKey = previousBatchKey ? `${r["05_ticker"]}_${r["02_model_name"]}_${previousBatchKey}` : null;
+        
+        return {
+          ticker: r["05_ticker"],
+          model: r["02_model_name"],
+          batch: r.batch_execution_date,
+          batchNum: r.batchNumber,
+          score: r.displayRixScore,
+          buscando: searchKey,
+          existe: searchKey ? previousBatchMap.has(searchKey) : false
+        };
+      });
 
       console.log('📊 Análisis de Trends:', {
         total: joinedData?.length || 0,
