@@ -662,6 +662,48 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_runs_duplicates_audit: {
+        Row: {
+          batch_execution_date: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string
+          model_name: string | null
+          reason: string | null
+          rix_score: number | null
+          row_number: number | null
+          target_name: string | null
+          ticker: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          batch_execution_date?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id: string
+          model_name?: string | null
+          reason?: string | null
+          rix_score?: number | null
+          row_number?: number | null
+          target_name?: string | null
+          ticker?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          batch_execution_date?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          model_name?: string | null
+          reason?: string | null
+          rix_score?: number | null
+          row_number?: number | null
+          target_name?: string | null
+          ticker?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       source_models: {
         Row: {
           evaluation_id: string
