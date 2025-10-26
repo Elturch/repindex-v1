@@ -236,15 +236,6 @@ export function useRixRuns(
             const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
             previousRixScore = previousBatchMap.get(mapKey);
           
-            console.log(`Buscando RIX anterior para ${rixRun["05_ticker"]} ${rixRun["02_model_name"]}:`, {
-              currentBatch: executionKey,
-              previousBatchKey,
-              mapKey,
-              foundPreviousScore: previousRixScore,
-              currentScore: displayRixScore,
-              allKeysInMap: Array.from(previousBatchMap.keys()).filter(k => k.startsWith(rixRun["05_ticker"]))
-            });
-          
             if (previousRixScore !== undefined) {
               const delta = displayRixScore - previousRixScore;
               
@@ -255,11 +246,7 @@ export function useRixRuns(
               } else {
                 trend = 'stable';
               }
-            } else {
-              console.log(`⚠️ No se encontró RIX anterior para ${rixRun["05_ticker"]} ${rixRun["02_model_name"]} con key ${mapKey}`);
             }
-          } else {
-            console.log(`ℹ️ ${rixRun["05_ticker"]} ${rixRun["02_model_name"]} está en el batch más antiguo (${executionKey}), no hay anterior para comparar`);
           }
         }
         
@@ -298,16 +285,10 @@ export function useRixRuns(
                 } else if (delta < 0) {
                   metricTrends[key] = 'down';
                 } else {
-                  // If delta === 0, mark as stable (shows horizontal arrow)
                   metricTrends[key] = 'stable';
                 }
               }
             });
-            
-              // Debug logging
-              console.log('Metric trends for', rixRun["05_ticker"], rixRun["02_model_name"], ':', metricTrends);
-            } else {
-              console.log('No previous metrics found for', rixRun["05_ticker"], rixRun["02_model_name"]);
             }
           }
         }
