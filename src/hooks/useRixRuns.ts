@@ -182,7 +182,7 @@ export function useRixRuns(
         if (currentBatchIndex > 0) {
           // There's a previous batch
           const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
-          const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
+          const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${previousBatchKey}`;
           
           // Find the run from previous batch
           const previousRun = rixData.find(r => 
@@ -244,20 +244,25 @@ export function useRixRuns(
         let previousRixScore: number | undefined;
         
         if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey && displayRixScore !== null && displayRixScore !== undefined) {
-          const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
-          previousRixScore = previousBatchMap.get(mapKey);
+          // Find the previous batch key for this rixRun
+          const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+          if (currentBatchIndex > 0) {
+            const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
+            const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
+            previousRixScore = previousBatchMap.get(mapKey);
           
-          if (previousRixScore !== undefined) {
-            const delta = displayRixScore - previousRixScore;
-            const deltaPercent = Math.abs((delta / previousRixScore) * 100);
-            
-            // Consider stable if change is less than 2%
-            if (deltaPercent < 2) {
-              trend = 'stable';
-            } else if (delta > 0) {
-              trend = 'up';
-            } else {
-              trend = 'down';
+            if (previousRixScore !== undefined) {
+              const delta = displayRixScore - previousRixScore;
+              const deltaPercent = Math.abs((delta / previousRixScore) * 100);
+              
+              // Consider stable if change is less than 2%
+              if (deltaPercent < 2) {
+                trend = 'stable';
+              } else if (delta > 0) {
+                trend = 'up';
+              } else {
+                trend = 'down';
+              }
             }
           }
         }
@@ -266,10 +271,14 @@ export function useRixRuns(
         let metricTrends: RixRun['metricTrends'] = {};
         
         if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey) {
-          const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
-          const previousMetrics = previousMetricsMap.get(mapKey);
+          // Find the previous batch key for this rixRun
+          const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+          if (currentBatchIndex > 0) {
+            const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
+            const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
+            const previousMetrics = previousMetricsMap.get(mapKey);
           
-          if (previousMetrics) {
+            if (previousMetrics) {
             const currentMetrics = {
               nvm: rixRun["23_nvm_score"],
               drm: rixRun["26_drm_score"],
@@ -297,10 +306,11 @@ export function useRixRuns(
               }
             });
             
-            // Debug logging
-            console.log('Metric trends for', rixRun["05_ticker"], rixRun["02_model_name"], ':', metricTrends);
-          } else {
-            console.log('No previous metrics found for', rixRun["05_ticker"], rixRun["02_model_name"]);
+              // Debug logging
+              console.log('Metric trends for', rixRun["05_ticker"], rixRun["02_model_name"], ':', metricTrends);
+            } else {
+              console.log('No previous metrics found for', rixRun["05_ticker"], rixRun["02_model_name"]);
+            }
           }
         }
         
