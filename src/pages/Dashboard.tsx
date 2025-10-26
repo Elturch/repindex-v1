@@ -98,7 +98,7 @@ export function Dashboard() {
   // Auto-select the most recent batch when data is available
   React.useEffect(() => {
     if (batchOptions.length > 0 && batchFilter === "all") {
-      const latestBatch = batchOptions[batchOptions.length - 1].value;
+      const latestBatch = batchOptions[0].value; // First element = most recent (sorted descending)
       setBatchFilter(latestBatch);
     }
   }, [batchOptions, batchFilter]);

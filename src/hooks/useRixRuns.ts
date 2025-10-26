@@ -130,9 +130,7 @@ export function useRixRuns(
       
       rixData?.forEach(run => {
         if (run.batch_execution_date) {
-          const batchDate = new Date(run.batch_execution_date);
-          const executionKey = format(batchDate, 'yyyy-MM-dd');
-          executionDates.add(executionKey);
+          executionDates.add(run.batch_execution_date);
         }
       });
       
@@ -141,8 +139,7 @@ export function useRixRuns(
       Array.from(executionDates)
         .sort((a, b) => b.localeCompare(a)) // Sort descending
         .forEach(dateKey => {
-          const [year, month, day] = dateKey.split('-').map(Number);
-          const executionDate = new Date(Date.UTC(year, month - 1, day));
+          const executionDate = new Date(dateKey);
           
           batchMap.set(dateKey, {
             number: batchCounter++,
@@ -162,9 +159,7 @@ export function useRixRuns(
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
-        const batchDate = new Date(run.batch_execution_date);
-        const executionKey = format(batchDate, 'yyyy-MM-dd');
-        const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
+        const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${run.batch_execution_date}`;
         
         // Store RIX score
         if (run["09_rix_score"] !== null && run["09_rix_score"] !== undefined) {
@@ -196,34 +191,33 @@ export function useRixRuns(
           : rixRun["09_rix_score"];
         
         // Calculate batch information from batch_execution_date
-        let executionKey: string | undefined;
         let batchNum: number | undefined;
         let batchLabel: string | undefined;
         
         if (rixRun.batch_execution_date) {
-          const batchDate = new Date(rixRun.batch_execution_date);
-          executionKey = format(batchDate, 'yyyy-MM-dd');
-          const batch = batchMap.get(executionKey);
+          const batch = batchMap.get(rixRun.batch_execution_date);
           batchNum = batch?.number;
           batchLabel = batch
             ? `Semana del ${format(batch.executionDate, 'd MMM yyyy')}`
             : undefined;
         }
         
-        // Calculate trend for RIX score
+        // Calculate trend for RIX score - use 09_rix_score directly to include runs with RMM=0
         let trend: 'up' | 'down' | 'stable' | undefined;
         let previousRixScore: number | undefined;
         
-        if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey && displayRixScore !== null && displayRixScore !== undefined) {
+        if (rixRun["05_ticker"] && rixRun["02_model_name"] && rixRun.batch_execution_date && rixRun["09_rix_score"] !== null && rixRun["09_rix_score"] !== undefined) {
           // Find the previous batch key for this rixRun
-          const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+          const currentBatchIndex = sortedBatches.findIndex(([key]) => key === rixRun.batch_execution_date);
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
             const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
             previousRixScore = previousBatchMap.get(mapKey);
           
             if (previousRixScore !== undefined) {
-              const delta = displayRixScore - previousRixScore;
+              // Use displayRixScore for the comparison to respect CXM exclusions
+              const currentScore = displayRixScore !== null && displayRixScore !== undefined ? displayRixScore : rixRun["09_rix_score"];
+              const delta = currentScore - previousRixScore;
               
               if (delta > 0) {
                 trend = 'up';
@@ -239,9 +233,9 @@ export function useRixRuns(
         // Calculate trends for all 8 metrics
         let metricTrends: RixRun['metricTrends'] = {};
         
-        if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey) {
+        if (rixRun["05_ticker"] && rixRun["02_model_name"] && rixRun.batch_execution_date) {
           // Find the previous batch key for this rixRun
-          const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+          const currentBatchIndex = sortedBatches.findIndex(([key]) => key === rixRun.batch_execution_date);
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
             const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
