@@ -161,9 +161,13 @@ export function useRixRuns(
       Array.from(executionDates)
         .sort()
         .forEach(dateKey => {
+          // Create UTC date to avoid timezone issues
+          const [year, month, day] = dateKey.split('-').map(Number);
+          const executionDate = new Date(Date.UTC(year, month - 1, day));
+          
           batchMap.set(dateKey, {
             number: batchCounter++,
-            executionDate: new Date(dateKey)
+            executionDate
           });
         });
 
@@ -301,7 +305,11 @@ export function useRixRun(id: string) {
       
       const sortedDates = Array.from(executionDates).sort();
       const batchNumber = sortedDates.indexOf(executionKey) + 1;
-      const batchLabel = `Consulta #${batchNumber}: ${format(new Date(executionKey), 'dd/MM/yyyy')}`;
+      
+      // Create UTC date to avoid timezone issues
+      const [year, month, day] = executionKey.split('-').map(Number);
+      const executionDate = new Date(Date.UTC(year, month - 1, day));
+      const batchLabel = `Consulta #${batchNumber}: ${format(executionDate, 'dd/MM/yyyy')}`;
       
       if (data["05_ticker"]) {
         const { data: repindexData, error: repindexError } = await supabase
