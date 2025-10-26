@@ -173,7 +173,7 @@ export function useRixRuns(
           const batch = batchMap.get(executionKey);
           batchNum = batch?.number;
           batchLabel = batch
-            ? `Consulta #${batch.number}: ${format(batch.executionDate, 'dd/MM/yyyy')}`
+            ? `Semana del ${format(batch.executionDate, 'd MMM yyyy')}`
             : undefined;
         }
         
@@ -267,7 +267,7 @@ export function useRixRun(id: string) {
         
         const [year, month, day] = executionKey.split('-').map(Number);
         const executionDate = new Date(Date.UTC(year, month - 1, day));
-        batchLabel = `Consulta #${batchNumber}: ${format(executionDate, 'dd/MM/yyyy')}`;
+        batchLabel = `Semana del ${format(executionDate, 'd MMM yyyy')}`;
       }
       
       if (data["05_ticker"]) {
