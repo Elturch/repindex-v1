@@ -296,6 +296,11 @@ export function useRixRuns(
                 // If delta === 0, don't set a trend (undefined = no arrow)
               }
             });
+            
+            // Debug logging
+            console.log('Metric trends for', rixRun["05_ticker"], rixRun["02_model_name"], ':', metricTrends);
+          } else {
+            console.log('No previous metrics found for', rixRun["05_ticker"], rixRun["02_model_name"]);
           }
         }
         

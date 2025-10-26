@@ -33,7 +33,7 @@ export function Dashboard() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
-  const [batchFilter, setBatchFilter] = useState<string>("1"); // Default to latest batch (batch #1)
+  const [batchFilter, setBatchFilter] = useState<string>("all"); // Changed to "all" to show trends
   const navigate = useNavigate();
   
   const { data: rixRuns, isLoading, error } = useRixRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, sectorFilter, ibexFamilyFilter);
