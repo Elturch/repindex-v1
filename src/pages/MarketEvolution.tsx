@@ -22,7 +22,7 @@ const COMPANY_COLORS = [
 ];
 
 export function MarketEvolution() {
-  const [ibexFilter, setIbexFilter] = useState<string>("IBEX-35");
+  const [ibexFilter, setIbexFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [numWeeks, setNumWeeks] = useState<number>(4);
   const [modelFilter, setModelFilter] = useState<string>("ChatGPT");
@@ -171,6 +171,47 @@ export function MarketEvolution() {
             Tendencias comparativas de RIX Score
           </p>
         </div>
+
+        {/* Market Summary Badge */}
+        {summary && marketData?.marketTrend && (
+          <Card className="bg-primary/5 border-primary/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <BarChart3 className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Media de la Bolsa</p>
+                    <p className="text-2xl font-bold">{summary.market.last} RIX</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="flex items-center gap-2 justify-end">
+                    {summary.market.trend === 'up' ? (
+                      <TrendingUp className="h-5 w-5 text-good" />
+                    ) : summary.market.trend === 'down' ? (
+                      <TrendingDown className="h-5 w-5 text-insufficient" />
+                    ) : (
+                      <ArrowRight className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    <span className={cn(
+                      "text-lg font-semibold",
+                      summary.market.delta > 0 ? "text-good" : 
+                      summary.market.delta < 0 ? "text-insufficient" : 
+                      "text-muted-foreground"
+                    )}>
+                      {summary.market.delta > 0 ? '+' : ''}{summary.market.deltaPercent}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {marketData.marketTrend[marketData.marketTrend.length - 1]?.numCompanies || 0} empresas
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Filters Card */}
         <Card>
@@ -331,7 +372,7 @@ export function MarketEvolution() {
             <CardHeader>
               <CardTitle>Evolución de RIX Score</CardTitle>
               <CardDescription>
-                Comparación de tendencias entre media del mercado y empresas seleccionadas
+                La línea azul muestra la media de RIX Score de todas las empresas de la Bolsa (filtradas). Las líneas punteadas muestran empresas individuales para comparación.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -362,9 +403,9 @@ export function MarketEvolution() {
                     type="monotone" 
                     dataKey="market" 
                     stroke="hsl(var(--primary))" 
-                    strokeWidth={3}
-                    name="Media del mercado"
-                    dot={{ r: 5 }}
+                    strokeWidth={4}
+                    name="📊 Media de la Bolsa"
+                    dot={{ r: 6, strokeWidth: 2, fill: "hsl(var(--primary))" }}
                   />
                   
                   {/* Company lines */}
