@@ -217,10 +217,33 @@ export function useRixRuns(
         if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey && rixRun["09_rix_score"] !== null && rixRun["09_rix_score"] !== undefined) {
           // Find the previous batch key for this rixRun
           const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+          
+          // Debug logging for AMS + ChatGPT
+          if (rixRun["05_ticker"] === 'AMS' && rixRun["02_model_name"] === 'ChatGPT') {
+            console.log('🔍 AMS + ChatGPT Debug:', {
+              executionKey,
+              currentBatchIndex,
+              sortedBatches: sortedBatches.map(([k, v]) => k),
+              currentScore: displayRixScore,
+              rixScore: rixRun["09_rix_score"]
+            });
+          }
+          
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
             const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
             previousRixScore = previousBatchMap.get(mapKey);
+            
+            // More debug for AMS + ChatGPT
+            if (rixRun["05_ticker"] === 'AMS' && rixRun["02_model_name"] === 'ChatGPT') {
+              console.log('🔍 Previous batch lookup:', {
+                previousBatchKey,
+                mapKey,
+                previousRixScore,
+                hasInMap: previousBatchMap.has(mapKey),
+                mapSize: previousBatchMap.size
+              });
+            }
           
             if (previousRixScore !== undefined) {
               // Use displayRixScore for the comparison to respect CXM exclusions
@@ -233,6 +256,11 @@ export function useRixRuns(
                 trend = 'down';
               } else {
                 trend = 'stable';
+              }
+              
+              // Final debug for AMS + ChatGPT
+              if (rixRun["05_ticker"] === 'AMS' && rixRun["02_model_name"] === 'ChatGPT') {
+                console.log('✅ Trend calculated:', { currentScore, previousRixScore, delta, trend });
               }
             }
           }
