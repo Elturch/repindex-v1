@@ -91,26 +91,12 @@ export function useRixRuns(
   return useQuery({
     queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter],
     queryFn: async () => {
-      // First get rix_runs data
-      let rixQuery = supabase
+      // ALWAYS fetch ALL rix_runs data for trend calculation (no filters)
+      const { data: rixData, error: rixError } = await supabase
         .from("rix_runs")
         .select("*")
         .order("09_rix_score", { ascending: false })
         .order("created_at", { ascending: false });
-
-      if (searchQuery) {
-        rixQuery = rixQuery.ilike("03_target_name", `%${searchQuery}%`);
-      }
-
-      if (modelFilter && modelFilter !== "all") {
-        rixQuery = rixQuery.eq("02_model_name", modelFilter);
-      }
-
-      if (companyFilter && companyFilter !== "all") {
-        rixQuery = rixQuery.eq("03_target_name", companyFilter);
-      }
-
-      const { data: rixData, error: rixError } = await rixQuery;
 
       if (rixError) {
         throw rixError;
@@ -309,67 +295,33 @@ export function useRixRuns(
         };
       });
 
-      // Debug detallado: verificar construcción de mapKeys
-      console.log('🔍 DEBUG - Batches ordenados:', sortedBatches.map(([key]) => key));
-      console.log('🔍 DEBUG - Keys guardadas en Map (primeras 10):', 
-        Array.from(previousBatchMap.keys()).slice(0, 10)
-      );
-      
-      // Verificar trends calculados
-      const withTrend = joinedData?.filter(r => r.trend !== undefined).length || 0;
-      const withoutTrend = joinedData?.filter(r => r.trend === undefined).length || 0;
-      
-      // Separar por batch
-      const batch2025_10_19_sinTrend = joinedData?.filter(r => 
-        r.trend === undefined && r.batch_execution_date?.includes('2025-10-19')
-      ).length || 0;
-      
-      const batch2025_10_26_sinTrend = joinedData?.filter(r => 
-        r.trend === undefined && r.batch_execution_date?.includes('2025-10-26')
-      ).length || 0;
-      
-      // Ejemplos DEL BATCH MÁS RECIENTE sin trend (este es el problema)
-      const examplesNewBatchWithoutTrend = joinedData?.filter(r => 
-        r.trend === undefined && r.batch_execution_date?.includes('2025-10-26')
-      ).slice(0, 5).map(r => {
-        const currentBatchIndex = sortedBatches.findIndex(([key]) => {
-          const batchDate = new Date(r.batch_execution_date!);
-          const execKey = format(batchDate, 'yyyy-MM-dd');
-          return key === execKey;
-        });
-        const previousBatchKey = currentBatchIndex > 0 ? sortedBatches[currentBatchIndex - 1][0] : null;
-        const searchKey = previousBatchKey ? `${r["05_ticker"]}_${r["02_model_name"]}_${previousBatchKey}` : null;
-        
-        return {
-          ticker: r["05_ticker"],
-          model: r["02_model_name"],
-          currentBatchIndex,
-          previousBatchKey,
-          searchKey,
-          existeEnMap: searchKey ? previousBatchMap.has(searchKey) : false,
-          scoreEnMap: searchKey ? previousBatchMap.get(searchKey) : null
-        };
-      });
-
-      console.log('📊 Análisis de Trends:', {
-        total: joinedData?.length || 0,
-        conTrend: withTrend,
-        sinTrend: withoutTrend,
-        porcentajeConTrend: `${((withTrend / (joinedData?.length || 1)) * 100).toFixed(1)}%`,
-        batch_antiguo_sinTrend: batch2025_10_19_sinTrend + ' (normal, no hay batch anterior)',
-        batch_nuevo_sinTrend: batch2025_10_26_sinTrend + ' ⚠️ (PROBLEMA - debería tener trend)',
-        ejemplosBatchNuevoSinTrend: examplesNewBatchWithoutTrend
-      });
-
-      // Apply sector filter after joining the data
+      // Apply ALL filters AFTER trend calculation
       let filteredData = joinedData;
+      
+      if (searchQuery) {
+        filteredData = filteredData?.filter(rixRun =>
+          rixRun["03_target_name"]?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+      
+      if (modelFilter && modelFilter !== "all") {
+        filteredData = filteredData?.filter(rixRun => 
+          rixRun["02_model_name"] === modelFilter
+        );
+      }
+      
+      if (companyFilter && companyFilter !== "all") {
+        filteredData = filteredData?.filter(rixRun => 
+          rixRun["03_target_name"] === companyFilter
+        );
+      }
+      
       if (sectorFilter && sectorFilter !== "all") {
-        filteredData = joinedData?.filter(rixRun => 
+        filteredData = filteredData?.filter(rixRun => 
           rixRun.repindex_root_issuers?.sector_category === sectorFilter
         );
       }
 
-      // Apply ibex family filter
       if (ibexFamilyFilter && ibexFamilyFilter !== "all") {
         filteredData = filteredData?.filter(rixRun => 
           rixRun.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter
