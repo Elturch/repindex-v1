@@ -14,7 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle } from "lucide-react";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
 import { format, addDays } from "date-fns";
@@ -325,55 +326,100 @@ export function Dashboard() {
             {/* Company Filter */}
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4 text-muted-foreground" />
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Seleccionar empresa" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border z-50">
-                  <SelectItem value="all">Todas las empresas</SelectItem>
-                  {companies?.map((company) => (
-                    <SelectItem key={company.issuer_id} value={company.issuer_name}>
-                      {company.issuer_name} ({company.ticker})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-48 justify-between">
+                    {companyFilter === "all" ? "Todas las empresas" : companies?.find(c => c.issuer_name === companyFilter)?.issuer_name || "Seleccionar..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Buscar empresa..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró empresa.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem value="all" onSelect={() => setCompanyFilter("all")}>
+                          <Check className={cn("mr-2 h-4 w-4", companyFilter === "all" ? "opacity-100" : "opacity-0")} />
+                          Todas las empresas
+                        </CommandItem>
+                        {companies?.map((company) => (
+                          <CommandItem key={company.issuer_id} value={company.issuer_name} onSelect={(value) => setCompanyFilter(value)}>
+                            <Check className={cn("mr-2 h-4 w-4", companyFilter === company.issuer_name ? "opacity-100" : "opacity-0")} />
+                            {company.issuer_name} ({company.ticker})
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Sector Filter */}
             <div className="flex items-center gap-2">
               <Factory className="h-4 w-4 text-muted-foreground" />
-              <Select value={sectorFilter} onValueChange={setSectorFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Seleccionar sector" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border z-50">
-                  <SelectItem value="all">Todos los sectores</SelectItem>
-                  {sectorCategories?.map((sector) => (
-                    <SelectItem key={sector.sector_category} value={sector.sector_category}>
-                      {sector.sector_category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-48 justify-between">
+                    {sectorFilter === "all" ? "Todos los sectores" : sectorFilter}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Buscar sector..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró sector.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem value="all" onSelect={() => setSectorFilter("all")}>
+                          <Check className={cn("mr-2 h-4 w-4", sectorFilter === "all" ? "opacity-100" : "opacity-0")} />
+                          Todos los sectores
+                        </CommandItem>
+                        {sectorCategories?.map((sector) => (
+                          <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => setSectorFilter(value)}>
+                            <Check className={cn("mr-2 h-4 w-4", sectorFilter === sector.sector_category ? "opacity-100" : "opacity-0")} />
+                            {sector.sector_category}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Ibex Family Filter */}
             <div className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <Select value={ibexFamilyFilter} onValueChange={setIbexFamilyFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Seleccionar IBEX Family" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border z-50">
-                  <SelectItem value="all">Todas las familias IBEX</SelectItem>
-                  {ibexFamilyCategories?.map((ibex) => (
-                    <SelectItem key={ibex.ibex_family_code} value={ibex.ibex_family_code}>
-                      {ibex.ibex_family_code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-48 justify-between">
+                    {ibexFamilyFilter === "all" ? "Todas las familias IBEX" : ibexFamilyFilter}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Buscar IBEX Family..." />
+                    <CommandList>
+                      <CommandEmpty>No se encontró familia IBEX.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem value="all" onSelect={() => setIbexFamilyFilter("all")}>
+                          <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "all" ? "opacity-100" : "opacity-0")} />
+                          Todas las familias IBEX
+                        </CommandItem>
+                        {ibexFamilyCategories?.map((ibex) => (
+                          <CommandItem key={ibex.ibex_family_code} value={ibex.ibex_family_code} onSelect={(value) => setIbexFamilyFilter(value)}>
+                            <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === ibex.ibex_family_code ? "opacity-100" : "opacity-0")} />
+                            {ibex.ibex_family_code}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Batch Filter */}
