@@ -125,13 +125,24 @@ export function useRixRuns(
       }
 
       // Group runs by batch_execution_date and assign batch numbers
+      // Normalize all dates to Sunday to ensure consistent grouping
       const batchMap = new Map<string, { number: number; executionDate: Date }>();
       const executionDates = new Set<string>();
+      
+      const normalizeToSunday = (date: Date): Date => {
+        const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
+        const daysToAdd = day === 0 ? 0 : 7 - day; // Days until next Sunday
+        const normalized = new Date(date);
+        normalized.setUTCDate(date.getUTCDate() + daysToAdd);
+        normalized.setUTCHours(0, 0, 0, 0);
+        return normalized;
+      };
       
       rixData?.forEach(run => {
         if (run.batch_execution_date) {
           const batchDate = new Date(run.batch_execution_date);
-          const executionKey = format(batchDate, 'yyyy-MM-dd');
+          const normalizedDate = normalizeToSunday(batchDate);
+          const executionKey = format(normalizedDate, 'yyyy-MM-dd');
           executionDates.add(executionKey);
         }
       });
@@ -160,7 +171,8 @@ export function useRixRuns(
           recordCount: rixData?.filter(r => {
             if (!r.batch_execution_date) return false;
             const batchDate = new Date(r.batch_execution_date);
-            return format(batchDate, 'yyyy-MM-dd') === key;
+            const normalizedDate = normalizeToSunday(batchDate);
+            return format(normalizedDate, 'yyyy-MM-dd') === key;
           }).length
         }))
       });
@@ -174,11 +186,13 @@ export function useRixRuns(
         .sort((a, b) => a[0].localeCompare(b[0])); // Sort chronologically (oldest first)
       
       // FIRST LOOP: Store ALL runs in maps (no filtering)
+      // Normalize dates to Sunday to ensure consistent key generation
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
         const batchDate = new Date(run.batch_execution_date);
-        const executionKey = format(batchDate, 'yyyy-MM-dd');
+        const normalizedDate = normalizeToSunday(batchDate);
+        const executionKey = format(normalizedDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
         
         // Store RIX score
@@ -211,13 +225,15 @@ export function useRixRuns(
           : rixRun["09_rix_score"];
         
         // Calculate batch information from batch_execution_date
+        // Normalize to Sunday for consistent grouping
         let executionKey: string | undefined;
         let batchNum: number | undefined;
         let batchLabel: string | undefined;
         
         if (rixRun.batch_execution_date) {
           const batchDate = new Date(rixRun.batch_execution_date);
-          executionKey = format(batchDate, 'yyyy-MM-dd');
+          const normalizedDate = normalizeToSunday(batchDate);
+          executionKey = format(normalizedDate, 'yyyy-MM-dd');
           const batch = batchMap.get(executionKey);
           batchNum = batch?.number;
           batchLabel = batch
@@ -242,6 +258,17 @@ export function useRixRuns(
               // Use displayRixScore for the comparison to respect CXM exclusions
               const currentScore = displayRixScore !== null && displayRixScore !== undefined ? displayRixScore : rixRun["09_rix_score"];
               const delta = currentScore - previousRixScore;
+              
+              // Debug trend calculation
+              console.log('📊 Trend Calculation:', {
+                ticker: rixRun["05_ticker"],
+                model: rixRun["02_model_name"],
+                currentBatch: executionKey,
+                previousBatch: sortedBatches[currentBatchIndex - 1][0],
+                currentScore,
+                previousRixScore,
+                delta
+              });
               
               if (delta > 0) {
                 trend = 'up';
