@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { toZonedTime, fromZonedTime } from 'https://deno.land/x/date_fns_tz@v3.2.0/index.js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -437,52 +438,43 @@ serve(async (req) => {
     }
 
     // Calculate batch_execution_date based on Madrid timezone
-    // If today is Sunday in Madrid, use today; otherwise find next Sunday
+    // All records from the same batch MUST have the exact same timestamp (normalized to Sunday 00:00:00 Madrid time)
     const calculateBatchExecutionDate = (): string => {
-      const madridTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
+      const now = new Date();
+      const madridTime = toZonedTime(now, 'Europe/Madrid');
       const dayOfWeek = madridTime.getDay(); // 0 = Sunday
       
       let batchDate: Date;
+      
       if (dayOfWeek === 0) {
-        // If it's Sunday in Madrid, use that day
-        batchDate = new Date(madridTime.setHours(0, 0, 0, 0));
+        // It's Sunday in Madrid: use that Sunday at 00:00:00
+        batchDate = new Date(madridTime);
+        batchDate.setHours(0, 0, 0, 0);
+        console.log(`✅ Current day is Sunday in Madrid. Using ${batchDate.toISOString()}`);
+      } else if (dayOfWeek === 6 && madridTime.getHours() >= 23) {
+        // It's Saturday after 23:00 in Madrid: use next day (Sunday) at 00:00:00
+        batchDate = new Date(madridTime);
+        batchDate.setDate(madridTime.getDate() + 1);
+        batchDate.setHours(0, 0, 0, 0);
+        console.log(`✅ Saturday after 23:00 in Madrid. Using next Sunday ${batchDate.toISOString()}`);
       } else {
-        // If not Sunday, calculate the next Sunday
-        const daysUntilSunday = 7 - dayOfWeek;
+        // Any other day: calculate next Sunday at 00:00:00
+        const daysUntilSunday = (7 - dayOfWeek) % 7 || 7;
         batchDate = new Date(madridTime);
         batchDate.setDate(madridTime.getDate() + daysUntilSunday);
         batchDate.setHours(0, 0, 0, 0);
+        console.log(`✅ Not Sunday. Days until next Sunday: ${daysUntilSunday}. Using ${batchDate.toISOString()}`);
       }
       
-      return batchDate.toISOString();
+      // Convert back to UTC maintaining the normalized date (Sunday 00:00:00 Madrid)
+      const utcDate = fromZonedTime(batchDate, 'Europe/Madrid');
+      console.log(`📅 Batch execution date (Madrid): ${batchDate.toISOString()}, UTC: ${utcDate.toISOString()}`);
+      
+      return utcDate.toISOString();
     };
     
     const batchExecutionDate = calculateBatchExecutionDate();
-    console.log(`📅 Batch execution date calculated: ${batchExecutionDate}`);
-
-    // Calculate batch_execution_date based on Madrid timezone
-    // If today is Sunday in Madrid, use today; otherwise find next Sunday
-    const calculateBatchExecutionDate = (): string => {
-      const madridTime = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Madrid" }));
-      const dayOfWeek = madridTime.getDay(); // 0 = Sunday
-      
-      let batchDate: Date;
-      if (dayOfWeek === 0) {
-        // If it's Sunday in Madrid, use that day
-        batchDate = new Date(madridTime.setHours(0, 0, 0, 0));
-      } else {
-        // If not Sunday, calculate the next Sunday
-        const daysUntilSunday = 7 - dayOfWeek;
-        batchDate = new Date(madridTime);
-        batchDate.setDate(madridTime.getDate() + daysUntilSunday);
-        batchDate.setHours(0, 0, 0, 0);
-      }
-      
-      return batchDate.toISOString();
-    };
-    
-    const batchExecutionDate = calculateBatchExecutionDate();
-    console.log(`📅 Batch execution date calculated: ${batchExecutionDate}`);
+    console.log(`📅 Final batch execution date: ${batchExecutionDate}`);
 
     const insertPromises = validResults.map(async (result, originalIndex) => {
       console.log(`Processing result ${originalIndex} with run_id: ${result.meta.run_id}`)

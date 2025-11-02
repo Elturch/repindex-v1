@@ -139,17 +139,31 @@ export function useRixRuns(
       // Sort execution dates chronologically (ascending - oldest first) and assign batch numbers
       // This way the most recent batch gets the highest number
       let batchCounter = 1;
-      Array.from(executionDates)
-        .sort((a, b) => a.localeCompare(b)) // Sort ascending (oldest first)
-        .forEach(dateKey => {
-          const [year, month, day] = dateKey.split('-').map(Number);
-          const executionDate = new Date(Date.UTC(year, month - 1, day));
-          
-          batchMap.set(dateKey, {
-            number: batchCounter++,
-            executionDate
-          });
+      const sortedDateKeys = Array.from(executionDates).sort((a, b) => a.localeCompare(b)); // Sort ascending (oldest first)
+      
+      sortedDateKeys.forEach(dateKey => {
+        const [year, month, day] = dateKey.split('-').map(Number);
+        const executionDate = new Date(Date.UTC(year, month - 1, day));
+        
+        batchMap.set(dateKey, {
+          number: batchCounter++,
+          executionDate
         });
+      });
+      
+      // Debug logging
+      console.log('🔍 Batch Map Created:', {
+        totalBatches: batchMap.size,
+        batches: Array.from(batchMap.entries()).map(([key, val]) => ({
+          date: key,
+          batchNumber: val.number,
+          recordCount: rixData?.filter(r => {
+            if (!r.batch_execution_date) return false;
+            const batchDate = new Date(r.batch_execution_date);
+            return format(batchDate, 'yyyy-MM-dd') === key;
+          }).length
+        }))
+      });
 
       // Create maps to find previous batch scores for trend calculation
       const previousBatchMap = new Map<string, number>(); // key: ticker_model_batchDate, value: rix_score

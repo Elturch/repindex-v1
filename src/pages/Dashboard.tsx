@@ -81,26 +81,68 @@ export function Dashboard() {
   ];
 
   // Generate batch options based on available data (most recent first)
+  // Include status indicator (✓ complete / ⏳ in progress)
   const batchOptions = useMemo(() => {
     if (!rixRuns) return [];
     
-    const batches = new Map<number, string>();
+    const batchGroups = new Map<number, { 
+      label: string; 
+      date: Date; 
+      count: number; 
+      companies: Set<string> 
+    }>();
+    
     rixRuns.forEach(run => {
-      if (run.batchNumber && run.batchLabel) {
-        batches.set(run.batchNumber, run.batchLabel);
+      if (run.batchNumber && run.batchLabel && run.batch_execution_date) {
+        if (!batchGroups.has(run.batchNumber)) {
+          batchGroups.set(run.batchNumber, {
+            label: run.batchLabel,
+            date: new Date(run.batch_execution_date),
+            count: 0,
+            companies: new Set()
+          });
+        }
+        const group = batchGroups.get(run.batchNumber)!;
+        group.count++;
+        if (run["05_ticker"]) {
+          group.companies.add(run["05_ticker"]);
+        }
       }
     });
     
-    return Array.from(batches.entries())
+    return Array.from(batchGroups.entries())
       .sort((a, b) => b[0] - a[0]) // Sort by batch number descending (most recent first)
-      .map(([num, label]) => ({ value: num.toString(), label }));
+      .map(([num, info]) => {
+        // A batch is complete if it has >= 150 unique companies
+        const isComplete = info.companies.size >= 150;
+        const statusIcon = isComplete ? '✓' : '⏳';
+        const subLabel = isComplete 
+          ? `${info.companies.size} empresas`
+          : `${info.companies.size}/153 empresas (en progreso)`;
+        
+        return {
+          value: num.toString(),
+          label: `${info.label} ${statusIcon}`,
+          subLabel,
+          isComplete
+        };
+      });
   }, [rixRuns]);
 
-  // Auto-select the most recent batch when data is available
+  // Auto-select the most recent COMPLETE batch when data is available
   React.useEffect(() => {
     if (batchOptions.length > 0 && batchFilter === "all") {
-      const latestBatch = batchOptions[0].value; // First element = most recent (sorted descending)
-      setBatchFilter(latestBatch);
+      // Find the most recent complete batch (isComplete = true)
+      const latestCompleteBatch = batchOptions.find(opt => opt.isComplete);
+      
+      if (latestCompleteBatch) {
+        console.log('🎯 Auto-selecting most recent complete batch:', latestCompleteBatch.value);
+        setBatchFilter(latestCompleteBatch.value);
+      } else {
+        // If no complete batches, select the most recent one anyway
+        console.log('⚠️  No complete batches found, selecting most recent:', batchOptions[0].value);
+        setBatchFilter(batchOptions[0].value);
+      }
     }
   }, [batchOptions, batchFilter]);
 
@@ -426,14 +468,17 @@ export function Dashboard() {
             <div className="flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
               <Select value={batchFilter} onValueChange={setBatchFilter}>
-                <SelectTrigger className="w-56">
+                <SelectTrigger className="w-64">
                   <SelectValue placeholder="Fecha de análisis" />
                 </SelectTrigger>
                 <SelectContent className="bg-background border z-50">
                   <SelectItem value="all">Todas las fechas</SelectItem>
                   {batchOptions.map((batch) => (
                     <SelectItem key={batch.value} value={batch.value}>
-                      {batch.label}
+                      <div className="flex flex-col">
+                        <span>{batch.label}</span>
+                        <span className="text-xs text-muted-foreground">{batch.subLabel}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
