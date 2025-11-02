@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { toZonedTime, fromZonedTime } from 'https://deno.land/x/date_fns_tz@v3.2.0/index.js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -439,38 +438,92 @@ serve(async (req) => {
 
     // Calculate batch_execution_date based on Madrid timezone
     // All records from the same batch MUST have the exact same timestamp (normalized to Sunday 00:00:00 Madrid time)
+    // Manual timezone conversion without external dependencies
     const calculateBatchExecutionDate = (): string => {
       const now = new Date();
-      const madridTime = toZonedTime(now, 'Europe/Madrid');
-      const dayOfWeek = madridTime.getDay(); // 0 = Sunday
+      
+      // Convert UTC to Madrid time manually
+      // Madrid is UTC+1 in winter (Oct-Mar) and UTC+2 in summer (Mar-Oct)
+      // Get the UTC time parts
+      const utcYear = now.getUTCFullYear();
+      const utcMonth = now.getUTCMonth();
+      const utcDate = now.getUTCDate();
+      const utcHours = now.getUTCHours();
+      
+      // Simple DST check for Europe/Madrid
+      // DST starts last Sunday of March at 02:00 UTC, ends last Sunday of October at 03:00 UTC
+      const isDST = (month: number, date: number, day: number, hours: number): boolean => {
+        // Before March or after October: always winter time
+        if (month < 2 || month > 9) return false;
+        // April to September: always summer time
+        if (month > 2 && month < 9) return true;
+        
+        // March: check if we're past last Sunday
+        if (month === 2) {
+          const lastSunday = 31 - ((5 * utcYear / 4 + 4) % 7);
+          return date > lastSunday || (date === lastSunday && hours >= 1);
+        }
+        
+        // October: check if we're before last Sunday
+        if (month === 9) {
+          const lastSunday = 31 - ((5 * utcYear / 4 + 1) % 7);
+          return date < lastSunday || (date === lastSunday && hours < 1);
+        }
+        
+        return false;
+      };
+      
+      const madridOffset = isDST(utcMonth, utcDate, now.getUTCDay(), utcHours) ? 2 : 1;
+      console.log(`🌍 Madrid offset: UTC+${madridOffset} hours`);
+      
+      // Create Madrid time by adding offset to UTC
+      const madridTime = new Date(now.getTime() + madridOffset * 60 * 60 * 1000);
+      const madridDayOfWeek = madridTime.getUTCDay(); // 0 = Sunday
+      const madridHour = madridTime.getUTCHours();
+      
+      console.log(`🕐 Madrid time: ${madridTime.toISOString()}, Day: ${madridDayOfWeek}, Hour: ${madridHour}`);
       
       let batchDate: Date;
       
-      if (dayOfWeek === 0) {
-        // It's Sunday in Madrid: use that Sunday at 00:00:00
-        batchDate = new Date(madridTime);
-        batchDate.setHours(0, 0, 0, 0);
+      if (madridDayOfWeek === 0) {
+        // It's Sunday in Madrid: use that Sunday at 00:00:00 Madrid time
+        batchDate = new Date(Date.UTC(
+          madridTime.getUTCFullYear(),
+          madridTime.getUTCMonth(),
+          madridTime.getUTCDate(),
+          0, 0, 0, 0
+        ));
         console.log(`✅ Current day is Sunday in Madrid. Using ${batchDate.toISOString()}`);
-      } else if (dayOfWeek === 6 && madridTime.getHours() >= 23) {
-        // It's Saturday after 23:00 in Madrid: use next day (Sunday) at 00:00:00
-        batchDate = new Date(madridTime);
-        batchDate.setDate(madridTime.getDate() + 1);
-        batchDate.setHours(0, 0, 0, 0);
+      } else if (madridDayOfWeek === 6 && madridHour >= 23) {
+        // It's Saturday after 23:00 in Madrid: use next day (Sunday) at 00:00:00 Madrid time
+        const nextDay = new Date(madridTime.getTime() + 24 * 60 * 60 * 1000);
+        batchDate = new Date(Date.UTC(
+          nextDay.getUTCFullYear(),
+          nextDay.getUTCMonth(),
+          nextDay.getUTCDate(),
+          0, 0, 0, 0
+        ));
         console.log(`✅ Saturday after 23:00 in Madrid. Using next Sunday ${batchDate.toISOString()}`);
       } else {
-        // Any other day: calculate next Sunday at 00:00:00
-        const daysUntilSunday = (7 - dayOfWeek) % 7 || 7;
-        batchDate = new Date(madridTime);
-        batchDate.setDate(madridTime.getDate() + daysUntilSunday);
-        batchDate.setHours(0, 0, 0, 0);
-        console.log(`✅ Not Sunday. Days until next Sunday: ${daysUntilSunday}. Using ${batchDate.toISOString()}`);
+        // Any other day: calculate next Sunday at 00:00:00 Madrid time
+        const daysUntilSunday = (7 - madridDayOfWeek) % 7 || 7;
+        const nextSunday = new Date(madridTime.getTime() + daysUntilSunday * 24 * 60 * 60 * 1000);
+        batchDate = new Date(Date.UTC(
+          nextSunday.getUTCFullYear(),
+          nextSunday.getUTCMonth(),
+          nextSunday.getUTCDate(),
+          0, 0, 0, 0
+        ));
+        console.log(`✅ Days until next Sunday: ${daysUntilSunday}. Using ${batchDate.toISOString()}`);
       }
       
-      // Convert back to UTC maintaining the normalized date (Sunday 00:00:00 Madrid)
-      const utcDate = fromZonedTime(batchDate, 'Europe/Madrid');
-      console.log(`📅 Batch execution date (Madrid): ${batchDate.toISOString()}, UTC: ${utcDate.toISOString()}`);
+      // Convert Madrid time back to UTC by subtracting the offset
+      const utcBatchDate = new Date(batchDate.getTime() - madridOffset * 60 * 60 * 1000);
       
-      return utcDate.toISOString();
+      console.log(`📅 Batch date (Madrid midnight): ${batchDate.toISOString()}`);
+      console.log(`📅 Batch date (UTC): ${utcBatchDate.toISOString()}`);
+      
+      return utcBatchDate.toISOString();
     };
     
     const batchExecutionDate = calculateBatchExecutionDate();
