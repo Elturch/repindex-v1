@@ -180,12 +180,20 @@ export function Dashboard() {
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
       
-      // For same validity status, prioritize more recent batch_execution_date
-      if (batchFilter === "all" && a.batch_execution_date && b.batch_execution_date) {
+      // For same validity status, order by RIX score descending (highest first)
+      const scoreA = a.displayRixScore ?? a["09_rix_score"] ?? 0;
+      const scoreB = b.displayRixScore ?? b["09_rix_score"] ?? 0;
+      
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA; // Descending order (highest score first)
+      }
+      
+      // If scores are equal, prioritize more recent batch_execution_date
+      if (a.batch_execution_date && b.batch_execution_date) {
         return new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime();
       }
       
-      return 0; // Keep original order
+      return 0;
     });
   }, [rixRuns, batchFilter]);
 
