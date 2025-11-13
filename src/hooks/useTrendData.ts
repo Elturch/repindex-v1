@@ -68,7 +68,17 @@ export function useTrendData({
         };
       }
 
-      // Group by batch_execution_date
+      // Normalize all dates to Sunday to ensure consistent grouping across weeks
+      const normalizeToSunday = (date: Date): Date => {
+        const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
+        const daysToAdd = day === 0 ? 0 : 7 - day; // Days until next Sunday
+        const normalized = new Date(date);
+        normalized.setUTCDate(date.getUTCDate() + daysToAdd);
+        normalized.setUTCHours(0, 0, 0, 0);
+        return normalized;
+      };
+
+      // Group by batch_execution_date (normalized to Sunday)
       const batchGroups = new Map<string, { scores: number[], companyScore?: number }>();
       
       allRuns.forEach(run => {
@@ -76,7 +86,8 @@ export function useTrendData({
         if (run["32_rmm_score"] === 0) return;
         
         const batchDate = new Date(run.batch_execution_date);
-        const batchKey = format(batchDate, 'yyyy-MM-dd');
+        const normalizedDate = normalizeToSunday(batchDate);
+        const batchKey = format(normalizedDate, 'yyyy-MM-dd');
         
         if (!batchGroups.has(batchKey)) {
           batchGroups.set(batchKey, { scores: [] });
