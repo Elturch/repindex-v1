@@ -82,22 +82,35 @@ export interface RixRun {
 }
 
 // Helper function to fetch all records with pagination
-async function fetchAllRixRuns() {
+async function fetchAllRixRuns(weeksToLoad?: number) {
   const pageSize = 1000;
   let allData: any[] = [];
   let page = 0;
   let hasMore = true;
 
+  // Calculate date limit if weeksToLoad is specified
+  let limitDate: Date | null = null;
+  if (weeksToLoad !== undefined) {
+    limitDate = new Date();
+    limitDate.setDate(limitDate.getDate() - (weeksToLoad * 7));
+  }
+
   while (hasMore) {
     const start = page * pageSize;
     const end = start + pageSize - 1;
     
-    const { data, error } = await supabase
+    let query = supabase
       .from("rix_runs")
       .select("*")
       .order("batch_execution_date", { ascending: false })
-      .order("09_rix_score", { ascending: false })
-      .range(start, end);
+      .order("09_rix_score", { ascending: false });
+    
+    // Apply date filter if limit is set
+    if (limitDate) {
+      query = query.gte("batch_execution_date", limitDate.toISOString());
+    }
+    
+    const { data, error } = await query.range(start, end);
 
     if (error) {
       throw error;
@@ -112,7 +125,7 @@ async function fetchAllRixRuns() {
     }
   }
 
-  console.log(`📦 Loaded ${allData.length} total rix_runs records across ${page} pages`);
+  console.log(`📦 Loaded ${allData.length} total rix_runs records across ${page} pages ${weeksToLoad ? `(last ${weeksToLoad} weeks)` : '(all history)'}`);
   return allData;
 }
 
@@ -121,14 +134,15 @@ export function useRixRuns(
   modelFilter?: string, 
   companyFilter?: string,
   sectorFilter?: string,
-  ibexFamilyFilter?: string
+  ibexFamilyFilter?: string,
+  weeksToLoad: number = 3 // Default: load only last 3 weeks
 ) {
   return useQuery({
-    queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter],
+    queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, weeksToLoad],
     queryFn: async () => {
-      // ALWAYS fetch ALL rix_runs data for trend calculation (no filters)
-      // Use pagination to load all records (Supabase has 1000 record limit per request)
-      const rixData = await fetchAllRixRuns();
+      // Fetch rix_runs data with optional week limit for performance
+      // Fetch records with optional week limit (pagination handled inside)
+      const rixData = await fetchAllRixRuns(weeksToLoad);
 
       if (!rixData) {
         throw new Error("No data returned from fetchAllRixRuns");
@@ -444,8 +458,8 @@ export function useRixRuns(
       return filteredData as RixRun[];
     },
     enabled: true,
-    refetchOnMount: 'always',
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    gcTime: 10 * 60 * 1000, // 10 minutes in memory
   });
 }
 

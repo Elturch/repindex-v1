@@ -62,11 +62,36 @@ export function ModelChart({
               stroke="hsl(var(--muted-foreground))"
               fontSize={12}
             />
+            
+            {/* Eje izquierdo: RIX Score (0-100) */}
             <YAxis 
+              yAxisId="left"
               stroke="hsl(var(--muted-foreground))"
               fontSize={12}
               domain={[0, 100]}
+              label={{ 
+                value: 'RIX Score', 
+                angle: -90, 
+                position: 'insideLeft',
+                style: { fill: 'hsl(var(--muted-foreground))' }
+              }}
             />
+            
+            {/* Eje derecho: Precio (€) */}
+            <YAxis 
+              yAxisId="right"
+              orientation="right"
+              stroke="hsl(var(--muted-foreground))"
+              fontSize={12}
+              domain={['auto', 'auto']}
+              label={{ 
+                value: 'Precio (€)', 
+                angle: 90, 
+                position: 'insideRight',
+                style: { fill: 'hsl(var(--muted-foreground))' }
+              }}
+            />
+            
             <Tooltip 
               contentStyle={{
                 backgroundColor: 'hsl(var(--popover))',
@@ -76,28 +101,54 @@ export function ModelChart({
             />
             <Legend />
             
-            {/* Market average line */}
+            {/* Market average line (RIX) */}
             <Line
+              yAxisId="left"
               type="monotone"
               dataKey="market"
               stroke="hsl(var(--primary))"
               strokeWidth={2}
-              name="Media del Mercado"
+              name="Media del Mercado (RIX)"
               dot={{ r: 4 }}
             />
             
-            {/* Company lines */}
+            {/* Company RIX lines */}
             {selectedCompanies.map((ticker, index) => (
               <Line
-                key={ticker}
+                key={`${ticker}-rix`}
+                yAxisId="left"
                 type="monotone"
                 dataKey={ticker}
                 stroke={COMPANY_COLORS[index % COMPANY_COLORS.length]}
                 strokeWidth={2}
-                name={ticker}
+                name={`${ticker} (RIX)`}
                 dot={{ r: 3 }}
               />
             ))}
+            
+            {/* Company price lines (only for traded companies) */}
+            {selectedCompanies.map((ticker, index) => {
+              // Check if this company has price data in any data point
+              const hasPrice = chartData.some(d => 
+                d[`${ticker}_isTraded`] && d[`${ticker}_price`] && d[`${ticker}_price`] > 0
+              );
+              
+              if (!hasPrice) return null;
+              
+              return (
+                <Line
+                  key={`${ticker}-price`}
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey={`${ticker}_price`}
+                  stroke={COMPANY_COLORS[index % COMPANY_COLORS.length]}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  name={`${ticker} (€)`}
+                  dot={{ r: 3 }}
+                />
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
       </CardContent>
