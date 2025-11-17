@@ -84,23 +84,78 @@ export function MarketEvolution() {
       .sort((a, b) => a.issuer_name.localeCompare(b.issuer_name));
   }, [companies, ibexFilter, sectorFilter]);
 
+  // Normalize values to base 100 index
+  const normalizeToIndex = (values: number[]): number[] => {
+    if (values.length === 0) return [];
+    const baseValue = values[0];
+    if (baseValue === 0 || !baseValue) return values.map(() => 100);
+    return values.map(v => (v / baseValue) * 100);
+  };
+
   // Prepare chart data for each model (data is already combined in useTrendDataLight)
   const prepareChartData = (data: any[]) => {
     if (!data || data.length === 0) return [];
     
-    return data.map((point: any) => {
-      const dataPoint: any = {
-        date: point.batchLabel,
-        market: point.market,
+    // First, extract complete series per company to normalize
+    const companySeries: Record<string, {rix: number[], price: number[], isTraded: boolean}> = {};
+    
+    selectedCompanies.forEach(ticker => {
+      companySeries[ticker] = {
+        rix: [],
+        price: [],
+        isTraded: false
       };
-      
-      // Add all company-specific data (RIX, price, name, isTraded)
+    });
+    
+    // Collect all values per company
+    data.forEach((point: any) => {
       selectedCompanies.forEach(ticker => {
         if (point[ticker] !== undefined) {
-          dataPoint[ticker] = point[ticker]; // RIX score
-          dataPoint[`${ticker}_price`] = point[`${ticker}_price`] || 0;
+          companySeries[ticker].rix.push(point[ticker]);
+          const priceValue = point[`${ticker}_price`] || 0;
+          if (priceValue > 0) {
+            companySeries[ticker].price.push(priceValue);
+          }
+          companySeries[ticker].isTraded = point[`${ticker}_isTraded`] || false;
+        }
+      });
+    });
+    
+    // Normalize series to base 100 index
+    const normalizedSeries: Record<string, {rixIndex: number[], priceIndex: number[], isTraded: boolean}> = {};
+    
+    Object.keys(companySeries).forEach(ticker => {
+      const {rix, price, isTraded} = companySeries[ticker];
+      normalizedSeries[ticker] = {
+        rixIndex: normalizeToIndex(rix),
+        priceIndex: isTraded && price.length > 0 ? normalizeToIndex(price) : [],
+        isTraded
+      };
+    });
+    
+    // Also normalize market average
+    const marketRixValues = data.map(p => p.market);
+    const marketRixIndex = normalizeToIndex(marketRixValues);
+    
+    // Build data points with normalized indices
+    return data.map((point: any, idx: number) => {
+      const dataPoint: any = {
+        date: point.batchLabel,
+        market_index: marketRixIndex[idx],
+      };
+      
+      // Add indices per company
+      selectedCompanies.forEach(ticker => {
+        if (normalizedSeries[ticker]) {
+          const ns = normalizedSeries[ticker];
+          dataPoint[`${ticker}_rix_index`] = ns.rixIndex[idx];
           dataPoint[`${ticker}_name`] = point[`${ticker}_name`] || ticker;
-          dataPoint[`${ticker}_isTraded`] = point[`${ticker}_isTraded`] || 0;
+          dataPoint[`${ticker}_isTraded`] = ns.isTraded;
+          
+          // Only add price_index if traded AND has data
+          if (ns.isTraded && ns.priceIndex.length > 0) {
+            dataPoint[`${ticker}_price_index`] = ns.priceIndex[idx];
+          }
         }
       });
       
