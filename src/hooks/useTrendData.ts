@@ -79,12 +79,29 @@ export function useTrendData({
       };
 
       // Group by batch_execution_date (normalized to Sunday)
-      const batchGroups = new Map<string, { scores: number[], companyScore?: number }>();
+      // First, keep only the most recent record for each ticker/batch combination
+      const batchRecordsMap = new Map<string, typeof allRuns[0]>();
       
       allRuns.forEach(run => {
         // Skip invalid data (RMM=0)
         if (run["32_rmm_score"] === 0) return;
         
+        const batchDate = new Date(run.batch_execution_date);
+        const normalizedDate = normalizeToSunday(batchDate);
+        const batchKey = format(normalizedDate, 'yyyy-MM-dd');
+        const mapKey = `${run["05_ticker"]}_${batchKey}`;
+        
+        // Keep the most recent record for each ticker/batch
+        const existing = batchRecordsMap.get(mapKey);
+        if (!existing || new Date(run.batch_execution_date) > new Date(existing.batch_execution_date)) {
+          batchRecordsMap.set(mapKey, run);
+        }
+      });
+      
+      // Now group the deduplicated records by batch
+      const batchGroups = new Map<string, { scores: number[], companyScore?: number }>();
+      
+      batchRecordsMap.forEach(run => {
         const batchDate = new Date(run.batch_execution_date);
         const normalizedDate = normalizeToSunday(batchDate);
         const batchKey = format(normalizedDate, 'yyyy-MM-dd');
