@@ -116,7 +116,7 @@ export default function ConsolidationAnalysis() {
 
       toast({
         title: "¡Análisis completado!",
-        description: `Se generaron ${data.reports_created} reportes consolidados`,
+        description: `Se generaron ${typeof data.reports_created === 'number' ? data.reports_created.toFixed(2) : data.reports_created} reportes consolidados`,
       });
 
       refetch();
