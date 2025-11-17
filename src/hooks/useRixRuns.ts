@@ -217,7 +217,11 @@ export function useRixRuns(
       const deduplicationInfo = {
         totalOriginalRecords: rixData?.length || 0,
         deduplicatedRecords: batchRecordsMap.size,
-        previousBatchMapSize: 0
+        previousBatchMapSize: previousBatchMap.size,
+        samplePreviousScores: Array.from(previousBatchMap.entries()).slice(0, 5).map(([key, score]) => ({
+          key,
+          score
+        }))
       };
 
       // CRITICAL: Process only the deduplicated records (from batchRecordsMap)
@@ -277,13 +281,22 @@ export function useRixRuns(
                 trend = 'stable';
               }
             } else {
-              // Log only when we have incomplete data
+              // Log only when we have incomplete data - with detailed key information
               console.log('⚠️ Missing data for trend:', {
                 ticker: rixRun["05_ticker"],
                 model: rixRun["02_model_name"],
                 currentBatch: executionKey,
+                currentBatchIndex,
+                previousBatchKey,
+                previousMapKey,
+                currentMapKey,
                 hasPreviousScore: previousRixScore !== undefined,
-                hasCurrentScore: currentBatchLatestScore !== undefined
+                hasCurrentScore: currentBatchLatestScore !== undefined,
+                previousScore: previousRixScore,
+                currentScore: currentBatchLatestScore,
+                // Check if keys exist in map
+                previousKeyExistsInMap: previousBatchMap.has(previousMapKey),
+                currentKeyExistsInMap: previousBatchMap.has(currentMapKey)
               });
             }
           }
@@ -348,6 +361,7 @@ export function useRixRuns(
       console.log('📈 FINAL Trend Summary:', {
         deduplication: deduplicationInfo,
         batchesFound: batchMap.size,
+        sortedBatchKeys: sortedBatches.map(([key]) => key),
         totalProcessed: joinedData.length,
         withTrend: recordsWithTrend,
         withoutTrend: recordsWithoutTrend,
@@ -358,11 +372,28 @@ export function useRixRuns(
           trend: r.trend,
           score: r["09_rix_score"]
         })),
-        samplesWithoutTrend: joinedData.filter(r => !r.trend).slice(0, 3).map(r => ({
+        samplesWithoutTrend: joinedData.filter(r => !r.trend).slice(0, 5).map(r => ({
           ticker: r["05_ticker"],
+          company: r["03_target_name"],
           model: r["02_model_name"],
-          batch: r.batchLabel
-        }))
+          batch: r.batchLabel,
+          batchDate: r.batch_execution_date
+        })),
+        // Check specific companies mentioned by user
+        specificCompanies: ['Metrovacesa', 'Arteche', 'Renta 4 Banco', 'Netex Learning'].map(name => {
+          const records = joinedData.filter(r => r["03_target_name"] === name);
+          return {
+            name,
+            recordCount: records.length,
+            withTrend: records.filter(r => r.trend).length,
+            withoutTrend: records.filter(r => !r.trend).length,
+            samples: records.slice(0, 2).map(r => ({
+              model: r["02_model_name"],
+              hasTrend: !!r.trend,
+              trend: r.trend
+            }))
+          };
+        })
       });
       
       // Apply ALL filters AFTER trend calculation
