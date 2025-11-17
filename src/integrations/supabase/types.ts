@@ -767,6 +767,48 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_trends: {
+        Row: {
+          batch_week: string
+          company_name: string
+          created_at: string | null
+          ibex_family_code: string | null
+          id: string
+          is_traded: boolean
+          model_name: string
+          rix_score: number
+          sector_category: string | null
+          stock_price: number | null
+          ticker: string
+        }
+        Insert: {
+          batch_week: string
+          company_name: string
+          created_at?: string | null
+          ibex_family_code?: string | null
+          id?: string
+          is_traded?: boolean
+          model_name: string
+          rix_score: number
+          sector_category?: string | null
+          stock_price?: number | null
+          ticker: string
+        }
+        Update: {
+          batch_week?: string
+          company_name?: string
+          created_at?: string | null
+          ibex_family_code?: string | null
+          id?: string
+          is_traded?: boolean
+          model_name?: string
+          rix_score?: number
+          sector_category?: string | null
+          stock_price?: number | null
+          ticker?: string
+        }
+        Relationships: []
+      }
       source_models: {
         Row: {
           evaluation_id: string

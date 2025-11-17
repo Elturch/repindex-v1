@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { useTrendData } from "@/hooks/useTrendData";
+import { useTrendDataLight } from "@/hooks/useTrendDataLight";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
@@ -32,79 +32,38 @@ export function MarketEvolution() {
   const { data: sectorCategories } = useSectorCategories();
   const { data: ibexFamilyCategories } = useIbexFamilyCategories();
 
-  // Get market trend data for all 4 models
-  const { data: chatGPTData, isLoading: chatGPTLoading } = useTrendData({
+  // Get market + company trend data for all 4 models (lightweight queries)
+  const { data: chatGPTData, isLoading: chatGPTLoading } = useTrendDataLight({
+    tickers: selectedCompanies,
     ibexFamily: ibexFilter,
     sector: sectorFilter,
     numWeeks,
     modelFilter: "ChatGPT"
   });
 
-  const { data: perplexityData, isLoading: perplexityLoading } = useTrendData({
+  const { data: perplexityData, isLoading: perplexityLoading } = useTrendDataLight({
+    tickers: selectedCompanies,
     ibexFamily: ibexFilter,
     sector: sectorFilter,
     numWeeks,
     modelFilter: "Perplexity"
   });
 
-  const { data: geminiData, isLoading: geminiLoading } = useTrendData({
+  const { data: geminiData, isLoading: geminiLoading } = useTrendDataLight({
+    tickers: selectedCompanies,
     ibexFamily: ibexFilter,
     sector: sectorFilter,
     numWeeks,
     modelFilter: "Google Gemini"
   });
 
-  const { data: deepseekData, isLoading: deepseekLoading } = useTrendData({
+  const { data: deepseekData, isLoading: deepseekLoading } = useTrendDataLight({
+    tickers: selectedCompanies,
     ibexFamily: ibexFilter,
     sector: sectorFilter,
     numWeeks,
     modelFilter: "Deepseek"
   });
-
-  // Get company-specific trends for all models
-  const chatGPTCompanyQueries = selectedCompanies.map(ticker =>
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useTrendData({
-      ticker,
-      ibexFamily: ibexFilter,
-      sector: sectorFilter,
-      numWeeks,
-      modelFilter: "ChatGPT"
-    })
-  );
-
-  const perplexityCompanyQueries = selectedCompanies.map(ticker =>
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useTrendData({
-      ticker,
-      ibexFamily: ibexFilter,
-      sector: sectorFilter,
-      numWeeks,
-      modelFilter: "Perplexity"
-    })
-  );
-
-  const geminiCompanyQueries = selectedCompanies.map(ticker =>
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useTrendData({
-      ticker,
-      ibexFamily: ibexFilter,
-      sector: sectorFilter,
-      numWeeks,
-      modelFilter: "Google Gemini"
-    })
-  );
-
-  const deepseekCompanyQueries = selectedCompanies.map(ticker =>
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useTrendData({
-      ticker,
-      ibexFamily: ibexFilter,
-      sector: sectorFilter,
-      numWeeks,
-      modelFilter: "Deepseek"
-    })
-  );
 
   // Filter companies by current filters (limit to 6)
   const filteredCompanies = useMemo(() => {
@@ -126,46 +85,48 @@ export function MarketEvolution() {
       .slice(0, MAX_COMPANIES);
   }, [companies, ibexFilter, sectorFilter]);
 
-  // Prepare chart data for each model
-  const prepareChartData = (marketData: any, companyQueries: any[]) => {
-    if (!marketData?.marketTrend) return [];
-
-    return marketData.marketTrend.map((point: any, index: number) => {
+  // Prepare chart data for each model (data is already combined in useTrendDataLight)
+  const prepareChartData = (data: any[]) => {
+    if (!data || data.length === 0) return [];
+    
+    return data.map((point: any) => {
       const dataPoint: any = {
         date: point.batchLabel,
-        market: point.averageRix,
+        market: point.market,
       };
-
-      // Add company data
-      selectedCompanies.forEach((ticker, companyIndex) => {
-        const companyData = companyQueries[companyIndex]?.data?.companyTrend?.[index];
-        if (companyData) {
-          dataPoint[ticker] = companyData.companyRix;
+      
+      // Add all company-specific data (RIX, price, name, isTraded)
+      selectedCompanies.forEach(ticker => {
+        if (point[ticker] !== undefined) {
+          dataPoint[ticker] = point[ticker]; // RIX score
+          dataPoint[`${ticker}_price`] = point[`${ticker}_price`] || 0;
+          dataPoint[`${ticker}_name`] = point[`${ticker}_name`] || ticker;
+          dataPoint[`${ticker}_isTraded`] = point[`${ticker}_isTraded`] || 0;
         }
       });
-
+      
       return dataPoint;
     });
   };
 
   const chatGPTChartData = useMemo(() => 
-    prepareChartData(chatGPTData, chatGPTCompanyQueries),
-    [chatGPTData, chatGPTCompanyQueries, selectedCompanies]
+    prepareChartData(chatGPTData),
+    [chatGPTData, selectedCompanies]
   );
 
   const perplexityChartData = useMemo(() => 
-    prepareChartData(perplexityData, perplexityCompanyQueries),
-    [perplexityData, perplexityCompanyQueries, selectedCompanies]
+    prepareChartData(perplexityData),
+    [perplexityData, selectedCompanies]
   );
 
   const geminiChartData = useMemo(() => 
-    prepareChartData(geminiData, geminiCompanyQueries),
-    [geminiData, geminiCompanyQueries, selectedCompanies]
+    prepareChartData(geminiData),
+    [geminiData, selectedCompanies]
   );
 
   const deepseekChartData = useMemo(() => 
-    prepareChartData(deepseekData, deepseekCompanyQueries),
-    [deepseekData, deepseekCompanyQueries, selectedCompanies]
+    prepareChartData(deepseekData),
+    [deepseekData, selectedCompanies]
   );
 
   // Add company handler with limit check
