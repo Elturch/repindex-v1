@@ -129,12 +129,15 @@ export function useRixRuns(
       const batchMap = new Map<string, { number: number; executionDate: Date }>();
       const executionDates = new Set<string>();
       
-      const normalizeToSunday = (date: Date): Date => {
+      const normalizeToMonday = (date: Date): Date => {
         const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
         const normalized = new Date(date);
-        // Normalizar al domingo del INICIO de la semana (hacia atrás)
-        // Si es domingo (0), queda igual. Si es lunes (1), retrocede 1 día al domingo anterior, etc.
-        normalized.setUTCDate(date.getUTCDate() - day);
+        // Normalizar al lunes de la semana (coincide con PostgreSQL DATE_TRUNC('week'))
+        // Si es domingo (0), retroceder 6 días al lunes anterior
+        // Si es lunes (1), quedarse igual
+        // Si es martes-sábado (2-6), retroceder al lunes
+        const daysToSubtract = day === 0 ? 6 : day - 1;
+        normalized.setUTCDate(date.getUTCDate() - daysToSubtract);
         normalized.setUTCHours(0, 0, 0, 0);
         return normalized;
       };
@@ -142,7 +145,7 @@ export function useRixRuns(
       rixData?.forEach(run => {
         if (run.batch_execution_date) {
           const batchDate = new Date(run.batch_execution_date);
-          const normalizedDate = normalizeToSunday(batchDate);
+          const normalizedDate = normalizeToMonday(batchDate);
           const executionKey = format(normalizedDate, 'yyyy-MM-dd');
           executionDates.add(executionKey);
         }
@@ -172,7 +175,7 @@ export function useRixRuns(
           recordCount: rixData?.filter(r => {
             if (!r.batch_execution_date) return false;
             const batchDate = new Date(r.batch_execution_date);
-            const normalizedDate = normalizeToSunday(batchDate);
+            const normalizedDate = normalizeToMonday(batchDate);
             return format(normalizedDate, 'yyyy-MM-dd') === key;
           }).length
         }))
@@ -195,7 +198,7 @@ export function useRixRuns(
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
         const batchDate = new Date(run.batch_execution_date);
-        const normalizedDate = normalizeToSunday(batchDate);
+        const normalizedDate = normalizeToMonday(batchDate);
         const executionKey = format(normalizedDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
         
@@ -260,7 +263,7 @@ export function useRixRuns(
         
         if (rixRun.batch_execution_date) {
           const batchDate = new Date(rixRun.batch_execution_date);
-          const normalizedDate = normalizeToSunday(batchDate);
+          const normalizedDate = normalizeToMonday(batchDate);
           executionKey = format(normalizedDate, 'yyyy-MM-dd');
           const batch = batchMap.get(executionKey);
           batchNum = batch?.number;
