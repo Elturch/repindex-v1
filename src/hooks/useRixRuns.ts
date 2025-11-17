@@ -178,12 +178,20 @@ export function useRixRuns(
       // batch_execution_date is already normalized to Sunday in the DB
       const batchRecordsMap = new Map<string, typeof rixData[0]>();
       
+      // Debug: Track Metrovacesa specifically
+      const metrovacesaKeys: string[] = [];
+      
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
         const batchDate = new Date(run.batch_execution_date);
         const executionKey = format(batchDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
+        
+        // Track Metrovacesa
+        if (run["03_target_name"] === 'Metrovacesa') {
+          metrovacesaKeys.push(mapKey);
+        }
         
         // If this key already exists, keep the record with the most recent created_at timestamp
         const existing = batchRecordsMap.get(mapKey);
@@ -192,11 +200,27 @@ export function useRixRuns(
         }
       });
       
+      console.log('🔍 Metrovacesa Keys Found:', {
+        allKeys: metrovacesaKeys,
+        uniqueKeys: [...new Set(metrovacesaKeys)],
+        inBatchRecordsMap: [...new Set(metrovacesaKeys)].filter(key => batchRecordsMap.has(key))
+      });
+      
       // Now store the scores and metrics from the most recent records
+      const metrovacesaScoresInMap: Array<{key: string, score: number}> = [];
+      
       batchRecordsMap.forEach((run, mapKey) => {
         // Store RIX score
         if (run["09_rix_score"] !== null && run["09_rix_score"] !== undefined) {
           previousBatchMap.set(mapKey, run["09_rix_score"]);
+          
+          // Track Metrovacesa scores
+          if (run["03_target_name"] === 'Metrovacesa') {
+            metrovacesaScoresInMap.push({
+              key: mapKey,
+              score: run["09_rix_score"]
+            });
+          }
         }
         
         // Store all metrics
@@ -211,6 +235,8 @@ export function useRixRuns(
           cxm: run["44_cxm_score"],
         });
       });
+      
+      console.log('🔍 Metrovacesa Scores in previousBatchMap:', metrovacesaScoresInMap);
 
       
       // Store deduplication results for final summary
@@ -282,7 +308,10 @@ export function useRixRuns(
               }
             } else {
               // Log only when we have incomplete data - with detailed key information
-              console.log('⚠️ Missing data for trend:', {
+              const isMetrovacesa = rixRun["03_target_name"] === 'Metrovacesa';
+              
+              console.log(isMetrovacesa ? '🚨 Metrovacesa Missing data for trend:' : '⚠️ Missing data for trend:', {
+                company: rixRun["03_target_name"],
                 ticker: rixRun["05_ticker"],
                 model: rixRun["02_model_name"],
                 currentBatch: executionKey,
@@ -296,7 +325,11 @@ export function useRixRuns(
                 currentScore: currentBatchLatestScore,
                 // Check if keys exist in map
                 previousKeyExistsInMap: previousBatchMap.has(previousMapKey),
-                currentKeyExistsInMap: previousBatchMap.has(currentMapKey)
+                currentKeyExistsInMap: previousBatchMap.has(currentMapKey),
+                // For Metrovacesa, show what keys ARE in the map
+                ...(isMetrovacesa && {
+                  allMetrovacesaKeysInMap: Array.from(previousBatchMap.keys()).filter(k => k.startsWith('MVC_'))
+                })
               });
             }
           }
