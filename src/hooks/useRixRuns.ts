@@ -225,6 +225,11 @@ export function useRixRuns(
           score: run["09_rix_score"]
         }))
       });
+      
+      console.log('📊 Previous Batch Map Size:', previousBatchMap.size);
+      console.log('📊 Sample Previous Scores:', 
+        Array.from(previousBatchMap.entries()).slice(0, 10)
+      );
 
       // CRITICAL: Process only the deduplicated records (from batchRecordsMap)
       // This ensures every record has proper trend calculation
@@ -275,15 +280,20 @@ export function useRixRuns(
               // This ensures consistent comparison regardless of which specific record we're displaying
               const delta = currentBatchLatestScore - previousRixScore;
               
-              console.log('📊 Trend Calculation:', {
-                ticker: rixRun["05_ticker"],
-                model: rixRun["02_model_name"],
-                currentBatch: executionKey,
-                previousBatch: previousBatchKey,
-                currentScore: currentBatchLatestScore,
-                previousScore: previousRixScore,
-                delta
-              });
+              // Only log when trend is undefined (debugging missing trends)
+              if (!trend) {
+                console.log('⚠️ NO TREND calculated:', {
+                  ticker: rixRun["05_ticker"],
+                  model: rixRun["02_model_name"],
+                  currentBatch: executionKey,
+                  previousBatch: previousBatchKey,
+                  currentMapKey: currentMapKey,
+                  previousMapKey: previousMapKey,
+                  currentScore: currentBatchLatestScore,
+                  previousScore: previousRixScore,
+                  delta
+                });
+              }
               
               if (delta > 0) {
                 trend = 'up';
@@ -348,6 +358,15 @@ export function useRixRuns(
         };
       });
 
+      // Count records with trends
+      const recordsWithTrend = joinedData.filter(r => r.trend !== undefined).length;
+      console.log('📈 Trend Calculation Summary:', {
+        totalRecords: joinedData.length,
+        recordsWithTrend,
+        recordsWithoutTrend: joinedData.length - recordsWithTrend,
+        percentageWithTrend: ((recordsWithTrend / joinedData.length) * 100).toFixed(1) + '%'
+      });
+      
       // Apply ALL filters AFTER trend calculation
       let filteredData = joinedData;
       
