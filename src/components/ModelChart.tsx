@@ -1,3 +1,4 @@
+import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -20,6 +21,33 @@ const COMPANY_COLORS = [
   'hsl(var(--chart-5))',
   'hsl(var(--destructive))',
 ];
+
+// Calculate dynamic domain for index values
+const calculateIndexDomain = (chartData: any[], selectedCompanies: string[]): [number, number] => {
+  if (!chartData || chartData.length === 0) return [70, 130];
+  
+  const allIndexValues: number[] = [];
+  
+  chartData.forEach(point => {
+    if (point.market_index) allIndexValues.push(point.market_index);
+    selectedCompanies.forEach(ticker => {
+      if (point[`${ticker}_rix_index`]) allIndexValues.push(point[`${ticker}_rix_index`]);
+      if (point[`${ticker}_price_index`]) allIndexValues.push(point[`${ticker}_price_index`]);
+    });
+  });
+  
+  if (allIndexValues.length === 0) return [70, 130];
+  
+  const minValue = Math.min(...allIndexValues);
+  const maxValue = Math.max(...allIndexValues);
+  const range = maxValue - minValue;
+  const padding = Math.max(range * 0.15, 5);
+  
+  return [
+    Math.floor(minValue - padding),
+    Math.ceil(maxValue + padding)
+  ];
+};
 
 export function ModelChart({
   modelName,
@@ -45,6 +73,9 @@ export function ModelChart({
     );
   }
 
+  // Calculate dynamic index domain
+  const indexDomain = calculateIndexDomain(chartData, selectedCompanies);
+
   return (
     <Card>
       <CardHeader>
@@ -63,32 +94,16 @@ export function ModelChart({
               fontSize={12}
             />
             
-            {/* Eje izquierdo: RIX Score (0-100) */}
+            {/* Single Y-axis: Base 100 Index */}
             <YAxis 
-              yAxisId="left"
               stroke="hsl(var(--muted-foreground))"
               fontSize={12}
-              domain={[30, 100]}
+              domain={indexDomain}
               label={{ 
-                value: 'RIX Score', 
+                value: 'Índice Base 100', 
                 angle: -90, 
                 position: 'insideLeft',
-                style: { fill: 'hsl(var(--muted-foreground))' }
-              }}
-            />
-            
-            {/* Eje derecho: Precio (€) */}
-            <YAxis 
-              yAxisId="right"
-              orientation="right"
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={12}
-              domain={['auto', 'auto']}
-              label={{ 
-                value: 'Precio (€)', 
-                angle: 90, 
-                position: 'insideRight',
-                style: { fill: 'hsl(var(--muted-foreground))' }
+                style: { fill: 'hsl(var(--muted-foreground))', textAnchor: 'middle' }
               }}
             />
             
@@ -101,52 +116,47 @@ export function ModelChart({
             />
             <Legend />
             
-            {/* Market average line (RIX) */}
+            {/* Market average RIX index */}
             <Line
-              yAxisId="left"
               type="monotone"
-              dataKey="market"
-              stroke="hsl(var(--primary))"
+              dataKey="market_index"
+              stroke="hsl(var(--muted-foreground))"
               strokeWidth={2}
-              name="Media del Mercado (RIX)"
-              dot={{ r: 4 }}
+              name="Media Mercado"
+              dot={false}
             />
             
-            {/* Company RIX lines */}
-            {selectedCompanies.map((ticker, index) => (
-              <Line
-                key={`${ticker}-rix`}
-                yAxisId="left"
-                type="monotone"
-                dataKey={ticker}
-                stroke={COMPANY_COLORS[index % COMPANY_COLORS.length]}
-                strokeWidth={2}
-                name={`${ticker} (RIX)`}
-                dot={{ r: 3 }}
-              />
-            ))}
-            
-            {/* Company price lines (only for traded companies) */}
+            {/* Company RIX and Price indices */}
             {selectedCompanies.map((ticker, index) => {
-              // Check if this company has price data in any data point
-              const hasPrice = chartData.some(d => 
-                d[`${ticker}_isTraded`] && d[`${ticker}_price`] && d[`${ticker}_price`] > 0
-              );
-              
-              if (!hasPrice) return null;
+              const color = COMPANY_COLORS[index % COMPANY_COLORS.length];
+              const companyName = chartData[0]?.[`${ticker}_name`] || ticker;
+              const isTraded = chartData[0]?.[`${ticker}_isTraded`] || false;
               
               return (
-                <Line
-                  key={`${ticker}-price`}
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey={`${ticker}_price`}
-                  stroke={COMPANY_COLORS[index % COMPANY_COLORS.length]}
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
-                  name={`${ticker} (€)`}
-                  dot={{ r: 3 }}
-                />
+                <React.Fragment key={ticker}>
+                  {/* RIX Index line (always show) */}
+                  <Line
+                    type="monotone"
+                    dataKey={`${ticker}_rix_index`}
+                    stroke={color}
+                    strokeWidth={2}
+                    name={`${companyName} RIX`}
+                    dot={false}
+                  />
+                  
+                  {/* Price Index line (only if traded and has data) */}
+                  {isTraded && chartData.some(d => d[`${ticker}_price_index`]) && (
+                    <Line
+                      type="monotone"
+                      dataKey={`${ticker}_price_index`}
+                      stroke={color}
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      name={`${companyName} Precio`}
+                      dot={false}
+                    />
+                  )}
+                </React.Fragment>
               );
             })}
           </LineChart>
