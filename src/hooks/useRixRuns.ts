@@ -95,10 +95,10 @@ export function useRixRuns(
       // Fetch at least the last 5 batches worth of data (~3500 records)
       const { data: rixData, error: rixError } = await supabase
         .from("rix_runs")
-        .select("*")
-        .limit(3500)
+        .select("*", { count: 'exact' })
         .order("batch_execution_date", { ascending: false })
-        .order("09_rix_score", { ascending: false });
+        .order("09_rix_score", { ascending: false })
+        .range(0, 3499);
 
       if (rixError) {
         throw rixError;
