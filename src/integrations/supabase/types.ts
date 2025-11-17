@@ -1029,6 +1029,7 @@ export type Database = {
           similarity: number
         }[]
       }
+      normalize_stock_price: { Args: { price_text: string }; Returns: number }
     }
     Enums: {
       [_ in never]: never
