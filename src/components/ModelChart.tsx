@@ -68,7 +68,7 @@ export function ModelChart({
               yAxisId="left"
               stroke="hsl(var(--muted-foreground))"
               fontSize={12}
-              domain={[0, 100]}
+              domain={[30, 100]}
               label={{ 
                 value: 'RIX Score', 
                 angle: -90, 
