@@ -253,7 +253,8 @@ export function useRixRuns(
             : undefined;
         }
         
-        // Calculate trend for RIX score - use 09_rix_score directly to include runs with RMM=0
+        // Calculate trend for RIX score
+        // IMPORTANT: Always use the LATEST record from the current batch to compare with the LATEST from previous batch
         let trend: 'up' | 'down' | 'stable' | undefined;
         let previousRixScore: number | undefined;
         
@@ -263,24 +264,16 @@ export function useRixRuns(
           
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
-            const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
-            previousRixScore = previousBatchMap.get(mapKey);
+            const previousMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
+            const currentMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
+            
+            previousRixScore = previousBatchMap.get(previousMapKey);
+            const currentBatchLatestScore = previousBatchMap.get(currentMapKey); // This has the latest score from current batch
           
-            if (previousRixScore !== undefined) {
-              // Use displayRixScore for the comparison to respect CXM exclusions
-              const currentScore = displayRixScore !== null && displayRixScore !== undefined ? displayRixScore : rixRun["09_rix_score"];
-              const delta = currentScore - previousRixScore;
-              
-              // Debug trend calculation
-              console.log('📊 Trend Calculation:', {
-                ticker: rixRun["05_ticker"],
-                model: rixRun["02_model_name"],
-                currentBatch: executionKey,
-                previousBatch: sortedBatches[currentBatchIndex - 1][0],
-                currentScore,
-                previousRixScore,
-                delta
-              });
+            if (previousRixScore !== undefined && currentBatchLatestScore !== undefined) {
+              // Always use the LATEST score from the current batch (from the deduplication)
+              // This ensures consistent comparison regardless of which specific record we're displaying
+              const delta = currentBatchLatestScore - previousRixScore;
               
               if (delta > 0) {
                 trend = 'up';
@@ -294,6 +287,7 @@ export function useRixRuns(
         }
         
         // Calculate trends for all 8 metrics
+        // Use the same logic: always compare the latest record from current batch with latest from previous batch
         let metricTrends: RixRun['metricTrends'] = {};
         
         if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey) {
@@ -301,37 +295,29 @@ export function useRixRuns(
           const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
-            const mapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
-            const previousMetrics = previousMetricsMap.get(mapKey);
-          
-            if (previousMetrics) {
-            const currentMetrics = {
-              nvm: rixRun["23_nvm_score"],
-              drm: rixRun["26_drm_score"],
-              sim: rixRun["29_sim_score"],
-              rmm: rixRun["32_rmm_score"],
-              cem: rixRun["35_cem_score"],
-              gam: rixRun["38_gam_score"],
-              dcm: rixRun["41_dcm_score"],
-              cxm: rixRun["44_cxm_score"],
-            };
+            const previousMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
+            const currentMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
             
-            // Calculate trend for each metric
-            (Object.keys(currentMetrics) as Array<keyof typeof currentMetrics>).forEach(key => {
-              const current = currentMetrics[key];
-              const previous = previousMetrics[key];
-              
-              if (current !== null && current !== undefined && previous !== null && previous !== undefined) {
-                const delta = current - previous;
-                if (delta > 0) {
-                  metricTrends[key] = 'up';
-                } else if (delta < 0) {
-                  metricTrends[key] = 'down';
-                } else {
-                  metricTrends[key] = 'stable';
+            const previousMetrics = previousMetricsMap.get(previousMapKey);
+            const currentMetrics = previousMetricsMap.get(currentMapKey); // Latest metrics from current batch
+          
+            if (previousMetrics && currentMetrics) {
+              // Calculate trend for each metric using the latest values from both batches
+              (Object.keys(currentMetrics) as Array<keyof typeof currentMetrics>).forEach(key => {
+                const current = currentMetrics[key];
+                const previous = previousMetrics[key];
+                
+                if (current !== null && current !== undefined && previous !== null && previous !== undefined) {
+                  const delta = current - previous;
+                  if (delta > 0) {
+                    metricTrends[key] = 'up';
+                  } else if (delta < 0) {
+                    metricTrends[key] = 'down';
+                  } else {
+                    metricTrends[key] = 'stable';
+                  }
                 }
-              }
-            });
+              });
             }
           }
         }
