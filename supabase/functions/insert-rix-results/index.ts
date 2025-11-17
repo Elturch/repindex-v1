@@ -44,6 +44,52 @@ interface PariResult {
     }
     flags: string[]
   }
+  // Campos adicionales opcionales
+  precio_accion?: string | null
+}
+
+// Helper function to validate and normalize stock prices
+function validateAndNormalizePrice(
+  priceText: string | null | undefined, 
+  ticker: string | null
+): string | null {
+  if (!priceText || priceText === 'NC' || priceText === 'N/A') return null;
+  
+  // Limpiar formato (quitar €, comas, espacios, etc)
+  const cleanPrice = String(priceText).replace(/[€,\s]/g, '').trim();
+  let price = parseFloat(cleanPrice);
+  
+  if (isNaN(price) || price <= 0) return null;
+  
+  // Rango esperado de precios de acciones
+  const MIN_VALID = 0.01;
+  const MAX_VALID = 1000;
+  
+  // Si ya está en rango válido, retornar con 2 decimales
+  if (price >= MIN_VALID && price <= MAX_VALID) {
+    return price.toFixed(2);
+  }
+  
+  // Auto-normalización por rangos
+  if (price >= 1000000) {
+    price = price / 1000000;
+  } else if (price >= 100000) {
+    // Ambiguo: probar ambas divisiones y elegir la que esté en rango válido
+    const opt1 = price / 100000;
+    const opt2 = price / 1000;
+    price = (opt1 >= MIN_VALID && opt1 <= MAX_VALID) ? opt1 : opt2;
+  } else if (price >= 10000) {
+    price = price / 1000;
+  } else if (price >= 1000) {
+    price = price / 100;
+  }
+  
+  // Log para debugging
+  if (price < MIN_VALID || price > MAX_VALID) {
+    console.warn(`⚠️ Precio sospechoso para ${ticker || 'unknown'}: ${price}€ (original: ${priceText})`);
+  }
+  
+  return price.toFixed(2);
 }
 
 // Helper function to safely convert any value to an integer, with robust validation
@@ -696,6 +742,12 @@ serve(async (req) => {
         .map(subscore => subscore.explicacion)
         .filter(explicacion => explicacion && explicacion.trim().length > 0)
 
+      // Validar y normalizar precio de acción si existe
+      const normalizedPrice = validateAndNormalizePrice(result.precio_accion, mappedTicker);
+      if (normalizedPrice && mappedTicker) {
+        console.log(`💰 Precio normalizado para ${mappedTicker}: ${result.precio_accion} -> ${normalizedPrice}€`);
+      }
+
       const insertData: Record<string, any> = {
         "02_model_name": result.meta.model_name,
         "03_target_name": result.meta.target_name,
@@ -723,6 +775,7 @@ serve(async (req) => {
         "22_explicacion": processExplanationField(result.relato_mini.explicacion),
         "25_explicaciones_detalladas": detailedExplanations.length > 0 ? detailedExplanations : null,
         "47_fase": result.meta.target_type || null,
+        "48_precio_accion": normalizedPrice,
         "51_pari_score_adjusted": adjustedPariScore !== null ? ensureInteger(adjustedPariScore, 0, "51_pari_score_adjusted") : null,
         "52_mpi_excluded": mpiExcluded,
         ...metricsMap
