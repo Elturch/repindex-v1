@@ -79,10 +79,9 @@ export function MarketEvolution() {
       filtered = filtered.filter(c => c.sector_category === sectorFilter);
     }
     
-    // Sort and limit to first 6
+    // Sort alphabetically
     return filtered
-      .sort((a, b) => a.issuer_name.localeCompare(b.issuer_name))
-      .slice(0, MAX_COMPANIES);
+      .sort((a, b) => a.issuer_name.localeCompare(b.issuer_name));
   }, [companies, ibexFilter, sectorFilter]);
 
   // Prepare chart data for each model (data is already combined in useTrendDataLight)
