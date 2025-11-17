@@ -81,7 +81,7 @@ const InsertRixResults = () => {
 
       toast({
         title: "Éxito",
-        description: `Se insertaron ${data.inserted_count} registros correctamente`,
+        description: `Se insertaron ${typeof data.inserted_count === 'number' ? data.inserted_count.toFixed(2) : data.inserted_count} registros correctamente`,
       });
 
       setJsonData('');
