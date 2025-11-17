@@ -81,6 +81,41 @@ export interface RixRun {
   } | null;
 }
 
+// Helper function to fetch all records with pagination
+async function fetchAllRixRuns() {
+  const pageSize = 1000;
+  let allData: any[] = [];
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const start = page * pageSize;
+    const end = start + pageSize - 1;
+    
+    const { data, error } = await supabase
+      .from("rix_runs")
+      .select("*")
+      .order("batch_execution_date", { ascending: false })
+      .order("09_rix_score", { ascending: false })
+      .range(start, end);
+
+    if (error) {
+      throw error;
+    }
+
+    if (data && data.length > 0) {
+      allData = [...allData, ...data];
+      hasMore = data.length === pageSize;
+      page++;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  console.log(`📦 Loaded ${allData.length} total rix_runs records across ${page} pages`);
+  return allData;
+}
+
 export function useRixRuns(
   searchQuery?: string, 
   modelFilter?: string, 
@@ -92,16 +127,11 @@ export function useRixRuns(
     queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter],
     queryFn: async () => {
       // ALWAYS fetch ALL rix_runs data for trend calculation (no filters)
-      // Fetch at least the last 5 batches worth of data (~3500 records)
-      const { data: rixData, error: rixError } = await supabase
-        .from("rix_runs")
-        .select("*", { count: 'exact' })
-        .order("batch_execution_date", { ascending: false })
-        .order("09_rix_score", { ascending: false })
-        .range(0, 3499);
+      // Use pagination to load all records (Supabase has 1000 record limit per request)
+      const rixData = await fetchAllRixRuns();
 
-      if (rixError) {
-        throw rixError;
+      if (!rixData) {
+        throw new Error("No data returned from fetchAllRixRuns");
       }
 
       // Get repindex data to join with rix_runs
