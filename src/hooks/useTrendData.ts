@@ -68,17 +68,18 @@ export function useTrendData({
         };
       }
 
-      // Normalize all dates to Sunday to ensure consistent grouping across weeks
-      const normalizeToSunday = (date: Date): Date => {
+      // Normalize all dates to Monday to ensure consistent grouping across weeks (matches PostgreSQL DATE_TRUNC('week'))
+      const normalizeToMonday = (date: Date): Date => {
         const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
-        const daysToAdd = day === 0 ? 0 : 7 - day; // Days until next Sunday
         const normalized = new Date(date);
-        normalized.setUTCDate(date.getUTCDate() + daysToAdd);
+        // Normalizar al lunes de la semana
+        const daysToSubtract = day === 0 ? 6 : day - 1;
+        normalized.setUTCDate(date.getUTCDate() - daysToSubtract);
         normalized.setUTCHours(0, 0, 0, 0);
         return normalized;
       };
 
-      // Group by batch_execution_date (normalized to Sunday)
+      // Group by batch_execution_date (normalized to Monday)
       // First, keep only the most recent record for each ticker/batch combination
       const batchRecordsMap = new Map<string, typeof allRuns[0]>();
       
@@ -87,7 +88,7 @@ export function useTrendData({
         if (run["32_rmm_score"] === 0) return;
         
         const batchDate = new Date(run.batch_execution_date);
-        const normalizedDate = normalizeToSunday(batchDate);
+        const normalizedDate = normalizeToMonday(batchDate);
         const batchKey = format(normalizedDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${batchKey}`;
         
@@ -103,7 +104,7 @@ export function useTrendData({
       
       batchRecordsMap.forEach(run => {
         const batchDate = new Date(run.batch_execution_date);
-        const normalizedDate = normalizeToSunday(batchDate);
+        const normalizedDate = normalizeToMonday(batchDate);
         const batchKey = format(normalizedDate, 'yyyy-MM-dd');
         
         if (!batchGroups.has(batchKey)) {
