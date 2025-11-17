@@ -131,9 +131,10 @@ export function useRixRuns(
       
       const normalizeToSunday = (date: Date): Date => {
         const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
-        const daysToAdd = day === 0 ? 0 : 7 - day; // Days until next Sunday
         const normalized = new Date(date);
-        normalized.setUTCDate(date.getUTCDate() + daysToAdd);
+        // Normalizar al domingo del INICIO de la semana (hacia atrás)
+        // Si es domingo (0), queda igual. Si es lunes (1), retrocede 1 día al domingo anterior, etc.
+        normalized.setUTCDate(date.getUTCDate() - day);
         normalized.setUTCHours(0, 0, 0, 0);
         return normalized;
       };
