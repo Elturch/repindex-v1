@@ -134,6 +134,69 @@ export type Database = {
           },
         ]
       }
+      chat_history: {
+        Row: {
+          answer: string | null
+          created_at: string | null
+          id: string
+          question: string
+          result: Json | null
+          session_id: string
+          sql_query: string | null
+        }
+        Insert: {
+          answer?: string | null
+          created_at?: string | null
+          id?: string
+          question: string
+          result?: Json | null
+          session_id: string
+          sql_query?: string | null
+        }
+        Update: {
+          answer?: string | null
+          created_at?: string | null
+          id?: string
+          question?: string
+          result?: Json | null
+          session_id?: string
+          sql_query?: string | null
+        }
+        Relationships: []
+      }
+      chat_vector_memory: {
+        Row: {
+          created_at: string | null
+          embedding: string | null
+          id: string
+          mensaje_usuario: string
+          metadata: Json | null
+          respuesta_bot: string | null
+          session_id: string
+          sql_generado: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          mensaje_usuario: string
+          metadata?: Json | null
+          respuesta_bot?: string | null
+          session_id: string
+          sql_generado?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          embedding?: string | null
+          id?: string
+          mensaje_usuario?: string
+          metadata?: Json | null
+          respuesta_bot?: string | null
+          session_id?: string
+          sql_generado?: string | null
+        }
+        Relationships: []
+      }
       contadores: {
         Row: {
           citation_density: number
@@ -899,6 +962,22 @@ export type Database = {
       }
     }
     Functions: {
+      buscar_contexto_similar: {
+        Args: {
+          limit_results?: number
+          query_embedding: string
+          session_filter?: string
+        }
+        Returns: {
+          id: string
+          mensaje_usuario: string
+          respuesta_bot: string
+          session_id: string
+          similarity: number
+          sql_generado: string
+        }[]
+      }
+      execute_sql: { Args: { sql_query: string }; Returns: Json }
       match_documents: {
         Args: { filter?: Json; match_count?: number; query_embedding: string }
         Returns: {

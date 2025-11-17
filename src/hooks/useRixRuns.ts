@@ -185,8 +185,11 @@ export function useRixRuns(
       const sortedBatches = Array.from(batchMap.entries())
         .sort((a, b) => a[0].localeCompare(b[0])); // Sort chronologically (oldest first)
       
-      // FIRST LOOP: Store ALL runs in maps (no filtering)
-      // Normalize dates to Sunday to ensure consistent key generation
+      // FIRST LOOP: Store the MOST RECENT run for each ticker/model/batch combination
+      // This handles cases where there are multiple runs in the same week (e.g., Saturday + Sunday)
+      // Group by normalized Sunday and keep only the most recent record
+      const batchRecordsMap = new Map<string, typeof rixData[0]>();
+      
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
@@ -195,6 +198,15 @@ export function useRixRuns(
         const executionKey = format(normalizedDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
         
+        // If this key already exists, keep the record with the most recent batch_execution_date
+        const existing = batchRecordsMap.get(mapKey);
+        if (!existing || new Date(run.batch_execution_date) > new Date(existing.batch_execution_date)) {
+          batchRecordsMap.set(mapKey, run);
+        }
+      });
+      
+      // Now store the scores and metrics from the most recent records
+      batchRecordsMap.forEach((run, mapKey) => {
         // Store RIX score
         if (run["09_rix_score"] !== null && run["09_rix_score"] !== undefined) {
           previousBatchMap.set(mapKey, run["09_rix_score"]);
