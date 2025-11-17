@@ -225,8 +225,23 @@ export function useRixRuns(
         });
       });
 
-      // Join the data and add validation flags + batch info + trend
-      const joinedData = rixData?.map(rixRun => {
+      
+      // Debug logging for deduplication
+      console.log('🔄 Deduplication Results:', {
+        totalOriginalRecords: rixData?.length || 0,
+        deduplicatedRecords: batchRecordsMap.size,
+        sampleDeduplicated: Array.from(batchRecordsMap.entries()).slice(0, 5).map(([key, run]) => ({
+          key,
+          ticker: run["05_ticker"],
+          model: run["02_model_name"],
+          date: run.batch_execution_date,
+          score: run["09_rix_score"]
+        }))
+      });
+
+      // CRITICAL: Process only the deduplicated records (from batchRecordsMap)
+      // This ensures every record has proper trend calculation
+      const joinedData = Array.from(batchRecordsMap.values()).map(rixRun => {
         const isRmmZero = rixRun["32_rmm_score"] === 0;
         const cxmExcluded = rixRun["52_cxm_excluded"] === true;
         const adjustedScore = rixRun["51_rix_score_adjusted"];
@@ -274,6 +289,16 @@ export function useRixRuns(
               // Always use the LATEST score from the current batch (from the deduplication)
               // This ensures consistent comparison regardless of which specific record we're displaying
               const delta = currentBatchLatestScore - previousRixScore;
+              
+              console.log('📊 Trend Calculation:', {
+                ticker: rixRun["05_ticker"],
+                model: rixRun["02_model_name"],
+                currentBatch: executionKey,
+                previousBatch: previousBatchKey,
+                currentScore: currentBatchLatestScore,
+                previousScore: previousRixScore,
+                delta
+              });
               
               if (delta > 0) {
                 trend = 'up';
