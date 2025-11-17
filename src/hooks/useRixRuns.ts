@@ -125,28 +125,14 @@ export function useRixRuns(
       }
 
       // Group runs by batch_execution_date and assign batch numbers
-      // Normalize all dates to Sunday to ensure consistent grouping
+      // Group runs by batch_execution_date (already normalized to Sunday in DB)
       const batchMap = new Map<string, { number: number; executionDate: Date }>();
       const executionDates = new Set<string>();
-      
-      const normalizeToSunday = (date: Date): Date => {
-        const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
-        const normalized = new Date(date);
-        // Normalizar al domingo de ESA MISMA semana
-        // Si es domingo (0), queda igual
-        // Si es sábado (6), +1 día = domingo siguiente
-        // Si es lunes-viernes, avanzar al domingo de esa semana
-        const daysToAdd = day === 0 ? 0 : 7 - day;
-        normalized.setUTCDate(date.getUTCDate() + daysToAdd);
-        normalized.setUTCHours(0, 0, 0, 0);
-        return normalized;
-      };
       
       rixData?.forEach(run => {
         if (run.batch_execution_date) {
           const batchDate = new Date(run.batch_execution_date);
-          const normalizedDate = normalizeToSunday(batchDate);
-          const executionKey = format(normalizedDate, 'yyyy-MM-dd');
+          const executionKey = format(batchDate, 'yyyy-MM-dd');
           executionDates.add(executionKey);
         }
       });
@@ -175,8 +161,7 @@ export function useRixRuns(
           recordCount: rixData?.filter(r => {
             if (!r.batch_execution_date) return false;
             const batchDate = new Date(r.batch_execution_date);
-            const normalizedDate = normalizeToSunday(batchDate);
-            return format(normalizedDate, 'yyyy-MM-dd') === key;
+            return format(batchDate, 'yyyy-MM-dd') === key;
           }).length
         }))
       });
@@ -190,21 +175,19 @@ export function useRixRuns(
         .sort((a, b) => a[0].localeCompare(b[0])); // Sort chronologically (oldest first)
       
       // FIRST LOOP: Store the MOST RECENT run for each ticker/model/batch combination
-      // This handles cases where there are multiple runs in the same week (e.g., Saturday + Sunday)
-      // Group by normalized Sunday and keep only the most recent record
+      // batch_execution_date is already normalized to Sunday in the DB
       const batchRecordsMap = new Map<string, typeof rixData[0]>();
       
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
         
         const batchDate = new Date(run.batch_execution_date);
-        const normalizedDate = normalizeToSunday(batchDate);
-        const executionKey = format(normalizedDate, 'yyyy-MM-dd');
+        const executionKey = format(batchDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
         
-        // If this key already exists, keep the record with the most recent batch_execution_date
+        // If this key already exists, keep the record with the most recent created_at timestamp
         const existing = batchRecordsMap.get(mapKey);
-        if (!existing || new Date(run.batch_execution_date) > new Date(existing.batch_execution_date)) {
+        if (!existing || new Date(run.created_at) > new Date(existing.created_at)) {
           batchRecordsMap.set(mapKey, run);
         }
       });
@@ -255,16 +238,14 @@ export function useRixRuns(
           ? adjustedScore
           : rixRun["09_rix_score"];
         
-        // Calculate batch information from batch_execution_date
-        // Normalize to Sunday for consistent grouping
+        // Calculate batch information from batch_execution_date (already normalized to Sunday in DB)
         let executionKey: string | undefined;
         let batchNum: number | undefined;
         let batchLabel: string | undefined;
         
         if (rixRun.batch_execution_date) {
           const batchDate = new Date(rixRun.batch_execution_date);
-          const normalizedDate = normalizeToSunday(batchDate);
-          executionKey = format(normalizedDate, 'yyyy-MM-dd');
+          executionKey = format(batchDate, 'yyyy-MM-dd');
           const batch = batchMap.get(executionKey);
           batchNum = batch?.number;
           batchLabel = batch

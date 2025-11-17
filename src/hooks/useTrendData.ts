@@ -68,19 +68,7 @@ export function useTrendData({
         };
       }
 
-      // Normalize all dates to Sunday to ensure consistent grouping across weeks
-      const normalizeToSunday = (date: Date): Date => {
-        const day = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
-        const normalized = new Date(date);
-        // Normalizar al domingo de ESA MISMA semana
-        // Si es domingo (0), queda igual. Si es sábado (6), +1 día. Otros días, avanzar al domingo
-        const daysToAdd = day === 0 ? 0 : 7 - day;
-        normalized.setUTCDate(date.getUTCDate() + daysToAdd);
-        normalized.setUTCHours(0, 0, 0, 0);
-        return normalized;
-      };
-
-      // Group by batch_execution_date (normalized to Sunday)
+      // Group by batch_execution_date (already normalized to Sunday in DB)
       // First, keep only the most recent record for each ticker/batch combination
       const batchRecordsMap = new Map<string, typeof allRuns[0]>();
       
@@ -89,11 +77,10 @@ export function useTrendData({
         if (run["32_rmm_score"] === 0) return;
         
         const batchDate = new Date(run.batch_execution_date);
-        const normalizedDate = normalizeToSunday(batchDate);
-        const batchKey = format(normalizedDate, 'yyyy-MM-dd');
+        const batchKey = format(batchDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${batchKey}`;
         
-        // Keep the most recent record for each ticker/batch
+        // Keep the most recent record for each ticker/batch (by batch_execution_date)
         const existing = batchRecordsMap.get(mapKey);
         if (!existing || new Date(run.batch_execution_date) > new Date(existing.batch_execution_date)) {
           batchRecordsMap.set(mapKey, run);
@@ -105,8 +92,7 @@ export function useTrendData({
       
       batchRecordsMap.forEach(run => {
         const batchDate = new Date(run.batch_execution_date);
-        const normalizedDate = normalizeToSunday(batchDate);
-        const batchKey = format(normalizedDate, 'yyyy-MM-dd');
+        const batchKey = format(batchDate, 'yyyy-MM-dd');
         
         if (!batchGroups.has(batchKey)) {
           batchGroups.set(batchKey, { scores: [] });
