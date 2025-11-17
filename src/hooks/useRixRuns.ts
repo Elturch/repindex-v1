@@ -166,20 +166,12 @@ export function useRixRuns(
         }))
       });
 
-      // Create maps to find previous batch scores for trend calculation
-      const previousBatchMap = new Map<string, number>(); // key: ticker_model_batchDate, value: rix_score
-      const previousMetricsMap = new Map<string, any>(); // key: ticker_model_batchDate, value: metrics object
-      
-      // Group runs by ticker and model, then find previous batch score
+      // Sort batches chronologically for trend calculation
       const sortedBatches = Array.from(batchMap.entries())
         .sort((a, b) => a[0].localeCompare(b[0])); // Sort chronologically (oldest first)
-      
-      // FIRST LOOP: Store the MOST RECENT run for each ticker/model/batch combination
-      // batch_execution_date is already normalized to Sunday in the DB
+
+      // Build a map of deduplicated records (most recent for each ticker/model/batch combination)
       const batchRecordsMap = new Map<string, typeof rixData[0]>();
-      
-      // Debug: Track Metrovacesa specifically
-      const metrovacesaKeys: string[] = [];
       
       rixData?.forEach(run => {
         if (!run["05_ticker"] || !run["02_model_name"] || !run.batch_execution_date) return;
@@ -188,67 +180,12 @@ export function useRixRuns(
         const executionKey = format(batchDate, 'yyyy-MM-dd');
         const mapKey = `${run["05_ticker"]}_${run["02_model_name"]}_${executionKey}`;
         
-        // Track Metrovacesa
-        if (run["03_target_name"] === 'Metrovacesa') {
-          metrovacesaKeys.push(mapKey);
-        }
-        
-        // If this key already exists, keep the record with the most recent created_at timestamp
+        // Keep the record with the most recent created_at timestamp
         const existing = batchRecordsMap.get(mapKey);
         if (!existing || new Date(run.created_at) > new Date(existing.created_at)) {
           batchRecordsMap.set(mapKey, run);
         }
       });
-      
-      console.log('🔍 Metrovacesa Keys Found:', {
-        allKeys: metrovacesaKeys,
-        uniqueKeys: [...new Set(metrovacesaKeys)],
-        inBatchRecordsMap: [...new Set(metrovacesaKeys)].filter(key => batchRecordsMap.has(key))
-      });
-      
-      // Now store the scores and metrics from the most recent records
-      const metrovacesaScoresInMap: Array<{key: string, score: number}> = [];
-      
-      batchRecordsMap.forEach((run, mapKey) => {
-        // Store RIX score
-        if (run["09_rix_score"] !== null && run["09_rix_score"] !== undefined) {
-          previousBatchMap.set(mapKey, run["09_rix_score"]);
-          
-          // Track Metrovacesa scores
-          if (run["03_target_name"] === 'Metrovacesa') {
-            metrovacesaScoresInMap.push({
-              key: mapKey,
-              score: run["09_rix_score"]
-            });
-          }
-        }
-        
-        // Store all metrics
-        previousMetricsMap.set(mapKey, {
-          nvm: run["23_nvm_score"],
-          drm: run["26_drm_score"],
-          sim: run["29_sim_score"],
-          rmm: run["32_rmm_score"],
-          cem: run["35_cem_score"],
-          gam: run["38_gam_score"],
-          dcm: run["41_dcm_score"],
-          cxm: run["44_cxm_score"],
-        });
-      });
-      
-      console.log('🔍 Metrovacesa Scores in previousBatchMap:', metrovacesaScoresInMap);
-
-      
-      // Store deduplication results for final summary
-      const deduplicationInfo = {
-        totalOriginalRecords: rixData?.length || 0,
-        deduplicatedRecords: batchRecordsMap.size,
-        previousBatchMapSize: previousBatchMap.size,
-        samplePreviousScores: Array.from(previousBatchMap.entries()).slice(0, 5).map(([key, score]) => ({
-          key,
-          score
-        }))
-      };
 
       // CRITICAL: Process only the deduplicated records (from batchRecordsMap)
       // This ensures every record has proper trend calculation
@@ -277,28 +214,42 @@ export function useRixRuns(
             : undefined;
         }
         
-        // Calculate trend for RIX score
-        // IMPORTANT: Always use the LATEST record from the current batch to compare with the LATEST from previous batch
+        // Calculate trend for RIX score by comparing with previous batch
         let trend: 'up' | 'down' | 'stable' | undefined;
         let previousRixScore: number | undefined;
         
         if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey && rixRun["09_rix_score"] !== null && rixRun["09_rix_score"] !== undefined) {
-          // Find the previous batch key for this rixRun
           const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
           
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
-            const previousMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
-            const currentMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
             
-            previousRixScore = previousBatchMap.get(previousMapKey);
-            const currentBatchLatestScore = previousBatchMap.get(currentMapKey); // This has the latest score from current batch
-          
-            if (previousRixScore !== undefined && currentBatchLatestScore !== undefined) {
-              // Always use the LATEST score from the current batch (from the deduplication)
-              // This ensures consistent comparison regardless of which specific record we're displaying
-              const delta = currentBatchLatestScore - previousRixScore;
-              
+            // Build a map of the MOST RECENT records from the PREVIOUS batch only
+            const previousBatchData = rixData?.filter(r => {
+              if (!r.batch_execution_date) return false;
+              const batchDate = new Date(r.batch_execution_date);
+              return format(batchDate, 'yyyy-MM-dd') === previousBatchKey;
+            }) || [];
+            
+            // Deduplicate previous batch by ticker+model, keeping most recent created_at
+            const prevBatchMap = new Map<string, typeof rixData[0]>();
+            previousBatchData.forEach(run => {
+              if (!run["05_ticker"] || !run["02_model_name"]) return;
+              const key = `${run["05_ticker"]}_${run["02_model_name"]}`;
+              const existing = prevBatchMap.get(key);
+              if (!existing || new Date(run.created_at) > new Date(existing.created_at)) {
+                prevBatchMap.set(key, run);
+              }
+            });
+            
+            // Get previous score from deduplicated previous batch
+            const prevKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}`;
+            const prevRun = prevBatchMap.get(prevKey);
+            previousRixScore = prevRun?.["09_rix_score"];
+            
+            // Compare with current score
+            if (previousRixScore !== undefined) {
+              const delta = rixRun["09_rix_score"] - previousRixScore;
               if (delta > 0) {
                 trend = 'up';
               } else if (delta < 0) {
@@ -306,57 +257,54 @@ export function useRixRuns(
               } else {
                 trend = 'stable';
               }
-            } else {
-              // Log only when we have incomplete data - with detailed key information
-              const isMetrovacesa = rixRun["03_target_name"] === 'Metrovacesa';
-              
-              console.log(isMetrovacesa ? '🚨 Metrovacesa Missing data for trend:' : '⚠️ Missing data for trend:', {
-                company: rixRun["03_target_name"],
-                ticker: rixRun["05_ticker"],
-                model: rixRun["02_model_name"],
-                currentBatch: executionKey,
-                currentBatchIndex,
-                previousBatchKey,
-                previousMapKey,
-                currentMapKey,
-                hasPreviousScore: previousRixScore !== undefined,
-                hasCurrentScore: currentBatchLatestScore !== undefined,
-                previousScore: previousRixScore,
-                currentScore: currentBatchLatestScore,
-                // Check if keys exist in map
-                previousKeyExistsInMap: previousBatchMap.has(previousMapKey),
-                currentKeyExistsInMap: previousBatchMap.has(currentMapKey),
-                // For Metrovacesa, show what keys ARE in the map
-                ...(isMetrovacesa && {
-                  allMetrovacesaKeysInMap: Array.from(previousBatchMap.keys()).filter(k => k.startsWith('MVC_'))
-                })
-              });
             }
           }
         }
         
-        // Calculate trends for all 8 metrics
-        // Use the same logic: always compare the latest record from current batch with latest from previous batch
+        // Calculate trends for all 8 metrics using the same approach
         let metricTrends: RixRun['metricTrends'] = {};
         
         if (rixRun["05_ticker"] && rixRun["02_model_name"] && executionKey) {
-          // Find the previous batch key for this rixRun
           const currentBatchIndex = sortedBatches.findIndex(([key]) => key === executionKey);
+          
           if (currentBatchIndex > 0) {
             const previousBatchKey = sortedBatches[currentBatchIndex - 1][0];
-            const previousMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${previousBatchKey}`;
-            const currentMapKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}_${executionKey}`;
             
-            const previousMetrics = previousMetricsMap.get(previousMapKey);
-            const currentMetrics = previousMetricsMap.get(currentMapKey); // Latest metrics from current batch
-          
-            if (previousMetrics && currentMetrics) {
-              // Calculate trend for each metric using the latest values from both batches
-              (Object.keys(currentMetrics) as Array<keyof typeof currentMetrics>).forEach(key => {
-                const current = currentMetrics[key];
-                const previous = previousMetrics[key];
-                
-                if (current !== null && current !== undefined && previous !== null && previous !== undefined) {
+            // Build a map of the MOST RECENT records from the PREVIOUS batch only
+            const previousBatchData = rixData?.filter(r => {
+              if (!r.batch_execution_date) return false;
+              const batchDate = new Date(r.batch_execution_date);
+              return format(batchDate, 'yyyy-MM-dd') === previousBatchKey;
+            }) || [];
+            
+            const prevBatchMap = new Map<string, typeof rixData[0]>();
+            previousBatchData.forEach(run => {
+              if (!run["05_ticker"] || !run["02_model_name"]) return;
+              const key = `${run["05_ticker"]}_${run["02_model_name"]}`;
+              const existing = prevBatchMap.get(key);
+              if (!existing || new Date(run.created_at) > new Date(existing.created_at)) {
+                prevBatchMap.set(key, run);
+              }
+            });
+            
+            const prevKey = `${rixRun["05_ticker"]}_${rixRun["02_model_name"]}`;
+            const prevRun = prevBatchMap.get(prevKey);
+            
+            if (prevRun) {
+              const metricsToCompare = [
+                { key: 'nvm', current: rixRun["23_nvm_score"], previous: prevRun["23_nvm_score"] },
+                { key: 'drm', current: rixRun["26_drm_score"], previous: prevRun["26_drm_score"] },
+                { key: 'sim', current: rixRun["29_sim_score"], previous: prevRun["29_sim_score"] },
+                { key: 'rmm', current: rixRun["32_rmm_score"], previous: prevRun["32_rmm_score"] },
+                { key: 'cem', current: rixRun["35_cem_score"], previous: prevRun["35_cem_score"] },
+                { key: 'gam', current: rixRun["38_gam_score"], previous: prevRun["38_gam_score"] },
+                { key: 'dcm', current: rixRun["41_dcm_score"], previous: prevRun["41_dcm_score"] },
+                { key: 'cxm', current: rixRun["44_cxm_score"], previous: prevRun["44_cxm_score"] },
+              ];
+              
+              metricsToCompare.forEach(({ key, current, previous }) => {
+                if (current !== null && current !== undefined && 
+                    previous !== null && previous !== undefined) {
                   const delta = current - previous;
                   if (delta > 0) {
                     metricTrends[key] = 'up';
@@ -392,7 +340,6 @@ export function useRixRuns(
       const recordsWithoutTrend = joinedData.length - recordsWithTrend;
       
       console.log('📈 FINAL Trend Summary:', {
-        deduplication: deduplicationInfo,
         batchesFound: batchMap.size,
         sortedBatchKeys: sortedBatches.map(([key]) => key),
         totalProcessed: joinedData.length,
