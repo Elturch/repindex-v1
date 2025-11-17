@@ -213,23 +213,12 @@ export function useRixRuns(
       });
 
       
-      // Debug logging for deduplication
-      console.log('🔄 Deduplication Results:', {
+      // Store deduplication results for final summary
+      const deduplicationInfo = {
         totalOriginalRecords: rixData?.length || 0,
         deduplicatedRecords: batchRecordsMap.size,
-        sampleDeduplicated: Array.from(batchRecordsMap.entries()).slice(0, 5).map(([key, run]) => ({
-          key,
-          ticker: run["05_ticker"],
-          model: run["02_model_name"],
-          date: run.batch_execution_date,
-          score: run["09_rix_score"]
-        }))
-      });
-      
-      console.log('📊 Previous Batch Map Size:', previousBatchMap.size);
-      console.log('📊 Sample Previous Scores:', 
-        Array.from(previousBatchMap.entries()).slice(0, 10)
-      );
+        previousBatchMapSize: 0
+      };
 
       // CRITICAL: Process only the deduplicated records (from batchRecordsMap)
       // This ensures every record has proper trend calculation
@@ -280,21 +269,6 @@ export function useRixRuns(
               // This ensures consistent comparison regardless of which specific record we're displaying
               const delta = currentBatchLatestScore - previousRixScore;
               
-              // Only log when trend is undefined (debugging missing trends)
-              if (!trend) {
-                console.log('⚠️ NO TREND calculated:', {
-                  ticker: rixRun["05_ticker"],
-                  model: rixRun["02_model_name"],
-                  currentBatch: executionKey,
-                  previousBatch: previousBatchKey,
-                  currentMapKey: currentMapKey,
-                  previousMapKey: previousMapKey,
-                  currentScore: currentBatchLatestScore,
-                  previousScore: previousRixScore,
-                  delta
-                });
-              }
-              
               if (delta > 0) {
                 trend = 'up';
               } else if (delta < 0) {
@@ -302,6 +276,15 @@ export function useRixRuns(
               } else {
                 trend = 'stable';
               }
+            } else {
+              // Log only when we have incomplete data
+              console.log('⚠️ Missing data for trend:', {
+                ticker: rixRun["05_ticker"],
+                model: rixRun["02_model_name"],
+                currentBatch: executionKey,
+                hasPreviousScore: previousRixScore !== undefined,
+                hasCurrentScore: currentBatchLatestScore !== undefined
+              });
             }
           }
         }
@@ -358,13 +341,28 @@ export function useRixRuns(
         };
       });
 
-      // Count records with trends
+      // Final summary with trend statistics
       const recordsWithTrend = joinedData.filter(r => r.trend !== undefined).length;
-      console.log('📈 Trend Calculation Summary:', {
-        totalRecords: joinedData.length,
-        recordsWithTrend,
-        recordsWithoutTrend: joinedData.length - recordsWithTrend,
-        percentageWithTrend: ((recordsWithTrend / joinedData.length) * 100).toFixed(1) + '%'
+      const recordsWithoutTrend = joinedData.length - recordsWithTrend;
+      
+      console.log('📈 FINAL Trend Summary:', {
+        deduplication: deduplicationInfo,
+        batchesFound: batchMap.size,
+        totalProcessed: joinedData.length,
+        withTrend: recordsWithTrend,
+        withoutTrend: recordsWithoutTrend,
+        percentageWithTrend: ((recordsWithTrend / joinedData.length) * 100).toFixed(1) + '%',
+        samplesWithTrend: joinedData.filter(r => r.trend).slice(0, 3).map(r => ({
+          ticker: r["05_ticker"],
+          model: r["02_model_name"],
+          trend: r.trend,
+          score: r["09_rix_score"]
+        })),
+        samplesWithoutTrend: joinedData.filter(r => !r.trend).slice(0, 3).map(r => ({
+          ticker: r["05_ticker"],
+          model: r["02_model_name"],
+          batch: r.batchLabel
+        }))
       });
       
       // Apply ALL filters AFTER trend calculation
