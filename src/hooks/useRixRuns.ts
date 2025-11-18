@@ -135,7 +135,7 @@ export function useRixRuns(
   companyFilter?: string,
   sectorFilter?: string,
   ibexFamilyFilter?: string,
-  weeksToLoad: number = 1 // Default: load only last week
+  weeksToLoad: number = 6 // Default: load last 6 weeks for trend calculation
 ) {
   return useQuery({
     queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, weeksToLoad],
