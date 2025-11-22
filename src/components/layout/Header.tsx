@@ -44,9 +44,9 @@ export function Header({ title = "Repindex.ai", className }: HeaderProps) {
         <div className="flex items-center space-x-2">
           {/* Navigation Buttons */}
           <Button
-            variant={location.pathname === "/" ? "default" : "ghost"}
+            variant={location.pathname === "/dashboard" ? "default" : "ghost"}
             size="sm"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
             className="flex items-center gap-2"
           >
             <LayoutDashboard className="h-4 w-4" />
