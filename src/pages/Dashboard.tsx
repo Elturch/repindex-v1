@@ -259,7 +259,7 @@ export function Dashboard() {
 
   if (isLoading) {
   return (
-    <Layout title="Repindex.ai">
+    <Layout title="RepIndex.ai">
       <div className="space-y-6">
           <div className="flex items-center justify-between">
             <Skeleton className="h-10 w-64" />
@@ -279,7 +279,7 @@ export function Dashboard() {
   }
 
     return (
-      <Layout title="Repindex.ai">
+      <Layout title="RepIndex.ai">
         <div className="space-y-6">
         {/* Title */}
         <div className="text-center">

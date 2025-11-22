@@ -184,7 +184,7 @@ export function RixRunDetail() {
   };
 
   return (
-    <Layout title="Repindex.ai">
+    <Layout title="RepIndex.ai">
       <div className="space-y-4">
         {/* Header - Compact */}
         <div className="flex items-center justify-between">

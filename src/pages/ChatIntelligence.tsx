@@ -220,7 +220,7 @@ export default function ChatIntelligence() {
   };
 
   const downloadAsTxt = () => {
-    const metadata = `Chat Inteligente - Repindex.ai\n` +
+    const metadata = `Chat Inteligente - RepIndex.ai\n` +
       `Fecha: ${format(new Date(), 'dd/MM/yyyy HH:mm')}\n` +
       `Empresa: ${selectedCompany || 'No seleccionada'}\n` +
       `Semana: ${selectedWeek === "all" ? "Todas las semanas" : selectedWeek}\n` +
@@ -278,7 +278,7 @@ export default function ChatIntelligence() {
   const downloadAsHtml = () => {
     const metadata = `
       <div style="background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-        <h2 style="margin: 0 0 10px 0; color: #333;">Chat Inteligente - Repindex.ai</h2>
+        <h2 style="margin: 0 0 10px 0; color: #333;">Chat Inteligente - RepIndex.ai</h2>
         <p style="margin: 5px 0; color: #666;"><strong>Fecha:</strong> ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
         <p style="margin: 5px 0; color: #666;"><strong>Empresa:</strong> ${selectedCompany || 'No seleccionada'}</p>
         <p style="margin: 5px 0; color: #666;"><strong>Semana:</strong> ${selectedWeek === "all" ? "Todas las semanas" : selectedWeek}</p>
@@ -344,7 +344,7 @@ export default function ChatIntelligence() {
   };
 
   return (
-    <Layout title="Repindex.ai">
+    <Layout title="RepIndex.ai">
       <div className="space-y-6">
         {/* Header */}
         <div className="text-center">

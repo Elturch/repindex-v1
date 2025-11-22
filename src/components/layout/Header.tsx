@@ -12,7 +12,7 @@ interface HeaderProps {
   className?: string;
 }
 
-export function Header({ title = "Repindex.ai", className }: HeaderProps) {
+export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
