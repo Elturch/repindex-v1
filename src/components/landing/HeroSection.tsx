@@ -33,7 +33,7 @@ export function HeroSection() {
             transition={{ delay: 0.3, duration: 0.6 }}
             className="text-4xl md:text-6xl font-bold tracking-tight"
           >
-            Repindex<span className="text-primary">.ai</span>
+            RepIndex<span className="text-primary">.ai</span>
           </motion.h1>
 
           {/* Subtitle */}
