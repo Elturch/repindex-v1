@@ -10,6 +10,7 @@ import InsertRixResults from "./pages/InsertRixResults";
 import ChatIntelligence from "./pages/ChatIntelligence";
 import { MarketEvolution } from "./pages/MarketEvolution";
 import NotFound from "./pages/NotFound";
+import Landing from "./pages/Landing";
 
 const queryClient = new QueryClient();
 
@@ -21,7 +22,8 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<Landing />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/chat" element={<ChatIntelligence />} />
             <Route path="/market-evolution" element={<MarketEvolution />} />
             <Route path="/rix-run/:id" element={<RixRunDetail />} />
