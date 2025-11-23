@@ -113,8 +113,8 @@ export function useTrendDataLight({
       return chartData;
     },
     enabled: true,
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
-    gcTime: 10 * 60 * 1000, // 10 minutes in memory
+    staleTime: 10 * 60 * 1000, // 10 minutes - caché agresivo
+    gcTime: 30 * 60 * 1000, // 30 minutes - mantener en memoria
     refetchOnWindowFocus: false,
   });
 }
