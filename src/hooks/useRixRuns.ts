@@ -135,7 +135,7 @@ export function useRixRuns(
   companyFilter?: string,
   sectorFilter?: string,
   ibexFamilyFilter?: string,
-  weeksToLoad: number = 6 // Default: load last 6 weeks for trend calculation
+  weeksToLoad: number = 2 // Default: load last 2 weeks (latest + previous for comparison)
 ) {
   return useQuery({
     queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, weeksToLoad],
@@ -469,8 +469,9 @@ export function useRixRuns(
       return filteredData as RixRun[];
     },
     enabled: true,
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
-    gcTime: 10 * 60 * 1000, // 10 minutes in memory
+    staleTime: 10 * 60 * 1000, // 10 minutes - caché agresivo para últimas 2 semanas
+    gcTime: 30 * 60 * 1000, // 30 minutes - mantener en memoria
+    refetchOnWindowFocus: false, // No recargar al cambiar de pestaña
   });
 }
 
