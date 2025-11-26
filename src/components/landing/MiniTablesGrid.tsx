@@ -20,6 +20,28 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
     info: "text-primary"
   };
 
+  // Ensure data is an array and has items
+  const safeData = data && Array.isArray(data) ? data : [];
+
+  if (safeData.length === 0) {
+    return (
+      <Card className="p-6 hover:shadow-card-hover transition-shadow">
+        <div className="flex items-start gap-3 mb-4">
+          <div className={`${variantColors[variant]}`}>
+            {icon}
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-lg">{title}</h3>
+            <p className="text-sm text-muted-foreground">{subtitle}</p>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground text-center py-4">
+          No hay datos disponibles
+        </p>
+      </Card>
+    );
+  }
+
   return (
     <Card className="p-6 hover:shadow-card-hover transition-shadow">
       <div className="flex items-start gap-3 mb-4">
@@ -33,7 +55,7 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
       </div>
 
       <div className="space-y-2">
-        {data.slice(0, 5).map((item, idx) => (
+        {safeData.slice(0, 5).map((item, idx) => (
           <div
             key={`${item.ticker}-${item.ai}-${idx}`}
             className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
@@ -85,42 +107,42 @@ export function MiniTablesGrid() {
       title: "Top 5 RIX",
       subtitle: "Mejores índices de reputación",
       icon: <Trophy className="w-6 h-6" />,
-      data: data.topOverall,
+      data: data.topOverall || [],
       variant: "success" as const
     },
     {
       title: "Bottom 5 RIX",
       subtitle: "Índices más bajos",
       icon: <TrendingDown className="w-6 h-6" />,
-      data: data.bottomOverall,
+      data: data.bottomOverall || [],
       variant: "danger" as const
     },
     {
       title: "Top 5 Cotizadas",
       subtitle: "Empresas en bolsa",
       icon: <Building2 className="w-6 h-6" />,
-      data: data.topTraded,
+      data: data.topTraded || [],
       variant: "info" as const
     },
     {
       title: "Top 5 No Cotizadas",
       subtitle: "Empresas privadas",
       icon: <Briefcase className="w-6 h-6" />,
-      data: data.topUntraded,
+      data: data.topUntraded || [],
       variant: "info" as const
     },
     {
       title: "Top Movers UP",
       subtitle: "Mayores subidas semanales",
       icon: <TrendingUp className="w-6 h-6" />,
-      data: data.topMoversUp,
+      data: data.topMoversUp || [],
       variant: "success" as const
     },
     {
       title: "Top Movers DOWN",
       subtitle: "Mayores bajadas semanales",
       icon: <TrendingDown className="w-6 h-6" />,
-      data: data.topMoversDown,
+      data: data.topMoversDown || [],
       variant: "danger" as const
     }
   ];
