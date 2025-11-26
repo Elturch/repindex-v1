@@ -1,6 +1,6 @@
 import { HeroSection } from "@/components/landing/HeroSection";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
-import { TopFiveSection } from "@/components/landing/TopFiveSection";
+import { MiniTablesGrid } from "@/components/landing/MiniTablesGrid";
 import { StatsSection } from "@/components/landing/StatsSection";
 import { CTASection } from "@/components/landing/CTASection";
 import { Layout } from "@/components/layout/Layout";
@@ -10,8 +10,8 @@ export default function Landing() {
     <Layout>
       <div className="min-h-screen">
         <HeroSection />
+        <MiniTablesGrid />
         <FeaturesSection />
-        <TopFiveSection />
         <StatsSection />
         <CTASection />
         
