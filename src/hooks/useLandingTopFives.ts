@@ -19,17 +19,17 @@ export function useLandingTopFives() {
   return useQuery({
     queryKey: ["landing-top-fives"],
     queryFn: async () => {
-      // Get latest batch week
-      const { data: latestBatch } = await supabase
+      // Get latest and previous batch weeks
+      const { data: latestBatches } = await supabase
         .from("rix_trends")
         .select("batch_week")
         .order("batch_week", { ascending: false })
-        .limit(1)
-        .single();
+        .limit(2);
 
-      if (!latestBatch) throw new Error("No data available");
+      if (!latestBatches || latestBatches.length === 0) throw new Error("No data available");
 
-      const latestWeek = latestBatch.batch_week;
+      const latestWeek = latestBatches[0].batch_week;
+      const previousWeek = latestBatches.length > 1 ? latestBatches[1].batch_week : null;
 
       // Top 5 by each AI model
       const topByAI: TopByAI = {
@@ -89,27 +89,69 @@ export function useLandingTopFives() {
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Top 5 with obsolete data (companies with "datos_antiguos" flag)
-      const { data: runsWithFlags } = await supabase
-        .from("rix_runs")
-        .select("03_target_name, 05_ticker, 09_rix_score, 02_model_name, 17_flags")
-        .eq("batch_execution_date", latestWeek)
-        .not("17_flags", "is", null)
-        .order("09_rix_score", { ascending: false })
-        .limit(20);
+      // Top 5 overall
+      const { data: topOverall } = await supabase
+        .from("rix_trends")
+        .select("company_name, ticker, rix_score, model_name")
+        .eq("batch_week", latestWeek)
+        .order("rix_score", { ascending: false })
+        .limit(5);
 
-      const topObsolete = runsWithFlags
-        ?.filter(run => {
-          const flags = run["17_flags"] as string[] | null;
-          return flags && flags.includes("datos_antiguos");
-        })
-        .slice(0, 5)
-        .map(run => ({
-          empresa: run["03_target_name"] || "",
-          ticker: run["05_ticker"] || "",
-          rix: run["09_rix_score"] || 0,
-          ai: run["02_model_name"] || ""
-        })) || [];
+      // Bottom 5 overall
+      const { data: bottomOverall } = await supabase
+        .from("rix_trends")
+        .select("company_name, ticker, rix_score, model_name")
+        .eq("batch_week", latestWeek)
+        .order("rix_score", { ascending: true })
+        .limit(5);
+
+      // Top Movers UP and DOWN (if previous week exists)
+      let topMoversUp: TopCompany[] = [];
+      let topMoversDown: TopCompany[] = [];
+
+      if (previousWeek) {
+        // Get current week data
+        const { data: currentData } = await supabase
+          .from("rix_trends")
+          .select("company_name, ticker, rix_score, model_name")
+          .eq("batch_week", latestWeek);
+
+        // Get previous week data
+        const { data: previousData } = await supabase
+          .from("rix_trends")
+          .select("company_name, ticker, rix_score, model_name")
+          .eq("batch_week", previousWeek);
+
+        if (currentData && previousData) {
+          // Calculate changes
+          const changes = currentData
+            .map(curr => {
+              const prev = previousData.find(
+                p => p.ticker === curr.ticker && p.model_name === curr.model_name
+              );
+              if (!prev) return null;
+              
+              return {
+                empresa: curr.company_name,
+                ticker: curr.ticker,
+                rix: curr.rix_score,
+                ai: curr.model_name,
+                change: curr.rix_score - prev.rix_score
+              };
+            })
+            .filter(Boolean) as (TopCompany & { change: number })[];
+
+          // Top 5 movers up
+          topMoversUp = changes
+            .sort((a, b) => b.change - a.change)
+            .slice(0, 5);
+
+          // Top 5 movers down
+          topMoversDown = changes
+            .sort((a, b) => a.change - b.change)
+            .slice(0, 5);
+        }
+      }
 
       return {
         topByAI,
@@ -125,7 +167,20 @@ export function useLandingTopFives() {
           rix: d.rix_score,
           ai: d.model_name
         })) || [],
-        topObsolete
+        topOverall: topOverall?.map(d => ({
+          empresa: d.company_name,
+          ticker: d.ticker,
+          rix: d.rix_score,
+          ai: d.model_name
+        })) || [],
+        bottomOverall: bottomOverall?.map(d => ({
+          empresa: d.company_name,
+          ticker: d.ticker,
+          rix: d.rix_score,
+          ai: d.model_name
+        })) || [],
+        topMoversUp,
+        topMoversDown
       };
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes

@@ -31,9 +31,9 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.6 }}
-            className="text-4xl md:text-6xl font-bold tracking-tight"
+            className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight max-w-4xl mx-auto"
           >
-            RepIndex<span className="text-primary">.ai</span>
+            RepIndex: la autoridad reputacional corporativa de las IAs
           </motion.h1>
 
           {/* Subtitle */}
@@ -41,9 +41,9 @@ export function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4, duration: 0.6 }}
-            className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto"
+            className="text-xl md:text-2xl font-semibold text-yellow-500 max-w-3xl mx-auto"
           >
-            Índice Reputacional Inteligente
+            AI Corporate Reputation Authority
           </motion.p>
 
           {/* Description */}
@@ -53,8 +53,8 @@ export function HeroSection() {
             transition={{ delay: 0.5, duration: 0.6 }}
             className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto"
           >
-            Analiza la reputación de más de 153 empresas españolas mediante 4 modelos de IA avanzados.
-            Obtén puntuaciones RIX actualizadas semanalmente con métricas precisas y tendencias históricas.
+            Analizamos cómo las inteligencias artificiales construyen la narrativa 
+            de las principales corporaciones
           </motion.p>
 
           {/* CTAs */}
@@ -70,7 +70,7 @@ export function HeroSection() {
               className="w-full sm:w-auto group"
             >
               <FaChartLine className="mr-2 group-hover:scale-110 transition-transform" />
-              Ver Dashboard
+              Ver el RepIndex del IBEX-35
             </Button>
             <Button
               size="lg"
