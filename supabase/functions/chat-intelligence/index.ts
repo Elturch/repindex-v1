@@ -2,6 +2,11 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
+// Caché en memoria para las empresas (TTL: 1 hora)
+let companiesCache: { issuer_name: string; ticker: string }[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 60 * 60 * 1000; // 1 hora en milisegundos
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -29,16 +34,29 @@ serve(async (req) => {
     const logPrefix = sessionId ? `[${sessionId.slice(0, 8)}]` : '[no-session]';
     console.log(`${logPrefix} User question:`, question);
 
-    // Load ALL companies from database for automatic detection
-    const { data: allCompanies, error: companiesError } = await supabaseClient
-      .from('repindex_root_issuers')
-      .select('issuer_name, ticker');
-    
-    if (companiesError) {
-      console.error(`${logPrefix} Error loading companies:`, companiesError);
+    // Load companies from cache or database
+    const now = Date.now();
+    let allCompanies: { issuer_name: string; ticker: string }[];
+
+    if (companiesCache && (now - cacheTimestamp) < CACHE_TTL) {
+      console.log(`${logPrefix} Using ${companiesCache.length} companies from memory cache`);
+      allCompanies = companiesCache;
+    } else {
+      console.log(`${logPrefix} Loading companies from database...`);
+      const { data: loadedCompanies, error: companiesError } = await supabaseClient
+        .from('repindex_root_issuers')
+        .select('issuer_name, ticker');
+      
+      if (companiesError) {
+        console.error(`${logPrefix} Error loading companies:`, companiesError);
+        allCompanies = [];
+      } else {
+        allCompanies = loadedCompanies || [];
+        companiesCache = allCompanies;
+        cacheTimestamp = now;
+        console.log(`${logPrefix} Loaded ${allCompanies.length} companies from database and cached`);
+      }
     }
-    
-    console.log(`${logPrefix} Loaded ${allCompanies?.length || 0} companies for detection`);
 
     // Extract metadata from question for hybrid search
     const extractMetadata = (q: string, companyList: any[]) => {
