@@ -478,9 +478,14 @@ export default function ChatIntelligence() {
                   {isLoading && (
                     <div className="flex justify-start">
                       <div className="bg-muted rounded-lg p-4 max-w-[80%]">
-                        <div className="flex items-center gap-2">
-                          <Skeleton className="h-4 w-4 rounded-full" />
-                          <span className="text-sm text-muted-foreground">Analizando datos...</span>
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <RefreshCw className="h-5 w-5 text-primary animate-spin" />
+                          </div>
+                          <div>
+                            <span className="text-sm font-medium text-foreground">Analizando datos...</span>
+                            <p className="text-xs text-muted-foreground mt-1">Consultando base de datos completa</p>
+                          </div>
                         </div>
                       </div>
                     </div>
