@@ -29,10 +29,20 @@ serve(async (req) => {
     const logPrefix = sessionId ? `[${sessionId.slice(0, 8)}]` : '[no-session]';
     console.log(`${logPrefix} User question:`, question);
 
+    // Load ALL companies from database for automatic detection
+    const { data: allCompanies, error: companiesError } = await supabaseClient
+      .from('repindex_root_issuers')
+      .select('issuer_name, ticker');
+    
+    if (companiesError) {
+      console.error(`${logPrefix} Error loading companies:`, companiesError);
+    }
+    
+    console.log(`${logPrefix} Loaded ${allCompanies?.length || 0} companies for detection`);
+
     // Extract metadata from question for hybrid search
-    const extractMetadata = (q: string) => {
+    const extractMetadata = (q: string, companyList: any[]) => {
       const lowerQ = q.toLowerCase();
-      const metadata: any = {};
       
       // Detect AI models mentioned
       const models = [];
@@ -49,32 +59,36 @@ serve(async (req) => {
         models.push('Deepseek');
       }
       
-      // Common company tickers/names
-      const companyPatterns = [
-        { regex: /santander/i, name: 'Banco Santander' },
-        { regex: /bbva/i, name: 'BBVA' },
-        { regex: /telefonica|telefónica/i, name: 'Telefónica' },
-        { regex: /iberdrola/i, name: 'Iberdrola' },
-        { regex: /inditex/i, name: 'Inditex' },
-        { regex: /repsol/i, name: 'Repsol' },
-        { regex: /caixabank/i, name: 'CaixaBank' },
-        { regex: /naturgy/i, name: 'Naturgy' },
-        { regex: /mapfre/i, name: 'Mapfre' },
-        { regex: /bankinter/i, name: 'Bankinter' },
-      ];
-      
+      // Detect companies by matching issuer_name or ticker
       const companies = [];
-      for (const pattern of companyPatterns) {
-        if (pattern.regex.test(q)) {
-          companies.push(pattern.name);
+      const detectedTickers = new Set();
+      
+      for (const company of companyList) {
+        const issuerName = company.issuer_name.toLowerCase();
+        const ticker = company.ticker.toLowerCase();
+        
+        // Check if company name or ticker appears in the question
+        // Use word boundaries to avoid partial matches
+        const nameRegex = new RegExp(`\\b${issuerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        const tickerRegex = new RegExp(`\\b${ticker}\\b`, 'i');
+        
+        if (nameRegex.test(q) || tickerRegex.test(q)) {
+          companies.push(company.issuer_name);
+          detectedTickers.add(company.ticker);
         }
       }
       
-      return { models, companies };
+      return { models, companies, tickers: Array.from(detectedTickers) };
     };
 
-    const { models: detectedModels, companies: detectedCompanies } = extractMetadata(question);
-    console.log(`${logPrefix} Detected metadata - Models:`, detectedModels, 'Companies:', detectedCompanies);
+    const { models: detectedModels, companies: detectedCompanies, tickers: detectedTickers } = 
+      extractMetadata(question, allCompanies || []);
+    
+    console.log(`${logPrefix} Detected metadata:`, {
+      models: detectedModels,
+      companies: detectedCompanies.length > 0 ? detectedCompanies : 'none',
+      tickers: detectedTickers.length > 0 ? detectedTickers : 'none'
+    });
 
     // Generate embedding for the question to search vector store
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
@@ -263,14 +277,20 @@ serve(async (req) => {
       context += '\n=== BASE DE DATOS COMPLETA (TODAS LAS EVALUACIONES RIX) ===\n\n';
       
       if (detectedModels.length > 0 || detectedCompanies.length > 0) {
-        context += `BÚSQUEDA HÍBRIDA APLICADA:\n`;
-        if (detectedModels.length > 0) context += `- Modelos filtrados: ${detectedModels.join(', ')}\n`;
-        if (detectedCompanies.length > 0) context += `- Empresas filtradas: ${detectedCompanies.join(', ')}\n`;
+        context += `🎯 BÚSQUEDA HÍBRIDA ACTIVADA (Vector + Metadatos):\n`;
+        if (detectedModels.length > 0) context += `- Modelos IA detectados: ${detectedModels.join(', ')}\n`;
+        if (detectedCompanies.length > 0) {
+          context += `- Empresas detectadas: ${detectedCompanies.join(', ')}\n`;
+          if (detectedTickers.length > 0) {
+            context += `- Tickers: ${detectedTickers.join(', ')}\n`;
+          }
+        }
+        context += `- Datos filtrados específicamente para esta consulta\n`;
         context += `\n`;
       }
       
-      context += `Total de evaluaciones: ${allRixData.length}\n`;
-      context += `Cada empresa es evaluada por 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek.\n\n`;
+      context += `Total de evaluaciones en contexto: ${allRixData.length}\n`;
+      context += `Sistema completo: 153 empresas × 4 modelos IA × múltiples semanas\n\n`;
       
       // Group by company and week for complete view
       const byCompanyWeek = allRixData.reduce((acc: any, run: any) => {
@@ -325,16 +345,19 @@ serve(async (req) => {
     const systemPrompt = `Eres un analista experto en reputación corporativa que trabaja con RepIndex.ai.
 
 DATOS DISPONIBLES:
-- Base de datos completa con evaluaciones de 153 empresas
+- Base de datos completa con evaluaciones de 153 empresas del ecosistema español
 - Cada empresa es analizada SEMANALMENTE por 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek
 - Tienes acceso a TODAS las evaluaciones históricas sin límites
+- Sistema de búsqueda híbrida: combina similitud vectorial (semántica) con filtros por empresa y modelo
 
 REGLA CRÍTICA: SOLO puedes analizar y responder con datos que estén EXPLÍCITAMENTE en el contexto proporcionado. 
 Si no hay datos disponibles, indica claramente que no puedes responder esa pregunta con los datos actuales.
 NUNCA inventes, asumas o generes datos que no estén en el contexto.
 
-IMPORTANTE: Cuando menciones que "solo hay X documentos de ChatGPT", revisa bien los datos estructurados completos.
-La base de datos contiene TODAS las evaluaciones de todos los modelos para todas las empresas cada semana.
+BÚSQUEDA HÍBRIDA:
+- Si ves "🎯 BÚSQUEDA HÍBRIDA ACTIVADA", significa que los datos ya están pre-filtrados por empresa/modelo
+- Los datos estructurados siempre contienen TODAS las evaluaciones disponibles para el filtro aplicado
+- Si no ves búsqueda híbrida activada, estás viendo datos generales sin filtrar
 
 Cuando respondas:
 1. Sé claro y conciso
