@@ -65,8 +65,9 @@ serve(async (req) => {
 
     console.log(`${logPrefix} Documents found:`, documents?.length || 0);
 
-    // Get recent RIX data for context - NO LIMIT to get all available data
-    const { data: recentRixData, error: rixError } = await supabaseClient
+    // Get ALL RIX data - no limits, no filters
+    // This ensures we have complete data for all 153 companies x 4 AI models x all weeks
+    const { data: allRixData, error: rixError } = await supabaseClient
       .from('rix_runs')
       .select(`
         "03_target_name",
@@ -75,6 +76,7 @@ serve(async (req) => {
         "06_period_from",
         "07_period_to",
         batch_execution_date,
+        "10_resumen",
         repindex_root_issuers (
           issuer_name,
           ticker,
@@ -82,13 +84,25 @@ serve(async (req) => {
           ibex_family_code
         )
       `)
-      .order('batch_execution_date', { ascending: false });
+      .order('batch_execution_date', { ascending: false })
+      .order('"03_target_name"', { ascending: true })
+      .order('"02_model_name"', { ascending: true });
 
     if (rixError) {
       console.error(`${logPrefix} Error fetching rix_runs:`, rixError);
     }
 
-    console.log(`${logPrefix} Recent RIX data:`, recentRixData?.length || 0, 'records');
+    console.log(`${logPrefix} Total RIX evaluations loaded:`, allRixData?.length || 0);
+    
+    // Log breakdown by model
+    if (allRixData && allRixData.length > 0) {
+      const byModel = allRixData.reduce((acc: any, run: any) => {
+        const model = run["02_model_name"];
+        acc[model] = (acc[model] || 0) + 1;
+        return acc;
+      }, {});
+      console.log(`${logPrefix} Breakdown by model:`, byModel);
+    }
 
     // Build comprehensive context
     let context = '';
@@ -105,33 +119,55 @@ serve(async (req) => {
       });
     }
 
-    if (recentRixData && recentRixData.length > 0) {
-      context += '\n=== DATOS ESTRUCTURADOS COMPLETOS (TODOS LOS RIX SCORES) ===\n\n';
-      context += `Total de evaluaciones disponibles: ${recentRixData.length}\n\n`;
+    if (allRixData && allRixData.length > 0) {
+      context += '\n=== BASE DE DATOS COMPLETA (TODAS LAS EVALUACIONES RIX) ===\n\n';
+      context += `IMPORTANTE: Esta base de datos contiene ${allRixData.length} evaluaciones.\n`;
+      context += `Cada empresa es evaluada por 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek.\n`;
+      context += `Total de empresas únicas: aproximadamente ${Math.floor(allRixData.length / 4 / 4)} empresas.\n\n`;
       
-      // Group by company for better readability
-      const byCompany = recentRixData.reduce((acc: any, run: any) => {
+      // Group by company and week for complete view
+      const byCompanyWeek = allRixData.reduce((acc: any, run: any) => {
         const company = run["03_target_name"];
-        if (!acc[company]) acc[company] = [];
-        acc[company].push(run);
+        const week = run["06_period_from"];
+        const key = `${company}|${week}`;
+        if (!acc[key]) {
+          acc[key] = {
+            company,
+            week,
+            ticker: run.repindex_root_issuers?.ticker,
+            sector: run.repindex_root_issuers?.sector_category,
+            ibex_family: run.repindex_root_issuers?.ibex_family_code,
+            models: []
+          };
+        }
+        acc[key].models.push({
+          model: run["02_model_name"],
+          rix: run["09_rix_score"],
+          summary: run["10_resumen"]
+        });
         return acc;
       }, {});
 
-      // Include ALL companies, not just a subset
-      Object.entries(byCompany).forEach(([company, runs]: [string, any]) => {
-        context += `Empresa: ${company}\n`;
-        context += `Ticker: ${runs[0].repindex_root_issuers?.ticker || 'N/A'}\n`;
-        context += `Sector: ${runs[0].repindex_root_issuers?.sector_category || 'N/A'}\n`;
-        context += `IBEX Family: ${runs[0].repindex_root_issuers?.ibex_family_code || 'N/A'}\n`;
-        context += 'Evaluaciones por modelo:\n';
-        runs.forEach((run: any) => {
-          context += `  - ${run["02_model_name"]}: RIX ${run["09_rix_score"]} (${run["06_period_from"]} - ${run["07_period_to"]})\n`;
+      // Show data organized by company and week
+      const entries = Object.values(byCompanyWeek);
+      context += `Datos organizados por empresa y semana (${entries.length} combinaciones únicas):\n\n`;
+      
+      entries.forEach((entry: any) => {
+        context += `Empresa: ${entry.company}\n`;
+        context += `Ticker: ${entry.ticker || 'N/A'} | Sector: ${entry.sector || 'N/A'} | IBEX: ${entry.ibex_family || 'N/A'}\n`;
+        context += `Semana: ${entry.week}\n`;
+        context += 'Evaluaciones:\n';
+        entry.models.forEach((m: any) => {
+          context += `  • ${m.model}: RIX ${m.rix}\n`;
+          if (m.summary) {
+            context += `    Resumen: ${m.summary.substring(0, 150)}...\n`;
+          }
         });
         context += '\n';
       });
     }
 
-    if (!documents?.length && !recentRixData?.length) {
+    if (!documents?.length && !allRixData?.length) {
       context += '⚠️ ADVERTENCIA: No se encontraron datos relevantes para esta consulta.\n';
       context += 'INSTRUCCIONES PARA LA IA: Informa al usuario que no hay datos disponibles para responder esta pregunta específica.\n';
     }
@@ -141,16 +177,25 @@ serve(async (req) => {
     // System prompt for the AI
     const systemPrompt = `Eres un analista experto en reputación corporativa que trabaja con RepIndex.ai.
 
+DATOS DISPONIBLES:
+- Base de datos completa con evaluaciones de 153 empresas
+- Cada empresa es analizada SEMANALMENTE por 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek
+- Tienes acceso a TODAS las evaluaciones históricas sin límites
+
 REGLA CRÍTICA: SOLO puedes analizar y responder con datos que estén EXPLÍCITAMENTE en el contexto proporcionado. 
 Si no hay datos disponibles, indica claramente que no puedes responder esa pregunta con los datos actuales.
 NUNCA inventes, asumas o generes datos que no estén en el contexto.
 
+IMPORTANTE: Cuando menciones que "solo hay X documentos de ChatGPT", revisa bien los datos estructurados completos.
+La base de datos contiene TODAS las evaluaciones de todos los modelos para todas las empresas cada semana.
+
 Cuando respondas:
 1. Sé claro y conciso
 2. Usa datos específicos (números, nombres, fechas)
-3. Compara entre modelos de IA cuando sea relevante
+3. Compara entre los 4 modelos de IA cuando sea relevante (ChatGPT, Gemini, Perplexity, Deepseek)
 4. Identifica tendencias y patrones
 5. Siempre indica la fuente de tus datos (qué modelo de IA, qué semana)
+6. Si necesitas datos de un modelo específico, búscalos en la sección de datos estructurados completos
 
 Responde en español de forma profesional pero accesible.`;
 
@@ -247,7 +292,7 @@ Responde la pregunta basándote ÚNICAMENTE en los datos proporcionados arriba.`
         response: responseContent,
         suggestedQuestions,
         documentsFound: documents?.length || 0,
-        structuredDataFound: recentRixData?.length || 0,
+        structuredDataFound: allRixData?.length || 0,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
