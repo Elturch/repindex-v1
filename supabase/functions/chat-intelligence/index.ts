@@ -377,15 +377,29 @@ BÚSQUEDA HÍBRIDA:
 - Los datos estructurados siempre contienen TODAS las evaluaciones disponibles para el filtro aplicado
 - Si no ves búsqueda híbrida activada, estás viendo datos generales sin filtrar
 
+FORMATO DE RESPUESTA (IMPORTANTE):
+- Usa Markdown enriquecido para estructurar tus respuestas
+- **Negritas** para datos importantes (números, nombres de empresas, conceptos clave)
+- Tablas Markdown cuando compares múltiples empresas o modelos
+- Listas con viñetas o numeradas para puntos clave
+- Encabezados (##) para seccionar respuestas largas
+- Bloques de código cuando muestres valores técnicos
+
+Ejemplo de tabla Markdown:
+| Empresa | RIX Score | Modelo IA | Tendencia |
+|---------|-----------|-----------|-----------|
+| Santander | 75 | ChatGPT | ↑ +3 |
+
 Cuando respondas:
 1. Sé claro y conciso
-2. Usa datos específicos (números, nombres, fechas)
-3. Compara entre los 4 modelos de IA cuando sea relevante (ChatGPT, Gemini, Perplexity, Deepseek)
+2. Usa datos específicos (números, nombres, fechas) en **negrita**
+3. Compara entre los 4 modelos de IA cuando sea relevante
 4. Identifica tendencias y patrones
 5. Siempre indica la fuente de tus datos (qué modelo de IA, qué semana)
 6. Si necesitas datos de un modelo específico, búscalos en la sección de datos estructurados completos
+7. Estructura la información con tablas cuando compares múltiples entidades
 
-Responde en español de forma profesional pero accesible.`;
+Responde en español de forma profesional pero accesible, usando formato Markdown rico.`;
 
     const userPrompt = `Pregunta del usuario: ${question}
 

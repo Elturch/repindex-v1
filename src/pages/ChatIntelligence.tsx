@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { MessageCircle, Send, Sparkles, Database, RefreshCw, Download, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -450,7 +451,14 @@ export default function ChatIntelligence() {
                             : 'bg-card border border-border'
                         }`}
                       >
-                        <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                        {message.role === 'user' ? (
+                          <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                        ) : (
+                          <MarkdownMessage 
+                            content={message.content} 
+                            showDownload={true}
+                          />
+                        )}
                         
                         {message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
                           <div className="mt-4 pt-4 border-t border-border/50">
