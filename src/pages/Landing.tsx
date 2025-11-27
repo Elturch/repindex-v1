@@ -4,11 +4,21 @@ import { MiniTablesGrid } from "@/components/landing/MiniTablesGrid";
 import { StatsSection } from "@/components/landing/StatsSection";
 import { CTASection } from "@/components/landing/CTASection";
 import { Layout } from "@/components/layout/Layout";
+import { Waves } from "@/components/landing/Waves";
 
 export default function Landing() {
   return (
     <Layout>
-      <div className="min-h-screen">
+      {/* Fondo de ondas animadas - fixed, cubre toda la pantalla */}
+      <Waves 
+        className="z-0"
+        strokeColor="rgba(128, 128, 128, 0.06)"
+        backgroundColor="transparent"
+        pointerSize={0}
+      />
+      
+      {/* Contenido con z-index superior */}
+      <div className="min-h-screen relative z-10">
         <HeroSection />
         <MiniTablesGrid />
         <FeaturesSection />
