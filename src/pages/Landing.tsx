@@ -12,7 +12,7 @@ export default function Landing() {
       {/* Fondo de ondas animadas - fixed, cubre toda la pantalla */}
       <Waves 
         className="z-0"
-        strokeColor="rgba(100, 150, 255, 0.10)"
+        strokeColor="rgba(100, 150, 255, 0.30)"
         backgroundColor="transparent"
         pointerSize={0}
       />
