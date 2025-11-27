@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw, Download, BarChart3 } from "lucide-react";
+import { MessageCircle, AlertCircle, Building2, CalendarDays, Database, RefreshCw, Download, BarChart3, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,8 @@ interface Message {
 }
 
 export default function ChatIntelligence() {
+  // Generate unique session ID on mount
+  const [sessionId] = useState(() => crypto.randomUUID());
   const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [selectedWeek, setSelectedWeek] = useState<string>("all");
   const [selectedIbexFamily, setSelectedIbexFamily] = useState<string>("all");
@@ -35,12 +37,43 @@ export default function ChatIntelligence() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [companySearch, setCompanySearch] = useState("");
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: rixRuns } = useRixRuns();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
   const { toast } = useToast();
+
+  // Load conversation history from DB on mount
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('chat_intelligence_sessions')
+          .select('*')
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: true });
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const loadedMessages: Message[] = data.map(msg => ({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content,
+            suggestedQuestions: msg.suggested_questions as string[] | undefined,
+          }));
+          setMessages(loadedMessages);
+        }
+      } catch (error) {
+        console.error('Error loading chat history:', error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadHistory();
+  }, [sessionId]);
 
   // Filter companies based on search and ibex family
   const filteredCompanies = companies?.filter(company => {
@@ -96,6 +129,16 @@ export default function ChatIntelligence() {
 
     setMessages(prev => [...prev, userMessage]);
 
+    // Save user message to DB
+    await supabase.from('chat_intelligence_sessions').insert({
+      session_id: sessionId,
+      company: selectedCompany,
+      week: selectedWeek === "all" ? null : selectedWeek,
+      analysis_type: analysisType,
+      role: 'user',
+      content: userMessage.content,
+    });
+
     try {
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
@@ -103,6 +146,7 @@ export default function ChatIntelligence() {
           week: selectedWeek === "all" ? null : selectedWeek,
           analysisType,
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+          sessionId,
         },
       });
 
@@ -115,6 +159,19 @@ export default function ChatIntelligence() {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Save assistant message to DB
+      await supabase.from('chat_intelligence_sessions').insert({
+        session_id: sessionId,
+        company: selectedCompany,
+        week: selectedWeek === "all" ? null : selectedWeek,
+        analysis_type: analysisType,
+        role: 'assistant',
+        content: data.response,
+        suggested_questions: data.suggestedQuestions,
+        documents_found: data.documentsFound,
+        structured_data_found: data.structuredDataFound,
+      });
 
       toast({
         title: "Análisis completado",
@@ -151,13 +208,24 @@ export default function ChatIntelligence() {
 
     setMessages(prev => [...prev, userMessage]);
 
+    // Save user message to DB
+    await supabase.from('chat_intelligence_sessions').insert({
+      session_id: sessionId,
+      company: selectedCompany,
+      week: selectedWeek === "all" ? null : selectedWeek,
+      analysis_type: analysisType,
+      role: 'user',
+      content: question,
+    });
+
     try {
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
           company: selectedCompany,
           week: selectedWeek === "all" ? null : selectedWeek,
-          analysisType: analysisType || 'consenso', // Use current analysis type or default
+          analysisType: analysisType || 'consenso',
           conversationHistory: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
+          sessionId,
         },
       });
 
@@ -170,6 +238,19 @@ export default function ChatIntelligence() {
       };
 
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Save assistant message to DB
+      await supabase.from('chat_intelligence_sessions').insert({
+        session_id: sessionId,
+        company: selectedCompany,
+        week: selectedWeek === "all" ? null : selectedWeek,
+        analysis_type: analysisType,
+        role: 'assistant',
+        content: data.response,
+        suggested_questions: data.suggestedQuestions,
+        documents_found: data.documentsFound,
+        structured_data_found: data.structuredDataFound,
+      });
 
       toast({
         title: "Análisis completado",
@@ -211,6 +292,14 @@ export default function ChatIntelligence() {
     } finally {
       setIsInitializing(false);
     }
+  };
+
+  const handleClearConversation = () => {
+    setMessages([]);
+    toast({
+      title: "Conversación limpiada",
+      description: "Se ha iniciado una nueva conversación",
+    });
   };
 
   const generateFileName = (extension: string) => {
@@ -429,26 +518,38 @@ export default function ChatIntelligence() {
             </div>
           </div>
 
-          {/* Initialize DB Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleInitializeVectorStore}
-            disabled={isInitializing}
-            className="gap-2"
-          >
-            {isInitializing ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Actualizando...
-              </>
-            ) : (
-              <>
-                <Database className="h-4 w-4" />
-                Actualizar Base de Datos
-              </>
-            )}
-          </Button>
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearConversation}
+              disabled={messages.length === 0}
+              className="gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Nueva Conversación
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleInitializeVectorStore}
+              disabled={isInitializing}
+              className="gap-2"
+            >
+              {isInitializing ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Actualizando...
+                </>
+              ) : (
+                <>
+                  <Database className="h-4 w-4" />
+                  Actualizar Base de Datos
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         <div className="grid lg:grid-cols-4 gap-6">
@@ -532,7 +633,13 @@ export default function ChatIntelligence() {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[600px] pr-4">
-                {messages.length === 0 ? (
+                {isLoadingHistory ? (
+                  <div className="space-y-4 py-4">
+                    <Skeleton className="h-20 w-3/4" />
+                    <Skeleton className="h-20 w-3/4 ml-auto" />
+                    <Skeleton className="h-20 w-3/4" />
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
                     <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
                     <p>Selecciona una empresa y tipo de análisis para comenzar</p>
