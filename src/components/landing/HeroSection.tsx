@@ -8,13 +8,13 @@ export function HeroSection() {
   const navigate = useNavigate();
 
   return (
-    <section className="relative py-20 px-4 overflow-hidden bg-gradient-to-b from-background to-accent/5">
+    <section className="relative py-12 px-4 overflow-hidden bg-gradient-to-b from-background to-accent/5">
       <div className="container mx-auto max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="text-center space-y-8"
+          className="text-center space-y-4"
         >
           {/* Icon decoration */}
           <motion.div

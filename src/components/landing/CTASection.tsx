@@ -7,14 +7,14 @@ export function CTASection() {
   const navigate = useNavigate();
 
   return (
-    <section className="py-20 px-4 bg-gradient-to-b from-accent/5 to-background">
+    <section className="py-12 px-4 bg-gradient-to-b from-accent/5 to-background">
       <div className="container mx-auto max-w-4xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="text-center space-y-8"
+          className="text-center space-y-4"
         >
           <h2 className="text-3xl md:text-4xl font-bold">
             Comienza tu Análisis Reputacional
