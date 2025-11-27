@@ -352,7 +352,7 @@ serve(async (req) => {
       // Group by company and week for rankings/recent questions
       // Group by company ONLY for ranking questions to show aggregate scores
       if (isRankingQuestion) {
-        // Get most recent week
+        // Get most recent week present in the data
         const latestWeek = allRixData[0]?.batch_execution_date;
         const latestWeekData = allRixData.filter(run => run.batch_execution_date === latestWeek);
         
@@ -382,7 +382,8 @@ serve(async (req) => {
           }))
           .sort((a: any, b: any) => b.avgRix - a.avgRix);
         
-        context += `\n📊 RANKING COMPLETO (Semana más reciente: ${latestWeekData[0]?.["06_period_from"]} - ${latestWeekData[0]?.["07_period_to"]}):\n\n`;
+        context += `\n📊 RANKING COMPLETO (Semana más reciente: ${latestWeekData[0]?.["06_period_from"]} - ${latestWeekData[0]?.["07_period_to"]}):\n`;
+        context += `Empresas con datos esta semana: ${rankedCompanies.length}\n\n`;
         context += `| # | Empresa | Ticker | RIX Promedio | Detalle por Modelo |\n`;
         context += `|---|---------|--------|--------------|--------------------|\n`;
         
@@ -446,9 +447,11 @@ DATOS DISPONIBLES:
 - Tienes acceso a TODAS las evaluaciones históricas sin límites
 - Sistema de búsqueda híbrida: combina similitud vectorial (semántica) con filtros por empresa y modelo
 
-REGLA CRÍTICA: SOLO puedes analizar y responder con datos que estén EXPLÍCITAMENTE en el contexto proporcionado. 
-Si no hay datos disponibles, indica claramente que no puedes responder esa pregunta con los datos actuales.
-NUNCA inventes, asumas o generes datos que no estén en el contexto.
+REGLA CRÍTICA: SOLO puedes analizar y responder con datos que estén EXPLÍCITAMENTE en el contexto proporcionado.
+- Cuando veas tablas de ranking o listados de empresas, asume que ya contienen TODAS las empresas disponibles para ese periodo y filtro.
+- Si el ranking muestra muchas empresas (por ejemplo > 5), NUNCA digas que solo tienes datos de 1 empresa.
+Si realmente no hay datos, el contexto lo indicará explícitamente.
+JAMÁS inventes, asumas o generes datos que no estén en el contexto.
 
 BÚSQUEDA HÍBRIDA:
 - Si ves "🎯 BÚSQUEDA HÍBRIDA ACTIVADA", significa que los datos ya están pre-filtrados por empresa/modelo
