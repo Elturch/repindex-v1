@@ -2,7 +2,6 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { FaRobot, FaChartLine } from "react-icons/fa";
-import { HiSparkles } from "react-icons/hi";
 
 export function HeroSection() {
   const navigate = useNavigate();
@@ -16,16 +15,6 @@ export function HeroSection() {
           transition={{ duration: 0.6 }}
           className="text-center space-y-4"
         >
-          {/* Icon decoration */}
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-4"
-          >
-            <HiSparkles className="w-10 h-10 text-primary" />
-          </motion.div>
-
           {/* Main title */}
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
