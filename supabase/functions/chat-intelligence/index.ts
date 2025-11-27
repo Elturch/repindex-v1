@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { company, week, analysisType, conversationHistory } = await req.json();
+    const { company, week, analysisType, conversationHistory, sessionId } = await req.json();
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -26,13 +26,14 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY not configured');
     }
 
+    const logPrefix = sessionId ? `[${sessionId.slice(0, 8)}]` : '[no-session]';
+    console.log(`${logPrefix} Processing request for company: ${company}, week: ${week}, type: ${analysisType}`);
+
     // Build search query based on context
     let searchQuery = `${company}`;
     if (week) searchQuery += ` semana ${week}`;
 
-    console.log('Search query:', searchQuery);
-    console.log('Company filter:', company);
-    console.log('Week filter:', week);
+    console.log(`${logPrefix} Search query:`, searchQuery);
 
     // Generate embedding for search query
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
@@ -185,7 +186,7 @@ serve(async (req) => {
 
     switch (analysisType) {
       case 'consenso':
-        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. IMPORTANTE: Solo analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos disponibles, informa al usuario claramente que no puedes realizar el análisis. NUNCA inventes o asumas datos que no estén presentes. Analiza paso a paso los datos y encuentra patrones de consenso entre los diferentes modelos de IA (ChatGPT, Gemini, Perplexity, Deepseek). Utiliza razonamiento estructurado para identificar coincidencias significativas.';
+        systemPrompt = 'Eres un analista experto en comparación entre modelos de IA. REGLA CRÍTICA DE SEGURIDAD: SOLO analiza datos que estén EXPLÍCITAMENTE en el contexto proporcionado. Si no hay documentos en el vector store, responde ÚNICAMENTE: "No tengo datos disponibles para [empresa] en [semana]. Por favor, selecciona otra semana o verifica que la empresa tenga datos en el sistema." NUNCA inventes, asumas o generes análisis sin datos del vector store. Analiza paso a paso los datos y encuentra patrones de consenso entre los diferentes modelos de IA (ChatGPT, Gemini, Perplexity, Deepseek). Utiliza razonamiento estructurado para identificar coincidencias significativas.';
         userPrompt = `Basándote en los datos siguientes, identifica los puntos de CONSENSO entre los modelos de IA sobre ${company}. Analiza sistemáticamente cada modelo y sus evaluaciones:\n\n${context}`;
         break;
 

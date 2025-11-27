@@ -164,6 +164,48 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_intelligence_sessions: {
+        Row: {
+          analysis_type: string | null
+          company: string | null
+          content: string
+          created_at: string | null
+          documents_found: number | null
+          id: string
+          role: string
+          session_id: string
+          structured_data_found: number | null
+          suggested_questions: Json | null
+          week: string | null
+        }
+        Insert: {
+          analysis_type?: string | null
+          company?: string | null
+          content: string
+          created_at?: string | null
+          documents_found?: number | null
+          id?: string
+          role: string
+          session_id: string
+          structured_data_found?: number | null
+          suggested_questions?: Json | null
+          week?: string | null
+        }
+        Update: {
+          analysis_type?: string | null
+          company?: string | null
+          content?: string
+          created_at?: string | null
+          documents_found?: number | null
+          id?: string
+          role?: string
+          session_id?: string
+          structured_data_found?: number | null
+          suggested_questions?: Json | null
+          week?: string | null
+        }
+        Relationships: []
+      }
       chat_vector_memory: {
         Row: {
           created_at: string | null
