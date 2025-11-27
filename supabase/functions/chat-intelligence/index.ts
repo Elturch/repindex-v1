@@ -96,16 +96,43 @@ serve(async (req) => {
         }
       }
       
-      return { models, companies, tickers: Array.from(detectedTickers) };
+      // Detect if question is about rankings/top companies
+      const isRankingQuestion = 
+        lowerQ.includes('mejor') || 
+        lowerQ.includes('top') || 
+        lowerQ.includes('ranking') ||
+        lowerQ.includes('peor') ||
+        lowerQ.includes('mayor') ||
+        lowerQ.includes('menor') ||
+        lowerQ.includes('subido') ||
+        lowerQ.includes('bajado') ||
+        /\d+\s+(empresas|compañías)/.test(lowerQ);
+      
+      // Detect time references
+      const isRecentTimeframe =
+        lowerQ.includes('esta semana') ||
+        lowerQ.includes('última semana') ||
+        lowerQ.includes('este mes') ||
+        lowerQ.includes('últimas semanas') ||
+        lowerQ.includes('reciente');
+      
+      return { models, companies, tickers: Array.from(detectedTickers), isRankingQuestion, isRecentTimeframe };
     };
 
-    const { models: detectedModels, companies: detectedCompanies, tickers: detectedTickers } = 
-      extractMetadata(question, allCompanies || []);
+    const { 
+      models: detectedModels, 
+      companies: detectedCompanies, 
+      tickers: detectedTickers,
+      isRankingQuestion,
+      isRecentTimeframe
+    } = extractMetadata(question, allCompanies || []);
     
     console.log(`${logPrefix} Detected metadata:`, {
       models: detectedModels,
       companies: detectedCompanies.length > 0 ? detectedCompanies : 'none',
-      tickers: detectedTickers.length > 0 ? detectedTickers : 'none'
+      tickers: detectedTickers.length > 0 ? detectedTickers : 'none',
+      isRankingQuestion,
+      isRecentTimeframe
     });
 
     // Generate embedding for the question to search vector store
@@ -225,8 +252,9 @@ serve(async (req) => {
       rixDataFilter['"02_model_name"'] = { in: detectedModels };
     }
 
-    // Get ALL RIX data - no limits, no filters
-    // This ensures we have complete data for all 153 companies x 4 AI models x all weeks
+    // Get RIX data with smart filtering
+    // For ranking questions or recent timeframe questions, limit to recent weeks
+    // Otherwise load all data (with filters if applicable)
     let rixQuery = supabaseClient
       .from('rix_runs')
       .select(`
@@ -247,6 +275,13 @@ serve(async (req) => {
       .order('batch_execution_date', { ascending: false })
       .order('"03_target_name"', { ascending: true })
       .order('"02_model_name"', { ascending: true });
+    
+    // Smart filtering: if ranking question or recent timeframe, limit to last 2 weeks
+    // This prevents context overflow and focuses on relevant data
+    if ((isRankingQuestion || isRecentTimeframe) && detectedCompanies.length === 0) {
+      console.log(`${logPrefix} Ranking/recent question detected - limiting to last 2 weeks`);
+      rixQuery = rixQuery.limit(1200); // ~153 companies × 4 models × 2 weeks
+    }
     
     // Apply metadata filters if detected
     if (detectedCompanies.length > 0) {
@@ -292,7 +327,7 @@ serve(async (req) => {
     }
 
     if (allRixData && allRixData.length > 0) {
-      context += '\n=== BASE DE DATOS COMPLETA (TODAS LAS EVALUACIONES RIX) ===\n\n';
+      context += '\n=== BASE DE DATOS ESTRUCTURADA (EVALUACIONES RIX) ===\n\n';
       
       if (detectedModels.length > 0 || detectedCompanies.length > 0) {
         context += `🎯 BÚSQUEDA HÍBRIDA ACTIVADA (Vector + Metadatos):\n`;
@@ -307,49 +342,93 @@ serve(async (req) => {
         context += `\n`;
       }
       
-      context += `Total de evaluaciones en contexto: ${allRixData.length}\n`;
-      context += `Sistema completo: 153 empresas × 4 modelos IA × múltiples semanas\n\n`;
+      context += `Total de evaluaciones cargadas: ${allRixData.length}\n`;
       
-      // Group by company and week for complete view
-      const byCompanyWeek = allRixData.reduce((acc: any, run: any) => {
-        const company = run["03_target_name"];
-        const week = run["06_period_from"];
-        const key = `${company}|${week}`;
-        if (!acc[key]) {
-          acc[key] = {
-            company,
-            week,
-            ticker: run.repindex_root_issuers?.ticker,
-            sector: run.repindex_root_issuers?.sector_category,
-            ibex_family: run.repindex_root_issuers?.ibex_family_code,
-            models: []
-          };
-        }
-        acc[key].models.push({
-          model: run["02_model_name"],
-          rix: run["09_rix_score"],
-          summary: run["10_resumen"]
-        });
-        return acc;
-      }, {});
-
-      // Show data organized by company and week
-      const entries = Object.values(byCompanyWeek);
-      context += `Datos organizados por empresa y semana (${entries.length} combinaciones únicas):\n\n`;
+      if (isRankingQuestion || isRecentTimeframe) {
+        context += `📊 PREGUNTA DE RANKING/RECIENTE DETECTADA - Datos de las últimas 2 semanas\n`;
+      }
       
-      entries.forEach((entry: any) => {
-        context += `Empresa: ${entry.company}\n`;
-        context += `Ticker: ${entry.ticker || 'N/A'} | Sector: ${entry.sector || 'N/A'} | IBEX: ${entry.ibex_family || 'N/A'}\n`;
-        context += `Semana: ${entry.week}\n`;
-        context += 'Evaluaciones:\n';
-        entry.models.forEach((m: any) => {
-          context += `  • ${m.model}: RIX ${m.rix}\n`;
-          if (m.summary) {
-            context += `    Resumen: ${m.summary.substring(0, 150)}...\n`;
+      context += `Sistema: 153 empresas × 4 modelos IA (ChatGPT, Google Gemini, Perplexity, Deepseek)\n\n`;
+      
+      // Group by company and week for rankings/recent questions
+      // Group by company ONLY for ranking questions to show aggregate scores
+      if (isRankingQuestion) {
+        // Get most recent week
+        const latestWeek = allRixData[0]?.batch_execution_date;
+        const latestWeekData = allRixData.filter(run => run.batch_execution_date === latestWeek);
+        
+        // Calculate average RIX by company for latest week
+        const companyScores = latestWeekData.reduce((acc: any, run: any) => {
+          const company = run["03_target_name"];
+          if (!acc[company]) {
+            acc[company] = {
+              company,
+              ticker: run.repindex_root_issuers?.ticker,
+              scores: [],
+              models: []
+            };
           }
+          acc[company].scores.push(run["09_rix_score"]);
+          acc[company].models.push({
+            model: run["02_model_name"],
+            score: run["09_rix_score"]
+          });
+          return acc;
+        }, {});
+        
+        const rankedCompanies = Object.values(companyScores)
+          .map((c: any) => ({
+            ...c,
+            avgRix: Math.round(c.scores.reduce((a: number, b: number) => a + b, 0) / c.scores.length)
+          }))
+          .sort((a: any, b: any) => b.avgRix - a.avgRix);
+        
+        context += `\n📊 RANKING COMPLETO (Semana más reciente: ${latestWeekData[0]?.["06_period_from"]} - ${latestWeekData[0]?.["07_period_to"]}):\n\n`;
+        context += `| # | Empresa | Ticker | RIX Promedio | Detalle por Modelo |\n`;
+        context += `|---|---------|--------|--------------|--------------------|\n`;
+        
+        rankedCompanies.slice(0, 50).forEach((c: any, idx: number) => {
+          const modelDetails = c.models.map((m: any) => `${m.model}: ${m.score}`).join(', ');
+          context += `| ${idx + 1} | ${c.company} | ${c.ticker || 'N/A'} | **${c.avgRix}** | ${modelDetails} |\n`;
         });
-        context += '\n';
-      });
+        
+        context += `\n(Mostrando top 50 de ${rankedCompanies.length} empresas evaluadas)\n\n`;
+      } else {
+        // For non-ranking questions, show detailed company-week-model breakdown
+        const byCompanyWeek = allRixData.reduce((acc: any, run: any) => {
+          const company = run["03_target_name"];
+          const week = run["06_period_from"];
+          const key = `${company}|${week}`;
+          if (!acc[key]) {
+            acc[key] = {
+              company,
+              week,
+              ticker: run.repindex_root_issuers?.ticker,
+              sector: run.repindex_root_issuers?.sector_category,
+              ibex_family: run.repindex_root_issuers?.ibex_family_code,
+              models: []
+            };
+          }
+          acc[key].models.push({
+            model: run["02_model_name"],
+            rix: run["09_rix_score"],
+            summary: run["10_resumen"]
+          });
+          return acc;
+        }, {});
+
+        const entries = Object.values(byCompanyWeek).slice(0, 100); // Limit to 100 entries for context size
+        context += `Datos organizados (primeras ${entries.length} combinaciones empresa-semana):\n\n`;
+        
+        entries.forEach((entry: any) => {
+          context += `**${entry.company}** (${entry.ticker || 'N/A'}) - Semana ${entry.week}\n`;
+          context += `Sector: ${entry.sector || 'N/A'} | IBEX: ${entry.ibex_family || 'N/A'}\n`;
+          entry.models.forEach((m: any) => {
+            context += `  • ${m.model}: RIX ${m.rix}\n`;
+          });
+          context += '\n';
+        });
+      }
     }
 
     if (!documents?.length && !allRixData?.length) {
