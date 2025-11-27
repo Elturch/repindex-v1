@@ -55,7 +55,7 @@ serve(async (req) => {
     const { data: documents, error: searchError } = await supabaseClient
       .rpc('match_documents', {
         query_embedding: queryEmbedding,
-        match_count: 15,
+        match_count: 50, // Increased from 15 to get more context
       });
 
     if (searchError) {
@@ -65,7 +65,7 @@ serve(async (req) => {
 
     console.log(`${logPrefix} Documents found:`, documents?.length || 0);
 
-    // Get recent RIX data for context
+    // Get recent RIX data for context - NO LIMIT to get all available data
     const { data: recentRixData, error: rixError } = await supabaseClient
       .from('rix_runs')
       .select(`
@@ -82,8 +82,7 @@ serve(async (req) => {
           ibex_family_code
         )
       `)
-      .order('batch_execution_date', { ascending: false })
-      .limit(100);
+      .order('batch_execution_date', { ascending: false });
 
     if (rixError) {
       console.error(`${logPrefix} Error fetching rix_runs:`, rixError);
@@ -96,7 +95,7 @@ serve(async (req) => {
     
     if (documents && documents.length > 0) {
       context += '=== DOCUMENTOS VECTORIZADOS RELEVANTES ===\n\n';
-      documents.slice(0, 10).forEach((doc: any, idx: number) => {
+      documents.slice(0, 20).forEach((doc: any, idx: number) => {
         context += `Documento ${idx + 1}:\n`;
         context += `Empresa: ${doc.metadata.company_name}\n`;
         context += `Modelo IA: ${doc.metadata.ai_model}\n`;
@@ -107,7 +106,8 @@ serve(async (req) => {
     }
 
     if (recentRixData && recentRixData.length > 0) {
-      context += '\n=== DATOS ESTRUCTURADOS RECIENTES (RIX SCORES) ===\n\n';
+      context += '\n=== DATOS ESTRUCTURADOS COMPLETOS (TODOS LOS RIX SCORES) ===\n\n';
+      context += `Total de evaluaciones disponibles: ${recentRixData.length}\n\n`;
       
       // Group by company for better readability
       const byCompany = recentRixData.reduce((acc: any, run: any) => {
@@ -117,7 +117,8 @@ serve(async (req) => {
         return acc;
       }, {});
 
-      Object.entries(byCompany).slice(0, 20).forEach(([company, runs]: [string, any]) => {
+      // Include ALL companies, not just a subset
+      Object.entries(byCompany).forEach(([company, runs]: [string, any]) => {
         context += `Empresa: ${company}\n`;
         context += `Ticker: ${runs[0].repindex_root_issuers?.ticker || 'N/A'}\n`;
         context += `Sector: ${runs[0].repindex_root_issuers?.sector_category || 'N/A'}\n`;
