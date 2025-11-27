@@ -29,6 +29,53 @@ serve(async (req) => {
     const logPrefix = sessionId ? `[${sessionId.slice(0, 8)}]` : '[no-session]';
     console.log(`${logPrefix} User question:`, question);
 
+    // Extract metadata from question for hybrid search
+    const extractMetadata = (q: string) => {
+      const lowerQ = q.toLowerCase();
+      const metadata: any = {};
+      
+      // Detect AI models mentioned
+      const models = [];
+      if (lowerQ.includes('chatgpt') || lowerQ.includes('gpt') || lowerQ.includes('openai')) {
+        models.push('ChatGPT');
+      }
+      if (lowerQ.includes('gemini') || lowerQ.includes('google')) {
+        models.push('Google Gemini');
+      }
+      if (lowerQ.includes('perplexity') || lowerQ.includes('perplex')) {
+        models.push('Perplexity');
+      }
+      if (lowerQ.includes('deepseek') || lowerQ.includes('deep seek')) {
+        models.push('Deepseek');
+      }
+      
+      // Common company tickers/names
+      const companyPatterns = [
+        { regex: /santander/i, name: 'Banco Santander' },
+        { regex: /bbva/i, name: 'BBVA' },
+        { regex: /telefonica|telefónica/i, name: 'Telefónica' },
+        { regex: /iberdrola/i, name: 'Iberdrola' },
+        { regex: /inditex/i, name: 'Inditex' },
+        { regex: /repsol/i, name: 'Repsol' },
+        { regex: /caixabank/i, name: 'CaixaBank' },
+        { regex: /naturgy/i, name: 'Naturgy' },
+        { regex: /mapfre/i, name: 'Mapfre' },
+        { regex: /bankinter/i, name: 'Bankinter' },
+      ];
+      
+      const companies = [];
+      for (const pattern of companyPatterns) {
+        if (pattern.regex.test(q)) {
+          companies.push(pattern.name);
+        }
+      }
+      
+      return { models, companies };
+    };
+
+    const { models: detectedModels, companies: detectedCompanies } = extractMetadata(question);
+    console.log(`${logPrefix} Detected metadata - Models:`, detectedModels, 'Companies:', detectedCompanies);
+
     // Generate embedding for the question to search vector store
     const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
       method: 'POST',
@@ -51,23 +98,104 @@ serve(async (req) => {
     const embeddingData = await embeddingResponse.json();
     const queryEmbedding = embeddingData.data[0].embedding;
 
-    // Search vector store for relevant documents
-    const { data: documents, error: searchError } = await supabaseClient
-      .rpc('match_documents', {
-        query_embedding: queryEmbedding,
-        match_count: 50, // Increased from 15 to get more context
-      });
-
-    if (searchError) {
-      console.error(`${logPrefix} Vector search error:`, searchError);
-      throw searchError;
+    // Hybrid search: Use metadata filters when available
+    // Build filter for match_documents
+    let metadataFilter: any = {};
+    
+    if (detectedModels.length > 0) {
+      // Filter by AI model if detected in question
+      console.log(`${logPrefix} Applying model filter:`, detectedModels);
+      // Note: match_documents filter uses jsonb containment, so we filter one model at a time
+      // or combine results
+    }
+    
+    if (detectedCompanies.length > 0) {
+      // Filter by company if detected in question
+      console.log(`${logPrefix} Applying company filter:`, detectedCompanies);
     }
 
+    // Perform hybrid vector search
+    // If specific metadata detected, do multiple targeted searches
+    let allDocuments: any[] = [];
+    
+    if (detectedModels.length > 0 || detectedCompanies.length > 0) {
+      // Hybrid search: combine metadata filters with vector similarity
+      const searches = [];
+      
+      if (detectedModels.length > 0 && detectedCompanies.length > 0) {
+        // Cross product: each model x each company
+        for (const model of detectedModels) {
+          for (const company of detectedCompanies) {
+            searches.push({ ai_model: model, company_name: company });
+          }
+        }
+      } else if (detectedModels.length > 0) {
+        // Only models detected
+        for (const model of detectedModels) {
+          searches.push({ ai_model: model });
+        }
+      } else if (detectedCompanies.length > 0) {
+        // Only companies detected
+        for (const company of detectedCompanies) {
+          searches.push({ company_name: company });
+        }
+      }
+      
+      console.log(`${logPrefix} Performing ${searches.length} hybrid searches`);
+      
+      for (const filter of searches) {
+        const { data: docs, error } = await supabaseClient
+          .rpc('match_documents', {
+            query_embedding: queryEmbedding,
+            match_count: 20,
+            filter: filter
+          });
+        
+        if (!error && docs) {
+          allDocuments.push(...docs);
+          console.log(`${logPrefix} Found ${docs.length} docs for filter:`, filter);
+        }
+      }
+      
+      // Remove duplicates by id
+      allDocuments = Array.from(
+        new Map(allDocuments.map(doc => [doc.id, doc])).values()
+      );
+      
+      console.log(`${logPrefix} Total unique documents after hybrid search:`, allDocuments.length);
+    } else {
+      // Standard semantic search without metadata filters
+      const { data: documents, error: searchError } = await supabaseClient
+        .rpc('match_documents', {
+          query_embedding: queryEmbedding,
+          match_count: 50,
+        });
+
+      if (searchError) {
+        console.error(`${logPrefix} Vector search error:`, searchError);
+        throw searchError;
+      }
+      
+      allDocuments = documents || [];
+      console.log(`${logPrefix} Standard semantic search found:`, allDocuments.length);
+    }
+
+    const documents = allDocuments;
+
     console.log(`${logPrefix} Documents found:`, documents?.length || 0);
+    
+    // Additional RIX data filtering based on detected metadata
+    let rixDataFilter: any = {};
+    if (detectedCompanies.length > 0) {
+      rixDataFilter['"03_target_name"'] = { in: detectedCompanies };
+    }
+    if (detectedModels.length > 0) {
+      rixDataFilter['"02_model_name"'] = { in: detectedModels };
+    }
 
     // Get ALL RIX data - no limits, no filters
     // This ensures we have complete data for all 153 companies x 4 AI models x all weeks
-    const { data: allRixData, error: rixError } = await supabaseClient
+    let rixQuery = supabaseClient
       .from('rix_runs')
       .select(`
         "03_target_name",
@@ -87,6 +215,18 @@ serve(async (req) => {
       .order('batch_execution_date', { ascending: false })
       .order('"03_target_name"', { ascending: true })
       .order('"02_model_name"', { ascending: true });
+    
+    // Apply metadata filters if detected
+    if (detectedCompanies.length > 0) {
+      rixQuery = rixQuery.in('"03_target_name"', detectedCompanies);
+      console.log(`${logPrefix} Filtering RIX data by companies:`, detectedCompanies);
+    }
+    if (detectedModels.length > 0) {
+      rixQuery = rixQuery.in('"02_model_name"', detectedModels);
+      console.log(`${logPrefix} Filtering RIX data by models:`, detectedModels);
+    }
+    
+    const { data: allRixData, error: rixError } = await rixQuery;
 
     if (rixError) {
       console.error(`${logPrefix} Error fetching rix_runs:`, rixError);
@@ -121,9 +261,16 @@ serve(async (req) => {
 
     if (allRixData && allRixData.length > 0) {
       context += '\n=== BASE DE DATOS COMPLETA (TODAS LAS EVALUACIONES RIX) ===\n\n';
-      context += `IMPORTANTE: Esta base de datos contiene ${allRixData.length} evaluaciones.\n`;
-      context += `Cada empresa es evaluada por 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek.\n`;
-      context += `Total de empresas únicas: aproximadamente ${Math.floor(allRixData.length / 4 / 4)} empresas.\n\n`;
+      
+      if (detectedModels.length > 0 || detectedCompanies.length > 0) {
+        context += `BÚSQUEDA HÍBRIDA APLICADA:\n`;
+        if (detectedModels.length > 0) context += `- Modelos filtrados: ${detectedModels.join(', ')}\n`;
+        if (detectedCompanies.length > 0) context += `- Empresas filtradas: ${detectedCompanies.join(', ')}\n`;
+        context += `\n`;
+      }
+      
+      context += `Total de evaluaciones: ${allRixData.length}\n`;
+      context += `Cada empresa es evaluada por 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek.\n\n`;
       
       // Group by company and week for complete view
       const byCompanyWeek = allRixData.reduce((acc: any, run: any) => {
