@@ -77,22 +77,20 @@ serve(async (req) => {
         models.push('Deepseek');
       }
       
-      // Detect companies by matching issuer_name or ticker
-      const companies = [];
-      const detectedTickers = new Set();
+      // Detect companies by ticker only (to evitar falsos positivos en preguntas genéricas)
+      const companies: string[] = [];
+      const detectedTickers = new Set<string>();
+      let tickerMatched = false;
       
       for (const company of companyList) {
-        const issuerName = company.issuer_name.toLowerCase();
-        const ticker = company.ticker.toLowerCase();
+        const ticker = (company.ticker || '').toLowerCase();
+        if (!ticker) continue;
         
-        // Check if company name or ticker appears in the question
-        // Use word boundaries to avoid partial matches
-        const nameRegex = new RegExp(`\\b${issuerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
         const tickerRegex = new RegExp(`\\b${ticker}\\b`, 'i');
-        
-        if (nameRegex.test(q) || tickerRegex.test(q)) {
+        if (tickerRegex.test(lowerQ)) {
           companies.push(company.issuer_name);
           detectedTickers.add(company.ticker);
+          tickerMatched = true;
         }
       }
       
@@ -115,6 +113,12 @@ serve(async (req) => {
         lowerQ.includes('este mes') ||
         lowerQ.includes('últimas semanas') ||
         lowerQ.includes('reciente');
+      
+      // Para preguntas genéricas de ranking sin ticker explícito, no fijamos empresa
+      if (isRankingQuestion && !tickerMatched) {
+        companies.length = 0;
+        detectedTickers.clear();
+      }
       
       return { models, companies, tickers: Array.from(detectedTickers), isRankingQuestion, isRecentTimeframe };
     };
@@ -259,18 +263,13 @@ serve(async (req) => {
       .from('rix_runs')
       .select(`
         "03_target_name",
+        "05_ticker",
         "02_model_name",
         "09_rix_score",
         "06_period_from",
         "07_period_to",
         batch_execution_date,
-        "10_resumen",
-        repindex_root_issuers (
-          issuer_name,
-          ticker,
-          sector_category,
-          ibex_family_code
-        )
+        "10_resumen"
       `)
       .order('batch_execution_date', { ascending: false })
       .order('"03_target_name"', { ascending: true })
@@ -363,7 +362,7 @@ serve(async (req) => {
           if (!acc[company]) {
             acc[company] = {
               company,
-              ticker: run.repindex_root_issuers?.ticker,
+              ticker: run["05_ticker"],
               scores: [],
               models: []
             };
@@ -403,9 +402,9 @@ serve(async (req) => {
             acc[key] = {
               company,
               week,
-              ticker: run.repindex_root_issuers?.ticker,
-              sector: run.repindex_root_issuers?.sector_category,
-              ibex_family: run.repindex_root_issuers?.ibex_family_code,
+              ticker: run["05_ticker"],
+              sector: null,
+              ibex_family: null,
               models: []
             };
           }
