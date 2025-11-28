@@ -119,7 +119,7 @@ export default function ChatIntelligence() {
 
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.response,
+        content: data.answer,
         suggestedQuestions: data.suggestedQuestions,
       };
 
@@ -129,15 +129,15 @@ export default function ChatIntelligence() {
       await supabase.from('chat_intelligence_sessions').insert({
         session_id: sessionId,
         role: 'assistant',
-        content: data.response,
+        content: data.answer,
         suggested_questions: data.suggestedQuestions,
-        documents_found: data.documentsFound,
-        structured_data_found: data.structuredDataFound,
+        documents_found: data.metadata?.documentsFound,
+        structured_data_found: data.metadata?.structuredDataFound,
       });
 
       toast({
         title: "Respuesta recibida",
-        description: `${data.documentsFound || 0} documentos consultados`,
+        description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
       });
     } catch (error) {
       console.error('Error in chat intelligence:', error);
