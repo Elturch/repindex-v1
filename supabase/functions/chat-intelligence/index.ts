@@ -100,6 +100,7 @@ serve(async (req) => {
         "07_period_to",
         "09_rix_score",
         "51_rix_score_adjusted",
+        "32_rmm_score",
         "10_resumen",
         "11_puntos_clave",
         batch_execution_date
@@ -144,40 +145,50 @@ serve(async (req) => {
       console.log(`${logPrefix} Current week: ${latestWeek} (${currentWeekData.length} records)`);
       console.log(`${logPrefix} Previous week: ${previousWeek || 'N/A'} (${previousWeekData.length} records)`);
 
-      // Calcular ranking por empresa (promedio de todos los modelos)
-      const companyScores = new Map<string, { scores: number[], ticker: string, models: string[] }>();
+      // RANKING DETERMINISTA: Lista de registros individuales (empresa × modelo)
+      // Ordenados por RIX descendente (igual que el dashboard)
+      const rankedRecords = currentWeekData
+        .filter(run => run["32_rmm_score"] !== 0) // Excluir registros inválidos
+        .map(run => ({
+          company: run["03_target_name"],
+          ticker: run["05_ticker"],
+          model: run["02_model_name"],
+          rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
+          periodFrom: run["06_period_from"],
+          periodTo: run["07_period_to"]
+        }))
+        .filter(r => r.company && r.rixScore != null)
+        .sort((a, b) => (b.rixScore || 0) - (a.rixScore || 0));
+
+      // PROMEDIOS POR EMPRESA (solo para consultas que lo requieran explícitamente)
+      const companyAverages = new Map<string, { scores: number[], ticker: string }>();
       
       currentWeekData.forEach(run => {
         const companyName = run["03_target_name"];
         const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
-        const model = run["02_model_name"];
         
         if (!companyName || score == null) return;
         
-        if (!companyScores.has(companyName)) {
-          companyScores.set(companyName, {
+        if (!companyAverages.has(companyName)) {
+          companyAverages.set(companyName, {
             scores: [],
-            ticker: run["05_ticker"] || '',
-            models: []
+            ticker: run["05_ticker"] || ''
           });
         }
         
-        const entry = companyScores.get(companyName)!;
-        entry.scores.push(score);
-        entry.models.push(model || '');
+        companyAverages.get(companyName)!.scores.push(score);
       });
 
-      const rankedCompanies = Array.from(companyScores.entries())
+      const rankedByAverage = Array.from(companyAverages.entries())
         .map(([company, data]) => ({
           company,
           ticker: data.ticker,
           avgRix: Math.round((data.scores.reduce((a, b) => a + b, 0) / data.scores.length) * 10) / 10,
-          models: data.models.join(', '),
-          modelCount: data.models.length
+          modelCount: data.scores.length
         }))
         .sort((a, b) => b.avgRix - a.avgRix);
 
-      // Calcular tendencias (comparar con semana anterior)
+      // Calcular tendencias (comparar promedios con semana anterior)
       const trends = new Map<string, number>();
       if (previousWeekData.length > 0) {
         const prevScores = new Map<string, number[]>();
@@ -190,7 +201,7 @@ serve(async (req) => {
           prevScores.get(companyName)!.push(score);
         });
 
-        rankedCompanies.forEach(curr => {
+        rankedByAverage.forEach(curr => {
           const prevData = prevScores.get(curr.company);
           if (prevData && prevData.length > 0) {
             const prevAvg = prevData.reduce((a, b) => a + b, 0) / prevData.length;
@@ -199,23 +210,35 @@ serve(async (req) => {
         });
       }
 
-      // GENERAR CONTEXTO: Ranking completo
-      const periodFrom = currentWeekData[0]?.["06_period_from"];
-      const periodTo = currentWeekData[0]?.["07_period_to"];
+      // GENERAR CONTEXTO: Ranking individual (como en el dashboard)
+      const periodFrom = rankedRecords[0]?.periodFrom;
+      const periodTo = rankedRecords[0]?.periodTo;
       
-      context += `\n📊 RANKING COMPLETO SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
-      context += `Total de empresas evaluadas: ${rankedCompanies.length}\n`;
-      context += `Total de evaluaciones: ${currentWeekData.length}\n\n`;
-      context += `| # | Empresa | Ticker | RIX Promedio | Modelos | Tendencia |\n`;
-      context += `|---|---------|--------|--------------|---------|----------|\n`;
+      context += `\n📊 RANKING INDIVIDUAL SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
+      context += `Este es el ranking tal como aparece en el dashboard principal.\n`;
+      context += `Cada fila es una evaluación individual: Empresa + Modelo IA + RIX Score.\n\n`;
+      context += `| # | Empresa | Ticker | RIX | Modelo IA |\n`;
+      context += `|---|---------|--------|-----|----------|\n`;
       
-      rankedCompanies.forEach((company, idx) => {
+      rankedRecords.slice(0, 50).forEach((record, idx) => {
+        context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} | ${record.model} |\n`;
+      });
+
+      context += `\n`;
+
+      // GENERAR CONTEXTO: Promedios por empresa (datos secundarios)
+      context += `\n📊 PROMEDIOS POR EMPRESA (solo usar si el usuario pregunta explícitamente):\n`;
+      context += `Esta tabla muestra el promedio de los 4 modelos de IA para cada empresa.\n\n`;
+      context += `| # | Empresa | Ticker | RIX Promedio | Tendencia vs Semana Anterior |\n`;
+      context += `|---|---------|--------|--------------|------------------------------|\n`;
+      
+      rankedByAverage.slice(0, 20).forEach((company, idx) => {
         const trend = trends.get(company.company);
         const trendStr = trend !== undefined 
           ? (trend > 0 ? `↗ +${trend.toFixed(1)}` : trend < 0 ? `↘ ${trend.toFixed(1)}` : '→ 0.0')
           : 'N/A';
         
-        context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${company.modelCount} | ${trendStr} |\n`;
+        context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${trendStr} |\n`;
       });
 
       context += `\n`;
@@ -250,11 +273,11 @@ serve(async (req) => {
 
       context += `\n`;
 
-      // GENERAR CONTEXTO: Top movers (mayores cambios positivos/negativos)
+      // GENERAR CONTEXTO: Top movers (basado en promedios)
       if (trends.size > 0) {
         const sortedByTrend = Array.from(trends.entries())
           .map(([company, trend]) => {
-            const companyData = rankedCompanies.find(c => c.company === company);
+            const companyData = rankedByAverage.find(c => c.company === company);
             return { company, trend, ticker: companyData?.ticker || '', rix: companyData?.avgRix || 0 };
           })
           .sort((a, b) => b.trend - a.trend);
@@ -262,14 +285,14 @@ serve(async (req) => {
         const topGainers = sortedByTrend.slice(0, 5);
         const topLosers = sortedByTrend.slice(-5).reverse();
 
-        context += `\n📈 TOP 5 GANADORES (mayor mejora vs semana anterior):\n`;
+        context += `\n📈 TOP 5 GANADORES (mayor mejora promedio vs semana anterior):\n`;
         topGainers.forEach((item, idx) => {
-          context += `${idx + 1}. ${item.company} (${item.ticker}): RIX ${item.rix}, cambio +${item.trend.toFixed(1)}\n`;
+          context += `${idx + 1}. ${item.company} (${item.ticker}): RIX promedio ${item.rix}, cambio +${item.trend.toFixed(1)}\n`;
         });
 
-        context += `\n📉 TOP 5 PERDEDORES (mayor caída vs semana anterior):\n`;
+        context += `\n📉 TOP 5 PERDEDORES (mayor caída promedio vs semana anterior):\n`;
         topLosers.forEach((item, idx) => {
-          context += `${idx + 1}. ${item.company} (${item.ticker}): RIX ${item.rix}, cambio ${item.trend.toFixed(1)}\n`;
+          context += `${idx + 1}. ${item.company} (${item.ticker}): RIX promedio ${item.rix}, cambio ${item.trend.toFixed(1)}\n`;
         });
 
         context += `\n`;
@@ -298,21 +321,38 @@ serve(async (req) => {
 Interpretar preguntas en lenguaje natural y responder usando SOLO los datos proporcionados.
 
 📊 DATOS QUE RECIBES:
-- **Ranking completo**: Todas las empresas evaluadas esta semana con sus RIX promedio
-- **Análisis por modelo IA**: Estadísticas de ChatGPT, Perplexity, Gemini y DeepSeek
-- **Tendencias semanales**: Comparación con la semana anterior
-- **Documentos cualitativos**: Contexto adicional de análisis previos
+- **RANKING INDIVIDUAL**: Lista de evaluaciones individuales (Empresa + Modelo IA + RIX Score) ordenada por RIX descendente
+  - Este es el MISMO formato que muestra el dashboard principal
+  - Cada fila es una evaluación independiente
+  - Una empresa puede aparecer varias veces con diferentes modelos
+- **PROMEDIOS POR EMPRESA**: Promedio de los 4 modelos de IA para cada empresa (solo usar si se pregunta explícitamente)
+- **ANÁLISIS POR MODELO IA**: Estadísticas de ChatGPT, Perplexity, Gemini y DeepSeek
+- **TENDENCIAS SEMANALES**: Comparación con la semana anterior
+- **DOCUMENTOS CUALITATIVOS**: Contexto adicional de análisis previos
 
-🔍 CÓMO RESPONDER:
-1. **Lee la pregunta cuidadosamente** - Identifica qué información pide el usuario
-2. **Busca en los datos proporcionados** - Los datos YA contienen toda la información disponible
-3. **Responde con precisión** - Si piden top 5, busca las 5 primeras del ranking
-4. **Cita datos específicos** - Menciona cifras, tickers, y detalles concretos
-5. **Compara cuando sea relevante** - Usa las tendencias para mostrar evolución
+🔍 CÓMO RESPONDER (COMPORTAMIENTO DETERMINISTA):
+
+**POR DEFECTO - USA EL RANKING INDIVIDUAL:**
+Cuando pregunten:
+- "Top 5 empresas" / "Mejores empresas" / "Ranking" / "Empresas con mejor RIX"
+  → Usa el RANKING INDIVIDUAL (las primeras 5 filas tal cual)
+  → Puedes incluir varias evaluaciones de la misma empresa si es lo que muestra el ranking
+  → Ejemplo: "1. Secuoya (82 - Perplexity), 2. Tubacex (82 - Perplexity)..."
+
+- "¿Cómo está X empresa?"
+  → Muestra las 4 evaluaciones de esa empresa (una por cada modelo)
+  → Indica cuál modelo le dio la mejor/peor valoración
+
+**SOLO SI PREGUNTAN EXPLÍCITAMENTE - USA PROMEDIOS:**
+- "Promedio de X" / "Media de X" / "Consenso entre modelos" / "Score consolidado"
+  → Usa la tabla de PROMEDIOS POR EMPRESA
+  → Calcula el promedio de los 4 modelos
 
 ⚠️ REGLAS CRÍTICAS:
+- COMPORTAMIENTO DETERMINISTA: Por defecto, usa siempre el ranking individual
+- El ranking individual puede tener la misma empresa varias veces (eso es CORRECTO)
 - SOLO usa información que aparezca explícitamente en el contexto
-- Si ves un ranking con 150+ empresas, significa que TODAS están disponibles
+- Si ves un ranking con 50+ evaluaciones, significa que TODOS los datos están disponibles
 - NUNCA digas "solo tengo datos de X empresa" si el ranking muestra muchas
 - Si NO encuentras información, di claramente "No hay datos disponibles para..."
 - JAMÁS inventes, supongas o generes datos que no estén en el contexto
@@ -322,8 +362,9 @@ Interpretar preguntas en lenguaje natural y responder usando SOLO los datos prop
 - Usa emojis moderadamente (📊 📈 📉 ⚠️)
 - Formato en markdown cuando ayude a la claridad
 - Respuestas concisas pero completas
+- Cuando uses ranking individual, menciona el modelo IA de cada evaluación
 
-RECUERDA: Los datos que recibes son completos y actualizados. Confía en ellos.`;
+RECUERDA: Los datos que recibes son completos, actualizados y deterministas. El ranking individual coincide EXACTAMENTE con el dashboard.`;
 
     const userPrompt = `Pregunta del usuario: "${question}"
 
