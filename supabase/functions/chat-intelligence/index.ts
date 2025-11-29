@@ -133,17 +133,33 @@ serve(async (req) => {
 
     // 4.2 Construir ranking completo de la semana actual
     if (allRixData && allRixData.length > 0) {
-      // Identificar semana más reciente
-      const latestWeek = allRixData[0]?.batch_execution_date;
-      const currentWeekData = allRixData.filter(run => run.batch_execution_date === latestWeek);
-      
-      // Identificar segunda semana más reciente para comparaciones
-      const uniqueWeeks = [...new Set(allRixData.map(r => r.batch_execution_date))];
-      const previousWeek = uniqueWeeks[1];
-      const previousWeekData = previousWeek ? allRixData.filter(run => run.batch_execution_date === previousWeek) : [];
+      // Crear clave de período para agrupar (period_from + period_to son consistentes)
+      const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
 
-      console.log(`${logPrefix} Current week: ${latestWeek} (${currentWeekData.length} records)`);
-      console.log(`${logPrefix} Previous week: ${previousWeek || 'N/A'} (${previousWeekData.length} records)`);
+      // Identificar todos los períodos únicos y ordenarlos por fecha descendente
+      const uniquePeriods = [...new Set(allRixData.map(getPeriodKey))]
+        .sort((a, b) => {
+          const dateA = a.split('|')[1]; // period_to
+          const dateB = b.split('|')[1];
+          return dateB.localeCompare(dateA); // Más reciente primero
+        });
+
+      // Semana actual (período más reciente)
+      const currentPeriod = uniquePeriods[0];
+      const currentWeekData = allRixData.filter(run => getPeriodKey(run) === currentPeriod);
+
+      // Semana anterior (segundo período más reciente)
+      const previousPeriod = uniquePeriods[1];
+      const previousWeekData = previousPeriod 
+        ? allRixData.filter(run => getPeriodKey(run) === previousPeriod) 
+        : [];
+
+      // Parsear fechas para logs y contexto
+      const [currentFrom, currentTo] = currentPeriod ? currentPeriod.split('|') : [null, null];
+      const [prevFrom, prevTo] = previousPeriod ? previousPeriod.split('|') : [null, null];
+
+      console.log(`${logPrefix} Current period: ${currentFrom} to ${currentTo} (${currentWeekData.length} records)`);
+      console.log(`${logPrefix} Previous period: ${prevFrom || 'N/A'} to ${prevTo || 'N/A'} (${previousWeekData.length} records)`);
 
       // RANKING DETERMINISTA: Lista de registros individuales (empresa × modelo)
       // Ordenados por RIX descendente (igual que el dashboard)
@@ -300,10 +316,8 @@ serve(async (req) => {
 
       // GENERAR CONTEXTO: Datos detallados de semana anterior (para comparaciones)
       if (previousWeekData.length > 0) {
-        const prevPeriodFrom = previousWeekData[0]?.["06_period_from"];
-        const prevPeriodTo = previousWeekData[0]?.["07_period_to"];
-        
-        context += `\n📅 DATOS SEMANA ANTERIOR (${prevPeriodFrom} a ${prevPeriodTo}):\n`;
+        // Usar las variables ya parseadas
+        context += `\n📅 DATOS SEMANA ANTERIOR (${prevFrom} a ${prevTo}):\n`;
         context += `Total de evaluaciones: ${previousWeekData.length}\n\n`;
       }
     } else {
