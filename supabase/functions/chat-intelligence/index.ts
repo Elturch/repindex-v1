@@ -423,32 +423,40 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
     // =============================================================================
     console.log(`${logPrefix} Generating follow-up questions...`);
     
-    // Extraer lista de empresas disponibles del contexto para restringir las preguntas
+    // Extraer listas de datos disponibles para restringir las preguntas
     const availableCompanies = allRixData 
       ? [...new Set(allRixData.map(r => r["03_target_name"]))].slice(0, 30).join(', ')
       : '';
     
+    // Extraer sectores y categorías IBEX del cache de compañías
+    const availableSectors = companyCache 
+      ? [...new Set(companyCache.map(c => c.sector_category).filter(Boolean))].join(', ')
+      : 'Energía, Banca, Telecomunicaciones, Construcción, Tecnología, Consumo';
+    
+    const availableIbexCategories = companyCache
+      ? [...new Set(companyCache.map(c => c.ibex_family_code).filter(Boolean))].join(', ')
+      : 'IBEX35, IBEX_MEDIUM, IBEX_SMALL, NO_IBEX';
+    
     const suggestedQuestionsPrompt = `Basándote en la pregunta "${question}" y la respuesta proporcionada, genera exactamente 3 preguntas de seguimiento.
 
-⚠️ RESTRICCIÓN CRÍTICA:
-Las preguntas SOLO pueden mencionar:
-- Empresas de esta lista: ${availableCompanies}
+⚠️ RESTRICCIÓN CRÍTICA - SOLO puedes mencionar datos que existen:
+- Empresas: ${availableCompanies}
+- Sectores: ${availableSectors}
+- Categorías IBEX: ${availableIbexCategories}
 - Modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
-- Métricas: RIX Score (0-100), tendencias semanales, comparaciones entre modelos
+- Métricas: RIX Score (0-100), tendencias semanales
 - Períodos: semana actual vs semana anterior
 
-PROHIBIDO mencionar:
-- Empresas que NO estén en la lista
-- Años específicos (ej: "2024", "última década")
-- Eventos históricos o noticias
-- Métricas financieras (ingresos, beneficios, cotización)
-- Cualquier dato no disponible en RepIndex
+💡 TEMAS RECOMENDADOS para las preguntas:
+1. Análisis por SECTOR (ej: "¿Qué sector tiene mejor RIX promedio?", "Comparativa del sector energético")
+2. Análisis por CATEGORÍA IBEX (ej: "¿Las empresas del IBEX35 tienen mejor reputación que las del IBEX Medium?")
+3. Comparación entre MODELOS de IA (ej: "¿Qué modelo es más generoso/estricto puntuando?")
+4. Comparación SEMANAL (ej: "¿Qué empresas mejoraron más vs la semana pasada?")
 
-Las preguntas deben:
-- Ser específicas sobre datos que SÍ existen
-- Explorar comparaciones entre empresas de la lista
-- Analizar diferencias entre modelos de IA
-- Comparar semana actual vs anterior
+PROHIBIDO mencionar:
+- Empresas/sectores que NO estén en las listas
+- Años específicos, eventos históricos, noticias
+- Métricas financieras (ingresos, cotización, beneficios)
 
 Responde SOLO con un array JSON de 3 strings:
 ["pregunta 1", "pregunta 2", "pregunta 3"]`;
