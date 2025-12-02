@@ -429,12 +429,12 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
       : '';
     
     // Extraer sectores y categorías IBEX del cache de compañías
-    const availableSectors = companyCache 
-      ? [...new Set(companyCache.map(c => c.sector_category).filter(Boolean))].join(', ')
+    const availableSectors = companiesCache 
+      ? [...new Set(companiesCache.map(c => c.sector_category).filter(Boolean))].join(', ')
       : 'Energía, Banca, Telecomunicaciones, Construcción, Tecnología, Consumo';
     
-    const availableIbexCategories = companyCache
-      ? [...new Set(companyCache.map(c => c.ibex_family_code).filter(Boolean))].join(', ')
+    const availableIbexCategories = companiesCache
+      ? [...new Set(companiesCache.map(c => c.ibex_family_code).filter(Boolean))].join(', ')
       : 'IBEX35, IBEX_MEDIUM, IBEX_SMALL, NO_IBEX';
     
     const suggestedQuestionsPrompt = `Basándote en la pregunta "${question}" y la respuesta proporcionada, genera exactamente 3 preguntas de seguimiento.
