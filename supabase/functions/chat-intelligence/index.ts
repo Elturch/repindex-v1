@@ -415,7 +415,7 @@ ${context}
 
 Por favor, responde a la pregunta usando SOLO la información del contexto anterior.`;
 
-    console.log(`${logPrefix} Calling OpenAI (o4-mini)...`);
+    console.log(`${logPrefix} Calling OpenAI (o3 reasoning model)...`);
     const messages = [
       { role: 'system', content: systemPrompt },
       ...conversationHistory,
@@ -429,9 +429,9 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'o4-mini',
+        model: 'o3',
         messages: messages,
-        max_completion_tokens: 2000,
+        max_completion_tokens: 4000,
       }),
     });
 
