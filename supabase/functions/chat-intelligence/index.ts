@@ -442,16 +442,18 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
 ⚠️ RESTRICCIÓN CRÍTICA - SOLO puedes mencionar datos que existen:
 - Empresas: ${availableCompanies}
 - Sectores: ${availableSectors}
-- Categorías IBEX: ${availableIbexCategories}
+- Categorías IBEX: ${availableIbexCategories} (NOTA: hay ~120 empresas fuera del IBEX)
 - Modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
 - Métricas: RIX Score (0-100), tendencias semanales
 - Períodos: semana actual vs semana anterior
 
-💡 TEMAS RECOMENDADOS para las preguntas:
-1. Análisis por SECTOR (ej: "¿Qué sector tiene mejor RIX promedio?", "Comparativa del sector energético")
-2. Análisis por CATEGORÍA IBEX (ej: "¿Las empresas del IBEX35 tienen mejor reputación que las del IBEX Medium?")
-3. Comparación entre MODELOS de IA (ej: "¿Qué modelo es más generoso/estricto puntuando?")
-4. Comparación SEMANAL (ej: "¿Qué empresas mejoraron más vs la semana pasada?")
+💡 TEMAS RECOMENDADOS para las preguntas (varía entre estos):
+1. SECTOR (ej: "¿Qué sector tiene mejor RIX?", "Top empresas del sector Energía")
+2. COTIZADAS vs NO COTIZADAS (ej: "¿Las empresas cotizadas tienen mejor reputación?")
+3. IBEX vs FUERA DEL IBEX (ej: "¿Cómo se compara el IBEX35 con las empresas no cotizadas?")
+4. MODELOS DE IA (ej: "¿Qué modelo es más estricto puntuando?", "¿Hay consenso entre modelos para X?")
+5. TENDENCIAS (ej: "¿Qué empresas mejoraron más esta semana?", "Top movers de la semana")
+6. COMPARATIVAS (ej: "Compara Iberdrola con Endesa", "Top 5 del sector Banca")
 
 PROHIBIDO mencionar:
 - Empresas/sectores que NO estén en las listas
