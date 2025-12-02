@@ -419,18 +419,38 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
     console.log(`${logPrefix} AI response received, length: ${answer.length}`);
 
     // =============================================================================
-    // PASO 6: GENERAR PREGUNTAS SUGERIDAS
+    // PASO 6: GENERAR PREGUNTAS SUGERIDAS (BASADAS SOLO EN DATOS DISPONIBLES)
     // =============================================================================
     console.log(`${logPrefix} Generating follow-up questions...`);
     
-    const suggestedQuestionsPrompt = `Basándote en la pregunta "${question}" y la respuesta proporcionada, genera exactamente 3 preguntas de seguimiento que el usuario podría hacer para profundizar en el análisis.
+    // Extraer lista de empresas disponibles del contexto para restringir las preguntas
+    const availableCompanies = allRixData 
+      ? [...new Set(allRixData.map(r => r["03_target_name"]))].slice(0, 30).join(', ')
+      : '';
+    
+    const suggestedQuestionsPrompt = `Basándote en la pregunta "${question}" y la respuesta proporcionada, genera exactamente 3 preguntas de seguimiento.
+
+⚠️ RESTRICCIÓN CRÍTICA:
+Las preguntas SOLO pueden mencionar:
+- Empresas de esta lista: ${availableCompanies}
+- Modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
+- Métricas: RIX Score (0-100), tendencias semanales, comparaciones entre modelos
+- Períodos: semana actual vs semana anterior
+
+PROHIBIDO mencionar:
+- Empresas que NO estén en la lista
+- Años específicos (ej: "2024", "última década")
+- Eventos históricos o noticias
+- Métricas financieras (ingresos, beneficios, cotización)
+- Cualquier dato no disponible en RepIndex
 
 Las preguntas deben:
-- Ser específicas y relevantes al contexto
-- Explorar diferentes ángulos (comparaciones, tendencias, análisis por modelo)
-- Ser progresivas (fácil → media → avanzada)
+- Ser específicas sobre datos que SÍ existen
+- Explorar comparaciones entre empresas de la lista
+- Analizar diferencias entre modelos de IA
+- Comparar semana actual vs anterior
 
-Responde SOLO con un array JSON de 3 strings, sin explicación adicional:
+Responde SOLO con un array JSON de 3 strings:
 ["pregunta 1", "pregunta 2", "pregunta 3"]`;
 
     try {
@@ -443,11 +463,11 @@ Responde SOLO con un array JSON de 3 strings, sin explicación adicional:
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [
-            { role: 'system', content: 'Eres un asistente que genera preguntas de seguimiento. Responde SOLO con el array JSON.' },
+            { role: 'system', content: 'Generas preguntas de seguimiento sobre datos de reputación corporativa. SOLO puedes mencionar empresas, modelos y métricas que existan en el sistema. Responde SOLO con el array JSON.' },
             { role: 'user', content: suggestedQuestionsPrompt }
           ],
           max_tokens: 300,
-          temperature: 0.7,
+          temperature: 0.5, // Reducido para respuestas más deterministas
         }),
       });
 
