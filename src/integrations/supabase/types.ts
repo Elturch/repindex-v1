@@ -1169,6 +1169,57 @@ export type Database = {
         }
         Relationships: []
       }
+      weekly_news: {
+        Row: {
+          generated_at: string | null
+          id: string
+          keywords: string[] | null
+          main_headline: string
+          main_story: Json
+          meta_description: string | null
+          meta_title: string | null
+          published_at: string | null
+          raw_data: Json | null
+          status: string | null
+          stories: Json
+          week_end: string
+          week_label: string
+          week_start: string
+        }
+        Insert: {
+          generated_at?: string | null
+          id?: string
+          keywords?: string[] | null
+          main_headline: string
+          main_story: Json
+          meta_description?: string | null
+          meta_title?: string | null
+          published_at?: string | null
+          raw_data?: Json | null
+          status?: string | null
+          stories?: Json
+          week_end: string
+          week_label: string
+          week_start: string
+        }
+        Update: {
+          generated_at?: string | null
+          id?: string
+          keywords?: string[] | null
+          main_headline?: string
+          main_story?: Json
+          meta_description?: string | null
+          meta_title?: string | null
+          published_at?: string | null
+          raw_data?: Json | null
+          status?: string | null
+          stories?: Json
+          week_end?: string
+          week_label?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       v_evaluation_composite: {
