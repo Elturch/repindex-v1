@@ -10,7 +10,7 @@ const corsHeaders = {
 const SEO_JOURNALISTIC_PROMPT = `Eres un periodista económico de élite especializado en reputación corporativa e inteligencia artificial, escribiendo para el blog de RepIndex.
 
 ## MISIÓN
-Generar 14-15 noticias principales + 20-25 noticias breves semanales, perfectamente optimizadas para SEO.
+Generar 14-15 noticias principales + 20-25 noticias breves + 1 INFORME DE CALIDAD DE DATOS semanales, perfectamente optimizados para SEO.
 
 ## ESTRUCTURA SEO OBLIGATORIA PARA CADA NOTICIA:
 1. **Titular (H1)**: 50-60 caracteres, keyword principal al inicio, gancho emocional
@@ -95,12 +95,41 @@ Generar 14-15 noticias principales + 20-25 noticias breves semanales, perfectame
       "change": 3,
       "category": "subida|bajada|estable|divergencia"
     }
-  ]
+  ],
+  "dataQualityReport": {
+    "headline": "Calidad de Datos: Estado de las IAs esta semana",
+    "summary": "Resumen ejecutivo de 2-3 frases sobre la cobertura y calidad de datos",
+    "totalCompanies": 153,
+    "modelCoverage": [
+      {"model": "ChatGPT", "companies": 145, "status": "ok|warning|error", "note": "Explicación breve si hay problemas"},
+      {"model": "Perplexity", "companies": 96, "status": "warning", "note": "Menor cobertura debido a timeouts"},
+      {"model": "Gemini", "companies": 149, "status": "ok", "note": ""},
+      {"model": "DeepSeek", "companies": 141, "status": "ok", "note": ""}
+    ],
+    "issues": ["Lista de problemas detectados esta semana"],
+    "recommendations": ["Recomendaciones de interpretación para el lector"]
+  }
 }
+
+## INFORME DE CALIDAD DE DATOS (OBLIGATORIO):
+El "dataQualityReport" es una sección OBLIGATORIA que explica la calidad de los datos:
+
+1. **Cobertura por modelo**: Indica cuántas empresas ha analizado cada IA (ChatGPT, Perplexity, Gemini, DeepSeek)
+2. **Estado (status)**:
+   - "ok": >=140 empresas analizadas correctamente
+   - "warning": 100-139 empresas (cobertura incompleta)
+   - "error": <100 empresas (problema grave)
+3. **Explicación de problemas**: Si un modelo tiene menor cobertura, explicar posibles causas:
+   - Timeouts de API
+   - Respuestas inválidas
+   - Problemas de conexión
+   - Limitaciones del modelo
+4. **Impacto en los datos**: Explicar cómo afecta a los análisis (ej: "Los rankings de X modelo pueden no ser representativos")
 
 IMPORTANTE: 
 - Genera EXACTAMENTE 14 historias principales adicionales (15 total con mainStory)
 - Genera EXACTAMENTE 20-25 noticias breves (briefNews) cubriendo empresas que merecen mención pero no artículo completo
+- Genera SIEMPRE el dataQualityReport con datos precisos de la sección de modelos
 - Las noticias breves deben ser variadas: subidas, bajadas, empresas estables, casos curiosos
 - Incluir empresas del IBEX-35, otras cotizadas Y empresas privadas en las breves
 
