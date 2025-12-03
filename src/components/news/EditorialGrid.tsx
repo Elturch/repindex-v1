@@ -126,10 +126,7 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
             ))}
           </div>
 
-          <div className="flex items-center justify-between pt-2">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">
-              3 min de lectura
-            </p>
+          <div className="flex items-center justify-end pt-2">
             {companies.length > 0 && (
               <Button
                 variant="ghost"
