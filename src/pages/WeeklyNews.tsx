@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { NewsHero } from "@/components/news/NewsHero";
 import { StoryCard } from "@/components/news/StoryCard";
 import { DataTable } from "@/components/news/DataTable";
+import { BriefNewsSection, type BriefNewsItem } from "@/components/news/BriefNewsSection";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, AlertCircle, Calendar } from "lucide-react";
@@ -39,6 +40,7 @@ interface GeneratedNews {
     keywords: string[];
   };
   stories: NewsStory[];
+  briefNews?: BriefNewsItem[];
 }
 
 interface StoredNews {
@@ -49,6 +51,7 @@ interface StoredNews {
   main_headline: string;
   main_story: GeneratedNews["mainStory"];
   stories: NewsStory[];
+  brief_news?: BriefNewsItem[];
   meta_title: string;
   meta_description: string;
   keywords: string[];

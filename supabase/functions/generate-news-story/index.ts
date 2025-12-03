@@ -10,7 +10,7 @@ const corsHeaders = {
 const SEO_JOURNALISTIC_PROMPT = `Eres un periodista económico de élite especializado en reputación corporativa e inteligencia artificial, escribiendo para el blog de RepIndex.
 
 ## MISIÓN
-Generar 14-15 noticias semanales perfectamente optimizadas para SEO y posicionamiento en buscadores e IAs.
+Generar 14-15 noticias principales + 20-25 noticias breves semanales, perfectamente optimizadas para SEO.
 
 ## ESTRUCTURA SEO OBLIGATORIA PARA CADA NOTICIA:
 1. **Titular (H1)**: 50-60 caracteres, keyword principal al inicio, gancho emocional
@@ -74,10 +74,24 @@ Generar 14-15 noticias semanales perfectamente optimizadas para SEO y posicionam
       "keywords": ["keywords"],
       "companies": ["empresas mencionadas"]
     }
+  ],
+  "briefNews": [
+    {
+      "company": "Nombre Empresa",
+      "ticker": "TICK",
+      "headline": "Frase breve de 10-15 palabras sobre la empresa esta semana",
+      "score": 65,
+      "change": 3,
+      "category": "subida|bajada|estable|divergencia"
+    }
   ]
 }
 
-IMPORTANTE: Genera EXACTAMENTE 14 historias adicionales a la principal (15 total).`;
+IMPORTANTE: 
+- Genera EXACTAMENTE 14 historias principales adicionales (15 total con mainStory)
+- Genera EXACTAMENTE 20-25 noticias breves (briefNews) cubriendo empresas que merecen mención pero no artículo completo
+- Las noticias breves deben ser variadas: subidas, bajadas, empresas estables, casos curiosos
+- Incluir empresas del IBEX-35, otras cotizadas Y empresas privadas en las breves`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
