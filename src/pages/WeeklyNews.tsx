@@ -91,7 +91,8 @@ export default function WeeklyNews() {
         metaDescription: storedNews.meta_description,
         keywords: storedNews.keywords || [],
         mainStory: storedNews.main_story,
-        stories: storedNews.stories
+        stories: storedNews.stories,
+        briefNews: storedNews.brief_news || []
       });
     }
   }, [storedNews]);
@@ -247,7 +248,7 @@ export default function WeeklyNews() {
               <RefreshCw className="h-8 w-8 mx-auto animate-spin text-primary mb-4" />
               <p className="font-medium">Generando análisis periodístico...</p>
               <p className="text-sm text-muted-foreground mt-1">
-                15 noticias SEO-optimizadas en preparación
+                15 noticias principales + 25 noticias breves en preparación
               </p>
             </div>
           )}
@@ -300,6 +301,11 @@ export default function WeeklyNews() {
                   ))}
                 </div>
               </section>
+
+              {/* Brief News Section */}
+              {generatedNews.briefNews && generatedNews.briefNews.length > 0 && (
+                <BriefNewsSection items={generatedNews.briefNews} />
+              )}
             </>
           )}
 
