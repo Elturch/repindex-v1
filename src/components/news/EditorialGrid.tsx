@@ -144,12 +144,12 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
         {/* Chart sidebar */}
         <div className={`lg:col-span-1 ${isEven ? '' : 'lg:col-start-1 lg:row-start-1'}`}>
           {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-            <div className="bg-muted/30 rounded-lg p-4 border print:p-3">
+            <div className="bg-muted/30 rounded-lg p-5 border print:p-3">
               <div className="flex justify-center mb-3">
-                {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={140} />}
-                {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={180} height={90} showTrend />}
-                {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={150} />}
-                {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={180} height={100} showLabels />}
+                {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={180} />}
+                {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={220} height={120} showTrend />}
+                {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={220} />}
+                {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={220} height={140} showLabels />}
               </div>
               <p className="text-xs text-center text-muted-foreground font-medium">
                 {story.dataHighlight}
@@ -185,10 +185,10 @@ function SecondaryStoryCard({ story }: { story: Story }) {
           {/* Mini chart */}
           {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
             <div className="flex-shrink-0">
-              {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={80} />}
-              {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={100} height={50} />}
-              {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={90} />}
-              {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={100} height={60} />}
+              {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={120} />}
+              {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={140} height={80} />}
+              {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={140} />}
+              {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={140} height={90} horizontal />}
             </div>
           )}
           
@@ -261,10 +261,10 @@ function TertiaryStoryCard({ story }: { story: Story }) {
         {/* Mini chart */}
         {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
           <div className="flex-shrink-0">
-            {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={50} />}
-            {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={60} height={30} />}
-            {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={55} />}
-            {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={60} height={35} />}
+            {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={80} />}
+            {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={80} height={50} />}
+            {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={100} />}
+            {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={80} height={50} horizontal />}
           </div>
         )}
         

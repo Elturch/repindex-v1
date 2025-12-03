@@ -104,18 +104,57 @@ IMPORTANTE:
 - Las noticias breves deben ser variadas: subidas, bajadas, empresas estables, casos curiosos
 - Incluir empresas del IBEX-35, otras cotizadas Y empresas privadas en las breves
 
-## GRÁFICOS OBLIGATORIOS - MUY IMPORTANTE:
-Cada noticia DEBE incluir un "chartData" con datos ESPECÍFICOS que reflejen los datos mencionados en el titular y body:
+## GRÁFICOS OBLIGATORIOS - ESTRUCTURA EXACTA:
+Cada noticia DEBE incluir un "chartData" con datos ESPECÍFICOS usando estos formatos:
 
-- **subidas/bajadas**: Usa tipo "line" con 4 puntos mostrando la evolución real (ej: semana -3, -2, -1, actual)
-- **divergencia**: Usa tipo "radar" con los scores REALES de cada IA mencionada (ChatGPT, Perplexity, Gemini, DeepSeek)
-- **consenso**: Usa tipo "pie" mostrando distribución de opiniones o porcentajes mencionados
-- **sector**: Usa tipo "bar" con los sectores y sus scores REALES
-- **modelo_ia**: Usa tipo "bar" comparando los promedios REALES de cada modelo
-- **ibex**: Usa tipo "bar" con el TOP 5 empresas y sus scores REALES
-- **privadas**: Usa tipo "bar" con empresas privadas y sus scores REALES
+Para **subidas/bajadas** usa tipo "line" con evolución semanal:
+  "chartData": {
+    "type": "line",
+    "data": [
+      {"name": "Sem -3", "value": 58},
+      {"name": "Sem -2", "value": 61},
+      {"name": "Sem -1", "value": 64},
+      {"name": "Actual", "value": 72}
+    ]
+  }
 
-Los valores del chartData DEBEN coincidir exactamente con los datos mencionados en headline/dataHighlight/body. NO inventes números aleatorios.`;
+Para **divergencia** usa tipo "bar" horizontal comparando modelos:
+  "chartData": {
+    "type": "bar",
+    "data": [
+      {"name": "ChatGPT", "value": 75},
+      {"name": "Perplexity", "value": 68},
+      {"name": "Gemini", "value": 82},
+      {"name": "DeepSeek", "value": 59}
+    ]
+  }
+
+Para **consenso** usa tipo "pie" mostrando distribución:
+  "chartData": {
+    "type": "pie", 
+    "data": [
+      {"name": "Alto (>70)", "value": 3},
+      {"name": "Medio (50-70)", "value": 1},
+      {"name": "Bajo (<50)", "value": 0}
+    ]
+  }
+
+Para **sector/ibex/privadas/modelo_ia** usa tipo "bar" con TOP empresas:
+  "chartData": {
+    "type": "bar",
+    "data": [
+      {"name": "Inditex", "value": 78},
+      {"name": "Iberdrola", "value": 74},
+      {"name": "BBVA", "value": 71},
+      {"name": "Telefónica", "value": 65},
+      {"name": "Repsol", "value": 62}
+    ]
+  }
+
+REGLAS DE DATOS:
+- Los valores RIX van de 0 a 100 (nunca fuera de este rango)
+- Los nombres en el gráfico deben coincidir con empresas/modelos mencionados en el texto
+- Usa datos REALES del contexto proporcionado, NO inventes números`;
 
 
 serve(async (req) => {
