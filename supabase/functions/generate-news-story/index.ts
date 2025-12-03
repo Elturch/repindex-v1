@@ -72,7 +72,13 @@ Generar 14-15 noticias principales + 20-25 noticias breves semanales, perfectame
       "body": "Desarrollo periodístico",
       "dataHighlight": "Dato clave",
       "keywords": ["keywords"],
-      "companies": ["empresas mencionadas"]
+      "companies": ["empresas mencionadas"],
+      "chartData": {
+        "type": "pie|line|radar|bar",
+        "data": [
+          {"name": "Etiqueta relacionada con la noticia", "value": 65}
+        ]
+      }
     }
   ],
   "briefNews": [
@@ -91,7 +97,21 @@ IMPORTANTE:
 - Genera EXACTAMENTE 14 historias principales adicionales (15 total con mainStory)
 - Genera EXACTAMENTE 20-25 noticias breves (briefNews) cubriendo empresas que merecen mención pero no artículo completo
 - Las noticias breves deben ser variadas: subidas, bajadas, empresas estables, casos curiosos
-- Incluir empresas del IBEX-35, otras cotizadas Y empresas privadas en las breves`;
+- Incluir empresas del IBEX-35, otras cotizadas Y empresas privadas en las breves
+
+## GRÁFICOS OBLIGATORIOS - MUY IMPORTANTE:
+Cada noticia DEBE incluir un "chartData" con datos ESPECÍFICOS que reflejen los datos mencionados en el titular y body:
+
+- **subidas/bajadas**: Usa tipo "line" con 4 puntos mostrando la evolución real (ej: semana -3, -2, -1, actual)
+- **divergencia**: Usa tipo "radar" con los scores REALES de cada IA mencionada (ChatGPT, Perplexity, Gemini, DeepSeek)
+- **consenso**: Usa tipo "pie" mostrando distribución de opiniones o porcentajes mencionados
+- **sector**: Usa tipo "bar" con los sectores y sus scores REALES
+- **modelo_ia**: Usa tipo "bar" comparando los promedios REALES de cada modelo
+- **ibex**: Usa tipo "bar" con el TOP 5 empresas y sus scores REALES
+- **privadas**: Usa tipo "bar" con empresas privadas y sus scores REALES
+
+Los valores del chartData DEBEN coincidir exactamente con los datos mencionados en headline/dataHighlight/body. NO inventes números aleatorios.`;
+
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {

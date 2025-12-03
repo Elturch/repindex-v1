@@ -29,58 +29,6 @@ const categoryConfig: Record<string, { label: string; emoji: string; variant: "d
   headline: { label: 'Destacado', emoji: '🔥', variant: 'default', chartType: 'pie' },
 };
 
-// Generate sample chart data based on category
-function generateChartData(category: string, dataHighlight: string): ChartData {
-  const config = categoryConfig[category.toLowerCase()];
-  const chartType = config?.chartType || 'line';
-  
-  // Extract numbers from dataHighlight for realistic data
-  const numbers = dataHighlight.match(/\d+/g)?.map(Number) || [50, 60, 70, 55];
-  
-  switch (chartType) {
-    case 'pie':
-      return {
-        type: 'pie',
-        data: [
-          { name: 'Positivo', value: numbers[0] || 65 },
-          { name: 'Neutral', value: numbers[1] || 25 },
-          { name: 'Negativo', value: 100 - (numbers[0] || 65) - (numbers[1] || 25) }
-        ]
-      };
-    case 'radar':
-      return {
-        type: 'radar',
-        data: [
-          { subject: 'GPT', value: numbers[0] || 70, fullMark: 100 },
-          { subject: 'Perp', value: numbers[1] || 65, fullMark: 100 },
-          { subject: 'Gem', value: numbers[2] || 55, fullMark: 100 },
-          { subject: 'DS', value: numbers[3] || 60, fullMark: 100 }
-        ]
-      };
-    case 'bar':
-      return {
-        type: 'bar',
-        data: [
-          { name: 'ChatGPT', value: numbers[0] || 68 },
-          { name: 'Perplexity', value: numbers[1] || 62 },
-          { name: 'Gemini', value: numbers[2] || 58 },
-          { name: 'DeepSeek', value: numbers[3] || 55 }
-        ]
-      };
-    case 'line':
-    default:
-      return {
-        type: 'line',
-        data: [
-          { value: (numbers[0] || 50) - 5 },
-          { value: (numbers[0] || 50) - 2 },
-          { value: numbers[0] || 50 },
-          { value: (numbers[0] || 50) + (numbers[1] || 3) }
-        ]
-      };
-  }
-}
-
 export function StoryCard({ category, headline, body, dataHighlight, lead, keywords, chartData }: StoryCardProps) {
   const config = categoryConfig[category.toLowerCase()] || { 
     label: category, 
@@ -89,7 +37,8 @@ export function StoryCard({ category, headline, body, dataHighlight, lead, keywo
     chartType: 'line' as const
   };
 
-  const chart = chartData || generateChartData(category, dataHighlight);
+  // Only show chart if chartData is provided from the AI
+  const chart = chartData;
 
   return (
     <article className="h-full">
@@ -100,13 +49,15 @@ export function StoryCard({ category, headline, body, dataHighlight, lead, keywo
               {config.emoji} {config.label}
             </Badge>
             
-            {/* Mini Chart */}
-            <div className="flex-shrink-0">
-              {chart.type === 'pie' && <MiniPieChart data={chart.data} size={70} />}
-              {chart.type === 'line' && <MiniLineChart data={chart.data} width={80} height={35} showTrend />}
-              {chart.type === 'radar' && <MiniRadarChart data={chart.data} size={80} />}
-              {chart.type === 'bar' && <MiniBarChart data={chart.data} width={90} height={40} />}
-            </div>
+            {/* Mini Chart - only show if AI provided specific data */}
+            {chart && chart.data && chart.data.length > 0 && (
+              <div className="flex-shrink-0">
+                {chart.type === 'pie' && <MiniPieChart data={chart.data} size={70} />}
+                {chart.type === 'line' && <MiniLineChart data={chart.data} width={80} height={35} showTrend />}
+                {chart.type === 'radar' && <MiniRadarChart data={chart.data} size={80} />}
+                {chart.type === 'bar' && <MiniBarChart data={chart.data} width={90} height={40} />}
+              </div>
+            )}
           </div>
           
           <h3 className="text-lg font-semibold leading-tight mt-2">
