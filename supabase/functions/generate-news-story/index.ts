@@ -160,12 +160,12 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'o3',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: SEO_JOURNALISTIC_PROMPT },
           { role: 'user', content: `Analiza estos datos del RepIndex y genera las 15 noticias SEO-optimizadas de la semana:\n\n${dataContext}` }
         ],
-        max_completion_tokens: 8000,
+        max_tokens: 8000,
       }),
     });
 
