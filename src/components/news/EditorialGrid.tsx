@@ -32,132 +32,204 @@ const categoryLabels: Record<string, string> = {
 
 export function EditorialGrid({ stories }: EditorialGridProps) {
   // Split stories for different sections
-  const primaryStories = stories.slice(0, 2);
-  const secondaryStories = stories.slice(2, 6);
-  const tertiaryStories = stories.slice(6);
+  const primaryStories = stories.slice(0, 3);
+  const secondaryStories = stories.slice(3, 8);
+  const tertiaryStories = stories.slice(8);
 
   return (
-    <div className="space-y-8">
-      {/* Primary row: 2 large stories */}
-      <div className="grid md:grid-cols-2 gap-8 pb-8 border-b">
+    <div className="space-y-10 print:space-y-6">
+      {/* Section header */}
+      <div className="text-center border-b pb-4 print:pb-2">
+        <span className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+          Noticias de la Semana
+        </span>
+      </div>
+
+      {/* Primary stories: Full narrative with charts */}
+      <div className="space-y-8 print:space-y-4">
         {primaryStories.map((story, i) => (
-          <PrimaryStoryCard key={i} story={story} />
+          <PrimaryStoryCard key={i} story={story} index={i} />
         ))}
       </div>
 
-      {/* Secondary row: 4 medium stories */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 pb-8 border-b">
+      {/* Divider */}
+      <div className="flex items-center gap-4 print:gap-2">
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-xs uppercase tracking-widest text-muted-foreground">Más Noticias</span>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+
+      {/* Secondary stories: Medium format with narrative */}
+      <div className="grid md:grid-cols-2 gap-8 print:gap-4">
         {secondaryStories.map((story, i) => (
           <SecondaryStoryCard key={i} story={story} />
         ))}
       </div>
 
-      {/* Tertiary: compact list */}
+      {/* Tertiary: Compact but still readable */}
       {tertiaryStories.length > 0 && (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tertiaryStories.map((story, i) => (
-            <TertiaryStoryCard key={i} story={story} />
-          ))}
-        </div>
+        <>
+          <div className="flex items-center gap-4 print:gap-2">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">Breves</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 print:gap-3">
+            {tertiaryStories.map((story, i) => (
+              <TertiaryStoryCard key={i} story={story} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function PrimaryStoryCard({ story }: { story: Story }) {
+function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
+  const paragraphs = story.body.split('\n\n');
+  const isEven = index % 2 === 0;
 
   return (
-    <article className="space-y-3">
-      <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-        {categoryLabel}
-      </span>
-      
-      <h3 className="text-2xl font-serif font-bold leading-tight">
-        {story.headline}
-      </h3>
-      
-      {story.lead && (
-        <p className="text-muted-foreground leading-relaxed">
-          {story.lead}
-        </p>
-      )}
-
-      {/* Chart */}
-      {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-        <div className="bg-muted/30 rounded-lg p-4 border">
-          <div className="flex justify-center">
-            {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={120} />}
-            {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={160} height={70} showTrend />}
-            {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={130} />}
-            {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={160} height={80} showLabels />}
-          </div>
-          <p className="text-xs text-center text-muted-foreground mt-2">
-            {story.dataHighlight}
+    <article className={`grid lg:grid-cols-3 gap-6 pb-8 border-b print:pb-4 print:break-inside-avoid ${isEven ? '' : 'lg:grid-flow-dense'}`}>
+      {/* Content */}
+      <div className={`lg:col-span-2 space-y-3 ${isEven ? '' : 'lg:col-start-2'}`}>
+        <span className="text-xs font-bold uppercase tracking-widest text-primary">
+          {categoryLabel}
+        </span>
+        
+        <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl">
+          {story.headline}
+        </h2>
+        
+        {story.lead && (
+          <p className="text-lg text-muted-foreground leading-relaxed font-serif print:text-base">
+            {story.lead}
           </p>
-        </div>
-      )}
+        )}
 
-      <p className="text-xs uppercase tracking-widest text-muted-foreground">
-        4 min de lectura
-      </p>
+        {/* Full narrative body */}
+        <div className="prose dark:prose-invert max-w-none">
+          {paragraphs.map((paragraph, i) => (
+            <p key={i} className="text-foreground/80 leading-relaxed mb-3 last:mb-0 print:text-sm print:mb-2">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+
+        <p className="text-xs uppercase tracking-widest text-muted-foreground pt-2">
+          3 min de lectura
+        </p>
+      </div>
+
+      {/* Chart sidebar */}
+      <div className={`lg:col-span-1 ${isEven ? '' : 'lg:col-start-1 lg:row-start-1'}`}>
+        {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
+          <div className="bg-muted/30 rounded-lg p-4 border print:p-3">
+            <div className="flex justify-center mb-3">
+              {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={140} />}
+              {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={180} height={90} showTrend />}
+              {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={150} />}
+              {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={180} height={100} showLabels />}
+            </div>
+            <p className="text-xs text-center text-muted-foreground font-medium">
+              {story.dataHighlight}
+            </p>
+          </div>
+        )}
+      </div>
     </article>
   );
 }
 
 function SecondaryStoryCard({ story }: { story: Story }) {
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
+  const paragraphs = story.body.split('\n\n').slice(0, 2); // First 2 paragraphs
 
   return (
-    <article className="space-y-2">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-        {categoryLabel}
-      </span>
-      
-      <h4 className="text-base font-serif font-semibold leading-tight">
-        {story.headline}
-      </h4>
-
-      {/* Mini chart */}
-      {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-        <div className="flex justify-center py-2">
-          {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={80} />}
-          {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={100} height={40} />}
-          {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={90} />}
-          {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={100} height={50} />}
+    <article className="space-y-3 pb-6 border-b print:pb-3 print:break-inside-avoid">
+      <div className="flex items-start gap-4">
+        {/* Mini chart */}
+        {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
+          <div className="flex-shrink-0">
+            {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={80} />}
+            {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={100} height={50} />}
+            {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={90} />}
+            {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={100} height={60} />}
+          </div>
+        )}
+        
+        <div className="flex-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            {categoryLabel}
+          </span>
+          
+          <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base">
+            {story.headline}
+          </h3>
         </div>
+      </div>
+
+      {/* Lead */}
+      {story.lead && (
+        <p className="text-sm text-muted-foreground leading-relaxed print:text-xs">
+          {story.lead}
+        </p>
       )}
 
-      <p className="text-xs text-muted-foreground line-clamp-2">
-        {story.dataHighlight}
-      </p>
+      {/* Abbreviated body */}
+      <div className="text-sm text-foreground/70 leading-relaxed print:text-xs">
+        {paragraphs.map((paragraph, i) => (
+          <p key={i} className="mb-2 last:mb-0">
+            {paragraph}
+          </p>
+        ))}
+      </div>
+
+      {/* Data highlight */}
+      <div className="bg-muted/50 rounded px-3 py-2 text-xs border-l-2 border-primary">
+        <p className="font-medium">{story.dataHighlight}</p>
+      </div>
     </article>
   );
 }
 
 function TertiaryStoryCard({ story }: { story: Story }) {
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
+  const firstParagraph = story.body.split('\n\n')[0];
 
   return (
-    <article className="flex gap-3 py-3 border-b last:border-b-0">
-      {/* Mini chart on left */}
-      {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-        <div className="flex-shrink-0">
-          {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={50} />}
-          {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={60} height={30} />}
-          {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={55} />}
-          {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={60} height={30} />}
+    <article className="space-y-2 pb-4 border-b print:pb-2 print:break-inside-avoid">
+      <div className="flex items-start gap-3">
+        {/* Mini chart */}
+        {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
+          <div className="flex-shrink-0">
+            {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={50} />}
+            {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={60} height={30} />}
+            {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={55} />}
+            {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={60} height={35} />}
+          </div>
+        )}
+        
+        <div className="flex-1 min-w-0">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+            {categoryLabel}
+          </span>
+          <h4 className="text-sm font-semibold leading-tight print:text-xs">
+            {story.headline}
+          </h4>
         </div>
-      )}
-      
-      <div className="flex-1 min-w-0">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">
-          {categoryLabel}
-        </span>
-        <h5 className="text-sm font-semibold leading-tight line-clamp-2">
-          {story.headline}
-        </h5>
       </div>
+      
+      {/* Brief narrative */}
+      <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3 print:line-clamp-2">
+        {firstParagraph}
+      </p>
+      
+      <p className="text-[10px] text-muted-foreground font-medium">
+        {story.dataHighlight}
+      </p>
     </article>
   );
 }
