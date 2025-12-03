@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { HelmetProvider } from "react-helmet-async";
+import { ChatProvider } from "@/contexts/ChatContext";
+import { FloatingChat } from "@/components/chat/FloatingChat";
 import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
 import InsertRixResults from "./pages/InsertRixResults";
@@ -24,17 +26,20 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/chat" element={<ChatIntelligence />} />
-            <Route path="/market-evolution" element={<MarketEvolution />} />
-            <Route path="/noticias" element={<WeeklyNews />} />
-            <Route path="/rix-run/:id" element={<RixRunDetail />} />
-            <Route path="/insert-rix" element={<InsertRixResults />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <ChatProvider>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/chat" element={<ChatIntelligence />} />
+              <Route path="/market-evolution" element={<MarketEvolution />} />
+              <Route path="/noticias" element={<WeeklyNews />} />
+              <Route path="/rix-run/:id" element={<RixRunDetail />} />
+              <Route path="/insert-rix" element={<InsertRixResults />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+            <FloatingChat />
+          </ChatProvider>
         </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>
