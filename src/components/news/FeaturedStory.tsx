@@ -47,10 +47,7 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
               ))}
             </div>
 
-            <div className="flex items-center justify-between pt-4 print:pt-2">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">
-                5 min de lectura · Análisis RepIndex
-              </p>
+            <div className="flex items-center justify-end pt-4 print:pt-2">
               {companies.length > 0 && (
                 <Button
                   variant="outline"
