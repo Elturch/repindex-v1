@@ -1,5 +1,7 @@
-import { Calendar, TrendingUp } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { Printer } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface MagazineHeaderProps {
   weekLabel: string;
@@ -8,58 +10,57 @@ interface MagazineHeaderProps {
 
 export function MagazineHeader({ weekLabel, publishedAt }: MagazineHeaderProps) {
   const formattedDate = publishedAt 
-    ? new Date(publishedAt).toLocaleDateString('es-ES', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      })
-    : null;
+    ? format(new Date(publishedAt), "d 'de' MMMM 'de' yyyy", { locale: es })
+    : format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: es });
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
-    <header className="border-b-2 border-foreground pb-4 mb-8">
-      {/* Top bar */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-        <div className="flex items-center gap-4">
-          <span className="uppercase tracking-widest font-medium">Boletín Semanal</span>
-          <Separator orientation="vertical" className="h-4" />
-          <span className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            {formattedDate || weekLabel}
-          </span>
-        </div>
-        <div className="flex items-center gap-1 text-primary">
-          <TrendingUp className="h-3 w-3" />
-          <span className="font-medium">Edición Nº {getWeekNumber()}</span>
-        </div>
+    <header className="text-center py-8 mb-8 border-b-2 border-foreground print:py-4 print:mb-4 print:border-b">
+      {/* Top bar with date and print button */}
+      <div className="flex items-center justify-between mb-4 print:mb-2">
+        <time className="text-xs uppercase tracking-widest text-muted-foreground">
+          {formattedDate}
+        </time>
+        
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={handlePrint}
+          className="print:hidden gap-2 text-muted-foreground hover:text-foreground"
+        >
+          <Printer className="h-4 w-4" />
+          <span className="hidden sm:inline">Imprimir</span>
+        </Button>
+        
+        <span className="text-xs uppercase tracking-widest text-muted-foreground">
+          Edición Semanal
+        </span>
       </div>
 
-      {/* Masthead */}
-      <div className="text-center py-4">
-        <h1 className="text-5xl md:text-6xl font-serif font-bold tracking-tight">
+      {/* Main masthead */}
+      <div className="space-y-2">
+        <h1 className="text-5xl md:text-7xl font-serif font-black tracking-tight print:text-4xl">
           RepIndex
         </h1>
-        <p className="text-sm text-muted-foreground mt-2 tracking-wide uppercase">
+        <p className="text-sm md:text-base uppercase tracking-[0.3em] text-muted-foreground font-medium">
           La Autoridad en Reputación Corporativa de las IAs
         </p>
       </div>
 
-      {/* Section labels */}
-      <div className="flex justify-center gap-6 text-xs uppercase tracking-widest text-muted-foreground pt-2">
-        <span>IBEX-35</span>
-        <span>Cotizadas</span>
-        <span>Privadas</span>
-        <span>Sectores</span>
-        <span>Modelos IA</span>
+      {/* Week indicator */}
+      <div className="mt-6 print:mt-3">
+        <span className="inline-block px-4 py-1 bg-primary/10 text-primary rounded-full text-sm font-semibold print:bg-transparent print:border print:border-foreground">
+          {weekLabel}
+        </span>
       </div>
+
+      {/* Tagline for print */}
+      <p className="hidden print:block text-xs text-muted-foreground mt-4">
+        Análisis semanal de cómo ChatGPT, Perplexity, Gemini y DeepSeek evalúan la reputación de las principales empresas españolas
+      </p>
     </header>
   );
-}
-
-function getWeekNumber(): number {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), 0, 1);
-  const diff = now.getTime() - start.getTime();
-  const oneWeek = 604800000;
-  return Math.ceil(diff / oneWeek);
 }

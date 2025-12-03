@@ -2,6 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Print styles for magazine layout */
+@media print {
+  @page {
+    size: A4;
+    margin: 1.5cm 2cm;
+  }
+  
+  body {
+    font-size: 11pt;
+    line-height: 1.4;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  
+  /* Hide non-essential elements */
+  nav, footer, button, .print\\:hidden {
+    display: none !important;
+  }
+  
+  /* Ensure good page breaks */
+  article {
+    page-break-inside: avoid;
+  }
+  
+  h1, h2, h3, h4 {
+    page-break-after: avoid;
+  }
+  
+  /* Improve chart visibility */
+  .recharts-wrapper {
+    max-width: 100% !important;
+  }
+  
+  /* Remove shadows and backgrounds for cleaner print */
+  .shadow, .shadow-sm, .shadow-lg {
+    box-shadow: none !important;
+  }
+  
+  /* Ensure borders are visible */
+  .border {
+    border-color: #ccc !important;
+  }
+}
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
