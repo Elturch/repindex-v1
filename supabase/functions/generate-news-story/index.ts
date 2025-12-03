@@ -60,7 +60,12 @@ Generar 14-15 noticias principales + 20-25 noticias breves semanales, perfectame
     "lead": "Primer párrafo con datos clave, respondiendo qué-quién-cuándo",
     "body": "Desarrollo analítico en 2-3 párrafos",
     "dataHighlight": "Dato clave para destacar visualmente",
-    "keywords": ["keyword1", "keyword2", "keyword3"]
+    "keywords": ["keyword1", "keyword2", "keyword3"],
+    "companies": ["empresas mencionadas en la noticia principal"],
+    "chartData": {
+      "type": "pie|line|radar|bar",
+      "data": [{"name": "Etiqueta", "value": 65}]
+    }
   },
   "stories": [
     {
@@ -72,7 +77,7 @@ Generar 14-15 noticias principales + 20-25 noticias breves semanales, perfectame
       "body": "Desarrollo periodístico",
       "dataHighlight": "Dato clave",
       "keywords": ["keywords"],
-      "companies": ["empresas mencionadas"],
+      "companies": ["empresas mencionadas - OBLIGATORIO para verificación de datos"],
       "chartData": {
         "type": "pie|line|radar|bar",
         "data": [

@@ -43,6 +43,7 @@ interface GeneratedNews {
     body: string;
     dataHighlight: string;
     keywords: string[];
+    companies?: string[];
     chartData?: ChartData;
   };
   stories: NewsStory[];
@@ -211,6 +212,7 @@ export default function WeeklyNews() {
             body={generatedNews.mainStory.body}
             dataHighlight={generatedNews.mainStory.dataHighlight}
             chartData={generatedNews.mainStory.chartData}
+            companies={generatedNews.mainStory.companies}
           />
 
           {/* Editorial Grid */}
