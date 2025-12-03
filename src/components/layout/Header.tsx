@@ -1,4 +1,4 @@
-import { Sun, Moon, MessageCircle, LayoutDashboard, TrendingUp } from "lucide-react";
+import { Sun, Moon, MessageCircle, LayoutDashboard, TrendingUp, Newspaper } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,16 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           >
             <TrendingUp className="h-4 w-4" />
             Evolución del Mercado
+          </Button>
+          
+          <Button
+            variant={location.pathname === "/noticias" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => navigate("/noticias")}
+            className="flex items-center gap-2"
+          >
+            <Newspaper className="h-4 w-4" />
+            Noticias
           </Button>
           
           <GlossaryDialog />
