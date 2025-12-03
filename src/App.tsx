@@ -11,6 +11,7 @@ import ChatIntelligence from "./pages/ChatIntelligence";
 import { MarketEvolution } from "./pages/MarketEvolution";
 import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
+import WeeklyNews from "./pages/WeeklyNews";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/chat" element={<ChatIntelligence />} />
             <Route path="/market-evolution" element={<MarketEvolution />} />
+            <Route path="/noticias" element={<WeeklyNews />} />
             <Route path="/rix-run/:id" element={<RixRunDetail />} />
             <Route path="/insert-rix" element={<InsertRixResults />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
