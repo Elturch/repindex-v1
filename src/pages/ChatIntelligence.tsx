@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
-import { MessageCircle, Send, Sparkles, Database, RefreshCw, Download, Trash2 } from "lucide-react";
+import { MessageCircle, Send, Sparkles, RefreshCw, Download, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +30,7 @@ export default function ChatIntelligence() {
   const [userQuestion, setUserQuestion] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(false);
+  
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -159,31 +159,6 @@ export default function ChatIntelligence() {
     await handleSendQuestion(prompt);
   };
 
-  const handleInitializeVectorStore = async () => {
-    setIsInitializing(true);
-    
-    try {
-      const { data, error } = await supabase.functions.invoke('populate-vector-store', {
-        body: { clean: true },
-      });
-
-      if (error) throw error;
-
-      toast({
-        title: "Base de datos actualizada",
-        description: `${data.documents_created} documentos creados con éxito`,
-      });
-    } catch (error) {
-      console.error('Error initializing vector store:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error al inicializar",
-        variant: "destructive",
-      });
-    } finally {
-      setIsInitializing(false);
-    }
-  };
 
   const handleClearConversation = () => {
     setMessages([]);
@@ -340,25 +315,6 @@ export default function ChatIntelligence() {
           >
             <Trash2 className="h-4 w-4" />
             Nueva Conversación
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleInitializeVectorStore}
-            disabled={isInitializing}
-            className="gap-2"
-          >
-            {isInitializing ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Actualizando...
-              </>
-            ) : (
-              <>
-                <Database className="h-4 w-4" />
-                Actualizar DB
-              </>
-            )}
           </Button>
         </div>
 
