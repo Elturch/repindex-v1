@@ -1,4 +1,8 @@
+import { useState } from "react";
 import { MiniBarChart, MiniLineChart, MiniPieChart, MiniRadarChart } from "./MiniCharts";
+import { DataVerificationModal } from "./DataVerificationModal";
+import { CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ChartData {
   type: 'pie' | 'line' | 'radar' | 'bar';
@@ -12,6 +16,7 @@ interface Story {
   body: string;
   dataHighlight: string;
   chartData?: ChartData;
+  companies?: string[];
 }
 
 interface EditorialGridProps {
@@ -87,111 +92,165 @@ export function EditorialGrid({ stories }: EditorialGridProps) {
 }
 
 function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
+  const [showVerification, setShowVerification] = useState(false);
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
   const paragraphs = story.body.split('\n\n');
   const isEven = index % 2 === 0;
+  const companies = story.companies || [];
 
   return (
-    <article className={`grid lg:grid-cols-3 gap-6 pb-8 border-b print:pb-4 print:break-inside-avoid ${isEven ? '' : 'lg:grid-flow-dense'}`}>
-      {/* Content */}
-      <div className={`lg:col-span-2 space-y-3 ${isEven ? '' : 'lg:col-start-2'}`}>
-        <span className="text-xs font-bold uppercase tracking-widest text-primary">
-          {categoryLabel}
-        </span>
-        
-        <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl">
-          {story.headline}
-        </h2>
-        
+    <>
+      <article className={`grid lg:grid-cols-3 gap-6 pb-8 border-b print:pb-4 print:break-inside-avoid ${isEven ? '' : 'lg:grid-flow-dense'}`}>
+        {/* Content */}
+        <div className={`lg:col-span-2 space-y-3 ${isEven ? '' : 'lg:col-start-2'}`}>
+          <span className="text-xs font-bold uppercase tracking-widest text-primary">
+            {categoryLabel}
+          </span>
+          
+          <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl">
+            {story.headline}
+          </h2>
+          
+          {story.lead && (
+            <p className="text-lg text-muted-foreground leading-relaxed font-serif print:text-base">
+              {story.lead}
+            </p>
+          )}
+
+          {/* Full narrative body */}
+          <div className="prose dark:prose-invert max-w-none">
+            {paragraphs.map((paragraph, i) => (
+              <p key={i} className="text-foreground/80 leading-relaxed mb-3 last:mb-0 print:text-sm print:mb-2">
+                {paragraph}
+              </p>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              3 min de lectura
+            </p>
+            {companies.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowVerification(true)}
+                className="gap-1.5 text-xs text-primary hover:text-primary print:hidden"
+              >
+                <CheckCircle className="h-3.5 w-3.5" />
+                Verificar datos
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Chart sidebar */}
+        <div className={`lg:col-span-1 ${isEven ? '' : 'lg:col-start-1 lg:row-start-1'}`}>
+          {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
+            <div className="bg-muted/30 rounded-lg p-4 border print:p-3">
+              <div className="flex justify-center mb-3">
+                {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={140} />}
+                {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={180} height={90} showTrend />}
+                {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={150} />}
+                {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={180} height={100} showLabels />}
+              </div>
+              <p className="text-xs text-center text-muted-foreground font-medium">
+                {story.dataHighlight}
+              </p>
+            </div>
+          )}
+        </div>
+      </article>
+
+      {companies.length > 0 && (
+        <DataVerificationModal
+          isOpen={showVerification}
+          onClose={() => setShowVerification(false)}
+          companies={companies}
+          headline={story.headline}
+          category={categoryLabel}
+        />
+      )}
+    </>
+  );
+}
+
+function SecondaryStoryCard({ story }: { story: Story }) {
+  const [showVerification, setShowVerification] = useState(false);
+  const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
+  const paragraphs = story.body.split('\n\n').slice(0, 2);
+  const companies = story.companies || [];
+
+  return (
+    <>
+      <article className="space-y-3 pb-6 border-b print:pb-3 print:break-inside-avoid">
+        <div className="flex items-start gap-4">
+          {/* Mini chart */}
+          {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
+            <div className="flex-shrink-0">
+              {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={80} />}
+              {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={100} height={50} />}
+              {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={90} />}
+              {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={100} height={60} />}
+            </div>
+          )}
+          
+          <div className="flex-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              {categoryLabel}
+            </span>
+            
+            <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base">
+              {story.headline}
+            </h3>
+          </div>
+        </div>
+
+        {/* Lead */}
         {story.lead && (
-          <p className="text-lg text-muted-foreground leading-relaxed font-serif print:text-base">
+          <p className="text-sm text-muted-foreground leading-relaxed print:text-xs">
             {story.lead}
           </p>
         )}
 
-        {/* Full narrative body */}
-        <div className="prose dark:prose-invert max-w-none">
+        {/* Abbreviated body */}
+        <div className="text-sm text-foreground/70 leading-relaxed print:text-xs">
           {paragraphs.map((paragraph, i) => (
-            <p key={i} className="text-foreground/80 leading-relaxed mb-3 last:mb-0 print:text-sm print:mb-2">
+            <p key={i} className="mb-2 last:mb-0">
               {paragraph}
             </p>
           ))}
         </div>
 
-        <p className="text-xs uppercase tracking-widest text-muted-foreground pt-2">
-          3 min de lectura
-        </p>
-      </div>
-
-      {/* Chart sidebar */}
-      <div className={`lg:col-span-1 ${isEven ? '' : 'lg:col-start-1 lg:row-start-1'}`}>
-        {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-          <div className="bg-muted/30 rounded-lg p-4 border print:p-3">
-            <div className="flex justify-center mb-3">
-              {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={140} />}
-              {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={180} height={90} showTrend />}
-              {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={150} />}
-              {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={180} height={100} showLabels />}
-            </div>
-            <p className="text-xs text-center text-muted-foreground font-medium">
-              {story.dataHighlight}
-            </p>
+        {/* Data highlight + verification */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="bg-muted/50 rounded px-3 py-2 text-xs border-l-2 border-primary flex-1">
+            <p className="font-medium">{story.dataHighlight}</p>
           </div>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function SecondaryStoryCard({ story }: { story: Story }) {
-  const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
-  const paragraphs = story.body.split('\n\n').slice(0, 2); // First 2 paragraphs
-
-  return (
-    <article className="space-y-3 pb-6 border-b print:pb-3 print:break-inside-avoid">
-      <div className="flex items-start gap-4">
-        {/* Mini chart */}
-        {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-          <div className="flex-shrink-0">
-            {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={80} />}
-            {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={100} height={50} />}
-            {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={90} />}
-            {story.chartData.type === 'bar' && <MiniBarChart data={story.chartData.data} width={100} height={60} />}
-          </div>
-        )}
-        
-        <div className="flex-1">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {categoryLabel}
-          </span>
-          
-          <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base">
-            {story.headline}
-          </h3>
+          {companies.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowVerification(true)}
+              className="gap-1 text-[10px] text-muted-foreground hover:text-primary print:hidden"
+            >
+              <CheckCircle className="h-3 w-3" />
+              Verificar
+            </Button>
+          )}
         </div>
-      </div>
+      </article>
 
-      {/* Lead */}
-      {story.lead && (
-        <p className="text-sm text-muted-foreground leading-relaxed print:text-xs">
-          {story.lead}
-        </p>
+      {companies.length > 0 && (
+        <DataVerificationModal
+          isOpen={showVerification}
+          onClose={() => setShowVerification(false)}
+          companies={companies}
+          headline={story.headline}
+          category={categoryLabel}
+        />
       )}
-
-      {/* Abbreviated body */}
-      <div className="text-sm text-foreground/70 leading-relaxed print:text-xs">
-        {paragraphs.map((paragraph, i) => (
-          <p key={i} className="mb-2 last:mb-0">
-            {paragraph}
-          </p>
-        ))}
-      </div>
-
-      {/* Data highlight */}
-      <div className="bg-muted/50 rounded px-3 py-2 text-xs border-l-2 border-primary">
-        <p className="font-medium">{story.dataHighlight}</p>
-      </div>
-    </article>
+    </>
   );
 }
 
