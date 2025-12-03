@@ -26,7 +26,7 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
     <>
       <article className="pb-10 border-b-2 border-foreground/20 print:pb-6 print:border-b">
         {/* Main headline */}
-        <h1 className="text-4xl md:text-5xl lg:text-6xl font-serif font-bold leading-[1.1] tracking-tight mb-6 print:text-3xl print:mb-4">
+        <h1 className="text-2xl md:text-3xl lg:text-4xl font-serif font-bold leading-[1.1] tracking-tight mb-6 print:text-2xl print:mb-4">
           {headline}
         </h1>
         
