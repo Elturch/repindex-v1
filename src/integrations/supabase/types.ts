@@ -1172,6 +1172,7 @@ export type Database = {
       weekly_news: {
         Row: {
           brief_news: Json | null
+          data_quality_report: Json | null
           generated_at: string | null
           id: string
           keywords: string[] | null
@@ -1189,6 +1190,7 @@ export type Database = {
         }
         Insert: {
           brief_news?: Json | null
+          data_quality_report?: Json | null
           generated_at?: string | null
           id?: string
           keywords?: string[] | null
@@ -1206,6 +1208,7 @@ export type Database = {
         }
         Update: {
           brief_news?: Json | null
+          data_quality_report?: Json | null
           generated_at?: string | null
           id?: string
           keywords?: string[] | null

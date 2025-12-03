@@ -276,6 +276,7 @@ serve(async (req) => {
           main_story: newsData.mainStory,
           stories: newsData.stories,
           brief_news: newsData.briefNews || [],
+          data_quality_report: newsData.dataQualityReport || null,
           raw_data: dataToProcess,
           meta_title: newsData.metaTitle,
           meta_description: newsData.metaDescription,
