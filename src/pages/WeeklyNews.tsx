@@ -8,6 +8,7 @@ import { FeaturedStory } from "@/components/news/FeaturedStory";
 import { EditorialGrid } from "@/components/news/EditorialGrid";
 import { DataTable } from "@/components/news/DataTable";
 import { BriefNewsSection, type BriefNewsItem } from "@/components/news/BriefNewsSection";
+import { DataQualityReport } from "@/components/news/DataQualityReport";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Newspaper } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -48,6 +49,19 @@ interface GeneratedNews {
   };
   stories: NewsStory[];
   briefNews?: BriefNewsItem[];
+  dataQualityReport?: {
+    headline: string;
+    summary: string;
+    totalCompanies: number;
+    modelCoverage: {
+      model: string;
+      companies: number;
+      status: 'ok' | 'warning' | 'error';
+      note?: string;
+    }[];
+    issues?: string[];
+    recommendations?: string[];
+  };
 }
 
 interface StoredNews {
@@ -59,6 +73,7 @@ interface StoredNews {
   main_story: GeneratedNews["mainStory"];
   stories: NewsStory[];
   brief_news?: BriefNewsItem[];
+  data_quality_report?: GeneratedNews["dataQualityReport"];
   meta_title: string;
   meta_description: string;
   keywords: string[];
@@ -96,7 +111,8 @@ export default function WeeklyNews() {
         keywords: storedNews.keywords || [],
         mainStory: storedNews.main_story,
         stories: storedNews.stories,
-        briefNews: storedNews.brief_news || []
+        briefNews: storedNews.brief_news || [],
+        dataQualityReport: storedNews.data_quality_report
       });
     }
   }, [storedNews]);
@@ -302,6 +318,13 @@ export default function WeeklyNews() {
                   ]}
                 />
               </div>
+
+              {/* Data Quality Report - alongside data tables */}
+              {generatedNews?.dataQualityReport && (
+                <div className="mt-8">
+                  <DataQualityReport report={generatedNews.dataQualityReport} />
+                </div>
+              )}
             </section>
           )}
 
