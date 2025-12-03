@@ -1171,6 +1171,7 @@ export type Database = {
       }
       weekly_news: {
         Row: {
+          brief_news: Json | null
           generated_at: string | null
           id: string
           keywords: string[] | null
@@ -1187,6 +1188,7 @@ export type Database = {
           week_start: string
         }
         Insert: {
+          brief_news?: Json | null
           generated_at?: string | null
           id?: string
           keywords?: string[] | null
@@ -1203,6 +1205,7 @@ export type Database = {
           week_start: string
         }
         Update: {
+          brief_news?: Json | null
           generated_at?: string | null
           id?: string
           keywords?: string[] | null

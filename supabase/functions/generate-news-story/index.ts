@@ -169,7 +169,7 @@ serve(async (req) => {
       throw new Error('Failed to parse news data from AI response');
     }
 
-    console.log(`Successfully generated ${newsData.stories?.length + 1 || 0} news stories`);
+    console.log(`Successfully generated ${newsData.stories?.length + 1 || 0} main stories + ${newsData.briefNews?.length || 0} brief news`);
 
     // Save to database if requested or CRON trigger
     if (saveToDb || trigger === 'cron') {
@@ -182,6 +182,7 @@ serve(async (req) => {
           main_headline: newsData.mainStory.headline,
           main_story: newsData.mainStory,
           stories: newsData.stories,
+          brief_news: newsData.briefNews || [],
           raw_data: dataToProcess,
           meta_title: newsData.metaTitle,
           meta_description: newsData.metaDescription,
@@ -200,7 +201,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       news: newsData,
-      storiesCount: (newsData.stories?.length || 0) + 1
+      storiesCount: (newsData.stories?.length || 0) + 1,
+      briefNewsCount: newsData.briefNews?.length || 0
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
