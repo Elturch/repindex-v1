@@ -165,7 +165,7 @@ serve(async (req) => {
           { role: 'system', content: SEO_JOURNALISTIC_PROMPT },
           { role: 'user', content: `Analiza estos datos del RepIndex y genera las 15 noticias SEO-optimizadas de la semana:\n\n${dataContext}` }
         ],
-        max_tokens: 8000,
+        max_tokens: 16000,
       }),
     });
 
