@@ -66,42 +66,38 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
 
         {/* Right side buttons */}
         <div className="flex items-center space-x-2">
-          {/* Show full navigation only when authenticated */}
-          {isAuthenticated && (
-            <>
-              <Button
-                variant={location.pathname === "/dashboard" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => navigate("/dashboard")}
-                className="flex items-center gap-2"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                <span className="hidden sm:inline">Dashboard</span>
-              </Button>
-              
-              <Button
-                variant={location.pathname === "/chat" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => navigate("/chat")}
-                className="flex items-center gap-2"
-              >
-                <MessageCircle className="h-4 w-4" />
-                <span className="hidden sm:inline">Chat IA</span>
-              </Button>
-              
-              <Button
-                variant={location.pathname === "/market-evolution" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => navigate("/market-evolution")}
-                className="flex items-center gap-2"
-              >
-                <TrendingUp className="h-4 w-4" />
-                <span className="hidden md:inline">Evolución</span>
-              </Button>
-            </>
-          )}
+          {/* Navigation - always visible, but protected routes redirect to login if not authenticated */}
+          <Button
+            variant={location.pathname === "/dashboard" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => isAuthenticated ? navigate("/dashboard") : navigate("/login")}
+            className="flex items-center gap-2"
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            <span className="hidden sm:inline">Dashboard</span>
+          </Button>
+          
+          <Button
+            variant={location.pathname === "/chat" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => isAuthenticated ? navigate("/chat") : navigate("/login")}
+            className="flex items-center gap-2"
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Chat IA</span>
+          </Button>
+          
+          <Button
+            variant={location.pathname === "/market-evolution" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => isAuthenticated ? navigate("/market-evolution") : navigate("/login")}
+            className="flex items-center gap-2"
+          >
+            <TrendingUp className="h-4 w-4" />
+            <span className="hidden md:inline">Evolución</span>
+          </Button>
 
-          {/* Noticias - always visible */}
+          {/* Noticias - always visible and accessible */}
           <Button
             variant={location.pathname === "/noticias" ? "default" : "ghost"}
             size="sm"
