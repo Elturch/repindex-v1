@@ -60,7 +60,7 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={isLoading}
-        className={compact ? "text-sm" : ""}
+        className={`flex-1 min-w-0 ${compact ? "text-sm" : ""}`}
       />
       <Button
         onClick={handleSend}
