@@ -108,6 +108,9 @@ export function CompanyBulletinViewer({ content, companyName, generatedAt }: Com
 function generatePrintHtml(content: string, companyName?: string, formattedDate?: string): string {
   // Convert markdown to HTML (basic conversion)
   const htmlContent = convertMarkdownToHtml(content);
+  
+  // Extract sections for table of contents
+  const sections = extractSections(content);
 
   return `
 <!DOCTYPE html>
@@ -125,6 +128,10 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       margin: 20mm 20mm 20mm 20mm;
     }
     
+    @page :first {
+      margin: 0;
+    }
+    
     @media print {
       html, body {
         width: 210mm;
@@ -136,6 +143,14 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       .print-container {
         padding: 0 !important;
         margin: 0 !important;
+      }
+      
+      .cover-page {
+        page-break-after: always;
+      }
+      
+      .toc-page {
+        page-break-after: always;
       }
     }
     
@@ -149,24 +164,172 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     }
     
     html {
-      font-size: 11pt;
+      font-size: 10pt;
     }
     
     body {
       font-family: 'Georgia', 'Times New Roman', Times, serif;
       font-size: 1rem;
-      line-height: 1.65;
+      line-height: 1.6;
       color: #1a1a1a;
       background: #ffffff;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     
-    /* Container with fallback margins for screen view */
+    /* ===========================================
+       COVER PAGE - PROFESSIONAL DESIGN
+       =========================================== */
+    .cover-page {
+      width: 210mm;
+      height: 297mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: white;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(ellipse at center, rgba(255,255,255,0.03) 0%, transparent 70%);
+      animation: none;
+    }
+    
+    .cover-logo {
+      font-size: 4rem;
+      font-weight: 900;
+      letter-spacing: -2px;
+      margin-bottom: 10px;
+      text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    
+    .cover-logo span {
+      color: #e94560;
+    }
+    
+    .cover-tagline {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+      opacity: 0.8;
+      margin-bottom: 60px;
+    }
+    
+    .cover-divider {
+      width: 120px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #e94560, transparent);
+      margin: 40px 0;
+    }
+    
+    .cover-edition {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      opacity: 0.7;
+      margin-bottom: 20px;
+    }
+    
+    .cover-company {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      padding: 20px 50px;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.05);
+    }
+    
+    .cover-date {
+      font-size: 1.1rem;
+      opacity: 0.9;
+      margin-top: 30px;
+    }
+    
+    .cover-footer {
+      position: absolute;
+      bottom: 40px;
+      font-size: 0.75rem;
+      opacity: 0.6;
+      letter-spacing: 1px;
+    }
+    
+    /* ===========================================
+       TABLE OF CONTENTS
+       =========================================== */
+    .toc-page {
+      padding: 50px;
+      min-height: 297mm;
+    }
+    
+    .toc-title {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 40px;
+      padding-bottom: 15px;
+      border-bottom: 3px solid #1a1a1a;
+    }
+    
+    .toc-list {
+      list-style: none;
+      padding: 0;
+    }
+    
+    .toc-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 12px 0;
+      border-bottom: 1px dotted #ccc;
+      font-size: 1rem;
+    }
+    
+    .toc-item:hover {
+      background: #f9f9f9;
+    }
+    
+    .toc-number {
+      font-weight: 700;
+      color: #e94560;
+      margin-right: 15px;
+      min-width: 30px;
+    }
+    
+    .toc-text {
+      flex: 1;
+    }
+    
+    .toc-page-num {
+      font-weight: 600;
+      color: #666;
+    }
+    
+    .toc-section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-top: 25px;
+      margin-bottom: 10px;
+      color: #333;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    /* ===========================================
+       MAIN CONTENT CONTAINER
+       =========================================== */
     .print-container {
       max-width: 800px;
       margin: 0 auto;
-      padding: 40px 40px;
+      padding: 40px;
     }
     
     /* ===========================================
@@ -191,7 +354,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     }
     
     .masthead-title {
-      font-size: 3rem;
+      font-size: 2.5rem;
       font-weight: 900;
       letter-spacing: -1px;
       margin: 0 0 4px 0;
@@ -223,7 +386,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
        CONTENT TYPOGRAPHY
        =========================================== */
     .bulletin-content h1 {
-      font-size: 1.75rem;
+      font-size: 1.6rem;
       font-weight: 800;
       margin: 32px 0 18px 0;
       padding-bottom: 10px;
@@ -233,7 +396,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     }
     
     .bulletin-content h2 {
-      font-size: 1.35rem;
+      font-size: 1.3rem;
       font-weight: 700;
       margin: 28px 0 14px 0;
       color: #222;
@@ -248,6 +411,14 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       color: #333;
       page-break-after: avoid;
       line-height: 1.35;
+    }
+    
+    .bulletin-content h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 18px 0 10px 0;
+      color: #444;
+      page-break-after: avoid;
     }
     
     .bulletin-content p {
@@ -283,27 +454,27 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       width: 100%;
       border-collapse: collapse;
       margin: 18px 0 24px 0;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       page-break-inside: avoid;
     }
     
     .bulletin-content thead {
-      background: #2a2a2a;
+      background: #1a1a2e;
       color: #fff;
     }
     
     .bulletin-content th {
-      padding: 12px 14px;
+      padding: 10px 12px;
       text-align: left;
       font-weight: 600;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       border: none;
     }
     
     .bulletin-content td {
-      padding: 10px 14px;
+      padding: 8px 12px;
       border-bottom: 1px solid #e5e5e5;
       vertical-align: top;
     }
@@ -322,7 +493,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     .bulletin-content blockquote {
       margin: 24px 0;
       padding: 20px 24px;
-      border-left: 5px solid #1a1a1a;
+      border-left: 5px solid #e94560;
       background: #f7f7f7;
       font-style: italic;
       font-size: 1.05rem;
@@ -400,15 +571,66 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     h2 + *, h3 + * {
       page-break-before: avoid;
     }
+    
+    /* ===========================================
+       PAGE NUMBERS
+       =========================================== */
+    @media print {
+      .bulletin-content {
+        counter-reset: page 2;
+      }
+    }
   </style>
 </head>
 <body>
+  <!-- COVER PAGE -->
+  <div class="cover-page">
+    <div class="cover-logo">Rep<span>Index</span></div>
+    <p class="cover-tagline">La Autoridad en Reputación Corporativa de las IAs</p>
+    
+    <div class="cover-divider"></div>
+    
+    <p class="cover-edition">Boletín Ejecutivo Premium</p>
+    <div class="cover-company">${companyName || 'Análisis Corporativo'}</div>
+    
+    <p class="cover-date">${formattedDate}</p>
+    
+    <p class="cover-footer">
+      Análisis basado en ChatGPT • Perplexity • Gemini • DeepSeek
+    </p>
+  </div>
+  
+  <!-- TABLE OF CONTENTS -->
+  <div class="toc-page">
+    <h1 class="toc-title">Índice de Contenidos</h1>
+    
+    <ul class="toc-list">
+      ${sections.map((section, idx) => `
+        <li class="toc-item">
+          <span class="toc-number">${idx + 1}.</span>
+          <span class="toc-text">${section}</span>
+        </li>
+      `).join('')}
+    </ul>
+    
+    <div style="margin-top: 50px; padding: 20px; background: #f9f9f9; border-left: 4px solid #e94560;">
+      <h3 style="margin-bottom: 10px; font-size: 1rem;">Sobre este informe</h3>
+      <p style="font-size: 0.9rem; line-height: 1.5; text-align: left;">
+        Este boletín ejecutivo presenta un análisis exhaustivo de la reputación corporativa 
+        de <strong>${companyName || 'la empresa'}</strong> según la percepción de cuatro 
+        modelos de inteligencia artificial líderes. Los datos se actualizan semanalmente 
+        y reflejan cómo las IAs construyen y comunican la narrativa de las principales corporaciones.
+      </p>
+    </div>
+  </div>
+  
+  <!-- MAIN CONTENT -->
   <div class="print-container">
     <!-- Magazine Header -->
     <header class="bulletin-header">
       <div class="header-meta">
         <span>${formattedDate}</span>
-        <span>Edición Especial</span>
+        <span>Edición Premium</span>
       </div>
       <h1 class="masthead-title">RepIndex</h1>
       <p class="masthead-subtitle">La Autoridad en Reputación Corporativa de las IAs</p>
@@ -422,7 +644,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     
     <!-- Footer -->
     <footer class="bulletin-footer">
-      <p><strong>RepIndex Bulletin</strong> — Edición Especial</p>
+      <p><strong>RepIndex Bulletin</strong> — Edición Premium</p>
       <p>Análisis basado en ChatGPT, Perplexity, Gemini y DeepSeek</p>
       <p>© ${new Date().getFullYear()} RepIndex — repindex.ai</p>
     </footer>
@@ -431,13 +653,34 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
 </html>`;
 }
 
+function extractSections(markdown: string): string[] {
+  const sections: string[] = [];
+  const lines = markdown.split('\n');
+  
+  for (const line of lines) {
+    // Match h1 and h2 headers
+    const h1Match = line.match(/^#\s+(.+)$/);
+    const h2Match = line.match(/^##\s+(.+)$/);
+    
+    if (h1Match) {
+      sections.push(h1Match[1].replace(/[*_`]/g, '').trim());
+    } else if (h2Match) {
+      sections.push(h2Match[1].replace(/[*_`]/g, '').trim());
+    }
+  }
+  
+  // Limit to first 20 sections for TOC
+  return sections.slice(0, 20);
+}
+
 function convertMarkdownToHtml(markdown: string): string {
   let html = markdown;
   
   // Escape HTML first
   html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   
-  // Headers
+  // Headers (h4 first to avoid conflicts)
+  html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
