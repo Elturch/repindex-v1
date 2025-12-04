@@ -65,36 +65,36 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
         </button>
 
         {/* Right side buttons */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
           {/* Navigation - always visible, but protected routes redirect to login if not authenticated */}
           <Button
             variant={location.pathname === "/dashboard" ? "default" : "ghost"}
             size="sm"
             onClick={() => isAuthenticated ? navigate("/dashboard") : navigate("/login")}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
           >
-            <LayoutDashboard className="h-4 w-4" />
-            <span className="hidden sm:inline">Dashboard</span>
+            <LayoutDashboard className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden md:inline">Dashboard</span>
           </Button>
           
           <Button
             variant={location.pathname === "/chat" ? "default" : "ghost"}
             size="sm"
             onClick={() => isAuthenticated ? navigate("/chat") : navigate("/login")}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
           >
-            <MessageCircle className="h-4 w-4" />
-            <span className="hidden sm:inline">Chat IA</span>
+            <MessageCircle className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden md:inline">Chat IA</span>
           </Button>
           
           <Button
             variant={location.pathname === "/market-evolution" ? "default" : "ghost"}
             size="sm"
             onClick={() => isAuthenticated ? navigate("/market-evolution") : navigate("/login")}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
           >
-            <TrendingUp className="h-4 w-4" />
-            <span className="hidden md:inline">Evolución</span>
+            <TrendingUp className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden lg:inline">Evolución</span>
           </Button>
 
           {/* Noticias - always visible and accessible */}
@@ -102,10 +102,10 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
             variant={location.pathname === "/noticias" ? "default" : "ghost"}
             size="sm"
             onClick={() => navigate("/noticias")}
-            className="flex items-center gap-2"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
           >
-            <Newspaper className="h-4 w-4" />
-            <span className="hidden sm:inline">Noticias</span>
+            <Newspaper className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden md:inline">Noticias</span>
           </Button>
           
           {isAuthenticated && <GlossaryDialog />}
