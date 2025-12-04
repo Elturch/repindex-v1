@@ -299,11 +299,11 @@ export function Dashboard() {
       <Layout title="RepIndex.ai">
         <div className="space-y-6">
         {/* Title */}
-        <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight">
+        <div className="text-center px-2">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
             Índice Reputacional - {aiFilter === "comparison" ? "Comparación" : aiFilter === "all" ? "Todos" : aiFilter}
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             {rixRuns?.length || 0} resultados analizados
             {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
               <span className="ml-2">(con filtros aplicados)</span>
@@ -312,54 +312,56 @@ export function Dashboard() {
         </div>
 
         {/* Controls - AI Selector and View Mode */}
-        <div className="flex items-center justify-between">
-          {/* AI Model Selector */}
-          <div className="flex items-center bg-muted/50 p-1 rounded-lg">
-            <Button
-              variant={aiFilter === "all" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setAIFilter("all")}
-              className="flex items-center gap-2"
-            >
-              <BarChart3 className="h-4 w-4" />
-              Todos
-            </Button>
-            <Button
-              variant={aiFilter === "ChatGPT" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setAIFilter("ChatGPT")}
-              className="flex items-center gap-2"
-            >
-              <ChatGPTIcon className="h-4 w-4" />
-              ChatGPT
-            </Button>
-            <Button
-              variant={aiFilter === "Google Gemini" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setAIFilter("Google Gemini")}
-              className="flex items-center gap-2"
-            >
-              <GeminiIcon className="h-4 w-4" />
-              Google Gemini
-            </Button>
-            <Button
-              variant={aiFilter === "Perplexity" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setAIFilter("Perplexity")}
-              className="flex items-center gap-2"
-            >
-              <PerplexityIcon className="h-4 w-4" />
-              Perplexity
-            </Button>
-            <Button
-              variant={aiFilter === "Deepseek" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setAIFilter("Deepseek")}
-              className="flex items-center gap-2"
-            >
-              <DeepseekIcon className="h-4 w-4" />
-              Deepseek
-            </Button>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          {/* AI Model Selector - Scrollable on mobile/tablet */}
+          <div className="w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
+            <div className="flex items-center bg-muted/50 p-1 rounded-lg min-w-max">
+              <Button
+                variant={aiFilter === "all" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAIFilter("all")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <BarChart3 className="h-4 w-4" />
+                Todos
+              </Button>
+              <Button
+                variant={aiFilter === "ChatGPT" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAIFilter("ChatGPT")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <ChatGPTIcon className="h-4 w-4" />
+                <span className="hidden xs:inline">ChatGPT</span>
+              </Button>
+              <Button
+                variant={aiFilter === "Google Gemini" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAIFilter("Google Gemini")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <GeminiIcon className="h-4 w-4" />
+                <span className="hidden xs:inline">Google</span>
+              </Button>
+              <Button
+                variant={aiFilter === "Perplexity" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAIFilter("Perplexity")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <PerplexityIcon className="h-4 w-4" />
+                <span className="hidden xs:inline">Perplexity</span>
+              </Button>
+              <Button
+                variant={aiFilter === "Deepseek" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setAIFilter("Deepseek")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <DeepseekIcon className="h-4 w-4" />
+                <span className="hidden xs:inline">Deepseek</span>
+              </Button>
+            </div>
           </div>
 
           {/* View Mode Selector */}
@@ -386,20 +388,21 @@ export function Dashboard() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/50 rounded-lg">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Filtros:</span>
-            
-            {/* Company Filter */}
-            <div className="flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-48 justify-between">
-                    {companyFilter === "all" ? "Todas las empresas" : companies?.find(c => c.issuer_name === companyFilter)?.issuer_name || "Seleccionar..."}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
+        <div className="overflow-x-auto">
+          <div className="flex flex-wrap items-center gap-3 p-3 sm:p-4 bg-muted/50 rounded-lg min-w-max sm:min-w-0">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <span className="text-sm font-medium whitespace-nowrap">Filtros:</span>
+              
+              {/* Company Filter */}
+              <div className="flex items-center gap-1.5">
+                <Building2 className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-40 sm:w-48 justify-between text-xs sm:text-sm">
+                      {companyFilter === "all" ? "Todas las empresas" : companies?.find(c => c.issuer_name === companyFilter)?.issuer_name || "Seleccionar..."}
+                      <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
                 <PopoverContent className="w-[300px] p-0" align="start">
                   <Command>
                     <CommandInput placeholder="Buscar empresa..." />
@@ -424,13 +427,13 @@ export function Dashboard() {
             </div>
 
             {/* Sector Filter */}
-            <div className="flex items-center gap-2">
-              <Factory className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-1.5">
+              <Factory className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-48 justify-between">
+                  <Button variant="outline" role="combobox" className="w-36 sm:w-48 justify-between text-xs sm:text-sm">
                     {sectorFilter === "all" ? "Todos los sectores" : sectorFilter}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[300px] p-0" align="start">
@@ -457,13 +460,13 @@ export function Dashboard() {
             </div>
 
             {/* Ibex Family Filter */}
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-1.5">
+              <BarChart3 className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-48 justify-between">
+                  <Button variant="outline" role="combobox" className="w-40 sm:w-48 justify-between text-xs sm:text-sm">
                     {ibexFamilyFilter === "all" ? "Todas las familias IBEX" : ibexFamilyFilter}
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[300px] p-0" align="start">
@@ -490,10 +493,10 @@ export function Dashboard() {
             </div>
 
             {/* Batch Filter */}
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center gap-1.5">
+              <CalendarDays className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <Select value={batchFilter} onValueChange={setBatchFilter}>
-                <SelectTrigger className="w-64">
+                <SelectTrigger className="w-48 sm:w-64 text-xs sm:text-sm">
                   <SelectValue placeholder="Fecha de análisis" />
                 </SelectTrigger>
                 <SelectContent className="bg-background border z-50">
@@ -521,6 +524,7 @@ export function Dashboard() {
               </Button>
             )}
           </div>
+        </div>
         </div>
 
         {error && (
