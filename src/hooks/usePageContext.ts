@@ -80,9 +80,17 @@ export function usePageContext(dynamicData?: Record<string, any>): DynamicPageCo
     if (path === '/dashboard' && dynamicData) {
       if (dynamicData.selectedCompany) {
         suggestions.unshift(`¿Por qué ${dynamicData.selectedCompany} tiene este RIX Score?`);
+        suggestions.unshift(`¿Cómo evalúan las IAs a ${dynamicData.selectedCompany}?`);
       }
       if (dynamicData.selectedSector) {
         suggestions.unshift(`Análisis del sector ${dynamicData.selectedSector}`);
+        suggestions.unshift(`¿Qué empresas lideran en ${dynamicData.selectedSector}?`);
+      }
+      if (dynamicData.selectedAIModel && dynamicData.selectedAIModel !== 'comparison') {
+        suggestions.unshift(`¿Por qué ${dynamicData.selectedAIModel} da estas puntuaciones?`);
+      }
+      if (dynamicData.selectedIbexFamily) {
+        suggestions.unshift(`Análisis de empresas ${dynamicData.selectedIbexFamily}`);
       }
     }
     
