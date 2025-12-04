@@ -93,266 +93,316 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Boletín Ejecutivo - ${companyName || 'Empresa'} | RepIndex</title>
+  <title>RepIndex Bulletin - ${companyName || 'Empresa'}</title>
   <style>
+    /* ===========================================
+       PRINT MARGINS - CRITICAL FOR PDF
+       =========================================== */
     @page {
       size: A4;
-      margin: 2.5cm 2cm 2.5cm 2cm;
+      margin: 20mm 18mm 20mm 18mm;
     }
     
+    @media print {
+      html, body {
+        width: 210mm;
+        height: 297mm;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      
+      .print-container {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+    }
+    
+    /* ===========================================
+       BASE STYLES
+       =========================================== */
     * {
       box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    html {
+      font-size: 11pt;
     }
     
     body {
-      font-family: 'Georgia', 'Times New Roman', serif;
-      font-size: 11pt;
-      line-height: 1.6;
+      font-family: 'Georgia', 'Times New Roman', Times, serif;
+      font-size: 1rem;
+      line-height: 1.65;
       color: #1a1a1a;
       background: #ffffff;
-      margin: 0;
-      padding: 0;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     
-    .container {
-      max-width: 100%;
-      padding: 0;
+    /* Container with fallback margins for screen view */
+    .print-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 40px 50px;
     }
     
-    /* Magazine Header */
-    .header {
+    /* ===========================================
+       MAGAZINE HEADER
+       =========================================== */
+    .bulletin-header {
       text-align: center;
-      padding-bottom: 20px;
-      margin-bottom: 25px;
-      border-bottom: 2px solid #1a1a1a;
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+      border-bottom: 3px solid #1a1a1a;
     }
     
-    .header-top {
+    .header-meta {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 15px;
-      font-size: 9pt;
+      margin-bottom: 16px;
+      font-size: 0.75rem;
       text-transform: uppercase;
-      letter-spacing: 2px;
+      letter-spacing: 2.5px;
       color: #666;
     }
     
-    .masthead {
-      margin-bottom: 10px;
-    }
-    
-    .masthead h1 {
-      font-size: 42pt;
+    .masthead-title {
+      font-size: 3rem;
       font-weight: 900;
       letter-spacing: -1px;
-      margin: 0;
+      margin: 0 0 4px 0;
       font-family: 'Georgia', serif;
     }
     
-    .tagline {
-      font-size: 10pt;
+    .masthead-subtitle {
+      font-size: 0.65rem;
       text-transform: uppercase;
-      letter-spacing: 4px;
-      color: #666;
-      margin-top: 5px;
+      letter-spacing: 5px;
+      color: #555;
+      margin: 0;
     }
     
-    .company-badge {
+    .company-focus {
       display: inline-block;
-      padding: 8px 20px;
-      background: #f0f0f0;
+      padding: 10px 28px;
+      background: linear-gradient(135deg, #f8f8f8, #eeeeee);
+      border: 1px solid #ddd;
       border-radius: 4px;
-      font-size: 12pt;
-      font-weight: 600;
-      margin-top: 15px;
-    }
-    
-    /* Content Styles */
-    .content {
-      column-count: 1;
-    }
-    
-    .content h1 {
-      font-size: 20pt;
+      font-size: 1rem;
       font-weight: 700;
-      margin: 25px 0 15px 0;
-      border-bottom: 1px solid #ddd;
-      padding-bottom: 8px;
+      margin-top: 20px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    /* ===========================================
+       CONTENT TYPOGRAPHY
+       =========================================== */
+    .bulletin-content h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      margin: 32px 0 18px 0;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e0e0;
       page-break-after: avoid;
+      line-height: 1.25;
     }
     
-    .content h2 {
-      font-size: 16pt;
+    .bulletin-content h2 {
+      font-size: 1.35rem;
       font-weight: 700;
-      margin: 20px 0 12px 0;
+      margin: 28px 0 14px 0;
+      color: #222;
+      page-break-after: avoid;
+      line-height: 1.3;
+    }
+    
+    .bulletin-content h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 22px 0 12px 0;
       color: #333;
       page-break-after: avoid;
+      line-height: 1.35;
     }
     
-    .content h3 {
-      font-size: 13pt;
-      font-weight: 600;
-      margin: 18px 0 10px 0;
-      color: #444;
-      page-break-after: avoid;
-    }
-    
-    .content p {
-      margin: 0 0 12px 0;
+    .bulletin-content p {
+      margin: 0 0 14px 0;
       text-align: justify;
+      text-justify: inter-word;
       orphans: 3;
       widows: 3;
     }
     
-    .content ul, .content ol {
-      margin: 10px 0 15px 0;
-      padding-left: 25px;
+    .bulletin-content ul, .bulletin-content ol {
+      margin: 12px 0 18px 0;
+      padding-left: 28px;
     }
     
-    .content li {
-      margin-bottom: 6px;
+    .bulletin-content li {
+      margin-bottom: 8px;
       page-break-inside: avoid;
     }
     
-    .content strong {
+    .bulletin-content strong {
       font-weight: 700;
     }
     
-    .content em {
+    .bulletin-content em {
       font-style: italic;
     }
     
-    /* Tables */
-    .content table {
+    /* ===========================================
+       TABLES - Professional Styling
+       =========================================== */
+    .bulletin-content table {
       width: 100%;
       border-collapse: collapse;
-      margin: 15px 0 20px 0;
-      font-size: 10pt;
+      margin: 18px 0 24px 0;
+      font-size: 0.9rem;
       page-break-inside: avoid;
     }
     
-    .content th {
-      background: #f5f5f5;
-      padding: 10px 12px;
-      text-align: left;
-      font-weight: 700;
-      border: 1px solid #ddd;
-      font-size: 9pt;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+    .bulletin-content thead {
+      background: #2a2a2a;
+      color: #fff;
     }
     
-    .content td {
-      padding: 8px 12px;
-      border: 1px solid #ddd;
+    .bulletin-content th {
+      padding: 12px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: none;
+    }
+    
+    .bulletin-content td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #e5e5e5;
       vertical-align: top;
     }
     
-    .content tr:nth-child(even) {
-      background: #fafafa;
+    .bulletin-content tbody tr:nth-child(even) {
+      background: #f9f9f9;
     }
     
-    /* Blockquotes / Highlights */
-    .content blockquote {
-      margin: 20px 0;
-      padding: 15px 20px;
-      border-left: 4px solid #1a1a1a;
-      background: #f9f9f9;
+    .bulletin-content tbody tr:hover {
+      background: #f0f0f0;
+    }
+    
+    /* ===========================================
+       BLOCKQUOTES - Pull Quotes
+       =========================================== */
+    .bulletin-content blockquote {
+      margin: 24px 0;
+      padding: 20px 24px;
+      border-left: 5px solid #1a1a1a;
+      background: #f7f7f7;
       font-style: italic;
+      font-size: 1.05rem;
       page-break-inside: avoid;
     }
     
-    .content blockquote p {
+    .bulletin-content blockquote p {
       margin: 0;
+      text-align: left;
     }
     
-    /* Footer */
-    .footer {
-      margin-top: 30px;
-      padding-top: 15px;
+    /* ===========================================
+       HORIZONTAL RULES - Section Separators
+       =========================================== */
+    .bulletin-content hr {
+      border: none;
       border-top: 1px solid #ddd;
-      text-align: center;
-      font-size: 9pt;
-      color: #666;
+      margin: 28px 0;
     }
     
-    .footer p {
-      margin: 3px 0;
-    }
-    
-    /* Code blocks (for data) */
-    .content code {
-      font-family: 'Courier New', monospace;
-      font-size: 10pt;
+    /* ===========================================
+       CODE / DATA HIGHLIGHTS
+       =========================================== */
+    .bulletin-content code {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9rem;
       background: #f4f4f4;
-      padding: 2px 5px;
+      padding: 3px 6px;
       border-radius: 3px;
     }
     
-    .content pre {
+    .bulletin-content pre {
       background: #f4f4f4;
-      padding: 15px;
+      padding: 16px;
       border-radius: 4px;
       overflow-x: auto;
-      font-size: 9pt;
+      font-size: 0.85rem;
       page-break-inside: avoid;
+      margin: 16px 0;
     }
     
-    /* Page breaks */
-    .page-break {
+    /* ===========================================
+       FOOTER
+       =========================================== */
+    .bulletin-footer {
+      margin-top: 36px;
+      padding-top: 18px;
+      border-top: 2px solid #1a1a1a;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #666;
+    }
+    
+    .bulletin-footer p {
+      margin: 4px 0;
+      text-align: center;
+    }
+    
+    /* ===========================================
+       PAGE BREAK CONTROLS
+       =========================================== */
+    .page-break-before {
       page-break-before: always;
     }
     
-    /* Prevent orphan headings */
     h1, h2, h3, h4, h5, h6 {
       page-break-after: avoid;
     }
     
-    /* Keep related content together */
-    table, figure, .data-box {
+    table, blockquote, pre, figure {
       page-break-inside: avoid;
     }
     
-    /* Print specific */
-    @media print {
-      body {
-        background: white;
-      }
-      
-      .no-print {
-        display: none !important;
-      }
+    /* Keep sections together */
+    h2 + *, h3 + * {
+      page-break-before: avoid;
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="print-container">
     <!-- Magazine Header -->
-    <header class="header">
-      <div class="header-top">
+    <header class="bulletin-header">
+      <div class="header-meta">
         <span>${formattedDate}</span>
-        <span>Boletín Ejecutivo</span>
+        <span>Edición Especial</span>
       </div>
-      <div class="masthead">
-        <h1>RepIndex</h1>
-        <p class="tagline">La Autoridad en Reputación Corporativa de las IAs</p>
-      </div>
-      ${companyName ? `<div class="company-badge">${companyName}</div>` : ''}
+      <h1 class="masthead-title">RepIndex</h1>
+      <p class="masthead-subtitle">La Autoridad en Reputación Corporativa de las IAs</p>
+      ${companyName ? `<div class="company-focus">${companyName}</div>` : ''}
     </header>
     
     <!-- Main Content -->
-    <main class="content">
+    <main class="bulletin-content">
       ${htmlContent}
     </main>
     
     <!-- Footer -->
-    <footer class="footer">
-      <p>© ${new Date().getFullYear()} RepIndex — Análisis generado con Inteligencia Artificial</p>
-      <p>Este documento ha sido generado automáticamente a partir de datos de ChatGPT, Perplexity, Gemini y DeepSeek</p>
-      <p>Para más información: repindex.ai</p>
+    <footer class="bulletin-footer">
+      <p><strong>RepIndex Bulletin</strong> — Edición Especial</p>
+      <p>Análisis basado en ChatGPT, Perplexity, Gemini y DeepSeek</p>
+      <p>© ${new Date().getFullYear()} RepIndex — repindex.ai</p>
     </footer>
   </div>
 </body>
