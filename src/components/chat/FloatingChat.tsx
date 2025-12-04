@@ -1,14 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, X, Minimize2, Maximize2, Trash2, Sparkles } from "lucide-react";
+import { MessageCircle, Minimize2, Maximize2, Trash2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChatContext } from "@/contexts/ChatContext";
 import { usePageContext } from "@/hooks/usePageContext";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
+import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTooltip";
 
 export function FloatingChat() {
   const navigate = useNavigate();
@@ -25,12 +27,51 @@ export function FloatingChat() {
   } = useChatContext();
   
   const pageContext = usePageContext();
+  const hasSeenOnboarding = useChatOnboardingSeen();
+  
+  // State for expanded button text
+  const [isButtonExpanded, setIsButtonExpanded] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const lastInteractionRef = useRef<number>(Date.now());
   
   // Check if there's active dynamic context
   const hasDynamicContext = pageContext.suggestions.length > 4 || 
     (location.pathname === '/dashboard') ||
     (location.pathname === '/market-evolution') ||
     (location.pathname.startsWith('/rix-run/'));
+  
+  // Get context-aware label for the button
+  const getContextLabel = () => {
+    if (location.pathname === '/dashboard') return "Dashboard";
+    if (location.pathname === '/market-evolution') return "Evolución";
+    if (location.pathname === '/noticias') return "Noticias";
+    if (location.pathname.startsWith('/rix-run/')) return "Análisis";
+    return "RepIndex";
+  };
+
+  // Collapse button after inactivity
+  useEffect(() => {
+    if (!isFloatingOpen && isButtonExpanded) {
+      const timer = setTimeout(() => {
+        setIsButtonExpanded(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isFloatingOpen, isButtonExpanded]);
+
+  // Re-expand button on route change
+  useEffect(() => {
+    setIsButtonExpanded(true);
+    lastInteractionRef.current = Date.now();
+  }, [location.pathname]);
+
+  // Show onboarding tooltip if not seen
+  useEffect(() => {
+    if (!hasSeenOnboarding && !isFloatingOpen) {
+      const timer = setTimeout(() => setShowOnboarding(true), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [hasSeenOnboarding, isFloatingOpen]);
   
   // Update page context when location changes
   useEffect(() => {
@@ -50,6 +91,11 @@ export function FloatingChat() {
     navigate('/chat');
   };
 
+  const handleOpenChat = () => {
+    setIsFloatingOpen(true);
+    setShowOnboarding(false);
+  };
+
   return (
     <>
       {/* Floating button when closed */}
@@ -61,28 +107,76 @@ export function FloatingChat() {
             exit={{ scale: 0, opacity: 0 }}
             className="fixed bottom-6 right-6 z-50"
           >
-            <Button
-              onClick={() => setIsFloatingOpen(true)}
-              size="lg"
-              className="h-14 w-14 rounded-full shadow-lg hover:shadow-xl transition-shadow"
-            >
-              <MessageCircle className="h-6 w-6" />
-            </Button>
+            {/* Onboarding tooltip */}
+            {showOnboarding && (
+              <ChatOnboardingTooltip onDismiss={() => setShowOnboarding(false)} />
+            )}
+            
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.div
+                    animate={hasDynamicContext ? {
+                      boxShadow: [
+                        "0 0 0 0 hsl(var(--primary) / 0)",
+                        "0 0 0 8px hsl(var(--primary) / 0.15)",
+                        "0 0 0 0 hsl(var(--primary) / 0)"
+                      ]
+                    } : {}}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    className="rounded-full"
+                  >
+                    <Button
+                      onClick={handleOpenChat}
+                      size="lg"
+                      className={`
+                        shadow-lg hover:shadow-xl transition-all duration-300
+                        ${isButtonExpanded 
+                          ? 'h-12 px-4 rounded-full gap-2' 
+                          : 'h-14 w-14 rounded-full'
+                        }
+                        ${hasDynamicContext ? 'chat-glow' : ''}
+                      `}
+                    >
+                      {hasDynamicContext ? (
+                        <Sparkles className="h-5 w-5" />
+                      ) : (
+                        <MessageCircle className="h-5 w-5" />
+                      )}
+                      {isButtonExpanded && (
+                        <motion.span
+                          initial={{ opacity: 0, width: 0 }}
+                          animate={{ opacity: 1, width: "auto" }}
+                          exit={{ opacity: 0, width: 0 }}
+                          className="text-sm font-medium whitespace-nowrap overflow-hidden"
+                        >
+                          {hasDynamicContext 
+                            ? `Pregunta sobre ${getContextLabel()}`
+                            : "Pregunta a RepIndex"
+                          }
+                        </motion.span>
+                      )}
+                    </Button>
+                  </motion.div>
+                </TooltipTrigger>
+                {!isButtonExpanded && (
+                  <TooltipContent side="left" className="max-w-[200px]">
+                    <p className="text-xs">
+                      {hasDynamicContext 
+                        ? `✨ Tengo contexto sobre ${getContextLabel()}`
+                        : "Chat con RepIndex"
+                      }
+                    </p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+            
             {/* Message count badge */}
             {messages.length > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 w-5 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 h-5 w-5 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center pointer-events-none">
                 {messages.filter(m => m.role === 'assistant').length}
               </span>
-            )}
-            {/* Dynamic context indicator */}
-            {hasDynamicContext && messages.length === 0 && (
-              <motion.span 
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -top-1 -left-1 h-5 w-5 bg-primary text-primary-foreground rounded-full flex items-center justify-center"
-              >
-                <Sparkles className="h-3 w-3" />
-              </motion.span>
             )}
           </motion.div>
         )}
