@@ -52,7 +52,7 @@ interface UserProfile {
 
 const Admin: React.FC = () => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('companies');
+  const [activeTab, setActiveTab] = useState('overview');
   
   // Companies state
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -391,7 +391,11 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+          <TabsList className="grid w-full max-w-xl grid-cols-3 mb-6">
+            <TabsTrigger value="overview" className="flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              Resumen
+            </TabsTrigger>
             <TabsTrigger value="companies" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Empresas
@@ -401,6 +405,169 @@ const Admin: React.FC = () => {
               Usuarios
             </TabsTrigger>
           </TabsList>
+
+          {/* ==================== RESUMEN ==================== */}
+          <TabsContent value="overview">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Resumen de Clientes</h2>
+              <Button variant="outline" size="sm" onClick={() => { fetchCompanies(); fetchUsers(); }}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {(loadingCompanies || loadingUsers) ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Statistics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-primary">{companies.length}</p>
+                      <p className="text-sm text-muted-foreground">Empresas</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-blue-600">{users.length}</p>
+                      <p className="text-sm text-muted-foreground">Usuarios</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-green-600">{companies.filter(c => c.is_active).length}</p>
+                      <p className="text-sm text-muted-foreground">Activas</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-amber-600">{users.filter(u => u.is_individual).length}</p>
+                      <p className="text-sm text-muted-foreground">Particulares</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Companies with their users */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Empresas y sus usuarios</h3>
+                  {companies.map((company) => {
+                    const companyUsers = users.filter(u => u.company_id === company.id);
+                    return (
+                      <Card key={company.id} className={!company.is_active ? 'opacity-60' : ''}>
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                <Building2 className="h-5 w-5 text-primary" />
+                              </div>
+                              <div>
+                                <CardTitle className="text-base">{company.company_name}</CardTitle>
+                                <CardDescription>
+                                  {company.contact_email || 'Sin email'}
+                                  {company.ticker && ` · ${company.ticker}`}
+                                </CardDescription>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={company.is_active ? 'default' : 'secondary'}>
+                                {company.is_active ? 'Activa' : 'Inactiva'}
+                              </Badge>
+                              <Badge variant="outline" className={company.plan_type === 'premium' ? 'border-amber-500 text-amber-600' : company.plan_type === 'enterprise' ? 'border-purple-500 text-purple-600' : ''}>
+                                {company.plan_type}
+                              </Badge>
+                              {company.monthly_fee === 0 && company.plan_type !== 'basic' && (
+                                <Badge variant="outline" className="border-green-500 text-green-600">
+                                  <Gift className="h-3 w-3 mr-1" />
+                                  Cortesía
+                                </Badge>
+                              )}
+                              <Button variant="ghost" size="sm" onClick={() => openEditCompany(company)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="pt-2">
+                          {companyUsers.length > 0 ? (
+                            <div className="border rounded-lg divide-y">
+                              {companyUsers.map((user) => (
+                                <div key={user.id} className="flex items-center justify-between p-3 hover:bg-muted/30">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                      <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <div>
+                                      <p className="font-medium text-sm">{user.full_name || 'Sin nombre'}</p>
+                                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
+                                      {user.is_active ? 'Activo' : 'Inactivo'}
+                                    </Badge>
+                                    <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)}>
+                                      <Mail className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground italic py-2">Sin usuarios asignados</p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+
+                  {/* Individual users (Particulares) */}
+                  {users.filter(u => u.is_individual || !u.company_id).length > 0 && (
+                    <Card className="border-dashed">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                            <Users className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-base">Usuarios Particulares</CardTitle>
+                            <CardDescription>Usuarios sin empresa asociada</CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-2">
+                        <div className="border rounded-lg divide-y">
+                          {users.filter(u => u.is_individual || !u.company_id).map((user) => (
+                            <div key={user.id} className="flex items-center justify-between p-3 hover:bg-muted/30">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                  <Users className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                </div>
+                                <div>
+                                  <p className="font-medium text-sm">{user.full_name || 'Sin nombre'}</p>
+                                  <p className="text-xs text-muted-foreground">{user.email}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">Particular</Badge>
+                                <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
+                                  {user.is_active ? 'Activo' : 'Inactivo'}
+                                </Badge>
+                                <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)}>
+                                  <Mail className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            )}
+          </TabsContent>
 
           {/* ==================== EMPRESAS ==================== */}
           <TabsContent value="companies">
