@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { 
   Building2, 
   Users, 
@@ -17,7 +18,9 @@ import {
   Loader2, 
   CheckCircle,
   Mail,
-  RefreshCw
+  RefreshCw,
+  Pencil,
+  Gift
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -26,8 +29,13 @@ interface Company {
   company_name: string;
   ticker: string | null;
   contact_email: string | null;
+  contact_phone: string | null;
+  billing_name: string | null;
+  tax_id: string | null;
   plan_type: string;
+  monthly_fee: number;
   is_active: boolean;
+  notes: string | null;
   created_at: string;
 }
 
@@ -50,6 +58,7 @@ const Admin: React.FC = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loadingCompanies, setLoadingCompanies] = useState(true);
   const [showCompanyForm, setShowCompanyForm] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [savingCompany, setSavingCompany] = useState(false);
   const [companyForm, setCompanyForm] = useState({
     company_name: '',
@@ -63,6 +72,8 @@ const Admin: React.FC = () => {
     tax_id: '',
     plan_type: 'basic',
     monthly_fee: '',
+    is_courtesy: false, // Plan gratuito de cortesía
+    is_active: true,
     notes: '',
   });
 
@@ -120,6 +131,34 @@ const Admin: React.FC = () => {
     }
   };
 
+  const resetCompanyForm = () => {
+    setCompanyForm({
+      company_name: '', ticker: '', contact_email: '', contact_phone: '',
+      billing_name: '', billing_address: '', billing_city: '', billing_postal_code: '',
+      tax_id: '', plan_type: 'basic', monthly_fee: '', is_courtesy: false, is_active: true, notes: '',
+    });
+  };
+
+  const openEditCompany = (company: Company) => {
+    setEditingCompany(company);
+    setCompanyForm({
+      company_name: company.company_name,
+      ticker: company.ticker || '',
+      contact_email: company.contact_email || '',
+      contact_phone: company.contact_phone || '',
+      billing_name: company.billing_name || '',
+      billing_address: '',
+      billing_city: '',
+      billing_postal_code: '',
+      tax_id: company.tax_id || '',
+      plan_type: company.plan_type,
+      monthly_fee: company.monthly_fee?.toString() || '0',
+      is_courtesy: company.monthly_fee === 0 && company.plan_type !== 'basic',
+      is_active: company.is_active,
+      notes: company.notes || '',
+    });
+  };
+
   const handleCreateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyForm.company_name.trim()) {
@@ -131,15 +170,41 @@ const Admin: React.FC = () => {
     try {
       await callAdminApi('create_company', {
         ...companyForm,
-        monthly_fee: companyForm.monthly_fee ? parseFloat(companyForm.monthly_fee) : 0,
+        monthly_fee: companyForm.is_courtesy ? 0 : (companyForm.monthly_fee ? parseFloat(companyForm.monthly_fee) : 0),
       });
       toast({ title: 'Empresa creada', description: `${companyForm.company_name} añadida correctamente` });
       setShowCompanyForm(false);
-      setCompanyForm({
-        company_name: '', ticker: '', contact_email: '', contact_phone: '',
-        billing_name: '', billing_address: '', billing_city: '', billing_postal_code: '',
-        tax_id: '', plan_type: 'basic', monthly_fee: '', notes: '',
+      resetCompanyForm();
+      fetchCompanies();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setSavingCompany(false);
+    }
+  };
+
+  const handleUpdateCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCompany) return;
+
+    setSavingCompany(true);
+    try {
+      await callAdminApi('update_company', {
+        id: editingCompany.id,
+        company_name: companyForm.company_name,
+        ticker: companyForm.ticker || null,
+        contact_email: companyForm.contact_email || null,
+        contact_phone: companyForm.contact_phone || null,
+        billing_name: companyForm.billing_name || null,
+        tax_id: companyForm.tax_id || null,
+        plan_type: companyForm.plan_type,
+        monthly_fee: companyForm.is_courtesy ? 0 : (companyForm.monthly_fee ? parseFloat(companyForm.monthly_fee) : 0),
+        is_active: companyForm.is_active,
+        notes: companyForm.notes || null,
       });
+      toast({ title: 'Empresa actualizada', description: `${companyForm.company_name} guardada correctamente` });
+      setEditingCompany(null);
+      resetCompanyForm();
       fetchCompanies();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -184,6 +249,137 @@ const Admin: React.FC = () => {
     }
   };
 
+  // Form component for company (reused in create and edit)
+  const CompanyFormFields = () => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="company_name">Nombre de la empresa *</Label>
+          <Input
+            id="company_name"
+            value={companyForm.company_name}
+            onChange={(e) => setCompanyForm(f => ({ ...f, company_name: e.target.value }))}
+            placeholder="Acme Corp"
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="ticker">Ticker (si cotiza)</Label>
+          <Input
+            id="ticker"
+            value={companyForm.ticker}
+            onChange={(e) => setCompanyForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
+            placeholder="ACM"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="contact_email">Email de contacto</Label>
+          <Input
+            id="contact_email"
+            type="email"
+            value={companyForm.contact_email}
+            onChange={(e) => setCompanyForm(f => ({ ...f, contact_email: e.target.value }))}
+            placeholder="contacto@empresa.com"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="contact_phone">Teléfono</Label>
+          <Input
+            id="contact_phone"
+            value={companyForm.contact_phone}
+            onChange={(e) => setCompanyForm(f => ({ ...f, contact_phone: e.target.value }))}
+            placeholder="+34 600 000 000"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="billing_name">Razón social</Label>
+          <Input
+            id="billing_name"
+            value={companyForm.billing_name}
+            onChange={(e) => setCompanyForm(f => ({ ...f, billing_name: e.target.value }))}
+            placeholder="Acme Corporation S.L."
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="tax_id">CIF/NIF</Label>
+          <Input
+            id="tax_id"
+            value={companyForm.tax_id}
+            onChange={(e) => setCompanyForm(f => ({ ...f, tax_id: e.target.value.toUpperCase() }))}
+            placeholder="B12345678"
+          />
+        </div>
+      </div>
+
+      {/* Plan section */}
+      <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
+        <h4 className="font-medium">Plan y facturación</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="plan_type">Tipo de plan</Label>
+            <Select value={companyForm.plan_type} onValueChange={(v) => setCompanyForm(f => ({ ...f, plan_type: v }))}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="basic">Basic</SelectItem>
+                <SelectItem value="premium">Premium</SelectItem>
+                <SelectItem value="enterprise">Enterprise</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="monthly_fee">Cuota mensual (€)</Label>
+            <Input
+              id="monthly_fee"
+              type="number"
+              step="0.01"
+              value={companyForm.monthly_fee}
+              onChange={(e) => setCompanyForm(f => ({ ...f, monthly_fee: e.target.value }))}
+              placeholder="0.00"
+              disabled={companyForm.is_courtesy}
+            />
+          </div>
+          <div className="space-y-2 flex items-end">
+            <div className="flex items-center gap-2 p-2 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <Gift className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <Switch
+                id="is_courtesy"
+                checked={companyForm.is_courtesy}
+                onCheckedChange={(v) => setCompanyForm(f => ({ ...f, is_courtesy: v, monthly_fee: v ? '0' : f.monthly_fee }))}
+              />
+              <Label htmlFor="is_courtesy" className="text-sm text-green-700 dark:text-green-300">
+                Plan cortesía (0€)
+              </Label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {editingCompany && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id="is_active"
+            checked={companyForm.is_active}
+            onCheckedChange={(v) => setCompanyForm(f => ({ ...f, is_active: v }))}
+          />
+          <Label htmlFor="is_active">Empresa activa</Label>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="notes">Notas internas</Label>
+        <Textarea
+          id="notes"
+          value={companyForm.notes}
+          onChange={(e) => setCompanyForm(f => ({ ...f, notes: e.target.value }))}
+          placeholder="Notas internas sobre la empresa..."
+          rows={2}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <Layout title="Admin - RepIndex">
       <div className="container max-w-6xl mx-auto py-8 px-4">
@@ -214,13 +410,14 @@ const Admin: React.FC = () => {
                 <Button variant="outline" size="sm" onClick={fetchCompanies}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
-                <Button onClick={() => setShowCompanyForm(true)}>
+                <Button onClick={() => { resetCompanyForm(); setShowCompanyForm(true); }}>
                   <Plus className="h-4 w-4 mr-2" />
                   Nueva Empresa
                 </Button>
               </div>
             </div>
 
+            {/* Create company form */}
             {showCompanyForm && (
               <Card className="mb-6 border-primary/50">
                 <CardHeader>
@@ -229,80 +426,7 @@ const Admin: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleCreateCompany} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="company_name">Nombre de la empresa *</Label>
-                        <Input
-                          id="company_name"
-                          value={companyForm.company_name}
-                          onChange={(e) => setCompanyForm(f => ({ ...f, company_name: e.target.value }))}
-                          placeholder="Acme Corp"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="ticker">Ticker (si cotiza)</Label>
-                        <Input
-                          id="ticker"
-                          value={companyForm.ticker}
-                          onChange={(e) => setCompanyForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
-                          placeholder="ACM"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="contact_email">Email de contacto</Label>
-                        <Input
-                          id="contact_email"
-                          type="email"
-                          value={companyForm.contact_email}
-                          onChange={(e) => setCompanyForm(f => ({ ...f, contact_email: e.target.value }))}
-                          placeholder="contacto@empresa.com"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="plan_type">Plan</Label>
-                        <Select value={companyForm.plan_type} onValueChange={(v) => setCompanyForm(f => ({ ...f, plan_type: v }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="basic">Basic</SelectItem>
-                            <SelectItem value="premium">Premium</SelectItem>
-                            <SelectItem value="enterprise">Enterprise</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="tax_id">CIF/NIF</Label>
-                        <Input
-                          id="tax_id"
-                          value={companyForm.tax_id}
-                          onChange={(e) => setCompanyForm(f => ({ ...f, tax_id: e.target.value.toUpperCase() }))}
-                          placeholder="B12345678"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="monthly_fee">Cuota mensual (€)</Label>
-                        <Input
-                          id="monthly_fee"
-                          type="number"
-                          step="0.01"
-                          value={companyForm.monthly_fee}
-                          onChange={(e) => setCompanyForm(f => ({ ...f, monthly_fee: e.target.value }))}
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="notes">Notas</Label>
-                      <Textarea
-                        id="notes"
-                        value={companyForm.notes}
-                        onChange={(e) => setCompanyForm(f => ({ ...f, notes: e.target.value }))}
-                        placeholder="Notas internas sobre la empresa..."
-                        rows={2}
-                      />
-                    </div>
+                    <CompanyFormFields />
                     <div className="flex gap-2 justify-end">
                       <Button type="button" variant="outline" onClick={() => setShowCompanyForm(false)}>
                         Cancelar
@@ -316,6 +440,28 @@ const Admin: React.FC = () => {
                 </CardContent>
               </Card>
             )}
+
+            {/* Edit company dialog */}
+            <Dialog open={!!editingCompany} onOpenChange={(open) => !open && setEditingCompany(null)}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Editar Empresa</DialogTitle>
+                  <DialogDescription>Modifica los datos de {editingCompany?.company_name}</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleUpdateCompany} className="space-y-4">
+                  <CompanyFormFields />
+                  <div className="flex gap-2 justify-end">
+                    <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={savingCompany}>
+                      {savingCompany ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                      Guardar Cambios
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
 
             {loadingCompanies ? (
               <div className="flex justify-center py-12">
@@ -331,7 +477,7 @@ const Admin: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 {companies.map((company) => (
-                  <Card key={company.id}>
+                  <Card key={company.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
@@ -349,7 +495,18 @@ const Admin: React.FC = () => {
                         <Badge variant={company.is_active ? 'default' : 'secondary'}>
                           {company.is_active ? 'Activa' : 'Inactiva'}
                         </Badge>
-                        <Badge variant="outline">{company.plan_type}</Badge>
+                        <Badge variant="outline" className={company.plan_type === 'premium' ? 'border-amber-500 text-amber-600' : company.plan_type === 'enterprise' ? 'border-purple-500 text-purple-600' : ''}>
+                          {company.plan_type}
+                        </Badge>
+                        {company.monthly_fee === 0 && company.plan_type !== 'basic' && (
+                          <Badge variant="outline" className="border-green-500 text-green-600">
+                            <Gift className="h-3 w-3 mr-1" />
+                            Cortesía
+                          </Badge>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => openEditCompany(company)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
