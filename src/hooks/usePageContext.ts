@@ -95,7 +95,18 @@ export function usePageContext(dynamicData?: Record<string, any>): DynamicPageCo
     }
     
     if (path === '/market-evolution' && dynamicData?.selectedCompanies?.length > 1) {
-      suggestions.unshift(`Compara ${dynamicData.selectedCompanies.slice(0, 3).join(' vs ')}`);
+      const companyList = dynamicData.selectedCompanies.slice(0, 3).join(' vs ');
+      suggestions.unshift(`Compara la evolución de ${companyList}`);
+      suggestions.unshift(`¿Qué modelo de IA es más optimista con ${dynamicData.selectedCompanies[0]}?`);
+    }
+    
+    if (path === '/market-evolution' && dynamicData?.selectedCompanies?.length === 1) {
+      suggestions.unshift(`Analiza la tendencia de ${dynamicData.selectedCompanies[0]}`);
+      suggestions.unshift(`¿Cómo ha variado el RIX de ${dynamicData.selectedCompanies[0]} este mes?`);
+    }
+    
+    if (path === '/market-evolution' && dynamicData?.selectedSector) {
+      suggestions.unshift(`¿Qué empresas de ${dynamicData.selectedSector} tienen mejor tendencia?`);
     }
     
     if (path === '/noticias' && dynamicData?.weekLabel) {

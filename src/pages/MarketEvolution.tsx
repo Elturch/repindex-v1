@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { useTrendDataLight } from "@/hooks/useTrendDataLight";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
+import { useChatContext } from "@/contexts/ChatContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,30 @@ export function MarketEvolution() {
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories } = useSectorCategories();
   const { data: ibexFamilyCategories } = useIbexFamilyCategories();
+  const { setPageContext } = useChatContext();
+
+  // Get company names for selected tickers
+  const selectedCompanyNames = useMemo(() => {
+    if (!companies || selectedCompanies.length === 0) return [];
+    return selectedCompanies.map(ticker => {
+      const company = companies.find(c => c.ticker === ticker);
+      return company?.issuer_name || ticker;
+    });
+  }, [companies, selectedCompanies]);
+
+  // Update chat context with selected companies
+  useEffect(() => {
+    setPageContext({
+      name: 'Evolución del Mercado',
+      path: '/market-evolution',
+      dynamicData: {
+        selectedCompanies: selectedCompanyNames,
+        selectedTickers: selectedCompanies,
+        selectedSector: sectorFilter !== 'all' ? sectorFilter : null,
+        selectedIbexFamily: ibexFilter !== 'all' ? ibexFilter : null,
+      }
+    });
+  }, [selectedCompanyNames, selectedCompanies, sectorFilter, ibexFilter, setPageContext]);
 
   // Get market + company trend data for all 4 models (lightweight queries)
   const { data: chatGPTData, isLoading: chatGPTLoading } = useTrendDataLight({
