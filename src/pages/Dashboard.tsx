@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useRixRuns } from "@/hooks/useRixRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
+import { useChatContext } from "@/contexts/ChatContext";
 import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ export function Dashboard() {
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
+  const { setPageContext } = useChatContext();
 
   const handleRowClick = (rixRunId: string) => {
     navigate(`/rix-run/${rixRunId}`);
@@ -196,6 +198,21 @@ export function Dashboard() {
       return 0;
     });
   }, [rixRuns, batchFilter]);
+
+  // Update chat context with current filters
+  useEffect(() => {
+    setPageContext({
+      name: 'Dashboard',
+      path: '/dashboard',
+      dynamicData: {
+        selectedCompany: companyFilter !== 'all' ? companyFilter : null,
+        selectedSector: sectorFilter !== 'all' ? sectorFilter : null,
+        selectedIbexFamily: ibexFamilyFilter !== 'all' ? ibexFamilyFilter : null,
+        selectedAIModel: aiFilter !== 'all' ? aiFilter : null,
+        totalResults: sortedRixRuns?.length || 0,
+      }
+    });
+  }, [companyFilter, sectorFilter, ibexFamilyFilter, aiFilter, sortedRixRuns?.length, setPageContext]);
 
   // Function to normalize flag names to user-friendly format
   const normalizeFlag = (flag: string) => {
