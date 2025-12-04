@@ -1,10 +1,11 @@
 import { useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { Sparkles, RefreshCw, FileText, ExternalLink } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 
 interface ChatMessagesProps {
@@ -26,6 +27,7 @@ export function ChatMessages({
   onStarterPrompt,
   compact = false,
 }: ChatMessagesProps) {
+  const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when messages change
@@ -92,10 +94,35 @@ export function ChatMessages({
               {message.role === 'user' ? (
                 <div className={`whitespace-pre-wrap ${compact ? 'text-xs' : 'text-sm'}`}>{message.content}</div>
               ) : message.metadata?.type === 'bulletin' ? (
-                <CompanyBulletinViewer 
-                  content={message.content}
-                  companyName={message.metadata?.companyName}
-                />
+                compact ? (
+                  // Compact mode: show link to full chat
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-primary">
+                      <FileText className="h-4 w-4" />
+                      <span className="text-xs font-semibold">
+                        Boletín de {message.metadata?.companyName || 'Empresa'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Boletín ejecutivo generado correctamente
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs h-8 gap-2"
+                      onClick={() => navigate('/chat')}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Ver boletín completo
+                    </Button>
+                  </div>
+                ) : (
+                  // Full mode: show complete bulletin viewer
+                  <CompanyBulletinViewer 
+                    content={message.content}
+                    companyName={message.metadata?.companyName}
+                  />
+                )
               ) : (
                 <MarkdownMessage 
                   content={message.content} 
