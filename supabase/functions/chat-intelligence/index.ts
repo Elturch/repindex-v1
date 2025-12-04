@@ -1120,15 +1120,36 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
   
   const suggestedQuestionsPrompt = `Basándote en la pregunta "${question}" y la respuesta proporcionada, genera exactamente 3 preguntas de seguimiento.
 
-⚠️ RESTRICCIÓN CRÍTICA - SOLO puedes mencionar datos que existen:
-- Empresas: ${availableCompanies}
-- Sectores: ${availableSectors}
-- Categorías IBEX: ${availableIbexCategories}
-- Modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
+⚠️ RESTRICCIÓN CRÍTICA - Las preguntas DEBEN ser respondibles con los datos existentes:
 
-💡 INCLUYE AL MENOS UNA sugerencia de BOLETÍN si parece relevante:
-- "Genera un boletín de [empresa relevante]"
-- "Informe ejecutivo de [empresa] vs competidores"
+DATOS DISPONIBLES EN REPINDEX:
+- RIX Score (0-100) por empresa y modelo de IA
+- Tendencias semanales (subida/bajada vs semana anterior)
+- Comparativas entre empresas del mismo sector
+- Ranking por modelos: ChatGPT, Perplexity, Gemini, DeepSeek
+- Categorías: IBEX35, IBEX_MEDIUM, IBEX_SMALL, empresas no cotizadas
+- Sectores: ${availableSectors}
+- Empresas: ${availableCompanies}
+
+❌ PREGUNTAS PROHIBIDAS (no tenemos estos datos):
+- Noticias específicas, eventos, declaraciones de directivos
+- Datos financieros (ingresos, beneficios, dividendos, cotización detallada)
+- Información histórica de hace meses o años
+- Causas exactas de variaciones (solo podemos inferir)
+- Comparaciones con empresas que NO están en la lista
+- Predicciones o proyecciones futuras
+- Análisis de competidores internacionales no listados
+- ESG, sostenibilidad, gobierno corporativo específico
+
+✅ TIPOS DE PREGUNTAS VÁLIDAS:
+- "¿Cuál es el RIX de [empresa de la lista]?"
+- "Top 5 empresas del sector [sector existente]"
+- "¿Cómo se comparan ChatGPT vs Perplexity en [empresa]?"
+- "¿Qué empresas subieron más esta semana?"
+- "Genera un boletín de [empresa de la lista]"
+- "¿Qué modelo de IA es más crítico/generoso?"
+- "Empresas cotizadas vs no cotizadas"
+- "Comparativa del sector [sector existente]"
 
 Responde SOLO con un array JSON de 3 strings:
 ["pregunta 1", "pregunta 2", "pregunta 3"]`;
