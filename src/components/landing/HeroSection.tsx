@@ -56,10 +56,10 @@ export function HeroSection() {
             <Button
               size="lg"
               onClick={() => navigate("/dashboard")}
-              className="w-full sm:w-auto group"
+              className="w-full sm:w-auto group whitespace-nowrap px-6"
             >
-              <FaChartLine className="mr-2 group-hover:scale-110 transition-transform" />
-              Ver el RepIndex del IBEX-35
+              <FaChartLine className="mr-2 flex-shrink-0 group-hover:scale-110 transition-transform" />
+              <span className="truncate sm:whitespace-nowrap">Ver el RepIndex del IBEX-35</span>
             </Button>
             <Button
               size="lg"
