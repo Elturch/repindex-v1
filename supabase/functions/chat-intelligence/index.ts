@@ -25,135 +25,233 @@ const BULLETIN_PATTERNS = [
 // =============================================================================
 // BULLETIN GENERATION PROMPT - Magazine Style with News Stories
 // =============================================================================
-const BULLETIN_SYSTEM_PROMPT = `Eres un PERIODISTA SENIOR de reputación corporativa escribiendo un BOLETÍN DE NOTICIAS profesional estilo periódico/revista sobre una empresa específica y su competencia.
+const BULLETIN_SYSTEM_PROMPT = `Eres un PERIODISTA SENIOR de reputación corporativa escribiendo un BOLETÍN DE NOTICIAS PREMIUM profesional estilo periódico/revista sobre una empresa específica y su competencia.
 
-## TU TAREA:
-Crear un BOLETÍN DE NOTICIAS (no un resumen ejecutivo) con HISTORIAS PERIODÍSTICAS reales basadas en los datos proporcionados. Cada sección debe ser una NOTICIA con titular, entradilla y cuerpo narrativo.
+## OBJETIVO:
+Crear un BOLETÍN DE NOTICIAS PREMIUM (producto de pago) con MÍNIMO 15 HISTORIAS PERIODÍSTICAS completas basadas en los datos proporcionados. Este boletín debe ser TAN COMPLETO que justifique su coste como servicio premium.
 
-## ESTRUCTURA DEL BOLETÍN (formato PERIÓDICO):
+## ESTRUCTURA DEL BOLETÍN PREMIUM (formato PERIÓDICO EXTENSO):
 
 ---
 
 # REPINDEX BULLETIN
-## Edición Especial: [NOMBRE EMPRESA]
+## Edición Premium: [NOMBRE EMPRESA]
 **[fecha inicio] - [fecha fin]** | **La Autoridad en Reputación Corporativa de las IAs**
 
 ---
 
-## 📰 NOTICIA PRINCIPAL
+## 📰 1. NOTICIA PRINCIPAL: ESTADO ACTUAL
 
 ### [TITULAR IMPACTANTE sobre el hallazgo más relevante de la empresa]
 
 **[Ciudad], [fecha]** — [Entradilla de 2-3 líneas que resume la noticia principal sobre la reputación de la empresa]
 
-[Cuerpo de la noticia: 3-4 párrafos narrativos que explican:
+[Cuerpo extenso de la noticia: 4-5 párrafos narrativos que explican:
 - Qué está pasando con la reputación de esta empresa según las IAs
 - Por qué es relevante este hallazgo
-- Contexto histórico (tendencia de 4 semanas)
-- Implicaciones para la empresa]
+- Contexto histórico detallado (tendencia de 4 semanas)
+- Implicaciones estratégicas para la empresa
+- Qué significa para los stakeholders]
 
 > "[Cita destacada o dato clave del análisis]"
 
 ---
 
-## 📊 RADAR DE REPUTACIÓN: [EMPRESA]
+## 📊 2. NOTICIA: ANATOMÍA DEL RIX SCORE
 
-### Cómo ven las IAs a [Empresa] esta semana
+### Por qué [Empresa] tiene un RIX de [XX]: Las 8 métricas que definen su reputación
 
-| Modelo IA | RIX Score | Percepción |
-|-----------|-----------|------------|
-| ChatGPT | XX | [interpretación en 3-4 palabras] |
-| Perplexity | XX | [interpretación] |
-| Gemini | XX | [interpretación] |
-| DeepSeek | XX | [interpretación] |
+[Entradilla explicando qué es el RIX y cómo se calcula]
 
-**Consenso**: [Alto/Medio/Bajo] — [1 frase explicativa]
+#### 🔍 DESGLOSE DE MÉTRICAS RIX:
 
----
+**NVM (Narrative Visibility Metric)**: [Score] 
+[2-3 párrafos explicando qué mide esta métrica, por qué la empresa tiene este score, qué implica para su visibilidad narrativa, y qué podría hacer para mejorar]
 
-## 🏆 NOTICIA: BATALLA SECTORIAL
+**DRM (Digital Resonance Metric)**: [Score]
+[2-3 párrafos sobre resonancia digital de la marca]
 
-### [TITULAR sobre la competencia - ej: "Iberdrola adelanta a Endesa en el ranking de reputación energética"]
+**SIM (Sentiment Integrity Metric)**: [Score]
+[2-3 párrafos sobre integridad del sentimiento]
 
-[Entradilla: 2 líneas sobre la situación competitiva]
+**RMM (Reputation Momentum Metric)**: [Score]
+[2-3 párrafos sobre momentum reputacional]
 
-[Cuerpo narrativo: 2-3 párrafos sobre:
-- Cómo está la empresa respecto a sus competidores
-- Quién lidera el sector y por qué
-- Movimientos destacados de la competencia
-- Qué empresa ha ganado/perdido más esta semana]
+**CEM (Crisis Exposure Metric)**: [Score]
+[2-3 párrafos sobre exposición a crisis]
 
-### Ranking del Sector: [Nombre del Sector]
+**GAM (Growth Association Metric)**: [Score]
+[2-3 párrafos sobre asociación con crecimiento]
 
-| Pos | Empresa | RIX | Tendencia |
-|-----|---------|-----|-----------|
-| 1 | ... | XX | ↗/↘/→ |
-| 2 | ... | XX | ↗/↘/→ |
-[etc.]
+**DCM (Data Consistency Metric)**: [Score]
+[2-3 párrafos sobre consistencia de datos]
+
+**CXM (Customer Experience Metric)**: [Score]
+[2-3 párrafos sobre experiencia de cliente percibida]
 
 ---
 
-## 📈 NOTICIA: TENDENCIA SEMANAL
+## 🤖 3. NOTICIA: LA VISIÓN DE LAS 4 IAS
 
-### [TITULAR sobre la evolución - ej: "Telefónica encadena su tercera semana de caída reputacional"]
+### ChatGPT, Perplexity, Gemini y DeepSeek: Cuatro perspectivas sobre [Empresa]
 
-[Cuerpo narrativo: 2 párrafos analizando la tendencia de 4 semanas de la empresa y sus competidores principales]
+[Entradilla sobre cómo cada IA ve diferente a la empresa]
 
-| Semana | [Empresa] | [Competidor 1] | [Competidor 2] |
-|--------|-----------|----------------|----------------|
-| Sem -3 | XX | XX | XX |
-| Sem -2 | XX | XX | XX |
-| Sem -1 | XX | XX | XX |
-| Actual | XX | XX | XX |
+#### ChatGPT opina: [RIX Score]
+[3-4 párrafos analizando cómo ChatGPT percibe la empresa, qué resumen genera, qué puntos clave destaca, por qué su score es diferente al de otros]
 
----
+#### Perplexity dice: [RIX Score]  
+[3-4 párrafos similar análisis]
 
-## 🔍 NOTICIAS BREVES DE LA COMPETENCIA
+#### Gemini evalúa: [RIX Score]
+[3-4 párrafos similar análisis]
 
-### [Competidor 1]: [Titular breve]
-[2-3 frases sobre qué pasa con este competidor según los datos]
+#### DeepSeek considera: [RIX Score]
+[3-4 párrafos similar análisis]
 
-### [Competidor 2]: [Titular breve]
-[2-3 frases sobre qué pasa con este competidor según los datos]
-
-### [Competidor 3]: [Titular breve]
-[2-3 frases sobre qué pasa con este competidor según los datos]
-
----
-
-## 💡 ANÁLISIS: LO QUE VIENE
-
-### Perspectivas para [Empresa]
-
-[2-3 párrafos de análisis prospectivo:
-- Qué podría mejorar o empeorar según las tendencias
-- Comparación con el comportamiento del sector
-- Factores a vigilar]
-
-**Puntos de atención para las próximas semanas:**
-1. [Punto 1]
-2. [Punto 2]
-3. [Punto 3]
+### Tabla Comparativa de Visiones
+| Modelo | RIX | Fortaleza Principal | Debilidad Principal |
+|--------|-----|---------------------|---------------------|
+| ChatGPT | XX | [descripción] | [descripción] |
+| Perplexity | XX | [descripción] | [descripción] |
+| Gemini | XX | [descripción] | [descripción] |
+| DeepSeek | XX | [descripción] | [descripción] |
 
 ---
 
-*RepIndex Bulletin — Edición Especial*
+## 🏆 4. NOTICIA: BATALLA SECTORIAL
+
+### [TITULAR épico sobre la competencia]
+
+[Cuerpo extenso: 4-5 párrafos sobre la competencia en el sector]
+
+### Ranking Completo del Sector: [Nombre del Sector]
+| Pos | Empresa | RIX | Tendencia | Fortaleza | Debilidad |
+|-----|---------|-----|-----------|-----------|-----------|
+[Tabla completa con TODOS los competidores]
+
+---
+
+## 📈 5. NOTICIA: EVOLUCIÓN 4 SEMANAS
+
+### [TITULAR sobre la tendencia histórica]
+
+[4-5 párrafos narrativos sobre la evolución semana a semana]
+
+| Semana | [Empresa] | ChatGPT | Perplexity | Gemini | DeepSeek |
+|--------|-----------|---------|------------|--------|----------|
+[Tabla con las 4 semanas de datos]
+
+---
+
+## 🔥 6-10. NOTICIAS SOBRE COMPETIDORES
+
+### 6. [Competidor 1]: [Titular de noticia]
+[2-3 párrafos completos como noticia independiente]
+
+### 7. [Competidor 2]: [Titular de noticia]
+[2-3 párrafos completos]
+
+### 8. [Competidor 3]: [Titular de noticia]
+[2-3 párrafos completos]
+
+### 9. [Competidor 4]: [Titular de noticia]
+[2-3 párrafos completos]
+
+### 10. [Competidor 5]: [Titular de noticia]
+[2-3 párrafos completos]
+
+---
+
+## 📊 11. NOTICIA: MAPA DE POSICIONAMIENTO
+
+### Dónde está [Empresa] en el ecosistema de reputación corporativa
+
+[3-4 párrafos analizando posicionamiento relativo]
+
+| Cuadrante | Empresas | Característica |
+|-----------|----------|----------------|
+| Líderes (RIX>80) | [...] | Alta reputación estable |
+| Aspirantes (60-80) | [...] | Crecimiento potencial |
+| En Riesgo (40-60) | [...] | Necesitan atención |
+| Críticos (<40) | [...] | Urgente intervención |
+
+---
+
+## 🎯 12. NOTICIA: ANÁLISIS DE DIVERGENCIAS
+
+### Cuando las IAs no se ponen de acuerdo sobre [Empresa]
+
+[3-4 párrafos sobre discrepancias entre modelos y qué significan]
+
+---
+
+## 📉 13. NOTICIA: RIESGOS DETECTADOS
+
+### Las señales de alarma que las IAs ven en [Empresa]
+
+[3-4 párrafos sobre aspectos negativos o áreas de mejora detectadas]
+
+---
+
+## 💡 14. NOTICIA: OPORTUNIDADES ESTRATÉGICAS
+
+### Dónde [Empresa] puede ganar terreno reputacional
+
+[3-4 párrafos sobre oportunidades identificadas a partir de los datos]
+
+---
+
+## 🔮 15. NOTICIA: PERSPECTIVAS Y RECOMENDACIONES
+
+### Lo que viene para [Empresa]: escenarios y acciones
+
+[4-5 párrafos de análisis prospectivo profundo]
+
+**Escenario Optimista**: [descripción]
+**Escenario Neutro**: [descripción]  
+**Escenario de Riesgo**: [descripción]
+
+### Plan de Acción Recomendado:
+1. **Acción Inmediata**: [descripción detallada]
+2. **Corto Plazo (1-4 semanas)**: [descripción]
+3. **Medio Plazo (1-3 meses)**: [descripción]
+4. **Largo Plazo (6+ meses)**: [descripción]
+
+---
+
+## 📋 ANEXOS Y DATOS ADICIONALES
+
+### A. Metodología RepIndex
+[Breve explicación de cómo se calcula el RIX]
+
+### B. Glosario de Métricas
+[Definiciones de NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM]
+
+### C. Fuentes de Datos
+[Información sobre los modelos de IA consultados]
+
+---
+
+*RepIndex Bulletin — Edición Premium*
 *Análisis basado en la percepción de ChatGPT, Perplexity, Gemini y DeepSeek*
 *© RepIndex — La Autoridad en Reputación Corporativa de las IAs*
 
 ---
 
 ## REGLAS CRÍTICAS PARA ESCRIBIR:
-1. ESCRIBE COMO PERIODISTA: titulares atractivos, entradillas, cuerpo narrativo. NO hagas listas o resúmenes secos.
-2. USA SOLO los datos proporcionados - NUNCA inventes cifras ni empresas
-3. Cada sección debe ser una HISTORIA con narrativa, no un volcado de datos
-4. Los titulares deben ser INFORMATIVOS y ATRACTIVOS (estilo El País, Expansión)
-5. Interpreta los datos: ¿qué SIGNIFICA que una empresa tenga RIX 72? ¿Es bueno, malo, mejor que antes?
-6. Incluye COMPARACIONES narrativas: "mientras X subía, Y bajaba..."
-7. Si faltan datos de algún modelo o semana, menciónalo como noticia ("Sin datos de Gemini esta semana")
-8. Mantén tono PROFESIONAL pero PERIODÍSTICO, no técnico
-9. Las tablas complementan el texto, no lo sustituyen
-10. El lector debe entender la historia SIN leer las tablas`;
+1. ESCRIBE MÍNIMO 15 NOTICIAS COMPLETAS - Este es un producto premium de pago
+2. CADA NOTICIA debe tener titular, entradilla y 3-5 párrafos de cuerpo narrativo
+3. EXPLICA EN DETALLE cada métrica RIX y por qué la empresa tiene ese score
+4. USA SOLO los datos proporcionados - NUNCA inventes cifras
+5. Los titulares deben ser INFORMATIVOS y ATRACTIVOS (estilo El País, Expansión, Financial Times)
+6. INTERPRETA los datos: ¿qué SIGNIFICA que una empresa tenga RIX 72? ¿Es bueno, malo, mejor que antes?
+7. COMPARA extensamente con competidores - dedica noticias individuales a cada uno
+8. Si faltan datos de algún modelo, menciónalo como noticia
+9. Mantén tono PROFESIONAL pero PERIODÍSTICO, no técnico
+10. Las tablas complementan el texto, NO lo sustituyen
+11. El boletín debe ser TAN COMPLETO que justifique guardarlo y compartirlo
+12. MÍNIMO 6000 palabras para un boletín premium completo`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -331,7 +429,7 @@ async function handleBulletinRequest(
   // 3. Get all tickers to fetch (company + competitors)
   const allTickers = [matchedCompany.ticker, ...competitors.map(c => c.ticker)];
 
-  // 4. Fetch 4 weeks of data for company and competitors
+  // 4. Fetch 4 weeks of data for company and competitors with ALL metrics
   const { data: rixData, error: rixError } = await supabaseClient
     .from('rix_runs')
     .select(`
@@ -342,13 +440,31 @@ async function handleBulletinRequest(
       "07_period_to",
       "09_rix_score",
       "51_rix_score_adjusted",
-      "32_rmm_score",
       "10_resumen",
+      "11_puntos_clave",
+      "22_explicacion",
+      "23_nvm_score",
+      "25_nvm_categoria",
+      "26_drm_score",
+      "28_drm_categoria",
+      "29_sim_score",
+      "31_sim_categoria",
+      "32_rmm_score",
+      "34_rmm_categoria",
+      "35_cem_score",
+      "37_cem_categoria",
+      "38_gam_score",
+      "40_gam_categoria",
+      "41_dcm_score",
+      "43_dcm_categoria",
+      "44_cxm_score",
+      "46_cxm_categoria",
+      "25_explicaciones_detalladas",
       batch_execution_date
     `)
     .in('"05_ticker"', allTickers)
     .order('batch_execution_date', { ascending: false })
-    .limit(500);
+    .limit(800);
 
   if (rixError) {
     console.error(`${logPrefix} Error fetching RIX data:`, rixError);
@@ -383,7 +499,7 @@ async function handleBulletinRequest(
   });
   bulletinContext += '\n';
 
-  // Data by week
+  // Data by week with DETAILED metrics
   uniquePeriods.forEach((period, weekIdx) => {
     const [periodFrom, periodTo] = period.split('|');
     const weekData = rixData?.filter(r => getPeriodKey(r) === period) || [];
@@ -391,35 +507,92 @@ async function handleBulletinRequest(
     const weekLabel = weekIdx === 0 ? 'SEMANA ACTUAL' : `SEMANA -${weekIdx}`;
     bulletinContext += `\n📅 ${weekLabel} (${periodFrom} a ${periodTo}):\n\n`;
 
-    // Data for main company
+    // DETAILED Data for main company
     const mainCompanyData = weekData.filter(r => r["05_ticker"] === matchedCompany.ticker);
-    bulletinContext += `**${matchedCompany.issuer_name}**:\n`;
+    bulletinContext += `**${matchedCompany.issuer_name} - DATOS DETALLADOS**:\n\n`;
     
     if (mainCompanyData.length > 0) {
       mainCompanyData.forEach(r => {
         const score = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
-        bulletinContext += `- ${r["02_model_name"]}: RIX ${score}\n`;
+        bulletinContext += `### ${r["02_model_name"]} - RIX: ${score}\n`;
+        
+        // Include all RIX metrics
+        bulletinContext += `**Métricas del RIX:**\n`;
+        bulletinContext += `- NVM (Visibility): ${r["23_nvm_score"] ?? 'N/A'} - ${r["25_nvm_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- DRM (Digital Resonance): ${r["26_drm_score"] ?? 'N/A'} - ${r["28_drm_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- SIM (Sentiment): ${r["29_sim_score"] ?? 'N/A'} - ${r["31_sim_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- RMM (Momentum): ${r["32_rmm_score"] ?? 'N/A'} - ${r["34_rmm_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- CEM (Crisis Exposure): ${r["35_cem_score"] ?? 'N/A'} - ${r["37_cem_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- GAM (Growth Association): ${r["38_gam_score"] ?? 'N/A'} - ${r["40_gam_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- DCM (Data Consistency): ${r["41_dcm_score"] ?? 'N/A'} - ${r["43_dcm_categoria"] || 'Sin categoría'}\n`;
+        bulletinContext += `- CXM (Customer Experience): ${r["44_cxm_score"] ?? 'N/A'} - ${r["46_cxm_categoria"] || 'Sin categoría'}\n`;
+        
+        // Include summary and key points
+        if (r["10_resumen"]) {
+          bulletinContext += `\n**Resumen de la IA:**\n${r["10_resumen"]}\n`;
+        }
+        if (r["11_puntos_clave"] && Array.isArray(r["11_puntos_clave"])) {
+          bulletinContext += `\n**Puntos Clave:**\n`;
+          r["11_puntos_clave"].forEach((punto: string, i: number) => {
+            bulletinContext += `${i + 1}. ${punto}\n`;
+          });
+        }
+        if (r["22_explicacion"]) {
+          bulletinContext += `\n**Explicación del Score:**\n${r["22_explicacion"]}\n`;
+        }
+        if (r["25_explicaciones_detalladas"]) {
+          bulletinContext += `\n**Explicaciones Detalladas por Métrica:**\n${JSON.stringify(r["25_explicaciones_detalladas"], null, 2)}\n`;
+        }
+        bulletinContext += '\n---\n';
       });
+      
       const avgScore = mainCompanyData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / mainCompanyData.length;
-      bulletinContext += `- **Promedio**: ${avgScore.toFixed(1)}\n`;
+      bulletinContext += `\n**PROMEDIO RIX ${matchedCompany.issuer_name}**: ${avgScore.toFixed(1)}\n`;
     } else {
       bulletinContext += `- Sin datos esta semana\n`;
     }
     bulletinContext += '\n';
 
-    // Data for competitors (condensed)
-    bulletinContext += `**Competidores esta semana**:\n`;
-    bulletinContext += `| Empresa | Ticker | RIX Promedio | Modelos |\n`;
-    bulletinContext += `|---------|--------|--------------|--------|\n`;
+    // Data for competitors with metrics
+    bulletinContext += `**COMPETIDORES - RESUMEN ESTA SEMANA**:\n`;
+    bulletinContext += `| Empresa | Ticker | RIX Prom | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
+    bulletinContext += `|---------|--------|----------|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
     
     competitors.forEach(comp => {
       const compData = weekData.filter(r => r["05_ticker"] === comp.ticker);
       if (compData.length > 0) {
         const avgScore = compData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / compData.length;
-        bulletinContext += `| ${comp.issuer_name} | ${comp.ticker} | ${avgScore.toFixed(1)} | ${compData.length} |\n`;
+        const avgNVM = compData.reduce((sum, r) => sum + (r["23_nvm_score"] || 0), 0) / compData.length;
+        const avgDRM = compData.reduce((sum, r) => sum + (r["26_drm_score"] || 0), 0) / compData.length;
+        const avgSIM = compData.reduce((sum, r) => sum + (r["29_sim_score"] || 0), 0) / compData.length;
+        const avgRMM = compData.reduce((sum, r) => sum + (r["32_rmm_score"] || 0), 0) / compData.length;
+        const avgCEM = compData.reduce((sum, r) => sum + (r["35_cem_score"] || 0), 0) / compData.length;
+        const avgGAM = compData.reduce((sum, r) => sum + (r["38_gam_score"] || 0), 0) / compData.length;
+        const avgDCM = compData.reduce((sum, r) => sum + (r["41_dcm_score"] || 0), 0) / compData.length;
+        const avgCXM = compData.reduce((sum, r) => sum + (r["44_cxm_score"] || 0), 0) / compData.length;
+        bulletinContext += `| ${comp.issuer_name} | ${comp.ticker} | ${avgScore.toFixed(1)} | ${avgNVM.toFixed(0)} | ${avgDRM.toFixed(0)} | ${avgSIM.toFixed(0)} | ${avgRMM.toFixed(0)} | ${avgCEM.toFixed(0)} | ${avgGAM.toFixed(0)} | ${avgDCM.toFixed(0)} | ${avgCXM.toFixed(0)} |\n`;
       }
     });
     bulletinContext += '\n';
+
+    // Individual competitor details for current week only
+    if (weekIdx === 0) {
+      bulletinContext += `\n**DETALLES DE COMPETIDORES - SEMANA ACTUAL:**\n`;
+      competitors.forEach(comp => {
+        const compData = weekData.filter(r => r["05_ticker"] === comp.ticker);
+        if (compData.length > 0) {
+          bulletinContext += `\n### ${comp.issuer_name} (${comp.ticker}):\n`;
+          compData.forEach(r => {
+            const score = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
+            bulletinContext += `- ${r["02_model_name"]}: RIX ${score}`;
+            if (r["10_resumen"]) {
+              bulletinContext += ` | Resumen: ${r["10_resumen"].substring(0, 200)}...`;
+            }
+            bulletinContext += '\n';
+          });
+        }
+      });
+    }
   });
 
   // Sector average calculation
@@ -470,7 +643,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         { role: 'system', content: BULLETIN_SYSTEM_PROMPT },
         { role: 'user', content: bulletinUserPrompt }
       ],
-      max_completion_tokens: 6000,
+      max_completion_tokens: 40000,
     }),
   });
 
