@@ -248,4 +248,13 @@ All colors MUST be HSL.
   .shadow-elevated {
     box-shadow: var(--shadow-elevated);
   }
+  
+  /* Chat glow effect for dynamic context */
+  .chat-glow {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.3), 0 4px 12px hsl(var(--primary) / 0.2);
+  }
+  
+  .chat-glow:hover {
+    box-shadow: 0 0 25px hsl(var(--primary) / 0.4), 0 6px 16px hsl(var(--primary) / 0.3);
+  }
 }
