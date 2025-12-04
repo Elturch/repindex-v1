@@ -14,7 +14,7 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     suggestions: [
       '¿Qué es el RIX Score y cómo se calcula?',
       '¿Cuáles son las empresas mejor valoradas esta semana?',
-      '¿Qué diferencias hay entre los modelos de IA?',
+      'Genera un boletín de Telefónica',
       '¿Cómo funciona RepIndex?',
     ]
   },
@@ -23,7 +23,7 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Tabla de resultados RIX semanal',
     suggestions: [
       '¿Qué empresas han mejorado más esta semana?',
-      '¿Cuáles tienen las mayores discrepancias entre modelos?',
+      'Genera un boletín de Inditex y sus competidores',
       '¿Qué empresas del IBEX35 lideran el ranking?',
       'Compara empresas cotizadas vs no cotizadas',
     ]
@@ -33,7 +33,7 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Gráficos de tendencias temporales',
     suggestions: [
       '¿Qué sectores muestran tendencia alcista?',
-      '¿Hay correlación entre RIX y precio de acción?',
+      'Genera un boletín de Iberdrola',
       '¿Qué empresas han sido más volátiles?',
       'Analiza la evolución del sector bancario',
     ]
@@ -43,7 +43,7 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Noticias y análisis de reputación',
     suggestions: [
       '¿Cuáles son las principales noticias de esta semana?',
-      '¿Qué empresas destacan en el boletín actual?',
+      'Genera un boletín ejecutivo de Repsol',
       '¿Cuál es la calidad de los datos recogidos?',
       'Resume las tendencias más importantes',
     ]
@@ -53,9 +53,9 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Análisis conversacional de datos',
     suggestions: [
       '¿Cuáles son las 5 empresas con mejor RIX Score?',
-      '¿Qué empresas tienen discrepancias entre modelos?',
+      'Genera un boletín de Banco Santander y competidores',
       'Compara la evolución de Telefónica e Iberdrola',
-      '¿Cómo evalúan las IAs a Banco Santander?',
+      '¿Cómo evalúan las IAs a BBVA?',
     ]
   },
 };
