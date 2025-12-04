@@ -81,12 +81,14 @@ const Admin: React.FC = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [showUserForm, setShowUserForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [savingUser, setSavingUser] = useState(false);
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
     company_id: '',
     is_individual: false,
+    is_active: true,
     send_magic_link: true,
   });
 
@@ -231,7 +233,7 @@ const Admin: React.FC = () => {
         description: `${userForm.email} añadido correctamente${userForm.send_magic_link ? '. Magic link enviado.' : ''}` 
       });
       setShowUserForm(false);
-      setUserForm({ email: '', full_name: '', company_id: '', is_individual: false, send_magic_link: true });
+      setUserForm({ email: '', full_name: '', company_id: '', is_individual: false, is_active: true, send_magic_link: true });
       fetchUsers();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -246,6 +248,41 @@ const Admin: React.FC = () => {
       toast({ title: 'Magic Link enviado', description: `Enlace enviado a ${email}` });
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const openEditUser = (user: UserProfile) => {
+    setEditingUser(user);
+    setUserForm({
+      email: user.email,
+      full_name: user.full_name || '',
+      company_id: user.company_id || '',
+      is_individual: user.is_individual,
+      is_active: user.is_active,
+      send_magic_link: false,
+    });
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    setSavingUser(true);
+    try {
+      await callAdminApi('update_user', {
+        id: editingUser.id,
+        full_name: userForm.full_name || null,
+        company_id: userForm.company_id || null,
+        is_active: userForm.is_active,
+        is_individual: userForm.is_individual || !userForm.company_id,
+      });
+      toast({ title: 'Usuario actualizado', description: `${userForm.email} guardado correctamente` });
+      setEditingUser(null);
+      fetchUsers();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setSavingUser(false);
     }
   };
 
@@ -507,7 +544,10 @@ const Admin: React.FC = () => {
                                     <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
                                       {user.is_active ? 'Activo' : 'Inactivo'}
                                     </Badge>
-                                    <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)}>
+                                    <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)} title="Enviar Magic Link">
                                       <Mail className="h-4 w-4" />
                                     </Button>
                                   </div>
@@ -554,7 +594,10 @@ const Admin: React.FC = () => {
                                 <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
                                   {user.is_active ? 'Activo' : 'Inactivo'}
                                 </Badge>
-                                <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)}>
+                                <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)} title="Enviar Magic Link">
                                   <Mail className="h-4 w-4" />
                                 </Button>
                               </div>
@@ -768,6 +811,67 @@ const Admin: React.FC = () => {
               </Card>
             )}
 
+            {/* Edit user dialog */}
+            <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Editar Usuario</DialogTitle>
+                  <DialogDescription>Modifica los datos de {editingUser?.email}</DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleUpdateUser} className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input value={userForm.email} disabled className="bg-muted" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit_full_name">Nombre completo</Label>
+                      <Input
+                        id="edit_full_name"
+                        value={userForm.full_name}
+                        onChange={(e) => setUserForm(f => ({ ...f, full_name: e.target.value }))}
+                        placeholder="Juan García"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit_user_company">Empresa</Label>
+                      <Select 
+                        value={userForm.company_id || "_none"} 
+                        onValueChange={(v) => setUserForm(f => ({ ...f, company_id: v === "_none" ? "" : v, is_individual: v === "_none" }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar empresa..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">Sin empresa (particular)</SelectItem>
+                          {companies.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="edit_is_active"
+                        checked={userForm.is_active}
+                        onCheckedChange={(v) => setUserForm(f => ({ ...f, is_active: v }))}
+                      />
+                      <Label htmlFor="edit_is_active">Usuario activo</Label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={savingUser}>
+                      {savingUser ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                      Guardar Cambios
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+
             {loadingUsers ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -804,7 +908,16 @@ const Admin: React.FC = () => {
                         <Button 
                           variant="ghost" 
                           size="sm"
+                          onClick={() => openEditUser(user)}
+                          title="Editar usuario"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
                           onClick={() => handleSendMagicLink(user.id, user.email)}
+                          title="Enviar Magic Link"
                         >
                           <Mail className="h-4 w-4 mr-1" />
                           Enviar Link
