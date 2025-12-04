@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useRixRun } from "@/hooks/useRixRuns";
 import { useMarketAverages } from "@/hooks/useMarketAverages";
+import { useChatContext } from "@/contexts/ChatContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,25 @@ export function RixRunDetail() {
     rixRun?.["06_period_from"], 
     rixRun?.["07_period_to"]
   );
+  const { setPageContext } = useChatContext();
+
+  // Update chat context with company details
+  useEffect(() => {
+    if (rixRun) {
+      setPageContext({
+        name: `Detalle: ${rixRun["03_target_name"]}`,
+        path: `/rix-run/${id}`,
+        dynamicData: {
+          companyName: rixRun["03_target_name"],
+          ticker: rixRun["05_ticker"],
+          modelName: rixRun["02_model_name"],
+          rixScore: rixRun.displayRixScore ?? rixRun["09_rix_score"],
+          sector: rixRun.repindex_root_issuers?.sector_category,
+          ibexFamily: rixRun.repindex_root_issuers?.ibex_family_code,
+        }
+      });
+    }
+  }, [rixRun, id, setPageContext]);
 
   const formatDateRange = (from?: string, to?: string) => {
     if (!from && !to) return "N/A";

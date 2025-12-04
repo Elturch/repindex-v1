@@ -122,9 +122,10 @@ export function usePageContext(dynamicData?: Record<string, any>): DynamicPageCo
         suggestions: [
           `¿Cuál es la tendencia histórica de ${dynamicData.companyName}?`,
           `¿Qué modelo de IA es más crítico con ${dynamicData.companyName}?`,
-          `Compara ${dynamicData.companyName} con sus competidores`,
+          dynamicData.sector ? `Compara ${dynamicData.companyName} con otras empresas de ${dynamicData.sector}` : `Compara ${dynamicData.companyName} con sus competidores`,
           `¿Qué factores influyen en el RIX de ${dynamicData.companyName}?`,
-        ],
+          dynamicData.modelName ? `¿Por qué ${dynamicData.modelName} le da ${dynamicData.rixScore} puntos?` : null,
+        ].filter(Boolean) as string[],
       };
     }
     
