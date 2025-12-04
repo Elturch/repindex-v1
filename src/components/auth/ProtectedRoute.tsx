@@ -7,9 +7,24 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
+// Check if we're in development/preview (not production)
+const isDevOrPreview = () => {
+  if (typeof window === 'undefined') return true;
+  const hostname = window.location.hostname;
+  return hostname.includes('localhost') || 
+         hostname.includes('preview') || 
+         hostname.includes('lovable.app') ||
+         hostname.includes('lovable.dev');
+};
+
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, isLoading, profile } = useAuth();
   const location = useLocation();
+
+  // In Preview/development, allow access without authentication
+  if (isDevOrPreview()) {
+    return <>{children}</>;
+  }
 
   // Show loading spinner while checking auth
   if (isLoading) {
