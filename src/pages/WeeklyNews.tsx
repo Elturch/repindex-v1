@@ -214,7 +214,7 @@ export default function WeeklyNews() {
       </Helmet>
 
       <Layout>
-        <article className="container max-w-6xl py-8">
+        <article className="container max-w-6xl py-8 print:max-w-none print:py-0 print:px-0">
           {/* Magazine Header */}
           <MagazineHeader 
             weekLabel={generatedNews.weekLabel} 
