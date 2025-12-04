@@ -562,14 +562,14 @@ const Admin: React.FC = () => {
                       <div className="space-y-2">
                         <Label htmlFor="user_company">Empresa</Label>
                         <Select 
-                          value={userForm.company_id} 
-                          onValueChange={(v) => setUserForm(f => ({ ...f, company_id: v, is_individual: v === '' }))}
+                          value={userForm.company_id || "_none"} 
+                          onValueChange={(v) => setUserForm(f => ({ ...f, company_id: v === "_none" ? "" : v, is_individual: v === "_none" }))}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Seleccionar empresa..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Sin empresa (particular)</SelectItem>
+                            <SelectItem value="_none">Sin empresa (particular)</SelectItem>
                             {companies.map((c) => (
                               <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
                             ))}
