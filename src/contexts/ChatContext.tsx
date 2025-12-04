@@ -34,6 +34,7 @@ interface ChatContextType {
   setPageContext: (context: PageContext | null) => void;
   isFloatingOpen: boolean;
   setIsFloatingOpen: (open: boolean) => void;
+  loadConversation: (sessionId: string) => void;
   // Export functions
   downloadAsTxt: () => void;
   downloadAsJson: () => void;
@@ -55,7 +56,7 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
@@ -187,6 +188,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
       description: "Se ha iniciado una nueva conversación",
     });
   }, [toast]);
+
+  const loadConversation = useCallback((newSessionId: string) => {
+    setSessionId(newSessionId as `${string}-${string}-${string}-${string}-${string}`);
+    setMessages([]);
+    setIsLoadingHistory(true);
+  }, []);
 
   const generateFileName = (extension: string) => {
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm');
@@ -324,6 +331,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setPageContext,
         isFloatingOpen,
         setIsFloatingOpen,
+        loadConversation,
         downloadAsTxt,
         downloadAsJson,
         downloadAsHtml,

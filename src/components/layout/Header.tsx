@@ -1,9 +1,19 @@
-import { Sun, Moon, MessageCircle, LayoutDashboard, TrendingUp, Newspaper } from "lucide-react";
+import { Sun, Moon, MessageCircle, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, User, Building2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GlossaryDialog } from "@/components/ui/glossary-dialog";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export type AIFilter = "all" | "ChatGPT" | "Google Gemini" | "Perplexity" | "Deepseek" | "comparison";
 
@@ -16,10 +26,24 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAuthenticated, profile, company, signOut, isLoading } = useAuth();
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
   };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
+  // Public pages only show limited navigation
+  const isPublicPage = ['/', '/noticias', '/login'].includes(location.pathname);
 
   return (
     <header className={cn(
@@ -42,37 +66,42 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
 
         {/* Right side buttons */}
         <div className="flex items-center space-x-2">
-          {/* Navigation Buttons */}
-          <Button
-            variant={location.pathname === "/dashboard" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => navigate("/dashboard")}
-            className="flex items-center gap-2"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Button>
-          
-          <Button
-            variant={location.pathname === "/chat" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => navigate("/chat")}
-            className="flex items-center gap-2"
-          >
-            <MessageCircle className="h-4 w-4" />
-            Chat IA
-          </Button>
-          
-          <Button
-            variant={location.pathname === "/market-evolution" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => navigate("/market-evolution")}
-            className="flex items-center gap-2"
-          >
-            <TrendingUp className="h-4 w-4" />
-            Evolución del Mercado
-          </Button>
-          
+          {/* Show full navigation only when authenticated */}
+          {isAuthenticated && (
+            <>
+              <Button
+                variant={location.pathname === "/dashboard" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => navigate("/dashboard")}
+                className="flex items-center gap-2"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </Button>
+              
+              <Button
+                variant={location.pathname === "/chat" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => navigate("/chat")}
+                className="flex items-center gap-2"
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span className="hidden sm:inline">Chat IA</span>
+              </Button>
+              
+              <Button
+                variant={location.pathname === "/market-evolution" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => navigate("/market-evolution")}
+                className="flex items-center gap-2"
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span className="hidden md:inline">Evolución</span>
+              </Button>
+            </>
+          )}
+
+          {/* Noticias - always visible */}
           <Button
             variant={location.pathname === "/noticias" ? "default" : "ghost"}
             size="sm"
@@ -80,10 +109,10 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
             className="flex items-center gap-2"
           >
             <Newspaper className="h-4 w-4" />
-            Noticias
+            <span className="hidden sm:inline">Noticias</span>
           </Button>
           
-          <GlossaryDialog />
+          {isAuthenticated && <GlossaryDialog />}
           
           {/* Theme Toggle */}
           <Button
@@ -95,6 +124,63 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
             <span className="sr-only">Toggle theme</span>
           </Button>
+
+          {/* Auth Section */}
+          {!isLoading && (
+            isAuthenticated ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+                    <Avatar className="h-9 w-9">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                        {getInitials(profile?.full_name)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {profile?.full_name || 'Usuario'}
+                      </p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {profile?.email}
+                      </p>
+                      {company && (
+                        <p className="text-xs leading-none text-muted-foreground flex items-center gap-1 mt-1">
+                          <Building2 className="h-3 w-3" />
+                          {company.company_name}
+                        </p>
+                      )}
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/mis-documentos')}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Mis Documentos
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/mis-conversaciones')}>
+                    <MessagesSquare className="mr-2 h-4 w-4" />
+                    Mis Conversaciones
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Cerrar sesión
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => navigate("/login")}
+              >
+                Acceder
+              </Button>
+            )
+          )}
         </div>
       </div>
     </header>

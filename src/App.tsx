@@ -5,7 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { HelmetProvider } from "react-helmet-async";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { FloatingChat } from "@/components/chat/FloatingChat";
 import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
@@ -15,8 +17,17 @@ import { MarketEvolution } from "./pages/MarketEvolution";
 import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
 import WeeklyNews from "./pages/WeeklyNews";
+import Login from "./pages/Login";
+import MyDocuments from "./pages/MyDocuments";
+import MyConversations from "./pages/MyConversations";
 
 const queryClient = new QueryClient();
+
+// Check if we're in production (not preview/localhost)
+const isProduction = typeof window !== 'undefined' && 
+  !window.location.hostname.includes('localhost') && 
+  !window.location.hostname.includes('preview') &&
+  !window.location.hostname.includes('lovable');
 
 const App = () => (
   <HelmetProvider>
@@ -26,20 +37,45 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <ChatProvider>
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/chat" element={<ChatIntelligence />} />
-              <Route path="/market-evolution" element={<MarketEvolution />} />
-              <Route path="/noticias" element={<WeeklyNews />} />
-              <Route path="/rix-run/:id" element={<RixRunDetail />} />
-              <Route path="/insert-rix" element={<InsertRixResults />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            <FloatingChat />
-          </ChatProvider>
+          <AuthProvider>
+            <ChatProvider>
+              <Routes>
+                {/* Public routes */}
+                <Route path="/" element={<Landing />} />
+                <Route path="/noticias" element={<WeeklyNews />} />
+                <Route path="/login" element={<Login />} />
+                
+                {/* Protected routes */}
+                <Route path="/dashboard" element={
+                  <ProtectedRoute><Dashboard /></ProtectedRoute>
+                } />
+                <Route path="/chat" element={
+                  <ProtectedRoute><ChatIntelligence /></ProtectedRoute>
+                } />
+                <Route path="/market-evolution" element={
+                  <ProtectedRoute><MarketEvolution /></ProtectedRoute>
+                } />
+                <Route path="/rix-run/:id" element={
+                  <ProtectedRoute><RixRunDetail /></ProtectedRoute>
+                } />
+                <Route path="/mis-documentos" element={
+                  <ProtectedRoute><MyDocuments /></ProtectedRoute>
+                } />
+                <Route path="/mis-conversaciones" element={
+                  <ProtectedRoute><MyConversations /></ProtectedRoute>
+                } />
+                
+                {/* Admin routes - only available in Preview/development */}
+                {!isProduction && (
+                  <Route path="/insert-rix" element={<InsertRixResults />} />
+                )}
+                
+                {/* Catch-all */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+              <FloatingChat />
+            </ChatProvider>
+          </AuthProvider>
         </BrowserRouter>
         </TooltipProvider>
       </ThemeProvider>
