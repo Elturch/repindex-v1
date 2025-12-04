@@ -79,6 +79,28 @@ export function CompanyBulletinViewer({ content, companyName, generatedAt }: Com
       <div className="bulletin-content">
         <MarkdownMessage content={content} showDownload={false} />
       </div>
+
+      {/* Footer Actions */}
+      <div className="flex items-center justify-center gap-2 pt-4 mt-4 border-t border-border/50">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleDownload}
+          className="gap-1.5"
+        >
+          <Download className="h-4 w-4" />
+          Descargar HTML
+        </Button>
+        <Button 
+          variant="default" 
+          size="sm" 
+          onClick={handlePrint}
+          className="gap-1.5"
+        >
+          <Printer className="h-4 w-4" />
+          Imprimir / PDF
+        </Button>
+      </div>
     </div>
   );
 }
