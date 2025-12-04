@@ -65,7 +65,7 @@ export function EditorialGrid({ stories }: EditorialGridProps) {
       </div>
 
       {/* Secondary stories: Medium format with narrative */}
-      <div className="grid md:grid-cols-2 gap-8 print:gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 print:gap-4">
         {secondaryStories.map((story, i) => (
           <SecondaryStoryCard key={i} story={story} />
         ))}
@@ -80,7 +80,7 @@ export function EditorialGrid({ stories }: EditorialGridProps) {
             <div className="flex-1 h-px bg-border" />
           </div>
           
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 print:gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 print:gap-3">
             {tertiaryStories.map((story, i) => (
               <TertiaryStoryCard key={i} story={story} />
             ))}
@@ -181,10 +181,10 @@ function SecondaryStoryCard({ story }: { story: Story }) {
   return (
     <>
       <article className="space-y-3 pb-6 border-b print:pb-3 print:break-inside-avoid">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
           {/* Mini chart */}
           {story.chartData && story.chartData.data && story.chartData.data.length > 0 && (
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 flex justify-center sm:justify-start">
               {story.chartData.type === 'pie' && <MiniPieChart data={story.chartData.data} size={120} />}
               {story.chartData.type === 'line' && <MiniLineChart data={story.chartData.data} width={140} height={80} />}
               {story.chartData.type === 'radar' && <MiniRadarChart data={story.chartData.data} size={140} />}

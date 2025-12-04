@@ -76,15 +76,15 @@ export function StatsSection() {
               viewport={{ once: true }}
               transition={{ delay: index * 0.1, duration: 0.5 }}
             >
-              <Card className="p-6 text-center hover:shadow-lg transition-shadow duration-300">
+              <Card className="p-4 sm:p-6 text-center hover:shadow-lg transition-shadow duration-300 h-full flex flex-col justify-center min-h-[120px]">
                 <motion.div
-                  className="text-4xl md:text-5xl font-bold text-primary mb-2"
+                  className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary mb-1 sm:mb-2"
                   whileHover={{ scale: 1.1 }}
                   transition={{ type: "spring", stiffness: 300 }}
                 >
                   <AnimatedCounter value={stat.value} suffix={stat.suffix} />
                 </motion.div>
-                <p className="text-sm text-muted-foreground font-medium">
+                <p className="text-xs sm:text-sm text-muted-foreground font-medium leading-tight">
                   {stat.label}
                 </p>
               </Card>
