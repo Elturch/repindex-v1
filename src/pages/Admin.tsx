@@ -249,8 +249,8 @@ const Admin: React.FC = () => {
     }
   };
 
-  // Form component for company (reused in create and edit)
-  const CompanyFormFields = () => (
+  // Company form fields JSX (inline to prevent input focus loss)
+  const companyFormFieldsJSX = (isEditing: boolean) => (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -356,7 +356,7 @@ const Admin: React.FC = () => {
         </div>
       </div>
 
-      {editingCompany && (
+      {isEditing && (
         <div className="flex items-center gap-2">
           <Switch
             id="is_active"
@@ -426,7 +426,7 @@ const Admin: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleCreateCompany} className="space-y-4">
-                    <CompanyFormFields />
+                    {companyFormFieldsJSX(false)}
                     <div className="flex gap-2 justify-end">
                       <Button type="button" variant="outline" onClick={() => setShowCompanyForm(false)}>
                         Cancelar
@@ -449,7 +449,7 @@ const Admin: React.FC = () => {
                   <DialogDescription>Modifica los datos de {editingCompany?.company_name}</DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleUpdateCompany} className="space-y-4">
-                  <CompanyFormFields />
+                  {companyFormFieldsJSX(true)}
                   <div className="flex gap-2 justify-end">
                     <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>
                       Cancelar
