@@ -456,7 +456,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
       suggestedQuestions,
       metadata: {
         type: 'bulletin',
-        company: matchedCompany.issuer_name,
+        companyName: matchedCompany.issuer_name,
         ticker: matchedCompany.ticker,
         sector: matchedCompany.sector_category,
         competitorsCount: competitors.length,
