@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Minimize2, Maximize2, Trash2, Sparkles } from "lucide-react";
+import { MessageCircle, Minimize2, Maximize2, Trash2, Sparkles, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChatContext } from "@/contexts/ChatContext";
 import { usePageContext } from "@/hooks/usePageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTooltip";
@@ -26,6 +27,7 @@ export function FloatingChat() {
     setPageContext,
   } = useChatContext();
   
+  const { isAuthenticated } = useAuth();
   const pageContext = usePageContext();
   const hasSeenOnboarding = useChatOnboardingSeen();
   
@@ -252,24 +254,47 @@ export function FloatingChat() {
               </CardHeader>
               
               <CardContent className="pt-0">
-                <ChatMessages
-                  messages={messages}
-                  isLoading={isLoading}
-                  isLoadingHistory={isLoadingHistory}
-                  onSuggestedQuestion={sendMessage}
-                  starterPrompts={pageContext.suggestions}
-                  onStarterPrompt={sendMessage}
-                  compact={true}
-                />
-                
-                <div className="mt-3">
-                  <ChatInput
-                    onSend={sendMessage}
-                    isLoading={isLoading}
-                    placeholder="Pregunta sobre RepIndex..."
-                    compact={true}
-                  />
-                </div>
+                {isAuthenticated ? (
+                  <>
+                    <ChatMessages
+                      messages={messages}
+                      isLoading={isLoading}
+                      isLoadingHistory={isLoadingHistory}
+                      onSuggestedQuestion={sendMessage}
+                      starterPrompts={pageContext.suggestions}
+                      onStarterPrompt={sendMessage}
+                      compact={true}
+                    />
+                    
+                    <div className="mt-3">
+                      <ChatInput
+                        onSend={sendMessage}
+                        isLoading={isLoading}
+                        placeholder="Pregunta sobre RepIndex..."
+                        compact={true}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Lock className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                    <p className="text-sm font-medium text-foreground mb-2">
+                      Este chat es solo para usuarios registrados
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      Accede a tu cuenta para usar el asistente de RepIndex
+                    </p>
+                    <Button 
+                      onClick={() => {
+                        setIsFloatingOpen(false);
+                        navigate('/login');
+                      }}
+                      size="sm"
+                    >
+                      Acceder
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>
