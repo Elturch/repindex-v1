@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
+import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
 import { Sparkles, RefreshCw } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 
@@ -90,6 +91,11 @@ export function ChatMessages({
             >
               {message.role === 'user' ? (
                 <div className={`whitespace-pre-wrap ${compact ? 'text-xs' : 'text-sm'}`}>{message.content}</div>
+              ) : message.metadata?.type === 'bulletin' ? (
+                <CompanyBulletinViewer 
+                  content={message.content}
+                  companyName={message.metadata?.companyName}
+                />
               ) : (
                 <MarkdownMessage 
                   content={message.content} 

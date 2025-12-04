@@ -3,10 +3,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
+export interface MessageMetadata {
+  type?: 'standard' | 'bulletin';
+  companyName?: string;
+  documentsFound?: number;
+  structuredDataFound?: number;
+}
+
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
   suggestedQuestions?: string[];
+  metadata?: MessageMetadata;
 }
 
 interface PageContext {
@@ -126,6 +134,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
         role: 'assistant',
         content: data.answer,
         suggestedQuestions: data.suggestedQuestions,
+        metadata: {
+          type: data.metadata?.type || 'standard',
+          companyName: data.metadata?.companyName,
+          documentsFound: data.metadata?.documentsFound,
+          structuredDataFound: data.metadata?.structuredDataFound,
+        },
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -140,10 +154,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         structured_data_found: data.metadata?.structuredDataFound,
       });
 
-      toast({
-        title: "Respuesta recibida",
-        description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
-      });
+      // Show appropriate toast based on response type
+      if (data.metadata?.type === 'bulletin') {
+        toast({
+          title: "Boletín generado",
+          description: `Boletín ejecutivo de ${data.metadata.companyName || 'empresa'} listo para descargar`,
+        });
+      } else {
+        toast({
+          title: "Respuesta recibida",
+          description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
+        });
+      }
     } catch (error) {
       console.error('Error in chat intelligence:', error);
       toast({
