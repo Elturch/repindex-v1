@@ -747,6 +747,55 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 // =============================================================================
 // STANDARD CHAT HANDLER (existing logic refactored)
 // =============================================================================
+// =============================================================================
+// FUNCIÓN: Detectar empresas mencionadas en la pregunta
+// =============================================================================
+function detectCompaniesInQuestion(question: string, companiesCache: any[]): any[] {
+  if (!companiesCache || companiesCache.length === 0) return [];
+  
+  const normalizedQuestion = question.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Remove accents
+  
+  const detectedCompanies: any[] = [];
+  
+  for (const company of companiesCache) {
+    const companyName = company.issuer_name?.toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") || '';
+    const ticker = company.ticker?.toLowerCase() || '';
+    
+    // Full name match
+    if (companyName && normalizedQuestion.includes(companyName)) {
+      detectedCompanies.push(company);
+      continue;
+    }
+    
+    // Ticker match (only if ticker is at least 2 chars and appears as a word)
+    if (ticker && ticker.length >= 2) {
+      const tickerRegex = new RegExp(`\\b${ticker}\\b`, 'i');
+      if (tickerRegex.test(normalizedQuestion)) {
+        detectedCompanies.push(company);
+        continue;
+      }
+    }
+    
+    // Partial name match (significant words > 4 chars, avoiding common words)
+    const commonWords = ['banco', 'grupo', 'empresa', 'compañia', 'sociedad', 'holding', 'spain', 'españa', 'corp', 'corporation'];
+    const nameWords = companyName.split(/\s+/).filter(
+      word => word.length > 4 && !commonWords.includes(word)
+    );
+    
+    for (const word of nameWords) {
+      if (normalizedQuestion.includes(word)) {
+        detectedCompanies.push(company);
+        break;
+      }
+    }
+  }
+  
+  // Deduplicate
+  return [...new Map(detectedCompanies.map(c => [c.ticker, c])).values()];
+}
+
 async function handleStandardChat(
   question: string,
   conversationHistory: any[],
@@ -755,6 +804,12 @@ async function handleStandardChat(
   sessionId: string | undefined,
   logPrefix: string
 ) {
+  // =============================================================================
+  // PASO 0: DETECTAR EMPRESAS MENCIONADAS EN LA PREGUNTA
+  // =============================================================================
+  const detectedCompanies = detectCompaniesInQuestion(question, companiesCache || []);
+  console.log(`${logPrefix} Detected companies in question: ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'none'}`);
+
   // =============================================================================
   // PASO 1: GENERAR EMBEDDING DE LA PREGUNTA (para vector search)
   // =============================================================================
@@ -812,7 +867,7 @@ async function handleStandardChat(
       batch_execution_date
     `)
     .order('batch_execution_date', { ascending: false })
-    .limit(1200);
+    .limit(1500);
 
   if (rixError) {
     console.error(`${logPrefix} Error loading RIX data:`, rixError);
@@ -862,13 +917,102 @@ async function handleStandardChat(
     console.log(`${logPrefix} Current period: ${currentFrom} to ${currentTo} (${currentWeekData.length} records)`);
     console.log(`${logPrefix} Previous period: ${prevFrom || 'N/A'} to ${prevTo || 'N/A'} (${previousWeekData.length} records)`);
 
+    // =========================================================================
+    // 4.3 SECCIÓN PRIORITARIA: EMPRESAS MENCIONADAS EN LA PREGUNTA
+    // =========================================================================
+    if (detectedCompanies.length > 0) {
+      context += `\n🎯 ======================================================================\n`;
+      context += `🎯 DATOS DE EMPRESAS MENCIONADAS EN LA PREGUNTA (PRIORIDAD MÁXIMA)\n`;
+      context += `🎯 ======================================================================\n\n`;
+      
+      for (const company of detectedCompanies) {
+        const companyName = company.issuer_name;
+        const ticker = company.ticker;
+        
+        // Get current week data for this company (ALL records, no filtering)
+        const companyCurrentData = currentWeekData.filter(run => 
+          run["03_target_name"]?.toLowerCase() === companyName.toLowerCase() ||
+          run["05_ticker"]?.toLowerCase() === ticker?.toLowerCase()
+        );
+        
+        // Get previous week data for trend
+        const companyPrevData = previousWeekData.filter(run => 
+          run["03_target_name"]?.toLowerCase() === companyName.toLowerCase() ||
+          run["05_ticker"]?.toLowerCase() === ticker?.toLowerCase()
+        );
+        
+        console.log(`${logPrefix} Company "${companyName}" (${ticker}): Current=${companyCurrentData.length} records, Previous=${companyPrevData.length} records`);
+        
+        context += `## 📊 ${companyName.toUpperCase()} (${ticker})\n`;
+        context += `Sector: ${company.sector_category || 'No especificado'} | IBEX: ${company.ibex_family_code || 'No IBEX'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
+        
+        if (companyCurrentData.length > 0) {
+          context += `### Datos Semana Actual (${currentFrom} a ${currentTo}):\n`;
+          context += `| Modelo IA | RIX Score | RMM Score |\n`;
+          context += `|-----------|-----------|----------|\n`;
+          
+          companyCurrentData.forEach(run => {
+            const rixScore = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
+            const rmmScore = run["32_rmm_score"];
+            context += `| ${run["02_model_name"]} | ${rixScore ?? 'N/A'} | ${rmmScore ?? 'N/A'} |\n`;
+          });
+          
+          // Calculate average
+          const validScores = companyCurrentData
+            .map(r => r["51_rix_score_adjusted"] ?? r["09_rix_score"])
+            .filter(s => s != null);
+          
+          if (validScores.length > 0) {
+            const avgScore = Math.round((validScores.reduce((a, b) => a + b, 0) / validScores.length) * 10) / 10;
+            context += `\n**Promedio RIX (${validScores.length} modelos): ${avgScore}**\n`;
+          }
+          
+          // Include resumen if available
+          const summaries = companyCurrentData.filter(r => r["10_resumen"]).slice(0, 2);
+          if (summaries.length > 0) {
+            context += `\n### Resúmenes de IA:\n`;
+            summaries.forEach(s => {
+              context += `- **${s["02_model_name"]}**: ${s["10_resumen"]?.substring(0, 300)}...\n`;
+            });
+          }
+        } else {
+          context += `⚠️ NO HAY DATOS DE ${companyName} EN LA SEMANA ACTUAL (${currentFrom} a ${currentTo})\n`;
+          context += `Esto puede indicar que la empresa no fue evaluada esta semana o hay un problema de datos.\n`;
+        }
+        
+        // Trend comparison with previous week
+        if (companyPrevData.length > 0 && companyCurrentData.length > 0) {
+          const currAvg = companyCurrentData
+            .map(r => r["51_rix_score_adjusted"] ?? r["09_rix_score"])
+            .filter(s => s != null)
+            .reduce((a, b, _, arr) => a + b / arr.length, 0);
+          
+          const prevAvg = companyPrevData
+            .map(r => r["51_rix_score_adjusted"] ?? r["09_rix_score"])
+            .filter(s => s != null)
+            .reduce((a, b, _, arr) => a + b / arr.length, 0);
+          
+          const change = currAvg - prevAvg;
+          const trendIcon = change > 0 ? '📈' : change < 0 ? '📉' : '➡️';
+          context += `\n### Tendencia vs Semana Anterior:\n`;
+          context += `${trendIcon} Cambio: ${change > 0 ? '+' : ''}${change.toFixed(1)} puntos (de ${prevAvg.toFixed(1)} a ${currAvg.toFixed(1)})\n`;
+        }
+        
+        context += `\n---\n\n`;
+      }
+    }
+
+    // =========================================================================
+    // 4.4 RANKING GENERAL (sin filtros destructivos)
+    // =========================================================================
     const rankedRecords = currentWeekData
-      .filter(run => run["32_rmm_score"] !== 0)
+      // ELIMINADO EL FILTRO DESTRUCTIVO: .filter(run => run["32_rmm_score"] !== 0)
       .map(run => ({
         company: run["03_target_name"],
         ticker: run["05_ticker"],
         model: run["02_model_name"],
         rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
+        rmmScore: run["32_rmm_score"],
         periodFrom: run["06_period_from"],
         periodTo: run["07_period_to"]
       }))
@@ -928,29 +1072,41 @@ async function handleStandardChat(
     
     context += `\n📊 RANKING INDIVIDUAL SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
     context += `Este es el ranking tal como aparece en el dashboard principal.\n`;
-    context += `Cada fila es una evaluación individual: Empresa + Modelo IA + RIX Score.\n\n`;
+    context += `Cada fila es una evaluación individual: Empresa + Modelo IA + RIX Score.\n`;
+    context += `Total de evaluaciones esta semana: ${rankedRecords.length}\n\n`;
     context += `| # | Empresa | Ticker | RIX | Modelo IA |\n`;
     context += `|---|---------|--------|-----|----------|\n`;
     
-    rankedRecords.slice(0, 50).forEach((record, idx) => {
+    // Increased from 50 to 150 records shown
+    rankedRecords.slice(0, 150).forEach((record, idx) => {
       context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} | ${record.model} |\n`;
     });
+
+    if (rankedRecords.length > 150) {
+      context += `\n... y ${rankedRecords.length - 150} evaluaciones más.\n`;
+    }
 
     context += `\n`;
 
     context += `\n📊 PROMEDIOS POR EMPRESA (solo usar si el usuario pregunta explícitamente):\n`;
-    context += `Esta tabla muestra el promedio de los 4 modelos de IA para cada empresa.\n\n`;
-    context += `| # | Empresa | Ticker | RIX Promedio | Tendencia vs Semana Anterior |\n`;
-    context += `|---|---------|--------|--------------|------------------------------|\n`;
+    context += `Esta tabla muestra el promedio de los 4 modelos de IA para cada empresa.\n`;
+    context += `Total de empresas evaluadas: ${rankedByAverage.length}\n\n`;
+    context += `| # | Empresa | Ticker | RIX Promedio | # Modelos | Tendencia vs Semana Anterior |\n`;
+    context += `|---|---------|--------|--------------|-----------|------------------------------|\n`;
     
-    rankedByAverage.slice(0, 20).forEach((company, idx) => {
+    // Increased from 20 to 50 companies shown
+    rankedByAverage.slice(0, 50).forEach((company, idx) => {
       const trend = trends.get(company.company);
       const trendStr = trend !== undefined 
         ? (trend > 0 ? `↗ +${trend.toFixed(1)}` : trend < 0 ? `↘ ${trend.toFixed(1)}` : '→ 0.0')
         : 'N/A';
       
-      context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${trendStr} |\n`;
+      context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${company.modelCount} | ${trendStr} |\n`;
     });
+
+    if (rankedByAverage.length > 50) {
+      context += `\n... y ${rankedByAverage.length - 50} empresas más.\n`;
+    }
 
     context += `\n`;
 
@@ -1029,13 +1185,32 @@ async function handleStandardChat(
 Interpretar preguntas en lenguaje natural y responder usando SOLO los datos proporcionados.
 
 📊 DATOS QUE RECIBES:
+- **🎯 DATOS DE EMPRESAS MENCIONADAS**: Sección PRIORITARIA con datos COMPLETOS de cualquier empresa que el usuario mencione
 - **RANKING INDIVIDUAL**: Lista de evaluaciones individuales (Empresa + Modelo IA + RIX Score) ordenada por RIX descendente
 - **PROMEDIOS POR EMPRESA**: Promedio de los 4 modelos de IA para cada empresa
 - **ANÁLISIS POR MODELO IA**: Estadísticas de ChatGPT, Perplexity, Gemini y DeepSeek
 - **TENDENCIAS SEMANALES**: Comparación con la semana anterior
 - **DOCUMENTOS CUALITATIVOS**: Contexto adicional de análisis previos
 
+🚨🚨🚨 REGLA ANTI-ALUCINACIÓN CRÍTICA 🚨🚨🚨
+
+ANTES DE RESPONDER, VERIFICA:
+1. Si el usuario pregunta por una empresa específica (ej: "Banco Santander", "Telefónica", "BBVA")
+2. Busca esa empresa en la sección "🎯 DATOS DE EMPRESAS MENCIONADAS EN LA PREGUNTA"
+3. Si la empresa aparece ahí con datos de modelos de IA → USA ESOS DATOS
+4. NUNCA digas "no tengo datos" o "no hay información" si la empresa aparece en el contexto con scores
+
+Si una empresa tiene datos de ALGUNOS modelos pero no de todos:
+- Reporta los datos que SÍ existen
+- Menciona qué modelos tienen datos y cuáles no
+- NO digas que no hay datos de la empresa
+
 🔍 CÓMO RESPONDER:
+
+**CUANDO PREGUNTAN POR UNA EMPRESA ESPECÍFICA:**
+1. PRIMERO busca en "🎯 DATOS DE EMPRESAS MENCIONADAS"
+2. Si está ahí, usa esos datos directamente
+3. Muestra: RIX por modelo, promedio, tendencia
 
 **POR DEFECTO - USA EL RANKING INDIVIDUAL:**
 - "Top 5 empresas" → Usa las primeras 5 filas del ranking
@@ -1052,10 +1227,12 @@ Si el usuario necesita un análisis más profundo de una empresa, sugiérele que
 - Contexto sectorial completo
 
 ⚠️ REGLAS CRÍTICAS:
+- PRIORIDAD 1: Siempre usar "DATOS DE EMPRESAS MENCIONADAS" cuando el usuario pregunte por una empresa específica
 - COMPORTAMIENTO DETERMINISTA: Por defecto, usa siempre el ranking individual
 - SOLO usa información que aparezca explícitamente en el contexto
 - NUNCA inventes datos
-- Interpreta la ausencia de datos como información relevante
+- NUNCA digas "no hay datos" si los datos están en el contexto
+- Interpreta la ausencia de datos SOLO si la empresa NO aparece en ninguna parte del contexto
 
 💬 ESTILO DE RESPUESTA:
 - Directo y profesional
