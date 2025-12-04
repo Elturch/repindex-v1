@@ -1,7 +1,8 @@
 import { useState, KeyboardEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Send, FileText } from "lucide-react";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -27,8 +28,32 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
     }
   };
 
+  const handleBulletinClick = () => {
+    if (!isLoading) {
+      onSend("Quiero generar un boletín ejecutivo de una empresa");
+    }
+  };
+
   return (
     <div className="flex gap-2">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size={compact ? "sm" : "default"}
+              onClick={handleBulletinClick}
+              disabled={isLoading}
+              className="shrink-0"
+            >
+              <FileText className={compact ? "h-4 w-4" : "h-5 w-5"} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p className="text-xs">Generar boletín ejecutivo</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <Input
         value={value}
         onChange={(e) => setValue(e.target.value)}

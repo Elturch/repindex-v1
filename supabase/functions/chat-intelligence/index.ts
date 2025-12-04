@@ -164,7 +164,42 @@ serve(async (req) => {
     }
 
     // =============================================================================
-    // CHECK FOR BULLETIN INTENT
+    // CHECK FOR GENERIC BULLETIN REQUEST (without specific company)
+    // =============================================================================
+    const GENERIC_BULLETIN_PATTERNS = [
+      /^quiero\s+(?:generar|crear|ver)\s+(?:un\s+)?bolet[íi]n\s+(?:ejecutivo\s+)?(?:de\s+una\s+empresa)?$/i,
+      /^(?:genera|crea|hazme|prepara)\s+(?:un\s+)?bolet[íi]n$/i,
+      /^bolet[íi]n\s+ejecutivo$/i,
+      /^(?:quiero|necesito|me\s+gustar[íi]a)\s+(?:un\s+)?bolet[íi]n/i,
+    ];
+
+    const isGenericBulletinRequest = GENERIC_BULLETIN_PATTERNS.some(pattern => pattern.test(question.trim()));
+    
+    if (isGenericBulletinRequest) {
+      console.log(`${logPrefix} GENERIC BULLETIN REQUEST - asking for company`);
+      
+      // Get some example companies to suggest
+      const exampleCompanies = companiesCache?.slice(0, 20).map(c => c.issuer_name) || [];
+      const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX35').slice(0, 10).map(c => c.issuer_name) || [];
+      
+      const suggestedCompanies = [...new Set([...ibexCompanies, ...exampleCompanies])].slice(0, 8);
+      
+      return new Response(
+        JSON.stringify({
+          answer: `¡Perfecto! 📋 Puedo generar un **boletín ejecutivo** completo para cualquier empresa de nuestra base de datos.\n\n**¿De qué empresa quieres el boletín?**\n\nEscribe el nombre de la empresa (por ejemplo: Telefónica, Inditex, Repsol, BBVA, Iberdrola...) y generaré un análisis detallado incluyendo:\n\n- 📊 **RIX Score** por cada modelo de IA (ChatGPT, Perplexity, Gemini, DeepSeek)\n- 🏆 **Comparativa** con competidores del mismo sector\n- 📈 **Tendencia** de las últimas 4 semanas\n- 💡 **Conclusiones** y recomendaciones\n\nEl boletín estará listo para **descargar o imprimir** en formato profesional.`,
+          suggestedQuestions: suggestedCompanies.map(c => `Genera un boletín de ${c}`),
+          metadata: {
+            type: 'standard',
+            documentsFound: 0,
+            structuredDataFound: companiesCache?.length || 0
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // =============================================================================
+    // CHECK FOR BULLETIN INTENT (with specific company)
     // =============================================================================
     let bulletinCompany: string | null = null;
     
