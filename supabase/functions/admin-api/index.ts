@@ -75,8 +75,12 @@ serve(async (req) => {
             company_name: data.company_name,
             ticker: data.ticker || null,
             contact_email: data.contact_email || null,
-            is_active: data.is_active,
+            contact_phone: data.contact_phone || null,
+            billing_name: data.billing_name || null,
+            tax_id: data.tax_id || null,
             plan_type: data.plan_type,
+            monthly_fee: data.monthly_fee ?? 0,
+            is_active: data.is_active,
             notes: data.notes || null,
           })
           .eq("id", data.id)
