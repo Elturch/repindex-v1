@@ -122,7 +122,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
        =========================================== */
     @page {
       size: A4;
-      margin: 20mm 18mm 20mm 18mm;
+      margin: 20mm 20mm 20mm 20mm;
     }
     
     @media print {
@@ -166,7 +166,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     .print-container {
       max-width: 800px;
       margin: 0 auto;
-      padding: 40px 50px;
+      padding: 40px 40px;
     }
     
     /* ===========================================
