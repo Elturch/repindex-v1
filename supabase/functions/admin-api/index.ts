@@ -113,14 +113,16 @@ serve(async (req) => {
       }
 
       case "create_user": {
-        // 1. Create user in auth.users
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: data.email,
-          email_confirm: true, // Auto-confirm email
-          user_metadata: {
-            full_name: data.full_name,
-          },
-        });
+        // 1. Create user in auth.users using inviteUserByEmail which sends the email automatically
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+          data.email,
+          {
+            data: {
+              full_name: data.full_name,
+            },
+            redirectTo: data.redirect_to || undefined,
+          }
+        );
         
         if (authError) throw authError;
         
@@ -135,22 +137,10 @@ serve(async (req) => {
           .eq("id", authData.user.id);
         
         if (profileError) throw profileError;
-
-        // 3. Optionally send magic link
-        if (data.send_magic_link) {
-          const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-            type: "magiclink",
-            email: data.email,
-          });
-          // We don't throw on magic link error, just log it
-          if (linkError) {
-            console.error("Error generating magic link:", linkError);
-          }
-        }
         
         return new Response(JSON.stringify({ 
           user: authData.user,
-          message: "Usuario creado exitosamente" 
+          message: "Usuario creado e invitación enviada por email" 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -183,15 +173,18 @@ serve(async (req) => {
         
         if (profileError) throw profileError;
 
-        const { error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: "magiclink",
-          email: profile.email,
-        });
+        // Use inviteUserByEmail to re-send invitation email
+        const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+          profile.email,
+          {
+            redirectTo: data.redirect_to || undefined,
+          }
+        );
         
-        if (linkError) throw linkError;
+        if (inviteError) throw inviteError;
         
         return new Response(JSON.stringify({ 
-          message: "Magic link enviado a " + profile.email 
+          message: "Invitación enviada a " + profile.email 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
