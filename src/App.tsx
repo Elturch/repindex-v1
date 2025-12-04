@@ -20,6 +20,7 @@ import WeeklyNews from "./pages/WeeklyNews";
 import Login from "./pages/Login";
 import MyDocuments from "./pages/MyDocuments";
 import MyConversations from "./pages/MyConversations";
+import Admin from "./pages/Admin";
 
 const queryClient = new QueryClient();
 
@@ -67,7 +68,10 @@ const App = () => (
                 
                 {/* Admin routes - only available in Preview/development */}
                 {!isProduction && (
-                  <Route path="/insert-rix" element={<InsertRixResults />} />
+                  <>
+                    <Route path="/insert-rix" element={<InsertRixResults />} />
+                    <Route path="/admin" element={<Admin />} />
+                  </>
                 )}
                 
                 {/* Catch-all */}
