@@ -67,10 +67,10 @@ export function ChatMessages({
               <Button
                 key={idx}
                 variant="outline"
-                className={`justify-start text-left h-auto ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent`}
+                className={`justify-start text-left h-auto whitespace-normal ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent`}
                 onClick={() => onStarterPrompt(prompt)}
               >
-                <span className={`${compact ? 'text-xs' : 'text-sm'}`}>{prompt}</span>
+                <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'}`}>{prompt}</span>
               </Button>
             ))}
           </div>
@@ -139,7 +139,7 @@ export function ChatMessages({
                         key={qIdx}
                         variant="outline"
                         size="sm"
-                        className={`w-full justify-start text-left h-auto ${compact ? 'py-1 px-2 text-[10px]' : 'py-2 px-3 text-xs'}`}
+                        className={`w-full justify-start text-left h-auto whitespace-normal ${compact ? 'py-1.5 px-2 text-[11px] leading-tight' : 'py-2 px-3 text-xs'}`}
                         onClick={() => onSuggestedQuestion(question)}
                         disabled={isLoading}
                       >
