@@ -54,12 +54,12 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
         {/* Logo and Title */}
         <button 
           onClick={() => navigate("/")}
-          className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer"
+          className="flex items-center space-x-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded bg-primary text-primary-foreground">
             <span className="text-sm font-bold">R</span>
           </div>
-          <span className="font-bold text-lg">
+          <span className="font-bold text-lg hidden sm:inline">
             {title}
           </span>
         </button>
