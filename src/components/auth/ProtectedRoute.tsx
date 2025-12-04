@@ -2,20 +2,11 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
+import { isDevOrPreview } from '@/lib/env';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
-
-// Check if we're in development/preview (not production)
-const isDevOrPreview = () => {
-  if (typeof window === 'undefined') return true;
-  const hostname = window.location.hostname;
-  return hostname.includes('localhost') || 
-         hostname.includes('preview') || 
-         hostname.includes('lovable.app') ||
-         hostname.includes('lovable.dev');
-};
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, isLoading, profile } = useAuth();

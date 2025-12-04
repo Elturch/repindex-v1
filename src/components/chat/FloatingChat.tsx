@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTooltip";
+import { isDevOrPreview } from "@/lib/env";
 
 export function FloatingChat() {
   const navigate = useNavigate();
@@ -254,7 +255,7 @@ export function FloatingChat() {
               </CardHeader>
               
               <CardContent className="pt-0">
-                {isAuthenticated ? (
+                {(isAuthenticated || isDevOrPreview()) ? (
                   <>
                     <ChatMessages
                       messages={messages}
