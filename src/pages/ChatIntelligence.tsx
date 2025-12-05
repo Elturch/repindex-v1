@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageCircle, Download, Trash2 } from "lucide-react";
+import { Bot, Download, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,7 +73,7 @@ export default function ChatIntelligence() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <MessageCircle className="h-5 w-5" />
+                  <Bot className="h-5 w-5" />
                   Conversación
                 </CardTitle>
                 <CardDescription>

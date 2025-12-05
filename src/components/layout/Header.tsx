@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sun, Moon, MessageCircle, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
+import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ interface HeaderProps {
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
-  { path: "/chat", label: "Agente Rix", icon: MessageCircle, protected: true },
+  { path: "/chat", label: "Agente Rix", icon: Bot, protected: true },
   { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
   { path: "/noticias", label: "Noticias", icon: Newspaper, protected: false },
 ];
