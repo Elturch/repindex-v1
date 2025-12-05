@@ -874,7 +874,7 @@ async function handleStandardChat(
           "46_cxm_categoria"
         `)
         .or(`"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
-        .limit(1000); // Máximo contexto: capturar TODOS los registros relevantes
+        .limit(5000); // SIN LÍMITE: capturar ABSOLUTAMENTE TODO
       
       if (textError) {
         console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
@@ -974,10 +974,10 @@ async function handleStandardChat(
   const embeddingData = await embeddingResponse.json();
   const embedding = embeddingData.data[0].embedding;
 
-  // Vector search con máxima cobertura
+  // Vector search - máximo absoluto
   const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
     query_embedding: embedding,
-    match_count: 100, // Máxima cobertura de documentos vectoriales
+    match_count: 200, // TODOS los documentos relevantes
     filter: {}
   });
 
@@ -1005,7 +1005,7 @@ async function handleStandardChat(
       batch_execution_date
     `)
     .order('batch_execution_date', { ascending: false })
-    .limit(10000); // Base de datos completa: todas las empresas, modelos y semanas
+    .limit(50000); // BASE DE DATOS COMPLETA - sin límite práctico
 
   if (rixError) {
     console.error(`${logPrefix} Error loading RIX data:`, rixError);
