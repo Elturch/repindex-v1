@@ -54,12 +54,12 @@ export function FeaturesSection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="text-center mb-8"
+          className="text-center mb-6 sm:mb-8 px-2"
         >
-          <h2 className="text-3xl md:text-4xl font-bold mb-2">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2" style={{ fontSize: 'clamp(1.25rem, 4vw, 2.25rem)' }}>
             Características Principales
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base md:text-lg text-muted-foreground max-w-2xl mx-auto" style={{ fontSize: 'clamp(0.8rem, 2vw, 1.125rem)' }}>
             Herramientas avanzadas para análisis reputacional empresarial
           </p>
         </motion.div>
@@ -73,18 +73,18 @@ export function FeaturesSection() {
         >
           {features.map((feature, index) => (
             <motion.div key={index} variants={item}>
-              <Card className="p-6 h-full hover:shadow-lg transition-shadow duration-300 border-border/50">
+              <Card className="p-4 sm:p-6 h-full hover:shadow-lg transition-shadow duration-300 border-border/50">
                 <motion.div
                   whileHover={{ scale: 1.1 }}
                   transition={{ type: "spring", stiffness: 300 }}
-                  className="mb-4"
+                  className="mb-3 sm:mb-4"
                 >
-                  <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center">
-                    <feature.icon className={`w-6 h-6 ${feature.color}`} />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-accent/10 flex items-center justify-center">
+                    <feature.icon className={`w-5 h-5 sm:w-6 sm:h-6 ${feature.color}`} />
                   </div>
                 </motion.div>
-                <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground">{feature.description}</p>
+                <h3 className="text-base sm:text-lg font-semibold mb-1 sm:mb-2">{feature.title}</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
               </Card>
             </motion.div>
           ))}

@@ -14,12 +14,12 @@ export function CTASection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="text-center space-y-4"
+          className="text-center space-y-3 sm:space-y-4 px-2"
         >
-          <h2 className="text-3xl md:text-4xl font-bold">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold" style={{ fontSize: 'clamp(1.25rem, 4vw, 2.25rem)' }}>
             Comienza tu Análisis Reputacional
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base md:text-lg text-muted-foreground max-w-2xl mx-auto" style={{ fontSize: 'clamp(0.8rem, 2vw, 1.125rem)' }}>
             Accede al dashboard completo con análisis en tiempo real o consulta el Agente Rix
             para obtener insights personalizados sobre cualquier empresa.
           </p>

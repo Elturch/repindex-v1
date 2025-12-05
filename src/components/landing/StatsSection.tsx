@@ -57,12 +57,12 @@ export function StatsSection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="text-center mb-8"
+          className="text-center mb-6 sm:mb-8 px-2"
         >
-          <h2 className="text-3xl md:text-4xl font-bold mb-2">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2" style={{ fontSize: 'clamp(1.25rem, 4vw, 2.25rem)' }}>
             RepIndex en Números
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+          <p className="text-sm sm:text-base md:text-lg text-muted-foreground max-w-2xl mx-auto" style={{ fontSize: 'clamp(0.8rem, 2vw, 1.125rem)' }}>
             Datos actualizados del análisis reputacional más completo del mercado español
           </p>
         </motion.div>
@@ -76,15 +76,16 @@ export function StatsSection() {
               viewport={{ once: true }}
               transition={{ delay: index * 0.1, duration: 0.5 }}
             >
-              <Card className="p-4 sm:p-6 text-center hover:shadow-lg transition-shadow duration-300 h-full flex flex-col justify-center min-h-[120px]">
+              <Card className="p-3 sm:p-4 md:p-6 text-center hover:shadow-lg transition-shadow duration-300 h-full flex flex-col justify-center min-h-[100px] sm:min-h-[120px]">
                 <motion.div
-                  className="text-3xl sm:text-4xl md:text-5xl font-bold text-primary mb-1 sm:mb-2"
+                  className="text-2xl sm:text-3xl md:text-4xl font-bold text-primary mb-1"
+                  style={{ fontSize: 'clamp(1.5rem, 5vw, 2.5rem)' }}
                   whileHover={{ scale: 1.1 }}
                   transition={{ type: "spring", stiffness: 300 }}
                 >
                   <AnimatedCounter value={stat.value} suffix={stat.suffix} />
                 </motion.div>
-                <p className="text-xs sm:text-sm text-muted-foreground font-medium leading-tight">
+                <p className="text-[10px] sm:text-xs md:text-sm text-muted-foreground font-medium leading-tight" style={{ fontSize: 'clamp(0.625rem, 1.5vw, 0.875rem)' }}>
                   {stat.label}
                 </p>
               </Card>
