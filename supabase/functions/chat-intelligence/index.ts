@@ -811,36 +811,31 @@ async function handleStandardChat(
   console.log(`${logPrefix} Detected companies in question: ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'none'}`);
 
   // =============================================================================
-  // PASO 0.5: DETECTAR SI ES UNA BÚSQUEDA DE FUENTES/MEDIOS
+  // PASO 1: EXTRAER KEYWORDS RELEVANTES DE LA PREGUNTA
   // =============================================================================
-  const mediaSearchPatterns = [
-    /(?:forbes|reuters|bloomberg|expansi[oó]n|cinco\s*d[ií]as|el\s*pa[ií]s|el\s*mundo|el\s*economista|financial\s*times|wsj|wall\s*street)/i,
-    /(?:medios?|fuentes?|prensa|peri[oó]dicos?|citad[oa]s?|mencion|aparece|referencia)/i,
-  ];
+  const stopWords = new Set(['de', 'la', 'el', 'en', 'que', 'es', 'y', 'a', 'los', 'las', 'un', 'una', 'por', 'con', 'para', 'del', 'al', 'se', 'su', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'sí', 'porque', 'esta', 'entre', 'cuando', 'muy', 'sin', 'sobre', 'también', 'me', 'hasta', 'hay', 'donde', 'quien', 'desde', 'todo', 'nos', 'durante', 'todos', 'uno', 'les', 'ni', 'contra', 'otros', 'ese', 'eso', 'ante', 'ellos', 'e', 'esto', 'mí', 'antes', 'algunos', 'qué', 'unos', 'yo', 'otro', 'otras', 'otra', 'él', 'tanto', 'esa', 'estos', 'mucho', 'quienes', 'nada', 'muchos', 'cual', 'poco', 'ella', 'estar', 'estas', 'algunas', 'algo', 'nosotros', 'mi', 'mis', 'tú', 'te', 'ti', 'tu', 'tus', 'ellas', 'nosotras', 'vosotros', 'vosotras', 'os', 'mío', 'mía', 'míos', 'mías', 'tuyo', 'tuya', 'tuyos', 'tuyas', 'suyo', 'suya', 'suyos', 'suyas', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'vuestro', 'vuestra', 'vuestros', 'vuestras', 'esos', 'esas', 'estoy', 'estás', 'está', 'estamos', 'estáis', 'están', 'esté', 'estés', 'estemos', 'estéis', 'estén', 'estaré', 'estarás', 'estará', 'estaremos', 'estaréis', 'estarán', 'estaría', 'estarías', 'estaríamos', 'estaríais', 'estarían', 'estaba', 'estabas', 'estábamos', 'estabais', 'estaban', 'estuve', 'estuviste', 'estuvo', 'estuvimos', 'estuvisteis', 'estuvieron', 'estuviera', 'estuvieras', 'estuviéramos', 'estuvierais', 'estuvieran', 'estuviese', 'estuvieses', 'estuviésemos', 'estuvieseis', 'estuviesen', 'estando', 'estado', 'estada', 'estados', 'estadas', 'estad', 'he', 'has', 'ha', 'hemos', 'habéis', 'han', 'haya', 'hayas', 'hayamos', 'hayáis', 'hayan', 'habré', 'habrás', 'habrá', 'habremos', 'habréis', 'habrán', 'habría', 'habrías', 'habríamos', 'habríais', 'habrían', 'había', 'habías', 'habíamos', 'habíais', 'habían', 'hube', 'hubiste', 'hubo', 'hubimos', 'hubisteis', 'hubieron', 'hubiera', 'hubieras', 'hubiéramos', 'hubierais', 'hubieran', 'hubiese', 'hubieses', 'hubiésemos', 'hubieseis', 'hubiesen', 'habiendo', 'habido', 'habida', 'habidos', 'habidas', 'soy', 'eres', 'somos', 'sois', 'son', 'sea', 'seas', 'seamos', 'seáis', 'sean', 'seré', 'serás', 'será', 'seremos', 'seréis', 'serán', 'sería', 'serías', 'seríamos', 'seríais', 'serían', 'era', 'eras', 'éramos', 'erais', 'eran', 'fui', 'fuiste', 'fue', 'fuimos', 'fuisteis', 'fueron', 'fuera', 'fueras', 'fuéramos', 'fuerais', 'fueran', 'fuese', 'fueses', 'fuésemos', 'fueseis', 'fuesen', 'siendo', 'sido', 'tengo', 'tienes', 'tiene', 'tenemos', 'tenéis', 'tienen', 'tenga', 'tengas', 'tengamos', 'tengáis', 'tengan', 'tendré', 'tendrás', 'tendrá', 'tendremos', 'tendréis', 'tendrán', 'tendría', 'tendrías', 'tendríamos', 'tendríais', 'tendrían', 'tenía', 'tenías', 'teníamos', 'teníais', 'tenían', 'tuve', 'tuviste', 'tuvo', 'tuvimos', 'tuvisteis', 'tuvieron', 'tuviera', 'tuvieras', 'tuviéramos', 'tuvierais', 'tuvieran', 'tuviese', 'tuvieses', 'tuviésemos', 'tuvieseis', 'tuviesen', 'teniendo', 'tenido', 'tenida', 'tenidos', 'tenidas', 'tened', 'dime', 'dame', 'cuál', 'cuáles', 'cuánto', 'cuánta', 'cuántos', 'cuántas', 'cómo', 'dónde', 'cuándo', 'quién', 'qué', 'todas', 'empresa', 'empresas', 'cualquier', 'alguna', 'alguno']);
   
-  const isMediaSearch = mediaSearchPatterns.some(p => p.test(question));
-  let searchTerms: string[] = [];
+  // Extract meaningful keywords from question
+  const questionKeywords = question
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length > 2 && !stopWords.has(word));
   
-  if (isMediaSearch) {
-    // Extract specific media names from the question
-    const mediaNames = question.match(/forbes|reuters|bloomberg|expansi[oó]n|cinco\s*d[ií]as|el\s*pa[ií]s|el\s*mundo|el\s*economista|financial\s*times|wsj|wall\s*street|abc|la\s*vanguardia|el\s*confidencial|invertia|bolsamania/gi);
-    if (mediaNames) {
-      searchTerms = [...new Set(mediaNames.map(m => m.toLowerCase()))];
-    }
-    console.log(`${logPrefix} MEDIA SEARCH DETECTED - Terms: ${searchTerms.join(', ') || 'general media search'}`);
-  }
+  console.log(`${logPrefix} Extracted keywords: ${questionKeywords.slice(0, 10).join(', ')}`);
 
   // =============================================================================
-  // PASO 1: BÚSQUEDA DIRECTA EN TEXTOS BRUTOS (si es búsqueda de fuentes)
+  // PASO 2: BÚSQUEDA FULL-TEXT EN TODA LA BASE DE DATOS
   // =============================================================================
-  let rawTextSearchResults: any[] = [];
+  console.log(`${logPrefix} Performing FULL DATABASE SEARCH across all text fields...`);
   
-  if (isMediaSearch && searchTerms.length > 0) {
-    console.log(`${logPrefix} Performing FULL-TEXT search across ALL raw AI responses...`);
-    
-    // Search in raw text fields using ILIKE for each search term
-    for (const term of searchTerms) {
-      const searchPattern = `%${term}%`;
+  let fullTextSearchResults: any[] = [];
+  const searchableKeywords = questionKeywords.filter(k => k.length > 3).slice(0, 5);
+  
+  if (searchableKeywords.length > 0) {
+    for (const keyword of searchableKeywords) {
+      const searchPattern = `%${keyword}%`;
       
       const { data: textResults, error: textError } = await supabaseClient
         .from('rix_runs')
@@ -851,41 +846,88 @@ async function handleStandardChat(
           "06_period_from",
           "07_period_to",
           "09_rix_score",
+          "51_rix_score_adjusted",
+          "10_resumen",
           "20_res_gpt_bruto",
           "21_res_perplex_bruto",
           "22_res_gemini_bruto",
           "23_res_deepseek_bruto",
-          "22_explicacion"
+          "22_explicacion",
+          "25_explicaciones_detalladas"
         `)
-        .or(`"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
-        .limit(100);
+        .or(`"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
+        .limit(50);
       
       if (textError) {
-        console.error(`${logPrefix} Error in text search for "${term}":`, textError);
-      } else {
-        console.log(`${logPrefix} Found ${textResults?.length || 0} records mentioning "${term}"`);
-        if (textResults) {
-          rawTextSearchResults.push(...textResults.map(r => ({ ...r, searchTerm: term })));
-        }
+        console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
+      } else if (textResults && textResults.length > 0) {
+        console.log(`${logPrefix} Found ${textResults.length} records mentioning "${keyword}"`);
+        fullTextSearchResults.push(...textResults.map(r => ({ ...r, matchedKeyword: keyword })));
       }
     }
     
-    // Deduplicate by company+model
+    // Deduplicate
     const seen = new Set();
-    rawTextSearchResults = rawTextSearchResults.filter(r => {
-      const key = `${r["03_target_name"]}-${r["02_model_name"]}`;
+    fullTextSearchResults = fullTextSearchResults.filter(r => {
+      const key = `${r["03_target_name"]}-${r["02_model_name"]}-${r["06_period_from"]}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
     
-    console.log(`${logPrefix} Total unique records with media mentions: ${rawTextSearchResults.length}`);
+    console.log(`${logPrefix} Total unique full-text search results: ${fullTextSearchResults.length}`);
   }
 
   // =============================================================================
-  // PASO 2: GENERAR EMBEDDING DE LA PREGUNTA (para vector search)
+  // PASO 3: CARGAR DATOS COMPLETOS DE EMPRESAS DETECTADAS (con textos)
   // =============================================================================
-  console.log(`${logPrefix} Generating embedding for question...`);
+  let detectedCompanyFullData: any[] = [];
+  
+  if (detectedCompanies.length > 0) {
+    console.log(`${logPrefix} Loading FULL DATA (including raw texts) for detected companies...`);
+    
+    for (const company of detectedCompanies.slice(0, 5)) { // Limit to 5 companies
+      const { data: companyData, error: companyError } = await supabaseClient
+        .from('rix_runs')
+        .select(`
+          "02_model_name",
+          "03_target_name",
+          "05_ticker",
+          "06_period_from",
+          "07_period_to",
+          "09_rix_score",
+          "51_rix_score_adjusted",
+          "10_resumen",
+          "11_puntos_clave",
+          "20_res_gpt_bruto",
+          "21_res_perplex_bruto",
+          "22_res_gemini_bruto",
+          "23_res_deepseek_bruto",
+          "22_explicacion",
+          "23_nvm_score",
+          "26_drm_score",
+          "29_sim_score",
+          "32_rmm_score",
+          "35_cem_score",
+          "38_gam_score",
+          "41_dcm_score",
+          "44_cxm_score"
+        `)
+        .eq('"05_ticker"', company.ticker)
+        .order('batch_execution_date', { ascending: false })
+        .limit(16); // 4 models × 4 weeks
+      
+      if (!companyError && companyData) {
+        console.log(`${logPrefix} Loaded ${companyData.length} full records for ${company.issuer_name}`);
+        detectedCompanyFullData.push(...companyData);
+      }
+    }
+  }
+
+  // =============================================================================
+  // PASO 4: GENERAR EMBEDDING Y VECTOR SEARCH (complementario)
+  // =============================================================================
+  console.log(`${logPrefix} Generating embedding for vector search...`);
   const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
     headers: {
@@ -905,22 +947,18 @@ async function handleStandardChat(
   const embeddingData = await embeddingResponse.json();
   const embedding = embeddingData.data[0].embedding;
 
-  // =============================================================================
-  // PASO 3: BÚSQUEDA VECTORIAL (para enriquecimiento cualitativo)
-  // =============================================================================
-  console.log(`${logPrefix} Performing vector search for qualitative enrichment...`);
   const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
     query_embedding: embedding,
-    match_count: 10, // Increased from 5
+    match_count: 15,
     filter: {}
   });
 
   console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
 
   // =============================================================================
-  // PASO 4: CARGAR DATOS ESTRUCTURADOS COMPLETOS (últimas 2 semanas)
+  // PASO 5: CARGAR DATOS ESTRUCTURADOS (últimas 2 semanas para ranking)
   // =============================================================================
-  console.log(`${logPrefix} Loading complete RIX data (last 2 weeks)...`);
+  console.log(`${logPrefix} Loading structured RIX data for rankings...`);
   
   const { data: allRixData, error: rixError } = await supabaseClient
     .from('rix_runs')
@@ -949,58 +987,58 @@ async function handleStandardChat(
   console.log(`${logPrefix} Total RIX records loaded: ${allRixData?.length || 0}`);
 
   // =============================================================================
-  // PASO 5: CONSTRUIR CONTEXTO ESTRUCTURADO COMPLETO
+  // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
   // =============================================================================
   let context = '';
 
-  // 5.0 AÑADIR RESULTADOS DE BÚSQUEDA DE MEDIOS (PRIORIDAD MÁXIMA)
-  if (rawTextSearchResults.length > 0) {
+  // 6.0 RESULTADOS DE BÚSQUEDA FULL-TEXT (PRIORIDAD MÁXIMA)
+  if (fullTextSearchResults.length > 0) {
     context += `🔍 ======================================================================\n`;
     context += `🔍 RESULTADOS DE BÚSQUEDA EN TEXTOS ORIGINALES DE IA\n`;
-    context += `🔍 Se encontraron ${rawTextSearchResults.length} registros con las fuentes buscadas\n`;
+    context += `🔍 Se encontraron ${fullTextSearchResults.length} registros relevantes en la base de datos\n`;
     context += `🔍 ======================================================================\n\n`;
     
-    // Group by search term
-    const byTerm = new Map<string, any[]>();
-    rawTextSearchResults.forEach(r => {
-      const term = r.searchTerm || 'unknown';
-      if (!byTerm.has(term)) byTerm.set(term, []);
-      byTerm.get(term)!.push(r);
+    // Group by keyword
+    const byKeyword = new Map<string, any[]>();
+    fullTextSearchResults.forEach(r => {
+      const kw = r.matchedKeyword || 'general';
+      if (!byKeyword.has(kw)) byKeyword.set(kw, []);
+      byKeyword.get(kw)!.push(r);
     });
     
-    for (const [term, results] of byTerm) {
-      context += `## 📰 Menciones de "${term.toUpperCase()}" (${results.length} registros):\n\n`;
+    for (const [keyword, results] of byKeyword) {
+      context += `## 📰 Resultados para "${keyword.toUpperCase()}" (${results.length} registros):\n\n`;
       context += `| Empresa | Ticker | Modelo IA | Período | RIX |\n`;
       context += `|---------|--------|-----------|---------|-----|\n`;
       
-      results.slice(0, 30).forEach(r => {
-        context += `| ${r["03_target_name"]} | ${r["05_ticker"]} | ${r["02_model_name"]} | ${r["06_period_from"]} a ${r["07_period_to"]} | ${r["09_rix_score"]} |\n`;
+      results.slice(0, 20).forEach(r => {
+        const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
+        context += `| ${r["03_target_name"]} | ${r["05_ticker"]} | ${r["02_model_name"]} | ${r["06_period_from"]} a ${r["07_period_to"]} | ${rix} |\n`;
       });
       
-      // Include some text excerpts showing the mention
-      context += `\n### Extractos donde aparece "${term}":\n`;
+      // Include text excerpts
+      context += `\n### Extractos relevantes:\n`;
       results.slice(0, 5).forEach((r, idx) => {
-        // Find which field contains the mention
         const fields = [
           { name: 'ChatGPT', value: r["20_res_gpt_bruto"] },
           { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
           { name: 'Gemini', value: r["22_res_gemini_bruto"] },
           { name: 'DeepSeek', value: r["23_res_deepseek_bruto"] },
           { name: 'Explicación', value: r["22_explicacion"] },
+          { name: 'Resumen', value: r["10_resumen"] },
         ];
         
         for (const field of fields) {
-          if (field.value && field.value.toLowerCase().includes(term.toLowerCase())) {
-            // Extract snippet around the mention
+          if (field.value && field.value.toLowerCase().includes(keyword.toLowerCase())) {
             const lowerText = field.value.toLowerCase();
-            const pos = lowerText.indexOf(term.toLowerCase());
-            const start = Math.max(0, pos - 100);
-            const end = Math.min(field.value.length, pos + term.length + 200);
+            const pos = lowerText.indexOf(keyword.toLowerCase());
+            const start = Math.max(0, pos - 150);
+            const end = Math.min(field.value.length, pos + keyword.length + 300);
             const snippet = field.value.substring(start, end);
             
             context += `\n**${idx + 1}. ${r["03_target_name"]} (${field.name}):**\n`;
             context += `> "...${snippet}..."\n`;
-            break; // Only show first matching field per record
+            break;
           }
         }
       });
@@ -1009,18 +1047,73 @@ async function handleStandardChat(
     context += '\n';
   }
 
-  // 5.1 Añadir documentos vectoriales (enriquecimiento cualitativo)
+  // 6.1 DATOS COMPLETOS DE EMPRESAS DETECTADAS (con textos brutos)
+  if (detectedCompanyFullData.length > 0) {
+    context += `\n🏢 ======================================================================\n`;
+    context += `🏢 DATOS COMPLETOS DE EMPRESAS MENCIONADAS (INCLUYE TEXTOS ORIGINALES)\n`;
+    context += `🏢 ======================================================================\n\n`;
+    
+    // Group by company
+    const byCompany = new Map<string, any[]>();
+    detectedCompanyFullData.forEach(r => {
+      const company = r["03_target_name"];
+      if (!byCompany.has(company)) byCompany.set(company, []);
+      byCompany.get(company)!.push(r);
+    });
+    
+    for (const [companyName, records] of byCompany) {
+      const company = detectedCompanies.find(c => c.issuer_name === companyName);
+      context += `## 📊 ${companyName.toUpperCase()} (${records[0]["05_ticker"]})\n`;
+      if (company) {
+        context += `Sector: ${company.sector_category || 'N/A'} | IBEX: ${company.ibex_family_code || 'N/A'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
+      }
+      
+      // Show scores by model
+      context += `### Scores por Modelo IA:\n`;
+      context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
+      context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
+      
+      records.slice(0, 4).forEach(r => {
+        const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
+        context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
+      });
+      
+      // Include raw text excerpts (most recent per model)
+      context += `\n### Análisis de cada modelo IA:\n`;
+      records.slice(0, 4).forEach(r => {
+        context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
+        
+        // Resumen
+        if (r["10_resumen"]) {
+          context += `- **Resumen**: ${r["10_resumen"].substring(0, 500)}...\n`;
+        }
+        
+        // Raw text excerpt
+        const rawField = r["02_model_name"] === 'ChatGPT' ? r["20_res_gpt_bruto"] :
+                        r["02_model_name"] === 'Perplexity' ? r["21_res_perplex_bruto"] :
+                        r["02_model_name"] === 'Gemini' ? r["22_res_gemini_bruto"] :
+                        r["02_model_name"] === 'DeepSeek' ? r["23_res_deepseek_bruto"] : null;
+        
+        if (rawField) {
+          context += `- **Texto original (extracto)**: ${rawField.substring(0, 800)}...\n`;
+        }
+      });
+      context += '\n---\n\n';
+    }
+  }
+
+  // 6.2 Documentos vectoriales (contexto adicional)
   if (vectorDocs && vectorDocs.length > 0) {
-    context += `📚 DOCUMENTOS RELACIONADOS (contexto cualitativo del vector store):\n\n`;
+    context += `📚 CONTEXTO ADICIONAL DEL VECTOR STORE (${vectorDocs.length} documentos):\n\n`;
     vectorDocs.forEach((doc: any, idx: number) => {
       const metadata = doc.metadata || {};
       context += `[${idx + 1}] ${metadata.company_name || 'Sin empresa'} - ${metadata.week || 'Sin fecha'}\n`;
-      context += `${doc.content?.substring(0, 500) || 'Sin contenido'}...\n\n`;
+      context += `${doc.content?.substring(0, 600) || 'Sin contenido'}...\n\n`;
     });
     context += '\n';
   }
 
-  // 4.2 Construir ranking completo de la semana actual
+  // 6.3 Construir ranking general de la semana actual
   if (allRixData && allRixData.length > 0) {
     const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
 
@@ -1046,92 +1139,7 @@ async function handleStandardChat(
     console.log(`${logPrefix} Previous period: ${prevFrom || 'N/A'} to ${prevTo || 'N/A'} (${previousWeekData.length} records)`);
 
     // =========================================================================
-    // 4.3 SECCIÓN PRIORITARIA: EMPRESAS MENCIONADAS EN LA PREGUNTA
-    // =========================================================================
-    if (detectedCompanies.length > 0) {
-      context += `\n🎯 ======================================================================\n`;
-      context += `🎯 DATOS DE EMPRESAS MENCIONADAS EN LA PREGUNTA (PRIORIDAD MÁXIMA)\n`;
-      context += `🎯 ======================================================================\n\n`;
-      
-      for (const company of detectedCompanies) {
-        const companyName = company.issuer_name;
-        const ticker = company.ticker;
-        
-        // Get current week data for this company (ALL records, no filtering)
-        const companyCurrentData = currentWeekData.filter(run => 
-          run["03_target_name"]?.toLowerCase() === companyName.toLowerCase() ||
-          run["05_ticker"]?.toLowerCase() === ticker?.toLowerCase()
-        );
-        
-        // Get previous week data for trend
-        const companyPrevData = previousWeekData.filter(run => 
-          run["03_target_name"]?.toLowerCase() === companyName.toLowerCase() ||
-          run["05_ticker"]?.toLowerCase() === ticker?.toLowerCase()
-        );
-        
-        console.log(`${logPrefix} Company "${companyName}" (${ticker}): Current=${companyCurrentData.length} records, Previous=${companyPrevData.length} records`);
-        
-        context += `## 📊 ${companyName.toUpperCase()} (${ticker})\n`;
-        context += `Sector: ${company.sector_category || 'No especificado'} | IBEX: ${company.ibex_family_code || 'No IBEX'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
-        
-        if (companyCurrentData.length > 0) {
-          context += `### Datos Semana Actual (${currentFrom} a ${currentTo}):\n`;
-          context += `| Modelo IA | RIX Score | RMM Score |\n`;
-          context += `|-----------|-----------|----------|\n`;
-          
-          companyCurrentData.forEach(run => {
-            const rixScore = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
-            const rmmScore = run["32_rmm_score"];
-            context += `| ${run["02_model_name"]} | ${rixScore ?? 'N/A'} | ${rmmScore ?? 'N/A'} |\n`;
-          });
-          
-          // Calculate average
-          const validScores = companyCurrentData
-            .map(r => r["51_rix_score_adjusted"] ?? r["09_rix_score"])
-            .filter(s => s != null);
-          
-          if (validScores.length > 0) {
-            const avgScore = Math.round((validScores.reduce((a, b) => a + b, 0) / validScores.length) * 10) / 10;
-            context += `\n**Promedio RIX (${validScores.length} modelos): ${avgScore}**\n`;
-          }
-          
-          // Include resumen if available
-          const summaries = companyCurrentData.filter(r => r["10_resumen"]).slice(0, 2);
-          if (summaries.length > 0) {
-            context += `\n### Resúmenes de IA:\n`;
-            summaries.forEach(s => {
-              context += `- **${s["02_model_name"]}**: ${s["10_resumen"]?.substring(0, 300)}...\n`;
-            });
-          }
-        } else {
-          context += `⚠️ NO HAY DATOS DE ${companyName} EN LA SEMANA ACTUAL (${currentFrom} a ${currentTo})\n`;
-          context += `Esto puede indicar que la empresa no fue evaluada esta semana o hay un problema de datos.\n`;
-        }
-        
-        // Trend comparison with previous week
-        if (companyPrevData.length > 0 && companyCurrentData.length > 0) {
-          const currAvg = companyCurrentData
-            .map(r => r["51_rix_score_adjusted"] ?? r["09_rix_score"])
-            .filter(s => s != null)
-            .reduce((a, b, _, arr) => a + b / arr.length, 0);
-          
-          const prevAvg = companyPrevData
-            .map(r => r["51_rix_score_adjusted"] ?? r["09_rix_score"])
-            .filter(s => s != null)
-            .reduce((a, b, _, arr) => a + b / arr.length, 0);
-          
-          const change = currAvg - prevAvg;
-          const trendIcon = change > 0 ? '📈' : change < 0 ? '📉' : '➡️';
-          context += `\n### Tendencia vs Semana Anterior:\n`;
-          context += `${trendIcon} Cambio: ${change > 0 ? '+' : ''}${change.toFixed(1)} puntos (de ${prevAvg.toFixed(1)} a ${currAvg.toFixed(1)})\n`;
-        }
-        
-        context += `\n---\n\n`;
-      }
-    }
-
-    // =========================================================================
-    // 4.4 RANKING GENERAL (sin filtros destructivos)
+    // 6.4 RANKING GENERAL (sin filtros destructivos)
     // =========================================================================
     const rankedRecords = currentWeekData
       // ELIMINADO EL FILTRO DESTRUCTIVO: .filter(run => run["32_rmm_score"] !== 0)
