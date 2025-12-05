@@ -32,7 +32,7 @@ interface HeaderProps {
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
-  { path: "/chat", label: "Chat IA", icon: MessageCircle, protected: true },
+  { path: "/chat", label: "Agente Rix", icon: MessageCircle, protected: true },
   { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
   { path: "/noticias", label: "Noticias", icon: Newspaper, protected: false },
 ];

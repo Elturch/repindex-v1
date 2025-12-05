@@ -61,12 +61,12 @@ export function ChatOnboardingTooltip({ onDismiss }: ChatOnboardingTooltipProps)
 
             {/* Content */}
             <div className="pr-6">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="h-4 w-4 text-primary" />
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                  </div>
+                  <h4 className="font-semibold text-sm">¡Hola! Soy el Agente Rix</h4>
                 </div>
-                <h4 className="font-semibold text-sm">¡Hola! Soy tu asistente</h4>
-              </div>
               
               <p className="text-xs text-muted-foreground mb-3">
                 Pregúntame sobre los datos que estás viendo. Puedo:

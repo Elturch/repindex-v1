@@ -131,7 +131,7 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
         </head>
         <body>
           <div class="header">
-            <h2 style="margin: 0 0 10px 0;">RepIndex.ai - Chat Inteligente</h2>
+            <h2 style="margin: 0 0 10px 0;">RepIndex.ai - Agente Rix</h2>
             <p style="margin: 0; color: #6a737d;">Exportado el ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
           </div>
           ${convertMarkdownToHtml(content)}

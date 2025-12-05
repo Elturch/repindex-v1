@@ -20,7 +20,7 @@ export function CTASection() {
             Comienza tu Análisis Reputacional
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Accede al dashboard completo con análisis en tiempo real o consulta nuestro chat inteligente
+            Accede al dashboard completo con análisis en tiempo real o consulta el Agente Rix
             para obtener insights personalizados sobre cualquier empresa.
           </p>
 
@@ -50,7 +50,7 @@ export function CTASection() {
                 className="w-full sm:w-auto group"
               >
                 <FaRobot className="mr-2 group-hover:scale-110 transition-transform" />
-                Consultar Chat IA
+                Agente Rix
               </Button>
             </motion.div>
           </motion.div>

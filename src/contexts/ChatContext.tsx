@@ -201,7 +201,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   };
 
   const downloadAsTxt = useCallback(() => {
-    const metadata = `Chat Inteligente - RepIndex.ai\n` +
+    const metadata = `Agente Rix - RepIndex.ai\n` +
       `Fecha: ${format(new Date(), 'dd/MM/yyyy HH:mm')}\n` +
       `Sesión: ${sessionId}\n` +
       `${'='.repeat(70)}\n\n`;
@@ -255,7 +255,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const downloadAsHtml = useCallback(() => {
     const metadata = `
       <div style="background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-        <h2 style="margin: 0 0 10px 0; color: #333;">Chat Inteligente - RepIndex.ai</h2>
+        <h2 style="margin: 0 0 10px 0; color: #333;">Agente Rix - RepIndex.ai</h2>
         <p style="margin: 5px 0; color: #666;"><strong>Fecha:</strong> ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
         <p style="margin: 5px 0; color: #666;"><strong>Sesión:</strong> ${sessionId}</p>
       </div>
