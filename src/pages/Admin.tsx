@@ -20,8 +20,14 @@ import {
   Mail,
   RefreshCw,
   Pencil,
-  Gift
+  Gift,
+  Database,
+  Play,
+  AlertCircle,
+  Clock
 } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 
 interface Company {
@@ -92,6 +98,18 @@ const Admin: React.FC = () => {
     send_magic_link: true,
   });
 
+  // Vector Store state
+  const [vectorStoreRunning, setVectorStoreRunning] = useState(false);
+  const [vectorStoreLogs, setVectorStoreLogs] = useState<string[]>([]);
+  const [vectorStoreProgress, setVectorStoreProgress] = useState(0);
+  const [vectorStoreResult, setVectorStoreResult] = useState<{
+    success: boolean;
+    total_runs?: number;
+    documents_created?: number;
+    documents_skipped?: number;
+    error?: string;
+  } | null>(null);
+
   // Fetch data
   useEffect(() => {
     fetchCompanies();
@@ -130,6 +148,61 @@ const Admin: React.FC = () => {
       toast({ title: 'Error', description: 'No se pudieron cargar los usuarios', variant: 'destructive' });
     } finally {
       setLoadingUsers(false);
+    }
+  };
+
+  const handleRunVectorStore = async (clean: boolean = true) => {
+    setVectorStoreRunning(true);
+    setVectorStoreLogs([]);
+    setVectorStoreProgress(0);
+    setVectorStoreResult(null);
+    
+    const startTime = Date.now();
+    setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Iniciando repoblado del vector store...`]);
+    setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Modo: ${clean ? 'Limpieza completa + regeneración' : 'Solo nuevos documentos'}`]);
+    
+    try {
+      // Simular progreso mientras esperamos la respuesta
+      const progressInterval = setInterval(() => {
+        setVectorStoreProgress(prev => Math.min(prev + Math.random() * 5, 95));
+      }, 2000);
+      
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Llamando a populate-vector-store...`]);
+      
+      const { data, error } = await supabase.functions.invoke('populate-vector-store', {
+        body: { clean, includeRawResponses: true },
+      });
+      
+      clearInterval(progressInterval);
+      
+      if (error) {
+        throw error;
+      }
+      
+      setVectorStoreProgress(100);
+      setVectorStoreResult(data);
+      
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ Completado en ${elapsed}s`]);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Total runs procesados: ${data.total_runs}`]);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Documentos creados: ${data.documents_created}`]);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Documentos omitidos: ${data.documents_skipped}`]);
+      
+      toast({
+        title: 'Vector Store actualizado',
+        description: `${data.documents_created} documentos creados`,
+      });
+    } catch (error: any) {
+      console.error('Error running vector store:', error);
+      setVectorStoreResult({ success: false, error: error.message });
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ Error: ${error.message}`]);
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setVectorStoreRunning(false);
     }
   };
 
@@ -428,7 +501,7 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-xl grid-cols-3 mb-6">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4 mb-6">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Resumen
@@ -440,6 +513,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Usuarios
+            </TabsTrigger>
+            <TabsTrigger value="system" className="flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Sistema
             </TabsTrigger>
           </TabsList>
 
@@ -928,6 +1005,121 @@ const Admin: React.FC = () => {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* ==================== SISTEMA ==================== */}
+          <TabsContent value="system">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Vector Store - Búsqueda Semántica
+                  </CardTitle>
+                  <CardDescription>
+                    Regenera los embeddings del vector store para mejorar la búsqueda en el chat.
+                    Incluye las respuestas completas de ChatGPT, Perplexity, Gemini y DeepSeek.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <Button
+                      onClick={() => handleRunVectorStore(true)}
+                      disabled={vectorStoreRunning}
+                      className="gap-2"
+                    >
+                      {vectorStoreRunning ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Procesando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4" />
+                          Repoblar Vector Store
+                        </>
+                      )}
+                    </Button>
+                    
+                    {vectorStoreRunning && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4 animate-pulse" />
+                        Este proceso puede tardar varios minutos...
+                      </div>
+                    )}
+                  </div>
+
+                  {vectorStoreRunning && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Progreso</span>
+                        <span>{Math.round(vectorStoreProgress)}%</span>
+                      </div>
+                      <Progress value={vectorStoreProgress} className="h-2" />
+                    </div>
+                  )}
+
+                  {vectorStoreResult && (
+                    <div className={`p-4 rounded-lg border ${vectorStoreResult.success ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        {vectorStoreResult.success ? (
+                          <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        ) : (
+                          <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                        )}
+                        <span className="font-medium">
+                          {vectorStoreResult.success ? 'Completado exitosamente' : 'Error en el proceso'}
+                        </span>
+                      </div>
+                      {vectorStoreResult.success && (
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Total runs</p>
+                            <p className="text-lg font-semibold">{vectorStoreResult.total_runs}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Creados</p>
+                            <p className="text-lg font-semibold text-green-600">{vectorStoreResult.documents_created}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Omitidos</p>
+                            <p className="text-lg font-semibold text-yellow-600">{vectorStoreResult.documents_skipped}</p>
+                          </div>
+                        </div>
+                      )}
+                      {vectorStoreResult.error && (
+                        <p className="text-sm text-red-600 dark:text-red-400">{vectorStoreResult.error}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {vectorStoreLogs.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Logs</Label>
+                      <ScrollArea className="h-48 rounded-md border bg-muted/30 p-3">
+                        <div className="space-y-1 font-mono text-xs">
+                          {vectorStoreLogs.map((log, i) => (
+                            <div key={i} className={log.includes('❌') ? 'text-red-500' : log.includes('✅') ? 'text-green-500' : ''}>
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                    <p className="font-medium mb-1">ℹ️ ¿Qué hace este proceso?</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Elimina todos los documentos actuales del vector store</li>
+                      <li>Genera nuevos embeddings incluyendo las respuestas completas de las 4 IAs</li>
+                      <li>Permite búsquedas semánticas sobre fuentes citadas (Forbes, Bloomberg, etc.)</li>
+                      <li>Mejora la calidad de las respuestas del Agente Rix</li>
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>
