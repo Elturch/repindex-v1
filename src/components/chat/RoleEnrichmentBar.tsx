@@ -90,12 +90,15 @@ export function RoleEnrichmentBar({
   // Full mode: show enrichment bar with featured roles + "más" button
   return (
     <div className="mt-4 pt-4 border-t border-border/30">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-2">
         <Theater className="h-4 w-4 text-primary" />
-        <span className="text-xs font-semibold text-muted-foreground">
-          Adapta esta respuesta a tu rol profesional:
+        <span className="text-sm font-semibold text-foreground">
+          Generar informe ejecutivo completo
         </span>
       </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        Pulsa un rol para recibir un <strong>informe expandido</strong> (2500+ palabras) con análisis específico, tablas, riesgos y plan de acción:
+      </p>
 
       <div className="flex flex-wrap gap-2">
         {featuredRoles.map((role) => (
@@ -128,10 +131,10 @@ export function RoleEnrichmentBar({
             <div className="p-3 border-b border-border">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <h4 className="font-semibold text-sm">Todos los roles profesionales</h4>
+                <h4 className="font-semibold text-sm">Informes por rol profesional</h4>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Selecciona un rol para adaptar la respuesta
+                Cada rol genera un informe ejecutivo completo con perspectiva específica
               </p>
             </div>
             <ScrollArea className="h-[320px]">
