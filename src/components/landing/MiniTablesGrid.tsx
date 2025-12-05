@@ -43,14 +43,14 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
   }
 
   return (
-    <Card className="p-6 hover:shadow-card-hover transition-shadow">
-      <div className="flex items-start gap-3 mb-4">
-        <div className={`${variantColors[variant]}`}>
+    <Card className="p-4 sm:p-6 hover:shadow-card-hover transition-shadow">
+      <div className="flex items-start gap-2 sm:gap-3 mb-3 sm:mb-4">
+        <div className={`${variantColors[variant]} flex-shrink-0`}>
           {icon}
         </div>
-        <div className="flex-1">
-          <h3 className="font-semibold text-lg">{title}</h3>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-base sm:text-lg leading-tight">{title}</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground">{subtitle}</p>
         </div>
       </div>
 
@@ -157,10 +157,10 @@ export function MiniTablesGrid() {
           transition={{ duration: 0.5 }}
           className="text-center mb-8"
         >
-          <h2 className="text-3xl md:text-4xl font-bold mb-2">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2" style={{ fontSize: 'clamp(1.25rem, 4vw, 2.25rem)' }}>
             RepIndex Corporativo
           </h2>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-2xl mx-auto px-2" style={{ fontSize: 'clamp(0.8rem, 2vw, 1.125rem)' }}>
             Explora las métricas de reputación corporativa analizadas por inteligencias artificiales
           </p>
         </motion.div>
