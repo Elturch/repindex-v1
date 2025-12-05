@@ -541,9 +541,9 @@ ${originalQuestion || "(No disponible)"}
         model: 'o3',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para el rol de ${roleName}. Este debe ser un documento profesional de consultoría premium con mínimo 2500 palabras, expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE.` }
+          { role: 'user', content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para el rol de ${roleName}. Este debe ser un documento profesional de consultoría premium de MÁXIMA CALIDAD sin límite de extensión - si necesitas 5000 palabras, escribe 5000 palabras. Expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE. EXCELENCIA sobre brevedad.` }
         ],
-        max_completion_tokens: 16000,
+        max_completion_tokens: 32000,
       }),
     });
 
