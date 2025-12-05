@@ -301,7 +301,25 @@ serve(async (req) => {
   const logPrefix = `[${crypto.randomUUID().slice(0, 8)}]`;
 
   try {
-    const { question, conversationHistory = [], sessionId } = await req.json();
+    const body = await req.json();
+    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse } = body;
+    
+    // =============================================================================
+    // CHECK FOR ENRICH ACTION (role-based response adaptation)
+    // =============================================================================
+    if (action === 'enrich' && roleId && rolePrompt && originalResponse) {
+      console.log(`${logPrefix} ENRICH REQUEST for role: ${roleName} (${roleId})`);
+      return await handleEnrichRequest(
+        roleId,
+        roleName,
+        rolePrompt,
+        originalQuestion || '',
+        originalResponse,
+        sessionId,
+        logPrefix
+      );
+    }
+
     console.log(`${logPrefix} User question:`, question);
 
     const supabaseClient = createClient(
@@ -416,6 +434,206 @@ serve(async (req) => {
     );
   }
 });
+
+// =============================================================================
+// ENRICH REQUEST HANDLER - Role-based response adaptation
+// =============================================================================
+async function handleEnrichRequest(
+  roleId: string,
+  roleName: string,
+  rolePrompt: string,
+  originalQuestion: string,
+  originalResponse: string,
+  sessionId: string | undefined,
+  logPrefix: string
+) {
+  console.log(`${logPrefix} Enriching response for role: ${roleName}`);
+
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!openAIApiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  const systemPrompt = `Eres el Agente Rix, un consultor senior de reputación corporativa que adapta sus respuestas según el rol profesional del usuario.
+
+El usuario ha solicitado que adaptes una respuesta existente para la perspectiva de un **${roleName}**.
+
+${rolePrompt}
+
+## REGLAS IMPORTANTES:
+1. **NO INVENTES DATOS NUEVOS**: Usa SOLO la información de la respuesta original
+2. **MANTÉN LA PRECISIÓN**: Los datos, cifras y empresas deben ser los mismos
+3. **ADAPTA EL ENFOQUE**: Cambia el ángulo, énfasis y formato según el rol
+4. **AÑADE VALOR**: Destaca insights específicos para ese rol profesional
+5. **FORMATO CLARO**: Usa Markdown (negritas, listas, tablas) de forma apropiada
+
+## RESPUESTA ORIGINAL A ADAPTAR:
+${originalResponse}
+
+## PREGUNTA ORIGINAL DEL USUARIO:
+${originalQuestion || "(No disponible)"}
+
+Por favor, reformula la respuesta anterior aplicando la perspectiva del rol solicitado.`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Adapta la respuesta para el rol de ${roleName}. Mantén todos los datos pero cambia el enfoque y formato.` }
+        ],
+        max_tokens: 4000,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`${logPrefix} OpenAI API error:`, errorText);
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const enrichedAnswer = data.choices[0].message.content;
+
+    console.log(`${logPrefix} Enriched response generated, length: ${enrichedAnswer.length}`);
+
+    // Generate role-specific follow-up questions
+    const suggestedQuestions = await generateRoleSpecificQuestions(
+      roleId,
+      roleName,
+      originalQuestion,
+      openAIApiKey,
+      logPrefix
+    );
+
+    return new Response(
+      JSON.stringify({
+        answer: enrichedAnswer,
+        suggestedQuestions,
+        metadata: {
+          type: 'enriched',
+          roleId,
+          roleName,
+        }
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error(`${logPrefix} Error in enrich request:`, error);
+    throw error;
+  }
+}
+
+// Helper function to generate role-specific follow-up questions
+async function generateRoleSpecificQuestions(
+  roleId: string,
+  roleName: string,
+  originalQuestion: string,
+  openAIApiKey: string,
+  logPrefix: string
+): Promise<string[]> {
+  const roleQuestionHints: Record<string, string[]> = {
+    ceo: [
+      "impacto en negocio",
+      "decisiones estratégicas",
+      "comparativa competitiva",
+      "riesgos principales"
+    ],
+    periodista: [
+      "titulares noticiables",
+      "controversias",
+      "investigación periodística",
+      "ángulos de historia"
+    ],
+    analista_mercados: [
+      "correlación RIX-cotización",
+      "señales de mercado",
+      "análisis técnico",
+      "comparativa sectorial"
+    ],
+    inversor: [
+      "screening reputacional",
+      "riesgo ESG",
+      "oportunidades de entrada",
+      "alertas de cartera"
+    ],
+    dircom: [
+      "gestión de crisis",
+      "narrativa mediática",
+      "mensajes clave",
+      "sentimiento público"
+    ],
+    marketing: [
+      "posicionamiento de marca",
+      "benchmarking",
+      "diferenciación",
+      "experiencia de cliente"
+    ],
+    estratega_interno: [
+      "capacidades organizativas",
+      "cultura corporativa",
+      "recursos internos",
+      "brechas de alineamiento"
+    ],
+    estratega_externo: [
+      "posición competitiva",
+      "oportunidades de mercado",
+      "amenazas externas",
+      "movimientos estratégicos"
+    ],
+  };
+
+  const hints = roleQuestionHints[roleId] || ["análisis detallado", "comparativas", "tendencias"];
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { 
+            role: 'system', 
+            content: `Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(', ')}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]`
+          },
+          { role: 'user', content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}.` }
+        ],
+        max_tokens: 300,
+        temperature: 0.6,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const text = data.choices[0].message.content.trim();
+      const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      return JSON.parse(cleanText);
+    }
+  } catch (error) {
+    console.warn(`${logPrefix} Error generating role-specific questions:`, error);
+  }
+
+  // Fallback questions based on role
+  const fallbackQuestions: Record<string, string[]> = {
+    ceo: ["¿Cuáles son los 3 riesgos reputacionales más urgentes?", "¿Cómo estamos vs la competencia directa?", "¿Qué decisiones debería considerar?"],
+    periodista: ["¿Qué empresa tiene la historia más noticiable esta semana?", "¿Hay alguna controversia emergente?", "¿Qué titular propones para esta información?"],
+    analista_mercados: ["¿Hay correlación entre RIX y cotización?", "¿Qué señales técnicas detectas?", "Comparativa detallada del sector"],
+    inversor: ["¿Pasa esta empresa el filtro reputacional?", "¿Cuál es el nivel de riesgo ESG?", "¿Es buen momento para entrar?"],
+  };
+
+  return fallbackQuestions[roleId] || ["¿Puedes profundizar más?", "¿Cómo se compara con competidores?", "¿Cuál es la tendencia?"];
+}
 
 // =============================================================================
 // BULLETIN REQUEST HANDLER

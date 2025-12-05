@@ -2,12 +2,15 @@ import { createContext, useContext, useState, useEffect, useRef, ReactNode, useC
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { getRoleById } from "@/lib/chatRoles";
 
 export interface MessageMetadata {
-  type?: 'standard' | 'bulletin';
+  type?: 'standard' | 'bulletin' | 'enriched';
   companyName?: string;
   documentsFound?: number;
   structuredDataFound?: number;
+  enrichedFromRole?: string;
+  originalContent?: string;
 }
 
 export interface Message {
@@ -29,6 +32,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   sendMessage: (question: string) => Promise<void>;
+  enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
   setPageContext: (context: PageContext | null) => void;
@@ -174,6 +178,95 @@ export function ChatProvider({ children }: ChatProviderProps) {
         description: error instanceof Error ? error.message : "Error en el análisis",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [messages, sessionId, toast]);
+
+  // Enrich a response with a specific professional role perspective
+  const enrichResponse = useCallback(async (roleId: string, messageIndex: number) => {
+    const role = getRoleById(roleId);
+    if (!role || role.id === 'general') return;
+
+    const targetMessage = messages[messageIndex];
+    if (!targetMessage || targetMessage.role !== 'assistant') return;
+
+    // Find the user question that preceded this response
+    let userQuestion = '';
+    for (let i = messageIndex - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        userQuestion = messages[i].content;
+        break;
+      }
+    }
+
+    setIsLoading(true);
+
+    // Add a visual indicator that we're enriching
+    const enrichmentRequest: Message = {
+      role: 'user',
+      content: `🎭 Adaptar respuesta para: ${role.emoji} ${role.name}`,
+    };
+
+    setMessages(prev => [...prev, enrichmentRequest]);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-intelligence', {
+        body: {
+          action: 'enrich',
+          roleId: role.id,
+          roleName: role.name,
+          rolePrompt: role.prompt,
+          originalQuestion: userQuestion,
+          originalResponse: targetMessage.content,
+          sessionId,
+        },
+      });
+
+      if (error) throw error;
+
+      const enrichedMessage: Message = {
+        role: 'assistant',
+        content: data.answer,
+        suggestedQuestions: data.suggestedQuestions,
+        metadata: {
+          type: 'enriched',
+          enrichedFromRole: roleId,
+          originalContent: targetMessage.content,
+        },
+      };
+
+      setMessages(prev => [...prev, enrichedMessage]);
+
+      // Save to DB
+      await supabase.from('chat_intelligence_sessions').insert([
+        {
+          session_id: sessionId,
+          role: 'user',
+          content: enrichmentRequest.content,
+        },
+        {
+          session_id: sessionId,
+          role: 'assistant',
+          content: data.answer,
+          suggested_questions: data.suggestedQuestions,
+        }
+      ]);
+
+      toast({
+        title: `Respuesta adaptada`,
+        description: `Perspectiva de ${role.emoji} ${role.name}`,
+      });
+
+    } catch (error) {
+      console.error('Error enriching response:', error);
+      toast({
+        title: "Error",
+        description: "No se pudo adaptar la respuesta",
+        variant: "destructive",
+      });
+      // Remove the enrichment request message on error
+      setMessages(prev => prev.slice(0, -1));
     } finally {
       setIsLoading(false);
     }
@@ -326,6 +419,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         isLoading,
         isLoadingHistory,
         sendMessage,
+        enrichResponse,
         clearConversation,
         pageContext,
         setPageContext,

@@ -5,16 +5,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
+import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Sparkles, RefreshCw, FileText, ExternalLink, AlertTriangle, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Sparkles, RefreshCw, FileText, ExternalLink, AlertTriangle, Loader2, Theater } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
+import { getRoleById } from "@/lib/chatRoles";
 
 interface ChatMessagesProps {
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
   onSuggestedQuestion: (question: string) => void;
+  onEnrichResponse?: (roleId: string, messageIndex: number) => void;
   starterPrompts: string[];
   onStarterPrompt: (prompt: string) => void;
   compact?: boolean;
@@ -25,6 +29,7 @@ export function ChatMessages({
   isLoading,
   isLoadingHistory,
   onSuggestedQuestion,
+  onEnrichResponse,
   starterPrompts,
   onStarterPrompt,
   compact = false,
@@ -116,6 +121,19 @@ export function ChatMessages({
                   : 'bg-card border border-border'
               }`}
             >
+              {/* Enriched response badge */}
+              {message.metadata?.type === 'enriched' && message.metadata?.enrichedFromRole && (
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">
+                  <Theater className="h-3.5 w-3.5 text-primary" />
+                  <Badge variant="secondary" className="text-[10px]">
+                    {(() => {
+                      const role = getRoleById(message.metadata.enrichedFromRole);
+                      return role ? `${role.emoji} ${role.name}` : 'Rol adaptado';
+                    })()}
+                  </Badge>
+                </div>
+              )}
+              
               {message.role === 'user' ? (
                 <div className={`whitespace-pre-wrap ${compact ? 'text-xs' : 'text-sm'}`}>{message.content}</div>
               ) : message.metadata?.type === 'bulletin' ? (
@@ -173,6 +191,18 @@ export function ChatMessages({
                     ))}
                   </div>
                 </div>
+              )}
+
+              {/* Role Enrichment Bar - only for assistant messages that are not bulletins and not already enriched */}
+              {message.role === 'assistant' && 
+               message.metadata?.type !== 'bulletin' && 
+               message.metadata?.type !== 'enriched' &&
+               onEnrichResponse && (
+                <RoleEnrichmentBar
+                  onEnrich={(roleId) => onEnrichResponse(roleId, idx)}
+                  disabled={isLoading}
+                  compact={compact}
+                />
               )}
             </div>
           </div>
