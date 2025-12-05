@@ -30,36 +30,68 @@ async function processVectorStore(includeRawResponses: boolean) {
 
   try {
     // Get existing document IDs (by rix_run_id in metadata)
+    // Use pagination to get ALL documents (Supabase default limit is 1000)
     console.log('Fetching existing documents...');
-    const { data: existingDocs, error: existingError } = await supabaseClient
-      .from('documents')
-      .select('metadata');
+    const existingRunIds = new Set<string>();
+    let docOffset = 0;
+    const docBatchSize = 1000;
+    
+    while (true) {
+      const { data: existingDocs, error: existingError } = await supabaseClient
+        .from('documents')
+        .select('metadata')
+        .range(docOffset, docOffset + docBatchSize - 1);
 
-    if (existingError) {
-      console.error('Error fetching existing docs:', existingError);
-      return { success: false, error: existingError.message };
+      if (existingError) {
+        console.error('Error fetching existing docs:', existingError);
+        return { success: false, error: existingError.message };
+      }
+      
+      if (!existingDocs || existingDocs.length === 0) break;
+      
+      existingDocs.forEach(d => {
+        if (d.metadata?.rix_run_id) {
+          existingRunIds.add(d.metadata.rix_run_id);
+        }
+      });
+      
+      if (existingDocs.length < docBatchSize) break;
+      docOffset += docBatchSize;
     }
-
-    const existingRunIds = new Set(
-      existingDocs?.map(d => d.metadata?.rix_run_id).filter(Boolean) || []
-    );
+    
     console.log(`Found ${existingRunIds.size} existing documents`);
 
-    // Get all rix_runs that don't have documents yet
-    const { data: rixRuns, error: rixError } = await supabaseClient
-      .from('rix_runs')
-      .select('*')
-      .not('10_resumen', 'is', null);
+    // Get ALL rix_runs using pagination (Supabase default limit is 1000)
+    console.log('Fetching all rix_runs...');
+    const allRixRuns: any[] = [];
+    let rixOffset = 0;
+    const rixBatchSize = 1000;
+    
+    while (true) {
+      const { data: rixRuns, error: rixError } = await supabaseClient
+        .from('rix_runs')
+        .select('*')
+        .not('10_resumen', 'is', null)
+        .range(rixOffset, rixOffset + rixBatchSize - 1);
 
-    if (rixError) {
-      console.error('Error fetching rix_runs:', rixError);
-      return { success: false, error: rixError.message };
+      if (rixError) {
+        console.error('Error fetching rix_runs:', rixError);
+        return { success: false, error: rixError.message };
+      }
+      
+      if (!rixRuns || rixRuns.length === 0) break;
+      
+      allRixRuns.push(...rixRuns);
+      console.log(`Fetched rix_runs batch: ${rixRuns.length} (total: ${allRixRuns.length})`);
+      
+      if (rixRuns.length < rixBatchSize) break;
+      rixOffset += rixBatchSize;
     }
 
-    const totalRuns = rixRuns?.length || 0;
-    const pendingRuns = rixRuns?.filter(r => !existingRunIds.has(r.id)) || [];
+    const totalRuns = allRixRuns.length;
+    const pendingRuns = allRixRuns.filter(r => !existingRunIds.has(r.id));
     
-    console.log(`Total rix_runs: ${totalRuns}, Pending: ${pendingRuns.length}`);
+    console.log(`Total rix_runs: ${totalRuns}, Existing docs: ${existingRunIds.size}, Pending: ${pendingRuns.length}`);
 
     if (pendingRuns.length === 0) {
       console.log('No pending documents to process!');
