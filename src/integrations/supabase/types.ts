@@ -1197,6 +1197,45 @@ export type Database = {
         }
         Relationships: []
       }
+      role_enrichment_analytics: {
+        Row: {
+          created_at: string
+          enrichment_timestamp: string
+          id: string
+          original_question: string
+          response_time_ms: number | null
+          role_id: string
+          role_name: string
+          session_id: string
+          tokens_used: number | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          enrichment_timestamp?: string
+          id?: string
+          original_question: string
+          response_time_ms?: number | null
+          role_id: string
+          role_name: string
+          session_id: string
+          tokens_used?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          enrichment_timestamp?: string
+          id?: string
+          original_question?: string
+          response_time_ms?: number | null
+          role_id?: string
+          role_name?: string
+          session_id?: string
+          tokens_used?: number | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       source_models: {
         Row: {
           evaluation_id: string
@@ -1467,6 +1506,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_role_preferences: {
+        Row: {
+          auto_enrich: boolean | null
+          created_at: string
+          default_role_id: string | null
+          favorite_roles: string[] | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_enrich?: boolean | null
+          created_at?: string
+          default_role_id?: string | null
+          favorite_roles?: string[] | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_enrich?: boolean | null
+          created_at?: string
+          default_role_id?: string | null
+          favorite_roles?: string[] | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
