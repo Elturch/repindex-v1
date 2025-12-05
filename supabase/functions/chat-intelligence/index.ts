@@ -1607,8 +1607,7 @@ async function handleStandardChat(
     context += '\n⚠️ No hay datos estructurados de RIX disponibles.\n\n';
   }
 
-  // Add hint about bulletin capability
-  context += `\n💡 NOTA: Si el usuario quiere un análisis más completo de una empresa específica, puede pedir un "boletín ejecutivo" o "informe completo" que incluirá competidores y 4 semanas de datos históricos.\n`;
+  // Context is complete - no hints needed
 
   console.log(`${logPrefix} Context length: ${context.length} characters`);
 
@@ -1672,10 +1671,13 @@ El RepIndex mide cómo las inteligencias artificiales (ChatGPT, Perplexity, Gemi
 - Tablas cuando aporten valor comparativo
 - Uso moderado de emojis: 📊 📈 📉 ⚠️ 🏆 💡
 
-**NIVEL DE PROFUNDIDAD:**
-- Para preguntas simples: respuesta directa con datos clave
-- Para preguntas de análisis: contexto sectorial, comparativas, tendencias
-- Para preguntas estratégicas: implicaciones y consideraciones de negocio
+**NIVEL DE PROFUNDIDAD - SIEMPRE EXHAUSTIVO:**
+- TODAS las respuestas deben ser COMPLETAS y EXHAUSTIVAS
+- Incluye SIEMPRE: contexto sectorial, comparativas con competidores, análisis de tendencias
+- Cada respuesta debe ser un mini-informe ejecutivo autosuficiente
+- NO escatimes en detalle: si hay datos disponibles, INCLÚYELOS TODOS
+- Mínimo 3-5 párrafos sustanciales con análisis profundo para cualquier pregunta
+- El usuario espera calidad de consultoría premium en CADA respuesta, no resúmenes
 
 **CUANDO CITES FUENTES DE IA:**
 - Especifica qué IA dijo qué: "ChatGPT menciona que...", "Según el análisis de Gemini..."
@@ -1715,7 +1717,7 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
     body: JSON.stringify({
       model: 'o3',
       messages: messages,
-      max_completion_tokens: 4000,
+      max_completion_tokens: 16000,
     }),
   });
 
