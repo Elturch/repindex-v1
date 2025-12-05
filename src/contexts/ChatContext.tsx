@@ -310,18 +310,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       setMessages(prev => [...prev, enrichedMessage]);
 
-      // Save to DB
+      // Save to DB with user_id
       await supabase.from('chat_intelligence_sessions').insert([
         {
           session_id: sessionId,
           role: 'user',
           content: enrichmentRequest.content,
+          user_id: currentUserId,
         },
         {
           session_id: sessionId,
           role: 'assistant',
           content: data.answer,
           suggested_questions: data.suggestedQuestions,
+          user_id: currentUserId,
         }
       ]);
 
@@ -331,6 +333,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         role_id: role.id,
         role_name: `${role.emoji} ${role.name}`,
         original_question: userQuestion,
+        user_id: currentUserId,
       });
 
       toast({
@@ -350,7 +353,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, sessionId, toast]);
+  }, [messages, sessionId, toast, currentUserId]);
 
   const clearConversation = useCallback(() => {
     setMessages([]);
