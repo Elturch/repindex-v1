@@ -25,7 +25,9 @@ import {
   Play,
   AlertCircle,
   BarChart3,
-  Sparkles
+  Sparkles,
+  MessageSquare,
+  Eye
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -70,6 +72,20 @@ interface RoleStats {
   role_id: string;
   role_name: string;
   count: number;
+}
+
+interface UserConversation {
+  id: string;
+  session_id: string;
+  user_id: string;
+  title: string | null;
+  messages_count: number | null;
+  last_message_at: string | null;
+  created_at: string | null;
+  is_starred: boolean | null;
+  is_archived: boolean | null;
+  user_email?: string;
+  user_name?: string;
 }
 
 const Admin: React.FC = () => {
@@ -136,6 +152,13 @@ const Admin: React.FC = () => {
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [totalEnrichments, setTotalEnrichments] = useState(0);
 
+  // Conversations state
+  const [conversations, setConversations] = useState<UserConversation[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+  const [conversationMessages, setConversationMessages] = useState<any[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+
   // Fetch initial vector store status on mount
   useEffect(() => {
     const fetchInitialStatus = async () => {
@@ -162,7 +185,35 @@ const Admin: React.FC = () => {
     fetchCompanies();
     fetchUsers();
     fetchRoleAnalytics();
+    fetchConversations();
   }, []);
+
+  const fetchConversations = async () => {
+    setLoadingConversations(true);
+    try {
+      const { conversations: convos } = await callAdminApi('list_conversations');
+      setConversations(convos || []);
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+      toast({ title: 'Error', description: 'No se pudieron cargar las conversaciones', variant: 'destructive' });
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  const fetchConversationMessages = async (sessionId: string) => {
+    setLoadingMessages(true);
+    setSelectedConversation(sessionId);
+    try {
+      const { messages } = await callAdminApi('get_conversation_messages', { session_id: sessionId });
+      setConversationMessages(messages || []);
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      toast({ title: 'Error', description: 'No se pudieron cargar los mensajes', variant: 'destructive' });
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
 
   const fetchRoleAnalytics = async () => {
     setLoadingAnalytics(true);
@@ -621,7 +672,7 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-3xl grid-cols-5 mb-6">
+          <TabsList className="grid w-full max-w-4xl grid-cols-6 mb-6">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Resumen
@@ -633,6 +684,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Usuarios
+            </TabsTrigger>
+            <TabsTrigger value="conversations" className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              Chats
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -1410,6 +1465,137 @@ const Admin: React.FC = () => {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* ==================== CONVERSACIONES ==================== */}
+          <TabsContent value="conversations">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Conversaciones de Usuarios</h2>
+              <Button variant="outline" size="sm" onClick={fetchConversations}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {loadingConversations ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : conversations.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No hay conversaciones guardadas</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Conversations list */}
+                <div className="space-y-3">
+                  <h3 className="font-medium text-sm text-muted-foreground mb-2">
+                    {conversations.length} conversaciones encontradas
+                  </h3>
+                  <ScrollArea className="h-[600px]">
+                    <div className="space-y-2 pr-4">
+                      {conversations.map((convo) => (
+                        <Card 
+                          key={convo.id} 
+                          className={`cursor-pointer hover:shadow-md transition-shadow ${selectedConversation === convo.session_id ? 'border-primary ring-1 ring-primary' : ''}`}
+                          onClick={() => fetchConversationMessages(convo.session_id)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">
+                                  {convo.title || 'Sin título'}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {convo.user_name || convo.user_email}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {convo.is_starred && (
+                                  <Badge variant="outline" className="text-xs border-amber-500 text-amber-600">★</Badge>
+                                )}
+                                <Badge variant="secondary" className="text-xs">
+                                  {convo.messages_count || 0} msg
+                                </Badge>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                              <span>
+                                {convo.last_message_at 
+                                  ? new Date(convo.last_message_at).toLocaleString('es-ES', { 
+                                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
+                                    })
+                                  : 'Sin actividad'}
+                              </span>
+                              <Button variant="ghost" size="sm" className="h-6 px-2">
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                {/* Messages viewer */}
+                <div>
+                  <h3 className="font-medium text-sm text-muted-foreground mb-2">
+                    {selectedConversation ? 'Mensajes de la conversación' : 'Selecciona una conversación'}
+                  </h3>
+                  <Card className="h-[600px]">
+                    <CardContent className="p-4 h-full">
+                      {loadingMessages ? (
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        </div>
+                      ) : !selectedConversation ? (
+                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                          <MessageSquare className="h-12 w-12 mb-4 opacity-50" />
+                          <p>Haz clic en una conversación para ver sus mensajes</p>
+                        </div>
+                      ) : conversationMessages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                          <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
+                          <p>No se encontraron mensajes para esta sesión</p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-full">
+                          <div className="space-y-4 pr-4">
+                            {conversationMessages.map((msg, idx) => (
+                              <div 
+                                key={msg.id || idx}
+                                className={`p-3 rounded-lg ${
+                                  msg.role === 'user' 
+                                    ? 'bg-primary/10 ml-8' 
+                                    : 'bg-muted mr-8'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <Badge variant={msg.role === 'user' ? 'default' : 'secondary'} className="text-xs">
+                                    {msg.role === 'user' ? 'Usuario' : 'Agente Rix'}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {msg.created_at && new Date(msg.created_at).toLocaleTimeString('es-ES', {
+                                      hour: '2-digit', minute: '2-digit'
+                                    })}
+                                  </span>
+                                </div>
+                                <p className="text-sm whitespace-pre-wrap line-clamp-6">
+                                  {msg.content?.slice(0, 500)}{msg.content?.length > 500 ? '...' : ''}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
