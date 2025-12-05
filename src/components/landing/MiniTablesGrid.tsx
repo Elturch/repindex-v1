@@ -43,28 +43,28 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
   }
 
   return (
-    <Card className="p-4 sm:p-6 hover:shadow-card-hover transition-shadow">
-      <div className="flex items-start gap-2 sm:gap-3 mb-3 sm:mb-4">
+    <Card className="p-3 sm:p-4 md:p-6 hover:shadow-card-hover transition-shadow">
+      <div className="flex items-start gap-2 mb-2 sm:mb-3 md:mb-4">
         <div className={`${variantColors[variant]} flex-shrink-0`}>
-          {icon}
+          <span className="[&>svg]:w-5 [&>svg]:h-5 sm:[&>svg]:w-6 sm:[&>svg]:h-6">{icon}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-base sm:text-lg leading-tight">{title}</h3>
-          <p className="text-xs sm:text-sm text-muted-foreground">{subtitle}</p>
+          <h3 className="font-semibold text-sm sm:text-base md:text-lg leading-tight">{title}</h3>
+          <p className="text-[10px] sm:text-xs md:text-sm text-muted-foreground">{subtitle}</p>
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5 sm:space-y-2">
         {safeData.slice(0, 5).map((item, idx) => (
           <div
             key={`${item.ticker}-${item.ai}-${idx}`}
-            className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
+            className="flex items-center justify-between py-1.5 sm:py-2 border-b border-border/50 last:border-0 gap-2"
           >
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">{item.empresa}</p>
-              <p className="text-xs text-muted-foreground">{item.ticker}</p>
+              <p className="font-medium text-[11px] sm:text-sm truncate leading-tight">{item.empresa}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">{item.ticker}</p>
             </div>
-            <Badge variant="outline" className="ml-2">
+            <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 flex-shrink-0">
               {item.rix.toFixed(1)}
             </Badge>
           </div>
@@ -148,19 +148,19 @@ export function MiniTablesGrid() {
   ];
 
   return (
-    <section className="py-12 px-4 bg-muted/30">
+    <section className="py-8 sm:py-12 px-2 sm:px-4 bg-muted/30">
       <div className="container mx-auto max-w-7xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.5 }}
-          className="text-center mb-8"
+          className="text-center mb-6 sm:mb-8"
         >
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2" style={{ fontSize: 'clamp(1.25rem, 4vw, 2.25rem)' }}>
+          <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-2" style={{ fontSize: 'clamp(1.125rem, 4vw, 2.25rem)' }}>
             RepIndex Corporativo
           </h2>
-          <p className="text-muted-foreground text-sm sm:text-base md:text-lg max-w-2xl mx-auto px-2" style={{ fontSize: 'clamp(0.8rem, 2vw, 1.125rem)' }}>
+          <p className="text-muted-foreground text-xs sm:text-sm md:text-base lg:text-lg max-w-2xl mx-auto px-1" style={{ fontSize: 'clamp(0.7rem, 2vw, 1.125rem)' }}>
             Explora las métricas de reputación corporativa analizadas por inteligencias artificiales
           </p>
         </motion.div>
@@ -177,7 +177,7 @@ export function MiniTablesGrid() {
               }
             }
           }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6"
         >
           {tables.map((table, idx) => (
             <motion.div
