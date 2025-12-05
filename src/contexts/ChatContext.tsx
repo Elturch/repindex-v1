@@ -66,7 +66,72 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Get current user on mount and auth changes
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUserId(user?.id || null);
+    };
+    getCurrentUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUserId(session?.user?.id || null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Create or update user_conversations record when user is authenticated
+  const ensureConversationRecord = useCallback(async (title?: string) => {
+    if (!currentUserId) return null;
+    
+    try {
+      // Check if conversation already exists
+      const { data: existing } = await supabase
+        .from('user_conversations')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('user_id', currentUserId)
+        .single();
+
+      if (existing) {
+        // Update messages count and last_message_at
+        await supabase
+          .from('user_conversations')
+          .update({ 
+            last_message_at: new Date().toISOString(),
+            messages_count: messages.length + 1,
+            title: title || 'Nueva conversación'
+          })
+          .eq('id', existing.id);
+        return existing.id;
+      } else {
+        // Create new conversation record
+        const { data: newConv, error } = await supabase
+          .from('user_conversations')
+          .insert({
+            session_id: sessionId,
+            user_id: currentUserId,
+            title: title || 'Nueva conversación',
+            last_message_at: new Date().toISOString(),
+            messages_count: 1
+          })
+          .select('id')
+          .single();
+        
+        if (error) throw error;
+        setConversationId(newConv?.id || null);
+        return newConv?.id;
+      }
+    } catch (error) {
+      console.error('Error managing conversation record:', error);
+      return null;
+    }
+  }, [currentUserId, sessionId, messages.length]);
 
   // Load conversation history from DB on mount
   useEffect(() => {
@@ -117,11 +182,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Save user message to DB
+    // Create/update conversation record for authenticated users
+    const convId = await ensureConversationRecord(question.slice(0, 50));
+
+    // Save user message to DB with user_id
     await supabase.from('chat_intelligence_sessions').insert({
       session_id: sessionId,
       role: 'user',
       content: question,
+      user_id: currentUserId,
+      conversation_id: convId,
     });
 
     try {
@@ -149,7 +219,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Save assistant message to DB
+      // Save assistant message to DB with user_id
       await supabase.from('chat_intelligence_sessions').insert({
         session_id: sessionId,
         role: 'assistant',
@@ -157,6 +227,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         suggested_questions: data.suggestedQuestions,
         documents_found: data.metadata?.documentsFound,
         structured_data_found: data.metadata?.structuredDataFound,
+        user_id: currentUserId,
+        conversation_id: convId,
       });
 
       // Show appropriate toast based on response type
@@ -181,7 +253,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, sessionId, toast]);
+  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord]);
 
   // Enrich a response with a specific professional role perspective
   const enrichResponse = useCallback(async (roleId: string, messageIndex: number) => {
