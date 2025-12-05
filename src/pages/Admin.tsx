@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -179,6 +180,32 @@ const Admin: React.FC = () => {
     };
     fetchInitialStatus();
   }, []);
+
+  // Compute chat activity data for chart
+  const chatActivityData = useMemo(() => {
+    const last14Days: { date: string; chats: number; label: string }[] = [];
+    const today = new Date();
+    
+    for (let i = 13; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const label = date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+      last14Days.push({ date: dateStr, chats: 0, label });
+    }
+
+    conversations.forEach(convo => {
+      if (convo.created_at) {
+        const convoDate = convo.created_at.split('T')[0];
+        const dayEntry = last14Days.find(d => d.date === convoDate);
+        if (dayEntry) {
+          dayEntry.chats++;
+        }
+      }
+    });
+
+    return last14Days;
+  }, [conversations]);
 
   // Fetch data
   useEffect(() => {
@@ -747,6 +774,50 @@ const Admin: React.FC = () => {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* Chat Activity Chart */}
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Actividad de Chat (últimos 14 días)</CardTitle>
+                    <CardDescription>Nuevas conversaciones por día</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chatActivityData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis 
+                            dataKey="label" 
+                            tick={{ fontSize: 11 }} 
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis 
+                            allowDecimals={false}
+                            tick={{ fontSize: 11 }}
+                            tickLine={false}
+                            axisLine={false}
+                            width={30}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'hsl(var(--card))', 
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '6px'
+                            }}
+                            labelStyle={{ fontWeight: 600 }}
+                          />
+                          <Bar 
+                            dataKey="chats" 
+                            fill="hsl(var(--primary))" 
+                            radius={[4, 4, 0, 0]}
+                            name="Conversaciones"
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Companies with their users */}
                 <div className="space-y-4">
