@@ -252,6 +252,51 @@ serve(async (req) => {
         });
       }
 
+      // ==================== CONVERSATIONS ====================
+      case "list_conversations": {
+        // Fetch all conversations with user info
+        const { data: conversations, error: convoError } = await supabaseAdmin
+          .from("user_conversations")
+          .select("*")
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .limit(100);
+        
+        if (convoError) throw convoError;
+
+        // Get user profiles
+        const { data: profiles } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id, email, full_name");
+
+        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+        const enrichedConversations = (conversations || []).map((c: any) => {
+          const profile = profileMap.get(c.user_id);
+          return {
+            ...c,
+            user_email: profile?.email || 'Desconocido',
+            user_name: profile?.full_name || null,
+          };
+        });
+
+        return new Response(JSON.stringify({ conversations: enrichedConversations }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "get_conversation_messages": {
+        const { data: messages, error } = await supabaseAdmin
+          .from("chat_intelligence_sessions")
+          .select("*")
+          .eq("session_id", data.session_id)
+          .order("created_at", { ascending: true });
+        
+        if (error) throw error;
+        return new Response(JSON.stringify({ messages }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
