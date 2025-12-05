@@ -5,8 +5,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
-import { Sparkles, RefreshCw, FileText, ExternalLink } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Sparkles, RefreshCw, FileText, ExternalLink, AlertTriangle, Loader2 } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
+import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -29,6 +31,7 @@ export function ChatMessages({
 }: ChatMessagesProps) {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const vectorStoreStatus = useVectorStoreStatus();
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -36,10 +39,30 @@ export function ChatMessages({
   }, [messages, isLoading]);
 
   const scrollHeight = compact ? "h-[300px]" : "h-[500px]";
+  
+  // Vector store repopulating warning banner
+  const VectorStoreWarning = () => {
+    if (!vectorStoreStatus.isRepopulating) return null;
+    
+    return (
+      <Alert variant="default" className="mb-3 border-amber-500/50 bg-amber-500/10">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+          <AlertDescription className={compact ? "text-[11px]" : "text-xs"}>
+            <span className="font-semibold text-amber-600">Actualizando base de conocimiento</span>
+            <span className="text-muted-foreground ml-1">
+              ({vectorStoreStatus.progress}%) — Las respuestas pueden ser menos precisas temporalmente
+            </span>
+          </AlertDescription>
+        </div>
+      </Alert>
+    );
+  };
 
   if (isLoadingHistory) {
     return (
       <ScrollArea className={`${scrollHeight} pr-4`}>
+        <VectorStoreWarning />
         <div className="space-y-4 py-4">
           <Skeleton className="h-16 w-3/4" />
           <Skeleton className="h-16 w-3/4 ml-auto" />
@@ -52,6 +75,7 @@ export function ChatMessages({
   if (messages.length === 0) {
     return (
       <ScrollArea className={`${scrollHeight} pr-4`}>
+        <VectorStoreWarning />
         <div className="flex flex-col items-center justify-center h-full space-y-4 py-8">
           <div className="text-center space-y-2">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
@@ -81,6 +105,7 @@ export function ChatMessages({
 
   return (
     <ScrollArea className={`${scrollHeight} pr-4`}>
+      <VectorStoreWarning />
       <div className="space-y-4">
         {messages.map((message, idx) => (
           <div key={idx} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
