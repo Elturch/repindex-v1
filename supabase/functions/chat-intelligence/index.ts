@@ -1717,7 +1717,7 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
     body: JSON.stringify({
       model: 'o3',
       messages: messages,
-      max_completion_tokens: 16000,
+      max_completion_tokens: 24000,
     }),
   });
 
