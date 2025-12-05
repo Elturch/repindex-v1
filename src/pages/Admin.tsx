@@ -715,7 +715,7 @@ const Admin: React.FC = () => {
             ) : (
               <div className="space-y-6">
                 {/* Statistics */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <Card>
                     <CardContent className="p-4 text-center">
                       <p className="text-3xl font-bold text-primary">{companies.length}</p>
@@ -726,6 +726,12 @@ const Admin: React.FC = () => {
                     <CardContent className="p-4 text-center">
                       <p className="text-3xl font-bold text-blue-600">{users.length}</p>
                       <p className="text-sm text-muted-foreground">Usuarios</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-purple-600">{conversations.length}</p>
+                      <p className="text-sm text-muted-foreground">Chats</p>
                     </CardContent>
                   </Card>
                   <Card>
