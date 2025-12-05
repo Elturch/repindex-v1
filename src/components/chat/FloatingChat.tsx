@@ -22,6 +22,7 @@ export function FloatingChat() {
     isLoading,
     isLoadingHistory,
     sendMessage,
+    enrichResponse,
     clearConversation,
     isFloatingOpen,
     setIsFloatingOpen,
@@ -262,6 +263,7 @@ export function FloatingChat() {
                       isLoading={isLoading}
                       isLoadingHistory={isLoadingHistory}
                       onSuggestedQuestion={sendMessage}
+                      onEnrichResponse={enrichResponse}
                       starterPrompts={pageContext.suggestions}
                       onStarterPrompt={sendMessage}
                       compact={true}
