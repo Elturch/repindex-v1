@@ -23,7 +23,9 @@ import {
   Gift,
   Database,
   Play,
-  AlertCircle
+  AlertCircle,
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -53,6 +55,21 @@ interface UserProfile {
   company_id: string | null;
   created_at: string;
   client_companies: { id: string; company_name: string } | null;
+}
+
+interface RoleEnrichmentAnalytic {
+  id: string;
+  role_id: string;
+  role_name: string;
+  original_question: string;
+  enrichment_timestamp: string;
+  session_id: string;
+}
+
+interface RoleStats {
+  role_id: string;
+  role_name: string;
+  count: number;
 }
 
 const Admin: React.FC = () => {
@@ -113,6 +130,12 @@ const Admin: React.FC = () => {
     error?: string;
   } | null>(null);
 
+  // Role Analytics state
+  const [roleAnalytics, setRoleAnalytics] = useState<RoleEnrichmentAnalytic[]>([]);
+  const [roleStats, setRoleStats] = useState<RoleStats[]>([]);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [totalEnrichments, setTotalEnrichments] = useState(0);
+
   // Fetch initial vector store status on mount
   useEffect(() => {
     const fetchInitialStatus = async () => {
@@ -138,7 +161,52 @@ const Admin: React.FC = () => {
   useEffect(() => {
     fetchCompanies();
     fetchUsers();
+    fetchRoleAnalytics();
   }, []);
+
+  const fetchRoleAnalytics = async () => {
+    setLoadingAnalytics(true);
+    try {
+      // Fetch recent enrichments
+      const { data: analytics, error: analyticsError, count } = await supabase
+        .from('role_enrichment_analytics')
+        .select('*', { count: 'exact' })
+        .order('enrichment_timestamp', { ascending: false })
+        .limit(50);
+
+      if (analyticsError) throw analyticsError;
+      setRoleAnalytics(analytics || []);
+      setTotalEnrichments(count || 0);
+
+      // Calculate role stats
+      const { data: allAnalytics, error: statsError } = await supabase
+        .from('role_enrichment_analytics')
+        .select('role_id, role_name');
+
+      if (statsError) throw statsError;
+
+      const statsMap = new Map<string, { role_name: string; count: number }>();
+      (allAnalytics || []).forEach((item: any) => {
+        const existing = statsMap.get(item.role_id);
+        if (existing) {
+          existing.count++;
+        } else {
+          statsMap.set(item.role_id, { role_name: item.role_name, count: 1 });
+        }
+      });
+
+      const stats: RoleStats[] = Array.from(statsMap.entries())
+        .map(([role_id, data]) => ({ role_id, role_name: data.role_name, count: data.count }))
+        .sort((a, b) => b.count - a.count);
+
+      setRoleStats(stats);
+    } catch (error) {
+      console.error('Error fetching role analytics:', error);
+      toast({ title: 'Error', description: 'No se pudieron cargar los analytics', variant: 'destructive' });
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
 
   const callAdminApi = async (action: string, data?: any) => {
     const { data: response, error } = await supabase.functions.invoke('admin-api', {
@@ -553,7 +621,7 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-2xl grid-cols-4 mb-6">
+          <TabsList className="grid w-full max-w-3xl grid-cols-5 mb-6">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Resumen
@@ -565,6 +633,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="users" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Usuarios
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Analytics
             </TabsTrigger>
             <TabsTrigger value="system" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
@@ -1055,6 +1127,138 @@ const Admin: React.FC = () => {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ==================== ANALYTICS ==================== */}
+          <TabsContent value="analytics">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Analytics de Enriquecimiento por Rol</h2>
+              <Button variant="outline" size="sm" onClick={fetchRoleAnalytics}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {loadingAnalytics ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Summary stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-primary">{totalEnrichments}</p>
+                      <p className="text-sm text-muted-foreground">Total Enriquecimientos</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-purple-600">{roleStats.length}</p>
+                      <p className="text-sm text-muted-foreground">Roles Utilizados</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-blue-600">
+                        {roleStats[0]?.count || 0}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Más usado: {roleStats[0]?.role_name || 'N/A'}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 text-center">
+                      <p className="text-3xl font-bold text-green-600">
+                        {new Set(roleAnalytics.map(a => a.session_id)).size}
+                      </p>
+                      <p className="text-sm text-muted-foreground">Sesiones Únicas</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Top roles */}
+                {roleStats.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Sparkles className="h-5 w-5 text-amber-500" />
+                        Roles Más Utilizados
+                      </CardTitle>
+                      <CardDescription>
+                        Distribución del uso de roles de enriquecimiento
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {roleStats.slice(0, 10).map((stat, index) => {
+                          const maxCount = roleStats[0]?.count || 1;
+                          const percentage = Math.round((stat.count / maxCount) * 100);
+                          return (
+                            <div key={stat.role_id} className="space-y-1">
+                              <div className="flex justify-between text-sm">
+                                <span className="font-medium">
+                                  {index + 1}. {stat.role_name}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {stat.count} uso{stat.count !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              <Progress value={percentage} className="h-2" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Recent enrichments table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Enriquecimientos Recientes</CardTitle>
+                    <CardDescription>
+                      Últimas 50 solicitudes de adaptación por rol
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {roleAnalytics.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No hay datos de enriquecimiento todavía</p>
+                        <p className="text-sm">Los analytics se registran cuando los usuarios adaptan respuestas a roles específicos</p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-[400px]">
+                        <div className="space-y-2">
+                          {roleAnalytics.map((analytic) => (
+                            <div 
+                              key={analytic.id} 
+                              className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/30 transition-colors"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="shrink-0">
+                                    {analytic.role_name}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(analytic.enrichment_timestamp).toLocaleString('es-ES')}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-muted-foreground truncate">
+                                  {analytic.original_question}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
           </TabsContent>
