@@ -34,7 +34,7 @@ const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
   { path: "/chat", label: "Agente Rix", icon: Bot, protected: true },
   { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
-  { path: "/noticias", label: "Noticias", icon: Newspaper, protected: false },
+  { path: "/noticias", label: "Newsroom", icon: Newspaper, protected: false },
 ];
 
 export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
