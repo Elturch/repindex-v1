@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Minimize2, Maximize2, Trash2, Sparkles, Lock } from "lucide-react";
+import { Bot, Minimize2, Maximize2, Trash2, Sparkles, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -144,7 +144,7 @@ export function FloatingChat() {
                       {hasDynamicContext ? (
                         <Sparkles className="h-5 w-5" />
                       ) : (
-                        <MessageCircle className="h-5 w-5" />
+                        <Bot className="h-5 w-5" />
                       )}
                       {isButtonExpanded && (
                         <motion.span
@@ -199,7 +199,7 @@ export function FloatingChat() {
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <MessageCircle className="h-5 w-5 text-primary" />
+                    <Bot className="h-5 w-5 text-primary" />
                     <CardTitle className="text-base">Agente Rix</CardTitle>
                   </div>
                   <div className="flex items-center gap-1">
