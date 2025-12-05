@@ -837,6 +837,7 @@ async function handleStandardChat(
     for (const keyword of searchableKeywords) {
       const searchPattern = `%${keyword}%`;
       
+      // BÚSQUEDA EXHAUSTIVA en TODOS los campos de texto de TODA la base de datos
       const { data: textResults, error: textError } = await supabaseClient
         .from('rix_runs')
         .select(`
@@ -848,15 +849,32 @@ async function handleStandardChat(
           "09_rix_score",
           "51_rix_score_adjusted",
           "10_resumen",
+          "11_puntos_clave",
           "20_res_gpt_bruto",
           "21_res_perplex_bruto",
           "22_res_gemini_bruto",
           "23_res_deepseek_bruto",
           "22_explicacion",
-          "25_explicaciones_detalladas"
+          "25_explicaciones_detalladas",
+          "23_nvm_score",
+          "26_drm_score",
+          "29_sim_score",
+          "32_rmm_score",
+          "35_cem_score",
+          "38_gam_score",
+          "41_dcm_score",
+          "44_cxm_score",
+          "25_nvm_categoria",
+          "28_drm_categoria",
+          "31_sim_categoria",
+          "34_rmm_categoria",
+          "37_cem_categoria",
+          "40_gam_categoria",
+          "43_dcm_categoria",
+          "46_cxm_categoria"
         `)
         .or(`"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
-        .limit(50);
+        .limit(100); // Aumentado de 50 a 100 resultados por keyword
       
       if (textError) {
         console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
@@ -886,7 +904,7 @@ async function handleStandardChat(
   if (detectedCompanies.length > 0) {
     console.log(`${logPrefix} Loading FULL DATA (including raw texts) for detected companies...`);
     
-    for (const company of detectedCompanies.slice(0, 5)) { // Limit to 5 companies
+    for (const company of detectedCompanies.slice(0, 8)) { // Aumentado de 5 a 8 empresas
       const { data: companyData, error: companyError } = await supabaseClient
         .from('rix_runs')
         .select(`
@@ -904,6 +922,7 @@ async function handleStandardChat(
           "22_res_gemini_bruto",
           "23_res_deepseek_bruto",
           "22_explicacion",
+          "25_explicaciones_detalladas",
           "23_nvm_score",
           "26_drm_score",
           "29_sim_score",
@@ -911,11 +930,19 @@ async function handleStandardChat(
           "35_cem_score",
           "38_gam_score",
           "41_dcm_score",
-          "44_cxm_score"
+          "44_cxm_score",
+          "25_nvm_categoria",
+          "28_drm_categoria",
+          "31_sim_categoria",
+          "34_rmm_categoria",
+          "37_cem_categoria",
+          "40_gam_categoria",
+          "43_dcm_categoria",
+          "46_cxm_categoria"
         `)
         .eq('"05_ticker"', company.ticker)
         .order('batch_execution_date', { ascending: false })
-        .limit(16); // 4 models × 4 weeks
+        .limit(32); // 4 models × 8 weeks - más historial
       
       if (!companyError && companyData) {
         console.log(`${logPrefix} Loaded ${companyData.length} full records for ${company.issuer_name}`);
@@ -947,9 +974,10 @@ async function handleStandardChat(
   const embeddingData = await embeddingResponse.json();
   const embedding = embeddingData.data[0].embedding;
 
+  // Vector search con mayor cobertura para contexto cualitativo
   const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
     query_embedding: embedding,
-    match_count: 15,
+    match_count: 30, // Aumentado de 15 a 30 documentos
     filter: {}
   });
 
@@ -977,7 +1005,7 @@ async function handleStandardChat(
       batch_execution_date
     `)
     .order('batch_execution_date', { ascending: false })
-    .limit(1500);
+    .limit(2500); // Aumentado para cobertura completa de empresas y modelos
 
   if (rixError) {
     console.error(`${logPrefix} Error loading RIX data:`, rixError);
@@ -1016,9 +1044,9 @@ async function handleStandardChat(
         context += `| ${r["03_target_name"]} | ${r["05_ticker"]} | ${r["02_model_name"]} | ${r["06_period_from"]} a ${r["07_period_to"]} | ${rix} |\n`;
       });
       
-      // Include text excerpts
-      context += `\n### Extractos relevantes:\n`;
-      results.slice(0, 5).forEach((r, idx) => {
+      // Include text excerpts - más extensos para contexto ejecutivo
+      context += `\n### Extractos relevantes (fuentes originales de IA):\n`;
+      results.slice(0, 8).forEach((r, idx) => {
         const fields = [
           { name: 'ChatGPT', value: r["20_res_gpt_bruto"] },
           { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
@@ -1032,11 +1060,11 @@ async function handleStandardChat(
           if (field.value && field.value.toLowerCase().includes(keyword.toLowerCase())) {
             const lowerText = field.value.toLowerCase();
             const pos = lowerText.indexOf(keyword.toLowerCase());
-            const start = Math.max(0, pos - 150);
-            const end = Math.min(field.value.length, pos + keyword.length + 300);
+            const start = Math.max(0, pos - 250);
+            const end = Math.min(field.value.length, pos + keyword.length + 500);
             const snippet = field.value.substring(start, end);
             
-            context += `\n**${idx + 1}. ${r["03_target_name"]} (${field.name}):**\n`;
+            context += `\n**${idx + 1}. ${r["03_target_name"]} (${r["02_model_name"]} - ${field.name}):**\n`;
             context += `> "...${snippet}..."\n`;
             break;
           }
@@ -1315,66 +1343,86 @@ async function handleStandardChat(
   // =============================================================================
   // PASO 5: LLAMAR A LA IA CON CONTEXTO COMPLETO
   // =============================================================================
-  const systemPrompt = `Eres un analista experto en reputación corporativa que trabaja con el sistema RepIndex.
+  const systemPrompt = `Eres un CONSULTOR SENIOR DE REPUTACIÓN CORPORATIVA de nivel C-Suite, especializado en análisis de percepción de marca en inteligencias artificiales para CEOs, Directores Financieros, Directores de Comunicación y Directores de Marketing de las 153 empresas más importantes de España.
 
-🎯 TU MISIÓN:
-Interpretar preguntas en lenguaje natural y responder usando SOLO los datos proporcionados.
+🎯 TU PERFIL PROFESIONAL:
+- Experiencia equivalente a 20+ años en análisis de reputación corporativa
+- Nivel de rigor analítico de McKinsey, Boston Consulting Group, o Deloitte
+- Comunicación ejecutiva: precisa, fundamentada, sin ambigüedades
+- Dominio absoluto del sistema RepIndex y sus 8 métricas dimensionales
 
-📊 DATOS QUE RECIBES:
-- **🎯 DATOS DE EMPRESAS MENCIONADAS**: Sección PRIORITARIA con datos COMPLETOS de cualquier empresa que el usuario mencione
-- **RANKING INDIVIDUAL**: Lista de evaluaciones individuales (Empresa + Modelo IA + RIX Score) ordenada por RIX descendente
-- **PROMEDIOS POR EMPRESA**: Promedio de los 4 modelos de IA para cada empresa
-- **ANÁLISIS POR MODELO IA**: Estadísticas de ChatGPT, Perplexity, Gemini y DeepSeek
-- **TENDENCIAS SEMANALES**: Comparación con la semana anterior
-- **DOCUMENTOS CUALITATIVOS**: Contexto adicional de análisis previos
+📊 SISTEMA REPINDEX - CONOCIMIENTO EXPERTO:
 
-🚨🚨🚨 REGLA ANTI-ALUCINACIÓN CRÍTICA 🚨🚨🚨
+El RepIndex mide cómo las inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek) perciben y representan la reputación de las empresas españolas. Es el primer sistema mundial que cuantifica la "reputación algorítmica" - cómo las IAs hablan de las empresas cuando millones de usuarios les preguntan.
 
-ANTES DE RESPONDER, VERIFICA:
-1. Si el usuario pregunta por una empresa específica (ej: "Banco Santander", "Telefónica", "BBVA")
-2. Busca esa empresa en la sección "🎯 DATOS DE EMPRESAS MENCIONADAS EN LA PREGUNTA"
-3. Si la empresa aparece ahí con datos de modelos de IA → USA ESOS DATOS
-4. NUNCA digas "no tengo datos" o "no hay información" si la empresa aparece en el contexto con scores
+**Las 8 Métricas Dimensionales (0-100):**
+- **NVM (Narrative Visibility Metric)**: Visibilidad narrativa - cuánto y cómo aparece la empresa en las respuestas de IA
+- **DRM (Digital Resonance Metric)**: Resonancia digital - amplificación y eco de la marca en el ecosistema digital
+- **SIM (Sentiment Integrity Metric)**: Integridad del sentimiento - coherencia y positividad del tono
+- **RMM (Reputation Momentum Metric)**: Momentum reputacional - tendencia y aceleración de la percepción
+- **CEM (Crisis Exposure Metric)**: Exposición a crisis - vulnerabilidad percibida ante eventos negativos
+- **GAM (Growth Association Metric)**: Asociación con crecimiento - percepción de dinamismo empresarial
+- **DCM (Data Consistency Metric)**: Consistencia de datos - coherencia de la información circulante
+- **CXM (Customer Experience Metric)**: Experiencia de cliente - percepción de calidad en atención al cliente
 
-Si una empresa tiene datos de ALGUNOS modelos pero no de todos:
-- Reporta los datos que SÍ existen
-- Menciona qué modelos tienen datos y cuáles no
-- NO digas que no hay datos de la empresa
+**Escala de Interpretación RIX:**
+- 80-100: Excelencia reputacional - Liderazgo sectorial indiscutible
+- 65-79: Reputación sólida - Posición competitiva favorable
+- 50-64: Reputación moderada - Margen de mejora significativo
+- 35-49: Reputación vulnerable - Requiere atención estratégica inmediata
+- 0-34: Reputación crítica - Riesgo reputacional elevado
 
-🔍 CÓMO RESPONDER:
+📚 FUENTES DE INFORMACIÓN QUE RECIBES:
 
-**CUANDO PREGUNTAN POR UNA EMPRESA ESPECÍFICA:**
-1. PRIMERO busca en "🎯 DATOS DE EMPRESAS MENCIONADAS"
-2. Si está ahí, usa esos datos directamente
-3. Muestra: RIX por modelo, promedio, tendencia
+1. **🔍 BÚSQUEDA FULL-TEXT**: Resultados de búsqueda en los textos originales generados por las 4 IAs
+2. **🏢 DATOS COMPLETOS DE EMPRESAS**: Información detallada cuando el usuario menciona empresas específicas
+3. **📊 RANKING SEMANAL**: Evaluaciones individuales (Empresa × Modelo IA × RIX Score)
+4. **📈 PROMEDIOS Y TENDENCIAS**: Análisis consolidado y comparación semanal
+5. **📚 CONTEXTO CUALITATIVO**: Documentos del vector store con análisis previos
 
-**POR DEFECTO - USA EL RANKING INDIVIDUAL:**
-- "Top 5 empresas" → Usa las primeras 5 filas del ranking
-- "¿Cómo está X empresa?" → Muestra las 4 evaluaciones de esa empresa
+🚨 PROTOCOLO DE RIGOR ANALÍTICO (OBLIGATORIO):
 
-**SOLO SI PREGUNTAN EXPLÍCITAMENTE - USA PROMEDIOS:**
-- "Promedio de X" / "Consenso entre modelos" → Usa la tabla de promedios
+**ANTES DE CADA RESPUESTA, VERIFICA:**
+1. ¿El usuario pregunta por una empresa específica? → Busca en "DATOS DE EMPRESAS MENCIONADAS"
+2. ¿Hay resultados de búsqueda full-text relevantes? → Cita las fuentes y extractos
+3. ¿Los datos existen en el contexto? → NUNCA digas "no hay datos" si aparecen
+4. ¿Puedes fundamentar cada afirmación con datos del contexto? → Si no, no lo afirmes
 
-💡 FUNCIONALIDAD ESPECIAL - BOLETINES:
-Si el usuario necesita un análisis más profundo de una empresa, sugiérele que puede pedir un "boletín ejecutivo" o "informe de [empresa] con sus competidores" para obtener:
-- Análisis detallado por modelo de IA
-- Comparativa con competidores del sector
+**REGLA DE ORO**: Si una empresa aparece en el contexto con datos de AL MENOS UN modelo de IA, tienes información. Reporta lo que existe y especifica qué modelos tienen cobertura.
+
+🎯 ESTÁNDARES DE RESPUESTA EJECUTIVA:
+
+**FORMATO Y TONO:**
+- Claridad ejecutiva: cada párrafo transmite una idea concreta con datos
+- Estructura lógica: contexto → análisis → conclusión → recomendación (si aplica)
+- Datos siempre citados: "Según ChatGPT (RIX 72)...", "Perplexity reporta..."
+- Sin vaguedades: evitar "aproximadamente", "más o menos", "podría ser"
+- Tablas cuando aporten valor comparativo
+- Uso moderado de emojis: 📊 📈 📉 ⚠️ 🏆 💡
+
+**NIVEL DE PROFUNDIDAD:**
+- Para preguntas simples: respuesta directa con datos clave
+- Para preguntas de análisis: contexto sectorial, comparativas, tendencias
+- Para preguntas estratégicas: implicaciones y consideraciones de negocio
+
+**CUANDO CITES FUENTES DE IA:**
+- Especifica qué IA dijo qué: "ChatGPT menciona que...", "Según el análisis de Gemini..."
+- Si hay divergencias entre modelos, destácalas como insight valioso
+- Las diferencias entre IAs son información de mercado, no errores
+
+💡 VALOR AÑADIDO - BOLETINES PREMIUM:
+Para análisis más profundos, sugiere al usuario que puede solicitar un "boletín ejecutivo" que incluye:
+- Análisis completo de las 8 métricas con explicación de drivers
+- Comparativa con 5-8 competidores del sector
 - Tendencia histórica de 4 semanas
-- Contexto sectorial completo
+- Contexto sectorial y posicionamiento competitivo
 
-⚠️ REGLAS CRÍTICAS:
-- PRIORIDAD 1: Siempre usar "DATOS DE EMPRESAS MENCIONADAS" cuando el usuario pregunte por una empresa específica
-- COMPORTAMIENTO DETERMINISTA: Por defecto, usa siempre el ranking individual
-- SOLO usa información que aparezca explícitamente en el contexto
-- NUNCA inventes datos
-- NUNCA digas "no hay datos" si los datos están en el contexto
-- Interpreta la ausencia de datos SOLO si la empresa NO aparece en ninguna parte del contexto
-
-💬 ESTILO DE RESPUESTA:
-- Directo y profesional
-- Usa emojis moderadamente (📊 📈 📉 ⚠️)
-- Formato en markdown cuando ayude
-- Respuestas concisas pero completas`;
+⚠️ PROHIBICIONES ABSOLUTAS:
+- NUNCA inventes datos o empresas
+- NUNCA afirmes certezas sobre información no disponible
+- NUNCA uses lenguaje coloquial o informal
+- NUNCA respondas con "no tengo información" si los datos están en el contexto
+- NUNCA ignores las fuentes cualitativas (textos brutos de IA) cuando sean relevantes`;
 
   const userPrompt = `Pregunta del usuario: "${question}"
 
