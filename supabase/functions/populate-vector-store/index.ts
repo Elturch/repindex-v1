@@ -7,6 +7,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Maximum characters to include from each raw response
+const MAX_RAW_RESPONSE_LENGTH = 8000;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -23,9 +26,10 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY not configured');
     }
 
-    // Parse request body for clean option
+    // Parse request body for options
     const body = await req.json().catch(() => ({}));
     const shouldClean = body.clean === true;
+    const includeRawResponses = body.includeRawResponses !== false; // Default: true
 
     // Clean existing documents if requested
     if (shouldClean) {
@@ -33,7 +37,7 @@ serve(async (req) => {
       const { error: deleteError } = await supabaseClient
         .from('documents')
         .delete()
-        .neq('id', 0); // Delete all
+        .neq('id', 0);
       
       if (deleteError) {
         console.error('Error cleaning documents:', deleteError);
@@ -42,7 +46,7 @@ serve(async (req) => {
       }
     }
 
-    // Get all rix_runs with resumen
+    // Get all rix_runs - include raw AI responses for rich text search
     const { data: rixRuns, error: rixError } = await supabaseClient
       .from('rix_runs')
       .select('*')
@@ -51,15 +55,15 @@ serve(async (req) => {
     if (rixError) throw rixError;
 
     console.log(`Processing ${rixRuns?.length || 0} rix_runs...`);
+    console.log(`Include raw AI responses: ${includeRawResponses}`);
 
-    // Get all issuers data to join manually
+    // Get all issuers data
     const { data: issuers, error: issuersError } = await supabaseClient
       .from('repindex_root_issuers')
       .select('ticker, issuer_name, sector_category, ibex_family_code');
 
     if (issuersError) throw issuersError;
 
-    // Create a map for quick lookup
     const issuersMap = new Map(
       issuers?.map(issuer => [issuer.ticker, issuer]) || []
     );
@@ -68,7 +72,7 @@ serve(async (req) => {
     let documentsSkipped = 0;
 
     for (const run of rixRuns || []) {
-      // Check if document already exists (skip if clean wasn't requested)
+      // Check if document already exists
       if (!shouldClean) {
         const { data: existing } = await supabaseClient
           .from('documents')
@@ -82,30 +86,35 @@ serve(async (req) => {
         }
       }
 
-      // Get issuer data from map
       const issuerData = issuersMap.get(run["05_ticker"]);
 
-      // Build content from resumen and puntos_clave
+      // Build RICH content including raw AI responses
       let content = `Empresa: ${run["03_target_name"] || "N/A"}\n`;
       content += `Ticker: ${run["05_ticker"] || "N/A"}\n`;
       content += `Modelo IA: ${run["02_model_name"] || "N/A"}\n`;
       content += `Período: ${run["06_period_from"]} - ${run["07_period_to"]}\n`;
-      content += `RIX Score: ${run["09_rix_score"] || "N/A"}\n\n`;
+      content += `RIX Score: ${run["09_rix_score"] || "N/A"}\n`;
       
+      if (issuerData) {
+        content += `Sector: ${issuerData.sector_category || "N/A"}\n`;
+        content += `Familia IBEX: ${issuerData.ibex_family_code || "N/A"}\n`;
+      }
+      content += `\n`;
+      
+      // Include summary
       if (run["10_resumen"]) {
-        content += `Resumen:\n${run["10_resumen"]}\n\n`;
+        content += `RESUMEN EJECUTIVO:\n${run["10_resumen"]}\n\n`;
       }
       
+      // Include key points
       if (run["11_puntos_clave"]) {
         try {
           let puntosClave: string[] = [];
           
           if (typeof run["11_puntos_clave"] === 'string') {
-            // Try to parse as JSON first
             try {
               puntosClave = JSON.parse(run["11_puntos_clave"]);
             } catch {
-              // If not JSON, split by comma and newline, or use as single item
               const text = run["11_puntos_clave"];
               if (text.includes(',')) {
                 puntosClave = text.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
@@ -120,18 +129,79 @@ serve(async (req) => {
           }
           
           if (puntosClave.length > 0) {
-            content += `Puntos Clave:\n`;
+            content += `PUNTOS CLAVE:\n`;
             puntosClave.forEach((punto: string, idx: number) => {
               content += `${idx + 1}. ${punto}\n`;
             });
+            content += `\n`;
           }
         } catch (e) {
           console.error('Error processing puntos_clave for run', run.id, ':', e);
-          // Continue without puntos_clave rather than failing
         }
       }
 
+      // Include explanation if available
+      if (run["22_explicacion"]) {
+        content += `EXPLICACIÓN DEL ANÁLISIS:\n${run["22_explicacion"]}\n\n`;
+      }
+
+      // =======================================================================
+      // NEW: Include RAW AI RESPONSES - This is where sources like Forbes appear!
+      // =======================================================================
+      if (includeRawResponses) {
+        // ChatGPT raw response
+        if (run["20_res_gpt_bruto"]) {
+          const gptText = run["20_res_gpt_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH);
+          content += `RESPUESTA COMPLETA CHATGPT:\n${gptText}\n\n`;
+        }
+
+        // Perplexity raw response (usually has most citations/sources)
+        if (run["21_res_perplex_bruto"]) {
+          const perplexText = run["21_res_perplex_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH);
+          content += `RESPUESTA COMPLETA PERPLEXITY:\n${perplexText}\n\n`;
+        }
+
+        // Gemini raw response
+        if (run["22_res_gemini_bruto"]) {
+          const geminiText = run["22_res_gemini_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH);
+          content += `RESPUESTA COMPLETA GEMINI:\n${geminiText}\n\n`;
+        }
+
+        // DeepSeek raw response
+        if (run["23_res_deepseek_bruto"]) {
+          const deepseekText = run["23_res_deepseek_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH);
+          content += `RESPUESTA COMPLETA DEEPSEEK:\n${deepseekText}\n\n`;
+        }
+      }
+
+      // Include detailed explanations per metric if available
+      if (run["25_explicaciones_detalladas"]) {
+        try {
+          const explicaciones = typeof run["25_explicaciones_detalladas"] === 'string'
+            ? JSON.parse(run["25_explicaciones_detalladas"])
+            : run["25_explicaciones_detalladas"];
+          
+          if (explicaciones && typeof explicaciones === 'object') {
+            content += `EXPLICACIONES POR MÉTRICA:\n`;
+            for (const [metric, explanation] of Object.entries(explicaciones)) {
+              if (explanation) {
+                content += `- ${metric}: ${explanation}\n`;
+              }
+            }
+            content += `\n`;
+          }
+        } catch (e) {
+          console.error('Error processing explicaciones_detalladas for run', run.id, ':', e);
+        }
+      }
+
+      // Log content size for monitoring
+      console.log(`Run ${run.id} (${run["03_target_name"]}): content size = ${content.length} chars`);
+
       // Generate embedding with OpenAI
+      // For very long content, we may need to truncate for embedding
+      const contentForEmbedding = content.slice(0, 32000); // OpenAI limit
+
       const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
         method: 'POST',
         headers: {
@@ -140,19 +210,20 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: 'text-embedding-3-small',
-          input: content,
+          input: contentForEmbedding,
         }),
       });
 
       if (!embeddingResponse.ok) {
-        console.error(`Failed to generate embedding for run ${run.id}`);
+        const errorText = await embeddingResponse.text();
+        console.error(`Failed to generate embedding for run ${run.id}:`, errorText);
         continue;
       }
 
       const embeddingData = await embeddingResponse.json();
       const embedding = embeddingData.data[0].embedding;
 
-      // Build metadata
+      // Build comprehensive metadata
       const metadata = {
         rix_run_id: run.id,
         company_name: run["03_target_name"],
@@ -163,6 +234,14 @@ serve(async (req) => {
         rix_score: run["09_rix_score"],
         sector_category: issuerData?.sector_category,
         ibex_family_code: issuerData?.ibex_family_code,
+        // Flag if raw responses were included
+        has_raw_responses: includeRawResponses && !!(
+          run["20_res_gpt_bruto"] || 
+          run["21_res_perplex_bruto"] || 
+          run["22_res_gemini_bruto"] || 
+          run["23_res_deepseek_bruto"]
+        ),
+        content_length: content.length,
         scores: {
           nvm: run["23_nvm_score"],
           drm: run["26_drm_score"],
@@ -188,7 +267,7 @@ serve(async (req) => {
         temporal_alignment: run["15_temporal_alignment"],
       };
 
-      // Insert document
+      // Insert document with full content
       const { error: insertError } = await supabaseClient
         .from('documents')
         .insert({
@@ -202,7 +281,15 @@ serve(async (req) => {
       } else {
         documentsCreated++;
       }
+
+      // Add small delay to avoid rate limits
+      if (documentsCreated % 50 === 0) {
+        console.log(`Progress: ${documentsCreated} documents created...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
+
+    console.log(`COMPLETED: ${documentsCreated} created, ${documentsSkipped} skipped`);
 
     return new Response(
       JSON.stringify({
@@ -210,6 +297,7 @@ serve(async (req) => {
         total_runs: rixRuns?.length || 0,
         documents_created: documentsCreated,
         documents_skipped: documentsSkipped,
+        include_raw_responses: includeRawResponses,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
