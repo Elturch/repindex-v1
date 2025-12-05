@@ -436,7 +436,7 @@ serve(async (req) => {
 });
 
 // =============================================================================
-// ENRICH REQUEST HANDLER - Role-based response adaptation
+// ENRICH REQUEST HANDLER - Role-based EXPANDED executive reports
 // =============================================================================
 async function handleEnrichRequest(
   roleId: string,
@@ -447,33 +447,88 @@ async function handleEnrichRequest(
   sessionId: string | undefined,
   logPrefix: string
 ) {
-  console.log(`${logPrefix} Enriching response for role: ${roleName}`);
+  console.log(`${logPrefix} Generating EXPANDED executive report for role: ${roleName}`);
 
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openAIApiKey) {
     throw new Error('OpenAI API key not configured');
   }
 
-  const systemPrompt = `Eres el Agente Rix, un consultor senior de reputación corporativa que adapta sus respuestas según el rol profesional del usuario.
+  const systemPrompt = `Eres el Agente Rix, un consultor senior de reputación corporativa creando un **INFORME EJECUTIVO COMPLETO** adaptado para un **${roleName}**.
 
-El usuario ha solicitado que adaptes una respuesta existente para la perspectiva de un **${roleName}**.
+## IMPORTANTE: ESTO ES UNA EXPANSIÓN, NO UN RESUMEN
+
+La respuesta original contiene datos que DEBES mantener y EXPANDIR significativamente. Tu trabajo es:
+
+1. **MANTENER todos los datos** de la respuesta original (cifras, empresas, métricas, comparativas)
+2. **EXPANDIR el análisis** con profundidad propia de un informe ejecutivo de consultoría premium
+3. **AÑADIR contexto específico** para el rol de ${roleName}
+4. **INCLUIR secciones adicionales** relevantes para este perfil profesional
+
+## ESTRUCTURA OBLIGATORIA DEL INFORME (mínimo 2500 palabras):
+
+---
+
+# 📋 INFORME EJECUTIVO PARA ${roleName.toUpperCase()}
+## Análisis de Reputación Corporativa - RepIndex
+
+---
+
+### 1. RESUMEN EJECUTIVO (2-3 párrafos)
+- Conclusión principal en negrita
+- Hallazgo más relevante para este rol
+- Acción prioritaria recomendada
+
+### 2. CONTEXTO Y DATOS CLAVE
+[Incluir TODOS los datos de la respuesta original organizados en tablas]
+
+### 3. ANÁLISIS DESDE LA PERSPECTIVA DE ${roleName.toUpperCase()}
 
 ${rolePrompt}
 
-## REGLAS IMPORTANTES:
-1. **NO INVENTES DATOS NUEVOS**: Usa SOLO la información de la respuesta original
-2. **MANTÉN LA PRECISIÓN**: Los datos, cifras y empresas deben ser los mismos
-3. **ADAPTA EL ENFOQUE**: Cambia el ángulo, énfasis y formato según el rol
-4. **AÑADE VALOR**: Destaca insights específicos para ese rol profesional
-5. **FORMATO CLARO**: Usa Markdown (negritas, listas, tablas) de forma apropiada
+Desarrolla CADA punto del prompt del rol con:
+- Mínimo 3-4 párrafos por punto
+- Datos concretos de la respuesta original
+- Implicaciones específicas para el rol
+- Recomendaciones accionables
 
-## RESPUESTA ORIGINAL A ADAPTAR:
+### 4. COMPARATIVA Y BENCHMARKING
+[Tabla comparativa con competidores si están disponibles]
+[Análisis de posición relativa]
+
+### 5. RIESGOS Y OPORTUNIDADES PARA ${roleName.toUpperCase()}
+- ⚠️ Riesgos identificados (mínimo 3, con detalle)
+- 💡 Oportunidades detectadas (mínimo 3, con detalle)
+
+### 6. PLAN DE ACCIÓN RECOMENDADO
+| Prioridad | Acción | Responsable | Plazo | Impacto Esperado |
+|-----------|--------|-------------|-------|------------------|
+[Mínimo 5 acciones concretas]
+
+### 7. CONCLUSIONES Y SIGUIENTES PASOS
+[3-4 párrafos de cierre con visión estratégica]
+
+---
+
+## DATOS ORIGINALES A EXPANDIR:
+
 ${originalResponse}
 
-## PREGUNTA ORIGINAL DEL USUARIO:
+## PREGUNTA ORIGINAL:
 ${originalQuestion || "(No disponible)"}
 
-Por favor, reformula la respuesta anterior aplicando la perspectiva del rol solicitado.`;
+---
+
+## REGLAS CRÍTICAS:
+
+1. **MÍNIMO 2500 PALABRAS** - Este es un informe ejecutivo premium
+2. **NO RESUMIR** - Expandir y profundizar en CADA punto
+3. **USAR TODOS LOS DATOS** - No omitir cifras ni empresas mencionadas
+4. **TABLAS Y FORMATO** - Usar Markdown: tablas, negritas, listas, quotes
+5. **PERSPECTIVA DEL ROL** - Cada sección debe reflejar las preocupaciones de ${roleName}
+6. **VALOR CONSULTIVO** - Como si fuera un entregable de McKinsey o BCG
+7. **RECOMENDACIONES CONCRETAS** - No generalidades, acciones específicas
+8. **NO INVENTAR DATOS** - Solo expandir análisis de datos existentes`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -483,13 +538,12 @@ Por favor, reformula la respuesta anterior aplicando la perspectiva del rol soli
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'o3',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Adapta la respuesta para el rol de ${roleName}. Mantén todos los datos pero cambia el enfoque y formato.` }
+          { role: 'user', content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para el rol de ${roleName}. Este debe ser un documento profesional de consultoría premium con mínimo 2500 palabras, expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE.` }
         ],
-        max_tokens: 4000,
-        temperature: 0.7,
+        max_completion_tokens: 16000,
       }),
     });
 
@@ -502,7 +556,7 @@ Por favor, reformula la respuesta anterior aplicando la perspectiva del rol soli
     const data = await response.json();
     const enrichedAnswer = data.choices[0].message.content;
 
-    console.log(`${logPrefix} Enriched response generated, length: ${enrichedAnswer.length}`);
+    console.log(`${logPrefix} EXPANDED executive report generated, length: ${enrichedAnswer.length} chars`);
 
     // Generate role-specific follow-up questions
     const suggestedQuestions = await generateRoleSpecificQuestions(
