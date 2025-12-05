@@ -49,7 +49,7 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     ]
   },
   '/chat': {
-    name: 'Chat Inteligente',
+    name: 'Agente Rix',
     description: 'Análisis conversacional de datos',
     suggestions: [
       '¿Cuáles son las 5 empresas con mejor RIX Score?',

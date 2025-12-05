@@ -46,7 +46,7 @@ export default function ChatIntelligence() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold tracking-tight">
-            Chat Inteligente RepIndex
+            Agente Rix
           </h1>
           <p className="text-sm text-muted-foreground">
             Pregunta sobre empresas, tendencias, comparaciones y análisis de reputación
@@ -77,7 +77,7 @@ export default function ChatIntelligence() {
                   Conversación
                 </CardTitle>
                 <CardDescription>
-                  Análisis inteligente basado en datos de RepIndex
+                  Tu asistente inteligente para analizar datos de RepIndex
                 </CardDescription>
               </div>
               
@@ -129,7 +129,7 @@ export default function ChatIntelligence() {
               <ChatInput
                 onSend={sendMessage}
                 isLoading={isLoading}
-                placeholder="Escribe tu pregunta sobre empresas, rankings o tendencias..."
+                placeholder="Pregunta al Agente Rix sobre empresas, rankings o tendencias..."
               />
             </div>
           </CardContent>

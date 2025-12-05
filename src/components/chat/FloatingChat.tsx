@@ -155,7 +155,7 @@ export function FloatingChat() {
                         >
                           {hasDynamicContext 
                             ? `Pregunta sobre ${getContextLabel()}`
-                            : "Pregunta a RepIndex"
+                            : "Pregunta al Agente Rix"
                           }
                         </motion.span>
                       )}
@@ -167,7 +167,7 @@ export function FloatingChat() {
                     <p className="text-xs">
                       {hasDynamicContext 
                         ? `✨ Tengo contexto sobre ${getContextLabel()}`
-                        : "Chat con RepIndex"
+                        : "Agente Rix"
                       }
                     </p>
                   </TooltipContent>
@@ -200,7 +200,7 @@ export function FloatingChat() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <MessageCircle className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-base">Chat RepIndex</CardTitle>
+                    <CardTitle className="text-base">Agente Rix</CardTitle>
                   </div>
                   <div className="flex items-center gap-1">
                     <Button
@@ -271,7 +271,7 @@ export function FloatingChat() {
                       <ChatInput
                         onSend={sendMessage}
                         isLoading={isLoading}
-                        placeholder="Pregunta sobre RepIndex..."
+                        placeholder="Pregunta al Agente Rix..."
                         compact={true}
                       />
                     </div>
@@ -280,10 +280,10 @@ export function FloatingChat() {
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Lock className="h-12 w-12 text-muted-foreground/50 mb-4" />
                     <p className="text-sm font-medium text-foreground mb-2">
-                      Este chat es solo para usuarios registrados
+                      El Agente Rix es solo para usuarios registrados
                     </p>
                     <p className="text-xs text-muted-foreground mb-4">
-                      Accede a tu cuenta para usar el asistente de RepIndex
+                      Accede a tu cuenta para usar el Agente Rix
                     </p>
                     <Button 
                       onClick={() => {
