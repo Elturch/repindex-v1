@@ -102,13 +102,47 @@ const Admin: React.FC = () => {
   const [vectorStoreRunning, setVectorStoreRunning] = useState(false);
   const [vectorStoreLogs, setVectorStoreLogs] = useState<string[]>([]);
   const [vectorStoreProgress, setVectorStoreProgress] = useState(0);
+  const [vectorStoreTotalRuns, setVectorStoreTotalRuns] = useState(0);
+  const [vectorStoreDocsCreated, setVectorStoreDocsCreated] = useState(0);
   const [vectorStoreResult, setVectorStoreResult] = useState<{
     success: boolean;
-    total_runs?: number;
-    documents_created?: number;
-    documents_skipped?: number;
+    message?: string;
     error?: string;
   } | null>(null);
+
+  // Polling for real-time progress
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+    
+    if (vectorStoreRunning && vectorStoreTotalRuns > 0) {
+      pollInterval = setInterval(async () => {
+        try {
+          const { count, error } = await supabase
+            .from('documents')
+            .select('*', { count: 'exact', head: true });
+          
+          if (!error && count !== null) {
+            setVectorStoreDocsCreated(count);
+            const progress = Math.min((count / vectorStoreTotalRuns) * 100, 100);
+            setVectorStoreProgress(progress);
+            
+            // Check if completed
+            if (count >= vectorStoreTotalRuns * 0.95) { // 95% threshold
+              setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ Proceso completado: ${count} documentos`]);
+              setVectorStoreResult({ success: true, message: `${count} documentos creados` });
+              setVectorStoreRunning(false);
+            }
+          }
+        } catch (e) {
+          console.error('Error polling documents:', e);
+        }
+      }, 3000); // Poll every 3 seconds
+    }
+    
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [vectorStoreRunning, vectorStoreTotalRuns]);
 
   // Fetch data
   useEffect(() => {
@@ -155,55 +189,52 @@ const Admin: React.FC = () => {
     setVectorStoreRunning(true);
     setVectorStoreLogs([]);
     setVectorStoreProgress(0);
+    setVectorStoreDocsCreated(0);
     setVectorStoreResult(null);
     
-    const startTime = Date.now();
     setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Iniciando repoblado del vector store...`]);
     setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Modo: ${clean ? 'Limpieza completa + regeneración' : 'Solo nuevos documentos'}`]);
     
     try {
-      // Simular progreso mientras esperamos la respuesta
-      const progressInterval = setInterval(() => {
-        setVectorStoreProgress(prev => Math.min(prev + Math.random() * 5, 95));
-      }, 2000);
+      // Get total rix_runs count for progress calculation
+      const { count: totalRuns } = await supabase
+        .from('rix_runs')
+        .select('*', { count: 'exact', head: true })
+        .not('10_resumen', 'is', null);
       
-      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Llamando a populate-vector-store...`]);
+      setVectorStoreTotalRuns(totalRuns || 0);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Total registros a procesar: ${totalRuns}`]);
       
+      // Call the edge function (returns immediately, processes in background)
       const { data, error } = await supabase.functions.invoke('populate-vector-store', {
         body: { clean, includeRawResponses: true },
       });
       
-      clearInterval(progressInterval);
+      if (error) throw error;
       
-      if (error) {
-        throw error;
-      }
-      
-      setVectorStoreProgress(100);
-      setVectorStoreResult(data);
-      
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ✅ Completado en ${elapsed}s`]);
-      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Total runs procesados: ${data.total_runs}`]);
-      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Documentos creados: ${data.documents_created}`]);
-      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Documentos omitidos: ${data.documents_skipped}`]);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏳ Proceso iniciado en segundo plano`]);
+      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] El progreso se actualiza automáticamente cada 3 segundos...`]);
       
       toast({
-        title: 'Vector Store actualizado',
-        description: `${data.documents_created} documentos creados`,
+        title: 'Vector Store iniciado',
+        description: 'El proceso se ejecuta en segundo plano. Puedes ver el progreso aquí.',
       });
     } catch (error: any) {
       console.error('Error running vector store:', error);
       setVectorStoreResult({ success: false, error: error.message });
       setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ❌ Error: ${error.message}`]);
+      setVectorStoreRunning(false);
       toast({
         title: 'Error',
         description: error.message,
         variant: 'destructive',
       });
-    } finally {
-      setVectorStoreRunning(false);
     }
+  };
+
+  const handleStopPolling = () => {
+    setVectorStoreRunning(false);
+    setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Polling detenido manualmente`]);
   };
 
   const resetCompanyForm = () => {
@@ -1042,20 +1073,26 @@ const Admin: React.FC = () => {
                     </Button>
                     
                     {vectorStoreRunning && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Clock className="h-4 w-4 animate-pulse" />
-                        Este proceso puede tardar varios minutos...
-                      </div>
+                      <Button variant="outline" onClick={handleStopPolling} size="sm">
+                        Ocultar progreso
+                      </Button>
                     )}
                   </div>
 
-                  {vectorStoreRunning && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Progreso</span>
-                        <span>{Math.round(vectorStoreProgress)}%</span>
+                  {vectorStoreRunning && vectorStoreTotalRuns > 0 && (
+                    <div className="space-y-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 animate-pulse text-blue-600" />
+                          <span className="font-medium text-blue-700 dark:text-blue-300">Procesando en segundo plano</span>
+                        </div>
+                        <span className="text-2xl font-bold text-blue-600">{Math.round(vectorStoreProgress)}%</span>
                       </div>
-                      <Progress value={vectorStoreProgress} className="h-2" />
+                      <Progress value={vectorStoreProgress} className="h-3" />
+                      <div className="flex justify-between text-sm text-blue-600 dark:text-blue-400">
+                        <span>{vectorStoreDocsCreated.toLocaleString()} documentos creados</span>
+                        <span>de {vectorStoreTotalRuns.toLocaleString()} registros</span>
+                      </div>
                     </div>
                   )}
 
@@ -1072,18 +1109,14 @@ const Admin: React.FC = () => {
                         </span>
                       </div>
                       {vectorStoreResult.success && (
-                        <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <p className="text-muted-foreground">Total runs</p>
-                            <p className="text-lg font-semibold">{vectorStoreResult.total_runs}</p>
+                            <p className="text-muted-foreground">Total registros</p>
+                            <p className="text-lg font-semibold">{vectorStoreTotalRuns}</p>
                           </div>
                           <div>
-                            <p className="text-muted-foreground">Creados</p>
-                            <p className="text-lg font-semibold text-green-600">{vectorStoreResult.documents_created}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">Omitidos</p>
-                            <p className="text-lg font-semibold text-yellow-600">{vectorStoreResult.documents_skipped}</p>
+                            <p className="text-muted-foreground">Documentos creados</p>
+                            <p className="text-lg font-semibold text-green-600">{vectorStoreDocsCreated}</p>
                           </div>
                         </div>
                       )}
