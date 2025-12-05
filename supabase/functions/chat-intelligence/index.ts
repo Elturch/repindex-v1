@@ -874,7 +874,7 @@ async function handleStandardChat(
           "46_cxm_categoria"
         `)
         .or(`"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
-        .limit(100); // Aumentado de 50 a 100 resultados por keyword
+        .limit(500); // SIN LÍMITE PRÁCTICO - capturar todo el contexto relevante
       
       if (textError) {
         console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
@@ -977,7 +977,7 @@ async function handleStandardChat(
   // Vector search con mayor cobertura para contexto cualitativo
   const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
     query_embedding: embedding,
-    match_count: 30, // Aumentado de 15 a 30 documentos
+    match_count: 50, // Máxima cobertura de documentos vectoriales
     filter: {}
   });
 
@@ -1005,7 +1005,7 @@ async function handleStandardChat(
       batch_execution_date
     `)
     .order('batch_execution_date', { ascending: false })
-    .limit(2500); // Aumentado para cobertura completa de empresas y modelos
+    .limit(5000); // Cobertura completa: 153 empresas × 4 modelos × 8 semanas
 
   if (rixError) {
     console.error(`${logPrefix} Error loading RIX data:`, rixError);
