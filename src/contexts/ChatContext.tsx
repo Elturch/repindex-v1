@@ -253,6 +253,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
         }
       ]);
 
+      // Save analytics
+      await supabase.from('role_enrichment_analytics').insert({
+        session_id: sessionId,
+        role_id: role.id,
+        role_name: `${role.emoji} ${role.name}`,
+        original_question: userQuestion,
+      });
+
       toast({
         title: `Respuesta adaptada`,
         description: `Perspectiva de ${role.emoji} ${role.name}`,
