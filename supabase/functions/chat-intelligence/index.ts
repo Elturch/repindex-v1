@@ -811,7 +811,79 @@ async function handleStandardChat(
   console.log(`${logPrefix} Detected companies in question: ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'none'}`);
 
   // =============================================================================
-  // PASO 1: GENERAR EMBEDDING DE LA PREGUNTA (para vector search)
+  // PASO 0.5: DETECTAR SI ES UNA BÚSQUEDA DE FUENTES/MEDIOS
+  // =============================================================================
+  const mediaSearchPatterns = [
+    /(?:forbes|reuters|bloomberg|expansi[oó]n|cinco\s*d[ií]as|el\s*pa[ií]s|el\s*mundo|el\s*economista|financial\s*times|wsj|wall\s*street)/i,
+    /(?:medios?|fuentes?|prensa|peri[oó]dicos?|citad[oa]s?|mencion|aparece|referencia)/i,
+  ];
+  
+  const isMediaSearch = mediaSearchPatterns.some(p => p.test(question));
+  let searchTerms: string[] = [];
+  
+  if (isMediaSearch) {
+    // Extract specific media names from the question
+    const mediaNames = question.match(/forbes|reuters|bloomberg|expansi[oó]n|cinco\s*d[ií]as|el\s*pa[ií]s|el\s*mundo|el\s*economista|financial\s*times|wsj|wall\s*street|abc|la\s*vanguardia|el\s*confidencial|invertia|bolsamania/gi);
+    if (mediaNames) {
+      searchTerms = [...new Set(mediaNames.map(m => m.toLowerCase()))];
+    }
+    console.log(`${logPrefix} MEDIA SEARCH DETECTED - Terms: ${searchTerms.join(', ') || 'general media search'}`);
+  }
+
+  // =============================================================================
+  // PASO 1: BÚSQUEDA DIRECTA EN TEXTOS BRUTOS (si es búsqueda de fuentes)
+  // =============================================================================
+  let rawTextSearchResults: any[] = [];
+  
+  if (isMediaSearch && searchTerms.length > 0) {
+    console.log(`${logPrefix} Performing FULL-TEXT search across ALL raw AI responses...`);
+    
+    // Search in raw text fields using ILIKE for each search term
+    for (const term of searchTerms) {
+      const searchPattern = `%${term}%`;
+      
+      const { data: textResults, error: textError } = await supabaseClient
+        .from('rix_runs')
+        .select(`
+          "03_target_name",
+          "05_ticker",
+          "02_model_name",
+          "06_period_from",
+          "07_period_to",
+          "09_rix_score",
+          "20_res_gpt_bruto",
+          "21_res_perplex_bruto",
+          "22_res_gemini_bruto",
+          "23_res_deepseek_bruto",
+          "22_explicacion"
+        `)
+        .or(`"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
+        .limit(100);
+      
+      if (textError) {
+        console.error(`${logPrefix} Error in text search for "${term}":`, textError);
+      } else {
+        console.log(`${logPrefix} Found ${textResults?.length || 0} records mentioning "${term}"`);
+        if (textResults) {
+          rawTextSearchResults.push(...textResults.map(r => ({ ...r, searchTerm: term })));
+        }
+      }
+    }
+    
+    // Deduplicate by company+model
+    const seen = new Set();
+    rawTextSearchResults = rawTextSearchResults.filter(r => {
+      const key = `${r["03_target_name"]}-${r["02_model_name"]}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    
+    console.log(`${logPrefix} Total unique records with media mentions: ${rawTextSearchResults.length}`);
+  }
+
+  // =============================================================================
+  // PASO 2: GENERAR EMBEDDING DE LA PREGUNTA (para vector search)
   // =============================================================================
   console.log(`${logPrefix} Generating embedding for question...`);
   const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
@@ -834,19 +906,19 @@ async function handleStandardChat(
   const embedding = embeddingData.data[0].embedding;
 
   // =============================================================================
-  // PASO 2: BÚSQUEDA VECTORIAL (para enriquecimiento cualitativo)
+  // PASO 3: BÚSQUEDA VECTORIAL (para enriquecimiento cualitativo)
   // =============================================================================
   console.log(`${logPrefix} Performing vector search for qualitative enrichment...`);
   const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
     query_embedding: embedding,
-    match_count: 5,
+    match_count: 10, // Increased from 5
     filter: {}
   });
 
   console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
 
   // =============================================================================
-  // PASO 3: CARGAR DATOS ESTRUCTURADOS COMPLETOS (últimas 2 semanas)
+  // PASO 4: CARGAR DATOS ESTRUCTURADOS COMPLETOS (últimas 2 semanas)
   // =============================================================================
   console.log(`${logPrefix} Loading complete RIX data (last 2 weeks)...`);
   
@@ -877,13 +949,69 @@ async function handleStandardChat(
   console.log(`${logPrefix} Total RIX records loaded: ${allRixData?.length || 0}`);
 
   // =============================================================================
-  // PASO 4: CONSTRUIR CONTEXTO ESTRUCTURADO COMPLETO
+  // PASO 5: CONSTRUIR CONTEXTO ESTRUCTURADO COMPLETO
   // =============================================================================
   let context = '';
 
-  // 4.1 Añadir documentos vectoriales (enriquecimiento cualitativo)
+  // 5.0 AÑADIR RESULTADOS DE BÚSQUEDA DE MEDIOS (PRIORIDAD MÁXIMA)
+  if (rawTextSearchResults.length > 0) {
+    context += `🔍 ======================================================================\n`;
+    context += `🔍 RESULTADOS DE BÚSQUEDA EN TEXTOS ORIGINALES DE IA\n`;
+    context += `🔍 Se encontraron ${rawTextSearchResults.length} registros con las fuentes buscadas\n`;
+    context += `🔍 ======================================================================\n\n`;
+    
+    // Group by search term
+    const byTerm = new Map<string, any[]>();
+    rawTextSearchResults.forEach(r => {
+      const term = r.searchTerm || 'unknown';
+      if (!byTerm.has(term)) byTerm.set(term, []);
+      byTerm.get(term)!.push(r);
+    });
+    
+    for (const [term, results] of byTerm) {
+      context += `## 📰 Menciones de "${term.toUpperCase()}" (${results.length} registros):\n\n`;
+      context += `| Empresa | Ticker | Modelo IA | Período | RIX |\n`;
+      context += `|---------|--------|-----------|---------|-----|\n`;
+      
+      results.slice(0, 30).forEach(r => {
+        context += `| ${r["03_target_name"]} | ${r["05_ticker"]} | ${r["02_model_name"]} | ${r["06_period_from"]} a ${r["07_period_to"]} | ${r["09_rix_score"]} |\n`;
+      });
+      
+      // Include some text excerpts showing the mention
+      context += `\n### Extractos donde aparece "${term}":\n`;
+      results.slice(0, 5).forEach((r, idx) => {
+        // Find which field contains the mention
+        const fields = [
+          { name: 'ChatGPT', value: r["20_res_gpt_bruto"] },
+          { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
+          { name: 'Gemini', value: r["22_res_gemini_bruto"] },
+          { name: 'DeepSeek', value: r["23_res_deepseek_bruto"] },
+          { name: 'Explicación', value: r["22_explicacion"] },
+        ];
+        
+        for (const field of fields) {
+          if (field.value && field.value.toLowerCase().includes(term.toLowerCase())) {
+            // Extract snippet around the mention
+            const lowerText = field.value.toLowerCase();
+            const pos = lowerText.indexOf(term.toLowerCase());
+            const start = Math.max(0, pos - 100);
+            const end = Math.min(field.value.length, pos + term.length + 200);
+            const snippet = field.value.substring(start, end);
+            
+            context += `\n**${idx + 1}. ${r["03_target_name"]} (${field.name}):**\n`;
+            context += `> "...${snippet}..."\n`;
+            break; // Only show first matching field per record
+          }
+        }
+      });
+      context += '\n';
+    }
+    context += '\n';
+  }
+
+  // 5.1 Añadir documentos vectoriales (enriquecimiento cualitativo)
   if (vectorDocs && vectorDocs.length > 0) {
-    context += `📚 DOCUMENTOS RELACIONADOS (contexto cualitativo):\n\n`;
+    context += `📚 DOCUMENTOS RELACIONADOS (contexto cualitativo del vector store):\n\n`;
     vectorDocs.forEach((doc: any, idx: number) => {
       const metadata = doc.metadata || {};
       context += `[${idx + 1}] ${metadata.company_name || 'Sin empresa'} - ${metadata.week || 'Sin fecha'}\n`;
