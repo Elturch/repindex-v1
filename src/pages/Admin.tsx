@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -105,6 +105,7 @@ const Admin: React.FC = () => {
   const [vectorStoreDocsCreated, setVectorStoreDocsCreated] = useState(0);
   const [vectorStoreRemaining, setVectorStoreRemaining] = useState(0);
   const [vectorStoreAutoRunning, setVectorStoreAutoRunning] = useState(false);
+  const autoRunningRef = useRef(false);
   const [vectorStoreResult, setVectorStoreResult] = useState<{
     success: boolean;
     complete?: boolean;
@@ -177,6 +178,7 @@ const Admin: React.FC = () => {
   const handleRunVectorStore = async () => {
     setVectorStoreRunning(true);
     setVectorStoreAutoRunning(true);
+    autoRunningRef.current = true;
     setVectorStoreResult(null);
     
     const addLog = (msg: string) => {
@@ -188,7 +190,7 @@ const Admin: React.FC = () => {
     let continueProcessing = true;
     let batchNumber = 0;
     
-    while (continueProcessing && vectorStoreAutoRunning) {
+    while (continueProcessing && autoRunningRef.current) {
       batchNumber++;
       addLog(`📦 Batch ${batchNumber}: procesando...`);
       
@@ -246,9 +248,11 @@ const Admin: React.FC = () => {
     
     setVectorStoreRunning(false);
     setVectorStoreAutoRunning(false);
+    autoRunningRef.current = false;
   };
 
   const handleStopVectorStore = () => {
+    autoRunningRef.current = false;
     setVectorStoreAutoRunning(false);
     setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏸️ Proceso pausado por usuario`]);
     toast({ title: 'Pausado', description: 'El proceso se detendrá tras el batch actual' });
