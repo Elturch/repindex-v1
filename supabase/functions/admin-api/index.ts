@@ -124,7 +124,21 @@ serve(async (req) => {
           }
         );
         
-        if (authError) throw authError;
+        if (authError) {
+          // Check if user already exists
+          if (authError.code === "email_exists") {
+            return new Response(
+              JSON.stringify({ 
+                error: "Este email ya está registrado. Usa 'Enviar Magic Link' para reenviar la invitación." 
+              }),
+              { 
+                status: 400, 
+                headers: { ...corsHeaders, "Content-Type": "application/json" } 
+              }
+            );
+          }
+          throw authError;
+        }
         
         // 2. Update the auto-created profile with additional data
         const { error: profileError } = await supabaseAdmin
@@ -173,18 +187,32 @@ serve(async (req) => {
         
         if (profileError) throw profileError;
 
-        // Use inviteUserByEmail to re-send invitation email
-        const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-          profile.email,
-          {
+        // Generate a magic link for existing user
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: "magiclink",
+          email: profile.email,
+          options: {
             redirectTo: data.redirect_to || undefined,
-          }
-        );
+          },
+        });
         
-        if (inviteError) throw inviteError;
+        if (linkError) throw linkError;
+
+        // Send the email using Supabase's built-in email (or we return the link for manual sending)
+        // Since generateLink doesn't send email automatically, we use inviteUserByEmail as fallback
+        // But for existing users, we can use signInWithOtp via admin
+        const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
+          email: profile.email,
+          options: {
+            emailRedirectTo: data.redirect_to || undefined,
+            shouldCreateUser: false, // Don't create new user, just send OTP
+          },
+        });
+        
+        if (otpError) throw otpError;
         
         return new Response(JSON.stringify({ 
-          message: "Invitación enviada a " + profile.email 
+          message: "Magic link enviado a " + profile.email 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
