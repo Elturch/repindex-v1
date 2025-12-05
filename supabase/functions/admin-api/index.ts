@@ -178,38 +178,72 @@ serve(async (req) => {
       }
 
       case "send_magic_link": {
-        // Get user email first
+        // Get user profile
         const { data: profile, error: profileError } = await supabaseAdmin
           .from("user_profiles")
-          .select("email")
+          .select("email, full_name")
           .eq("id", data.user_id)
           .single();
         
         if (profileError) throw profileError;
 
-        // Generate a magic link for existing user
+        // Generate a magic link using admin API (bypasses rate limits)
         const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
           type: "magiclink",
           email: profile.email,
           options: {
-            redirectTo: data.redirect_to || undefined,
+            redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
           },
         });
         
         if (linkError) throw linkError;
 
-        // Send the email using Supabase's built-in email (or we return the link for manual sending)
-        // Since generateLink doesn't send email automatically, we use inviteUserByEmail as fallback
-        // But for existing users, we can use signInWithOtp via admin
-        const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
-          email: profile.email,
-          options: {
-            emailRedirectTo: data.redirect_to || undefined,
-            shouldCreateUser: false, // Don't create new user, just send OTP
-          },
-        });
+        // Send email via Resend (bypasses Supabase 60-second rate limit)
+        const resendApiKey = Deno.env.get("RESEND_API_KEY");
         
-        if (otpError) throw otpError;
+        if (!resendApiKey) {
+          throw new Error("RESEND_API_KEY no configurada");
+        }
+
+        const emailResponse = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: "RepIndex <noreply@repindex.ai>",
+            to: profile.email,
+            subject: "Tu enlace de acceso a RepIndex",
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #1a1a2e;">Accede a RepIndex</h2>
+                <p>Hola${profile.full_name ? ` ${profile.full_name}` : ''},</p>
+                <p>Haz clic en el siguiente botón para acceder a tu cuenta de RepIndex:</p>
+                <p style="margin: 30px 0;">
+                  <a href="${linkData.properties.action_link}" 
+                     style="background-color: #3b82f6; color: white; padding: 12px 24px; 
+                            text-decoration: none; border-radius: 6px; display: inline-block;">
+                    Acceder a RepIndex
+                  </a>
+                </p>
+                <p style="color: #666; font-size: 14px;">
+                  Este enlace expira en 24 horas. Si no solicitaste este acceso, puedes ignorar este correo.
+                </p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+                <p style="color: #999; font-size: 12px;">
+                  RepIndex - Análisis de Reputación Corporativa
+                </p>
+              </div>
+            `,
+          }),
+        });
+
+        if (!emailResponse.ok) {
+          const errorData = await emailResponse.json();
+          console.error("Resend error:", errorData);
+          throw new Error(`Error enviando email: ${errorData.message || 'Unknown error'}`);
+        }
         
         return new Response(JSON.stringify({ 
           message: "Magic link enviado a " + profile.email 
