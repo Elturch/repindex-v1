@@ -59,7 +59,7 @@ export function HeroSection() {
               className="w-full sm:w-auto group whitespace-nowrap px-6"
             >
               <FaChartLine className="mr-2 flex-shrink-0 group-hover:scale-110 transition-transform" />
-              <span className="truncate sm:whitespace-nowrap">Ver el RepIndex del IBEX-35</span>
+              <span className="truncate sm:whitespace-nowrap">Ver el RepIndex</span>
             </Button>
             <Button
               size="lg"
