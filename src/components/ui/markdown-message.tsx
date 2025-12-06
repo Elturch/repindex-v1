@@ -17,130 +17,7 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const fileName = `repindex_respuesta_${timestamp}.html`;
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="es">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>RepIndex - Respuesta del Chat</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              max-width: 800px;
-              margin: 40px auto;
-              padding: 20px;
-              line-height: 1.6;
-              color: #333;
-            }
-            h1, h2, h3, h4, h5, h6 {
-              margin-top: 24px;
-              margin-bottom: 16px;
-              font-weight: 600;
-              line-height: 1.25;
-            }
-            h1 { font-size: 2em; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
-            h2 { font-size: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
-            h3 { font-size: 1.25em; }
-            p { margin-bottom: 16px; }
-            strong { font-weight: 600; }
-            em { font-style: italic; }
-            code {
-              background: #f6f8fa;
-              padding: 2px 6px;
-              border-radius: 3px;
-              font-family: 'Monaco', 'Courier New', monospace;
-              font-size: 0.9em;
-            }
-            pre {
-              background: #f6f8fa;
-              padding: 16px;
-              border-radius: 6px;
-              overflow-x: auto;
-              margin-bottom: 16px;
-            }
-            pre code {
-              background: none;
-              padding: 0;
-            }
-            table {
-              border-collapse: collapse;
-              width: 100%;
-              margin-bottom: 16px;
-              overflow: hidden;
-              border-radius: 6px;
-            }
-            thead {
-              background: #f6f8fa;
-            }
-            th, td {
-              border: 1px solid #dfe2e5;
-              padding: 12px;
-              text-align: left;
-            }
-            th {
-              font-weight: 600;
-            }
-            tr:nth-child(even) {
-              background: #f9fafb;
-            }
-            ul, ol {
-              margin-bottom: 16px;
-              padding-left: 2em;
-            }
-            li {
-              margin-bottom: 8px;
-            }
-            blockquote {
-              border-left: 4px solid #dfe2e5;
-              padding-left: 16px;
-              margin: 16px 0;
-              color: #6a737d;
-            }
-            a {
-              color: #0366d6;
-              text-decoration: none;
-            }
-            a:hover {
-              text-decoration: underline;
-            }
-            hr {
-              border: none;
-              border-top: 1px solid #eaecef;
-              margin: 24px 0;
-            }
-            .header {
-              background: #f6f8fa;
-              padding: 20px;
-              border-radius: 8px;
-              margin-bottom: 30px;
-              border-left: 4px solid #3b82f6;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px solid #eaecef;
-              text-align: center;
-              color: #6a737d;
-              font-size: 0.9em;
-            }
-            @media print {
-              body { margin: 20px; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h2 style="margin: 0 0 10px 0;">RepIndex.ai - Agente Rix</h2>
-            <p style="margin: 0; color: #6a737d;">Exportado el ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
-          </div>
-          ${convertMarkdownToHtml(content)}
-          <div class="footer">
-            <p>Este documento fue generado por RepIndex.ai</p>
-          </div>
-        </body>
-      </html>
-    `;
+    const htmlContent = generateExportHtml(content);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -161,23 +38,23 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          // Headers with visual hierarchy and decorative elements
+          // Headers with visual hierarchy
           h1: ({ children }) => (
             <h1 className="text-2xl md:text-3xl font-bold mt-8 mb-5 pb-3 border-b-2 border-primary/30 text-foreground flex items-center gap-3">
-              <span className="w-1.5 h-8 bg-gradient-to-b from-primary to-primary/50 rounded-full" />
-              {children}
+              <span className="w-1.5 h-8 bg-gradient-to-b from-primary to-primary/50 rounded-full flex-shrink-0" />
+              <span>{children}</span>
             </h1>
           ),
           h2: ({ children }) => (
             <h2 className="text-xl md:text-2xl font-bold mt-7 mb-4 pb-2 border-b border-border/50 text-foreground flex items-center gap-2">
-              <span className="w-1 h-6 bg-primary/70 rounded-full" />
-              {children}
+              <span className="w-1 h-6 bg-primary/70 rounded-full flex-shrink-0" />
+              <span>{children}</span>
             </h2>
           ),
           h3: ({ children }) => (
             <h3 className="text-lg md:text-xl font-semibold mt-6 mb-3 text-foreground flex items-center gap-2">
-              <span className="w-2 h-2 bg-primary/60 rounded-full" />
-              {children}
+              <span className="w-2 h-2 bg-primary/60 rounded-full flex-shrink-0" />
+              <span>{children}</span>
             </h3>
           ),
           h4: ({ children }) => (
@@ -196,7 +73,7 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
             </h6>
           ),
           
-          // Paragraphs with good readability
+          // Paragraphs
           p: ({ children }) => (
             <p className="mb-4 leading-relaxed text-foreground/90 text-[15px]">
               {children}
@@ -211,26 +88,26 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
             <em className="italic text-foreground/80">{children}</em>
           ),
           
-          // Lists with better styling
+          // Lists
           ul: ({ children }) => (
-            <ul className="mb-5 space-y-2 pl-1">
+            <ul className="mb-5 space-y-2 pl-0">
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="mb-5 space-y-2 pl-1 list-decimal list-inside marker:text-primary marker:font-semibold">
+            <ol className="mb-5 space-y-2 pl-0 counter-reset-item">
               {children}
             </ol>
           ),
-          li: ({ children }) => (
-            <li className="flex items-start gap-3 text-[15px] leading-relaxed text-foreground/90">
-              <span className="mt-2 w-1.5 h-1.5 bg-primary/70 rounded-full shrink-0" />
+          li: ({ children, ordered, index, ...props }: any) => (
+            <li className="flex items-start gap-3 text-[15px] leading-relaxed text-foreground/90 pl-0">
+              <span className="mt-2 w-1.5 h-1.5 bg-primary rounded-full flex-shrink-0" />
               <span className="flex-1">{children}</span>
             </li>
           ),
           
-          // Code blocks with syntax highlighting appearance
-          code: ({ inline, children, className, ...props }: any) => {
+          // Code
+          code: ({ inline, children, ...props }: any) => {
             if (inline) {
               return (
                 <code 
@@ -256,41 +133,41 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
             </pre>
           ),
           
-          // Professional tables
+          // Professional tables with excellent styling
           table: ({ children }) => (
-            <div className="my-6 overflow-x-auto rounded-xl border border-border/50 shadow-sm">
-              <table className="w-full border-collapse text-sm">
+            <div className="my-6 overflow-x-auto">
+              <table className="w-full border-collapse text-sm bg-card rounded-xl overflow-hidden shadow-lg border border-border/40">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-gradient-to-r from-muted/80 to-muted/50 border-b-2 border-border/30">
+            <thead className="bg-gradient-to-r from-primary/15 via-primary/10 to-primary/5">
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-border/30">
+            <tbody className="bg-card">
               {children}
             </tbody>
           ),
-          tr: ({ children }) => (
-            <tr className="hover:bg-muted/30 transition-colors">
+          tr: ({ children, isHeader, ...props }: any) => (
+            <tr className="border-b border-border/30 hover:bg-muted/40 transition-colors even:bg-muted/20">
               {children}
             </tr>
           ),
           th: ({ children }) => (
-            <th className="px-4 py-3 text-left font-bold text-foreground text-xs uppercase tracking-wider whitespace-nowrap">
+            <th className="px-4 py-3.5 text-left font-bold text-foreground text-xs uppercase tracking-wider border-b-2 border-primary/30 whitespace-nowrap">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-4 py-3 text-foreground/90 align-top">
+            <td className="px-4 py-3 text-foreground/90 border-b border-border/20">
               {children}
             </td>
           ),
           
-          // Blockquotes with visual impact
+          // Blockquotes
           blockquote: ({ children }) => (
             <blockquote className="my-5 pl-5 py-3 border-l-4 border-primary/50 bg-primary/5 rounded-r-lg italic text-foreground/80">
               {children}
@@ -342,11 +219,337 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
   );
 }
 
-// Comprehensive markdown to HTML converter for export
+// Generate complete HTML document for export with premium styling
+function generateExportHtml(markdown: string): string {
+  const now = format(new Date(), 'dd/MM/yyyy HH:mm');
+  
+  const styles = `
+    :root {
+      --primary: #3b82f6;
+      --primary-light: #60a5fa;
+      --primary-dark: #2563eb;
+      --text: #1f2937;
+      --text-light: #6b7280;
+      --bg: #ffffff;
+      --bg-alt: #f9fafb;
+      --border: #e5e7eb;
+      --shadow: rgba(0, 0, 0, 0.1);
+    }
+    
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px;
+      line-height: 1.7;
+      color: var(--text);
+      background: var(--bg);
+      font-size: 15px;
+    }
+    
+    /* Header */
+    .document-header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      padding: 28px 32px;
+      border-radius: 16px;
+      margin-bottom: 40px;
+      box-shadow: 0 10px 40px rgba(59, 130, 246, 0.2);
+    }
+    
+    .document-header h1 {
+      margin: 0 0 8px 0;
+      font-size: 1.75em;
+      font-weight: 700;
+      border: none;
+      padding: 0;
+    }
+    
+    .document-header .subtitle {
+      margin: 0;
+      opacity: 0.9;
+      font-size: 0.95em;
+    }
+    
+    /* Typography */
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 32px;
+      margin-bottom: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+      color: var(--text);
+    }
+    
+    h1 { 
+      font-size: 2em; 
+      border-bottom: 3px solid var(--primary);
+      padding-bottom: 12px;
+    }
+    
+    h2 { 
+      font-size: 1.6em; 
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 10px;
+    }
+    
+    h3 { 
+      font-size: 1.35em;
+      color: var(--primary-dark);
+    }
+    
+    h4 { font-size: 1.15em; }
+    h5 { font-size: 1em; text-transform: uppercase; letter-spacing: 0.5px; }
+    h6 { font-size: 0.9em; color: var(--text-light); text-transform: uppercase; }
+    
+    p {
+      margin: 0 0 16px 0;
+      text-align: justify;
+    }
+    
+    strong { 
+      font-weight: 700; 
+      color: var(--text);
+    }
+    
+    em { 
+      font-style: italic; 
+    }
+    
+    /* Code */
+    code {
+      background: #f1f5f9;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      font-size: 0.875em;
+      color: var(--primary-dark);
+    }
+    
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 20px;
+      border-radius: 12px;
+      overflow-x: auto;
+      margin: 20px 0;
+      box-shadow: 0 4px 12px var(--shadow);
+    }
+    
+    pre code {
+      background: none;
+      padding: 0;
+      color: inherit;
+      font-size: 0.9em;
+    }
+    
+    /* Tables - Premium Styling */
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 24px 0;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      border: 1px solid var(--border);
+    }
+    
+    thead {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    }
+    
+    thead tr {
+      border-bottom: 2px solid var(--primary);
+    }
+    
+    th {
+      padding: 14px 16px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 0.75em;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text);
+      border-bottom: 2px solid var(--primary);
+      white-space: nowrap;
+    }
+    
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text);
+      vertical-align: top;
+    }
+    
+    tbody tr:nth-child(even) {
+      background: #fafbfc;
+    }
+    
+    tbody tr:hover {
+      background: #f0f9ff;
+    }
+    
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+    
+    /* Lists */
+    ul, ol {
+      margin: 0 0 20px 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    
+    li {
+      margin-bottom: 10px;
+      padding-left: 28px;
+      position: relative;
+      line-height: 1.6;
+    }
+    
+    ul li::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 10px;
+      width: 6px;
+      height: 6px;
+      background: var(--primary);
+      border-radius: 50%;
+    }
+    
+    ol {
+      counter-reset: list-counter;
+    }
+    
+    ol li {
+      counter-increment: list-counter;
+    }
+    
+    ol li::before {
+      content: counter(list-counter) '.';
+      position: absolute;
+      left: 4px;
+      top: 0;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    
+    /* Blockquotes */
+    blockquote {
+      border-left: 4px solid var(--primary);
+      padding: 16px 24px;
+      margin: 24px 0;
+      background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+      border-radius: 0 12px 12px 0;
+      font-style: italic;
+      color: var(--text-light);
+    }
+    
+    blockquote p {
+      margin: 0;
+    }
+    
+    /* Links */
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+    
+    a:hover {
+      border-bottom-color: var(--primary);
+    }
+    
+    /* Horizontal Rule */
+    hr {
+      border: none;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+      margin: 32px 0;
+    }
+    
+    /* Footer */
+    .document-footer {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 2px solid var(--border);
+      text-align: center;
+      color: var(--text-light);
+      font-size: 0.9em;
+    }
+    
+    .document-footer a {
+      color: var(--primary);
+    }
+    
+    /* Print Styles */
+    @media print {
+      body {
+        padding: 20px;
+        max-width: 100%;
+      }
+      
+      .document-header {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      
+      table, thead, tbody, tr, th, td {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      
+      thead {
+        display: table-header-group;
+      }
+      
+      tr {
+        page-break-inside: avoid;
+      }
+    }
+  `;
+
+  const bodyContent = convertMarkdownToHtml(markdown);
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RepIndex - Respuesta del Agente Rix</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>${styles}</style>
+</head>
+<body>
+  <div class="document-header">
+    <h1>RepIndex.ai — Agente Rix</h1>
+    <p class="subtitle">Documento exportado el ${now}</p>
+  </div>
+  
+  <main class="content">
+    ${bodyContent}
+  </main>
+  
+  <div class="document-footer">
+    <p>Este documento fue generado automáticamente por <a href="https://repindex.ai">RepIndex.ai</a></p>
+  </div>
+</body>
+</html>`;
+}
+
+// Comprehensive markdown to HTML converter
 function convertMarkdownToHtml(markdown: string): string {
   let html = markdown;
   
-  // Process tables first (before other replacements can interfere)
+  // Process tables first
   html = processMarkdownTables(html);
   
   // Code blocks (before inline code)
@@ -357,7 +560,7 @@ function convertMarkdownToHtml(markdown: string): string {
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
   
-  // Headers (order matters - h6 to h1)
+  // Headers (h6 to h1)
   html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
   html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
   html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
@@ -371,11 +574,10 @@ function convertMarkdownToHtml(markdown: string): string {
   html = html.replace(/^___$/gim, '<hr>');
   
   // Blockquotes
-  html = html.replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>');
-  // Merge consecutive blockquotes
-  html = html.replace(/<\/blockquote>\n<blockquote>/g, '<br>');
+  html = html.replace(/^> (.*$)/gim, '<blockquote><p>$1</p></blockquote>');
+  html = html.replace(/<\/blockquote>\n<blockquote>/g, '');
   
-  // Bold and italic combinations
+  // Bold and italic
   html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<strong><em>$1</em></strong>');
   html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
   html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
@@ -386,61 +588,12 @@ function convertMarkdownToHtml(markdown: string): string {
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   
-  // Ordered lists
+  // Lists
   html = processOrderedLists(html);
-  
-  // Unordered lists
   html = processUnorderedLists(html);
   
-  // Paragraphs - split by double newlines and wrap non-special content
-  const lines = html.split('\n');
-  const processedLines: string[] = [];
-  let inParagraph = false;
-  let paragraphContent = '';
-  
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    
-    // Check if this is a block element
-    const isBlockElement = 
-      trimmedLine.startsWith('<h') ||
-      trimmedLine.startsWith('<table') ||
-      trimmedLine.startsWith('<ul') ||
-      trimmedLine.startsWith('<ol') ||
-      trimmedLine.startsWith('<pre') ||
-      trimmedLine.startsWith('<blockquote') ||
-      trimmedLine.startsWith('<hr') ||
-      trimmedLine.startsWith('</table') ||
-      trimmedLine.startsWith('</ul') ||
-      trimmedLine.startsWith('</ol') ||
-      trimmedLine.startsWith('</pre') ||
-      trimmedLine === '';
-    
-    if (isBlockElement) {
-      if (paragraphContent) {
-        processedLines.push(`<p>${paragraphContent}</p>`);
-        paragraphContent = '';
-      }
-      if (trimmedLine) {
-        processedLines.push(line);
-      }
-    } else {
-      if (paragraphContent) {
-        paragraphContent += ' ' + trimmedLine;
-      } else {
-        paragraphContent = trimmedLine;
-      }
-    }
-  }
-  
-  if (paragraphContent) {
-    processedLines.push(`<p>${paragraphContent}</p>`);
-  }
-  
-  html = processedLines.join('\n');
-  
-  // Clean up empty paragraphs
-  html = html.replace(/<p>\s*<\/p>/g, '');
+  // Wrap remaining text in paragraphs
+  html = wrapInParagraphs(html);
   
   return html;
 }
@@ -457,90 +610,76 @@ function escapeHtml(text: string): string {
 function processMarkdownTables(markdown: string): string {
   const lines = markdown.split('\n');
   const result: string[] = [];
-  let inTable = false;
   let tableRows: string[] = [];
+  let inTable = false;
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    
-    // Check if this is a table row (contains | and has content)
     const isTableRow = line.includes('|') && line.replace(/\|/g, '').trim().length > 0;
-    const isSeparatorRow = /^\|?[\s\-:|]+\|?$/.test(line) && line.includes('-');
+    const isSeparator = /^\|?[\s\-:|]+\|?$/.test(line) && line.includes('-');
     
-    if (isTableRow || isSeparatorRow) {
+    if (isTableRow || isSeparator) {
       if (!inTable) {
         inTable = true;
         tableRows = [];
       }
       tableRows.push(line);
     } else {
-      if (inTable) {
-        // Process accumulated table
-        result.push(convertTableToHtml(tableRows));
-        inTable = false;
+      if (inTable && tableRows.length > 0) {
+        result.push(buildTableHtml(tableRows));
         tableRows = [];
+        inTable = false;
       }
       result.push(lines[i]);
     }
   }
   
-  // Don't forget the last table if file ends with one
   if (inTable && tableRows.length > 0) {
-    result.push(convertTableToHtml(tableRows));
+    result.push(buildTableHtml(tableRows));
   }
   
   return result.join('\n');
 }
 
-function convertTableToHtml(rows: string[]): string {
-  if (rows.length < 2) return rows.join('\n'); // Not a valid table
+function buildTableHtml(rows: string[]): string {
+  if (rows.length < 2) return rows.join('\n');
   
-  // Find separator row index
-  let separatorIndex = -1;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i].trim();
-    if (/^\|?[\s\-:|]+\|?$/.test(row) && row.includes('-')) {
-      separatorIndex = i;
-      break;
-    }
-  }
+  // Find separator index
+  let separatorIdx = rows.findIndex(row => 
+    /^\|?[\s\-:|]+\|?$/.test(row.trim()) && row.includes('-')
+  );
   
-  // If no separator found, treat first row as header
-  if (separatorIndex === -1) {
-    separatorIndex = 1;
-  }
+  if (separatorIdx === -1) separatorIdx = 1;
+  
+  const headerRows = rows.slice(0, separatorIdx);
+  const bodyRows = rows.slice(separatorIdx + 1).filter(row => 
+    row.trim().length > 0 && !/^\|?[\s\-:|]+\|?$/.test(row.trim())
+  );
   
   let html = '<table>\n';
   
-  // Process header rows (everything before separator)
-  if (separatorIndex > 0) {
+  // Thead
+  if (headerRows.length > 0) {
     html += '<thead>\n';
-    for (let i = 0; i < separatorIndex; i++) {
-      const row = rows[i].trim();
-      const cells = parseTableRow(row);
-      html += '<tr>\n';
+    for (const row of headerRows) {
+      const cells = parseTableCells(row);
+      html += '<tr>';
       for (const cell of cells) {
-        html += `<th>${cell}</th>\n`;
+        html += `<th>${cell}</th>`;
       }
       html += '</tr>\n';
     }
     html += '</thead>\n';
   }
   
-  // Process body rows (everything after separator)
-  const bodyRows = rows.slice(separatorIndex + 1).filter(row => {
-    const trimmed = row.trim();
-    // Skip empty rows and separator-like rows
-    return trimmed.length > 0 && !/^\|?[\s\-:|]+\|?$/.test(trimmed);
-  });
-  
+  // Tbody
   if (bodyRows.length > 0) {
     html += '<tbody>\n';
     for (const row of bodyRows) {
-      const cells = parseTableRow(row.trim());
-      html += '<tr>\n';
+      const cells = parseTableCells(row);
+      html += '<tr>';
       for (const cell of cells) {
-        html += `<td>${cell}</td>\n`;
+        html += `<td>${cell}</td>`;
       }
       html += '</tr>\n';
     }
@@ -551,13 +690,12 @@ function convertTableToHtml(rows: string[]): string {
   return html;
 }
 
-function parseTableRow(row: string): string[] {
+function parseTableCells(row: string): string[] {
   return row
-    .replace(/^\|/, '') // Remove leading pipe
-    .replace(/\|$/, '') // Remove trailing pipe
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
     .split('|')
-    .map(cell => cell.trim())
-    .filter(cell => cell.length > 0 || row.includes('|')); // Keep cells even if empty when pipes exist
+    .map(cell => cell.trim());
 }
 
 function processOrderedLists(html: string): string {
@@ -566,8 +704,7 @@ function processOrderedLists(html: string): string {
   let inList = false;
   
   for (const line of lines) {
-    const match = line.match(/^(\d+)\. (.*)$/);
-    
+    const match = line.match(/^(\d+)\.\s+(.*)$/);
     if (match) {
       if (!inList) {
         result.push('<ol>');
@@ -583,10 +720,7 @@ function processOrderedLists(html: string): string {
     }
   }
   
-  if (inList) {
-    result.push('</ol>');
-  }
-  
+  if (inList) result.push('</ol>');
   return result.join('\n');
 }
 
@@ -596,8 +730,7 @@ function processUnorderedLists(html: string): string {
   let inList = false;
   
   for (const line of lines) {
-    const match = line.match(/^[\*\-\+] (.*)$/);
-    
+    const match = line.match(/^[\*\-\+]\s+(.*)$/);
     if (match) {
       if (!inList) {
         result.push('<ul>');
@@ -613,9 +746,35 @@ function processUnorderedLists(html: string): string {
     }
   }
   
-  if (inList) {
-    result.push('</ul>');
+  if (inList) result.push('</ul>');
+  return result.join('\n');
+}
+
+function wrapInParagraphs(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let paragraphBuffer = '';
+  
+  const blockTags = ['<h', '<table', '<ul', '<ol', '<pre', '<blockquote', '<hr', '</table', '</ul', '</ol', '</pre', '</blockquote'];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isBlock = blockTags.some(tag => trimmed.startsWith(tag)) || trimmed === '';
+    
+    if (isBlock) {
+      if (paragraphBuffer) {
+        result.push(`<p>${paragraphBuffer}</p>`);
+        paragraphBuffer = '';
+      }
+      if (trimmed) result.push(line);
+    } else {
+      paragraphBuffer += (paragraphBuffer ? ' ' : '') + trimmed;
+    }
   }
   
-  return result.join('\n');
+  if (paragraphBuffer) {
+    result.push(`<p>${paragraphBuffer}</p>`);
+  }
+  
+  return result.join('\n').replace(/<p>\s*<\/p>/g, '');
 }
