@@ -495,46 +495,69 @@ function processMarkdownTables(markdown: string): string {
 function convertTableToHtml(rows: string[]): string {
   if (rows.length < 2) return rows.join('\n'); // Not a valid table
   
-  let html = '<table>\n';
-  
+  // Find separator row index
+  let separatorIndex = -1;
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i].trim();
-    
-    // Skip separator row
     if (/^\|?[\s\-:|]+\|?$/.test(row) && row.includes('-')) {
-      continue;
-    }
-    
-    // Parse cells
-    const cells = row
-      .replace(/^\|/, '') // Remove leading pipe
-      .replace(/\|$/, '') // Remove trailing pipe
-      .split('|')
-      .map(cell => cell.trim());
-    
-    const isHeader = i === 0;
-    const tag = isHeader ? 'th' : 'td';
-    const wrapper = isHeader ? 'thead' : (i === 1 || (i === 2 && /^\|?[\s\-:|]+\|?$/.test(rows[1]))) ? 'tbody' : '';
-    
-    if (isHeader) {
-      html += '<thead>\n';
-    } else if (i === 1 || (i === 2 && /^\|?[\s\-:|]+\|?$/.test(rows[1]))) {
-      html += '<tbody>\n';
-    }
-    
-    html += '<tr>\n';
-    for (const cell of cells) {
-      html += `<${tag}>${cell}</${tag}>\n`;
-    }
-    html += '</tr>\n';
-    
-    if (isHeader) {
-      html += '</thead>\n';
+      separatorIndex = i;
+      break;
     }
   }
   
-  html += '</tbody>\n</table>';
+  // If no separator found, treat first row as header
+  if (separatorIndex === -1) {
+    separatorIndex = 1;
+  }
+  
+  let html = '<table>\n';
+  
+  // Process header rows (everything before separator)
+  if (separatorIndex > 0) {
+    html += '<thead>\n';
+    for (let i = 0; i < separatorIndex; i++) {
+      const row = rows[i].trim();
+      const cells = parseTableRow(row);
+      html += '<tr>\n';
+      for (const cell of cells) {
+        html += `<th>${cell}</th>\n`;
+      }
+      html += '</tr>\n';
+    }
+    html += '</thead>\n';
+  }
+  
+  // Process body rows (everything after separator)
+  const bodyRows = rows.slice(separatorIndex + 1).filter(row => {
+    const trimmed = row.trim();
+    // Skip empty rows and separator-like rows
+    return trimmed.length > 0 && !/^\|?[\s\-:|]+\|?$/.test(trimmed);
+  });
+  
+  if (bodyRows.length > 0) {
+    html += '<tbody>\n';
+    for (const row of bodyRows) {
+      const cells = parseTableRow(row.trim());
+      html += '<tr>\n';
+      for (const cell of cells) {
+        html += `<td>${cell}</td>\n`;
+      }
+      html += '</tr>\n';
+    }
+    html += '</tbody>\n';
+  }
+  
+  html += '</table>';
   return html;
+}
+
+function parseTableRow(row: string): string[] {
+  return row
+    .replace(/^\|/, '') // Remove leading pipe
+    .replace(/\|$/, '') // Remove trailing pipe
+    .split('|')
+    .map(cell => cell.trim())
+    .filter(cell => cell.length > 0 || row.includes('|')); // Keep cells even if empty when pipes exist
 }
 
 function processOrderedLists(html: string): string {
