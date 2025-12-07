@@ -310,13 +310,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       setMessages(prev => [...prev, enrichedMessage]);
 
-      // Save to DB with user_id
+      // Ensure conversation record exists for enrichments too
+      const convId = await ensureConversationRecord(enrichmentRequest.content.slice(0, 50));
+
+      // Save to DB with user_id and conversation_id
       await supabase.from('chat_intelligence_sessions').insert([
         {
           session_id: sessionId,
           role: 'user',
           content: enrichmentRequest.content,
           user_id: currentUserId,
+          conversation_id: convId,
         },
         {
           session_id: sessionId,
@@ -324,6 +328,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           content: data.answer,
           suggested_questions: data.suggestedQuestions,
           user_id: currentUserId,
+          conversation_id: convId,
         }
       ]);
 
