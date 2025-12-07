@@ -133,37 +133,39 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
             </pre>
           ),
           
-          // Professional tables with excellent styling
+          // Premium tables with elegant styling
           table: ({ children }) => (
-            <div className="my-6 overflow-x-auto">
-              <table className="w-full border-collapse text-sm bg-card rounded-xl overflow-hidden shadow-lg border border-border/40">
+            <div className="my-6 overflow-x-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+              <table className="w-full border-collapse text-sm bg-card rounded-xl overflow-hidden shadow-medium border border-border/50 backdrop-blur-sm">
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-gradient-to-r from-primary/15 via-primary/10 to-primary/5">
+            <thead className="bg-gradient-to-r from-primary/20 via-primary/15 to-primary/10 sticky top-0">
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="bg-card">
+            <tbody className="bg-card divide-y divide-border/30">
               {children}
             </tbody>
           ),
           tr: ({ children, isHeader, ...props }: any) => (
-            <tr className="border-b border-border/30 hover:bg-muted/40 transition-colors even:bg-muted/20">
+            <tr className="group border-b border-border/20 hover:bg-primary/5 transition-all duration-200 even:bg-muted/30">
               {children}
             </tr>
           ),
           th: ({ children }) => (
-            <th className="px-4 py-3.5 text-left font-bold text-foreground text-xs uppercase tracking-wider border-b-2 border-primary/30 whitespace-nowrap">
-              {children}
+            <th className="px-4 py-4 text-left font-bold text-foreground text-xs uppercase tracking-wider border-b-2 border-primary/40 whitespace-nowrap first:rounded-tl-xl last:rounded-tr-xl">
+              <span className="flex items-center gap-1.5">
+                {children}
+              </span>
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-4 py-3 text-foreground/90 border-b border-border/20">
-              {children}
+            <td className="px-4 py-3.5 text-foreground/90 group-hover:text-foreground transition-colors font-medium">
+              <span className="block">{children}</span>
             </td>
           ),
           
