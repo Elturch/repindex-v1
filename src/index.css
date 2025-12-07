@@ -313,22 +313,53 @@ All colors MUST be HSL.
 /* Premium Markdown Content Styling */
 @layer components {
   .markdown-content {
-    @apply text-foreground;
+    @apply text-foreground leading-relaxed;
   }
   
-  /* Smooth scrolling for tables */
+  /* Premium table styling */
   .markdown-content table {
     font-variant-numeric: tabular-nums;
+    border-spacing: 0;
   }
   
-  /* Zebra striping for table rows */
+  /* Zebra striping with subtle gradient */
   .markdown-content tbody tr:nth-child(even) {
-    @apply bg-muted/20;
+    @apply bg-muted/30;
   }
   
-  /* Highlight numbers in tables */
+  .markdown-content tbody tr:nth-child(odd) {
+    @apply bg-transparent;
+  }
+  
+  /* Row hover effect */
+  .markdown-content tbody tr {
+    @apply transition-all duration-200;
+  }
+  
+  .markdown-content tbody tr:hover {
+    @apply bg-primary/5;
+    transform: translateX(2px);
+  }
+  
+  /* Cell styling with tabular numbers */
   .markdown-content td {
     font-feature-settings: "tnum";
+    @apply align-middle;
+  }
+  
+  /* First column emphasis */
+  .markdown-content td:first-child {
+    @apply font-semibold text-foreground;
+  }
+  
+  /* Numeric cells alignment */
+  .markdown-content td:not(:first-child) {
+    @apply text-right tabular-nums;
+  }
+  
+  /* Header cell styling */
+  .markdown-content th {
+    @apply font-bold text-foreground bg-gradient-to-b from-primary/15 to-primary/5;
   }
   
   /* Better list markers */
@@ -345,7 +376,7 @@ All colors MUST be HSL.
     @apply font-bold text-primary mr-2;
   }
   
-  /* Emoji sizing */
+  /* Emoji sizing and proper font stack */
   .markdown-content p,
   .markdown-content li,
   .markdown-content h1,
@@ -353,19 +384,51 @@ All colors MUST be HSL.
   .markdown-content h3,
   .markdown-content h4,
   .markdown-content h5,
-  .markdown-content h6 {
+  .markdown-content h6,
+  .markdown-content td,
+  .markdown-content th {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Color Emoji', sans-serif;
+  }
+  
+  /* Custom scrollbar for table overflow */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
   }
   
   /* Responsive tables */
   @media (max-width: 640px) {
     .markdown-content table {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
     }
     
     .markdown-content th,
     .markdown-content td {
-      padding: 0.5rem;
+      padding: 0.5rem 0.75rem;
+    }
+    
+    .markdown-content td:not(:first-child),
+    .markdown-content th:not(:first-child) {
+      @apply text-center;
     }
   }
   
@@ -377,11 +440,16 @@ All colors MUST be HSL.
     
     .markdown-content table {
       border: 1px solid #000;
+      box-shadow: none !important;
     }
     
     .markdown-content th,
     .markdown-content td {
       border: 1px solid #ccc;
+    }
+    
+    .markdown-content tbody tr:hover {
+      transform: none;
     }
     
     .markdown-content blockquote {
