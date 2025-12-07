@@ -438,6 +438,199 @@ serve(async (req) => {
 // =============================================================================
 // ENRICH REQUEST HANDLER - Role-based EXPANDED executive reports
 // =============================================================================
+// ARQUITECTURA DE ORQUESTACIÓN DE PROMPTS:
+// - Nivel técnico 1-2: Lenguaje ejecutivo, sin jerga, impacto de negocio
+// - Nivel técnico 3: Balance profesional, métricas explicadas
+// - Nivel técnico 4-5: Glosario técnico completo, datos extensos
+// =============================================================================
+
+// Glosario técnico para perfiles técnicos
+const REPINDEX_GLOSSARY = `
+## GLOSARIO TÉCNICO REPINDEX
+
+| Métrica | Código | Descripción |
+|---------|--------|-------------|
+| News Volume Metric | NVM | Volumen y frecuencia de apariciones en medios. Mide visibilidad mediática absoluta. |
+| Digital Reach Metric | DRM | Alcance digital estimado de las menciones (audiencia potencial). |
+| Sentiment Index Metric | SIM | Índice de sentimiento: positivo, neutro, negativo ponderado. |
+| Reputation Momentum Metric | RMM | Inercia reputacional: dirección y velocidad del cambio. Indica tendencia. |
+| Crisis Exposure Metric | CEM | Exposición a crisis: menciones negativas de alto impacto. |
+| Governance & Accountability Metric | GAM | Percepción de gobernanza, transparencia y responsabilidad. |
+| Digital Conversation Metric | DCM | Participación activa en conversaciones digitales (engagement). |
+| Customer Experience Metric | CXM | Percepción de experiencia de cliente según fuentes digitales. |
+| RIX Score | RIX | Índice compuesto 0-100 que pondera las 8 métricas según metodología propietaria. |
+`;
+
+// Mapeo de niveles técnicos por rol
+const ROLE_TECHNICAL_LEVELS: Record<string, number> = {
+  'ceo': 1,
+  'vendedor_b2b': 1,
+  'estratega_interno': 2,
+  'estratega_externo': 2,
+  'dircom': 2,
+  'marketing': 2,
+  'rrhh': 2,
+  'ejecutivo_cuentas': 2,
+  'rsc_esg': 3,
+  'inversor': 3,
+  'legal': 3,
+  'periodista': 4,
+  'analista_mercados': 4,
+  'consultor_ma': 4,
+  'analista_datos': 5,
+};
+
+// Instrucciones de tono por nivel técnico
+function getToneInstructions(technicalLevel: number): string {
+  if (technicalLevel <= 1) {
+    return `
+## INSTRUCCIONES DE COMUNICACIÓN - PERFIL EJECUTIVO SENIOR (CEO, Alta Dirección)
+
+⚠️ REGLA CRÍTICA: Este perfil NO domina el glosario técnico de RepIndex.
+
+TRADUCCIONES OBLIGATORIAS:
+- En lugar de "NVM" → di "visibilidad en medios"
+- En lugar de "DRM" → di "alcance digital"
+- En lugar de "SIM" → di "sentimiento (positivo/negativo)"
+- En lugar de "RMM" → di "tendencia de reputación"
+- En lugar de "CEM" → di "exposición a noticias negativas"
+- En lugar de "GAM" → di "percepción de gobernanza"
+- En lugar de "DCM" → di "conversación digital"
+- En lugar de "CXM" → di "experiencia de cliente percibida"
+
+TONO Y ESTILO:
+- Lenguaje CLARO y DIRECTO, CERO jerga técnica
+- Máximo 4-5 puntos principales con bullets
+- Usa metáforas de negocio: "el termómetro de reputación", "barómetro de percepción"
+- Céntrate en IMPACTO EN NEGOCIO: ingresos, valoración, stakeholders
+- Comparaciones simples: "mejor que", "peor que", "al nivel de"
+- Termina con: "¿Qué significa esto para su negocio?"
+`;
+  }
+  
+  if (technicalLevel === 2) {
+    return `
+## INSTRUCCIONES DE COMUNICACIÓN - PERFIL DIRECTIVO FUNCIONAL
+
+REGLA: Este perfil conoce conceptos pero no es experto técnico.
+
+ESTILO DE MÉTRICAS:
+- Puedes mencionar métricas SIEMPRE con contexto: "la métrica de experiencia de cliente (CXM)"
+- Explica brevemente cada métrica la primera vez que la uses
+- No asumas familiaridad con el sistema de puntuación
+
+TONO Y ESTILO:
+- Lenguaje profesional accesible
+- Equilibrio entre insight estratégico y detalle operativo
+- Enfócate en su área funcional
+- Incluye benchmarks y comparativas
+- Proporciona recomendaciones accionables para su departamento
+- Usa narrativa: "La historia que cuentan los datos es..."
+`;
+  }
+  
+  if (technicalLevel === 3) {
+    return `
+## INSTRUCCIONES DE COMUNICACIÓN - PERFIL PROFESIONAL ESPECIALIZADO
+
+REGLA: Este perfil tiene formación técnica pero no es experto en RepIndex.
+
+ESTILO DE MÉTRICAS:
+- Puedes usar acrónimos estándar de su industria (ESG, ROI, P/E)
+- Introduce métricas RepIndex (NVM, DRM, etc.) con contexto breve
+- Análisis detallado orientado a toma de decisiones
+
+TONO Y ESTILO:
+- Lenguaje técnico-profesional del sector
+- Tablas comparativas, ratios, tendencias
+- Incluye caveats y disclaimers apropiados
+- Menciona metodología cuando aporte credibilidad
+`;
+  }
+  
+  if (technicalLevel === 4) {
+    return `
+## INSTRUCCIONES DE COMUNICACIÓN - PERFIL ANALÍTICO-TÉCNICO
+
+REGLA: Este perfil DOMINA el glosario técnico.
+
+ESTILO DE MÉTRICAS:
+- USA libremente: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM
+- Análisis profundo con todas las métricas disponibles
+- Series temporales, evolución, correlaciones
+- Transparencia metodológica
+
+TONO Y ESTILO:
+- Datos tabulados extensos
+- Incluir fuentes: "Según ChatGPT, Perplexity, Gemini, DeepSeek..."
+- Destacar anomalías, outliers, divergencias entre modelos
+`;
+  }
+  
+  // Nivel 5: Muy técnico
+  return `
+## INSTRUCCIONES DE COMUNICACIÓN - PERFIL TÉCNICO EXPERTO
+
+REGLA: Este perfil es EXPERTO en análisis de datos.
+
+ESTILO DE MÉTRICAS:
+- Máximo detalle técnico y metodológico
+- Uso completo del glosario sin explicaciones: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM
+- Incluir pesos de cada métrica en el cálculo del RIX
+- Series completas, estadísticas descriptivas (media, mediana, desviación)
+
+TONO Y ESTILO:
+- Divergencias entre modelos IA con detalle
+- Formato tabular extenso para exportación
+- Datos en bruto cuando sea útil
+- Mencionar limitaciones de datos y cobertura
+`;
+}
+
+// Formato de salida según nivel técnico
+function getOutputFormat(technicalLevel: number): string {
+  if (technicalLevel <= 1) {
+    return `
+FORMATO DE SALIDA: BRIEFING EJECUTIVO
+- Máximo 1 página impresa (400-600 palabras)
+- 3-5 bullets principales destacados
+- 1 tabla resumen si aporta (máximo 4 columnas)
+- Conclusión en negrita al inicio
+- Sin anexos técnicos
+`;
+  }
+  
+  if (technicalLevel === 2) {
+    return `
+FORMATO DE SALIDA: NARRATIVA PROFESIONAL
+- 800-1200 palabras en párrafos fluidos
+- Estilo storytelling cuando sea apropiado
+- 1-2 tablas de apoyo integradas
+- Destacar los insights más relevantes para su área
+`;
+  }
+  
+  if (technicalLevel >= 4) {
+    return `
+FORMATO DE SALIDA: INFORME TÉCNICO CON DATOS
+- Extensión ilimitada según datos disponibles
+- Múltiples tablas comparativas
+- Series temporales completas
+- Desglose métrica por métrica
+- Formato preparado para exportación
+`;
+  }
+  
+  return `
+FORMATO DE SALIDA: INFORME PROFESIONAL EQUILIBRADO
+- 1500-2500 palabras
+- Balance entre narrativa y datos
+- 3-5 tablas de apoyo
+- Secciones claramente estructuradas
+- Resumen ejecutivo + desarrollo + recomendaciones
+`;
+}
+
 async function handleEnrichRequest(
   roleId: string,
   roleName: string,
@@ -447,66 +640,40 @@ async function handleEnrichRequest(
   sessionId: string | undefined,
   logPrefix: string
 ) {
-  console.log(`${logPrefix} Generating EXPANDED executive report for role: ${roleName}`);
+  // Obtener nivel técnico del rol
+  const technicalLevel = ROLE_TECHNICAL_LEVELS[roleId] || 3;
+  console.log(`${logPrefix} Generating report for role: ${roleName} (level ${technicalLevel})`);
 
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openAIApiKey) {
     throw new Error('OpenAI API key not configured');
   }
 
+  // Orquestar el prompt según nivel técnico
+  const toneInstructions = getToneInstructions(technicalLevel);
+  const outputFormat = getOutputFormat(technicalLevel);
+  const glossary = technicalLevel >= 4 ? REPINDEX_GLOSSARY : '';
+
   const systemPrompt = `Eres el Agente Rix, un consultor senior de reputación corporativa creando un **INFORME EJECUTIVO COMPLETO** adaptado para un **${roleName}**.
+
+${toneInstructions}
+
+${glossary}
+
+${outputFormat}
 
 ## IMPORTANTE: ESTO ES UNA EXPANSIÓN, NO UN RESUMEN
 
-La respuesta original contiene datos que DEBES mantener y EXPANDIR significativamente. Tu trabajo es:
+La respuesta original contiene datos que DEBES mantener y EXPANDIR. Tu trabajo es:
 
 1. **MANTENER todos los datos** de la respuesta original (cifras, empresas, métricas, comparativas)
-2. **EXPANDIR el análisis** con profundidad propia de un informe ejecutivo de consultoría premium
-3. **AÑADIR contexto específico** para el rol de ${roleName}
+2. **EXPANDIR el análisis** con profundidad propia de un informe ejecutivo
+3. **ADAPTAR EL LENGUAJE** al nivel técnico del ${roleName}
 4. **INCLUIR secciones adicionales** relevantes para este perfil profesional
 
-## ESTRUCTURA OBLIGATORIA DEL INFORME (mínimo 2500 palabras):
-
----
-
-# 📋 INFORME EJECUTIVO PARA ${roleName.toUpperCase()}
-## Análisis de Reputación Corporativa - RepIndex
-
----
-
-### 1. RESUMEN EJECUTIVO (2-3 párrafos)
-- Conclusión principal en negrita
-- Hallazgo más relevante para este rol
-- Acción prioritaria recomendada
-
-### 2. CONTEXTO Y DATOS CLAVE
-[Incluir TODOS los datos de la respuesta original organizados en tablas]
-
-### 3. ANÁLISIS DESDE LA PERSPECTIVA DE ${roleName.toUpperCase()}
+## PERSPECTIVA ESPECÍFICA: ${roleName.toUpperCase()}
 
 ${rolePrompt}
-
-Desarrolla CADA punto del prompt del rol con:
-- Mínimo 3-4 párrafos por punto
-- Datos concretos de la respuesta original
-- Implicaciones específicas para el rol
-- Recomendaciones accionables
-
-### 4. COMPARATIVA Y BENCHMARKING
-[Tabla comparativa con competidores si están disponibles]
-[Análisis de posición relativa]
-
-### 5. RIESGOS Y OPORTUNIDADES PARA ${roleName.toUpperCase()}
-- ⚠️ Riesgos identificados (mínimo 3, con detalle)
-- 💡 Oportunidades detectadas (mínimo 3, con detalle)
-
-### 6. PLAN DE ACCIÓN RECOMENDADO
-| Prioridad | Acción | Responsable | Plazo | Impacto Esperado |
-|-----------|--------|-------------|-------|------------------|
-[Mínimo 5 acciones concretas]
-
-### 7. CONCLUSIONES Y SIGUIENTES PASOS
-[3-4 párrafos de cierre con visión estratégica]
 
 ---
 
@@ -521,14 +688,11 @@ ${originalQuestion || "(No disponible)"}
 
 ## REGLAS CRÍTICAS:
 
-1. **MÍNIMO 2500 PALABRAS** - Este es un informe ejecutivo premium
-2. **NO RESUMIR** - Expandir y profundizar en CADA punto
-3. **USAR TODOS LOS DATOS** - No omitir cifras ni empresas mencionadas
-4. **TABLAS Y FORMATO** - Usar Markdown: tablas, negritas, listas, quotes
-5. **PERSPECTIVA DEL ROL** - Cada sección debe reflejar las preocupaciones de ${roleName}
-6. **VALOR CONSULTIVO** - Como si fuera un entregable de McKinsey o BCG
-7. **RECOMENDACIONES CONCRETAS** - No generalidades, acciones específicas
-8. **NO INVENTAR DATOS** - Solo expandir análisis de datos existentes`;
+1. **NO INVENTAR DATOS** - Solo expandir análisis de datos existentes
+2. **USAR TODOS LOS DATOS** - No omitir cifras ni empresas mencionadas
+3. **RESPETAR EL NIVEL TÉCNICO** - ${technicalLevel <= 2 ? 'EVITAR jerga técnica, traducir todo a lenguaje de negocio' : technicalLevel >= 4 ? 'Usar glosario técnico libremente' : 'Balance entre claridad y detalle'}
+4. **TABLAS Y FORMATO** - Usar Markdown: tablas, negritas, listas
+5. **VALOR CONSULTIVO** - Como si fuera un entregable de consultoría premium`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
