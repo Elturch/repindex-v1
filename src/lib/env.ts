@@ -11,14 +11,25 @@
  */
 export const isDevOrPreview = (): boolean => {
   if (typeof window === 'undefined') return true;
+  
   const hostname = window.location.hostname;
-  return (
+  const href = window.location.href;
+  
+  // Check for Lovable preview/development environments
+  const isLovableEnv = 
     hostname.includes('localhost') ||
     hostname.includes('preview') ||
     hostname.includes('lovable.app') ||
     hostname.includes('lovable.dev') ||
-    hostname.includes('lovableproject.com')
-  );
+    hostname.includes('lovableproject.com') ||
+    href.includes('__lovable_token'); // Lovable preview token in URL
+  
+  // Log for debugging (remove in production)
+  if (isLovableEnv) {
+    console.log('[DEV MODE] Bypassing authentication - Lovable environment detected:', hostname);
+  }
+  
+  return isLovableEnv;
 };
 
 /**
