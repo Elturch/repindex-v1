@@ -970,26 +970,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 
   console.log(`${logPrefix} Bulletin generated, length: ${bulletinContent.length}`);
 
-  // 8. Save to database
-  if (sessionId) {
-    await supabaseClient.from('chat_intelligence_sessions').insert([
-      {
-        session_id: sessionId,
-        role: 'user',
-        content: originalQuestion,
-        company: matchedCompany.ticker,
-        analysis_type: 'bulletin'
-      },
-      {
-        session_id: sessionId,
-        role: 'assistant',
-        content: bulletinContent,
-        company: matchedCompany.ticker,
-        analysis_type: 'bulletin',
-        structured_data_found: rixData?.length || 0,
-      }
-    ]);
-  }
+  // NOTE: Database saving is handled by ChatContext.tsx to avoid duplication
+  // and ensure proper user_id linking
 
   // 9. Return bulletin response
   const suggestedQuestions = [
@@ -1818,24 +1800,8 @@ Responde SOLO con un array JSON de 3 strings:
       }
     }
 
-    // Save to database
-    if (sessionId) {
-      await supabaseClient.from('chat_intelligence_sessions').insert([
-        {
-          session_id: sessionId,
-          role: 'user',
-          content: question,
-        },
-        {
-          session_id: sessionId,
-          role: 'assistant',
-          content: answer,
-          documents_found: vectorDocs?.length || 0,
-          structured_data_found: allRixData?.length || 0,
-          suggested_questions: suggestedQuestions,
-        }
-      ]);
-    }
+    // NOTE: Database saving is handled by ChatContext.tsx to avoid duplication
+    // and ensure proper user_id linking
 
     return new Response(
       JSON.stringify({
