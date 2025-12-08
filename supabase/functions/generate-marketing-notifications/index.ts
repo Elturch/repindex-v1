@@ -1042,6 +1042,8 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
       } else if (targetingMode === "persona") {
         // Get users by persona from latest analysis
         if (targetPersonas?.length > 0) {
+          console.log("Target personas received:", targetPersonas);
+          
           const { data: latestBatch } = await supabase
             .from("profile_analysis_batches")
             .select("id")
@@ -1050,12 +1052,57 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
             .single();
 
           if (latestBatch) {
-            const { data: snapshots } = await supabase
-              .from("user_activity_snapshots")
-              .select("user_id, persona_id")
-              .eq("analysis_batch_id", latestBatch.id)
-              .in("persona_id", targetPersonas);
-            finalUserIds = [...new Set(snapshots?.map((s: any) => s.user_id) || [])];
+            console.log("Latest batch ID:", latestBatch.id);
+            
+            // Get all personas from this batch to map internal IDs to real UUIDs
+            const { data: allPersonas } = await supabase
+              .from("user_personas")
+              .select("id, name")
+              .eq("analysis_batch_id", latestBatch.id);
+            
+            console.log("Available personas in DB:", allPersonas);
+            
+            // Map internal persona IDs to real UUIDs
+            const personaNameMap: Record<string, string> = {
+              "inactive_users": "Usuarios Inactivos",
+              "casual_user": "Usuario Casual", 
+              "executive_user": "Ejecutivo Activo",
+              "power_user": "Usuario Avanzado",
+              "analyst": "Analista",
+            };
+            
+            const realPersonaIds: string[] = [];
+            for (const targetId of targetPersonas) {
+              // Check if already a UUID
+              const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+              
+              if (isUUID) {
+                realPersonaIds.push(targetId);
+              } else {
+                // Map internal ID to persona name, then find UUID
+                const mappedName = personaNameMap[targetId];
+                const matchingPersona = allPersonas?.find((p: any) => 
+                  p.name === mappedName || 
+                  p.name.toLowerCase().includes(targetId.replace(/_/g, " ").toLowerCase())
+                );
+                if (matchingPersona) {
+                  realPersonaIds.push(matchingPersona.id);
+                }
+              }
+            }
+            
+            console.log("Resolved persona IDs:", realPersonaIds);
+            
+            if (realPersonaIds.length > 0) {
+              const { data: snapshots } = await supabase
+                .from("user_activity_snapshots")
+                .select("user_id, persona_id")
+                .eq("analysis_batch_id", latestBatch.id)
+                .in("persona_id", realPersonaIds);
+              
+              console.log("Found snapshots:", snapshots?.length || 0);
+              finalUserIds = [...new Set(snapshots?.map((s: any) => s.user_id) || [])];
+            }
           }
         }
       } else if (targetingMode === "all") {
