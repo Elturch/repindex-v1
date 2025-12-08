@@ -436,7 +436,30 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse } = body;
+    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse, conversationId } = body;
+    
+    // =============================================================================
+    // EXTRACT USER ID FROM JWT TOKEN
+    // =============================================================================
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    
+    let userId: string | null = null;
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const { data: { user }, error } = await supabaseClient.auth.getUser(token);
+        if (user && !error) {
+          userId = user.id;
+          console.log(`${logPrefix} Authenticated user: ${userId}`);
+        }
+      } catch (authError) {
+        console.warn(`${logPrefix} Could not extract user from token:`, authError);
+      }
+    }
     
     // =============================================================================
     // CHECK FOR ENRICH ACTION (role-based response adaptation)
@@ -450,16 +473,13 @@ serve(async (req) => {
         originalQuestion || '',
         originalResponse,
         sessionId,
-        logPrefix
+        logPrefix,
+        supabaseClient,
+        userId
       );
     }
 
     console.log(`${logPrefix} User question:`, question);
-
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
 
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
@@ -538,7 +558,9 @@ serve(async (req) => {
         supabaseClient,
         openAIApiKey,
         sessionId,
-        logPrefix
+        logPrefix,
+        userId,
+        conversationId
       );
     }
 
@@ -551,7 +573,8 @@ serve(async (req) => {
       supabaseClient,
       openAIApiKey,
       sessionId,
-      logPrefix
+      logPrefix,
+      userId
     );
 
   } catch (error) {
@@ -579,7 +602,9 @@ async function handleEnrichRequest(
   originalQuestion: string,
   originalResponse: string,
   sessionId: string | undefined,
-  logPrefix: string
+  logPrefix: string,
+  supabaseClient: any,
+  userId: string | null
 ) {
   console.log(`${logPrefix} Generating EXPANDED executive report for role: ${roleName}`);
 
@@ -824,7 +849,9 @@ async function handleBulletinRequest(
   supabaseClient: any,
   openAIApiKey: string,
   sessionId: string | undefined,
-  logPrefix: string
+  logPrefix: string,
+  userId: string | null,
+  conversationId: string | undefined
 ) {
   console.log(`${logPrefix} Processing bulletin request for: ${companyQuery}`);
 
@@ -1079,7 +1106,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 
   console.log(`${logPrefix} Bulletin generated (via ${result.provider}), length: ${bulletinContent.length}`);
 
-  // 8. Save to database
+  // 8. Save to database (chat_intelligence_sessions)
   if (sessionId) {
     await supabaseClient.from('chat_intelligence_sessions').insert([
       {
@@ -1087,7 +1114,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         role: 'user',
         content: originalQuestion,
         company: matchedCompany.ticker,
-        analysis_type: 'bulletin'
+        analysis_type: 'bulletin',
+        user_id: userId
       },
       {
         session_id: sessionId,
@@ -1096,8 +1124,39 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         company: matchedCompany.ticker,
         analysis_type: 'bulletin',
         structured_data_found: rixData?.length || 0,
+        user_id: userId
       }
     ]);
+  }
+  
+  // 8b. Save bulletin to user_documents for authenticated users
+  if (userId) {
+    const documentTitle = `Boletín Ejecutivo: ${matchedCompany.issuer_name}`;
+    console.log(`${logPrefix} Saving bulletin to user_documents for user: ${userId}`);
+    
+    const { error: docError } = await supabaseClient.from('user_documents').insert({
+      user_id: userId,
+      document_type: 'bulletin',
+      title: documentTitle,
+      company_name: matchedCompany.issuer_name,
+      ticker: matchedCompany.ticker,
+      content_markdown: bulletinContent,
+      conversation_id: conversationId || null,
+      metadata: {
+        sector: matchedCompany.sector_category,
+        competitorsCount: competitors.length,
+        weeksAnalyzed: uniquePeriods.length,
+        dataPointsUsed: rixData?.length || 0,
+        aiProvider: result.provider,
+        generatedAt: new Date().toISOString()
+      }
+    });
+    
+    if (docError) {
+      console.error(`${logPrefix} Error saving bulletin to user_documents:`, docError);
+    } else {
+      console.log(`${logPrefix} Bulletin saved to user_documents successfully`);
+    }
   }
 
   // 9. Return bulletin response
@@ -1184,7 +1243,8 @@ async function handleStandardChat(
   supabaseClient: any,
   openAIApiKey: string,
   sessionId: string | undefined,
-  logPrefix: string
+  logPrefix: string,
+  userId: string | null
 ) {
   // =============================================================================
   // PASO 0: DETECTAR EMPRESAS MENCIONADAS EN LA PREGUNTA
@@ -2223,6 +2283,7 @@ Responde SOLO con un array JSON de 3 strings:
           session_id: sessionId,
           role: 'user',
           content: question,
+          user_id: userId
         },
         {
           session_id: sessionId,
@@ -2231,6 +2292,7 @@ Responde SOLO con un array JSON de 3 strings:
           documents_found: vectorDocs?.length || 0,
           structured_data_found: allRixData?.length || 0,
           suggested_questions: suggestedQuestions,
+          user_id: userId
         }
       ]);
     }

@@ -198,6 +198,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           question,
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
           sessionId,
+          conversationId: convId,
         },
       });
 
@@ -233,7 +234,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       if (data.metadata?.type === 'bulletin') {
         toast({
           title: "Boletín generado",
-          description: `Boletín ejecutivo de ${data.metadata.companyName || 'empresa'} listo para descargar`,
+          description: currentUserId 
+            ? `Boletín de ${data.metadata.companyName || 'empresa'} guardado en "Mis Documentos"` 
+            : `Boletín de ${data.metadata.companyName || 'empresa'} listo para descargar`,
         });
       } else {
         toast({
