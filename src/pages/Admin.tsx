@@ -34,12 +34,15 @@ import {
   Target,
   Send,
   Bell,
-  Megaphone
+  Megaphone,
+  Activity
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import DirectMessageSystem from '@/components/admin/DirectMessageSystem';
+import { AnalyticsDashboard } from '@/components/admin/AnalyticsDashboard';
+import { InboundDashboard } from '@/components/admin/InboundDashboard';
 
 interface Company {
   id: string;
@@ -899,7 +902,15 @@ const Admin: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="analytics" className="flex items-center gap-1.5 px-3 text-xs">
               <BarChart3 className="h-3.5 w-3.5" />
+              Roles
+            </TabsTrigger>
+            <TabsTrigger value="user-analytics" className="flex items-center gap-1.5 px-3 text-xs">
+              <Activity className="h-3.5 w-3.5" />
               Analytics
+            </TabsTrigger>
+            <TabsTrigger value="inbound" className="flex items-center gap-1.5 px-3 text-xs">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Inbound
             </TabsTrigger>
             <TabsTrigger value="marketing" className="flex items-center gap-1.5 px-3 text-xs">
               <Megaphone className="h-3.5 w-3.5" />
@@ -2800,6 +2811,16 @@ const Admin: React.FC = () => {
                 </Card>
               </div>
             )}
+          </TabsContent>
+
+          {/* ==================== USER ANALYTICS ==================== */}
+          <TabsContent value="user-analytics">
+            <AnalyticsDashboard />
+          </TabsContent>
+
+          {/* ==================== INBOUND DASHBOARD ==================== */}
+          <TabsContent value="inbound">
+            <InboundDashboard />
           </TabsContent>
 
           {/* ==================== DIRECT MESSAGES (DM) ==================== */}
