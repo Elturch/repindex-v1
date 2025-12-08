@@ -21,14 +21,9 @@ import Login from "./pages/Login";
 import MyDocuments from "./pages/MyDocuments";
 import MyConversations from "./pages/MyConversations";
 import Admin from "./pages/Admin";
+import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
-
-// Check if we're in production (not preview/localhost)
-const isProduction = typeof window !== 'undefined' && 
-  !window.location.hostname.includes('localhost') && 
-  !window.location.hostname.includes('preview') &&
-  !window.location.hostname.includes('lovable');
 
 const App = () => (
   <HelmetProvider>
@@ -67,7 +62,7 @@ const App = () => (
                 } />
                 
                 {/* Admin routes - only available in Preview/development */}
-                {!isProduction && (
+                {isDevOrPreview() && (
                   <>
                     <Route path="/insert-rix" element={<InsertRixResults />} />
                     <Route path="/admin" element={<Admin />} />
