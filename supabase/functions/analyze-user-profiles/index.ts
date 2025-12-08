@@ -405,6 +405,96 @@ Asigna cada usuario a la persona que mejor le corresponda según su comportamien
       }
     }
 
+    // Persist analysis to database
+    const startTime = Date.now();
+    
+    // Create analysis batch
+    const { data: batchData, error: batchError } = await supabase
+      .from("profile_analysis_batches")
+      .insert({
+        total_users_analyzed: userActivities.length,
+        total_personas_generated: personas.length,
+        ai_provider: OPENAI_API_KEY ? "openai" : GOOGLE_GEMINI_API_KEY ? "gemini" : "rule-based",
+      })
+      .select("id")
+      .single();
+
+    if (batchError) {
+      console.error("Error creating batch:", batchError);
+    }
+
+    const batchId = batchData?.id;
+
+    if (batchId) {
+      // Insert personas
+      const personaInserts = personas.map(p => ({
+        name: p.name,
+        emoji: p.emoji,
+        description: p.description,
+        characteristics: p.characteristics,
+        avg_conversations: p.avgMetrics.conversations,
+        avg_enrichments: p.avgMetrics.enrichments,
+        avg_documents: p.avgMetrics.documents,
+        avg_session_frequency: p.avgMetrics.sessionFrequency,
+        user_count: p.userCount,
+        analysis_batch_id: batchId,
+      }));
+
+      const { data: insertedPersonas, error: personaError } = await supabase
+        .from("user_personas")
+        .insert(personaInserts)
+        .select("id, name");
+
+      if (personaError) {
+        console.error("Error inserting personas:", personaError);
+      }
+
+      // Create persona ID mapping
+      const personaIdMap: Record<string, string> = {};
+      insertedPersonas?.forEach((ip, idx) => {
+        personaIdMap[personas[idx].id] = ip.id;
+      });
+
+      // Insert user activity snapshots
+      const activityInserts = userActivities.map(u => {
+        // Find which persona this user belongs to
+        const userPersona = personas.find(p => p.userIds.includes(u.userId));
+        const dbPersonaId = userPersona ? personaIdMap[userPersona.id] : null;
+
+        return {
+          user_id: u.userId,
+          user_email: u.email,
+          user_name: u.fullName,
+          total_conversations: u.totalConversations,
+          total_messages: u.totalMessages,
+          total_enrichments: u.totalEnrichments,
+          total_documents: u.totalDocuments,
+          favorite_roles: u.favoriteRoles.map(r => r.roleName),
+          mentioned_companies: u.companiesMentioned,
+          question_patterns: u.questionPatterns,
+          first_activity: u.daysActive > 0 ? new Date(Date.now() - u.daysActive * 24 * 60 * 60 * 1000).toISOString() : null,
+          last_activity: u.lastActivity,
+          activity_days: u.daysActive,
+          persona_id: dbPersonaId,
+          analysis_batch_id: batchId,
+        };
+      });
+
+      const { error: activityError } = await supabase
+        .from("user_activity_snapshots")
+        .insert(activityInserts);
+
+      if (activityError) {
+        console.error("Error inserting activity snapshots:", activityError);
+      }
+
+      // Update batch with duration
+      await supabase
+        .from("profile_analysis_batches")
+        .update({ analysis_duration_ms: Date.now() - startTime })
+        .eq("id", batchId);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -412,6 +502,8 @@ Asigna cada usuario a la persona que mejor le corresponda según su comportamien
         personas,
         totalUsers: userActivities.length,
         analysisDate: new Date().toISOString(),
+        batchId,
+        persisted: !!batchId,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

@@ -618,6 +618,36 @@ export type Database = {
           },
         ]
       }
+      profile_analysis_batches: {
+        Row: {
+          ai_provider: string | null
+          analysis_duration_ms: number | null
+          analyzed_at: string
+          id: string
+          notes: string | null
+          total_personas_generated: number | null
+          total_users_analyzed: number | null
+        }
+        Insert: {
+          ai_provider?: string | null
+          analysis_duration_ms?: number | null
+          analyzed_at?: string
+          id?: string
+          notes?: string | null
+          total_personas_generated?: number | null
+          total_users_analyzed?: number | null
+        }
+        Update: {
+          ai_provider?: string | null
+          analysis_duration_ms?: number | null
+          analyzed_at?: string
+          id?: string
+          notes?: string | null
+          total_personas_generated?: number | null
+          total_users_analyzed?: number | null
+        }
+        Relationships: []
+      }
       recommendations_tactical: {
         Row: {
           evaluation_id: string
@@ -1356,6 +1386,74 @@ export type Database = {
         }
         Relationships: []
       }
+      user_activity_snapshots: {
+        Row: {
+          activity_days: number | null
+          analysis_batch_id: string
+          created_at: string
+          favorite_roles: string[] | null
+          first_activity: string | null
+          id: string
+          last_activity: string | null
+          mentioned_companies: string[] | null
+          persona_id: string | null
+          question_patterns: string[] | null
+          total_conversations: number | null
+          total_documents: number | null
+          total_enrichments: number | null
+          total_messages: number | null
+          user_email: string
+          user_id: string
+          user_name: string | null
+        }
+        Insert: {
+          activity_days?: number | null
+          analysis_batch_id: string
+          created_at?: string
+          favorite_roles?: string[] | null
+          first_activity?: string | null
+          id?: string
+          last_activity?: string | null
+          mentioned_companies?: string[] | null
+          persona_id?: string | null
+          question_patterns?: string[] | null
+          total_conversations?: number | null
+          total_documents?: number | null
+          total_enrichments?: number | null
+          total_messages?: number | null
+          user_email: string
+          user_id: string
+          user_name?: string | null
+        }
+        Update: {
+          activity_days?: number | null
+          analysis_batch_id?: string
+          created_at?: string
+          favorite_roles?: string[] | null
+          first_activity?: string | null
+          id?: string
+          last_activity?: string | null
+          mentioned_companies?: string[] | null
+          persona_id?: string | null
+          question_patterns?: string[] | null
+          total_conversations?: number | null
+          total_documents?: number | null
+          total_enrichments?: number | null
+          total_messages?: number | null
+          user_email?: string
+          user_id?: string
+          user_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_activity_snapshots_persona_id_fkey"
+            columns: ["persona_id"]
+            isOneToOne: false
+            referencedRelation: "user_personas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_conversations: {
         Row: {
           created_at: string | null
@@ -1456,6 +1554,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_personas: {
+        Row: {
+          analysis_batch_id: string
+          avg_conversations: number | null
+          avg_documents: number | null
+          avg_enrichments: number | null
+          avg_session_frequency: number | null
+          characteristics: string[]
+          created_at: string
+          description: string
+          emoji: string
+          id: string
+          name: string
+          user_count: number | null
+        }
+        Insert: {
+          analysis_batch_id: string
+          avg_conversations?: number | null
+          avg_documents?: number | null
+          avg_enrichments?: number | null
+          avg_session_frequency?: number | null
+          characteristics?: string[]
+          created_at?: string
+          description: string
+          emoji?: string
+          id?: string
+          name: string
+          user_count?: number | null
+        }
+        Update: {
+          analysis_batch_id?: string
+          avg_conversations?: number | null
+          avg_documents?: number | null
+          avg_enrichments?: number | null
+          avg_session_frequency?: number | null
+          characteristics?: string[]
+          created_at?: string
+          description?: string
+          emoji?: string
+          id?: string
+          name?: string
+          user_count?: number | null
+        }
+        Relationships: []
       }
       user_profiles: {
         Row: {
@@ -1677,6 +1820,18 @@ export type Database = {
           target_type?: string | null
           ticker?: string | null
           tz?: string | null
+        }
+        Relationships: []
+      }
+      v_persona_evolution: {
+        Row: {
+          analyzed_at: string | null
+          batch_id: string | null
+          count_change: number | null
+          emoji: string | null
+          persona_name: string | null
+          previous_count: number | null
+          user_count: number | null
         }
         Relationships: []
       }
