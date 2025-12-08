@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { getRoleById } from "@/lib/chatRoles";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
@@ -66,24 +67,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const { toast } = useToast();
-
-  // Get current user on mount and auth changes
+  
+  // Use auth context for user ID - this syncs properly with AuthProvider
+  const { user, isAuthenticated } = useAuth();
+  const currentUserId = user?.id || null;
+  
+  // Debug logging for auth state
   useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUserId(user?.id || null);
-    };
-    getCurrentUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUserId(session?.user?.id || null);
+    console.log('[ChatContext] Auth state changed:', { 
+      isAuthenticated, 
+      userId: currentUserId,
+      sessionId 
     });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  }, [isAuthenticated, currentUserId, sessionId]);
 
   // Create or update user_conversations record when user is authenticated
   const ensureConversationRecord = useCallback(async (title?: string) => {
