@@ -28,7 +28,10 @@ import {
   BarChart3,
   Sparkles,
   MessageSquare,
-  Eye
+  Eye,
+  UserCircle,
+  TrendingUp,
+  Target
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -87,6 +90,38 @@ interface UserConversation {
   is_archived: boolean | null;
   user_email?: string;
   user_name?: string;
+}
+
+interface UserPersona {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  characteristics: string[];
+  userIds: string[];
+  userCount: number;
+  avgMetrics: {
+    conversations: number;
+    enrichments: number;
+    documents: number;
+    sessionFrequency: number;
+  };
+  color: string;
+}
+
+interface UserActivity {
+  userId: string;
+  email: string;
+  fullName: string | null;
+  companyName: string | null;
+  totalConversations: number;
+  totalMessages: number;
+  totalEnrichments: number;
+  totalDocuments: number;
+  favoriteRoles: { roleId: string; roleName: string; count: number }[];
+  lastActivity: string | null;
+  daysActive: number;
+  companiesMentioned: string[];
 }
 
 const Admin: React.FC = () => {
@@ -160,6 +195,13 @@ const Admin: React.FC = () => {
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [filterByUserId, setFilterByUserId] = useState<string | null>(null);
+
+  // User Profiles/Personas state
+  const [personas, setPersonas] = useState<UserPersona[]>([]);
+  const [userActivities, setUserActivities] = useState<UserActivity[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
+  const [profilesAnalyzedAt, setProfilesAnalyzedAt] = useState<string | null>(null);
   const [filterByUserName, setFilterByUserName] = useState<string | null>(null);
 
   // Test user for admin (only visible in Admin panel)
@@ -225,6 +267,24 @@ const Admin: React.FC = () => {
 
     return last14Days;
   }, [conversations]);
+
+  // Fetch user profiles analysis
+  const fetchUserProfiles = async () => {
+    setLoadingProfiles(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-user-profiles');
+      if (error) throw error;
+      setPersonas(data.personas || []);
+      setUserActivities(data.userActivities || []);
+      setProfilesAnalyzedAt(data.analysisDate || new Date().toISOString());
+      toast({ title: 'Análisis completado', description: `${data.personas?.length || 0} perfiles identificados` });
+    } catch (error: any) {
+      console.error('Error analyzing profiles:', error);
+      toast({ title: 'Error', description: 'No se pudo analizar los perfiles', variant: 'destructive' });
+    } finally {
+      setLoadingProfiles(false);
+    }
+  };
 
   // Fetch data
   useEffect(() => {
@@ -718,10 +778,14 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-4xl grid-cols-6 mb-6">
+          <TabsList className="grid w-full max-w-5xl grid-cols-7 mb-6">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Resumen
+            </TabsTrigger>
+            <TabsTrigger value="profiles" className="flex items-center gap-2">
+              <UserCircle className="h-4 w-4" />
+              Perfiles
             </TabsTrigger>
             <TabsTrigger value="companies" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
@@ -744,6 +808,262 @@ const Admin: React.FC = () => {
               Sistema
             </TabsTrigger>
           </TabsList>
+
+          {/* ==================== PERFILES DE USUARIO ==================== */}
+          <TabsContent value="profiles">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  Perfiles y Estereotipos de Usuarios
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Análisis dinámico de comportamiento basado en IA
+                  {profilesAnalyzedAt && (
+                    <span className="ml-2 text-xs">
+                      · Último análisis: {new Date(profilesAnalyzedAt).toLocaleString('es-ES')}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <Button onClick={fetchUserProfiles} disabled={loadingProfiles}>
+                {loadingProfiles ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Analizando...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Analizar Perfiles
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {loadingProfiles ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                <p className="text-muted-foreground">Analizando patrones de comportamiento con IA...</p>
+                <p className="text-xs text-muted-foreground mt-1">Esto puede tardar unos segundos</p>
+              </div>
+            ) : personas.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <UserCircle className="h-16 w-16 text-muted-foreground mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium mb-2">Sin análisis de perfiles</h3>
+                  <p className="text-muted-foreground text-center max-w-md mb-4">
+                    Haz clic en "Analizar Perfiles" para que la IA analice el comportamiento 
+                    de los usuarios y cree estereotipos dinámicos.
+                  </p>
+                  <Button onClick={fetchUserProfiles}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Iniciar Análisis
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-6">
+                {/* Personas grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {personas.map((persona) => (
+                    <Card 
+                      key={persona.id}
+                      className={`cursor-pointer transition-all hover:shadow-lg ${
+                        selectedPersona === persona.id ? 'ring-2 ring-primary shadow-lg' : ''
+                      }`}
+                      style={{ borderLeftColor: persona.color, borderLeftWidth: '4px' }}
+                      onClick={() => setSelectedPersona(selectedPersona === persona.id ? null : persona.id)}
+                    >
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{persona.emoji}</span>
+                            <div>
+                              <CardTitle className="text-base">{persona.name}</CardTitle>
+                              <CardDescription className="text-xs">
+                                {persona.userCount} usuario{persona.userCount !== 1 ? 's' : ''}
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <Badge 
+                            variant="secondary" 
+                            style={{ backgroundColor: `${persona.color}20`, color: persona.color }}
+                          >
+                            {Math.round((persona.userCount / userActivities.length) * 100)}%
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <p className="text-sm text-muted-foreground">{persona.description}</p>
+                        
+                        <div className="flex flex-wrap gap-1">
+                          {persona.characteristics.slice(0, 3).map((char, idx) => (
+                            <Badge key={idx} variant="outline" className="text-xs">
+                              {char}
+                            </Badge>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+                          <div className="text-center">
+                            <p className="text-lg font-bold" style={{ color: persona.color }}>
+                              {persona.avgMetrics.conversations.toFixed(1)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Avg. Chats</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-lg font-bold" style={{ color: persona.color }}>
+                              {persona.avgMetrics.enrichments.toFixed(1)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Avg. Enriq.</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Selected persona details */}
+                {selectedPersona && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5" />
+                        Usuarios del perfil: {personas.find(p => p.id === selectedPersona)?.name}
+                      </CardTitle>
+                      <CardDescription>
+                        Detalle de usuarios asignados a este estereotipo
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[400px]">
+                        <div className="space-y-2">
+                          {userActivities
+                            .filter(u => personas.find(p => p.id === selectedPersona)?.userIds.includes(u.userId))
+                            .map((user) => (
+                              <div 
+                                key={user.userId}
+                                className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                    <UserCircle className="h-5 w-5 text-primary" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium">{user.fullName || user.email}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {user.companyName || 'Particular'}
+                                      {user.lastActivity && (
+                                        <span className="ml-2">
+                                          · Último: {new Date(user.lastActivity).toLocaleDateString('es-ES')}
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                  <div className="text-center">
+                                    <p className="font-bold text-sm">{user.totalConversations}</p>
+                                    <p className="text-xs text-muted-foreground">Chats</p>
+                                  </div>
+                                  <div className="text-center">
+                                    <p className="font-bold text-sm">{user.totalEnrichments}</p>
+                                    <p className="text-xs text-muted-foreground">Enriq.</p>
+                                  </div>
+                                  <div className="text-center">
+                                    <p className="font-bold text-sm">{user.totalDocuments}</p>
+                                    <p className="text-xs text-muted-foreground">Docs</p>
+                                  </div>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFilterByUserId(user.userId);
+                                      setFilterByUserName(user.fullName || user.email);
+                                      setActiveTab('conversations');
+                                    }}
+                                  >
+                                    <MessageSquare className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Activity heatmap summary */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Distribución de Actividad por Perfil
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {personas.map((persona) => (
+                        <div key={persona.id} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span>{persona.emoji}</span>
+                              <span className="font-medium">{persona.name}</span>
+                            </div>
+                            <span className="text-sm text-muted-foreground">
+                              {persona.userCount} usuarios ({Math.round((persona.userCount / userActivities.length) * 100)}%)
+                            </span>
+                          </div>
+                          <div className="h-4 bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ 
+                                width: `${(persona.userCount / userActivities.length) * 100}%`,
+                                backgroundColor: persona.color 
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Insights */}
+                <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                      Insights del Análisis
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-4 rounded-lg bg-background/80">
+                        <p className="text-2xl font-bold text-primary">{userActivities.length}</p>
+                        <p className="text-sm text-muted-foreground">Usuarios analizados</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-background/80">
+                        <p className="text-2xl font-bold text-green-600">
+                          {personas.find(p => p.id.includes('power') || p.id.includes('intensive'))?.userCount || 0}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Usuarios intensivos</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-background/80">
+                        <p className="text-2xl font-bold text-amber-600">
+                          {personas.find(p => p.id.includes('dormant') || p.id.includes('inactive'))?.userCount || 0}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Usuarios inactivos</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
 
           {/* ==================== RESUMEN ==================== */}
           <TabsContent value="overview">
