@@ -32,7 +32,7 @@ interface ChatContextType {
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
-  sendMessage: (question: string) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -161,7 +161,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string) => {
+  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -192,6 +192,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
       conversation_id: convId,
     });
 
+    // Extract company name from bulletin request if bulletinMode is active
+    let bulletinCompanyName: string | null = null;
+    if (options?.bulletinMode) {
+      // Extract company name from patterns like "Genera un boletín ejecutivo de Telefónica"
+      const bulletinPatterns = [
+        /(?:bolet[íi]n|informe|reporte)\s+(?:ejecutivo\s+)?(?:de|para|sobre)\s+(.+?)$/i,
+        /(?:de|para|sobre)\s+(.+?)$/i,
+      ];
+      for (const pattern of bulletinPatterns) {
+        const match = question.match(pattern);
+        if (match) {
+          bulletinCompanyName = match[1].trim().replace(/\s+y\s+(?:sus?\s+)?(?:competidores?|competencia)$/i, '');
+          break;
+        }
+      }
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
@@ -199,6 +216,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
           sessionId,
           conversationId: convId,
+          // Only send bulletin params if explicitly triggered by button
+          bulletinMode: options?.bulletinMode || false,
+          bulletinCompanyName,
         },
       });
 

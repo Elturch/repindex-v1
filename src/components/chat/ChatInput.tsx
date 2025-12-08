@@ -6,7 +6,7 @@ import { Send, FileText, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, options?: { bulletinMode?: boolean }) => void;
   isLoading: boolean;
   placeholder?: string;
   compact?: boolean;
@@ -60,6 +60,7 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
   const [value, setValue] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [bulletinModeActive, setBulletinModeActive] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
@@ -126,8 +127,10 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
         recognitionRef.current.stop();
         setIsListening(false);
       }
-      onSend(value.trim());
+      // Send with bulletinMode flag if active
+      onSend(value.trim(), { bulletinMode: bulletinModeActive });
       setValue("");
+      setBulletinModeActive(false); // Reset after sending
     }
   };
 
@@ -140,10 +143,18 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
 
   const handleBulletinClick = () => {
     if (!isLoading) {
-      // Pre-fill input so user just needs to type company name
+      // Activate bulletin mode and pre-fill with company prompt
+      setBulletinModeActive(true);
       setValue("Genera un boletín ejecutivo de ");
     }
   };
+
+  // Reset bulletin mode if user clears input or removes the bulletin prefix
+  useEffect(() => {
+    if (bulletinModeActive && !value.toLowerCase().includes('boletín')) {
+      setBulletinModeActive(false);
+    }
+  }, [value, bulletinModeActive]);
 
   return (
     <div className="flex gap-2">
@@ -151,17 +162,20 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              variant="outline"
+              variant={bulletinModeActive ? "default" : "outline"}
               size={compact ? "sm" : "default"}
               onClick={handleBulletinClick}
               disabled={isLoading}
-              className="shrink-0"
+              className={cn(
+                "shrink-0 transition-all",
+                bulletinModeActive && "bg-primary text-primary-foreground"
+              )}
             >
               <FileText className={compact ? "h-4 w-4" : "h-5 w-5"} />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p className="text-xs">Generar boletín ejecutivo</p>
+            <p className="text-xs">Generar boletín ejecutivo de empresa</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -198,12 +212,13 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={isListening ? "Escuchando..." : placeholder}
+        placeholder={bulletinModeActive ? "Escribe el nombre de la empresa..." : (isListening ? "Escuchando..." : placeholder)}
         disabled={isLoading}
         className={cn(
           "flex-1 min-w-0",
           compact && "text-sm",
-          isListening && "border-red-500 ring-1 ring-red-500"
+          isListening && "border-red-500 ring-1 ring-red-500",
+          bulletinModeActive && "border-primary ring-1 ring-primary"
         )}
       />
       <Button
