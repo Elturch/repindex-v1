@@ -140,7 +140,8 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
 
   const handleBulletinClick = () => {
     if (!isLoading) {
-      onSend("Genera un boletín ejecutivo de [EMPRESA]. Por favor, indícame de qué empresa quieres el informe.");
+      // Pre-fill input so user just needs to type company name
+      setValue("Genera un boletín ejecutivo de ");
     }
   };
 
