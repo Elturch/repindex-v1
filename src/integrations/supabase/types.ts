@@ -1488,6 +1488,65 @@ export type Database = {
         }
         Relationships: []
       }
+      user_activity_logs: {
+        Row: {
+          browser: string | null
+          created_at: string | null
+          device_type: string | null
+          event_data: Json | null
+          event_type: string
+          id: string
+          page_path: string | null
+          page_title: string | null
+          referrer: string | null
+          screen_width: number | null
+          session_id: string
+          session_start_at: string | null
+          time_on_page_seconds: number | null
+          user_id: string | null
+        }
+        Insert: {
+          browser?: string | null
+          created_at?: string | null
+          device_type?: string | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          page_path?: string | null
+          page_title?: string | null
+          referrer?: string | null
+          screen_width?: number | null
+          session_id: string
+          session_start_at?: string | null
+          time_on_page_seconds?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          browser?: string | null
+          created_at?: string | null
+          device_type?: string | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          page_path?: string | null
+          page_title?: string | null
+          referrer?: string | null
+          screen_width?: number | null
+          session_id?: string
+          session_start_at?: string | null
+          time_on_page_seconds?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_activity_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_activity_snapshots: {
         Row: {
           activity_days: number | null

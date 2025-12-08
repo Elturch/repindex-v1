@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { Header } from "./Header";
+import { useActivityLogger } from "@/hooks/useActivityLogger";
 
 interface LayoutProps {
   children: ReactNode;
@@ -7,6 +8,8 @@ interface LayoutProps {
 }
 
 export function Layout({ children, title }: LayoutProps) {
+  // Auto-track page views and user activity
+  useActivityLogger();
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header title={title} />
