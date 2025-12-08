@@ -39,6 +39,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
+import DirectMessageSystem from '@/components/admin/DirectMessageSystem';
 
 interface Company {
   id: string;
@@ -903,6 +904,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="marketing" className="flex items-center gap-2">
               <Megaphone className="h-4 w-4" />
               Marketing
+            </TabsTrigger>
+            <TabsTrigger value="dm" className="flex items-center gap-2">
+              <Mail className="h-4 w-4" />
+              DM
             </TabsTrigger>
             <TabsTrigger value="system" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
@@ -2795,6 +2800,21 @@ const Admin: React.FC = () => {
                 </Card>
               </div>
             )}
+          </TabsContent>
+
+          {/* ==================== DIRECT MESSAGES (DM) ==================== */}
+          <TabsContent value="dm">
+            <DirectMessageSystem
+              users={users}
+              companies={companies.map(c => ({ id: c.id, company_name: c.company_name, is_active: c.is_active }))}
+              personas={personas.map(p => ({ 
+                id: p.id, 
+                name: p.name, 
+                emoji: p.emoji, 
+                userCount: p.userCount,
+                color: p.color 
+              }))}
+            />
           </TabsContent>
         </Tabs>
       </div>
