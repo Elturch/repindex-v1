@@ -159,6 +159,25 @@ const Admin: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
   const [conversationMessages, setConversationMessages] = useState<any[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [filterByUserId, setFilterByUserId] = useState<string | null>(null);
+  const [filterByUserName, setFilterByUserName] = useState<string | null>(null);
+
+  // Test user for admin (only visible in Admin panel)
+  const testUser: UserProfile = {
+    id: 'test-lovable-user',
+    email: 'pruebas@lovable.dev',
+    full_name: 'Pruebas Lovable',
+    is_individual: true,
+    is_active: true,
+    company_id: null,
+    created_at: new Date().toISOString(),
+    client_companies: null,
+  };
+
+  // Combine real users with test user for admin display
+  const allUsersWithTest = useMemo(() => {
+    return [testUser, ...users];
+  }, [users]);
 
   // Fetch initial vector store status on mount
   useEffect(() => {
@@ -883,6 +902,19 @@ const Admin: React.FC = () => {
                                     <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)} title="Enviar Magic Link">
                                       <Mail className="h-4 w-4" />
                                     </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setFilterByUserId(user.id);
+                                        setFilterByUserName(user.full_name || user.email);
+                                        setActiveTab('conversations');
+                                      }} 
+                                      title="Ver conversaciones"
+                                    >
+                                      <MessageSquare className="h-4 w-4" />
+                                    </Button>
                                   </div>
                                 </div>
                               ))}
@@ -894,6 +926,56 @@ const Admin: React.FC = () => {
                       </Card>
                     );
                   })}
+
+                  {/* Test user card - Admin only */}
+                  <Card className="border-purple-500/50 bg-purple-50/50 dark:bg-purple-900/10">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                            <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-base flex items-center gap-2">
+                              Usuario de Pruebas
+                              <Badge variant="outline" className="border-purple-500 text-purple-600 text-xs">Admin Only</Badge>
+                            </CardTitle>
+                            <CardDescription>Usuario interno para testing de funcionalidades</CardDescription>
+                          </div>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      <div className="border border-purple-200 dark:border-purple-800 rounded-lg divide-y">
+                        <div className="flex items-center justify-between p-3 hover:bg-purple-100/50 dark:hover:bg-purple-900/30">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                              <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{testUser.full_name}</p>
+                              <p className="text-xs text-muted-foreground">{testUser.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs border-purple-500 text-purple-600">Test</Badge>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => {
+                                setFilterByUserId(testUser.id);
+                                setFilterByUserName(testUser.full_name || testUser.email);
+                                setActiveTab('conversations');
+                              }} 
+                              title="Ver conversaciones"
+                            >
+                              <MessageSquare className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {/* Individual users (Particulares) */}
                   {users.filter(u => u.is_individual || !u.company_id).length > 0 && (
@@ -932,6 +1014,18 @@ const Admin: React.FC = () => {
                                 </Button>
                                 <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)} title="Enviar Magic Link">
                                   <Mail className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => {
+                                    setFilterByUserId(user.id);
+                                    setFilterByUserName(user.full_name || user.email);
+                                    setActiveTab('conversations');
+                                  }} 
+                                  title="Ver conversaciones"
+                                >
+                                  <MessageSquare className="h-4 w-4" />
                                 </Button>
                               </div>
                             </div>
@@ -1238,23 +1332,35 @@ const Admin: React.FC = () => {
                           {user.is_active ? 'Activo' : 'Inactivo'}
                         </Badge>
                         {user.is_individual && <Badge variant="outline">Particular</Badge>}
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => openEditUser(user)}
-                          title="Editar usuario"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => handleSendMagicLink(user.id, user.email)}
-                          title="Enviar Magic Link"
-                        >
-                          <Mail className="h-4 w-4 mr-1" />
-                          Enviar Link
-                        </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => openEditUser(user)}
+                                      title="Editar usuario"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleSendMagicLink(user.id, user.email)}
+                                      title="Enviar Magic Link"
+                                    >
+                                      <Mail className="h-4 w-4 mr-1" />
+                                      Enviar Link
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => {
+                                        setFilterByUserId(user.id);
+                                        setFilterByUserName(user.full_name || user.email);
+                                        setActiveTab('conversations');
+                                      }}
+                                      title="Ver conversaciones"
+                                    >
+                                      <MessageSquare className="h-4 w-4" />
+                                    </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -1547,7 +1653,24 @@ const Admin: React.FC = () => {
           {/* ==================== CONVERSACIONES ==================== */}
           <TabsContent value="conversations">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Conversaciones de Usuarios</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold">Conversaciones de Usuarios</h2>
+                {filterByUserId && (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-sm">
+                      Filtrando: {filterByUserName}
+                    </Badge>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => { setFilterByUserId(null); setFilterByUserName(null); }}
+                      className="h-6 px-2 text-xs"
+                    >
+                      ✕ Quitar filtro
+                    </Button>
+                  </div>
+                )}
+              </div>
               <Button variant="outline" size="sm" onClick={fetchConversations}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -1569,11 +1692,16 @@ const Admin: React.FC = () => {
                 {/* Conversations list */}
                 <div className="space-y-3">
                   <h3 className="font-medium text-sm text-muted-foreground mb-2">
-                    {conversations.length} conversaciones encontradas
+                    {filterByUserId 
+                      ? `${conversations.filter(c => c.user_id === filterByUserId).length} conversaciones de ${filterByUserName}`
+                      : `${conversations.length} conversaciones encontradas`
+                    }
                   </h3>
                   <ScrollArea className="h-[600px]">
                     <div className="space-y-2 pr-4">
-                      {conversations.map((convo) => (
+                      {conversations
+                        .filter(c => !filterByUserId || c.user_id === filterByUserId)
+                        .map((convo) => (
                         <Card 
                           key={convo.id} 
                           className={`cursor-pointer hover:shadow-md transition-shadow ${selectedConversation === convo.session_id ? 'border-primary ring-1 ring-primary' : ''}`}
