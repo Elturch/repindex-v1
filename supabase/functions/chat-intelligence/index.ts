@@ -1824,192 +1824,254 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
 
   // =============================================================================
-  // PASO 6: GENERAR PREGUNTAS SUGERIDAS INTELIGENTES
+  // PASO 6: GENERAR PREGUNTAS SUGERIDAS BASADAS EN ANÁLISIS DE DATOS
   // =============================================================================
-  console.log(`${logPrefix} Generating intelligent follow-up questions...`);
+  console.log(`${logPrefix} Analyzing data for hidden patterns and generating smart questions...`);
   
-  // Analyze conversation depth and extract insights from history
-  const conversationDepth = conversationHistory.length;
-  const isFirstInteraction = conversationDepth === 0;
-  
-  // Extract mentioned companies, sectors, and topics from conversation history
-  const extractConversationInsights = () => {
-    const insights = {
-      mentionedCompanies: new Set<string>(),
-      mentionedSectors: new Set<string>(),
-      mentionedModels: new Set<string>(),
-      topics: new Set<string>(),
-      questionTypes: new Set<string>(),
-    };
+  // =============================================================================
+  // ANÁLISIS DE DATOS: Detectar patrones ocultos, anomalías y sorpresas
+  // =============================================================================
+  const analyzeDataForInsights = () => {
+    if (!allRixData || allRixData.length === 0) {
+      return { patterns: [], anomalies: [], surprises: [] };
+    }
     
-    const allText = [
-      ...conversationHistory.map((m: any) => m.content || ''),
-      question,
-      answer
-    ].join(' ').toLowerCase();
+    const patterns: string[] = [];
+    const anomalies: string[] = [];
+    const surprises: string[] = [];
     
-    // Extract companies from current data
-    if (allRixData) {
+    // Group data by company
+    const byCompany: Record<string, any[]> = {};
+    allRixData.forEach(r => {
+      const company = r["03_target_name"];
+      if (!byCompany[company]) byCompany[company] = [];
+      byCompany[company].push(r);
+    });
+    
+    // 1. DIVERGENCIAS ENTRE MODELOS: Empresas donde ChatGPT y DeepSeek difieren más
+    const modelDivergences: { company: string; ticker: string; chatgpt: number; deepseek: number; diff: number }[] = [];
+    Object.entries(byCompany).forEach(([company, records]) => {
+      const chatgpt = records.find(r => r["02_model_name"]?.toLowerCase().includes('chatgpt'));
+      const deepseek = records.find(r => r["02_model_name"]?.toLowerCase().includes('deepseek'));
+      if (chatgpt && deepseek && chatgpt["09_rix_score"] && deepseek["09_rix_score"]) {
+        const diff = Math.abs(chatgpt["09_rix_score"] - deepseek["09_rix_score"]);
+        if (diff >= 10) {
+          modelDivergences.push({
+            company,
+            ticker: chatgpt["05_ticker"] || '',
+            chatgpt: chatgpt["09_rix_score"],
+            deepseek: deepseek["09_rix_score"],
+            diff
+          });
+        }
+      }
+    });
+    modelDivergences.sort((a, b) => b.diff - a.diff);
+    if (modelDivergences.length > 0) {
+      const top = modelDivergences[0];
+      anomalies.push(`${top.company} tiene ${top.diff} puntos de divergencia entre ChatGPT (${top.chatgpt}) y DeepSeek (${top.deepseek})`);
+    }
+    
+    // 2. EMPRESAS CONTRA-TENDENCIA: Suben cuando el sector baja o viceversa
+    if (companiesCache) {
+      const bySector: Record<string, any[]> = {};
       allRixData.forEach(r => {
-        const companyName = r["03_target_name"]?.toLowerCase();
-        const ticker = r["05_ticker"]?.toLowerCase();
-        if (companyName && allText.includes(companyName.toLowerCase())) {
-          insights.mentionedCompanies.add(r["03_target_name"]);
-        }
-        if (ticker && allText.includes(ticker.toLowerCase())) {
-          insights.mentionedCompanies.add(r["03_target_name"]);
-        }
+        const company = companiesCache?.find(c => c.ticker === r["05_ticker"]);
+        const sector = company?.sector_category || 'Otros';
+        if (!bySector[sector]) bySector[sector] = [];
+        bySector[sector].push(r);
+      });
+      
+      Object.entries(bySector).forEach(([sector, records]) => {
+        if (records.length < 4) return;
+        const avgRix = records.reduce((sum, r) => sum + (r["09_rix_score"] || 0), 0) / records.length;
+        const outliers = records.filter(r => {
+          const diff = (r["09_rix_score"] || 0) - avgRix;
+          return Math.abs(diff) > 15;
+        });
+        outliers.forEach(o => {
+          const direction = o["09_rix_score"] > avgRix ? 'supera' : 'está por debajo de';
+          surprises.push(`${o["03_target_name"]} ${direction} la media del sector ${sector} en ${Math.abs(o["09_rix_score"] - avgRix).toFixed(0)} puntos`);
+        });
       });
     }
     
-    // Extract sectors
-    const sectorKeywords = ['banca', 'banco', 'energía', 'energia', 'telecomunicaciones', 'telecom', 
-      'construcción', 'inmobiliaria', 'tecnología', 'tech', 'consumo', 'retail', 'moda', 
-      'seguros', 'utilities', 'transporte', 'media', 'farmacéutica', 'salud'];
-    sectorKeywords.forEach(s => {
-      if (allText.includes(s)) insights.mentionedSectors.add(s);
+    // 3. EMPRESAS NO COTIZADAS QUE SUPERAN A IBEX35
+    if (companiesCache) {
+      const nonTraded = allRixData.filter(r => {
+        const company = companiesCache?.find(c => c.ticker === r["05_ticker"]);
+        return company && !company.cotiza_en_bolsa;
+      });
+      const ibex35 = allRixData.filter(r => {
+        const company = companiesCache?.find(c => c.ticker === r["05_ticker"]);
+        return company?.ibex_family_code === 'IBEX35';
+      });
+      
+      const avgIbex = ibex35.length > 0 
+        ? ibex35.reduce((sum, r) => sum + (r["09_rix_score"] || 0), 0) / ibex35.length 
+        : 0;
+      
+      const outperformers = nonTraded.filter(r => (r["09_rix_score"] || 0) > avgIbex + 5);
+      if (outperformers.length > 0) {
+        const best = outperformers.sort((a, b) => (b["09_rix_score"] || 0) - (a["09_rix_score"] || 0))[0];
+        patterns.push(`${best["03_target_name"]} (no cotizada) supera la media del IBEX35 (${avgIbex.toFixed(0)}) con un RIX de ${best["09_rix_score"]}`);
+      }
+    }
+    
+    // 4. MÉTRICAS EXTREMAS: Empresas con métricas muy altas en un área pero muy bajas en otra
+    Object.entries(byCompany).forEach(([company, records]) => {
+      records.forEach(r => {
+        const metrics = [
+          { name: 'NVM', score: r["23_nvm_score"] },
+          { name: 'DRM', score: r["26_drm_score"] },
+          { name: 'SIM', score: r["29_sim_score"] },
+          { name: 'RMM', score: r["32_rmm_score"] },
+          { name: 'CEM', score: r["35_cem_score"] },
+          { name: 'GAM', score: r["38_gam_score"] },
+          { name: 'DCM', score: r["41_dcm_score"] },
+          { name: 'CXM', score: r["44_cxm_score"] },
+        ].filter(m => m.score != null);
+        
+        if (metrics.length >= 4) {
+          const max = metrics.reduce((a, b) => a.score > b.score ? a : b);
+          const min = metrics.reduce((a, b) => a.score < b.score ? a : b);
+          if (max.score - min.score >= 35) {
+            patterns.push(`${company} tiene un desequilibrio de ${max.score - min.score} puntos entre ${max.name} (${max.score}) y ${min.name} (${min.score})`);
+          }
+        }
+      });
     });
     
-    // Extract AI models
-    ['chatgpt', 'perplexity', 'gemini', 'deepseek'].forEach(m => {
-      if (allText.includes(m)) insights.mentionedModels.add(m);
+    // 5. MODELOS SISTEMÁTICAMENTE CRÍTICOS O GENEROSOS
+    const modelAvgs: Record<string, { sum: number; count: number }> = {};
+    allRixData.forEach(r => {
+      const model = r["02_model_name"];
+      if (!model || !r["09_rix_score"]) return;
+      if (!modelAvgs[model]) modelAvgs[model] = { sum: 0, count: 0 };
+      modelAvgs[model].sum += r["09_rix_score"];
+      modelAvgs[model].count++;
     });
     
-    // Detect question types/topics
-    if (allText.includes('comparar') || allText.includes('vs') || allText.includes('versus')) {
-      insights.topics.add('comparativas');
+    const modelRankings = Object.entries(modelAvgs)
+      .map(([model, data]) => ({ model, avg: data.sum / data.count }))
+      .sort((a, b) => b.avg - a.avg);
+    
+    if (modelRankings.length >= 2) {
+      const mostGenerous = modelRankings[0];
+      const mostCritical = modelRankings[modelRankings.length - 1];
+      if (mostGenerous.avg - mostCritical.avg >= 5) {
+        patterns.push(`${mostGenerous.model} es ${(mostGenerous.avg - mostCritical.avg).toFixed(1)} puntos más generoso que ${mostCritical.model} en promedio`);
+      }
     }
-    if (allText.includes('tendencia') || allText.includes('evolución') || allText.includes('subió') || allText.includes('bajó')) {
-      insights.topics.add('tendencias');
-    }
-    if (allText.includes('sector')) {
-      insights.topics.add('análisis_sectorial');
-    }
-    if (allText.includes('ibex')) {
-      insights.topics.add('ibex');
-    }
-    if (allText.includes('cotizada') || allText.includes('no cotizada')) {
-      insights.topics.add('cotización');
-    }
-    if (allText.includes('boletín') || allText.includes('informe')) {
-      insights.topics.add('informes');
-    }
-    if (allText.includes('métrica') || allText.includes('nvm') || allText.includes('drm') || 
-        allText.includes('sim') || allText.includes('rmm') || allText.includes('cem') ||
-        allText.includes('gam') || allText.includes('dcm') || allText.includes('cxm')) {
-      insights.topics.add('métricas');
-    }
+    
+    // 6. CONSENSO PERFECTO vs DISCORDIA TOTAL
+    Object.entries(byCompany).forEach(([company, records]) => {
+      if (records.length < 3) return;
+      const scores = records.map(r => r["09_rix_score"]).filter(Boolean);
+      if (scores.length < 3) return;
+      
+      const min = Math.min(...scores);
+      const max = Math.max(...scores);
+      const range = max - min;
+      
+      if (range <= 3) {
+        patterns.push(`${company} tiene consenso perfecto: todos los modelos la puntúan entre ${min} y ${max}`);
+      } else if (range >= 25) {
+        anomalies.push(`${company} genera discordia total: ${range} puntos de diferencia entre modelos (${min}-${max})`);
+      }
+    });
     
     return {
-      mentionedCompanies: [...insights.mentionedCompanies],
-      mentionedSectors: [...insights.mentionedSectors],
-      mentionedModels: [...insights.mentionedModels],
-      topics: [...insights.topics],
+      patterns: patterns.slice(0, 5),
+      anomalies: anomalies.slice(0, 5),
+      surprises: surprises.slice(0, 5),
+      modelDivergences: modelDivergences.slice(0, 3),
     };
   };
   
-  const insights = extractConversationInsights();
-  console.log(`${logPrefix} Conversation insights:`, JSON.stringify(insights));
+  const dataInsights = analyzeDataForInsights();
+  console.log(`${logPrefix} Data insights found: ${dataInsights.patterns.length} patterns, ${dataInsights.anomalies.length} anomalies, ${dataInsights.surprises.length} surprises`);
   
-  const availableCompanies = allRixData 
-    ? [...new Set(allRixData.map(r => r["03_target_name"]))].slice(0, 30).join(', ')
-    : '';
+  // Extract topics already discussed to avoid repetition
+  const discussedTopics = new Set<string>();
+  const allConversationText = [
+    ...conversationHistory.map((m: any) => m.content || ''),
+    question,
+    answer
+  ].join(' ').toLowerCase();
+  
+  // Mark mentioned companies as discussed
+  if (allRixData) {
+    allRixData.forEach(r => {
+      const companyName = r["03_target_name"]?.toLowerCase();
+      if (companyName && allConversationText.includes(companyName)) {
+        discussedTopics.add(companyName);
+      }
+    });
+  }
   
   const availableSectors = companiesCache 
     ? [...new Set(companiesCache.map(c => c.sector_category).filter(Boolean))].join(', ')
     : 'Energía, Banca, Telecomunicaciones, Construcción, Tecnología, Consumo';
-  
-  // Build intelligent context for question generation
-  const conversationSummary = conversationHistory.length > 0 
-    ? `\nRESUMEN DE LA CONVERSACIÓN (${Math.ceil(conversationHistory.length / 2)} intercambios previos):\n` +
-      conversationHistory.slice(-6).map((m: any, i: number) => 
-        `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${m.content?.substring(0, 150)}...`
-      ).join('\n')
-    : '';
-  
-  const insightsContext = `
-CONTEXTO DE LA CONVERSACIÓN:
-- Nivel de profundidad: ${isFirstInteraction ? 'PRIMERA INTERACCIÓN' : conversationDepth > 4 ? 'USUARIO EXPERTO (múltiples intercambios)' : 'USUARIO EN EXPLORACIÓN'}
-- Empresas ya discutidas: ${insights.mentionedCompanies.length > 0 ? insights.mentionedCompanies.join(', ') : 'Ninguna específica aún'}
-- Sectores de interés: ${insights.mentionedSectors.length > 0 ? insights.mentionedSectors.join(', ') : 'No identificados aún'}
-- Modelos IA mencionados: ${insights.mentionedModels.length > 0 ? insights.mentionedModels.join(', ') : 'Ninguno específico'}
-- Temas explorados: ${insights.topics.length > 0 ? insights.topics.join(', ') : 'Exploración inicial'}
-${conversationSummary}`;
 
-  const intelligentQuestionPrompt = `Eres un ESTRATEGA DE CONVERSACIÓN experto en engagement de usuarios ejecutivos. Tu misión es generar 3 preguntas de seguimiento que demuestren INTELIGENCIA CONTEXTUAL y guíen al usuario hacia insights más profundos.
+  // Build prompt with REAL DATA DISCOVERIES
+  const dataDiscoveriesPrompt = `Eres un ANALISTA DE DATOS EXPERTO que ha descubierto patrones ocultos en miles de registros. Tu trabajo es generar 3 preguntas que SORPRENDAN al usuario revelando insights que NO son obvios a simple vista.
 
-${insightsContext}
+🔬 DESCUBRIMIENTOS EN LOS DATOS (REALES, VERIFICADOS):
 
-PREGUNTA ACTUAL: "${question}"
-RESPUESTA PROPORCIONADA (resumen): ${answer.substring(0, 500)}...
+📊 PATRONES DETECTADOS:
+${dataInsights.patterns.length > 0 ? dataInsights.patterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '- Analizando patrones...'}
 
-🧠 ESTRATEGIA DE PREGUNTAS SEGÚN NIVEL:
+⚠️ ANOMALÍAS ENCONTRADAS:
+${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join('\n') : '- Sin anomalías críticas'}
 
-${isFirstInteraction ? `
-**PRIMERA INTERACCIÓN - Preguntas de Descubrimiento Inteligente:**
-- NO preguntas obvias como "¿Cuál es el top 5?"
-- SÍ preguntas que revelen patrones ocultos: "¿Qué empresa del IBEX tiene la mayor divergencia entre ChatGPT y DeepSeek?"
-- SÍ preguntas comparativas sofisticadas: "¿Los bancos tradicionales superan a las fintech en percepción de IA?"
-- SÍ preguntas de tendencia: "¿Hay alguna empresa que haya mejorado consistentemente las últimas 4 semanas?"
-` : conversationDepth > 4 ? `
-**USUARIO EXPERTO - Preguntas de Análisis Avanzado:**
-- Profundizar en empresas específicas ya mencionadas: ${insights.mentionedCompanies.slice(0, 3).join(', ') || 'las discutidas'}
-- Cross-análisis sofisticados: "¿Cómo se posiciona [empresa mencionada] vs su principal competidor en las métricas donde más flaquea?"
-- Preguntas de síntesis: "¿Hay un patrón común entre las empresas que ambos hemos analizado?"
-- Solicitar boletín ejecutivo si aún no lo ha pedido
-- Comparativas modelo a modelo para las empresas de interés
-` : `
-**USUARIO EN EXPLORACIÓN - Preguntas de Profundización:**
-- Expandir el sector detectado: ${insights.mentionedSectors[0] || 'el sector de interés'}
-- Conectar empresas mencionadas con competidores: "${insights.mentionedCompanies[0] || 'la empresa'} vs su principal competidor"
-- Introducir métricas específicas: "¿En qué métrica destaca/flaquea [empresa]?"
-- Sugerir análisis de modelos si no lo ha explorado: "¿Qué modelo de IA es más crítico con [sector/empresa]?"
-`}
+💡 SORPRESAS EN LOS DATOS:
+${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join('\n') : '- Analizando sorpresas...'}
 
-⚠️ REGLAS CRÍTICAS:
+🎯 DIVERGENCIAS MÁXIMAS ENTRE MODELOS:
+${dataInsights.modelDivergences?.length > 0 
+  ? dataInsights.modelDivergences.map((d, i) => `${i + 1}. ${d.company}: ChatGPT (${d.chatgpt}) vs DeepSeek (${d.deepseek}) = ${d.diff} pts diferencia`).join('\n')
+  : '- Calculando divergencias...'}
 
-1. **EVITAR OBVIEDADES**: Nunca preguntas genéricas tipo "¿Cuál es el top 5?" o "¿Cómo está [empresa]?"
-2. **CONTEXTUALIZAR**: Cada pregunta debe conectar con lo ya discutido
-3. **PROGRESIÓN**: Las preguntas deben llevar a un nivel de análisis superior
-4. **INSIGHTS OCULTOS**: Preguntas que revelen datos no obvios (divergencias, anomalías, patrones)
-5. **SOLO DATOS DISPONIBLES**: Empresas de: ${availableCompanies.substring(0, 200)}...
-6. **SECTORES**: ${availableSectors}
-7. **MODELOS**: ChatGPT, Perplexity, Gemini, DeepSeek
+TEMAS YA DISCUTIDOS (EVITAR REPETIR):
+${[...discussedTopics].slice(0, 10).join(', ') || 'Ninguno específico aún'}
 
-🎯 EJEMPLOS DE PREGUNTAS INTELIGENTES (no uses estos exactamente, son para inspiración):
+PREGUNTA ACTUAL DEL USUARIO: "${question}"
 
-NIVEL 1 (Primera vez):
-- "¿Qué empresa tiene la mayor discrepancia entre cómo la ve ChatGPT vs cómo la ve DeepSeek?"
-- "¿Hay algún sector donde las empresas no cotizadas superen a las del IBEX35?"
-- "¿Cuál es la empresa que más ha subido esta semana y por qué destaca?"
+🧠 TU MISIÓN: Genera 3 preguntas que:
 
-NIVEL 2 (Explorando):
-- "Comparando con ${insights.mentionedCompanies[0] || 'Telefónica'}, ¿qué empresa de su sector la supera en visibilidad narrativa (NVM)?"
-- "De las empresas de ${insights.mentionedSectors[0] || 'banca'}, ¿cuál tiene el momentum más fuerte?"
-- "¿Hay correlación entre el tamaño de empresa y su RIX en ${insights.mentionedSectors[0] || 'el sector'}?"
+1. **REVELEN DATOS OCULTOS**: Usa los descubrimientos de arriba para formular preguntas que el usuario NUNCA habría pensado
+2. **SORPRENDAN CON HECHOS**: Cada pregunta debe insinuar un dato sorprendente (ej: "¿Sabías que [empresa X] tiene más divergencia entre modelos que cualquier empresa del IBEX?")
+3. **SEAN IMPOSIBLES DE IGNORAR**: Preguntas que generen curiosidad inmediata porque revelan algo contraintuitivo
 
-NIVEL 3 (Experto):
-- "Genera un boletín ejecutivo de ${insights.mentionedCompanies[0] || 'la empresa que más me interesa'} con análisis de competencia"
-- "¿Qué patrón común tienen las 3 empresas que hemos analizado en sus métricas de crisis (CEM)?"
-- "¿Cómo explicarías las divergencias entre modelos para ${insights.mentionedCompanies[0]} a un CEO?"
+❌ PROHIBIDO:
+- Preguntas genéricas como "¿Cuál es el top 5?" o "¿Cómo está [empresa]?"
+- Preguntas que el usuario ya podría adivinar
+- Preguntas sin datos concretos detrás
+- Repetir empresas o temas ya discutidos
 
-Responde SOLO con un array JSON de 3 strings con preguntas específicas, contextuales e inteligentes:
-["pregunta 1", "pregunta 2", "pregunta 3"]`;
+✅ FORMATO IDEAL DE PREGUNTA:
+- "¿Por qué [empresa X] tiene ${dataInsights.anomalies[0] ? 'la mayor divergencia entre modelos' : 'un patrón inusual'}?"
+- "¿Sabías que [dato sorprendente]? ¿Quieres analizar por qué?"
+- "Hay ${dataInsights.patterns.length} empresas que rompen el patrón de su sector, ¿cuál te interesa explorar?"
+
+Responde SOLO con un array JSON de 3 preguntas específicas basadas en los DATOS REALES de arriba:
+["pregunta basada en dato real 1", "pregunta basada en dato real 2", "pregunta basada en dato real 3"]`;
 
   try {
     const questionsMessages = [
-      { role: 'system', content: 'Eres un experto en engagement ejecutivo. Generas preguntas inteligentes, contextuales y progresivamente más sofisticadas. Responde SOLO con el array JSON.' },
-      { role: 'user', content: intelligentQuestionPrompt }
+      { role: 'system', content: 'Eres un analista de datos que genera preguntas basadas en descubrimientos REALES. Cada pregunta debe revelar un insight oculto en los datos. Responde SOLO con el array JSON.' },
+      { role: 'user', content: dataDiscoveriesPrompt }
     ];
 
     let suggestedQuestions: string[] = [];
     
-    const questionsText = await callAISimple(questionsMessages, 'gpt-4o-mini', 500, logPrefix);
+    const questionsText = await callAISimple(questionsMessages, 'gpt-4o-mini', 600, logPrefix);
     if (questionsText) {
       try {
         const cleanText = questionsText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         suggestedQuestions = JSON.parse(cleanText);
-        console.log(`${logPrefix} Generated ${suggestedQuestions.length} intelligent questions`);
+        console.log(`${logPrefix} Generated ${suggestedQuestions.length} data-driven questions`);
       } catch (parseError) {
         console.warn(`${logPrefix} Error parsing follow-up questions:`, parseError);
         suggestedQuestions = [];
