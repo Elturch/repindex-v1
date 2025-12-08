@@ -13,6 +13,140 @@ let cacheTimestamp = 0;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
+// AI FALLBACK HELPER - OpenAI → Gemini
+// =============================================================================
+interface AICallResult {
+  content: string;
+  provider: 'openai' | 'gemini';
+}
+
+async function callAIWithFallback(
+  messages: { role: string; content: string }[],
+  model: string,
+  maxTokens: number,
+  logPrefix: string,
+  timeout: number = 120000
+): Promise<AICallResult> {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+  
+  // Model mapping: OpenAI → Gemini equivalent
+  const modelMapping: Record<string, string> = {
+    'o3': 'gemini-2.5-flash',
+    'gpt-4o-mini': 'gemini-2.5-flash-lite',
+    'gpt-4o': 'gemini-2.5-flash',
+  };
+  
+  // 1. Try OpenAI first
+  if (openAIApiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      console.log(`${logPrefix} Calling OpenAI (${model})...`);
+      
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_completion_tokens: maxTokens,
+        }),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`${logPrefix} OpenAI response received successfully`);
+        return { content: data.choices[0].message.content, provider: 'openai' };
+      }
+      
+      // Errors that trigger fallback: 429, 500, 502, 503, 504
+      if ([429, 500, 502, 503, 504].includes(response.status)) {
+        const errorText = await response.text();
+        console.warn(`${logPrefix} OpenAI returned ${response.status}, switching to Gemini fallback...`);
+        console.warn(`${logPrefix} OpenAI error details: ${errorText.substring(0, 200)}`);
+      } else {
+        const errorText = await response.text();
+        console.error(`${logPrefix} OpenAI API error (${response.status}):`, errorText);
+        throw new Error(`OpenAI API error: ${response.statusText}`);
+      }
+      
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.warn(`${logPrefix} OpenAI timeout (${timeout}ms), switching to Gemini fallback...`);
+      } else if (error.message?.includes('OpenAI API error')) {
+        throw error; // Re-throw non-recoverable errors
+      } else {
+        console.warn(`${logPrefix} OpenAI network error, switching to Gemini fallback:`, error.message);
+      }
+    }
+  } else {
+    console.warn(`${logPrefix} No OpenAI API key, using Gemini directly...`);
+  }
+  
+  // 2. Fallback to Gemini
+  if (!geminiApiKey) {
+    throw new Error('Both OpenAI and Gemini API keys are not configured');
+  }
+  
+  const geminiModel = modelMapping[model] || 'gemini-2.5-flash';
+  console.log(`${logPrefix} Using Gemini fallback (${geminiModel})...`);
+  
+  const geminiResponse = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${geminiApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: geminiModel,
+        messages,
+        max_tokens: maxTokens,
+      }),
+    }
+  );
+  
+  if (!geminiResponse.ok) {
+    const errorText = await geminiResponse.text();
+    console.error(`${logPrefix} Gemini API error:`, errorText);
+    throw new Error(`Both OpenAI and Gemini failed. Gemini error: ${geminiResponse.statusText}`);
+  }
+  
+  const geminiData = await geminiResponse.json();
+  console.log(`${logPrefix} Gemini response received successfully (fallback)`);
+  
+  return { 
+    content: geminiData.choices[0].message.content, 
+    provider: 'gemini' 
+  };
+}
+
+// Helper for simpler calls (gpt-4o-mini for questions generation)
+async function callAISimple(
+  messages: { role: string; content: string }[],
+  model: string,
+  maxTokens: number,
+  logPrefix: string
+): Promise<string | null> {
+  try {
+    const result = await callAIWithFallback(messages, model, maxTokens, logPrefix, 30000);
+    return result.content;
+  } catch (error) {
+    console.warn(`${logPrefix} AI call failed:`, error.message);
+    return null;
+  }
+}
+
+// =============================================================================
 // BULLETIN DETECTION PATTERNS
 // =============================================================================
 const BULLETIN_PATTERNS = [
@@ -531,39 +665,21 @@ ${originalQuestion || "(No disponible)"}
 8. **NO INVENTAR DATOS** - Solo expandir análisis de datos existentes`;
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'o3',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para el rol de ${roleName}. Este debe ser un documento profesional de consultoría premium de MÁXIMA CALIDAD sin límite de extensión - si necesitas 5000 palabras, escribe 5000 palabras. Expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE. EXCELENCIA sobre brevedad.` }
-        ],
-        max_completion_tokens: 32000,
-      }),
-    });
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para el rol de ${roleName}. Este debe ser un documento profesional de consultoría premium de MÁXIMA CALIDAD sin límite de extensión - si necesitas 5000 palabras, escribe 5000 palabras. Expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE. EXCELENCIA sobre brevedad.` }
+    ];
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`${logPrefix} OpenAI API error:`, errorText);
-      throw new Error(`OpenAI API error: ${response.statusText}`);
-    }
+    const result = await callAIWithFallback(messages, 'o3', 32000, logPrefix);
+    const enrichedAnswer = result.content;
 
-    const data = await response.json();
-    const enrichedAnswer = data.choices[0].message.content;
-
-    console.log(`${logPrefix} EXPANDED executive report generated, length: ${enrichedAnswer.length} chars`);
+    console.log(`${logPrefix} EXPANDED executive report generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`);
 
     // Generate role-specific follow-up questions
     const suggestedQuestions = await generateRoleSpecificQuestions(
       roleId,
       roleName,
       originalQuestion,
-      openAIApiKey,
       logPrefix
     );
 
@@ -575,6 +691,7 @@ ${originalQuestion || "(No disponible)"}
           type: 'enriched',
           roleId,
           roleName,
+          aiProvider: result.provider,
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -591,7 +708,6 @@ async function generateRoleSpecificQuestions(
   roleId: string,
   roleName: string,
   originalQuestion: string,
-  openAIApiKey: string,
   logPrefix: string
 ): Promise<string[]> {
   const roleQuestionHints: Record<string, string[]> = {
@@ -648,29 +764,16 @@ async function generateRoleSpecificQuestions(
   const hints = roleQuestionHints[roleId] || ["análisis detallado", "comparativas", "tendencias"];
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
+    const messages = [
+      { 
+        role: 'system', 
+        content: `Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(', ')}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]`
       },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { 
-            role: 'system', 
-            content: `Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(', ')}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]`
-          },
-          { role: 'user', content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}.` }
-        ],
-        max_tokens: 300,
-        temperature: 0.6,
-      }),
-    });
+      { role: 'user', content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}.` }
+    ];
 
-    if (response.ok) {
-      const data = await response.json();
-      const text = data.choices[0].message.content.trim();
+    const text = await callAISimple(messages, 'gpt-4o-mini', 300, logPrefix);
+    if (text) {
       const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       return JSON.parse(cleanText);
     }
@@ -943,32 +1046,15 @@ ${bulletinContext}
 
 Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especificado en tus instrucciones.`;
 
-  const chatResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openAIApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'o3',
-      messages: [
-        { role: 'system', content: BULLETIN_SYSTEM_PROMPT },
-        { role: 'user', content: bulletinUserPrompt }
-      ],
-      max_completion_tokens: 40000,
-    }),
-  });
+  const bulletinMessages = [
+    { role: 'system', content: BULLETIN_SYSTEM_PROMPT },
+    { role: 'user', content: bulletinUserPrompt }
+  ];
 
-  if (!chatResponse.ok) {
-    const errorText = await chatResponse.text();
-    console.error(`${logPrefix} OpenAI API error:`, errorText);
-    throw new Error(`OpenAI API error: ${chatResponse.statusText}`);
-  }
+  const result = await callAIWithFallback(bulletinMessages, 'o3', 40000, logPrefix, 180000);
+  const bulletinContent = result.content;
 
-  const chatData = await chatResponse.json();
-  const bulletinContent = chatData.choices[0].message.content;
-
-  console.log(`${logPrefix} Bulletin generated, length: ${bulletinContent.length}`);
+  console.log(`${logPrefix} Bulletin generated (via ${result.provider}), length: ${bulletinContent.length}`);
 
   // 8. Save to database
   if (sessionId) {
@@ -1009,7 +1095,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         sector: matchedCompany.sector_category,
         competitorsCount: competitors.length,
         weeksAnalyzed: uniquePeriods.length,
-        dataPointsUsed: rixData?.length || 0
+        dataPointsUsed: rixData?.length || 0,
+        aiProvider: result.provider,
       }
     }),
     { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -1701,36 +1788,17 @@ ${context}
 
 Por favor, responde a la pregunta usando SOLO la información del contexto anterior.`;
 
-  console.log(`${logPrefix} Calling OpenAI (o3 reasoning model)...`);
+  console.log(`${logPrefix} Calling AI model...`);
   const messages = [
     { role: 'system', content: systemPrompt },
     ...conversationHistory,
     { role: 'user', content: userPrompt }
   ];
 
-  const chatResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openAIApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'o3',
-      messages: messages,
-      max_completion_tokens: 24000,
-    }),
-  });
+  const chatResult = await callAIWithFallback(messages, 'o3', 24000, logPrefix);
+  const answer = chatResult.content;
 
-  if (!chatResponse.ok) {
-    const errorText = await chatResponse.text();
-    console.error(`${logPrefix} OpenAI API error:`, errorText);
-    throw new Error(`OpenAI API error: ${chatResponse.statusText}`);
-  }
-
-  const chatData = await chatResponse.json();
-  const answer = chatData.choices[0].message.content;
-
-  console.log(`${logPrefix} AI response received, length: ${answer.length}`);
+  console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
 
   // =============================================================================
   // PASO 6: GENERAR PREGUNTAS SUGERIDAS
@@ -1786,29 +1854,15 @@ Responde SOLO con un array JSON de 3 strings:
 ["pregunta 1", "pregunta 2", "pregunta 3"]`;
 
   try {
-    const questionsResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'Generas preguntas de seguimiento sobre datos de reputación corporativa. Responde SOLO con el array JSON.' },
-          { role: 'user', content: suggestedQuestionsPrompt }
-        ],
-        max_tokens: 300,
-        temperature: 0.5,
-      }),
-    });
+    const questionsMessages = [
+      { role: 'system', content: 'Generas preguntas de seguimiento sobre datos de reputación corporativa. Responde SOLO con el array JSON.' },
+      { role: 'user', content: suggestedQuestionsPrompt }
+    ];
 
     let suggestedQuestions: string[] = [];
     
-    if (questionsResponse.ok) {
-      const questionsData = await questionsResponse.json();
-      const questionsText = questionsData.choices[0].message.content.trim();
-      
+    const questionsText = await callAISimple(questionsMessages, 'gpt-4o-mini', 300, logPrefix);
+    if (questionsText) {
       try {
         const cleanText = questionsText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         suggestedQuestions = JSON.parse(cleanText);
@@ -1844,7 +1898,8 @@ Responde SOLO con un array JSON de 3 strings:
         metadata: {
           documentsFound: vectorDocs?.length || 0,
           structuredDataFound: allRixData?.length || 0,
-          dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0
+          dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0,
+          aiProvider: chatResult.provider,
         }
       }),
       {
@@ -1861,7 +1916,8 @@ Responde SOLO con un array JSON de 3 strings:
         metadata: {
           documentsFound: vectorDocs?.length || 0,
           structuredDataFound: allRixData?.length || 0,
-          dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0
+          dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0,
+          aiProvider: chatResult.provider,
         }
       }),
       {
