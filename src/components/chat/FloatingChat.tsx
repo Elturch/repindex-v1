@@ -176,12 +176,8 @@ export function FloatingChat() {
               </Tooltip>
             </TooltipProvider>
             
-            {/* Message count badge */}
-            {messages.length > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 w-5 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center pointer-events-none">
-                {messages.filter(m => m.role === 'assistant').length}
-              </span>
-            )}
+            {/* Notification badge - only shown when there are unread admin notifications */}
+            {/* TODO: Conectar con user_notifications cuando admin envíe mensajes */}
           </motion.div>
         )}
       </AnimatePresence>
