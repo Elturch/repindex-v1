@@ -209,18 +209,23 @@ const Admin: React.FC = () => {
 
   // Marketing state
   const [sendingNotifications, setSendingNotifications] = useState(false);
+  const [generatingPlan, setGeneratingPlan] = useState(false);
   const [notificationStats, setNotificationStats] = useState<{
     notificationsSent: number;
     usersReached: number;
     byPersona: { name: string; count: number }[];
+    generatedBy?: string;
   } | null>(null);
   const [customNotification, setCustomNotification] = useState({
     title: '',
     content: '',
     type: 'persona_tip',
     priority: 'normal',
+    prompt: '', // For AI generation
   });
   const [selectedMarketingPersonas, setSelectedMarketingPersonas] = useState<string[]>([]);
+  const [inboundPlan, setInboundPlan] = useState<any>(null);
+  const [useAIGeneration, setUseAIGeneration] = useState(true);
 
   // Test user for admin (only visible in Admin panel)
   const testUser: UserProfile = {
@@ -2176,23 +2181,31 @@ const Admin: React.FC = () => {
               </Card>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Enviar notificaciones automáticas */}
+                {/* Notificaciones con IA */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Sparkles className="h-5 w-5" />
-                      Notificaciones Automáticas por Perfil
+                      <Sparkles className="h-5 w-5 text-amber-500" />
+                      Notificaciones Generadas con IA
                     </CardTitle>
                     <CardDescription>
-                      Genera y envía notificaciones personalizadas según el estereotipo de cada usuario
+                      Usa OpenAI/Gemini para generar mensajes personalizados para cada usuario
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-amber-500" />
+                        <span className="text-sm font-medium">Generación con IA</span>
+                      </div>
+                      <Switch
+                        checked={useAIGeneration}
+                        onCheckedChange={setUseAIGeneration}
+                      />
+                    </div>
+                    
                     <div>
-                      <Label className="text-sm font-medium">Seleccionar perfiles objetivo (opcional)</Label>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        Deja vacío para enviar a todos los perfiles
-                      </p>
+                      <Label className="text-sm font-medium">Perfiles objetivo (opcional)</Label>
                       <div className="flex flex-wrap gap-2 mt-2">
                         {personas.map((persona) => (
                           <Badge
@@ -2223,14 +2236,14 @@ const Admin: React.FC = () => {
                         try {
                           const { data, error } = await supabase.functions.invoke('generate-marketing-notifications', {
                             body: { 
-                              action: 'generate_for_all',
+                              action: useAIGeneration ? 'generate_ai_notifications' : 'generate_for_all',
                               targetPersonas: selectedMarketingPersonas.length > 0 ? selectedMarketingPersonas : undefined,
                             }
                           });
                           if (error) throw error;
                           setNotificationStats(data);
                           toast({ 
-                            title: '✅ Notificaciones enviadas', 
+                            title: `✅ Notificaciones ${data.generatedBy === 'ai' ? 'generadas con IA' : 'enviadas'}`, 
                             description: `${data.notificationsSent} notificaciones a ${data.usersReached} usuarios` 
                           });
                         } catch (err: any) {
@@ -2245,12 +2258,12 @@ const Admin: React.FC = () => {
                       {sendingNotifications ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          Enviando...
+                          {useAIGeneration ? 'Generando con IA...' : 'Enviando...'}
                         </>
                       ) : (
                         <>
-                          <Send className="h-4 w-4 mr-2" />
-                          Enviar Notificaciones Personalizadas
+                          {useAIGeneration ? <Sparkles className="h-4 w-4 mr-2" /> : <Send className="h-4 w-4 mr-2" />}
+                          {useAIGeneration ? 'Generar Notificaciones con IA' : 'Enviar Notificaciones Estáticas'}
                         </>
                       )}
                     </Button>
@@ -2259,7 +2272,12 @@ const Admin: React.FC = () => {
                       <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-900">
                         <h4 className="font-medium text-green-800 dark:text-green-200 mb-2 flex items-center gap-2">
                           <CheckCircle className="h-4 w-4" />
-                          Último envío
+                          Último envío 
+                          {notificationStats.generatedBy === 'ai' && (
+                            <Badge variant="outline" className="ml-2 text-xs bg-amber-100 text-amber-800">
+                              <Sparkles className="h-3 w-3 mr-1" /> IA
+                            </Badge>
+                          )}
                         </h4>
                         <div className="grid grid-cols-2 gap-2 text-sm">
                           <div>
@@ -2271,7 +2289,7 @@ const Admin: React.FC = () => {
                             <span className="ml-2 font-bold">{notificationStats.usersReached}</span>
                           </div>
                         </div>
-                        {notificationStats.byPersona.length > 0 && (
+                        {notificationStats.byPersona?.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
                             <p className="text-xs text-muted-foreground mb-1">Por perfil:</p>
                             <div className="flex flex-wrap gap-1">
@@ -2279,6 +2297,113 @@ const Admin: React.FC = () => {
                                 <Badge key={idx} variant="outline" className="text-xs">
                                   {p.name}: {p.count}
                                 </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Plan de Inbound Marketing con IA */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Target className="h-5 w-5 text-purple-500" />
+                      Plan de Inbound Marketing
+                    </CardTitle>
+                    <CardDescription>
+                      Genera un plan completo de campañas y automatizaciones con IA
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Button 
+                      onClick={async () => {
+                        setGeneratingPlan(true);
+                        try {
+                          const { data, error } = await supabase.functions.invoke('generate-marketing-notifications', {
+                            body: { action: 'generate_inbound_plan' }
+                          });
+                          if (error) throw error;
+                          setInboundPlan(data.plan);
+                          toast({ 
+                            title: '✅ Plan generado con IA', 
+                            description: `${data.plan?.campaigns?.length || 0} campañas creadas` 
+                          });
+                        } catch (err: any) {
+                          toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                        } finally {
+                          setGeneratingPlan(false);
+                        }
+                      }}
+                      disabled={generatingPlan}
+                      className="w-full"
+                      variant="outline"
+                    >
+                      {generatingPlan ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Generando plan con IA...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          Generar Plan de Inbound
+                        </>
+                      )}
+                    </Button>
+
+                    {inboundPlan && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="bg-purple-100 text-purple-800">
+                            {inboundPlan.generated_by === 'openai' ? 'OpenAI' : inboundPlan.generated_by === 'gemini' ? 'Gemini' : 'Fallback'}
+                          </Badge>
+                          <span>Generado: {new Date(inboundPlan.generated_at).toLocaleString('es-ES')}</span>
+                        </div>
+
+                        {/* Campañas */}
+                        <div className="p-3 bg-muted/50 rounded-lg">
+                          <h5 className="font-medium text-sm mb-2">📣 Campañas ({inboundPlan.campaigns?.length || 0})</h5>
+                          <div className="space-y-2">
+                            {inboundPlan.campaigns?.slice(0, 3).map((campaign: any, idx: number) => (
+                              <div key={idx} className="p-2 bg-background rounded border text-xs">
+                                <div className="font-medium">{campaign.name}</div>
+                                <div className="text-muted-foreground mt-1">
+                                  Trigger: {campaign.trigger} | {campaign.notification_sequence?.length || 0} pasos
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Calendario */}
+                        {inboundPlan.calendar && (
+                          <div className="p-3 bg-muted/50 rounded-lg">
+                            <h5 className="font-medium text-sm mb-2">📅 Calendario Semanal</h5>
+                            <div className="grid grid-cols-3 gap-2 text-xs">
+                              {Object.entries(inboundPlan.calendar).map(([day, types]: [string, any]) => (
+                                <div key={day} className="p-2 bg-background rounded border">
+                                  <div className="font-medium capitalize">{day}</div>
+                                  <div className="text-muted-foreground">{types?.join(', ') || '-'}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Automatizaciones */}
+                        {inboundPlan.automation_rules && (
+                          <div className="p-3 bg-muted/50 rounded-lg">
+                            <h5 className="font-medium text-sm mb-2">⚡ Automatizaciones ({inboundPlan.automation_rules?.length || 0})</h5>
+                            <div className="space-y-1 text-xs">
+                              {inboundPlan.automation_rules?.slice(0, 3).map((rule: any, idx: number) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs">{rule.trigger}</Badge>
+                                  <span>→</span>
+                                  <span className="text-muted-foreground">{rule.action}</span>
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -2375,7 +2500,7 @@ const Admin: React.FC = () => {
                             title: '✅ Notificación enviada', 
                             description: `Enviada a ${data.notificationsSent} usuarios` 
                           });
-                          setCustomNotification({ title: '', content: '', type: 'persona_tip', priority: 'normal' });
+                          setCustomNotification({ title: '', content: '', type: 'persona_tip', priority: 'normal', prompt: '' });
                         } catch (err: any) {
                           toast({ title: 'Error', description: err.message, variant: 'destructive' });
                         } finally {
