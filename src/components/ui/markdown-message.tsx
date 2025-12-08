@@ -703,6 +703,8 @@ function generateExportHtml(markdown: string): string {
         max-width: 100%;
         font-size: 11pt;
         line-height: 1.5;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
       
       .report-header {
@@ -739,6 +741,23 @@ function generateExportHtml(markdown: string): string {
       
       .report-footer {
         page-break-before: avoid;
+      }
+      
+      /* Hide browser extensions, TTS controls, and fixed elements */
+      [class*="speech"], [class*="tts"], [class*="read-aloud"], [class*="readaloud"],
+      [id*="speech"], [id*="tts"], [id*="read-aloud"], [id*="readaloud"],
+      button[aria-label*="speech"], button[aria-label*="read"], button[aria-label*="play"],
+      .readaloud-player, .tts-controls, #readaloud-player, #tts-wrapper,
+      div[style*="position: fixed"], div[style*="position:fixed"],
+      div[style*="z-index: 99"], div[style*="z-index:99"],
+      iframe[style*="position: fixed"], iframe[style*="position:fixed"],
+      [data-extension], [class*="extension"], [id*="extension"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
       }
     }
   `;
