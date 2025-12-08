@@ -564,6 +564,63 @@ export type Database = {
           },
         ]
       }
+      marketing_campaigns: {
+        Row: {
+          content_template: string
+          created_at: string
+          description: string | null
+          end_date: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          notification_type: string
+          priority: string | null
+          start_date: string | null
+          target_personas: string[] | null
+          title_template: string
+          total_clicked: number | null
+          total_read: number | null
+          total_sent: number | null
+          updated_at: string
+        }
+        Insert: {
+          content_template: string
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          notification_type: string
+          priority?: string | null
+          start_date?: string | null
+          target_personas?: string[] | null
+          title_template: string
+          total_clicked?: number | null
+          total_read?: number | null
+          total_sent?: number | null
+          updated_at?: string
+        }
+        Update: {
+          content_template?: string
+          created_at?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          notification_type?: string
+          priority?: string | null
+          start_date?: string | null
+          target_personas?: string[] | null
+          title_template?: string
+          total_clicked?: number | null
+          total_read?: number | null
+          total_sent?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       meta_weight_scheme: {
         Row: {
           CEM: number
@@ -614,6 +671,51 @@ export type Database = {
             columns: ["evaluation_id"]
             isOneToOne: true
             referencedRelation: "v_evaluation_composite"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_analytics: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          event_data: Json | null
+          event_type: string
+          id: string
+          notification_id: string | null
+          user_id: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          notification_id?: string | null
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          notification_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_analytics_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "marketing_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_analytics_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "user_notifications"
             referencedColumns: ["id"]
           },
         ]
@@ -1554,6 +1656,108 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_notification_preferences: {
+        Row: {
+          created_at: string
+          email_frequency: string | null
+          enable_company_alerts: boolean | null
+          enable_data_refresh_alerts: boolean | null
+          enable_email_notifications: boolean | null
+          enable_inactivity_reminders: boolean | null
+          enable_newsroom_alerts: boolean | null
+          enable_persona_tips: boolean | null
+          enable_surveys: boolean | null
+          id: string
+          quiet_hours_end: string | null
+          quiet_hours_start: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_frequency?: string | null
+          enable_company_alerts?: boolean | null
+          enable_data_refresh_alerts?: boolean | null
+          enable_email_notifications?: boolean | null
+          enable_inactivity_reminders?: boolean | null
+          enable_newsroom_alerts?: boolean | null
+          enable_persona_tips?: boolean | null
+          enable_surveys?: boolean | null
+          id?: string
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_frequency?: string | null
+          enable_company_alerts?: boolean | null
+          enable_data_refresh_alerts?: boolean | null
+          enable_email_notifications?: boolean | null
+          enable_inactivity_reminders?: boolean | null
+          enable_newsroom_alerts?: boolean | null
+          enable_persona_tips?: boolean | null
+          enable_surveys?: boolean | null
+          id?: string
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_notifications: {
+        Row: {
+          content: string
+          created_at: string
+          dismissed_at: string | null
+          expires_at: string | null
+          id: string
+          is_dismissed: boolean | null
+          is_read: boolean | null
+          metadata: Json | null
+          notification_type: string
+          persona_id: string | null
+          priority: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          dismissed_at?: string | null
+          expires_at?: string | null
+          id?: string
+          is_dismissed?: boolean | null
+          is_read?: boolean | null
+          metadata?: Json | null
+          notification_type: string
+          persona_id?: string | null
+          priority?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          dismissed_at?: string | null
+          expires_at?: string | null
+          id?: string
+          is_dismissed?: boolean | null
+          is_read?: boolean | null
+          metadata?: Json | null
+          notification_type?: string
+          persona_id?: string | null
+          priority?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_personas: {
         Row: {

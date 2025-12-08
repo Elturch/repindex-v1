@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.admin-api]
 verify_jwt = false
+
+[functions.analyze-user-profiles]
+verify_jwt = false
+
+[functions.generate-marketing-notifications]
+verify_jwt = false

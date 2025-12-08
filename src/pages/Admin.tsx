@@ -31,7 +31,10 @@ import {
   Eye,
   UserCircle,
   TrendingUp,
-  Target
+  Target,
+  Send,
+  Bell,
+  Megaphone
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -203,6 +206,21 @@ const Admin: React.FC = () => {
   const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
   const [profilesAnalyzedAt, setProfilesAnalyzedAt] = useState<string | null>(null);
   const [filterByUserName, setFilterByUserName] = useState<string | null>(null);
+
+  // Marketing state
+  const [sendingNotifications, setSendingNotifications] = useState(false);
+  const [notificationStats, setNotificationStats] = useState<{
+    notificationsSent: number;
+    usersReached: number;
+    byPersona: { name: string; count: number }[];
+  } | null>(null);
+  const [customNotification, setCustomNotification] = useState({
+    title: '',
+    content: '',
+    type: 'persona_tip',
+    priority: 'normal',
+  });
+  const [selectedMarketingPersonas, setSelectedMarketingPersonas] = useState<string[]>([]);
 
   // Test user for admin (only visible in Admin panel)
   const testUser: UserProfile = {
@@ -802,6 +820,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="analytics" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Analytics
+            </TabsTrigger>
+            <TabsTrigger value="marketing" className="flex items-center gap-2">
+              <Megaphone className="h-4 w-4" />
+              Marketing
             </TabsTrigger>
             <TabsTrigger value="system" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
@@ -2119,6 +2141,343 @@ const Admin: React.FC = () => {
                     </CardContent>
                   </Card>
                 </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ==================== MARKETING ==================== */}
+          <TabsContent value="marketing">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <Megaphone className="h-5 w-5 text-primary" />
+                  Inbound Marketing por Perfil
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Envía notificaciones personalizadas al chat de cada usuario según su perfil
+                </p>
+              </div>
+            </div>
+
+            {personas.length === 0 ? (
+              <Card className="border-dashed">
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <Target className="h-16 w-16 text-muted-foreground mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium mb-2">Primero analiza los perfiles</h3>
+                  <p className="text-muted-foreground text-center max-w-md mb-4">
+                    Para enviar notificaciones personalizadas, primero debes analizar los perfiles 
+                    de usuario en la pestaña "Perfiles".
+                  </p>
+                  <Button onClick={() => setActiveTab('profiles')}>
+                    <UserCircle className="h-4 w-4 mr-2" />
+                    Ir a Perfiles
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Enviar notificaciones automáticas */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5" />
+                      Notificaciones Automáticas por Perfil
+                    </CardTitle>
+                    <CardDescription>
+                      Genera y envía notificaciones personalizadas según el estereotipo de cada usuario
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label className="text-sm font-medium">Seleccionar perfiles objetivo (opcional)</Label>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Deja vacío para enviar a todos los perfiles
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {personas.map((persona) => (
+                          <Badge
+                            key={persona.id}
+                            variant={selectedMarketingPersonas.includes(persona.id) ? "default" : "outline"}
+                            className="cursor-pointer transition-all"
+                            style={selectedMarketingPersonas.includes(persona.id) ? { 
+                              backgroundColor: persona.color,
+                              borderColor: persona.color,
+                            } : {}}
+                            onClick={() => {
+                              setSelectedMarketingPersonas(prev => 
+                                prev.includes(persona.id) 
+                                  ? prev.filter(p => p !== persona.id)
+                                  : [...prev, persona.id]
+                              );
+                            }}
+                          >
+                            {persona.emoji} {persona.name} ({persona.userCount})
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Button 
+                      onClick={async () => {
+                        setSendingNotifications(true);
+                        try {
+                          const { data, error } = await supabase.functions.invoke('generate-marketing-notifications', {
+                            body: { 
+                              action: 'generate_for_all',
+                              targetPersonas: selectedMarketingPersonas.length > 0 ? selectedMarketingPersonas : undefined,
+                            }
+                          });
+                          if (error) throw error;
+                          setNotificationStats(data);
+                          toast({ 
+                            title: '✅ Notificaciones enviadas', 
+                            description: `${data.notificationsSent} notificaciones a ${data.usersReached} usuarios` 
+                          });
+                        } catch (err: any) {
+                          toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                        } finally {
+                          setSendingNotifications(false);
+                        }
+                      }}
+                      disabled={sendingNotifications}
+                      className="w-full"
+                    >
+                      {sendingNotifications ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 mr-2" />
+                          Enviar Notificaciones Personalizadas
+                        </>
+                      )}
+                    </Button>
+
+                    {notificationStats && (
+                      <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-900">
+                        <h4 className="font-medium text-green-800 dark:text-green-200 mb-2 flex items-center gap-2">
+                          <CheckCircle className="h-4 w-4" />
+                          Último envío
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Notificaciones:</span>
+                            <span className="ml-2 font-bold">{notificationStats.notificationsSent}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Usuarios:</span>
+                            <span className="ml-2 font-bold">{notificationStats.usersReached}</span>
+                          </div>
+                        </div>
+                        {notificationStats.byPersona.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-green-200 dark:border-green-800">
+                            <p className="text-xs text-muted-foreground mb-1">Por perfil:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {notificationStats.byPersona.map((p, idx) => (
+                                <Badge key={idx} variant="outline" className="text-xs">
+                                  {p.name}: {p.count}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Notificación personalizada */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Bell className="h-5 w-5" />
+                      Notificación Personalizada
+                    </CardTitle>
+                    <CardDescription>
+                      Crea y envía una notificación manual a usuarios específicos
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label>Título</Label>
+                      <Input 
+                        placeholder="📢 Título de la notificación..."
+                        value={customNotification.title}
+                        onChange={(e) => setCustomNotification(prev => ({ ...prev, title: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <Label>Contenido</Label>
+                      <Textarea 
+                        placeholder="Escribe el mensaje que verán los usuarios en su chat..."
+                        value={customNotification.content}
+                        onChange={(e) => setCustomNotification(prev => ({ ...prev, content: e.target.value }))}
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Tipo</Label>
+                        <Select 
+                          value={customNotification.type}
+                          onValueChange={(v) => setCustomNotification(prev => ({ ...prev, type: v }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="persona_tip">💡 Consejo</SelectItem>
+                            <SelectItem value="newsroom">📰 Newsroom</SelectItem>
+                            <SelectItem value="data_refresh">🔄 Datos</SelectItem>
+                            <SelectItem value="company_alert">🏢 Empresa</SelectItem>
+                            <SelectItem value="survey">📋 Encuesta</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Prioridad</Label>
+                        <Select 
+                          value={customNotification.priority}
+                          onValueChange={(v) => setCustomNotification(prev => ({ ...prev, priority: v }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Baja</SelectItem>
+                            <SelectItem value="normal">Normal</SelectItem>
+                            <SelectItem value="high">Alta</SelectItem>
+                            <SelectItem value="urgent">Urgente</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <Button 
+                      onClick={async () => {
+                        if (!customNotification.title || !customNotification.content) {
+                          toast({ title: 'Error', description: 'Completa título y contenido', variant: 'destructive' });
+                          return;
+                        }
+                        setSendingNotifications(true);
+                        try {
+                          const { data, error } = await supabase.functions.invoke('generate-marketing-notifications', {
+                            body: { 
+                              action: 'send_custom',
+                              customNotification,
+                              targetPersonas: selectedMarketingPersonas.length > 0 ? selectedMarketingPersonas : undefined,
+                            }
+                          });
+                          if (error) throw error;
+                          toast({ 
+                            title: '✅ Notificación enviada', 
+                            description: `Enviada a ${data.notificationsSent} usuarios` 
+                          });
+                          setCustomNotification({ title: '', content: '', type: 'persona_tip', priority: 'normal' });
+                        } catch (err: any) {
+                          toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                        } finally {
+                          setSendingNotifications(false);
+                        }
+                      }}
+                      disabled={sendingNotifications || !customNotification.title || !customNotification.content}
+                      className="w-full"
+                      variant="secondary"
+                    >
+                      {sendingNotifications ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 mr-2" />
+                          Enviar Notificación Manual
+                        </>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Templates por perfil */}
+                <Card className="lg:col-span-2">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Target className="h-5 w-5" />
+                      Templates de Notificación por Perfil
+                    </CardTitle>
+                    <CardDescription>
+                      Mensajes predefinidos que se envían automáticamente según el comportamiento del usuario
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {[
+                        { 
+                          emoji: '🚀', 
+                          name: 'Usuario Intensivo', 
+                          templates: [
+                            '📰 Nuevo análisis semanal disponible',
+                            '💡 Maximiza tu análisis con exportación PDF',
+                            '🎯 Prueba el rol de Analista M&A'
+                          ]
+                        },
+                        { 
+                          emoji: '👤', 
+                          name: 'Usuario Regular', 
+                          templates: [
+                            '📊 Descubre el enriquecimiento por rol',
+                            '🔄 Datos actualizados esta semana',
+                            '📄 Genera tu primer boletín ejecutivo'
+                          ]
+                        },
+                        { 
+                          emoji: '🌱', 
+                          name: 'Usuario Casual', 
+                          templates: [
+                            '👋 ¡Bienvenido a RepIndex!',
+                            '🎯 Empieza preguntando rankings',
+                            '💬 El Agente Rix te ayuda'
+                          ]
+                        },
+                        { 
+                          emoji: '💤', 
+                          name: 'Usuario Inactivo', 
+                          templates: [
+                            '🔔 Te echamos de menos',
+                            '📰 Novedades de la semana',
+                            '🚀 Vuelve a explorar'
+                          ]
+                        },
+                        { 
+                          emoji: '📄', 
+                          name: 'Generador de Informes', 
+                          templates: [
+                            '📄 Optimiza tus informes comparativos',
+                            '📊 Nuevos datos disponibles',
+                            '🎯 Rol ejecutivo recomendado'
+                          ]
+                        },
+                      ].map((profile, idx) => (
+                        <div key={idx} className="p-4 border rounded-lg">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-2xl">{profile.emoji}</span>
+                            <h4 className="font-medium">{profile.name}</h4>
+                          </div>
+                          <div className="space-y-1">
+                            {profile.templates.map((t, tIdx) => (
+                              <p key={tIdx} className="text-xs text-muted-foreground truncate">
+                                {t}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </TabsContent>
