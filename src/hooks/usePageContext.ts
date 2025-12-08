@@ -14,8 +14,8 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     suggestions: [
       '¿Qué es el RIX Score y cómo se calcula?',
       '¿Cuáles son las empresas mejor valoradas esta semana?',
-      'Genera un boletín de Telefónica',
       '¿Cómo funciona RepIndex?',
+      'Compara empresas cotizadas vs no cotizadas',
     ]
   },
   '/dashboard': {
@@ -23,9 +23,9 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Tabla de resultados RIX semanal',
     suggestions: [
       '¿Qué empresas han mejorado más esta semana?',
-      'Genera un boletín de Inditex y sus competidores',
       '¿Qué empresas del IBEX35 lideran el ranking?',
       'Compara empresas cotizadas vs no cotizadas',
+      '¿Qué sectores tienen mejor reputación?',
     ]
   },
   '/market-evolution': {
@@ -33,9 +33,9 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Gráficos de tendencias temporales',
     suggestions: [
       '¿Qué sectores muestran tendencia alcista?',
-      'Genera un boletín de Iberdrola',
       '¿Qué empresas han sido más volátiles?',
       'Analiza la evolución del sector bancario',
+      '¿Cuáles son las tendencias de esta semana?',
     ]
   },
   '/noticias': {
@@ -43,9 +43,9 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Noticias y análisis de reputación',
     suggestions: [
       '¿Cuáles son las principales noticias de esta semana?',
-      'Genera un boletín ejecutivo de Repsol',
       '¿Cuál es la calidad de los datos recogidos?',
       'Resume las tendencias más importantes',
+      '¿Qué empresas destacan en el boletín?',
     ]
   },
   '/chat': {
@@ -53,9 +53,9 @@ const pageContexts: Record<string, PageContextSuggestions> = {
     description: 'Análisis conversacional de datos',
     suggestions: [
       '¿Cuáles son las 5 empresas con mejor RIX Score?',
-      'Genera un boletín de Banco Santander y competidores',
       'Compara la evolución de Telefónica e Iberdrola',
       '¿Cómo evalúan las IAs a BBVA?',
+      'Análisis cruzado de empresas del sector energético',
     ]
   },
 };

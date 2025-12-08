@@ -436,7 +436,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse, conversationId } = body;
+    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse, conversationId, bulletinMode, bulletinCompanyName } = body;
     
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
@@ -537,23 +537,14 @@ serve(async (req) => {
     }
 
     // =============================================================================
-    // CHECK FOR BULLETIN INTENT (with specific company)
+    // BULLETIN MODE - ONLY TRIGGERED BY EXPLICIT BUTTON CLICK
     // =============================================================================
-    let bulletinCompany: string | null = null;
-    
-    for (const pattern of BULLETIN_PATTERNS) {
-      const match = question.match(pattern);
-      if (match) {
-        bulletinCompany = match[1].trim();
-        console.log(`${logPrefix} BULLETIN INTENT DETECTED for company: ${bulletinCompany}`);
-        break;
-      }
-    }
-
-    // If bulletin intent detected, use specialized flow
-    if (bulletinCompany) {
+    // Bulletins are ONLY generated when bulletinMode is explicitly set to true
+    // This prevents false positives from users asking for "informes" in general conversation
+    if (bulletinMode === true && bulletinCompanyName) {
+      console.log(`${logPrefix} BULLETIN MODE ACTIVATED for company: ${bulletinCompanyName}`);
       return await handleBulletinRequest(
-        bulletinCompany,
+        bulletinCompanyName,
         question,
         supabaseClient,
         openAIApiKey,
