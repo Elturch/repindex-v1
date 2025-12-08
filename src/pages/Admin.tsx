@@ -876,41 +876,41 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-5xl grid-cols-7 mb-6">
-            <TabsTrigger value="overview" className="flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
+          <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto mb-6 flex-wrap gap-1">
+            <TabsTrigger value="overview" className="flex items-center gap-1.5 px-3 text-xs">
+              <Building2 className="h-3.5 w-3.5" />
               Resumen
             </TabsTrigger>
-            <TabsTrigger value="profiles" className="flex items-center gap-2">
-              <UserCircle className="h-4 w-4" />
+            <TabsTrigger value="profiles" className="flex items-center gap-1.5 px-3 text-xs">
+              <UserCircle className="h-3.5 w-3.5" />
               Perfiles
             </TabsTrigger>
-            <TabsTrigger value="companies" className="flex items-center gap-2">
-              <Building2 className="h-4 w-4" />
+            <TabsTrigger value="companies" className="flex items-center gap-1.5 px-3 text-xs">
+              <Building2 className="h-3.5 w-3.5" />
               Empresas
             </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
+            <TabsTrigger value="users" className="flex items-center gap-1.5 px-3 text-xs">
+              <Users className="h-3.5 w-3.5" />
               Usuarios
             </TabsTrigger>
-            <TabsTrigger value="conversations" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
+            <TabsTrigger value="conversations" className="flex items-center gap-1.5 px-3 text-xs">
+              <MessageSquare className="h-3.5 w-3.5" />
               Chats
             </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
+            <TabsTrigger value="analytics" className="flex items-center gap-1.5 px-3 text-xs">
+              <BarChart3 className="h-3.5 w-3.5" />
               Analytics
             </TabsTrigger>
-            <TabsTrigger value="marketing" className="flex items-center gap-2">
-              <Megaphone className="h-4 w-4" />
+            <TabsTrigger value="marketing" className="flex items-center gap-1.5 px-3 text-xs">
+              <Megaphone className="h-3.5 w-3.5" />
               Marketing
             </TabsTrigger>
-            <TabsTrigger value="dm" className="flex items-center gap-2">
-              <Mail className="h-4 w-4" />
+            <TabsTrigger value="dm" className="flex items-center gap-1.5 px-3 text-xs">
+              <Mail className="h-3.5 w-3.5" />
               DM
             </TabsTrigger>
-            <TabsTrigger value="system" className="flex items-center gap-2">
-              <Database className="h-4 w-4" />
+            <TabsTrigger value="system" className="flex items-center gap-1.5 px-3 text-xs">
+              <Database className="h-3.5 w-3.5" />
               Sistema
             </TabsTrigger>
           </TabsList>
