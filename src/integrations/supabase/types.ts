@@ -1657,6 +1657,114 @@ export type Database = {
           },
         ]
       }
+      user_engagement_scores: {
+        Row: {
+          calculated_at: string | null
+          created_at: string | null
+          current_persona_id: string | null
+          depth_score: number | null
+          engagement_score: number | null
+          frequency_score: number | null
+          id: string
+          ignored_count_30d: number | null
+          last_notification_at: string | null
+          last_notification_type: string | null
+          lifecycle_stage: string | null
+          notifications_sent_24h: number | null
+          notifications_sent_30d: number | null
+          notifications_sent_7d: number | null
+          persona_confidence: number | null
+          preferred_days: string[] | null
+          preferred_hour: number | null
+          recency_score: number | null
+          recent_notification_types: string[] | null
+          response_score: number | null
+          user_id: string
+          weight_company_alert: number | null
+          weight_data_refresh: number | null
+          weight_engagement: number | null
+          weight_feature_discovery: number | null
+          weight_inactivity: number | null
+          weight_newsroom: number | null
+          weight_persona_tip: number | null
+        }
+        Insert: {
+          calculated_at?: string | null
+          created_at?: string | null
+          current_persona_id?: string | null
+          depth_score?: number | null
+          engagement_score?: number | null
+          frequency_score?: number | null
+          id?: string
+          ignored_count_30d?: number | null
+          last_notification_at?: string | null
+          last_notification_type?: string | null
+          lifecycle_stage?: string | null
+          notifications_sent_24h?: number | null
+          notifications_sent_30d?: number | null
+          notifications_sent_7d?: number | null
+          persona_confidence?: number | null
+          preferred_days?: string[] | null
+          preferred_hour?: number | null
+          recency_score?: number | null
+          recent_notification_types?: string[] | null
+          response_score?: number | null
+          user_id: string
+          weight_company_alert?: number | null
+          weight_data_refresh?: number | null
+          weight_engagement?: number | null
+          weight_feature_discovery?: number | null
+          weight_inactivity?: number | null
+          weight_newsroom?: number | null
+          weight_persona_tip?: number | null
+        }
+        Update: {
+          calculated_at?: string | null
+          created_at?: string | null
+          current_persona_id?: string | null
+          depth_score?: number | null
+          engagement_score?: number | null
+          frequency_score?: number | null
+          id?: string
+          ignored_count_30d?: number | null
+          last_notification_at?: string | null
+          last_notification_type?: string | null
+          lifecycle_stage?: string | null
+          notifications_sent_24h?: number | null
+          notifications_sent_30d?: number | null
+          notifications_sent_7d?: number | null
+          persona_confidence?: number | null
+          preferred_days?: string[] | null
+          preferred_hour?: number | null
+          recency_score?: number | null
+          recent_notification_types?: string[] | null
+          response_score?: number | null
+          user_id?: string
+          weight_company_alert?: number | null
+          weight_data_refresh?: number | null
+          weight_engagement?: number | null
+          weight_feature_discovery?: number | null
+          weight_inactivity?: number | null
+          weight_newsroom?: number | null
+          weight_persona_tip?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_engagement_scores_current_persona_id_fkey"
+            columns: ["current_persona_id"]
+            isOneToOne: false
+            referencedRelation: "user_personas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_engagement_scores_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_notification_preferences: {
         Row: {
           created_at: string
@@ -2086,6 +2194,7 @@ export type Database = {
         Args: { batch_date?: string; price_text: string; ticker?: string }
         Returns: number
       }
+      reset_daily_fatigue_counters: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "manager" | "user"

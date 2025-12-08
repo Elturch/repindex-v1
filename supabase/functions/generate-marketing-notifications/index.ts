@@ -7,6 +7,113 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ============================================
+// FATIGUE LIMITS BY LIFECYCLE STAGE
+// ============================================
+const FATIGUE_LIMITS: Record<string, { perDay: number; perWeek: number; perMonth: number; minHoursBetween: number }> = {
+  'power_user': { perDay: 1, perWeek: 3, perMonth: 8, minHoursBetween: 24 },
+  'engaged': { perDay: 1, perWeek: 4, perMonth: 12, minHoursBetween: 24 },
+  'active': { perDay: 1, perWeek: 3, perMonth: 10, minHoursBetween: 48 },
+  'new': { perDay: 1, perWeek: 2, perMonth: 6, minHoursBetween: 48 },
+  'at_risk': { perDay: 1, perWeek: 2, perMonth: 4, minHoursBetween: 72 },
+  'churned': { perDay: 0, perWeek: 1, perMonth: 2, minHoursBetween: 168 }, // 7 days
+};
+
+// ============================================
+// DECISION ENGINE: Should we send notification?
+// ============================================
+interface EngagementScore {
+  user_id: string;
+  engagement_score: number;
+  lifecycle_stage: string;
+  notifications_sent_24h: number;
+  notifications_sent_7d: number;
+  notifications_sent_30d: number;
+  last_notification_at: string | null;
+  last_notification_type: string | null;
+  ignored_count_30d: number;
+  weight_newsroom: number;
+  weight_persona_tip: number;
+  weight_data_refresh: number;
+  weight_inactivity: number;
+  weight_company_alert: number;
+  weight_feature_discovery: number;
+  weight_engagement: number;
+  recent_notification_types: string[];
+}
+
+function shouldSendNotification(
+  engagementScore: EngagementScore
+): { eligible: boolean; reason: string } {
+  const limits = FATIGUE_LIMITS[engagementScore.lifecycle_stage] || FATIGUE_LIMITS['active'];
+
+  // Check daily limit
+  if (engagementScore.notifications_sent_24h >= limits.perDay) {
+    return { eligible: false, reason: 'daily_limit_reached' };
+  }
+
+  // Check weekly limit
+  if (engagementScore.notifications_sent_7d >= limits.perWeek) {
+    return { eligible: false, reason: 'weekly_limit_reached' };
+  }
+
+  // Check monthly limit
+  if (engagementScore.notifications_sent_30d >= limits.perMonth) {
+    return { eligible: false, reason: 'monthly_limit_reached' };
+  }
+
+  // Check minimum time between notifications
+  if (engagementScore.last_notification_at) {
+    const hoursSince = (Date.now() - new Date(engagementScore.last_notification_at).getTime()) / (1000 * 60 * 60);
+    if (hoursSince < limits.minHoursBetween) {
+      return { eligible: false, reason: 'too_soon' };
+    }
+  }
+
+  // Check if user ignores too many notifications (reduce frequency)
+  const totalNotifs = engagementScore.notifications_sent_30d || 0;
+  const ignoreRate = totalNotifs > 0 ? engagementScore.ignored_count_30d / totalNotifs : 0;
+  if (ignoreRate > 0.7 && engagementScore.notifications_sent_7d >= 1) {
+    return { eligible: false, reason: 'high_ignore_rate' };
+  }
+
+  return { eligible: true, reason: 'eligible' };
+}
+
+// ============================================
+// SELECT BEST NOTIFICATION TYPE
+// ============================================
+function selectNotificationType(
+  engagementScore: EngagementScore
+): string {
+  const weights: Record<string, number> = {
+    newsroom: engagementScore.weight_newsroom || 0,
+    persona_tip: engagementScore.weight_persona_tip || 0,
+    data_refresh: engagementScore.weight_data_refresh || 0,
+    inactivity: engagementScore.weight_inactivity || 0,
+    company_alert: engagementScore.weight_company_alert || 0,
+    feature_discovery: engagementScore.weight_feature_discovery || 0,
+    engagement: engagementScore.weight_engagement || 0,
+  };
+
+  // Sort types by weight
+  const sortedTypes = Object.entries(weights)
+    .filter(([_, weight]) => weight > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  // Avoid repeating same type from last 7 days
+  const recentTypes = engagementScore.recent_notification_types || [];
+  
+  for (const [type] of sortedTypes) {
+    if (!recentTypes.includes(type)) {
+      return type;
+    }
+  }
+
+  // If all were used recently, use the highest weighted
+  return sortedTypes[0]?.[0] || 'newsroom';
+}
+
 // AI Provider fallback system
 async function callAIWithFallback(messages: any[], maxTokens: number = 2000): Promise<{ content: string; provider: string }> {
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
@@ -91,6 +198,8 @@ async function generatePersonalizedNotification(
     lastActivity: string;
     favoriteRoles: string[];
     mentionedCompanies: string[];
+    engagementScore: number;
+    lifecycleStage: string;
   },
   notificationType: string,
   weeklyHighlights?: {
@@ -105,7 +214,7 @@ Tu tarea es generar notificaciones push personalizadas y atractivas para usuario
 REGLAS:
 - Mensajes cortos, directos y accionables (máximo 2 líneas)
 - Usa emojis relevantes
-- Personaliza según el perfil del usuario
+- Personaliza según el perfil del usuario y su engagement score
 - Incluye call-to-action claro
 - Tono profesional pero cercano
 - En español
@@ -115,7 +224,7 @@ TIPOS DE NOTIFICACIÓN:
 - newsroom: Novedades del análisis semanal
 - data_refresh: Datos actualizados disponibles
 - persona_tip: Consejo personalizado según perfil
-- inactivity: Reenganche de usuarios inactivos
+- inactivity: Reenganche de usuarios inactivos (tono muy cuidadoso, no agresivo)
 - company_alert: Alertas sobre empresas mencionadas
 - feature_discovery: Descubrimiento de funcionalidades
 - engagement: Fomentar uso recurrente
@@ -132,6 +241,8 @@ Responde SOLO en formato JSON:
 PERFIL DEL USUARIO:
 - Nombre: ${userContext.userName || "Usuario"}
 - Tipo: ${userContext.personaEmoji} ${userContext.personaName}
+- Engagement Score: ${userContext.engagementScore}/100
+- Lifecycle Stage: ${userContext.lifecycleStage}
 - Características: ${userContext.characteristics?.join(", ") || "No definidas"}
 - Conversaciones totales: ${userContext.totalConversations || 0}
 - Documentos generados: ${userContext.totalDocuments || 0}
@@ -146,7 +257,7 @@ CONTEXTO SEMANAL:
 - Empresas destacadas: ${weeklyHighlights.topCompanies?.join(", ")}
 ` : ""}
 
-Genera una notificación relevante y personalizada.`;
+Genera una notificación relevante y personalizada para su nivel de engagement.`;
 
   try {
     const { content } = await callAIWithFallback([
@@ -161,157 +272,7 @@ Genera una notificación relevante y personalizada.`;
     throw new Error("Invalid JSON response");
   } catch (e) {
     console.error("AI notification generation failed:", e);
-    // Fallback to static templates
     return getStaticNotification(notificationType, userContext.personaName);
-  }
-}
-
-// Generate push notification schedule for a user
-async function generateUserSchedule(
-  userContext: {
-    userName: string;
-    personaName: string;
-    characteristics: string[];
-    activityDays: number;
-    totalConversations: number;
-    lastActivity: string;
-  }
-): Promise<{
-  frequency: string;
-  preferredDays: string[];
-  notificationTypes: string[];
-  maxPerWeek: number;
-}> {
-  const systemPrompt = `Eres un experto en marketing automation de RepIndex.
-Diseña un calendario de notificaciones push óptimo para cada usuario según su perfil y comportamiento.
-
-REGLAS:
-- Usuarios activos: máximo 3-4 notificaciones/semana
-- Usuarios regulares: 2-3 notificaciones/semana  
-- Usuarios casuales: 1-2 notificaciones/semana
-- Usuarios inactivos: 1 notificación/semana (reenganche)
-- Evitar saturación
-- Considerar mejores días (lunes, miércoles son buenos para B2B)
-- Priorizar tipos de notificación según perfil
-
-Responde SOLO en formato JSON:
-{
-  "frequency": "daily|weekly|biweekly",
-  "preferredDays": ["monday", "wednesday"],
-  "notificationTypes": ["newsroom", "persona_tip"],
-  "maxPerWeek": 3
-}`;
-
-  const userPrompt = `Diseña calendario de notificaciones para:
-- Perfil: ${userContext.personaName}
-- Características: ${userContext.characteristics?.join(", ") || "No definidas"}
-- Días de actividad: ${userContext.activityDays || 0}
-- Conversaciones: ${userContext.totalConversations || 0}
-- Última actividad: ${userContext.lastActivity || "Desconocida"}`;
-
-  try {
-    const { content } = await callAIWithFallback([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ], 300);
-
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    throw new Error("Invalid JSON");
-  } catch (e) {
-    console.error("Schedule generation failed:", e);
-    return {
-      frequency: "weekly",
-      preferredDays: ["monday", "thursday"],
-      notificationTypes: ["newsroom", "persona_tip"],
-      maxPerWeek: 2,
-    };
-  }
-}
-
-// Generate complete inbound marketing plan for all personas
-async function generateInboundPlan(personas: any[]): Promise<any> {
-  const systemPrompt = `Eres un estratega de inbound marketing para RepIndex, plataforma de análisis de reputación corporativa.
-Diseña un plan de marketing automation completo para maximizar engagement y retención.
-
-OBJETIVO: Aumentar uso recurrente de la plataforma
-
-CANALES DISPONIBLES:
-- Notificaciones push in-app (chat)
-- Alertas de datos actualizados
-- Consejos personalizados
-- Novedades del newsroom semanal
-- Alertas de empresas de interés
-
-MÉTRICAS CLAVE:
-- Frecuencia de uso semanal
-- Generación de boletines
-- Tiempo en plataforma
-- Conversiones de casual a power user
-
-Responde en JSON con estructura:
-{
-  "campaigns": [
-    {
-      "name": "nombre campaña",
-      "target_personas": ["persona_id"],
-      "trigger": "weekly|event|inactivity",
-      "notification_sequence": [
-        {
-          "day_offset": 0,
-          "type": "newsroom|persona_tip|etc",
-          "goal": "objetivo específico"
-        }
-      ],
-      "success_metrics": ["métrica1", "métrica2"]
-    }
-  ],
-  "automation_rules": [
-    {
-      "trigger": "evento disparador",
-      "action": "acción a tomar",
-      "target": "a quién aplica"
-    }
-  ],
-  "calendar": {
-    "monday": ["tipo_notificacion"],
-    "wednesday": ["tipo_notificacion"],
-    "friday": ["tipo_notificacion"]
-  }
-}`;
-
-  const userPrompt = `Diseña plan de inbound marketing para estos perfiles de usuario:
-
-${personas.map(p => `
-PERFIL: ${p.emoji} ${p.name}
-- Descripción: ${p.description}
-- Características: ${p.characteristics?.join(", ")}
-- Usuarios en este perfil: ${p.user_count || 0}
-- Promedio conversaciones: ${p.avg_conversations || 0}
-- Promedio documentos: ${p.avg_documents || 0}
-`).join("\n")}
-
-Genera un plan completo con campañas específicas para cada perfil, reglas de automatización y calendario semanal.`;
-
-  try {
-    const { content, provider } = await callAIWithFallback([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ], 4000);
-
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const plan = JSON.parse(jsonMatch[0]);
-      plan.generated_by = provider;
-      plan.generated_at = new Date().toISOString();
-      return plan;
-    }
-    throw new Error("Invalid JSON");
-  } catch (e) {
-    console.error("Inbound plan generation failed:", e);
-    return getDefaultInboundPlan();
   }
 }
 
@@ -363,68 +324,15 @@ function getStaticNotification(type: string, personaName: string): { title: stri
   return templates[type] || templates.persona_tip;
 }
 
-// Default inbound plan fallback
-function getDefaultInboundPlan() {
-  return {
-    campaigns: [
-      {
-        name: "Onboarding Nuevos Usuarios",
-        target_personas: ["casual_user"],
-        trigger: "event",
-        notification_sequence: [
-          { day_offset: 0, type: "welcome", goal: "Primer contacto" },
-          { day_offset: 2, type: "persona_tip", goal: "Enseñar funcionalidad básica" },
-          { day_offset: 5, type: "feature_discovery", goal: "Descubrir boletines" },
-        ],
-        success_metrics: ["first_query", "first_bulletin"],
-      },
-      {
-        name: "Engagement Semanal",
-        target_personas: ["regular_user", "power_user"],
-        trigger: "weekly",
-        notification_sequence: [
-          { day_offset: 0, type: "newsroom", goal: "Informar novedades" },
-          { day_offset: 3, type: "persona_tip", goal: "Profundizar uso" },
-        ],
-        success_metrics: ["weekly_sessions", "documents_generated"],
-      },
-      {
-        name: "Reenganche Inactivos",
-        target_personas: ["dormant_user"],
-        trigger: "inactivity",
-        notification_sequence: [
-          { day_offset: 0, type: "inactivity", goal: "Recuperar usuario" },
-          { day_offset: 7, type: "newsroom", goal: "Mostrar valor perdido" },
-        ],
-        success_metrics: ["reactivation_rate"],
-      },
-    ],
-    automation_rules: [
-      { trigger: "7_days_inactive", action: "send_inactivity_notification", target: "all_users" },
-      { trigger: "new_weekly_data", action: "send_newsroom_notification", target: "active_users" },
-      { trigger: "company_rix_change_5pct", action: "send_company_alert", target: "users_following_company" },
-    ],
-    calendar: {
-      monday: ["newsroom"],
-      wednesday: ["persona_tip"],
-      friday: ["engagement"],
-    },
-    generated_by: "fallback",
-    generated_at: new Date().toISOString(),
-  };
-}
-
 // Get weekly highlights from database
 async function getWeeklyHighlights(supabase: any): Promise<any> {
   try {
-    // Get top movers
     const { data: trends } = await supabase
       .from("rix_trends")
       .select("company_name, rix_score")
       .order("batch_week", { ascending: false })
       .limit(50);
 
-    // Get latest news count
     const { data: news } = await supabase
       .from("weekly_news")
       .select("id, main_headline, stories")
@@ -446,6 +354,44 @@ async function getWeeklyHighlights(supabase: any): Promise<any> {
   }
 }
 
+// Update fatigue counters after sending notification
+async function updateFatigueCounters(
+  supabase: any,
+  userId: string,
+  notificationType: string
+): Promise<void> {
+  try {
+    // Get current engagement score
+    const { data: current } = await supabase
+      .from("user_engagement_scores")
+      .select("notifications_sent_24h, notifications_sent_7d, notifications_sent_30d, recent_notification_types")
+      .eq("user_id", userId)
+      .single();
+
+    if (!current) return;
+
+    const recentTypes = current.recent_notification_types || [];
+    recentTypes.push(notificationType);
+    
+    // Keep only last 5 types
+    const trimmedTypes = recentTypes.slice(-5);
+
+    await supabase
+      .from("user_engagement_scores")
+      .update({
+        notifications_sent_24h: (current.notifications_sent_24h || 0) + 1,
+        notifications_sent_7d: (current.notifications_sent_7d || 0) + 1,
+        notifications_sent_30d: (current.notifications_sent_30d || 0) + 1,
+        last_notification_at: new Date().toISOString(),
+        last_notification_type: notificationType,
+        recent_notification_types: trimmedTypes,
+      })
+      .eq("user_id", userId);
+  } catch (e) {
+    console.error("Failed to update fatigue counters:", e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -464,18 +410,205 @@ serve(async (req) => {
       customNotification, 
       userId, 
       notificationId,
-      // DM specific params
       dmPayload,
       targetingMode,
       targetUserIds,
       targetCompanies,
     } = body;
 
-    // ACTION: Generate AI-powered notifications for all users
+    // ============================================
+    // ACTION: CRON - Weighted Decision Engine Notifications
+    // ============================================
+    if (action === "cron_weighted_notifications") {
+      console.log("Starting CRON weighted decision engine...");
+
+      // Get all engagement scores
+      const { data: engagementScores, error: engError } = await supabase
+        .from("user_engagement_scores")
+        .select("*");
+
+      if (engError) throw engError;
+
+      if (!engagementScores?.length) {
+        console.log("No engagement scores found. Run analyze-user-profiles first.");
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: "No engagement scores available",
+            notificationsSent: 0 
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Get user activity snapshots for context
+      const { data: latestBatch } = await supabase
+        .from("profile_analysis_batches")
+        .select("id")
+        .order("analyzed_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      const { data: userSnapshots } = await supabase
+        .from("user_activity_snapshots")
+        .select(`
+          user_id, user_email, user_name,
+          total_conversations, total_documents, total_enrichments,
+          last_activity, activity_days,
+          favorite_roles, mentioned_companies,
+          persona_id,
+          user_personas (id, name, emoji, characteristics)
+        `)
+        .eq("analysis_batch_id", latestBatch?.id);
+
+      const snapshotMap = new Map(userSnapshots?.map((s: any) => [s.user_id, s]) || []);
+
+      // Get weekly highlights
+      const weeklyHighlights = await getWeeklyHighlights(supabase);
+
+      // Get user preferences
+      const { data: preferences } = await supabase
+        .from("user_notification_preferences")
+        .select("*");
+      const prefMap = new Map(preferences?.map((p: any) => [p.user_id, p]) || []);
+
+      const notifications: any[] = [];
+      const skipped: { userId: string; reason: string }[] = [];
+
+      for (const engScore of engagementScores) {
+        // Step 1: Check eligibility (fatigue management)
+        const eligibility = shouldSendNotification(engScore);
+        
+        if (!eligibility.eligible) {
+          skipped.push({ userId: engScore.user_id, reason: eligibility.reason });
+          continue;
+        }
+
+        // Step 2: Select optimal notification type based on weights
+        const notificationType = selectNotificationType(engScore);
+
+        // Step 3: Check user preferences
+        const userPrefs = prefMap.get(engScore.user_id);
+        if (userPrefs) {
+          if (notificationType === "persona_tip" && !userPrefs.enable_persona_tips) continue;
+          if (notificationType === "newsroom" && !userPrefs.enable_newsroom_alerts) continue;
+          if (notificationType === "data_refresh" && !userPrefs.enable_data_refresh_alerts) continue;
+          if (notificationType === "inactivity" && !userPrefs.enable_inactivity_reminders) continue;
+          if (notificationType === "company_alert" && !userPrefs.enable_company_alerts) continue;
+        }
+
+        // Step 4: Get user context for personalization
+        const snapshot = snapshotMap.get(engScore.user_id);
+        const persona = snapshot?.user_personas as any;
+
+        // Step 5: Generate personalized notification with AI
+        const notif = await generatePersonalizedNotification(
+          {
+            userName: snapshot?.user_name || "Usuario",
+            personaName: persona?.name || "Usuario",
+            personaEmoji: persona?.emoji || "👤",
+            characteristics: persona?.characteristics || [],
+            totalConversations: snapshot?.total_conversations || 0,
+            totalDocuments: snapshot?.total_documents || 0,
+            lastActivity: snapshot?.last_activity || "",
+            favoriteRoles: snapshot?.favorite_roles || [],
+            mentionedCompanies: snapshot?.mentioned_companies || [],
+            engagementScore: engScore.engagement_score,
+            lifecycleStage: engScore.lifecycle_stage,
+          },
+          notificationType,
+          weeklyHighlights
+        );
+
+        notifications.push({
+          user_id: engScore.user_id,
+          notification_type: notificationType,
+          title: notif.title,
+          content: notif.content,
+          priority: notif.priority,
+          persona_id: persona?.id || null,
+          metadata: {
+            persona_name: persona?.name || null,
+            engagement_score: engScore.engagement_score,
+            lifecycle_stage: engScore.lifecycle_stage,
+            generated_by: "weighted_decision_engine",
+            notification_weights: {
+              newsroom: engScore.weight_newsroom,
+              persona_tip: engScore.weight_persona_tip,
+              company_alert: engScore.weight_company_alert,
+            },
+            generated_at: new Date().toISOString(),
+          },
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      }
+
+      // Insert notifications
+      if (notifications.length > 0) {
+        const { error: insertError } = await supabase
+          .from("user_notifications")
+          .insert(notifications);
+
+        if (insertError) {
+          console.error("Insert error:", insertError);
+          throw insertError;
+        }
+
+        // Update fatigue counters for each notified user
+        for (const notif of notifications) {
+          await updateFatigueCounters(supabase, notif.user_id, notif.notification_type);
+        }
+
+        // Track analytics
+        const analyticsEntries = notifications.map(n => ({
+          campaign_id: null,
+          user_id: n.user_id,
+          event_type: "cron_delivered",
+          event_data: { 
+            engagement_score: n.metadata.engagement_score,
+            lifecycle_stage: n.metadata.lifecycle_stage,
+            notification_type: n.notification_type,
+          },
+        }));
+
+        await supabase.from("notification_analytics").insert(analyticsEntries);
+      }
+
+      // Calculate summary by lifecycle stage
+      const byLifecycle = notifications.reduce((acc: Record<string, number>, n) => {
+        const stage = n.metadata.lifecycle_stage || "unknown";
+        acc[stage] = (acc[stage] || 0) + 1;
+        return acc;
+      }, {});
+
+      const byType = notifications.reduce((acc: Record<string, number>, n) => {
+        acc[n.notification_type] = (acc[n.notification_type] || 0) + 1;
+        return acc;
+      }, {});
+
+      console.log(`CRON complete: ${notifications.length} sent, ${skipped.length} skipped`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          notificationsSent: notifications.length,
+          usersSkipped: skipped.length,
+          skipReasons: skipped.reduce((acc: Record<string, number>, s) => {
+            acc[s.reason] = (acc[s.reason] || 0) + 1;
+            return acc;
+          }, {}),
+          byLifecycleStage: byLifecycle,
+          byNotificationType: byType,
+          generatedBy: "weighted_decision_engine",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ACTION: Generate AI-powered notifications for all users (legacy)
     if (action === "generate_ai_notifications") {
       console.log("Starting AI-powered notification generation...");
 
-      // Get latest analysis batch
       const { data: latestBatch } = await supabase
         .from("profile_analysis_batches")
         .select("id")
@@ -490,7 +623,6 @@ serve(async (req) => {
         );
       }
 
-      // Get user snapshots with persona info
       const { data: userSnapshots } = await supabase
         .from("user_activity_snapshots")
         .select(`
@@ -510,10 +642,15 @@ serve(async (req) => {
         );
       }
 
-      // Get weekly highlights
+      // Get engagement scores
+      const { data: engagementScores } = await supabase
+        .from("user_engagement_scores")
+        .select("user_id, engagement_score, lifecycle_stage");
+      
+      const engMap = new Map(engagementScores?.map((e: any) => [e.user_id, e]) || []);
+
       const weeklyHighlights = await getWeeklyHighlights(supabase);
 
-      // Get user preferences
       const { data: preferences } = await supabase
         .from("user_notification_preferences")
         .select("*");
@@ -521,9 +658,7 @@ serve(async (req) => {
 
       const targetPersonaSet = new Set(targetPersonas || []);
       const notifications: any[] = [];
-      const schedules: any[] = [];
 
-      // Determine notification types based on user profile
       const notificationTypesForPersona: Record<string, string[]> = {
         "Usuario Intensivo": ["newsroom", "persona_tip", "feature_discovery"],
         "Usuario Regular": ["newsroom", "persona_tip", "data_refresh"],
@@ -535,45 +670,23 @@ serve(async (req) => {
       for (const snapshot of userSnapshots) {
         const persona = snapshot.user_personas as any;
         const personaName = persona?.name || "Usuario";
+        const eng = engMap.get(snapshot.user_id);
 
-        // Filter by target personas if specified
         if (targetPersonas?.length > 0 && !targetPersonaSet.has(persona?.id)) {
           continue;
         }
 
-        // Check user preferences
         const userPrefs = prefMap.get(snapshot.user_id);
-
-        // Generate user schedule
-        const schedule = await generateUserSchedule({
-          userName: snapshot.user_name || "Usuario",
-          personaName,
-          characteristics: persona?.characteristics || [],
-          activityDays: snapshot.activity_days || 0,
-          totalConversations: snapshot.total_conversations || 0,
-          lastActivity: snapshot.last_activity || "",
-        });
-
-        schedules.push({
-          user_id: snapshot.user_id,
-          schedule,
-        });
-
-        // Get notification types for this persona
         const notifTypes = notificationTypesForPersona[personaName] || ["persona_tip", "newsroom"];
-        
-        // Generate 1-2 AI-powered notifications
-        const typesToSend = notifTypes.slice(0, Math.min(2, schedule.maxPerWeek));
+        const typesToSend = notifTypes.slice(0, 2);
 
         for (const notifType of typesToSend) {
-          // Check preferences
           if (userPrefs) {
             if (notifType === "persona_tip" && !userPrefs.enable_persona_tips) continue;
             if (notifType === "newsroom" && !userPrefs.enable_newsroom_alerts) continue;
             if (notifType === "data_refresh" && !userPrefs.enable_data_refresh_alerts) continue;
           }
 
-          // Generate personalized notification with AI
           const notif = await generatePersonalizedNotification(
             {
               userName: snapshot.user_name || "Usuario",
@@ -585,6 +698,8 @@ serve(async (req) => {
               lastActivity: snapshot.last_activity || "",
               favoriteRoles: snapshot.favorite_roles || [],
               mentionedCompanies: snapshot.mentioned_companies || [],
+              engagementScore: eng?.engagement_score || 50,
+              lifecycleStage: eng?.lifecycle_stage || "active",
             },
             notifType,
             weeklyHighlights
@@ -600,7 +715,6 @@ serve(async (req) => {
             metadata: {
               persona_name: personaName,
               generated_by: "ai",
-              schedule: schedule,
               campaign_id: campaignId || null,
               generated_at: new Date().toISOString(),
             },
@@ -609,7 +723,6 @@ serve(async (req) => {
         }
       }
 
-      // Insert notifications
       if (notifications.length > 0) {
         const { error: insertError } = await supabase
           .from("user_notifications")
@@ -620,7 +733,6 @@ serve(async (req) => {
           throw insertError;
         }
 
-        // Track analytics
         const analyticsEntries = notifications.map(n => ({
           campaign_id: campaignId || null,
           user_id: n.user_id,
@@ -639,7 +751,6 @@ serve(async (req) => {
           success: true,
           notificationsSent: notifications.length,
           usersReached: new Set(notifications.map(n => n.user_id)).size,
-          schedules: schedules.length,
           byPersona: Object.entries(
             notifications.reduce((acc: Record<string, number>, n) => {
               const key = n.metadata.persona_name || "Sin perfil";
@@ -648,274 +759,6 @@ serve(async (req) => {
             }, {})
           ).map(([name, count]) => ({ name, count })),
           generatedBy: "ai",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ACTION: Generate complete inbound marketing plan
-    if (action === "generate_inbound_plan") {
-      console.log("Generating AI-powered inbound marketing plan...");
-
-      // Get all personas from latest batch
-      const { data: latestBatch } = await supabase
-        .from("profile_analysis_batches")
-        .select("id")
-        .order("analyzed_at", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!latestBatch) {
-        return new Response(
-          JSON.stringify({ error: "No hay análisis de perfiles disponible." }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const { data: personas } = await supabase
-        .from("user_personas")
-        .select("*")
-        .eq("analysis_batch_id", latestBatch.id);
-
-      if (!personas?.length) {
-        return new Response(
-          JSON.stringify({ error: "No hay personas definidas." }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const plan = await generateInboundPlan(personas);
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          plan,
-          personasAnalyzed: personas.length,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ACTION: Generate static notifications (original behavior)
-    if (action === "generate_for_all") {
-      const { data: latestBatch } = await supabase
-        .from("profile_analysis_batches")
-        .select("id")
-        .order("analyzed_at", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!latestBatch) {
-        return new Response(
-          JSON.stringify({ error: "No hay análisis de perfiles disponible." }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const { data: userSnapshots } = await supabase
-        .from("user_activity_snapshots")
-        .select(`
-          user_id, user_email, user_name,
-          persona_id,
-          user_personas (id, name, emoji)
-        `)
-        .eq("analysis_batch_id", latestBatch.id);
-
-      const { data: preferences } = await supabase
-        .from("user_notification_preferences")
-        .select("user_id, enable_persona_tips, enable_newsroom_alerts, enable_data_refresh_alerts");
-
-      const prefMap = new Map(preferences?.map(p => [p.user_id, p]) || []);
-      const notifications: any[] = [];
-      const targetPersonaSet = new Set(targetPersonas || []);
-
-      for (const snapshot of userSnapshots || []) {
-        const persona = snapshot.user_personas as any;
-        const personaName = persona?.name || "Usuario";
-
-        if (targetPersonas?.length > 0 && !targetPersonaSet.has(persona?.id)) {
-          continue;
-        }
-
-        const userPrefs = prefMap.get(snapshot.user_id);
-        const notifTypes = ["newsroom", "persona_tip"];
-        
-        for (const type of notifTypes.slice(0, 2)) {
-          if (userPrefs) {
-            if (type === "persona_tip" && !userPrefs.enable_persona_tips) continue;
-            if (type === "newsroom" && !userPrefs.enable_newsroom_alerts) continue;
-          }
-
-          const notif = getStaticNotification(type, personaName);
-
-          notifications.push({
-            user_id: snapshot.user_id,
-            notification_type: type,
-            title: notif.title,
-            content: notif.content,
-            priority: notif.priority,
-            persona_id: persona?.id || null,
-            metadata: {
-              persona_name: personaName,
-              generated_by: "static",
-              campaign_id: campaignId || null,
-              generated_at: new Date().toISOString(),
-            },
-            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          });
-        }
-      }
-
-      if (notifications.length > 0) {
-        const { error: insertError } = await supabase
-          .from("user_notifications")
-          .insert(notifications);
-        if (insertError) throw insertError;
-
-        await supabase.from("notification_analytics").insert(
-          notifications.map(n => ({
-            campaign_id: campaignId || null,
-            user_id: n.user_id,
-            event_type: "delivered",
-            event_data: { persona_id: n.persona_id },
-          }))
-        );
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          notificationsSent: notifications.length,
-          usersReached: new Set(notifications.map(n => n.user_id)).size,
-          generatedBy: "static",
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ACTION: Send custom notification with AI enhancement
-    if (action === "send_custom_ai") {
-      if (!customNotification?.prompt) {
-        return new Response(
-          JSON.stringify({ error: "Se requiere prompt para generar notificación" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const systemPrompt = `Genera una notificación push para RepIndex basada en el prompt del usuario.
-Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|high"}`;
-
-      const { content } = await callAIWithFallback([
-        { role: "system", content: systemPrompt },
-        { role: "user", content: customNotification.prompt },
-      ], 500);
-
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return new Response(
-          JSON.stringify({ error: "Error generando notificación" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const generatedNotif = JSON.parse(jsonMatch[0]);
-
-      let targetUserIds: string[] = [];
-      if (userId) {
-        targetUserIds = [userId];
-      } else if (targetPersonas?.length > 0) {
-        const { data: snapshots } = await supabase
-          .from("user_activity_snapshots")
-          .select("user_id, persona_id")
-          .in("persona_id", targetPersonas);
-        targetUserIds = [...new Set(snapshots?.map(s => s.user_id) || [])];
-      } else {
-        const { data: users } = await supabase
-          .from("user_profiles")
-          .select("id")
-          .eq("is_active", true);
-        targetUserIds = users?.map(u => u.id) || [];
-      }
-
-      const notifications = targetUserIds.map(uid => ({
-        user_id: uid,
-        notification_type: customNotification.type || "persona_tip",
-        title: generatedNotif.title,
-        content: generatedNotif.content,
-        priority: generatedNotif.priority,
-        metadata: {
-          generated_by: "ai",
-          prompt: customNotification.prompt,
-          campaign_id: campaignId,
-          generated_at: new Date().toISOString(),
-        },
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      }));
-
-      if (notifications.length > 0) {
-        const { error } = await supabase.from("user_notifications").insert(notifications);
-        if (error) throw error;
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          notificationsSent: notifications.length,
-          generatedNotification: generatedNotif,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ACTION: Send custom notification (static)
-    if (action === "send_custom") {
-      if (!customNotification) {
-        return new Response(
-          JSON.stringify({ error: "Se requiere customNotification" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      let targetUserIds: string[] = [];
-      if (userId) {
-        targetUserIds = [userId];
-      } else if (targetPersonas?.length > 0) {
-        const { data: snapshots } = await supabase
-          .from("user_activity_snapshots")
-          .select("user_id, persona_id")
-          .in("persona_id", targetPersonas);
-        targetUserIds = [...new Set(snapshots?.map(s => s.user_id) || [])];
-      } else {
-        const { data: users } = await supabase
-          .from("user_profiles")
-          .select("id")
-          .eq("is_active", true);
-        targetUserIds = users?.map(u => u.id) || [];
-      }
-
-      const notifications = targetUserIds.map(uid => ({
-        user_id: uid,
-        notification_type: customNotification.type || "persona_tip",
-        title: customNotification.title,
-        content: customNotification.content,
-        priority: customNotification.priority || "normal",
-        metadata: {
-          custom: true,
-          campaign_id: campaignId,
-          generated_at: new Date().toISOString(),
-        },
-        expires_at: customNotification.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      }));
-
-      if (notifications.length > 0) {
-        const { error } = await supabase.from("user_notifications").insert(notifications);
-        if (error) throw error;
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          notificationsSent: notifications.length,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -967,6 +810,22 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
 
       if (error) throw error;
 
+      // Update ignored count in engagement scores
+      if (userId) {
+        const { data: current } = await supabase
+          .from("user_engagement_scores")
+          .select("ignored_count_30d")
+          .eq("user_id", userId)
+          .single();
+
+        if (current) {
+          await supabase
+            .from("user_engagement_scores")
+            .update({ ignored_count_30d: (current.ignored_count_30d || 0) + 1 })
+            .eq("user_id", userId);
+        }
+      }
+
       await supabase.from("notification_analytics").insert({
         notification_id: notificationId,
         user_id: userId,
@@ -1013,6 +872,52 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
       );
     }
 
+    // ACTION: Get engagement dashboard data
+    if (action === "get_engagement_dashboard") {
+      const { data: engagementScores } = await supabase
+        .from("user_engagement_scores")
+        .select(`
+          *,
+          user_profiles (email, full_name)
+        `);
+
+      // Calculate distributions
+      const lifecycleDistribution = engagementScores?.reduce((acc: Record<string, number>, e) => {
+        acc[e.lifecycle_stage] = (acc[e.lifecycle_stage] || 0) + 1;
+        return acc;
+      }, {}) || {};
+
+      const avgEngagement = engagementScores?.length 
+        ? Math.round(engagementScores.reduce((s, e) => s + (e.engagement_score || 0), 0) / engagementScores.length)
+        : 0;
+
+      const eligibleToday = engagementScores?.filter(e => {
+        const eligibility = shouldSendNotification(e);
+        return eligibility.eligible;
+      }).length || 0;
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          totalUsers: engagementScores?.length || 0,
+          avgEngagementScore: avgEngagement,
+          lifecycleDistribution,
+          eligibleToday,
+          users: engagementScores?.map(e => ({
+            userId: e.user_id,
+            email: (e.user_profiles as any)?.email,
+            fullName: (e.user_profiles as any)?.full_name,
+            engagementScore: e.engagement_score,
+            lifecycleStage: e.lifecycle_stage,
+            lastNotification: e.last_notification_at,
+            notificationsSent24h: e.notifications_sent_24h,
+            notificationsSent7d: e.notifications_sent_7d,
+          })) || [],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ACTION: Send Direct Message (DM) - flexible targeting
     if (action === "send_dm" || action === "send_dm_ai") {
       console.log("Processing DM with targeting mode:", targetingMode);
@@ -1026,11 +931,9 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
 
       let finalUserIds: string[] = [];
 
-      // Determine target users based on targeting mode
       if (targetingMode === "individual" || targetingMode === "custom") {
         finalUserIds = targetUserIds || [];
       } else if (targetingMode === "company") {
-        // Get all users from selected companies
         if (targetCompanies?.length > 0) {
           const { data: companyUsers } = await supabase
             .from("user_profiles")
@@ -1040,10 +943,7 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
           finalUserIds = companyUsers?.map((u: any) => u.id) || [];
         }
       } else if (targetingMode === "persona") {
-        // Get users by persona from latest analysis
         if (targetPersonas?.length > 0) {
-          console.log("Target personas received:", targetPersonas);
-          
           const { data: latestBatch } = await supabase
             .from("profile_analysis_batches")
             .select("id")
@@ -1052,17 +952,11 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
             .single();
 
           if (latestBatch) {
-            console.log("Latest batch ID:", latestBatch.id);
-            
-            // Get all personas from this batch to map internal IDs to real UUIDs
             const { data: allPersonas } = await supabase
               .from("user_personas")
               .select("id, name")
               .eq("analysis_batch_id", latestBatch.id);
             
-            console.log("Available personas in DB:", allPersonas);
-            
-            // Map internal persona IDs to real UUIDs
             const personaNameMap: Record<string, string> = {
               "inactive_users": "Usuarios Inactivos",
               "casual_user": "Usuario Casual", 
@@ -1073,13 +967,11 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
             
             const realPersonaIds: string[] = [];
             for (const targetId of targetPersonas) {
-              // Check if already a UUID
               const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
               
               if (isUUID) {
                 realPersonaIds.push(targetId);
               } else {
-                // Map internal ID to persona name, then find UUID
                 const mappedName = personaNameMap[targetId];
                 const matchingPersona = allPersonas?.find((p: any) => 
                   p.name === mappedName || 
@@ -1091,8 +983,6 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
               }
             }
             
-            console.log("Resolved persona IDs:", realPersonaIds);
-            
             if (realPersonaIds.length > 0) {
               const { data: snapshots } = await supabase
                 .from("user_activity_snapshots")
@@ -1100,20 +990,17 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
                 .eq("analysis_batch_id", latestBatch.id)
                 .in("persona_id", realPersonaIds);
               
-              console.log("Found snapshots:", snapshots?.length || 0);
               finalUserIds = [...new Set(snapshots?.map((s: any) => s.user_id) || [])];
             }
           }
         }
       } else if (targetingMode === "all") {
-        // Get all active users
         const { data: allUsers } = await supabase
           .from("user_profiles")
           .select("id")
           .eq("is_active", true);
         finalUserIds = allUsers?.map((u: any) => u.id) || [];
       } else if (targetUserIds?.length > 0) {
-        // Fallback to explicit user IDs
         finalUserIds = targetUserIds;
       }
 
@@ -1124,7 +1011,6 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
         );
       }
 
-      // Deduplicate
       finalUserIds = [...new Set(finalUserIds)];
 
       let finalTitle = dmPayload.title;
@@ -1132,7 +1018,6 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
       let finalPriority = dmPayload.priority || "normal";
       let generatedBy = "manual";
 
-      // If AI generation requested, enhance the message
       if (action === "send_dm_ai" && dmPayload.aiPrompt) {
         const systemPrompt = `Eres el asistente de comunicación de RepIndex. 
 Genera un mensaje profesional pero cercano basado en el prompt.
@@ -1165,7 +1050,6 @@ Responde SOLO en JSON:
         }
       }
 
-      // Create notifications for all target users
       const notifications = finalUserIds.map((uid: string) => ({
         user_id: uid,
         notification_type: dmPayload.type || "announcement",
@@ -1179,10 +1063,9 @@ Responde SOLO en JSON:
           sent_at: new Date().toISOString(),
           ai_prompt: dmPayload.aiPrompt || null,
         },
-        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days expiry
+        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       }));
 
-      // Insert notifications in batches to avoid timeout
       const batchSize = 100;
       let insertedCount = 0;
       
@@ -1199,7 +1082,6 @@ Responde SOLO en JSON:
         insertedCount += batch.length;
       }
 
-      // Track analytics
       const analyticsEntries = finalUserIds.map((uid: string) => ({
         user_id: uid,
         event_type: "dm_delivered",
@@ -1209,7 +1091,6 @@ Responde SOLO en JSON:
         },
       }));
 
-      // Insert analytics in batches
       for (let i = 0; i < analyticsEntries.length; i += batchSize) {
         const batch = analyticsEntries.slice(i, i + batchSize);
         await supabase.from("notification_analytics").insert(batch);
