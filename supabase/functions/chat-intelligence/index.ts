@@ -1829,11 +1829,12 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
   console.log(`${logPrefix} Analyzing data for hidden patterns and generating smart questions...`);
   
   // =============================================================================
-  // ANÁLISIS DE DATOS: Detectar patrones ocultos, anomalías y sorpresas
+  // ANÁLISIS DE DATOS CON VALIDACIÓN DE CALIDAD
+  // Solo genera insights basados en datos SÓLIDOS (cobertura completa de 4 modelos)
   // =============================================================================
   const analyzeDataForInsights = () => {
     if (!allRixData || allRixData.length === 0) {
-      return { patterns: [], anomalies: [], surprises: [] };
+      return { patterns: [], anomalies: [], surprises: [], modelDivergences: [], dataQuality: 'insufficient' };
     }
     
     const patterns: string[] = [];
@@ -1848,78 +1849,180 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
       byCompany[company].push(r);
     });
     
-    // 1. DIVERGENCIAS ENTRE MODELOS: Empresas donde ChatGPT y DeepSeek difieren más
-    const modelDivergences: { company: string; ticker: string; chatgpt: number; deepseek: number; diff: number }[] = [];
+    // =============================================================================
+    // VALIDACIÓN DE CALIDAD: Solo considerar empresas con datos de los 4 modelos
+    // =============================================================================
+    const REQUIRED_MODELS = ['chatgpt', 'perplexity', 'gemini', 'deepseek'];
+    const MIN_MODELS_FOR_INSIGHT = 4; // Exigimos cobertura completa
+    
+    const companiesWithFullCoverage: Record<string, any[]> = {};
     Object.entries(byCompany).forEach(([company, records]) => {
+      const modelsPresent = new Set(
+        records
+          .map(r => r["02_model_name"]?.toLowerCase())
+          .filter(Boolean)
+      );
+      
+      // Verificar que tenga datos de los 4 modelos con scores válidos
+      const hasAllModels = REQUIRED_MODELS.every(model => 
+        records.some(r => 
+          r["02_model_name"]?.toLowerCase().includes(model) && 
+          r["09_rix_score"] != null &&
+          r["09_rix_score"] > 0
+        )
+      );
+      
+      if (hasAllModels) {
+        companiesWithFullCoverage[company] = records;
+      }
+    });
+    
+    const fullCoverageCount = Object.keys(companiesWithFullCoverage).length;
+    console.log(`${logPrefix} Companies with full 4-model coverage: ${fullCoverageCount}/${Object.keys(byCompany).length}`);
+    
+    // Si no hay suficientes empresas con cobertura completa, no generar insights
+    if (fullCoverageCount < 10) {
+      console.log(`${logPrefix} Insufficient data quality for insights (need at least 10 companies with full coverage)`);
+      return { 
+        patterns: [], 
+        anomalies: [], 
+        surprises: [], 
+        modelDivergences: [],
+        dataQuality: 'insufficient',
+        coverageStats: { full: fullCoverageCount, total: Object.keys(byCompany).length }
+      };
+    }
+    
+    // =============================================================================
+    // 1. DIVERGENCIAS ENTRE MODELOS (solo empresas con cobertura completa)
+    // =============================================================================
+    const modelDivergences: { company: string; ticker: string; chatgpt: number; deepseek: number; perplexity: number; gemini: number; maxDiff: number; models: string }[] = [];
+    
+    Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
       const chatgpt = records.find(r => r["02_model_name"]?.toLowerCase().includes('chatgpt'));
       const deepseek = records.find(r => r["02_model_name"]?.toLowerCase().includes('deepseek'));
-      if (chatgpt && deepseek && chatgpt["09_rix_score"] && deepseek["09_rix_score"]) {
-        const diff = Math.abs(chatgpt["09_rix_score"] - deepseek["09_rix_score"]);
-        if (diff >= 10) {
+      const perplexity = records.find(r => r["02_model_name"]?.toLowerCase().includes('perplexity'));
+      const gemini = records.find(r => r["02_model_name"]?.toLowerCase().includes('gemini'));
+      
+      if (chatgpt && deepseek && perplexity && gemini) {
+        const scores = [
+          { model: 'ChatGPT', score: chatgpt["09_rix_score"] },
+          { model: 'DeepSeek', score: deepseek["09_rix_score"] },
+          { model: 'Perplexity', score: perplexity["09_rix_score"] },
+          { model: 'Gemini', score: gemini["09_rix_score"] },
+        ];
+        
+        const maxScore = Math.max(...scores.map(s => s.score));
+        const minScore = Math.min(...scores.map(s => s.score));
+        const maxDiff = maxScore - minScore;
+        
+        // Solo reportar divergencias significativas (>=12 puntos) con datos sólidos
+        if (maxDiff >= 12) {
+          const highest = scores.find(s => s.score === maxScore)!;
+          const lowest = scores.find(s => s.score === minScore)!;
+          
           modelDivergences.push({
             company,
             ticker: chatgpt["05_ticker"] || '',
             chatgpt: chatgpt["09_rix_score"],
             deepseek: deepseek["09_rix_score"],
-            diff
+            perplexity: perplexity["09_rix_score"],
+            gemini: gemini["09_rix_score"],
+            maxDiff,
+            models: `${highest.model} (${highest.score}) vs ${lowest.model} (${lowest.score})`
           });
         }
       }
     });
-    modelDivergences.sort((a, b) => b.diff - a.diff);
+    
+    modelDivergences.sort((a, b) => b.maxDiff - a.maxDiff);
     if (modelDivergences.length > 0) {
       const top = modelDivergences[0];
-      anomalies.push(`${top.company} tiene ${top.diff} puntos de divergencia entre ChatGPT (${top.chatgpt}) y DeepSeek (${top.deepseek})`);
+      anomalies.push(`${top.company} tiene ${top.maxDiff} puntos de divergencia: ${top.models}`);
     }
     
-    // 2. EMPRESAS CONTRA-TENDENCIA: Suben cuando el sector baja o viceversa
+    // =============================================================================
+    // 2. ANÁLISIS SECTORIAL (solo con sectores que tengan ≥3 empresas con cobertura completa)
+    // =============================================================================
     if (companiesCache) {
-      const bySector: Record<string, any[]> = {};
-      allRixData.forEach(r => {
-        const company = companiesCache?.find(c => c.ticker === r["05_ticker"]);
-        const sector = company?.sector_category || 'Otros';
+      const bySector: Record<string, { company: string; avgRix: number; ticker: string }[]> = {};
+      
+      Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
+        const companyInfo = companiesCache?.find(c => c.ticker === records[0]?.["05_ticker"]);
+        const sector = companyInfo?.sector_category;
+        if (!sector) return;
+        
+        // Calcular promedio de los 4 modelos para esta empresa
+        const validScores = records.map(r => r["09_rix_score"]).filter(s => s != null && s > 0);
+        if (validScores.length < 4) return; // Necesitamos los 4 scores
+        
+        const avgRix = validScores.reduce((a, b) => a + b, 0) / validScores.length;
+        
         if (!bySector[sector]) bySector[sector] = [];
-        bySector[sector].push(r);
+        bySector[sector].push({ company, avgRix, ticker: records[0]?.["05_ticker"] });
       });
       
-      Object.entries(bySector).forEach(([sector, records]) => {
-        if (records.length < 4) return;
-        const avgRix = records.reduce((sum, r) => sum + (r["09_rix_score"] || 0), 0) / records.length;
-        const outliers = records.filter(r => {
-          const diff = (r["09_rix_score"] || 0) - avgRix;
-          return Math.abs(diff) > 15;
-        });
-        outliers.forEach(o => {
-          const direction = o["09_rix_score"] > avgRix ? 'supera' : 'está por debajo de';
-          surprises.push(`${o["03_target_name"]} ${direction} la media del sector ${sector} en ${Math.abs(o["09_rix_score"] - avgRix).toFixed(0)} puntos`);
+      Object.entries(bySector).forEach(([sector, companies]) => {
+        // Solo analizar sectores con al menos 3 empresas con cobertura completa
+        if (companies.length < 3) return;
+        
+        const sectorAvg = companies.reduce((sum, c) => sum + c.avgRix, 0) / companies.length;
+        const sortedByRix = [...companies].sort((a, b) => b.avgRix - a.avgRix);
+        
+        // Detectar outliers: empresas que difieren >12 puntos de la media sectorial
+        companies.forEach(c => {
+          const diff = c.avgRix - sectorAvg;
+          if (Math.abs(diff) >= 12) {
+            const direction = diff > 0 ? 'supera' : 'está por debajo de';
+            surprises.push(`${c.company} ${direction} la media del sector ${sector} (${sectorAvg.toFixed(0)}) en ${Math.abs(diff).toFixed(0)} puntos (promedio 4 modelos: ${c.avgRix.toFixed(0)})`);
+          }
         });
       });
     }
     
-    // 3. EMPRESAS NO COTIZADAS QUE SUPERAN A IBEX35
+    // =============================================================================
+    // 3. IBEX35 vs NO COTIZADAS (solo con cobertura completa)
+    // =============================================================================
     if (companiesCache) {
-      const nonTraded = allRixData.filter(r => {
-        const company = companiesCache?.find(c => c.ticker === r["05_ticker"]);
-        return company && !company.cotiza_en_bolsa;
-      });
-      const ibex35 = allRixData.filter(r => {
-        const company = companiesCache?.find(c => c.ticker === r["05_ticker"]);
-        return company?.ibex_family_code === 'IBEX35';
+      const ibex35Companies: { company: string; avgRix: number }[] = [];
+      const nonTradedCompanies: { company: string; avgRix: number }[] = [];
+      
+      Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
+        const companyInfo = companiesCache?.find(c => c.ticker === records[0]?.["05_ticker"]);
+        if (!companyInfo) return;
+        
+        const validScores = records.map(r => r["09_rix_score"]).filter(s => s != null && s > 0);
+        if (validScores.length < 4) return;
+        
+        const avgRix = validScores.reduce((a, b) => a + b, 0) / validScores.length;
+        
+        if (companyInfo.ibex_family_code === 'IBEX35') {
+          ibex35Companies.push({ company, avgRix });
+        } else if (!companyInfo.cotiza_en_bolsa) {
+          nonTradedCompanies.push({ company, avgRix });
+        }
       });
       
-      const avgIbex = ibex35.length > 0 
-        ? ibex35.reduce((sum, r) => sum + (r["09_rix_score"] || 0), 0) / ibex35.length 
-        : 0;
-      
-      const outperformers = nonTraded.filter(r => (r["09_rix_score"] || 0) > avgIbex + 5);
-      if (outperformers.length > 0) {
-        const best = outperformers.sort((a, b) => (b["09_rix_score"] || 0) - (a["09_rix_score"] || 0))[0];
-        patterns.push(`${best["03_target_name"]} (no cotizada) supera la media del IBEX35 (${avgIbex.toFixed(0)}) con un RIX de ${best["09_rix_score"]}`);
+      // Solo generar insight si hay suficientes datos en ambos grupos
+      if (ibex35Companies.length >= 10 && nonTradedCompanies.length >= 5) {
+        const avgIbex = ibex35Companies.reduce((sum, c) => sum + c.avgRix, 0) / ibex35Companies.length;
+        
+        const outperformers = nonTradedCompanies
+          .filter(c => c.avgRix > avgIbex + 5)
+          .sort((a, b) => b.avgRix - a.avgRix);
+        
+        if (outperformers.length > 0) {
+          const best = outperformers[0];
+          patterns.push(`${best.company} (no cotizada, promedio ${best.avgRix.toFixed(0)}) supera la media del IBEX35 (${avgIbex.toFixed(0)}) basado en consenso de 4 modelos`);
+        }
       }
     }
     
-    // 4. MÉTRICAS EXTREMAS: Empresas con métricas muy altas en un área pero muy bajas en otra
-    Object.entries(byCompany).forEach(([company, records]) => {
+    // =============================================================================
+    // 4. DESEQUILIBRIOS DE MÉTRICAS (solo con todas las métricas presentes)
+    // =============================================================================
+    Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
+      // Usar el registro con más métricas completas
       records.forEach(r => {
         const metrics = [
           { name: 'NVM', score: r["23_nvm_score"] },
@@ -1930,62 +2033,83 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
           { name: 'GAM', score: r["38_gam_score"] },
           { name: 'DCM', score: r["41_dcm_score"] },
           { name: 'CXM', score: r["44_cxm_score"] },
-        ].filter(m => m.score != null);
+        ].filter(m => m.score != null && m.score > 0);
         
-        if (metrics.length >= 4) {
+        // Solo considerar si tiene al menos 7 de 8 métricas (datos sólidos)
+        if (metrics.length >= 7) {
           const max = metrics.reduce((a, b) => a.score > b.score ? a : b);
           const min = metrics.reduce((a, b) => a.score < b.score ? a : b);
-          if (max.score - min.score >= 35) {
-            patterns.push(`${company} tiene un desequilibrio de ${max.score - min.score} puntos entre ${max.name} (${max.score}) y ${min.name} (${min.score})`);
+          
+          // Desequilibrio significativo: ≥30 puntos
+          if (max.score - min.score >= 30) {
+            const model = r["02_model_name"];
+            patterns.push(`${company} (según ${model}): desequilibrio de ${max.score - min.score} pts entre ${max.name} (${max.score}) y ${min.name} (${min.score})`);
           }
         }
       });
     });
     
-    // 5. MODELOS SISTEMÁTICAMENTE CRÍTICOS O GENEROSOS
-    const modelAvgs: Record<string, { sum: number; count: number }> = {};
-    allRixData.forEach(r => {
-      const model = r["02_model_name"];
-      if (!model || !r["09_rix_score"]) return;
-      if (!modelAvgs[model]) modelAvgs[model] = { sum: 0, count: 0 };
-      modelAvgs[model].sum += r["09_rix_score"];
-      modelAvgs[model].count++;
-    });
-    
-    const modelRankings = Object.entries(modelAvgs)
-      .map(([model, data]) => ({ model, avg: data.sum / data.count }))
-      .sort((a, b) => b.avg - a.avg);
-    
-    if (modelRankings.length >= 2) {
-      const mostGenerous = modelRankings[0];
-      const mostCritical = modelRankings[modelRankings.length - 1];
-      if (mostGenerous.avg - mostCritical.avg >= 5) {
-        patterns.push(`${mostGenerous.model} es ${(mostGenerous.avg - mostCritical.avg).toFixed(1)} puntos más generoso que ${mostCritical.model} en promedio`);
-      }
-    }
-    
-    // 6. CONSENSO PERFECTO vs DISCORDIA TOTAL
-    Object.entries(byCompany).forEach(([company, records]) => {
-      if (records.length < 3) return;
-      const scores = records.map(r => r["09_rix_score"]).filter(Boolean);
-      if (scores.length < 3) return;
+    // =============================================================================
+    // 5. CONSENSO vs DISCORDIA (solo empresas con 4 modelos)
+    // =============================================================================
+    Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
+      const scores = records.map(r => r["09_rix_score"]).filter(s => s != null && s > 0);
+      
+      // Requiere exactamente 4 scores válidos
+      if (scores.length !== 4) return;
       
       const min = Math.min(...scores);
       const max = Math.max(...scores);
       const range = max - min;
+      const avg = scores.reduce((a, b) => a + b, 0) / 4;
       
-      if (range <= 3) {
-        patterns.push(`${company} tiene consenso perfecto: todos los modelos la puntúan entre ${min} y ${max}`);
-      } else if (range >= 25) {
-        anomalies.push(`${company} genera discordia total: ${range} puntos de diferencia entre modelos (${min}-${max})`);
+      if (range <= 4) {
+        patterns.push(`${company} tiene consenso perfecto entre los 4 modelos: RIX entre ${min} y ${max} (promedio: ${avg.toFixed(0)})`);
+      } else if (range >= 20) {
+        anomalies.push(`${company} genera discordia total: ${range} puntos entre modelos (${min}-${max}), requiere análisis`);
       }
     });
     
+    // =============================================================================
+    // 6. TENDENCIA DE MODELOS (solo con volumen suficiente)
+    // =============================================================================
+    const modelStats: Record<string, { scores: number[]; count: number }> = {};
+    Object.values(companiesWithFullCoverage).flat().forEach(r => {
+      const model = r["02_model_name"];
+      const score = r["09_rix_score"];
+      if (!model || score == null || score <= 0) return;
+      
+      if (!modelStats[model]) modelStats[model] = { scores: [], count: 0 };
+      modelStats[model].scores.push(score);
+      modelStats[model].count++;
+    });
+    
+    const modelRankings = Object.entries(modelStats)
+      .filter(([_, data]) => data.count >= 50) // Mínimo 50 empresas para estadística robusta
+      .map(([model, data]) => ({
+        model,
+        avg: data.scores.reduce((a, b) => a + b, 0) / data.count,
+        count: data.count
+      }))
+      .sort((a, b) => b.avg - a.avg);
+    
+    if (modelRankings.length >= 4) {
+      const mostGenerous = modelRankings[0];
+      const mostCritical = modelRankings[modelRankings.length - 1];
+      const diff = mostGenerous.avg - mostCritical.avg;
+      
+      if (diff >= 4) {
+        patterns.push(`${mostGenerous.model} es sistemáticamente ${diff.toFixed(1)} pts más generoso que ${mostCritical.model} (basado en ${mostGenerous.count} empresas con cobertura completa)`);
+      }
+    }
+    
     return {
-      patterns: patterns.slice(0, 5),
-      anomalies: anomalies.slice(0, 5),
-      surprises: surprises.slice(0, 5),
+      patterns: patterns.slice(0, 4),
+      anomalies: anomalies.slice(0, 4),
+      surprises: surprises.slice(0, 4),
       modelDivergences: modelDivergences.slice(0, 3),
+      dataQuality: 'solid',
+      coverageStats: { full: fullCoverageCount, total: Object.keys(byCompany).length }
     };
   };
   
@@ -2014,24 +2138,30 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
     ? [...new Set(companiesCache.map(c => c.sector_category).filter(Boolean))].join(', ')
     : 'Energía, Banca, Telecomunicaciones, Construcción, Tecnología, Consumo';
 
-  // Build prompt with REAL DATA DISCOVERIES
-  const dataDiscoveriesPrompt = `Eres un ANALISTA DE DATOS EXPERTO que ha descubierto patrones ocultos en miles de registros. Tu trabajo es generar 3 preguntas que SORPRENDAN al usuario revelando insights que NO son obvios a simple vista.
+  // Build prompt with REAL DATA DISCOVERIES (solo si hay calidad suficiente)
+  const hasQualityData = dataInsights.dataQuality === 'solid' && 
+    (dataInsights.patterns.length > 0 || dataInsights.anomalies.length > 0 || dataInsights.surprises.length > 0);
+  
+  const dataDiscoveriesPrompt = hasQualityData 
+    ? `Eres un ANALISTA DE DATOS EXPERTO que ha descubierto patrones ocultos analizando ${dataInsights.coverageStats?.full || 'múltiples'} empresas con COBERTURA COMPLETA de los 4 modelos de IA. Tu trabajo es generar 3 preguntas que SORPRENDAN al usuario revelando insights que NO son obvios a simple vista.
 
-🔬 DESCUBRIMIENTOS EN LOS DATOS (REALES, VERIFICADOS):
+🔬 DESCUBRIMIENTOS VERIFICADOS (basados SOLO en empresas con datos de ChatGPT + Perplexity + Gemini + DeepSeek):
 
 📊 PATRONES DETECTADOS:
-${dataInsights.patterns.length > 0 ? dataInsights.patterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '- Analizando patrones...'}
+${dataInsights.patterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}
 
 ⚠️ ANOMALÍAS ENCONTRADAS:
-${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join('\n') : '- Sin anomalías críticas'}
+${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join('\n') : '- Sin anomalías significativas con datos sólidos'}
 
 💡 SORPRESAS EN LOS DATOS:
-${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join('\n') : '- Analizando sorpresas...'}
+${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join('\n') : '- Sin sorpresas destacables con datos completos'}
 
-🎯 DIVERGENCIAS MÁXIMAS ENTRE MODELOS:
+🎯 DIVERGENCIAS MÁXIMAS ENTRE MODELOS (4 modelos analizados):
 ${dataInsights.modelDivergences?.length > 0 
-  ? dataInsights.modelDivergences.map((d, i) => `${i + 1}. ${d.company}: ChatGPT (${d.chatgpt}) vs DeepSeek (${d.deepseek}) = ${d.diff} pts diferencia`).join('\n')
-  : '- Calculando divergencias...'}
+  ? dataInsights.modelDivergences.map((d, i) => `${i + 1}. ${d.company}: ${d.models} = ${d.maxDiff} pts diferencia`).join('\n')
+  : '- Consenso alto entre modelos'}
+
+📈 CALIDAD DE DATOS: ${dataInsights.coverageStats?.full}/${dataInsights.coverageStats?.total} empresas con cobertura completa de 4 modelos
 
 TEMAS YA DISCUTIDOS (EVITAR REPETIR):
 ${[...discussedTopics].slice(0, 10).join(', ') || 'Ninguno específico aún'}
@@ -2040,23 +2170,31 @@ PREGUNTA ACTUAL DEL USUARIO: "${question}"
 
 🧠 TU MISIÓN: Genera 3 preguntas que:
 
-1. **REVELEN DATOS OCULTOS**: Usa los descubrimientos de arriba para formular preguntas que el usuario NUNCA habría pensado
-2. **SORPRENDAN CON HECHOS**: Cada pregunta debe insinuar un dato sorprendente (ej: "¿Sabías que [empresa X] tiene más divergencia entre modelos que cualquier empresa del IBEX?")
-3. **SEAN IMPOSIBLES DE IGNORAR**: Preguntas que generen curiosidad inmediata porque revelan algo contraintuitivo
+1. **REVELEN DATOS OCULTOS**: Usa SOLO los descubrimientos verificados de arriba (nunca inventes)
+2. **SORPRENDAN CON HECHOS CONCRETOS**: Cada pregunta debe mencionar datos específicos
+3. **SEAN IMPOSIBLES DE IGNORAR**: Preguntas que generen curiosidad inmediata
 
 ❌ PROHIBIDO:
-- Preguntas genéricas como "¿Cuál es el top 5?" o "¿Cómo está [empresa]?"
-- Preguntas que el usuario ya podría adivinar
-- Preguntas sin datos concretos detrás
+- Preguntas genéricas o que el usuario podría adivinar
+- Inventar datos o empresas que no aparecen arriba
 - Repetir empresas o temas ya discutidos
+- Preguntas basadas en datos incompletos o parciales
 
-✅ FORMATO IDEAL DE PREGUNTA:
-- "¿Por qué [empresa X] tiene ${dataInsights.anomalies[0] ? 'la mayor divergencia entre modelos' : 'un patrón inusual'}?"
-- "¿Sabías que [dato sorprendente]? ¿Quieres analizar por qué?"
-- "Hay ${dataInsights.patterns.length} empresas que rompen el patrón de su sector, ¿cuál te interesa explorar?"
+✅ FORMATO IDEAL:
+- "¿Por qué ${dataInsights.modelDivergences?.[0]?.company || '[empresa]'} genera tanta discordia entre los modelos (${dataInsights.modelDivergences?.[0]?.maxDiff || 'X'} puntos de diferencia)?"
+- "¿Sabías que ${dataInsights.patterns[0] || '[patrón detectado]'}? ¿Quieres profundizar?"
 
-Responde SOLO con un array JSON de 3 preguntas específicas basadas en los DATOS REALES de arriba:
-["pregunta basada en dato real 1", "pregunta basada en dato real 2", "pregunta basada en dato real 3"]`;
+Responde SOLO con un array JSON de 3 preguntas basadas en los DATOS VERIFICADOS:
+["pregunta 1", "pregunta 2", "pregunta 3"]`
+    : `Genera 3 preguntas genéricas pero útiles sobre análisis de reputación corporativa para las empresas del IBEX35 y empresas españolas.
+
+PREGUNTA ACTUAL DEL USUARIO: "${question}"
+
+Evita: preguntas obvias como "¿Cuál es el top 5?". 
+Sugiere: comparativas sectoriales, divergencias entre modelos de IA, empresas no cotizadas vs IBEX35.
+
+Responde SOLO con un array JSON de 3 strings:
+["pregunta 1", "pregunta 2", "pregunta 3"]`;
 
   try {
     const questionsMessages = [
