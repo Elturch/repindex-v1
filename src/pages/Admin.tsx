@@ -225,7 +225,81 @@ const Admin: React.FC = () => {
   });
   const [selectedMarketingPersonas, setSelectedMarketingPersonas] = useState<string[]>([]);
   const [inboundPlan, setInboundPlan] = useState<any>(null);
+  const [savedInboundPlan, setSavedInboundPlan] = useState<{ plan: any; savedAt: string } | null>(null);
   const [useAIGeneration, setUseAIGeneration] = useState(true);
+
+  // Changelog del sistema - historial de evolución de la herramienta
+  const systemChangelog = [
+    {
+      version: '2.5.0',
+      date: '2024-12-08',
+      title: 'Marketing Inbound con IA',
+      changes: [
+        'Generación de notificaciones personalizadas por perfil de usuario usando IA',
+        'Plan de inbound completo generado dinámicamente',
+        'Calendario semanal de push notifications adaptado a cada persona',
+        'Guardado del último plan generado para seguimiento',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.4.0',
+      date: '2024-12-07',
+      title: 'Análisis de Perfiles de Usuario',
+      changes: [
+        'Segmentación automática de usuarios en personas/estereotipos',
+        'Análisis de comportamiento basado en actividad real',
+        'Métricas por perfil: conversaciones, enriquecimientos, documentos',
+        'Distribución visual de perfiles',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.3.0',
+      date: '2024-12-05',
+      title: 'Enriquecimiento por Rol Profesional',
+      changes: [
+        '15 roles profesionales para adaptar respuestas',
+        'Analytics de uso de roles',
+        'Respuestas expandidas de 2500-5000 palabras',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.2.0',
+      date: '2024-12-01',
+      title: 'Generador de Boletines',
+      changes: [
+        'Boletines ejecutivos personalizados por empresa',
+        'Análisis competitivo automático',
+        'Formato magazine profesional para impresión',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.1.0',
+      date: '2024-11-28',
+      title: 'Vector Store Mejorado',
+      changes: [
+        'Indexación de respuestas completas de 4 IAs',
+        'Sincronización incremental automática',
+        'Mejora significativa en calidad de respuestas',
+      ],
+      type: 'improvement' as const,
+    },
+    {
+      version: '2.0.0',
+      date: '2024-11-20',
+      title: 'Agente Rix Flotante',
+      changes: [
+        'Chat disponible en todas las páginas',
+        'Contexto dinámico según página actual',
+        'Persistencia de conversaciones',
+        'Sugerencias contextuales',
+      ],
+      type: 'feature' as const,
+    },
+  ];
 
   // Test user for admin (only visible in Admin panel)
   const testUser: UserProfile = {
@@ -1059,7 +1133,7 @@ const Admin: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* Insights */}
+              {/* Insights */}
                 <Card className="bg-gradient-to-r from-primary/5 to-primary/10 border-primary/20">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -1086,6 +1160,117 @@ const Admin: React.FC = () => {
                         <p className="text-sm text-muted-foreground">Usuarios inactivos</p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Último Plan de Inbound Guardado */}
+                {savedInboundPlan && (
+                  <Card className="border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                          <Megaphone className="h-5 w-5" />
+                          Último Plan de Inbound Activo
+                        </CardTitle>
+                        <Badge variant="outline" className="border-green-500 text-green-600">
+                          {new Date(savedInboundPlan.savedAt).toLocaleDateString('es-ES', {
+                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </Badge>
+                      </div>
+                      <CardDescription>
+                        Plan generado por IA para notificaciones personalizadas
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Campañas activas */}
+                      {savedInboundPlan.plan?.campaigns && (
+                        <div>
+                          <h4 className="text-sm font-medium mb-2">Campañas Activas ({savedInboundPlan.plan.campaigns.length})</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {savedInboundPlan.plan.campaigns.slice(0, 4).map((campaign: any, idx: number) => (
+                              <div key={idx} className="p-2 rounded border bg-background/80 text-sm">
+                                <p className="font-medium truncate">{campaign.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {campaign.target_personas?.join(', ')}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Calendario resumen */}
+                      {savedInboundPlan.plan?.weeklyCalendar && (
+                        <div>
+                          <h4 className="text-sm font-medium mb-2">Calendario Semanal</h4>
+                          <div className="flex gap-1 flex-wrap">
+                            {Object.entries(savedInboundPlan.plan.weeklyCalendar).map(([day, actions]: [string, any]) => (
+                              <Badge key={day} variant="secondary" className="text-xs">
+                                {day}: {Array.isArray(actions) ? actions.length : 0} acciones
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => setActiveTab('marketing')}
+                      >
+                        Ver Plan Completo en Marketing
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Changelog del Sistema */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5 text-blue-500" />
+                      Evolución de la Herramienta
+                    </CardTitle>
+                    <CardDescription>
+                      Historial de mejoras y nuevas funcionalidades
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[300px]">
+                      <div className="space-y-4">
+                        {systemChangelog.map((entry, idx) => (
+                          <div 
+                            key={entry.version} 
+                            className={`p-3 rounded-lg border ${
+                              idx === 0 ? 'bg-primary/5 border-primary/30' : 'bg-muted/30'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={entry.type === 'feature' ? 'default' : 'secondary'}
+                                  className="text-xs"
+                                >
+                                  v{entry.version}
+                                </Badge>
+                                <span className="font-medium text-sm">{entry.title}</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{entry.date}</span>
+                            </div>
+                            <ul className="text-xs text-muted-foreground space-y-1">
+                              {entry.changes.map((change, cIdx) => (
+                                <li key={cIdx} className="flex items-start gap-1">
+                                  <span className="text-green-500 mt-0.5">•</span>
+                                  {change}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
                   </CardContent>
                 </Card>
               </div>
@@ -2327,9 +2512,14 @@ const Admin: React.FC = () => {
                           });
                           if (error) throw error;
                           setInboundPlan(data.plan);
+                          // Guardar el plan para mostrarlo en Perfiles
+                          setSavedInboundPlan({ 
+                            plan: data.plan, 
+                            savedAt: new Date().toISOString() 
+                          });
                           toast({ 
-                            title: '✅ Plan generado con IA', 
-                            description: `${data.plan?.campaigns?.length || 0} campañas creadas` 
+                            title: '✅ Plan generado y guardado', 
+                            description: `${data.plan?.campaigns?.length || 0} campañas creadas. Ver en Perfiles.` 
                           });
                         } catch (err: any) {
                           toast({ title: 'Error', description: err.message, variant: 'destructive' });
