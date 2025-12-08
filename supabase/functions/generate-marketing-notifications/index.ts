@@ -457,7 +457,19 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json();
-    const { action, campaignId, targetPersonas, customNotification, userId, notificationId } = body;
+    const { 
+      action, 
+      campaignId, 
+      targetPersonas, 
+      customNotification, 
+      userId, 
+      notificationId,
+      // DM specific params
+      dmPayload,
+      targetingMode,
+      targetUserIds,
+      targetCompanies,
+    } = body;
 
     // ACTION: Generate AI-powered notifications for all users
     if (action === "generate_ai_notifications") {
@@ -996,6 +1008,175 @@ Responde en JSON: {"title": "...", "content": "...", "priority": "low|normal|hig
             ...c,
             stats: statsMap[c.id] || { delivered: 0, read: 0, clicked: 0, dismissed: 0 },
           })),
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ACTION: Send Direct Message (DM) - flexible targeting
+    if (action === "send_dm" || action === "send_dm_ai") {
+      console.log("Processing DM with targeting mode:", targetingMode);
+      
+      if (!dmPayload?.title || !dmPayload?.content) {
+        return new Response(
+          JSON.stringify({ error: "Se requiere título y contenido del mensaje" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      let finalUserIds: string[] = [];
+
+      // Determine target users based on targeting mode
+      if (targetingMode === "individual" || targetingMode === "custom") {
+        finalUserIds = targetUserIds || [];
+      } else if (targetingMode === "company") {
+        // Get all users from selected companies
+        if (targetCompanies?.length > 0) {
+          const { data: companyUsers } = await supabase
+            .from("user_profiles")
+            .select("id")
+            .in("company_id", targetCompanies)
+            .eq("is_active", true);
+          finalUserIds = companyUsers?.map((u: any) => u.id) || [];
+        }
+      } else if (targetingMode === "persona") {
+        // Get users by persona from latest analysis
+        if (targetPersonas?.length > 0) {
+          const { data: latestBatch } = await supabase
+            .from("profile_analysis_batches")
+            .select("id")
+            .order("analyzed_at", { ascending: false })
+            .limit(1)
+            .single();
+
+          if (latestBatch) {
+            const { data: snapshots } = await supabase
+              .from("user_activity_snapshots")
+              .select("user_id, persona_id")
+              .eq("analysis_batch_id", latestBatch.id)
+              .in("persona_id", targetPersonas);
+            finalUserIds = [...new Set(snapshots?.map((s: any) => s.user_id) || [])];
+          }
+        }
+      } else if (targetingMode === "all") {
+        // Get all active users
+        const { data: allUsers } = await supabase
+          .from("user_profiles")
+          .select("id")
+          .eq("is_active", true);
+        finalUserIds = allUsers?.map((u: any) => u.id) || [];
+      } else if (targetUserIds?.length > 0) {
+        // Fallback to explicit user IDs
+        finalUserIds = targetUserIds;
+      }
+
+      if (finalUserIds.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "No se encontraron destinatarios para el mensaje" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Deduplicate
+      finalUserIds = [...new Set(finalUserIds)];
+
+      let finalTitle = dmPayload.title;
+      let finalContent = dmPayload.content;
+      let finalPriority = dmPayload.priority || "normal";
+      let generatedBy = "manual";
+
+      // If AI generation requested, enhance the message
+      if (action === "send_dm_ai" && dmPayload.aiPrompt) {
+        const systemPrompt = `Eres el asistente de comunicación de RepIndex. 
+Genera un mensaje profesional pero cercano basado en el prompt.
+El mensaje debe ser relevante para usuarios de una plataforma de análisis de reputación corporativa.
+
+Responde SOLO en JSON:
+{
+  "title": "título con emoji apropiado (max 60 chars)",
+  "content": "mensaje mejorado y personalizado (max 300 chars)",
+  "priority": "${finalPriority}"
+}`;
+
+        try {
+          const { content: aiResponse, provider } = await callAIWithFallback([
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Prompt original: ${dmPayload.aiPrompt}\n\nTítulo base: ${dmPayload.title}\nContenido base: ${dmPayload.content}` },
+          ], 500);
+
+          const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const enhanced = JSON.parse(jsonMatch[0]);
+            finalTitle = enhanced.title || finalTitle;
+            finalContent = enhanced.content || finalContent;
+            finalPriority = enhanced.priority || finalPriority;
+            generatedBy = `ai_${provider}`;
+          }
+        } catch (e) {
+          console.error("AI enhancement failed, using original message:", e);
+          generatedBy = "manual_ai_fallback";
+        }
+      }
+
+      // Create notifications for all target users
+      const notifications = finalUserIds.map((uid: string) => ({
+        user_id: uid,
+        notification_type: dmPayload.type || "announcement",
+        title: finalTitle,
+        content: finalContent,
+        priority: finalPriority,
+        metadata: {
+          dm: true,
+          targeting_mode: targetingMode,
+          generated_by: generatedBy,
+          sent_at: new Date().toISOString(),
+          ai_prompt: dmPayload.aiPrompt || null,
+        },
+        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days expiry
+      }));
+
+      // Insert notifications in batches to avoid timeout
+      const batchSize = 100;
+      let insertedCount = 0;
+      
+      for (let i = 0; i < notifications.length; i += batchSize) {
+        const batch = notifications.slice(i, i + batchSize);
+        const { error: insertError } = await supabase
+          .from("user_notifications")
+          .insert(batch);
+        
+        if (insertError) {
+          console.error("DM insert error:", insertError);
+          throw insertError;
+        }
+        insertedCount += batch.length;
+      }
+
+      // Track analytics
+      const analyticsEntries = finalUserIds.map((uid: string) => ({
+        user_id: uid,
+        event_type: "dm_delivered",
+        event_data: {
+          targeting_mode: targetingMode,
+          generated_by: generatedBy,
+        },
+      }));
+
+      // Insert analytics in batches
+      for (let i = 0; i < analyticsEntries.length; i += batchSize) {
+        const batch = analyticsEntries.slice(i, i + batchSize);
+        await supabase.from("notification_analytics").insert(batch);
+      }
+
+      console.log(`DM sent successfully to ${insertedCount} users`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          notificationsSent: insertedCount,
+          usersReached: finalUserIds.length,
+          targetingMode,
+          generatedBy,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
