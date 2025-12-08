@@ -19,10 +19,15 @@ interface UserActivity {
   totalDocuments: number;
   documentTypes: { type: string; count: number }[];
   lastActivity: string | null;
+  firstActivity: string | null;
   daysActive: number;
   avgSessionLength: number;
   questionPatterns: string[];
   companiesMentioned: string[];
+  // Notification response tracking
+  notificationsSent: number;
+  notificationsRead: number;
+  notificationsIgnored: number;
 }
 
 interface UserPersona {
@@ -42,6 +47,148 @@ interface UserPersona {
   color: string;
 }
 
+// ============================================
+// LEAD SCORING ALGORITHM (Explicit Weights)
+// ============================================
+const SCORING_WEIGHTS = {
+  RECENCY: 0.30,      // 30% - How recent was last activity
+  FREQUENCY: 0.25,    // 25% - Frequency of use
+  DEPTH: 0.25,        // 25% - Depth of usage (enrichments, docs)
+  RESPONSE: 0.20,     // 20% - Response to previous notifications
+};
+
+function calculateEngagementScore(userActivity: UserActivity): {
+  engagementScore: number;
+  lifecycleStage: string;
+  componentScores: {
+    recencyScore: number;
+    frequencyScore: number;
+    depthScore: number;
+    responseScore: number;
+  };
+} {
+  // 1. RECENCY SCORE (0-100)
+  // Day 0 = 100, Day 7 = 77, Day 14 = 53, Day 30 = 0
+  const daysSinceActivity = userActivity.lastActivity 
+    ? Math.ceil((Date.now() - new Date(userActivity.lastActivity).getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+  const recencyScore = Math.max(0, Math.round(100 - (daysSinceActivity * 3.33)));
+
+  // 2. FREQUENCY SCORE (0-100)
+  // 0 convos = 0, 1-2 = 20, 3-5 = 50, 6-10 = 75, 10+ = 100
+  const frequencyScore = Math.min(100, userActivity.totalConversations * 10);
+
+  // 3. DEPTH SCORE (0-100)
+  // Based on usage of advanced features
+  const depthScore = Math.min(100, 
+    (userActivity.totalEnrichments * 15) + 
+    (userActivity.totalDocuments * 20) +
+    (userActivity.avgMessagesPerConvo > 5 ? 20 : 0)
+  );
+
+  // 4. RESPONSE SCORE (0-100)
+  // Based on interaction with previous notifications
+  const totalNotifs = userActivity.notificationsSent || 0;
+  const responseRate = totalNotifs > 0 
+    ? userActivity.notificationsRead / totalNotifs 
+    : 0.5; // Default 50% for new users
+  const responseScore = Math.min(100, Math.round(responseRate * 100));
+
+  // COMBINED SCORE
+  const engagementScore = Math.round(
+    (recencyScore * SCORING_WEIGHTS.RECENCY) +
+    (frequencyScore * SCORING_WEIGHTS.FREQUENCY) +
+    (depthScore * SCORING_WEIGHTS.DEPTH) +
+    (responseScore * SCORING_WEIGHTS.RESPONSE)
+  );
+
+  // LIFECYCLE STAGE (determined by score and activity)
+  let lifecycleStage = 'new';
+  if (userActivity.totalConversations === 0 && daysSinceActivity > 30) {
+    lifecycleStage = 'churned';
+  } else if (daysSinceActivity > 14) {
+    lifecycleStage = 'at_risk';
+  } else if (engagementScore >= 80) {
+    lifecycleStage = 'power_user';
+  } else if (engagementScore >= 50) {
+    lifecycleStage = 'engaged';
+  } else if (engagementScore >= 20) {
+    lifecycleStage = 'active';
+  }
+
+  return {
+    engagementScore,
+    lifecycleStage,
+    componentScores: { recencyScore, frequencyScore, depthScore, responseScore }
+  };
+}
+
+// ============================================
+// NOTIFICATION WEIGHTS BY LIFECYCLE STAGE
+// ============================================
+const LIFECYCLE_WEIGHTS: Record<string, Record<string, number>> = {
+  'power_user': {
+    newsroom: 0.35, company_alert: 0.30, persona_tip: 0.15, 
+    feature_discovery: 0.10, data_refresh: 0.10, inactivity: 0, engagement: 0
+  },
+  'engaged': {
+    newsroom: 0.30, persona_tip: 0.25, company_alert: 0.20,
+    data_refresh: 0.15, feature_discovery: 0.10, inactivity: 0, engagement: 0
+  },
+  'active': {
+    persona_tip: 0.30, newsroom: 0.25, feature_discovery: 0.20,
+    data_refresh: 0.15, company_alert: 0.10, inactivity: 0, engagement: 0
+  },
+  'new': {
+    persona_tip: 0.35, feature_discovery: 0.30, newsroom: 0.20,
+    engagement: 0.15, inactivity: 0, company_alert: 0, data_refresh: 0
+  },
+  'at_risk': {
+    inactivity: 0.50, newsroom: 0.30, company_alert: 0.20,
+    persona_tip: 0, feature_discovery: 0, data_refresh: 0, engagement: 0
+  },
+  'churned': {
+    inactivity: 0.80, newsroom: 0.20,
+    persona_tip: 0, feature_discovery: 0, data_refresh: 0, company_alert: 0, engagement: 0
+  },
+};
+
+function calculateNotificationWeights(
+  userActivity: UserActivity,
+  lifecycleStage: string
+): Record<string, number> {
+  // Get base weights by lifecycle
+  const baseWeights = { ...(LIFECYCLE_WEIGHTS[lifecycleStage] || LIFECYCLE_WEIGHTS['active']) };
+
+  // Adjust weights based on user characteristics
+  
+  // If user has companies of interest → boost company_alert
+  if (userActivity.companiesMentioned.length > 0) {
+    baseWeights.company_alert = (baseWeights.company_alert || 0) * 1.5;
+  }
+
+  // If uses roles frequently → boost persona_tip
+  if (userActivity.totalEnrichments > 3) {
+    baseWeights.persona_tip = (baseWeights.persona_tip || 0) * 1.3;
+  }
+
+  // If generates many documents → boost newsroom and data_refresh
+  if (userActivity.totalDocuments > 2) {
+    baseWeights.newsroom = (baseWeights.newsroom || 0) * 1.2;
+    baseWeights.data_refresh = (baseWeights.data_refresh || 0) * 1.2;
+  }
+
+  // Normalize to sum to 1
+  const total = Object.values(baseWeights).reduce((a, b) => a + b, 0);
+  if (total > 0) {
+    Object.keys(baseWeights).forEach(k => {
+      baseWeights[k] = baseWeights[k] / total;
+    });
+  }
+
+  return baseWeights;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -51,6 +198,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log("Starting user profile analysis with engagement scoring...");
 
     // Fetch all user data
     const { data: users, error: usersError } = await supabase
@@ -86,6 +235,17 @@ serve(async (req) => {
       .from("user_documents")
       .select("user_id, document_type, company_name, created_at");
 
+    // Fetch notification analytics for response tracking
+    const { data: notificationAnalytics } = await supabase
+      .from("notification_analytics")
+      .select("user_id, event_type, created_at")
+      .order("created_at", { ascending: false });
+
+    // Fetch existing notifications for sent count
+    const { data: notifications } = await supabase
+      .from("user_notifications")
+      .select("user_id, is_read, is_dismissed, created_at");
+
     // Build user activity profiles
     const userActivities: UserActivity[] = [];
 
@@ -94,6 +254,7 @@ serve(async (req) => {
       const userMessages = (messages || []).filter(m => m.user_id === user.id);
       const userEnrichments = (enrichments || []).filter(e => e.user_id === user.id);
       const userDocs = (documents || []).filter(d => d.user_id === user.id);
+      const userNotifs = (notifications || []).filter(n => n.user_id === user.id);
 
       // Calculate role preferences
       const roleCount: Record<string, { name: string; count: number }> = {};
@@ -131,7 +292,7 @@ serve(async (req) => {
         .map(m => m.content)
         .slice(0, 20);
 
-      // Calculate days active
+      // Calculate days active and first activity
       const firstActivity = userConvos.length > 0 
         ? new Date(Math.min(...userConvos.map(c => new Date(c.created_at || 0).getTime())))
         : new Date();
@@ -147,6 +308,11 @@ serve(async (req) => {
         ? new Date(Math.max(...allDates.map(d => new Date(d!).getTime()))).toISOString()
         : null;
 
+      // Calculate notification response metrics
+      const notificationsSent = userNotifs.length;
+      const notificationsRead = userNotifs.filter(n => n.is_read).length;
+      const notificationsIgnored = userNotifs.filter(n => !n.is_read && n.is_dismissed).length;
+
       userActivities.push({
         userId: user.id,
         email: user.email,
@@ -160,14 +326,35 @@ serve(async (req) => {
         totalDocuments: userDocs.length,
         documentTypes,
         lastActivity,
+        firstActivity: firstActivity.toISOString(),
         daysActive,
         avgSessionLength: userConvos.length > 0 
           ? userConvos.reduce((sum, c) => sum + (c.messages_count || 0), 0) / userConvos.length 
           : 0,
         questionPatterns: userQuestions.slice(0, 5),
         companiesMentioned: companiesMentioned as string[],
+        notificationsSent,
+        notificationsRead,
+        notificationsIgnored,
       });
     }
+
+    console.log(`Analyzed ${userActivities.length} users`);
+
+    // Calculate engagement scores for all users
+    const engagementResults = userActivities.map(ua => {
+      const { engagementScore, lifecycleStage, componentScores } = calculateEngagementScore(ua);
+      const notificationWeights = calculateNotificationWeights(ua, lifecycleStage);
+      
+      return {
+        userId: ua.userId,
+        engagementScore,
+        lifecycleStage,
+        ...componentScores,
+        weights: notificationWeights,
+        activity: ua,
+      };
+    });
 
     // Use AI to analyze and create personas
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -472,8 +659,8 @@ Asigna cada usuario a la persona que mejor le corresponda según su comportamien
           favorite_roles: u.favoriteRoles.map(r => r.roleName),
           mentioned_companies: u.companiesMentioned,
           question_patterns: u.questionPatterns,
-          first_activity: u.daysActive > 0 ? new Date(Date.now() - u.daysActive * 24 * 60 * 60 * 1000).toISOString() : null,
           last_activity: u.lastActivity,
+          first_activity: u.firstActivity,
           activity_days: u.daysActive,
           persona_id: dbPersonaId,
           analysis_batch_id: batchId,
@@ -488,6 +675,43 @@ Asigna cada usuario a la persona que mejor le corresponda según su comportamien
         console.error("Error inserting activity snapshots:", activityError);
       }
 
+      // ============================================
+      // UPSERT ENGAGEMENT SCORES
+      // ============================================
+      console.log("Updating engagement scores...");
+      
+      for (const result of engagementResults) {
+        const userPersona = personas.find(p => p.userIds.includes(result.userId));
+        const dbPersonaId = userPersona ? personaIdMap[userPersona.id] : null;
+
+        const { error: engagementError } = await supabase
+          .from("user_engagement_scores")
+          .upsert({
+            user_id: result.userId,
+            recency_score: result.recencyScore,
+            frequency_score: result.frequencyScore,
+            depth_score: result.depthScore,
+            response_score: result.responseScore,
+            engagement_score: result.engagementScore,
+            lifecycle_stage: result.lifecycleStage,
+            weight_newsroom: result.weights.newsroom || 0,
+            weight_persona_tip: result.weights.persona_tip || 0,
+            weight_data_refresh: result.weights.data_refresh || 0,
+            weight_inactivity: result.weights.inactivity || 0,
+            weight_company_alert: result.weights.company_alert || 0,
+            weight_feature_discovery: result.weights.feature_discovery || 0,
+            weight_engagement: result.weights.engagement || 0,
+            current_persona_id: dbPersonaId,
+            calculated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id',
+          });
+
+        if (engagementError) {
+          console.error(`Error upserting engagement score for ${result.userId}:`, engagementError);
+        }
+      }
+
       // Update batch with duration
       await supabase
         .from("profile_analysis_batches")
@@ -495,23 +719,47 @@ Asigna cada usuario a la persona que mejor le corresponda según su comportamien
         .eq("id", batchId);
     }
 
+    // Calculate lifecycle distribution for response
+    const lifecycleDistribution = engagementResults.reduce((acc, r) => {
+      acc[r.lifecycleStage] = (acc[r.lifecycleStage] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const avgEngagement = engagementResults.length > 0
+      ? Math.round(engagementResults.reduce((s, r) => s + r.engagementScore, 0) / engagementResults.length)
+      : 0;
+
+    console.log("Analysis complete:", {
+      usersAnalyzed: userActivities.length,
+      personasGenerated: personas.length,
+      avgEngagementScore: avgEngagement,
+      lifecycleDistribution,
+    });
+
     return new Response(
       JSON.stringify({
         success: true,
         userActivities,
         personas,
-        totalUsers: userActivities.length,
-        analysisDate: new Date().toISOString(),
+        engagementScores: engagementResults,
+        summary: {
+          totalUsers: userActivities.length,
+          totalPersonas: personas.length,
+          avgEngagementScore: avgEngagement,
+          lifecycleDistribution,
+        },
         batchId,
-        persisted: !!batchId,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
-  } catch (error: any) {
-    console.error("Error analyzing user profiles:", error);
+  } catch (error) {
+    console.error("Error in analyze-user-profiles:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        stack: error.stack 
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
