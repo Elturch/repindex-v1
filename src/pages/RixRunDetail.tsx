@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useRixRun } from "@/hooks/useRixRuns";
 import { useMarketAverages } from "@/hooks/useMarketAverages";
+import { useSiblingRixRuns } from "@/hooks/useSiblingRixRuns";
 import { useChatContext } from "@/contexts/ChatContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatsPanel } from "@/components/ui/stats-panel";
 import { RadarChartComparison } from "@/components/ui/radar-chart";
+import { SiblingAICards } from "@/components/SiblingAICards";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
@@ -31,6 +33,15 @@ export function RixRunDetail() {
     rixRun?.["06_period_from"], 
     rixRun?.["07_period_to"]
   );
+  
+  // Fetch sibling AI evaluations (other models for same company/week)
+  const { data: siblingRuns, isLoading: siblingsLoading } = useSiblingRixRuns(
+    rixRun?.["05_ticker"],
+    rixRun?.["06_period_from"],
+    rixRun?.["07_period_to"],
+    rixRun?.["02_model_name"]
+  );
+  
   const { setPageContext } = useChatContext();
 
   // Update chat context with company details
@@ -498,8 +509,17 @@ export function RixRunDetail() {
             </Card>
           </div>
 
-          {/* Right Column - Stats and Flags */}
+          {/* Right Column - Sibling AIs, Stats and Flags */}
           <div className="space-y-4">
+            
+            {/* Sibling AI Evaluations - Same company, different models */}
+            <div className="hidden lg:block">
+              <SiblingAICards
+                siblings={siblingRuns || []}
+                companyName={rixRun["03_target_name"] || "Empresa"}
+                isLoading={siblingsLoading}
+              />
+            </div>
             
             {/* Statistics Panel - Compact */}
             <Card>
