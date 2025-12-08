@@ -187,62 +187,46 @@ serve(async (req) => {
         
         if (profileError) throw profileError;
 
-        // Generate a magic link using admin API (bypasses rate limits)
-        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: "magiclink",
-          email: profile.email,
-          options: {
+        // Use Supabase's native magic link via inviteUserByEmail (sends email automatically)
+        // This bypasses the need for Resend
+        const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+          profile.email,
+          {
             redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
-          },
-        });
+          }
+        );
         
-        if (linkError) throw linkError;
-
-        // Send email via Resend (bypasses Supabase 60-second rate limit)
-        const resendApiKey = Deno.env.get("RESEND_API_KEY");
-        
-        if (!resendApiKey) {
-          throw new Error("RESEND_API_KEY no configurada");
-        }
-
-        const emailResponse = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${resendApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: "RepIndex <noreply@repindex.ai>",
-            to: profile.email,
-            subject: "Tu enlace de acceso a RepIndex",
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #1a1a2e;">Accede a RepIndex</h2>
-                <p>Hola${profile.full_name ? ` ${profile.full_name}` : ''},</p>
-                <p>Haz clic en el siguiente botón para acceder a tu cuenta de RepIndex:</p>
-                <p style="margin: 30px 0;">
-                  <a href="${linkData.properties.action_link}" 
-                     style="background-color: #3b82f6; color: white; padding: 12px 24px; 
-                            text-decoration: none; border-radius: 6px; display: inline-block;">
-                    Acceder a RepIndex
-                  </a>
-                </p>
-                <p style="color: #666; font-size: 14px;">
-                  Este enlace expira en 24 horas. Si no solicitaste este acceso, puedes ignorar este correo.
-                </p>
-                <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
-                <p style="color: #999; font-size: 12px;">
-                  RepIndex - Análisis de Reputación Corporativa
-                </p>
-              </div>
-            `,
-          }),
-        });
-
-        if (!emailResponse.ok) {
-          const errorData = await emailResponse.json();
-          console.error("Resend error:", errorData);
-          throw new Error(`Error enviando email: ${errorData.message || 'Unknown error'}`);
+        if (inviteError) {
+          // If user already confirmed, use generateLink + native OTP email
+          if (inviteError.code === "email_exists" || inviteError.message?.includes("already")) {
+            // For existing users, generate OTP link via admin API
+            const { error: otpError } = await supabaseAdmin.auth.admin.generateLink({
+              type: "magiclink",
+              email: profile.email,
+              options: {
+                redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
+              },
+            });
+            
+            if (otpError) throw otpError;
+            
+            // Use signInWithOtp which sends email via Supabase's built-in system
+            const anonClient = createClient(
+              Deno.env.get("SUPABASE_URL")!,
+              Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!
+            );
+            
+            const { error: signInError } = await anonClient.auth.signInWithOtp({
+              email: profile.email,
+              options: {
+                emailRedirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
+              },
+            });
+            
+            if (signInError) throw signInError;
+          } else {
+            throw inviteError;
+          }
         }
         
         return new Response(JSON.stringify({ 
