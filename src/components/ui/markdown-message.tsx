@@ -221,21 +221,22 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
   );
 }
 
-// Generate complete HTML document for export with premium styling
+// Generate complete HTML document for export with premium RepIndex report styling
 function generateExportHtml(markdown: string): string {
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
+  const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
   const styles = `
     :root {
       --primary: #3b82f6;
       --primary-light: #60a5fa;
-      --primary-dark: #2563eb;
+      --primary-dark: #1e40af;
       --primary-glow: #93c5fd;
       --text: #1f2937;
       --text-light: #6b7280;
       --text-muted: #9ca3af;
       --bg: #ffffff;
-      --bg-alt: #f9fafb;
+      --bg-alt: #f8fafc;
       --bg-muted: #f3f4f6;
       --border: #e5e7eb;
       --border-light: #f1f5f9;
@@ -245,6 +246,13 @@ function generateExportHtml(markdown: string): string {
     
     * {
       box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    @page {
+      size: A4;
+      margin: 20mm 18mm;
     }
     
     body {
@@ -268,11 +276,11 @@ function generateExportHtml(markdown: string): string {
       line-height: 1;
     }
     
-    /* Header */
-    .document-header {
+    /* Report Header - Professional Corporate Style */
+    .report-header {
       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
       color: white;
-      padding: 32px 36px;
+      padding: 36px 40px;
       border-radius: 20px;
       margin-bottom: 44px;
       box-shadow: 0 12px 48px var(--shadow-primary), 0 4px 16px rgba(0, 0, 0, 0.06);
@@ -280,34 +288,50 @@ function generateExportHtml(markdown: string): string {
       overflow: hidden;
     }
     
-    .document-header::before {
+    .report-header::before {
       content: '';
       position: absolute;
       top: -50%;
       right: -20%;
       width: 60%;
       height: 200%;
-      background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
+      background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%);
       transform: rotate(-12deg);
       pointer-events: none;
     }
     
-    .document-header h1 {
-      margin: 0 0 10px 0;
-      font-size: 1.85em;
+    .report-header .logo {
+      font-size: 32px;
       font-weight: 800;
-      border: none;
-      padding: 0;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.03em;
+      margin-bottom: 6px;
       position: relative;
     }
     
-    .document-header .subtitle {
-      margin: 0;
-      opacity: 0.92;
-      font-size: 0.95em;
-      font-weight: 500;
+    .report-header .logo span {
+      color: rgba(255,255,255,0.92);
+    }
+    
+    .report-header .report-title {
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0.95;
+      margin-bottom: 20px;
       position: relative;
+    }
+    
+    .report-header .meta {
+      display: flex;
+      gap: 28px;
+      font-size: 13px;
+      opacity: 0.88;
+      position: relative;
+    }
+    
+    .report-header .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     
     /* Typography */
@@ -321,7 +345,7 @@ function generateExportHtml(markdown: string): string {
     }
     
     h1 { 
-      font-size: 2em; 
+      font-size: 1.85em; 
       border-bottom: 3px solid var(--primary);
       padding-bottom: 14px;
       display: flex;
@@ -340,7 +364,7 @@ function generateExportHtml(markdown: string): string {
     }
     
     h2 { 
-      font-size: 1.6em; 
+      font-size: 1.5em; 
       border-bottom: 2px solid var(--border);
       padding-bottom: 12px;
       display: flex;
@@ -360,7 +384,7 @@ function generateExportHtml(markdown: string): string {
     }
     
     h3 { 
-      font-size: 1.35em;
+      font-size: 1.3em;
       color: var(--primary-dark);
       display: flex;
       align-items: center;
@@ -480,13 +504,13 @@ function generateExportHtml(markdown: string): string {
       transition: background-color 0.15s ease;
     }
     
-    /* Primera columna destacada */
+    /* First column emphasized */
     td:first-child {
       font-weight: 600;
       color: var(--text);
     }
     
-    /* Columnas numéricas alineadas a la derecha */
+    /* Numeric columns aligned right */
     td:not(:first-child) {
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -508,11 +532,6 @@ function generateExportHtml(markdown: string): string {
     /* Hover effect */
     tbody tr:hover {
       background: linear-gradient(90deg, #eff6ff 0%, #f0f9ff 100%);
-      transform: translateX(2px);
-    }
-    
-    tbody tr:last-child td {
-      border-bottom: none;
     }
     
     tbody tr:last-child td:first-child {
@@ -613,8 +632,8 @@ function generateExportHtml(markdown: string): string {
       border-radius: 1px;
     }
     
-    /* Footer */
-    .document-footer {
+    /* Report Footer - Corporate Style */
+    .report-footer {
       margin-top: 56px;
       padding-top: 28px;
       border-top: 2px solid var(--border);
@@ -623,9 +642,33 @@ function generateExportHtml(markdown: string): string {
       font-size: 0.9em;
     }
     
-    .document-footer a {
+    .report-footer .footer-logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+    
+    .report-footer .footer-tagline {
+      font-size: 13px;
+      color: var(--text-light);
+      margin-bottom: 8px;
+    }
+    
+    .report-footer .footer-url {
+      font-size: 14px;
       color: var(--primary);
       font-weight: 600;
+      margin-bottom: 16px;
+    }
+    
+    .report-footer .disclaimer {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-style: italic;
+      max-width: 600px;
+      margin: 0 auto;
+      line-height: 1.5;
     }
     
     /* Responsive */
@@ -635,35 +678,26 @@ function generateExportHtml(markdown: string): string {
         font-size: 14px;
       }
       
-      .document-header {
-        padding: 24px 20px;
+      .report-header {
+        padding: 28px 24px;
         border-radius: 14px;
       }
       
-      .document-header h1 {
-        font-size: 1.5em;
+      .report-header .logo {
+        font-size: 26px;
       }
       
       h1 { font-size: 1.6em; }
       h2 { font-size: 1.35em; }
       h3 { font-size: 1.2em; }
       
-      table {
-        font-size: 0.85em;
-      }
+      table { font-size: 0.85em; }
       
-      th, td {
-        padding: 10px 12px;
-      }
+      th, td { padding: 10px 12px; }
     }
     
     /* Print Styles */
     @media print {
-      @page {
-        size: A4;
-        margin: 20mm 18mm;
-      }
-      
       body {
         padding: 0;
         max-width: 100%;
@@ -671,7 +705,7 @@ function generateExportHtml(markdown: string): string {
         line-height: 1.5;
       }
       
-      .document-header {
+      .report-header {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
         page-break-after: avoid;
@@ -703,7 +737,7 @@ function generateExportHtml(markdown: string): string {
         page-break-inside: avoid;
       }
       
-      .document-footer {
+      .report-footer {
         page-break-before: avoid;
       }
     }
@@ -716,23 +750,33 @@ function generateExportHtml(markdown: string): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RepIndex - Respuesta del Agente Rix</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>Informe RepIndex - ${dateForFile}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>${styles}</style>
 </head>
 <body>
-  <div class="document-header">
-    <h1>RepIndex.ai — Agente Rix</h1>
-    <p class="subtitle">Documento exportado el ${now}</p>
-  </div>
+  <header class="report-header">
+    <div class="logo">Rep<span>Index</span></div>
+    <div class="report-title">Informe de Inteligencia Reputacional</div>
+    <div class="meta">
+      <div class="meta-item">📅 ${now}</div>
+      <div class="meta-item">📊 Agente Rix</div>
+    </div>
+  </header>
   
   <main class="content">
     ${bodyContent}
   </main>
   
-  <div class="document-footer">
-    <p>Este documento fue generado automáticamente por <a href="https://repindex.ai">RepIndex.ai</a></p>
-  </div>
+  <footer class="report-footer">
+    <div class="footer-logo">RepIndex</div>
+    <div class="footer-tagline">Inteligencia Artificial para Análisis de Reputación Corporativa</div>
+    <div class="footer-url">🌐 repindex.ai</div>
+    <p class="disclaimer">
+      Este informe ha sido generado automáticamente por Agente Rix, el asistente de inteligencia reputacional de RepIndex. 
+      Los datos y análisis se basan en información disponible en la base de datos de RepIndex.
+    </p>
+  </footer>
 </body>
 </html>`;
 }

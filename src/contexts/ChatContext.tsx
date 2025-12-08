@@ -429,53 +429,302 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [messages, sessionId, toast]);
 
   const downloadAsHtml = useCallback(() => {
-    const metadata = `
-      <div style="background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-        <h2 style="margin: 0 0 10px 0; color: #333;">Agente Rix - RepIndex.ai</h2>
-        <p style="margin: 5px 0; color: #666;"><strong>Fecha:</strong> ${format(new Date(), 'dd/MM/yyyy HH:mm')}</p>
-        <p style="margin: 5px 0; color: #666;"><strong>Sesión:</strong> ${sessionId}</p>
-      </div>
-    `;
-
-    const conversation = messages.map(msg => {
-      const isUser = msg.role === 'user';
-      const bgColor = isUser ? '#3b82f6' : '#ffffff';
-      const textColor = isUser ? '#ffffff' : '#333333';
-      const alignment = isUser ? 'flex-end' : 'flex-start';
-      const role = isUser ? 'Usuario' : 'Asistente IA';
-      
-      const questions = msg.suggestedQuestions?.length
-        ? `<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0,0,0,0.1);">
-            <p style="font-weight: bold; font-size: 12px; margin-bottom: 10px;">Preguntas sugeridas:</p>
-            ${msg.suggestedQuestions.map(q => `<p style="font-size: 13px; margin: 5px 0;">• ${q}</p>`).join('')}
-           </div>`
-        : '';
-
-      return `
-        <div style="display: flex; justify-content: ${alignment}; margin-bottom: 20px;">
-          <div style="max-width: 80%; background: ${bgColor}; color: ${textColor}; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <p style="font-weight: bold; font-size: 11px; opacity: 0.8; margin-bottom: 8px;">${role}</p>
-            <div style="white-space: pre-wrap;">${msg.content.replace(/\n/g, '<br>')}</div>
-            ${questions}
-          </div>
-        </div>
-      `;
-    }).join('');
-
+    const now = format(new Date(), 'dd/MM/yyyy HH:mm');
+    const dateForTitle = format(new Date(), 'dd-MM-yyyy');
+    
     const html = `
       <!DOCTYPE html>
-      <html>
+      <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Conversación RepIndex - ${format(new Date(), 'dd-MM-yyyy')}</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Informe RepIndex - ${dateForTitle}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; line-height: 1.6; }
-            @media print { body { margin: 20px; } }
+            :root {
+              --primary: #3b82f6;
+              --primary-dark: #1e40af;
+              --primary-light: #60a5fa;
+              --text: #1f2937;
+              --text-light: #6b7280;
+              --bg: #ffffff;
+              --bg-alt: #f8fafc;
+              --border: #e5e7eb;
+            }
+            
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            
+            @page {
+              size: A4;
+              margin: 20mm 18mm;
+            }
+            
+            body {
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              max-width: 900px;
+              margin: 0 auto;
+              padding: 40px 24px;
+              line-height: 1.7;
+              color: var(--text);
+              background: var(--bg);
+              font-size: 14px;
+              -webkit-font-smoothing: antialiased;
+            }
+            
+            /* Header corporativo */
+            .report-header {
+              background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+              color: white;
+              padding: 32px 40px;
+              border-radius: 16px;
+              margin-bottom: 40px;
+              position: relative;
+              overflow: hidden;
+              box-shadow: 0 10px 40px rgba(59, 130, 246, 0.25);
+            }
+            
+            .report-header::before {
+              content: '';
+              position: absolute;
+              top: -50%;
+              right: -20%;
+              width: 60%;
+              height: 200%;
+              background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%);
+              transform: rotate(-12deg);
+            }
+            
+            .report-header .logo {
+              font-size: 28px;
+              font-weight: 800;
+              letter-spacing: -0.02em;
+              margin-bottom: 8px;
+              position: relative;
+            }
+            
+            .report-header .logo span {
+              color: rgba(255,255,255,0.9);
+            }
+            
+            .report-header .subtitle {
+              font-size: 15px;
+              opacity: 0.9;
+              font-weight: 500;
+              margin-bottom: 20px;
+              position: relative;
+            }
+            
+            .report-header .meta {
+              display: flex;
+              gap: 24px;
+              font-size: 13px;
+              opacity: 0.85;
+              position: relative;
+            }
+            
+            .report-header .meta-item {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            }
+            
+            /* Contenido de mensajes */
+            .message {
+              margin-bottom: 24px;
+              page-break-inside: avoid;
+            }
+            
+            .message-user {
+              background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+              color: white;
+              padding: 16px 20px;
+              border-radius: 12px 12px 4px 12px;
+              margin-left: 15%;
+              box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+            }
+            
+            .message-assistant {
+              background: var(--bg-alt);
+              border: 1px solid var(--border);
+              padding: 24px;
+              border-radius: 4px 12px 12px 12px;
+              margin-right: 5%;
+            }
+            
+            .message-role {
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin-bottom: 10px;
+              opacity: 0.8;
+            }
+            
+            .message-content {
+              white-space: pre-wrap;
+              line-height: 1.75;
+            }
+            
+            .message-assistant .message-content h1,
+            .message-assistant .message-content h2,
+            .message-assistant .message-content h3 {
+              margin-top: 20px;
+              margin-bottom: 12px;
+              color: var(--text);
+            }
+            
+            .message-assistant .message-content h1 { font-size: 1.5em; border-bottom: 2px solid var(--primary); padding-bottom: 8px; }
+            .message-assistant .message-content h2 { font-size: 1.3em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+            .message-assistant .message-content h3 { font-size: 1.15em; color: var(--primary-dark); }
+            
+            .suggested-questions {
+              margin-top: 16px;
+              padding-top: 16px;
+              border-top: 1px dashed var(--border);
+            }
+            
+            .suggested-questions-title {
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: var(--text-light);
+              margin-bottom: 8px;
+            }
+            
+            .suggested-question {
+              font-size: 13px;
+              color: var(--primary-dark);
+              margin: 4px 0;
+              padding-left: 12px;
+              position: relative;
+            }
+            
+            .suggested-question::before {
+              content: '•';
+              position: absolute;
+              left: 0;
+              color: var(--primary);
+            }
+            
+            /* Tables */
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 16px 0;
+              font-size: 13px;
+              border-radius: 8px;
+              overflow: hidden;
+              border: 1px solid var(--border);
+            }
+            
+            thead { background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
+            
+            th {
+              padding: 12px 14px;
+              text-align: left;
+              font-weight: 700;
+              font-size: 11px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              border-bottom: 2px solid var(--primary);
+            }
+            
+            td {
+              padding: 10px 14px;
+              border-bottom: 1px solid var(--border);
+            }
+            
+            tbody tr:nth-child(even) { background: #f9fafb; }
+            tbody tr:hover { background: #f1f5f9; }
+            
+            /* Footer corporativo */
+            .report-footer {
+              margin-top: 50px;
+              padding-top: 24px;
+              border-top: 2px solid var(--border);
+              text-align: center;
+              color: var(--text-light);
+              font-size: 12px;
+            }
+            
+            .report-footer .logo {
+              font-size: 18px;
+              font-weight: 700;
+              color: var(--primary);
+              margin-bottom: 8px;
+            }
+            
+            .report-footer p {
+              margin: 4px 0;
+            }
+            
+            .report-footer .disclaimer {
+              margin-top: 16px;
+              font-size: 11px;
+              color: #9ca3af;
+              font-style: italic;
+            }
+            
+            @media print {
+              body { padding: 0; }
+              .report-header { break-after: avoid; }
+              .message { break-inside: avoid; }
+              .report-footer { break-before: avoid; }
+            }
           </style>
         </head>
         <body>
-          ${metadata}
-          ${conversation}
+          <header class="report-header">
+            <div class="logo">Rep<span>Index</span></div>
+            <div class="subtitle">Informe de Inteligencia Reputacional</div>
+            <div class="meta">
+              <div class="meta-item">📅 ${now}</div>
+              <div class="meta-item">💬 ${messages.length} mensajes</div>
+              <div class="meta-item">🔖 ${sessionId.slice(0, 8)}</div>
+            </div>
+          </header>
+          
+          <main>
+            ${messages.map(msg => {
+              const isUser = msg.role === 'user';
+              const role = isUser ? 'Consulta' : 'Análisis RepIndex';
+              const questions = msg.suggestedQuestions?.length
+                ? `<div class="suggested-questions">
+                    <div class="suggested-questions-title">Análisis adicionales sugeridos</div>
+                    ${msg.suggestedQuestions.map(q => `<div class="suggested-question">${q}</div>`).join('')}
+                   </div>`
+                : '';
+              
+              // Convert markdown to basic HTML
+              let content = msg.content
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+              
+              return `
+                <div class="message">
+                  <div class="message-${isUser ? 'user' : 'assistant'}">
+                    <div class="message-role">${role}</div>
+                    <div class="message-content">${content}</div>
+                    ${!isUser ? questions : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </main>
+          
+          <footer class="report-footer">
+            <div class="logo">RepIndex</div>
+            <p>Inteligencia Artificial para Análisis de Reputación Corporativa</p>
+            <p>🌐 repindex.ai</p>
+            <p class="disclaimer">
+              Este informe ha sido generado automáticamente por Agente Rix. 
+              Los datos y análisis se basan en información disponible en la base de datos de RepIndex.
+            </p>
+          </footer>
         </body>
       </html>
     `;
@@ -484,13 +733,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = generateFileName('html');
+    link.download = `informe_repindex_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.html`;
     link.click();
     URL.revokeObjectURL(url);
 
     toast({
-      title: "Conversación exportada",
-      description: "Archivo HTML descargado exitosamente",
+      title: "Informe exportado",
+      description: "Informe RepIndex descargado como HTML",
     });
   }, [messages, sessionId, toast]);
 
