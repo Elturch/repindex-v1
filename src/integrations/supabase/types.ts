@@ -1877,8 +1877,11 @@ export type Database = {
       }
       user_notifications: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           content: string
           created_at: string
+          created_by: string | null
           dismissed_at: string | null
           expires_at: string | null
           id: string
@@ -1889,12 +1892,17 @@ export type Database = {
           persona_id: string | null
           priority: string | null
           read_at: string | null
+          scheduled_for: string | null
+          status: string
           title: string
           user_id: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           content: string
           created_at?: string
+          created_by?: string | null
           dismissed_at?: string | null
           expires_at?: string | null
           id?: string
@@ -1905,12 +1913,17 @@ export type Database = {
           persona_id?: string | null
           priority?: string | null
           read_at?: string | null
+          scheduled_for?: string | null
+          status?: string
           title: string
           user_id: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           content?: string
           created_at?: string
+          created_by?: string | null
           dismissed_at?: string | null
           expires_at?: string | null
           id?: string
@@ -1921,6 +1934,8 @@ export type Database = {
           persona_id?: string | null
           priority?: string | null
           read_at?: string | null
+          scheduled_for?: string | null
+          status?: string
           title?: string
           user_id?: string
         }
