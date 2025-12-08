@@ -281,6 +281,45 @@ serve(async (req) => {
         });
       }
 
+      // ==================== NOTIFICATIONS ====================
+      case "send_test_notification": {
+        // Get user by email
+        const { data: profile, error: profileError } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id, email, full_name")
+          .eq("email", data.email)
+          .single();
+        
+        if (profileError) throw new Error(`Usuario no encontrado: ${data.email}`);
+
+        // Insert notification
+        const { data: notification, error: notifError } = await supabaseAdmin
+          .from("user_notifications")
+          .insert({
+            user_id: profile.id,
+            title: data.title || "🧪 Test del Sistema",
+            content: data.content || "Este es un mensaje de prueba.",
+            notification_type: data.notification_type || "system",
+            priority: data.priority || "normal",
+            status: "sent",
+            approved_at: new Date().toISOString(),
+          })
+          .select()
+          .single();
+        
+        if (notifError) throw notifError;
+        
+        console.log(`Test notification sent to ${profile.email}:`, notification);
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          notification,
+          message: `Notificación enviada a ${profile.email}` 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
