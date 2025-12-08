@@ -470,54 +470,101 @@ export function ChatProvider({ children }: ChatProviderProps) {
               -webkit-font-smoothing: antialiased;
             }
             
-            /* Header corporativo */
+            /* Header corporativo premium */
             .report-header {
-              background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+              background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
               color: white;
-              padding: 32px 40px;
-              border-radius: 16px;
+              padding: 44px 40px;
+              border-radius: 18px;
               margin-bottom: 40px;
               position: relative;
               overflow: hidden;
-              box-shadow: 0 10px 40px rgba(59, 130, 246, 0.25);
+              box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4), 0 8px 24px rgba(0, 0, 0, 0.12);
+              border: 1px solid rgba(255,255,255,0.08);
             }
             
             .report-header::before {
               content: '';
               position: absolute;
-              top: -50%;
-              right: -20%;
-              width: 60%;
-              height: 200%;
-              background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%);
-              transform: rotate(-12deg);
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: 
+                radial-gradient(ellipse at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 90% 80%, rgba(99, 102, 241, 0.12) 0%, transparent 50%);
+              pointer-events: none;
+            }
+            
+            .report-header .header-top {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              margin-bottom: 24px;
+              position: relative;
+            }
+            
+            .report-header .logo-section {
+              position: relative;
             }
             
             .report-header .logo {
-              font-size: 28px;
+              font-size: 32px;
               font-weight: 800;
               letter-spacing: -0.02em;
-              margin-bottom: 8px;
+              margin-bottom: 4px;
               position: relative;
             }
             
             .report-header .logo span {
-              color: rgba(255,255,255,0.9);
+              color: #60a5fa;
+            }
+            
+            .report-header .company-tagline {
+              font-size: 10px;
+              text-transform: uppercase;
+              letter-spacing: 2px;
+              opacity: 0.7;
+              font-weight: 500;
+            }
+            
+            .report-header .header-badge {
+              background: rgba(59, 130, 246, 0.2);
+              border: 1px solid rgba(255,255,255,0.15);
+              padding: 6px 14px;
+              border-radius: 20px;
+              font-size: 10px;
+              font-weight: 600;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+            }
+            
+            .report-header .divider {
+              height: 1px;
+              background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0.2) 80%, transparent 100%);
+              margin-bottom: 20px;
+            }
+            
+            .report-header .report-title {
+              font-size: 20px;
+              font-weight: 700;
+              margin-bottom: 4px;
+              position: relative;
             }
             
             .report-header .subtitle {
-              font-size: 15px;
-              opacity: 0.9;
-              font-weight: 500;
+              font-size: 13px;
+              opacity: 0.8;
+              font-weight: 400;
               margin-bottom: 20px;
               position: relative;
             }
             
             .report-header .meta {
               display: flex;
-              gap: 24px;
-              font-size: 13px;
-              opacity: 0.85;
+              gap: 28px;
+              font-size: 12px;
+              opacity: 0.75;
               position: relative;
             }
             
@@ -696,12 +743,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
         </head>
         <body>
           <header class="report-header">
-            <div class="logo">Rep<span>Index</span></div>
-            <div class="subtitle">Informe de Inteligencia Reputacional</div>
+            <div class="header-top">
+              <div class="logo-section">
+                <div class="logo">Rep<span>Index</span></div>
+                <div class="company-tagline">Inteligencia Reputacional Corporativa</div>
+              </div>
+              <div class="header-badge">Documento Confidencial</div>
+            </div>
+            <div class="divider"></div>
+            <div class="report-title">Informe de Conversación</div>
+            <div class="subtitle">Generado por Agente Rix — Asistente de Inteligencia Artificial</div>
             <div class="meta">
               <div class="meta-item">📅 ${now}</div>
               <div class="meta-item">💬 ${messages.length} mensajes</div>
-              <div class="meta-item">🔖 ${sessionId.slice(0, 8)}</div>
+              <div class="meta-item">🔖 Sesión ${sessionId.slice(0, 8)}</div>
             </div>
           </header>
           
@@ -739,12 +794,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
           
           <footer class="report-footer">
             <div class="logo">RepIndex</div>
-            <p>Inteligencia Artificial para Análisis de Reputación Corporativa</p>
-            <p>🌐 repindex.ai</p>
-            <p class="disclaimer">
-              Este informe ha sido generado automáticamente por Agente Rix. 
-              Los datos y análisis se basan en información disponible en la base de datos de RepIndex.
-            </p>
+            <p style="font-size: 14px; color: #64748b; margin: 8px 0;">Inteligencia Artificial para Análisis de Reputación Corporativa</p>
+            <p style="font-size: 13px; color: #3b82f6; font-weight: 600; margin: 8px 0;">🌐 repindex.ai</p>
+            <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+              <p class="disclaimer">
+                © ${new Date().getFullYear()} RepIndex. Este documento es confidencial y ha sido generado automáticamente por Agente Rix. 
+                Los datos y análisis se basan en información disponible en la base de datos de RepIndex. 
+                Queda prohibida su reproducción o distribución sin autorización expresa.
+              </p>
+            </div>
           </footer>
         </body>
       </html>

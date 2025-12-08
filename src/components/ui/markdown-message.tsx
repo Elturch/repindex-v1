@@ -276,62 +276,127 @@ function generateExportHtml(markdown: string): string {
       line-height: 1;
     }
     
-    /* Report Header - Professional Corporate Style */
+    /* Report Header - Premium Corporate Style */
     .report-header {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
       color: white;
-      padding: 36px 40px;
+      padding: 48px 44px;
       border-radius: 20px;
       margin-bottom: 44px;
-      box-shadow: 0 12px 48px var(--shadow-primary), 0 4px 16px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4), 0 8px 24px rgba(0, 0, 0, 0.12);
       position: relative;
       overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
     }
     
     .report-header::before {
       content: '';
       position: absolute;
-      top: -50%;
-      right: -20%;
-      width: 60%;
-      height: 200%;
-      background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%);
-      transform: rotate(-12deg);
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: 
+        radial-gradient(ellipse at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 90% 80%, rgba(99, 102, 241, 0.12) 0%, transparent 50%);
       pointer-events: none;
     }
     
-    .report-header .logo {
-      font-size: 32px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 6px;
+    .report-header .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 28px;
       position: relative;
     }
     
+    .report-header .logo-section {
+      position: relative;
+    }
+    
+    .report-header .logo {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 4px;
+      background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
     .report-header .logo span {
-      color: rgba(255,255,255,0.92);
+      background: linear-gradient(135deg, #60a5fa 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+    
+    .report-header .company-tagline {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      opacity: 0.7;
+      font-weight: 500;
+    }
+    
+    .report-header .header-badge {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(99, 102, 241, 0.2) 100%);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 8px 16px;
+      border-radius: 24px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      position: relative;
+    }
+    
+    .report-header .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0.2) 80%, transparent 100%);
+      margin-bottom: 24px;
+      position: relative;
     }
     
     .report-header .report-title {
-      font-size: 18px;
-      font-weight: 600;
-      opacity: 0.95;
-      margin-bottom: 20px;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      position: relative;
+      letter-spacing: -0.01em;
+    }
+    
+    .report-header .report-subtitle {
+      font-size: 14px;
+      opacity: 0.8;
+      font-weight: 400;
+      margin-bottom: 24px;
       position: relative;
     }
     
     .report-header .meta {
       display: flex;
-      gap: 28px;
-      font-size: 13px;
-      opacity: 0.88;
+      gap: 32px;
+      font-size: 12px;
+      opacity: 0.75;
       position: relative;
     }
     
     .report-header .meta-item {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+    }
+    
+    .report-header .meta-item .icon {
+      width: 16px;
+      height: 16px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
     }
     
     /* Typography */
@@ -775,11 +840,20 @@ function generateExportHtml(markdown: string): string {
 </head>
 <body>
   <header class="report-header">
-    <div class="logo">Rep<span>Index</span></div>
-    <div class="report-title">Informe de Inteligencia Reputacional</div>
+    <div class="header-top">
+      <div class="logo-section">
+        <div class="logo">Rep<span>Index</span></div>
+        <div class="company-tagline">Inteligencia Reputacional Corporativa</div>
+      </div>
+      <div class="header-badge">Documento Confidencial</div>
+    </div>
+    <div class="divider"></div>
+    <div class="report-title">Informe de Análisis Reputacional</div>
+    <div class="report-subtitle">Generado por Agente Rix — Asistente de Inteligencia Artificial</div>
     <div class="meta">
-      <div class="meta-item">📅 ${now}</div>
-      <div class="meta-item">📊 Agente Rix</div>
+      <div class="meta-item"><span class="icon">📅</span> ${now}</div>
+      <div class="meta-item"><span class="icon">📊</span> Análisis RepIndex</div>
+      <div class="meta-item"><span class="icon">🔐</span> Uso interno</div>
     </div>
   </header>
   
@@ -791,10 +865,13 @@ function generateExportHtml(markdown: string): string {
     <div class="footer-logo">RepIndex</div>
     <div class="footer-tagline">Inteligencia Artificial para Análisis de Reputación Corporativa</div>
     <div class="footer-url">🌐 repindex.ai</div>
-    <p class="disclaimer">
-      Este informe ha sido generado automáticamente por Agente Rix, el asistente de inteligencia reputacional de RepIndex. 
-      Los datos y análisis se basan en información disponible en la base de datos de RepIndex.
-    </p>
+    <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+      <p class="disclaimer">
+        © ${new Date().getFullYear()} RepIndex. Este documento es confidencial y ha sido generado automáticamente por Agente Rix, 
+        el asistente de inteligencia reputacional de RepIndex. Los datos y análisis se basan en información disponible 
+        en la base de datos de RepIndex. Queda prohibida su reproducción o distribución sin autorización expresa.
+      </p>
+    </div>
   </footer>
 </body>
 </html>`;
