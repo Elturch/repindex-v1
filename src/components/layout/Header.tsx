@@ -108,7 +108,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
 
         {/* Right side actions */}
         <div className="flex items-center gap-2">
-          {isAuthenticated && <GlossaryDialog />}
+          <GlossaryDialog />
           
           {/* Theme Toggle */}
           <Button
