@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, Minimize2, Maximize2, Trash2, Sparkles, Lock } from "lucide-react";
+import { Bot, Minimize2, Maximize2, Trash2, Sparkles, Lock, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +9,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useChatContext } from "@/contexts/ChatContext";
 import { usePageContext } from "@/hooks/usePageContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserNotifications } from "@/hooks/useUserNotifications";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
 import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTooltip";
+import { NotificationsPanel } from "./NotificationsPanel";
 import { isDevOrPreview } from "@/lib/env";
 
 export function FloatingChat() {
@@ -32,10 +34,18 @@ export function FloatingChat() {
   const { isAuthenticated } = useAuth();
   const pageContext = usePageContext();
   const hasSeenOnboarding = useChatOnboardingSeen();
+  const { 
+    notifications, 
+    unreadCount, 
+    markAsRead, 
+    markAllAsRead, 
+    dismissNotification 
+  } = useUserNotifications();
   
   // State for expanded button text
   const [isButtonExpanded, setIsButtonExpanded] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const lastInteractionRef = useRef<number>(Date.now());
   
   // Check if there's active dynamic context
@@ -98,6 +108,10 @@ export function FloatingChat() {
   const handleOpenChat = () => {
     setIsFloatingOpen(true);
     setShowOnboarding(false);
+    // Auto-show notifications panel if there are unread notifications
+    if (unreadCount > 0) {
+      setShowNotifications(true);
+    }
   };
 
   return (
@@ -176,8 +190,21 @@ export function FloatingChat() {
               </Tooltip>
             </TooltipProvider>
             
-            {/* Notification badge - only shown when there are unread admin notifications */}
-            {/* TODO: Conectar con user_notifications cuando admin envíe mensajes */}
+            {/* Notification badge */}
+            {unreadCount > 0 && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1"
+              >
+                <Badge 
+                  variant="destructive" 
+                  className="h-5 min-w-5 px-1.5 text-xs font-bold animate-pulse"
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Badge>
+              </motion.div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -198,8 +225,27 @@ export function FloatingChat() {
                   <div className="flex items-center gap-2">
                     <Bot className="h-5 w-5 text-primary" />
                     <CardTitle className="text-base">Agente Rix</CardTitle>
+                    {unreadCount > 0 && (
+                      <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+                        {unreadCount}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
+                    {notifications.length > 0 && (
+                      <Button
+                        variant={showNotifications ? "secondary" : "ghost"}
+                        size="icon"
+                        className="h-8 w-8 relative"
+                        onClick={() => setShowNotifications(!showNotifications)}
+                        title="Notificaciones"
+                      >
+                        <Bell className="h-4 w-4" />
+                        {unreadCount > 0 && (
+                          <span className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-destructive rounded-full" />
+                        )}
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
@@ -252,6 +298,18 @@ export function FloatingChat() {
               </CardHeader>
               
               <CardContent className="pt-0">
+                {/* Notifications Panel */}
+                <AnimatePresence>
+                  {showNotifications && notifications.length > 0 && (
+                    <NotificationsPanel
+                      notifications={notifications}
+                      onMarkAsRead={markAsRead}
+                      onMarkAllAsRead={markAllAsRead}
+                      onDismiss={dismissNotification}
+                      onClose={() => setShowNotifications(false)}
+                    />
+                  )}
+                </AnimatePresence>
                 {(isAuthenticated || isDevOrPreview()) ? (
                   <>
                     <ChatMessages
