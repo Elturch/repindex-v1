@@ -169,7 +169,7 @@ export function ChatMessages({
               ) : (
                 <MarkdownMessage 
                   content={message.content} 
-                  showDownload={!compact}
+                  showDownload={true}
                 />
               )}
               
