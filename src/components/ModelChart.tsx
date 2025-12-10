@@ -143,19 +143,6 @@ export function ModelChart({
                     name={`${companyName} RIX`}
                     dot={false}
                   />
-                  
-                  {/* Price Index line (only if traded and has data) */}
-                  {isTraded && chartData.some(d => d[`${ticker}_price_index`]) && (
-                    <Line
-                      type="monotone"
-                      dataKey={`${ticker}_price_index`}
-                      stroke={color}
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      name={`${companyName} Precio`}
-                      dot={false}
-                    />
-                  )}
                 </React.Fragment>
               );
             })}
