@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -13,7 +12,9 @@ import {
   Database,
   Loader2,
   CheckCircle,
-  Clock
+  Clock,
+  Calendar,
+  Zap
 } from 'lucide-react';
 
 interface FeedbackItem {
@@ -34,18 +35,22 @@ interface FeedbackStats {
   negative: number;
   includedInVectorStore: number;
   pendingInclusion: number;
+  todayCount: number;
 }
 
 export function FeedbackPanel() {
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
+  const [todayItems, setTodayItems] = useState<FeedbackItem[]>([]);
   const [stats, setStats] = useState<FeedbackStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingFeedback, setSyncingFeedback] = useState(false);
   const { toast } = useToast();
 
   const fetchFeedback = async () => {
     setLoading(true);
     try {
+      // Get all feedback
       const { data, error } = await supabase
         .from('chat_response_feedback')
         .select('*')
@@ -57,14 +62,23 @@ export function FeedbackPanel() {
       const items = (data || []) as FeedbackItem[];
       setFeedbackItems(items);
 
+      // Get today's items
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+      
+      const todayFeedback = items.filter(i => new Date(i.created_at) >= today);
+      setTodayItems(todayFeedback);
+
       // Calculate stats
       const total = items.length;
       const positive = items.filter(i => i.rating === 'positive').length;
       const negative = items.filter(i => i.rating === 'negative').length;
       const includedInVectorStore = items.filter(i => i.included_in_vector_store).length;
       const pendingInclusion = items.filter(i => i.rating === 'positive' && !i.included_in_vector_store).length;
+      const todayCount = todayFeedback.length;
 
-      setStats({ total, positive, negative, includedInVectorStore, pendingInclusion });
+      setStats({ total, positive, negative, includedInVectorStore, pendingInclusion, todayCount });
     } catch (error) {
       console.error('Error fetching feedback:', error);
       toast({
@@ -77,47 +91,30 @@ export function FeedbackPanel() {
     }
   };
 
-  const syncPositiveToVectorStore = async () => {
-    setSyncing(true);
+  const syncFeedbackToVectorStore = async () => {
+    setSyncingFeedback(true);
     try {
-      const pendingItems = feedbackItems.filter(
-        i => i.rating === 'positive' && !i.included_in_vector_store
-      );
-
-      if (pendingItems.length === 0) {
-        toast({
-          title: 'Sin pendientes',
-          description: 'No hay respuestas positivas pendientes de sincronizar',
-        });
-        return;
-      }
-
-      // Mark items as included (the actual vector store sync happens in populate-vector-store)
-      const { error } = await supabase
-        .from('chat_response_feedback')
-        .update({ 
-          included_in_vector_store: true,
-          vector_store_included_at: new Date().toISOString()
-        })
-        .in('id', pendingItems.map(i => i.id));
+      const { data, error } = await supabase.functions.invoke('populate-feedback-vectors', {
+        body: {}
+      });
 
       if (error) throw error;
 
       toast({
-        title: 'Sincronización preparada',
-        description: `${pendingItems.length} respuestas marcadas para incluir en el vector store`,
+        title: 'Sincronización completada',
+        description: `${data.processed || 0} respuestas añadidas al vector store`,
       });
 
       fetchFeedback();
     } catch (error) {
-      console.error('Error syncing to vector store:', error);
+      console.error('Error syncing feedback:', error);
       toast({
         title: 'Error',
-        description: 'No se pudo sincronizar',
+        description: 'No se pudo sincronizar el feedback',
         variant: 'destructive',
       });
     } finally {
-      setSyncing(false);
+      setSyncingFeedback(false);
     }
   };
 
@@ -136,140 +133,135 @@ export function FeedbackPanel() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <ThumbsUp className="h-5 w-5 text-green-500" />
-              Feedback de Respuestas
-            </CardTitle>
-            <CardDescription>
-              Valoraciones de usuarios para entrenar y mejorar el Agente Rix
-            </CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchFeedback}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Stats */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="p-4 rounded-lg border bg-muted/30 text-center">
-              <p className="text-2xl font-bold">{stats.total}</p>
-              <p className="text-xs text-muted-foreground">Total valoraciones</p>
+    <div className="space-y-6">
+      {/* Stats Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Database className="h-4 w-4 text-muted-foreground" />
+                Feedback y Entrenamiento
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Valoraciones de usuarios para refuerzo del Agente Rix
+              </CardDescription>
             </div>
-            <div className="p-4 rounded-lg border bg-green-50 dark:bg-green-950/20 text-center">
-              <div className="flex items-center justify-center gap-1">
-                <ThumbsUp className="h-4 w-4 text-green-500" />
-                <p className="text-2xl font-bold text-green-600">{stats.positive}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">Positivas</p>
-            </div>
-            <div className="p-4 rounded-lg border bg-red-50 dark:bg-red-950/20 text-center">
-              <div className="flex items-center justify-center gap-1">
-                <ThumbsDown className="h-4 w-4 text-red-500" />
-                <p className="text-2xl font-bold text-red-600">{stats.negative}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">Negativas</p>
-            </div>
-            <div className="p-4 rounded-lg border bg-blue-50 dark:bg-blue-950/20 text-center">
-              <div className="flex items-center justify-center gap-1">
-                <Database className="h-4 w-4 text-blue-500" />
-                <p className="text-2xl font-bold text-blue-600">{stats.includedInVectorStore}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">En vector store</p>
-            </div>
-            <div className="p-4 rounded-lg border bg-amber-50 dark:bg-amber-950/20 text-center">
-              <div className="flex items-center justify-center gap-1">
-                <Clock className="h-4 w-4 text-amber-500" />
-                <p className="text-2xl font-bold text-amber-600">{stats.pendingInclusion}</p>
-              </div>
-              <p className="text-xs text-muted-foreground">Pendientes</p>
-            </div>
-          </div>
-        )}
-
-        {/* Sync button */}
-        {stats && stats.pendingInclusion > 0 && (
-          <div className="flex items-center gap-4 p-4 rounded-lg border bg-primary/5">
-            <div className="flex-1">
-              <p className="font-medium text-sm">
-                {stats.pendingInclusion} respuestas positivas listas para entrenar
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Añade estas respuestas al vector store para mejorar el Agente Rix
-              </p>
-            </div>
-            <Button onClick={syncPositiveToVectorStore} disabled={syncing} className="gap-2">
-              {syncing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <Database className="h-4 w-4" />
-                  Incluir en Vector Store
-                </>
-              )}
+            <Button variant="ghost" size="sm" onClick={fetchFeedback} className="h-8 w-8 p-0">
+              <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           </div>
-        )}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Stats Grid */}
+          {stats && (
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+              <div className="p-2.5 rounded-md border bg-muted/30 text-center">
+                <p className="text-lg font-semibold">{stats.total}</p>
+                <p className="text-[10px] text-muted-foreground">Total</p>
+              </div>
+              <div className="p-2.5 rounded-md border bg-green-50/50 dark:bg-green-950/20 text-center">
+                <p className="text-lg font-semibold text-green-600">{stats.positive}</p>
+                <p className="text-[10px] text-muted-foreground">Positivas</p>
+              </div>
+              <div className="p-2.5 rounded-md border bg-red-50/50 dark:bg-red-950/20 text-center">
+                <p className="text-lg font-semibold text-red-600">{stats.negative}</p>
+                <p className="text-[10px] text-muted-foreground">Negativas</p>
+              </div>
+              <div className="p-2.5 rounded-md border bg-blue-50/50 dark:bg-blue-950/20 text-center">
+                <p className="text-lg font-semibold text-blue-600">{stats.includedInVectorStore}</p>
+                <p className="text-[10px] text-muted-foreground">En Vector</p>
+              </div>
+              <div className="p-2.5 rounded-md border bg-amber-50/50 dark:bg-amber-950/20 text-center">
+                <p className="text-lg font-semibold text-amber-600">{stats.pendingInclusion}</p>
+                <p className="text-[10px] text-muted-foreground">Pendientes</p>
+              </div>
+              <div className="p-2.5 rounded-md border bg-purple-50/50 dark:bg-purple-950/20 text-center">
+                <p className="text-lg font-semibold text-purple-600">{stats.todayCount}</p>
+                <p className="text-[10px] text-muted-foreground">Hoy</p>
+              </div>
+            </div>
+          )}
 
-        {/* Feedback list */}
-        <div>
-          <h4 className="font-medium text-sm mb-3">Últimas valoraciones</h4>
-          {feedbackItems.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <ThumbsUp className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <p>No hay valoraciones todavía</p>
-              <p className="text-sm">Las valoraciones aparecerán cuando los usuarios califiquen respuestas</p>
+          {/* Sync Button */}
+          {stats && stats.pendingInclusion > 0 && (
+            <div className="flex items-center gap-3 p-3 rounded-md border bg-primary/5">
+              <Zap className="h-4 w-4 text-primary flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium">
+                  {stats.pendingInclusion} respuestas positivas pendientes
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Se sincronizan automáticamente cada noche a las 02:00
+                </p>
+              </div>
+              <Button 
+                size="sm" 
+                onClick={syncFeedbackToVectorStore} 
+                disabled={syncingFeedback}
+                className="h-7 text-xs gap-1.5"
+              >
+                {syncingFeedback ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Database className="h-3 w-3" />
+                )}
+                Sincronizar ahora
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Today's Feedback */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            Valoraciones de hoy
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {todayItems.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">
+              <p className="text-sm">No hay valoraciones hoy</p>
             </div>
           ) : (
-            <ScrollArea className="h-[400px]">
-              <div className="space-y-3 pr-4">
-                {feedbackItems.map((item) => (
+            <ScrollArea className="h-[200px]">
+              <div className="space-y-2 pr-4">
+                {todayItems.map((item) => (
                   <div
                     key={item.id}
-                    className={`p-4 rounded-lg border ${
+                    className={`p-2.5 rounded-md border ${
                       item.rating === 'positive' 
-                        ? 'border-green-200 bg-green-50/50 dark:bg-green-950/10 dark:border-green-900' 
-                        : 'border-red-200 bg-red-50/50 dark:bg-red-950/10 dark:border-red-900'
+                        ? 'border-green-200/50 bg-green-50/30 dark:bg-green-950/10' 
+                        : 'border-red-200/50 bg-red-50/30 dark:bg-red-950/10'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-2">
+                      {item.rating === 'positive' ? (
+                        <ThumbsUp className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <ThumbsDown className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
+                      )}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          {item.rating === 'positive' ? (
-                            <ThumbsUp className="h-4 w-4 text-green-500 flex-shrink-0" />
-                          ) : (
-                            <ThumbsDown className="h-4 w-4 text-red-500 flex-shrink-0" />
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(item.created_at).toLocaleString('es-ES')}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(item.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           {item.included_in_vector_store && (
-                            <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-700 gap-1">
-                              <CheckCircle className="h-3 w-3" />
-                              En vector store
+                            <Badge variant="outline" className="text-[8px] h-4 bg-blue-100/50 text-blue-600 border-blue-200">
+                              <CheckCircle className="h-2 w-2 mr-0.5" />
+                              Vector
                             </Badge>
                           )}
                         </div>
-                        
                         {item.user_question && (
-                          <div className="mb-2">
-                            <p className="text-xs font-medium text-muted-foreground">Pregunta:</p>
-                            <p className="text-sm truncate">{item.user_question}</p>
-                          </div>
+                          <p className="text-[10px] text-muted-foreground mb-0.5 truncate">
+                            P: {item.user_question}
+                          </p>
                         )}
-                        
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Respuesta valorada:</p>
-                          <p className="text-sm line-clamp-3">{item.message_content.substring(0, 300)}...</p>
-                        </div>
+                        <p className="text-xs line-clamp-2">{item.message_content.substring(0, 150)}...</p>
                       </div>
                     </div>
                   </div>
@@ -277,18 +269,80 @@ export function FeedbackPanel() {
               </div>
             </ScrollArea>
           )}
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* Info */}
-        <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-          <p className="font-medium mb-1">ℹ️ Sistema de entrenamiento</p>
-          <ul className="list-disc list-inside space-y-1">
-            <li><strong>👍 Positivas:</strong> Se añaden al vector store para reforzar respuestas similares</li>
-            <li><strong>👎 Negativas:</strong> Se analizan para identificar patrones a corregir</li>
-            <li>El feedback ayuda a mejorar continuamente la calidad del Agente Rix</li>
-          </ul>
-        </div>
-      </CardContent>
-    </Card>
+      {/* All Feedback */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Historial de valoraciones</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {feedbackItems.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <ThumbsUp className="h-8 w-8 mx-auto mb-3 opacity-20" />
+              <p className="text-sm">No hay valoraciones todavía</p>
+            </div>
+          ) : (
+            <ScrollArea className="h-[300px]">
+              <div className="space-y-2 pr-4">
+                {feedbackItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`p-2.5 rounded-md border ${
+                      item.rating === 'positive' 
+                        ? 'border-green-200/50 bg-green-50/30 dark:bg-green-950/10' 
+                        : 'border-red-200/50 bg-red-50/30 dark:bg-red-950/10'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {item.rating === 'positive' ? (
+                        <ThumbsUp className="h-3 w-3 text-green-500 mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <ThumbsDown className="h-3 w-3 text-red-500 mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(item.created_at).toLocaleString('es-ES', { 
+                              day: '2-digit', 
+                              month: '2-digit',
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </span>
+                          {item.included_in_vector_store && (
+                            <Badge variant="outline" className="text-[8px] h-4 bg-blue-100/50 text-blue-600 border-blue-200">
+                              <CheckCircle className="h-2 w-2 mr-0.5" />
+                              Vector
+                            </Badge>
+                          )}
+                        </div>
+                        {item.user_question && (
+                          <p className="text-[10px] text-muted-foreground mb-0.5 truncate">
+                            P: {item.user_question}
+                          </p>
+                        )}
+                        <p className="text-xs line-clamp-2">{item.message_content.substring(0, 150)}...</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Info */}
+      <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-md border">
+        <p className="font-medium mb-1">Sistema de entrenamiento por refuerzo</p>
+        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+          <li><span className="text-green-600">Positivas:</span> Se añaden al vector store como ejemplos de calidad</li>
+          <li><span className="text-red-600">Negativas:</span> Se analizan para identificar mejoras</li>
+          <li><span className="text-blue-600">CRON nocturno:</span> Sincronización automática a las 02:00 UTC</li>
+        </ul>
+      </div>
+    </div>
   );
 }
