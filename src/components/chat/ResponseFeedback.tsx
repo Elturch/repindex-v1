@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ThumbsUp, ThumbsDown, Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -68,40 +67,36 @@ export function ResponseFeedback({
 
   if (rating) {
     return (
-      <div className={`flex items-center gap-1.5 ${compact ? 'mt-1.5' : 'mt-2'} text-muted-foreground`}>
-        <Check className="h-3 w-3 text-green-500" />
-        <span className={`${compact ? 'text-[10px]' : 'text-xs'}`}>
-          Valoración guardada
+      <div className={`flex items-center gap-1 ${compact ? 'mt-1' : 'mt-1.5'} opacity-50`}>
+        <Check className="h-2.5 w-2.5 text-muted-foreground" />
+        <span className={`${compact ? 'text-[8px]' : 'text-[9px]'} text-muted-foreground`}>
+          Gracias
         </span>
       </div>
     );
   }
 
   return (
-    <div className={`flex items-center gap-1 ${compact ? 'mt-1.5' : 'mt-2'}`}>
-      <span className={`${compact ? 'text-[10px]' : 'text-xs'} text-muted-foreground mr-1`}>
+    <div className={`flex items-center gap-0.5 ${compact ? 'mt-1' : 'mt-1.5'} opacity-40 hover:opacity-100 transition-opacity`}>
+      <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-muted-foreground mr-0.5`}>
         ¿Útil?
       </span>
-      <Button
-        variant="ghost"
-        size="sm"
+      <button
         onClick={() => handleFeedback('positive')}
         disabled={isSubmitting}
-        className={`${compact ? 'h-6 w-6 p-0' : 'h-7 w-7 p-0'} hover:bg-green-500/10 hover:text-green-500 transition-colors`}
+        className={`${compact ? 'p-0.5' : 'p-1'} text-muted-foreground/50 hover:text-green-600 transition-colors disabled:opacity-50`}
         title="Respuesta útil"
       >
-        <ThumbsUp className={`${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
+        <ThumbsUp className={`${compact ? 'h-2.5 w-2.5' : 'h-3 w-3'} stroke-[1.5]`} />
+      </button>
+      <button
         onClick={() => handleFeedback('negative')}
         disabled={isSubmitting}
-        className={`${compact ? 'h-6 w-6 p-0' : 'h-7 w-7 p-0'} hover:bg-red-500/10 hover:text-red-500 transition-colors`}
+        className={`${compact ? 'p-0.5' : 'p-1'} text-muted-foreground/50 hover:text-red-600 transition-colors disabled:opacity-50`}
         title="Respuesta mejorable"
       >
-        <ThumbsDown className={`${compact ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} />
-      </Button>
+        <ThumbsDown className={`${compact ? 'h-2.5 w-2.5' : 'h-3 w-3'} stroke-[1.5]`} />
+      </button>
     </div>
   );
 }

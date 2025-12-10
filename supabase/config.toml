@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.populate-vector-store]
 verify_jwt = false
 
+[functions.populate-feedback-vectors]
+verify_jwt = false
+
 [functions.chat-intelligence]
 verify_jwt = false
 
