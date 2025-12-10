@@ -116,9 +116,9 @@ export function ChatMessages({
       <VectorStoreWarning />
       <div className="space-y-4">
         {messages.map((message, idx) => (
-          <div key={idx} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={idx} className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div
-              className={`${compact ? 'max-w-[90%]' : 'max-w-[80%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} ${
+              className={`${compact ? 'max-w-[90%]' : 'max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} ${
                 message.role === 'user'
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card border border-border'
@@ -176,7 +176,8 @@ export function ChatMessages({
                 />
               )}
               
-              {message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
+              {/* Suggested Questions - inside message bubble */}
+              {message.role === 'assistant' && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
                 <div className={`${compact ? 'mt-2 pt-2' : 'mt-4 pt-4'} border-t border-border/50`}>
                   <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold mb-2 opacity-80`}>Preguntas sugeridas:</p>
                   <div className="space-y-1">
