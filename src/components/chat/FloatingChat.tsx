@@ -20,6 +20,7 @@ export function FloatingChat() {
   const navigate = useNavigate();
   const location = useLocation();
   const {
+    sessionId,
     messages,
     isLoading,
     isLoadingHistory,
@@ -321,6 +322,7 @@ export function FloatingChat() {
                       starterPrompts={pageContext.suggestions}
                       onStarterPrompt={sendMessage}
                       compact={true}
+                      sessionId={sessionId}
                     />
                     
                     <div className="mt-3">

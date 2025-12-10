@@ -17,6 +17,7 @@ import { ChatInput } from "@/components/chat/ChatInput";
 
 export default function ChatIntelligence() {
   const {
+    sessionId,
     messages,
     isLoading,
     isLoadingHistory,
@@ -124,6 +125,7 @@ export default function ChatIntelligence() {
               starterPrompts={pageContext.suggestions}
               onStarterPrompt={sendMessage}
               compact={false}
+              sessionId={sessionId}
             />
 
             {/* Input Area */}

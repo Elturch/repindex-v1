@@ -220,6 +220,51 @@ export type Database = {
           },
         ]
       }
+      chat_response_feedback: {
+        Row: {
+          created_at: string
+          feedback_comment: string | null
+          id: string
+          included_in_vector_store: boolean | null
+          message_content: string
+          message_index: number
+          metadata: Json | null
+          rating: string
+          session_id: string
+          user_id: string | null
+          user_question: string | null
+          vector_store_included_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          feedback_comment?: string | null
+          id?: string
+          included_in_vector_store?: boolean | null
+          message_content: string
+          message_index: number
+          metadata?: Json | null
+          rating: string
+          session_id: string
+          user_id?: string | null
+          user_question?: string | null
+          vector_store_included_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          feedback_comment?: string | null
+          id?: string
+          included_in_vector_store?: boolean | null
+          message_content?: string
+          message_index?: number
+          metadata?: Json | null
+          rating?: string
+          session_id?: string
+          user_id?: string | null
+          user_question?: string | null
+          vector_store_included_at?: string | null
+        }
+        Relationships: []
+      }
       chat_vector_memory: {
         Row: {
           created_at: string | null
