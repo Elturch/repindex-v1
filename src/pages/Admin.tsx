@@ -43,6 +43,7 @@ import { useToast } from '@/hooks/use-toast';
 import DirectMessageSystem from '@/components/admin/DirectMessageSystem';
 import { AnalyticsDashboard } from '@/components/admin/AnalyticsDashboard';
 import { InboundDashboard } from '@/components/admin/InboundDashboard';
+import { FeedbackPanel } from '@/components/admin/FeedbackPanel';
 
 interface Company {
   id: string;
@@ -2191,10 +2192,14 @@ const Admin: React.FC = () => {
                       <li>Procesa en batches de 100 docs con auto-continuación</li>
                       <li>Incluye respuestas completas de ChatGPT, Perplexity, Gemini y DeepSeek</li>
                       <li>Mejora las respuestas del Agente Rix con más contexto</li>
+                      <li><strong>Nuevo:</strong> Incluye respuestas valoradas positivamente por usuarios</li>
                     </ul>
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Feedback de Respuestas */}
+              <FeedbackPanel />
             </div>
           </TabsContent>
 

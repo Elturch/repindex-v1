@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
 import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
+import { ResponseFeedback } from "./ResponseFeedback";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, RefreshCw, FileText, ExternalLink, AlertTriangle, Loader2, Theater } from "lucide-react";
@@ -22,6 +23,7 @@ interface ChatMessagesProps {
   starterPrompts: string[];
   onStarterPrompt: (prompt: string) => void;
   compact?: boolean;
+  sessionId?: string;
 }
 
 export function ChatMessages({
@@ -33,6 +35,7 @@ export function ChatMessages({
   starterPrompts,
   onStarterPrompt,
   compact = false,
+  sessionId,
 }: ChatMessagesProps) {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -201,6 +204,17 @@ export function ChatMessages({
                 <RoleEnrichmentBar
                   onEnrich={(roleId) => onEnrichResponse(roleId, idx)}
                   disabled={isLoading}
+                  compact={compact}
+                />
+              )}
+
+              {/* Response Feedback - thumbs up/down for assistant messages */}
+              {message.role === 'assistant' && sessionId && (
+                <ResponseFeedback
+                  sessionId={sessionId}
+                  messageIndex={idx}
+                  messageContent={message.content}
+                  userQuestion={messages[idx - 1]?.role === 'user' ? messages[idx - 1]?.content : undefined}
                   compact={compact}
                 />
               )}
