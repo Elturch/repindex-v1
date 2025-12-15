@@ -8,8 +8,8 @@ interface DeepseekIconProps {
 }
 
 export function DeepseekIcon({ className, size = 16 }: DeepseekIconProps) {
-  // Triple the size to fill the frame like other icons
-  const adjustedSize = size * 3;
+  // Use 4x multiplier since the logo has more whitespace than other icons
+  const adjustedSize = size * 4;
   
   return (
     <img
@@ -17,7 +17,7 @@ export function DeepseekIcon({ className, size = 16 }: DeepseekIconProps) {
       alt="Deepseek"
       width={adjustedSize}
       height={adjustedSize}
-      className={cn("object-contain", className)}
+      className={cn("object-contain scale-110", className)}
     />
   );
 }
