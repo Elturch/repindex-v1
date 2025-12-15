@@ -101,9 +101,9 @@ export function SiblingAICards({ siblings, companyName, isLoading }: SiblingAICa
                 group
               `}
             >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 flex items-center justify-center">
-                  <Icon className="w-6 h-6" />
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-10 md:h-10 lg:w-12 lg:h-12 flex items-center justify-center">
+                  <Icon size={32} className="sm:w-10 sm:h-10 md:w-8 md:h-8 lg:w-10 lg:h-10" />
                 </div>
                 <span className="font-medium text-sm">
                   {sibling.model_name}
