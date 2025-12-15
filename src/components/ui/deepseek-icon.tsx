@@ -8,8 +8,8 @@ interface DeepseekIconProps {
 }
 
 export function DeepseekIcon({ className, size = 16 }: DeepseekIconProps) {
-  // Use 4x multiplier since the logo has more whitespace than other icons
-  const adjustedSize = size * 4;
+  // Use 5x multiplier since the logo has more whitespace than other icons
+  const adjustedSize = size * 5;
   
   return (
     <img
