@@ -268,74 +268,80 @@ export function AnalyticsDashboard() {
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-primary" />
               <span className="text-sm text-muted-foreground">Usuarios Únicos</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{metrics.uniqueUsers}</p>
+            <p className="text-2xl font-bold mt-auto">{metrics.uniqueUsers}</p>
             <p className="text-xs text-muted-foreground">{metrics.uniqueUsersToday} hoy</p>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-chart-2" />
               <span className="text-sm text-muted-foreground">Sesiones</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{metrics.uniqueSessions}</p>
+            <p className="text-2xl font-bold mt-auto">{metrics.uniqueSessions}</p>
+            <p className="text-xs text-muted-foreground invisible">-</p>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <Eye className="h-4 w-4 text-chart-3" />
               <span className="text-sm text-muted-foreground">Páginas Vistas</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{metrics.pageViews}</p>
+            <p className="text-2xl font-bold mt-auto">{metrics.pageViews}</p>
+            <p className="text-xs text-muted-foreground invisible">-</p>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-chart-4" />
               <span className="text-sm text-muted-foreground">Duración Media</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{formatDuration(metrics.avgDuration)}</p>
+            <p className="text-2xl font-bold mt-auto">{formatDuration(metrics.avgDuration)}</p>
+            <p className="text-xs text-muted-foreground invisible">-</p>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-chart-5" />
               <span className="text-sm text-muted-foreground">Mensajes Chat</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{metrics.chatMessages}</p>
+            <p className="text-2xl font-bold mt-auto">{metrics.chatMessages}</p>
+            <p className="text-xs text-muted-foreground invisible">-</p>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-primary" />
               <span className="text-sm text-muted-foreground">Documentos</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{metrics.documents}</p>
+            <p className="text-2xl font-bold mt-auto">{metrics.documents}</p>
+            <p className="text-xs text-muted-foreground invisible">-</p>
           </CardContent>
         </Card>
         
-        <Card>
-          <CardContent className="pt-4">
+        <Card className="h-full">
+          <CardContent className="pt-4 h-full flex flex-col">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-green-500" />
               <span className="text-sm text-muted-foreground">Total Eventos</span>
             </div>
-            <p className="text-2xl font-bold mt-1">{activityLogs.length}</p>
+            <p className="text-2xl font-bold mt-auto">{activityLogs.length}</p>
+            <p className="text-xs text-muted-foreground invisible">-</p>
           </CardContent>
         </Card>
       </div>
