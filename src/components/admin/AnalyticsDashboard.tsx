@@ -118,7 +118,7 @@ export function AnalyticsDashboard() {
   // Daily activity chart data
   const dailyData = useMemo(() => {
     const days = dateRange === 'today' ? 1 : dateRange === 'week' ? 7 : 30;
-    const data: { date: string; users: number; views: number; messages: number }[] = [];
+    const data: { date: string; sessions: number; views: number; authenticated: number }[] = [];
     
     for (let i = days - 1; i >= 0; i--) {
       const date = subDays(new Date(), i);
@@ -132,9 +132,9 @@ export function AnalyticsDashboard() {
       
       data.push({
         date: format(date, 'dd/MM', { locale: es }),
-        users: new Set(dayLogs.filter(l => l.user_id).map(l => l.user_id)).size,
+        sessions: new Set(dayLogs.map(l => l.session_id)).size,
         views: dayLogs.filter(l => l.event_type === 'page_view').length,
-        messages: dayLogs.filter(l => l.event_type === 'chat_message').length
+        authenticated: new Set(dayLogs.filter(l => l.user_id).map(l => l.user_id)).size
       });
     }
     
@@ -364,9 +364,9 @@ export function AnalyticsDashboard() {
                   }} 
                 />
                 <Legend />
-                <Line type="monotone" dataKey="users" name="Usuarios" stroke="hsl(var(--primary))" strokeWidth={2} />
+                <Line type="monotone" dataKey="sessions" name="Sesiones" stroke="hsl(var(--primary))" strokeWidth={2} />
                 <Line type="monotone" dataKey="views" name="Vistas" stroke="hsl(var(--chart-2))" strokeWidth={2} />
-                <Line type="monotone" dataKey="messages" name="Mensajes" stroke="hsl(var(--chart-3))" strokeWidth={2} />
+                <Line type="monotone" dataKey="authenticated" name="Usuarios Auth" stroke="hsl(var(--chart-3))" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>
