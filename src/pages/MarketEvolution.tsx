@@ -118,13 +118,13 @@ export function MarketEvolution() {
   };
 
   // Prepare chart data for each model (data is already combined in useTrendDataLight)
-  const prepareChartData = (data: any[]) => {
-    if (!data || data.length === 0) return [];
+  const prepareChartData = React.useCallback((data: any[], companies: string[]) => {
+    if (!data || data.length === 0 || companies.length === 0) return [];
     
     // First, extract complete series per company to normalize
     const companySeries: Record<string, {rix: number[], price: number[], isTraded: boolean}> = {};
     
-    selectedCompanies.forEach(ticker => {
+    companies.forEach(ticker => {
       companySeries[ticker] = {
         rix: [],
         price: [],
@@ -134,7 +134,7 @@ export function MarketEvolution() {
     
     // Collect all values per company
     data.forEach((point: any) => {
-      selectedCompanies.forEach(ticker => {
+      companies.forEach(ticker => {
         if (point[ticker] !== undefined) {
           companySeries[ticker].rix.push(point[ticker]);
           const priceValue = point[`${ticker}_price`] || 0;
@@ -170,7 +170,7 @@ export function MarketEvolution() {
       };
       
       // Add indices per company
-      selectedCompanies.forEach(ticker => {
+      companies.forEach(ticker => {
         if (normalizedSeries[ticker]) {
           const ns = normalizedSeries[ticker];
           dataPoint[`${ticker}_rix_index`] = ns.rixIndex[idx];
@@ -186,26 +186,26 @@ export function MarketEvolution() {
       
       return dataPoint;
     });
-  };
+  }, []);
 
   const chatGPTChartData = useMemo(() => 
-    prepareChartData(chatGPTData),
-    [chatGPTData, selectedCompanies]
+    prepareChartData(chatGPTData || [], selectedCompanies),
+    [chatGPTData, selectedCompanies, prepareChartData]
   );
 
   const perplexityChartData = useMemo(() => 
-    prepareChartData(perplexityData),
-    [perplexityData, selectedCompanies]
+    prepareChartData(perplexityData || [], selectedCompanies),
+    [perplexityData, selectedCompanies, prepareChartData]
   );
 
   const geminiChartData = useMemo(() => 
-    prepareChartData(geminiData),
-    [geminiData, selectedCompanies]
+    prepareChartData(geminiData || [], selectedCompanies),
+    [geminiData, selectedCompanies, prepareChartData]
   );
 
   const deepseekChartData = useMemo(() => 
-    prepareChartData(deepseekData),
-    [deepseekData, selectedCompanies]
+    prepareChartData(deepseekData || [], selectedCompanies),
+    [deepseekData, selectedCompanies, prepareChartData]
   );
 
   // Add company handler with limit check
