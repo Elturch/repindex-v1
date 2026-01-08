@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
+import repindexLogo from "@/assets/repindex-logo-icon.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -78,9 +79,11 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           onClick={() => navigate("/")}
           className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded bg-primary text-primary-foreground">
-            <span className="text-sm font-bold">R</span>
-          </div>
+          <img 
+            src={repindexLogo} 
+            alt="RepIndex" 
+            className="h-8 w-8 rounded"
+          />
           <span className="font-bold text-lg hidden sm:inline">
             {title}
           </span>
@@ -191,9 +194,11 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
             <SheetContent side="right" className="w-72">
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded bg-primary text-primary-foreground">
-                    <span className="text-sm font-bold">R</span>
-                  </div>
+                  <img 
+                    src={repindexLogo} 
+                    alt="RepIndex" 
+                    className="h-8 w-8 rounded"
+                  />
                   RepIndex.ai
                 </SheetTitle>
               </SheetHeader>
