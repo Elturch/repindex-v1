@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
-import repindexLogo from "@/assets/repindex-logo-icon.png";
+import repindexLogoText from "@/assets/repindex-logo-text.png";
+import repindexFavicon from "@/assets/repindex-favicon.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -80,13 +81,15 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
         >
           <img 
-            src={repindexLogo} 
+            src={repindexFavicon} 
             alt="RepIndex" 
             className="h-8 w-8 rounded"
           />
-          <span className="font-bold text-lg hidden sm:inline">
-            {title}
-          </span>
+          <img 
+            src={repindexLogoText} 
+            alt="RepIndex.ai" 
+            className="h-6 hidden sm:inline"
+          />
         </button>
 
         {/* Desktop Navigation */}
@@ -195,11 +198,15 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   <img 
-                    src={repindexLogo} 
+                    src={repindexFavicon} 
                     alt="RepIndex" 
                     className="h-8 w-8 rounded"
                   />
-                  RepIndex.ai
+                  <img 
+                    src={repindexLogoText} 
+                    alt="RepIndex.ai" 
+                    className="h-5"
+                  />
                 </SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col gap-2 mt-6">
