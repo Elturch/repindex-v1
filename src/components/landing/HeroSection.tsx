@@ -27,8 +27,7 @@ export function HeroSection() {
           duration: 0.6
         }} className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight max-w-4xl mx-auto leading-tight" style={{
           fontSize: 'clamp(1.5rem, 4vw, 3rem)'
-        }}>La autoridad reputacional 
-corporativa de las IAs</motion.h1>
+        }}>La autoridad reputacional corporativa de las IAs</motion.h1>
 
           {/* Subtitle */}
           <motion.p initial={{
