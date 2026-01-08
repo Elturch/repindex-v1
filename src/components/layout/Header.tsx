@@ -88,7 +88,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           <img 
             src={repindexLogoText} 
             alt="RepIndex.ai" 
-            className="h-6 hidden sm:inline"
+            className="h-10 hidden sm:inline"
           />
         </button>
 
@@ -205,7 +205,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
                   <img 
                     src={repindexLogoText} 
                     alt="RepIndex.ai" 
-                    className="h-5"
+                    className="h-8"
                   />
                 </SheetTitle>
               </SheetHeader>
