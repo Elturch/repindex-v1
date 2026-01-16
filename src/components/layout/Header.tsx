@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
 import repindexLogoFull from "@/assets/repindex-logo-full.png";
+import repindexLogoFullDark from "@/assets/repindex-logo-full-dark.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -80,7 +81,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
         >
           <img 
-            src={repindexLogoFull} 
+            src={theme === "dark" ? repindexLogoFullDark : repindexLogoFull} 
             alt="RepIndex.ai" 
             className="h-10"
           />
@@ -192,7 +193,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   <img 
-                    src={repindexLogoFull} 
+                    src={theme === "dark" ? repindexLogoFullDark : repindexLogoFull} 
                     alt="RepIndex.ai" 
                     className="h-8"
                   />
