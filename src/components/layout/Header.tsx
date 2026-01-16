@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
-import repindexLogoText from "@/assets/repindex-logo-text-alpha.png";
+import repindexLogoText from "@/assets/repindex-logo-text-source.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -77,12 +77,15 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
         {/* Logo and Title */}
         <button 
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0 isolate"
         >
           <img 
             src={repindexLogoText} 
             alt="RepIndex.ai" 
-            className={cn("h-10 grayscale", theme === "dark" && "invert")}
+            className={cn(
+              "h-10 grayscale",
+              theme === "dark" ? "invert mix-blend-screen" : "mix-blend-multiply"
+            )}
           />
         </button>
 
@@ -194,7 +197,10 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
                   <img 
                     src={repindexLogoText} 
                     alt="RepIndex.ai" 
-                    className={cn("h-8 grayscale", theme === "dark" && "invert")}
+                    className={cn(
+                      "h-8 grayscale",
+                      theme === "dark" ? "invert mix-blend-screen" : "mix-blend-multiply"
+                    )}
                   />
                 </SheetTitle>
               </SheetHeader>
