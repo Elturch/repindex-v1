@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
-import repindexLogoText from "@/assets/repindex-logo-text.png";
-import repindexFavicon from "@/assets/repindex-favicon.png";
+import repindexLogoFull from "@/assets/repindex-logo-full.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -81,14 +80,9 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer flex-shrink-0"
         >
           <img 
-            src={repindexFavicon} 
-            alt="RepIndex" 
-            className="h-8 w-8 rounded"
-          />
-          <img 
-            src={repindexLogoText} 
+            src={repindexLogoFull} 
             alt="RepIndex.ai" 
-            className="h-10 hidden sm:inline grayscale"
+            className="h-10"
           />
         </button>
 
@@ -198,14 +192,9 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   <img 
-                    src={repindexFavicon} 
-                    alt="RepIndex" 
-                    className="h-8 w-8 rounded"
-                  />
-                  <img 
-                    src={repindexLogoText} 
+                    src={repindexLogoFull} 
                     alt="RepIndex.ai" 
-                    className="h-8 grayscale"
+                    className="h-8"
                   />
                 </SheetTitle>
               </SheetHeader>
