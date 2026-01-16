@@ -82,7 +82,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           <img 
             src={repindexLogo} 
             alt="RepIndex.ai" 
-            className="h-10"
+            className={`h-10 ${theme === "dark" ? "invert" : ""}`}
           />
         </button>
 
@@ -194,7 +194,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
                   <img 
                     src={repindexLogo} 
                     alt="RepIndex.ai" 
-                    className="h-8"
+                    className={`h-8 ${theme === "dark" ? "invert" : ""}`}
                   />
                 </SheetTitle>
               </SheetHeader>
