@@ -70,7 +70,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
 
   return (
     <header className={cn(
-      "sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 print:hidden",
+      "sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 dark:bg-black dark:supports-[backdrop-filter]:bg-black print:hidden",
       className
     )}>
       <div className="container flex h-18 max-w-screen-2xl items-center justify-between px-4">
