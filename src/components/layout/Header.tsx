@@ -73,7 +73,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
       "sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 print:hidden",
       className
     )}>
-      <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4">
+      <div className="container flex h-16 max-w-screen-2xl items-center justify-between px-4">
         {/* Logo and Title */}
         <button 
           onClick={() => navigate("/")}
@@ -82,7 +82,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
           <img 
             src={repindexLogo} 
             alt="RepIndex.ai" 
-            className={`h-14 grayscale ${theme === "dark" ? "invert" : ""}`}
+            className={`h-8 ${theme === "dark" ? "invert" : ""}`}
           />
         </button>
 
@@ -194,7 +194,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
                   <img 
                     src={repindexLogo} 
                     alt="RepIndex.ai" 
-                    className={`h-10 grayscale ${theme === "dark" ? "invert" : ""}`}
+                    className={`h-6 ${theme === "dark" ? "invert" : ""}`}
                   />
                 </SheetTitle>
               </SheetHeader>
