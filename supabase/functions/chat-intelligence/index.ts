@@ -13,11 +13,72 @@ let cacheTimestamp = 0;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
+// API USAGE LOGGING HELPER
+// =============================================================================
+interface ApiUsageParams {
+  supabaseClient: any;
+  edgeFunction: string;
+  provider: string;
+  model: string;
+  actionType: string;
+  inputTokens: number;
+  outputTokens: number;
+  userId?: string | null;
+  sessionId?: string;
+  metadata?: Record<string, any>;
+}
+
+async function logApiUsage(params: ApiUsageParams): Promise<void> {
+  try {
+    // Fetch cost config
+    const { data: costConfig } = await params.supabaseClient
+      .from('api_cost_config')
+      .select('input_cost_per_million, output_cost_per_million')
+      .eq('provider', params.provider)
+      .eq('model', params.model)
+      .single();
+
+    // Calculate estimated cost
+    let estimatedCost = 0;
+    if (costConfig) {
+      const inputCost = (params.inputTokens / 1000000) * costConfig.input_cost_per_million;
+      const outputCost = (params.outputTokens / 1000000) * costConfig.output_cost_per_million;
+      estimatedCost = inputCost + outputCost;
+    }
+
+    // Insert log
+    const { error } = await params.supabaseClient
+      .from('api_usage_logs')
+      .insert({
+        edge_function: params.edgeFunction,
+        provider: params.provider,
+        model: params.model,
+        action_type: params.actionType,
+        input_tokens: params.inputTokens,
+        output_tokens: params.outputTokens,
+        estimated_cost_usd: estimatedCost,
+        user_id: params.userId || null,
+        session_id: params.sessionId || null,
+        metadata: params.metadata || {},
+      });
+
+    if (error) {
+      console.warn('Failed to log API usage:', error.message);
+    }
+  } catch (e) {
+    console.warn('Error in logApiUsage:', e);
+  }
+}
+
+// =============================================================================
 // AI FALLBACK HELPER - OpenAI → Gemini
 // =============================================================================
 interface AICallResult {
   content: string;
   provider: 'openai' | 'gemini';
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 async function callAIWithFallback(
@@ -63,8 +124,15 @@ async function callAIWithFallback(
       
       if (response.ok) {
         const data = await response.json();
-        console.log(`${logPrefix} OpenAI response received successfully`);
-        return { content: data.choices[0].message.content, provider: 'openai' };
+        const usage = data.usage || {};
+        console.log(`${logPrefix} OpenAI response received successfully (in: ${usage.prompt_tokens || 0}, out: ${usage.completion_tokens || 0})`);
+        return { 
+          content: data.choices[0].message.content, 
+          provider: 'openai',
+          model: model,
+          inputTokens: usage.prompt_tokens || 0,
+          outputTokens: usage.completion_tokens || 0,
+        };
       }
       
       // Errors that trigger fallback: 429, 500, 502, 503, 504
@@ -122,11 +190,15 @@ async function callAIWithFallback(
   }
   
   const geminiData = await geminiResponse.json();
-  console.log(`${logPrefix} Gemini response received successfully (fallback)`);
+  const geminiUsage = geminiData.usage || {};
+  console.log(`${logPrefix} Gemini response received successfully (fallback, in: ${geminiUsage.prompt_tokens || 0}, out: ${geminiUsage.completion_tokens || 0})`);
   
   return { 
     content: geminiData.choices[0].message.content, 
-    provider: 'gemini' 
+    provider: 'gemini',
+    model: geminiModel,
+    inputTokens: geminiUsage.prompt_tokens || 0,
+    outputTokens: geminiUsage.completion_tokens || 0,
   };
 }
 
@@ -714,6 +786,20 @@ ${originalQuestion || "(No disponible)"}
 
     console.log(`${logPrefix} EXPANDED executive report generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`);
 
+    // Log API usage
+    await logApiUsage({
+      supabaseClient,
+      edgeFunction: 'chat-intelligence',
+      provider: result.provider,
+      model: result.model,
+      actionType: 'enrich',
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      userId,
+      sessionId,
+      metadata: { roleId, roleName },
+    });
+
     // Generate role-specific follow-up questions
     const suggestedQuestions = await generateRoleSpecificQuestions(
       roleId,
@@ -1096,6 +1182,20 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
   const bulletinContent = result.content;
 
   console.log(`${logPrefix} Bulletin generated (via ${result.provider}), length: ${bulletinContent.length}`);
+
+  // Log API usage
+  await logApiUsage({
+    supabaseClient,
+    edgeFunction: 'chat-intelligence',
+    provider: result.provider,
+    model: result.model,
+    actionType: 'bulletin',
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    userId,
+    sessionId,
+    metadata: { companyName: matchedCompany.issuer_name, ticker: matchedCompany.ticker },
+  });
 
   // 8. Save to database (chat_intelligence_sessions)
   if (sessionId) {
@@ -1873,6 +1973,19 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
   const answer = chatResult.content;
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
+
+  // Log API usage
+  await logApiUsage({
+    supabaseClient,
+    edgeFunction: 'chat-intelligence',
+    provider: chatResult.provider,
+    model: chatResult.model,
+    actionType: 'chat',
+    inputTokens: chatResult.inputTokens,
+    outputTokens: chatResult.outputTokens,
+    userId,
+    sessionId,
+  });
 
   // =============================================================================
   // PASO 6: GENERAR PREGUNTAS SUGERIDAS BASADAS EN ANÁLISIS DE DATOS

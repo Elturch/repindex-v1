@@ -68,6 +68,78 @@ export type Database = {
         }
         Relationships: []
       }
+      api_cost_config: {
+        Row: {
+          id: string
+          input_cost_per_million: number
+          model: string
+          output_cost_per_million: number
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          input_cost_per_million: number
+          model: string
+          output_cost_per_million: number
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          input_cost_per_million?: number
+          model?: string
+          output_cost_per_million?: number
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      api_usage_logs: {
+        Row: {
+          action_type: string
+          created_at: string
+          edge_function: string
+          estimated_cost_usd: number
+          id: string
+          input_tokens: number
+          metadata: Json | null
+          model: string
+          output_tokens: number
+          provider: string
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          edge_function: string
+          estimated_cost_usd?: number
+          id?: string
+          input_tokens?: number
+          metadata?: Json | null
+          model: string
+          output_tokens?: number
+          provider: string
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          edge_function?: string
+          estimated_cost_usd?: number
+          id?: string
+          input_tokens?: number
+          metadata?: Json | null
+          model?: string
+          output_tokens?: number
+          provider?: string
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       by_metric: {
         Row: {
           contrib_points_chatgpt: number

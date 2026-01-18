@@ -44,6 +44,8 @@ import DirectMessageSystem from '@/components/admin/DirectMessageSystem';
 import { AnalyticsDashboard } from '@/components/admin/AnalyticsDashboard';
 import { InboundDashboard } from '@/components/admin/InboundDashboard';
 import { FeedbackPanel } from '@/components/admin/FeedbackPanel';
+import { ApiCostDashboard } from '@/components/admin/ApiCostDashboard';
+import { DollarSign } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -924,6 +926,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="system" className="flex items-center gap-1.5 px-3 text-xs">
               <Database className="h-3.5 w-3.5" />
               Sistema
+            </TabsTrigger>
+            <TabsTrigger value="api-costs" className="flex items-center gap-1.5 px-3 text-xs">
+              <DollarSign className="h-3.5 w-3.5" />
+              Gastos API
             </TabsTrigger>
           </TabsList>
 
@@ -2841,6 +2847,11 @@ const Admin: React.FC = () => {
                 color: p.color 
               }))}
             />
+          </TabsContent>
+
+          {/* ==================== GASTOS API ==================== */}
+          <TabsContent value="api-costs">
+            <ApiCostDashboard />
           </TabsContent>
         </Tabs>
       </div>
