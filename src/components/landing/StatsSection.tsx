@@ -1,6 +1,8 @@
 import { motion, useInView } from "framer-motion";
 import { useRef, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Stat {
   value: string;
@@ -8,12 +10,29 @@ interface Stat {
   suffix?: string;
 }
 
-const stats: Stat[] = [
-  { value: "153", label: "Empresas Analizadas", suffix: "+" },
-  { value: "4", label: "Modelos de IA" },
-  { value: "8", label: "Métricas de Reputación" },
-  { value: "1", label: "Actualización Semanal" }
-];
+function useCompanyCount() {
+  return useQuery({
+    queryKey: ['company-count'],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('repindex_root_issuers')
+        .select('*', { count: 'exact', head: true });
+      
+      if (error) throw error;
+      return count || 166;
+    },
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+}
+
+function getStats(companyCount: number): Stat[] {
+  return [
+    { value: String(companyCount), label: "Empresas Analizadas", suffix: "+" },
+    { value: "4", label: "Modelos de IA" },
+    { value: "8", label: "Métricas de Reputación" },
+    { value: "1", label: "Actualización Semanal" }
+  ];
+}
 
 function AnimatedCounter({ value, suffix = "" }: { value: string; suffix?: string }) {
   const [count, setCount] = useState(0);
@@ -49,6 +68,9 @@ function AnimatedCounter({ value, suffix = "" }: { value: string; suffix?: strin
 }
 
 export function StatsSection() {
+  const { data: companyCount = 166 } = useCompanyCount();
+  const stats = getStats(companyCount);
+
   return (
     <section className="py-12 px-4 bg-background">
       <div className="container mx-auto max-w-6xl">
