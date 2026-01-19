@@ -159,7 +159,7 @@ export function ChatInput({
     if (!isLoading) {
       // Activate bulletin mode and pre-fill with company prompt
       setBulletinModeActive(true);
-      setValue("Genera un boletín ejecutivo de ");
+      setValue(tr.bulletinPromptPrefix);
     }
   };
 

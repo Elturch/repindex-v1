@@ -27,6 +27,7 @@ export interface ChatUITranslations {
   
   // Buttons & actions
   generateBulletin: string;
+  bulletinPromptPrefix: string;
   dictateMessage: string;
   stopDictation: string;
   
@@ -110,6 +111,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'Escribe el nombre de la empresa...',
     inputListening: 'Escuchando...',
     generateBulletin: 'Generar boletín ejecutivo de empresa',
+    bulletinPromptPrefix: 'Genera un boletín ejecutivo de ',
     dictateMessage: 'Dictar mensaje',
     stopDictation: 'Detener dictado',
     responseReceived: 'Respuesta recibida',
@@ -177,6 +179,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'Enter the company name...',
     inputListening: 'Listening...',
     generateBulletin: 'Generate executive company bulletin',
+    bulletinPromptPrefix: 'Generate an executive bulletin for ',
     dictateMessage: 'Dictate message',
     stopDictation: 'Stop dictation',
     responseReceived: 'Response received',
@@ -244,6 +247,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'Entrez le nom de l\'entreprise...',
     inputListening: 'Écoute...',
     generateBulletin: 'Générer un bulletin exécutif d\'entreprise',
+    bulletinPromptPrefix: 'Génère un bulletin exécutif de ',
     dictateMessage: 'Dicter un message',
     stopDictation: 'Arrêter la dictée',
     responseReceived: 'Réponse reçue',
@@ -311,6 +315,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'Geben Sie den Unternehmensnamen ein...',
     inputListening: 'Zuhören...',
     generateBulletin: 'Executive-Unternehmensbulletin erstellen',
+    bulletinPromptPrefix: 'Erstelle ein Executive-Bulletin für ',
     dictateMessage: 'Nachricht diktieren',
     stopDictation: 'Diktat stoppen',
     responseReceived: 'Antwort erhalten',
@@ -378,6 +383,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'Digite o nome da empresa...',
     inputListening: 'Ouvindo...',
     generateBulletin: 'Gerar boletim executivo de empresa',
+    bulletinPromptPrefix: 'Gere um boletim executivo de ',
     dictateMessage: 'Ditar mensagem',
     stopDictation: 'Parar ditado',
     responseReceived: 'Resposta recebida',
@@ -445,6 +451,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'Inserisci il nome dell\'azienda...',
     inputListening: 'Ascolto...',
     generateBulletin: 'Genera bollettino esecutivo aziendale',
+    bulletinPromptPrefix: 'Genera un bollettino esecutivo di ',
     dictateMessage: 'Dettare messaggio',
     stopDictation: 'Ferma dettatura',
     responseReceived: 'Risposta ricevuta',
@@ -512,6 +519,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: 'أدخل اسم الشركة...',
     inputListening: 'جارِ الاستماع...',
     generateBulletin: 'إنشاء نشرة تنفيذية للشركة',
+    bulletinPromptPrefix: 'إنشاء نشرة تنفيذية لـ ',
     dictateMessage: 'إملاء رسالة',
     stopDictation: 'إيقاف الإملاء',
     responseReceived: 'تم استلام الرد',
@@ -579,6 +587,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: '输入公司名称...',
     inputListening: '正在听...',
     generateBulletin: '生成公司执行简报',
+    bulletinPromptPrefix: '生成执行简报：',
     dictateMessage: '语音输入',
     stopDictation: '停止语音',
     responseReceived: '收到回复',
@@ -646,6 +655,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: '会社名を入力...',
     inputListening: '聞いています...',
     generateBulletin: 'エグゼクティブ企業速報を生成',
+    bulletinPromptPrefix: '次の会社のエグゼクティブ速報を生成：',
     dictateMessage: 'メッセージを音声入力',
     stopDictation: '音声入力を停止',
     responseReceived: '回答を受信',
@@ -713,6 +723,7 @@ const translations: Record<string, ChatUITranslations> = {
     inputPlaceholderBulletin: '회사 이름을 입력하세요...',
     inputListening: '듣는 중...',
     generateBulletin: '기업 임원 게시판 생성',
+    bulletinPromptPrefix: '임원 게시판 생성: ',
     dictateMessage: '메시지 음성 입력',
     stopDictation: '음성 입력 중지',
     responseReceived: '응답 수신',
