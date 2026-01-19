@@ -14,10 +14,12 @@ function isAllowedOrigin(req: Request): boolean {
     'localhost',
     'preview',
     'lovable.dev',
+    'lovableproject.com',
     '127.0.0.1'
   ]
   
   const source = origin || referer
+  console.log('Checking origin:', source)
   return allowedPatterns.some(pattern => source.toLowerCase().includes(pattern))
 }
 
