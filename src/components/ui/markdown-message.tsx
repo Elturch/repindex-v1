@@ -4,20 +4,23 @@ import { Button } from './button';
 import { Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { getChatTranslations, type ChatUITranslations } from '@/lib/chatTranslations';
 
 interface MarkdownMessageProps {
   content: string;
   showDownload?: boolean;
+  languageCode?: string;
 }
 
-export function MarkdownMessage({ content, showDownload = false }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, showDownload = false, languageCode = 'es' }: MarkdownMessageProps) {
   const { toast } = useToast();
+  const tr = getChatTranslations(languageCode);
 
   const downloadMessage = () => {
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const fileName = `repindex_respuesta_${timestamp}.html`;
 
-    const htmlContent = generateExportHtml(content);
+    const htmlContent = generateExportHtml(content, tr, languageCode);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -28,8 +31,8 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
     URL.revokeObjectURL(url);
 
     toast({
-      title: 'Respuesta exportada',
-      description: 'Archivo HTML descargado exitosamente',
+      title: tr.pdfExported,
+      description: tr.pdfExportedDesc,
     });
   };
 
@@ -224,7 +227,7 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
 }
 
 // Generate complete HTML document for export with premium RepIndex report styling
-function generateExportHtml(markdown: string): string {
+function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string): string {
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
   const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
@@ -832,11 +835,11 @@ function generateExportHtml(markdown: string): string {
   const bodyContent = convertMarkdownToHtml(markdown);
 
   return `<!DOCTYPE html>
-<html lang="es">
+<html lang="${languageCode}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Informe RepIndex - ${dateForFile}</title>
+  <title>${tr.pdfTitle} - ${dateForFile}</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>${styles}</style>
 </head>
@@ -845,17 +848,17 @@ function generateExportHtml(markdown: string): string {
     <div class="header-top">
       <div class="logo-section">
         <div class="logo">Rep<span>Index</span></div>
-        <div class="company-tagline">Inteligencia Reputacional Corporativa</div>
+        <div class="company-tagline">${tr.pdfTagline}</div>
       </div>
-      <div class="header-badge">Documento Confidencial</div>
+      <div class="header-badge">${tr.pdfConfidential}</div>
     </div>
     <div class="divider"></div>
-    <div class="report-title">Informe de Análisis Reputacional</div>
-    <div class="report-subtitle">Generado por Agente Rix — Asistente de Inteligencia Artificial</div>
+    <div class="report-title">${tr.pdfReportTitle}</div>
+    <div class="report-subtitle">${tr.pdfReportSubtitle}</div>
     <div class="meta">
       <div class="meta-item"><span class="icon">📅</span> ${now}</div>
-      <div class="meta-item"><span class="icon">📊</span> Análisis RepIndex</div>
-      <div class="meta-item"><span class="icon">🔐</span> Uso interno</div>
+      <div class="meta-item"><span class="icon">📊</span> ${tr.pdfAnalysis}</div>
+      <div class="meta-item"><span class="icon">🔐</span> ${tr.pdfInternalUse}</div>
     </div>
   </header>
   
@@ -865,13 +868,11 @@ function generateExportHtml(markdown: string): string {
   
   <footer class="report-footer">
     <div class="footer-logo">RepIndex</div>
-    <div class="footer-tagline">Inteligencia Artificial para Análisis de Reputación Corporativa</div>
+    <div class="footer-tagline">${tr.pdfFooterTagline}</div>
     <div class="footer-url">🌐 repindex.ai</div>
     <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
       <p class="disclaimer">
-        © ${new Date().getFullYear()} RepIndex. Este documento es confidencial y ha sido generado automáticamente por Agente Rix, 
-        el asistente de inteligencia reputacional de RepIndex. Los datos y análisis se basan en información disponible 
-        en la base de datos de RepIndex. Queda prohibida su reproducción o distribución sin autorización expresa.
+        © ${new Date().getFullYear()} RepIndex. ${tr.pdfDisclaimer}
       </p>
     </div>
   </footer>
