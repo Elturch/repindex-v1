@@ -508,7 +508,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse, conversationId, bulletinMode, bulletinCompanyName } = body;
+    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse, conversationId, bulletinMode, bulletinCompanyName, language = 'es', languageName = 'Español' } = body;
     
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
@@ -1953,7 +1953,10 @@ El RepIndex mide cómo las inteligencias artificiales (ChatGPT, Perplexity, Gemi
 - NUNCA ignores las fuentes cualitativas (textos brutos de IA) cuando sean relevantes
 - NUNCA sugieras solicitar informes adicionales, boletines premium, o análisis más detallados
 - NUNCA incluyas frases como "Para un análisis más detallado...", "Se recomienda solicitar...", "Para profundizar..."
-- Tu respuesta DEBE SER COMPLETA Y EXHAUSTIVA por sí misma, sin remitir a otros productos o servicios`;
+- Tu respuesta DEBE SER COMPLETA Y EXHAUSTIVA por sí misma, sin remitir a otros productos o servicios
+
+🌐 IDIOMA DE RESPUESTA (OBLIGATORIO):
+Responde SIEMPRE en ${languageName} (${language}). Toda la respuesta, incluyendo tablas, análisis y conclusiones, debe estar en ${languageName}.`;
 
   const userPrompt = `Pregunta del usuario: "${question}"
 

@@ -30,6 +30,8 @@ export function FloatingChat() {
     isFloatingOpen,
     setIsFloatingOpen,
     setPageContext,
+    language,
+    setLanguage,
   } = useChatContext();
   
   const { isAuthenticated } = useAuth();
@@ -331,6 +333,8 @@ export function FloatingChat() {
                         isLoading={isLoading}
                         placeholder="Pregunta al Agente Rix..."
                         compact={true}
+                        language={language}
+                        onLanguageChange={setLanguage}
                       />
                     </div>
                   </>

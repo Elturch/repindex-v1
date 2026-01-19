@@ -4,12 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Send, FileText, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LanguageSelector } from "./LanguageSelector";
+import { ChatLanguage } from "@/lib/chatLanguages";
 
 interface ChatInputProps {
   onSend: (message: string, options?: { bulletinMode?: boolean }) => void;
   isLoading: boolean;
   placeholder?: string;
   compact?: boolean;
+  language: ChatLanguage;
+  onLanguageChange: (language: ChatLanguage) => void;
 }
 
 // Extend Window interface for SpeechRecognition
@@ -56,7 +60,14 @@ declare global {
   }
 }
 
-export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunta...", compact = false }: ChatInputProps) {
+export function ChatInput({ 
+  onSend, 
+  isLoading, 
+  placeholder = "Escribe tu pregunta...", 
+  compact = false,
+  language,
+  onLanguageChange 
+}: ChatInputProps) {
   const [value, setValue] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -71,7 +82,8 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'es-ES';
+      // Use language-specific speech recognition
+      recognition.lang = language.speechCode;
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
@@ -107,7 +119,7 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
         recognitionRef.current.abort();
       }
     };
-  }, []);
+  }, [language.speechCode]);
 
   const toggleListening = () => {
     if (!recognitionRef.current) return;
@@ -158,6 +170,14 @@ export function ChatInput({ onSend, isLoading, placeholder = "Escribe tu pregunt
 
   return (
     <div className="flex gap-2">
+      {/* Language Selector */}
+      <LanguageSelector
+        selectedLanguage={language}
+        onLanguageChange={onLanguageChange}
+        compact={compact}
+        disabled={isLoading}
+      />
+
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>

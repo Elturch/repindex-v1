@@ -29,6 +29,8 @@ export default function ChatIntelligence() {
     downloadAsTxt,
     downloadAsJson,
     downloadAsHtml,
+    language,
+    setLanguage,
   } = useChatContext();
 
   const pageContext = usePageContext();
@@ -134,6 +136,8 @@ export default function ChatIntelligence() {
                 onSend={sendMessage}
                 isLoading={isLoading}
                 placeholder="Pregunta al Agente Rix sobre empresas, rankings o tendencias..."
+                language={language}
+                onLanguageChange={setLanguage}
               />
             </div>
           </CardContent>
