@@ -9,11 +9,11 @@ import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { ResponseFeedback } from "./ResponseFeedback";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, FileText, ExternalLink, AlertTriangle, Loader2, Theater } from "lucide-react";
+import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { getRoleById } from "@/lib/chatRoles";
-import { getChatTranslations, ChatUITranslations } from "@/lib/chatTranslations";
+import { getChatTranslations } from "@/lib/chatTranslations";
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -177,6 +177,7 @@ export function ChatMessages({
                 <MarkdownMessage 
                   content={message.content} 
                   showDownload={true}
+                  languageCode={languageCode}
                 />
               )}
               
