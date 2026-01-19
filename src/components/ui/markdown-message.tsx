@@ -207,15 +207,17 @@ export function MarkdownMessage({ content, showDownload = false }: MarkdownMessa
       </ReactMarkdown>
       
       {showDownload && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={downloadMessage}
-          className="absolute -bottom-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity gap-2 text-muted-foreground hover:text-foreground"
-        >
-          <Download className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Descargar</span>
-        </Button>
+        <div className="flex justify-end mt-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={downloadMessage}
+            className="opacity-70 hover:opacity-100 transition-opacity gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="text-xs font-medium">Descargar como informe</span>
+          </Button>
+        </div>
       )}
     </div>
   );
