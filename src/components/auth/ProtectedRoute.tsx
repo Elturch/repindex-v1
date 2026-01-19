@@ -12,9 +12,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, isLoading, profile } = useAuth();
   const location = useLocation();
 
-  // In Preview/development, allow access without authentication
+  // In Preview/development, allow access without authentication for non-admin pages.
+  // Admin pages must stay authenticated because they read sensitive data (costs, users, etc.).
   if (isDevOrPreview()) {
-    return <>{children}</>;
+    const path = location.pathname;
+    const isAdminArea = path.startsWith('/admin') || path.startsWith('/insert-rix');
+    if (!isAdminArea) return <>{children}</>;
   }
 
   // Show loading spinner while checking auth
