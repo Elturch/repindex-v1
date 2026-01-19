@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { getRoleById } from "@/lib/chatRoles";
 import { useAuth } from "@/contexts/AuthContext";
 import { convertMarkdownToHtml, baseExportStyles, premiumTableStyles } from "@/lib/markdownToHtml";
+import { ChatLanguage, getSavedLanguage, saveLanguagePreference, DEFAULT_LANGUAGE } from "@/lib/chatLanguages";
 
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
@@ -41,6 +42,9 @@ interface ChatContextType {
   isFloatingOpen: boolean;
   setIsFloatingOpen: (open: boolean) => void;
   loadConversation: (sessionId: string) => void;
+  // Language
+  language: ChatLanguage;
+  setLanguage: (language: ChatLanguage) => void;
   // Export functions
   downloadAsTxt: () => void;
   downloadAsJson: () => void;
@@ -69,6 +73,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const { toast } = useToast();
   
   // Use auth context for user ID - this syncs properly with AuthProvider
@@ -220,6 +225,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // Only send bulletin params if explicitly triggered by button
           bulletinMode: options?.bulletinMode || false,
           bulletinCompanyName,
+          // Language preference
+          language: language.code,
+          languageName: language.nativeName,
         },
       });
 
@@ -314,6 +322,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           originalQuestion: userQuestion,
           originalResponse: targetMessage.content,
           sessionId,
+          // Language preference
+          language: language.code,
+          languageName: language.nativeName,
         },
       });
 
@@ -810,6 +821,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
   }, [messages, sessionId, toast]);
 
+  // Language setter with persistence
+  const setLanguage = useCallback((newLanguage: ChatLanguage) => {
+    setLanguageState(newLanguage);
+    saveLanguagePreference(newLanguage.code);
+  }, []);
+
   return (
     <ChatContext.Provider
       value={{
@@ -825,6 +842,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         isFloatingOpen,
         setIsFloatingOpen,
         loadConversation,
+        language,
+        setLanguage,
         downloadAsTxt,
         downloadAsJson,
         downloadAsHtml,
