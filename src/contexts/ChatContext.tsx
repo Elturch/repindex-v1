@@ -1,9 +1,10 @@
-import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { getRoleById } from "@/lib/chatRoles";
 import { useAuth } from "@/contexts/AuthContext";
+import { convertMarkdownToHtml, baseExportStyles, premiumTableStyles } from "@/lib/markdownToHtml";
 
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
@@ -674,36 +675,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
               color: var(--primary);
             }
             
-            /* Tables */
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 16px 0;
-              font-size: 13px;
-              border-radius: 8px;
-              overflow: hidden;
-              border: 1px solid var(--border);
-            }
-            
-            thead { background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
-            
-            th {
-              padding: 12px 14px;
-              text-align: left;
-              font-weight: 700;
-              font-size: 11px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              border-bottom: 2px solid var(--primary);
-            }
-            
-            td {
-              padding: 10px 14px;
-              border-bottom: 1px solid var(--border);
-            }
-            
-            tbody tr:nth-child(even) { background: #f9fafb; }
-            tbody tr:hover { background: #f1f5f9; }
+            /* Tables - Premium Styling */
+            ${premiumTableStyles}
             
             /* Footer corporativo */
             .report-footer {
@@ -792,14 +765,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                    </div>`
                 : '';
               
-              // Convert markdown to basic HTML
-              let content = msg.content
-                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                .replace(/\n/g, '<br>');
+              // Convert markdown to premium HTML using shared converter
+              const content = convertMarkdownToHtml(msg.content);
               
               return `
                 <div class="message">
