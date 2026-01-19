@@ -6,6 +6,7 @@ import { Send, FileText, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "./LanguageSelector";
 import { ChatLanguage } from "@/lib/chatLanguages";
+import { getChatTranslations } from "@/lib/chatTranslations";
 
 interface ChatInputProps {
   onSend: (message: string, options?: { bulletinMode?: boolean }) => void;
@@ -63,7 +64,7 @@ declare global {
 export function ChatInput({ 
   onSend, 
   isLoading, 
-  placeholder = "Escribe tu pregunta...", 
+  placeholder,
   compact = false,
   language,
   onLanguageChange 
@@ -73,6 +74,7 @@ export function ChatInput({
   const [speechSupported, setSpeechSupported] = useState(false);
   const [bulletinModeActive, setBulletinModeActive] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const tr = getChatTranslations(language.code);
 
   useEffect(() => {
     // Check if speech recognition is supported
@@ -195,7 +197,7 @@ export function ChatInput({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top">
-            <p className="text-xs">Generar boletín ejecutivo de empresa</p>
+            <p className="text-xs">{tr.generateBulletin}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -222,7 +224,7 @@ export function ChatInput({
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <p className="text-xs">{isListening ? "Detener dictado" : "Dictar mensaje"}</p>
+              <p className="text-xs">{isListening ? tr.stopDictation : tr.dictateMessage}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -232,7 +234,7 @@ export function ChatInput({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={bulletinModeActive ? "Escribe el nombre de la empresa..." : (isListening ? "Escuchando..." : placeholder)}
+        placeholder={bulletinModeActive ? tr.inputPlaceholderBulletin : (isListening ? tr.inputListening : (placeholder || tr.inputPlaceholder))}
         disabled={isLoading}
         className={cn(
           "flex-1 min-w-0",

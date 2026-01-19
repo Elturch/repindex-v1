@@ -15,6 +15,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTooltip";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { isDevOrPreview } from "@/lib/env";
+import { getChatTranslations } from "@/lib/chatTranslations";
 
 export function FloatingChat() {
   const navigate = useNavigate();
@@ -37,6 +38,7 @@ export function FloatingChat() {
   const { isAuthenticated } = useAuth();
   const pageContext = usePageContext(undefined, language);
   const hasSeenOnboarding = useChatOnboardingSeen();
+  const tr = getChatTranslations(language.code);
   const { 
     notifications, 
     unreadCount, 
@@ -325,13 +327,13 @@ export function FloatingChat() {
                       onStarterPrompt={sendMessage}
                       compact={true}
                       sessionId={sessionId}
+                      languageCode={language.code}
                     />
                     
                     <div className="mt-3">
                       <ChatInput
                         onSend={sendMessage}
                         isLoading={isLoading}
-                        placeholder="Pregunta al Agente Rix..."
                         compact={true}
                         language={language}
                         onLanguageChange={setLanguage}

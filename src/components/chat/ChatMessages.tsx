@@ -13,6 +13,7 @@ import { Sparkles, RefreshCw, FileText, ExternalLink, AlertTriangle, Loader2, Th
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { getRoleById } from "@/lib/chatRoles";
+import { getChatTranslations, ChatUITranslations } from "@/lib/chatTranslations";
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -24,6 +25,7 @@ interface ChatMessagesProps {
   onStarterPrompt: (prompt: string) => void;
   compact?: boolean;
   sessionId?: string;
+  languageCode?: string;
 }
 
 export function ChatMessages({
@@ -36,10 +38,12 @@ export function ChatMessages({
   onStarterPrompt,
   compact = false,
   sessionId,
+  languageCode = 'es',
 }: ChatMessagesProps) {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const vectorStoreStatus = useVectorStoreStatus();
+  const tr = getChatTranslations(languageCode);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -57,9 +61,9 @@ export function ChatMessages({
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
           <AlertDescription className={compact ? "text-[11px]" : "text-xs"}>
-            <span className="font-semibold text-amber-600">Actualizando base de conocimiento</span>
+            <span className="font-semibold text-amber-600">{tr.updatingKnowledgeBase}</span>
             <span className="text-muted-foreground ml-1">
-              ({vectorStoreStatus.progress}%) — Las respuestas pueden ser menos precisas temporalmente
+              ({vectorStoreStatus.progress}%) — {tr.responsesLessPrecise}
             </span>
           </AlertDescription>
         </div>
@@ -87,14 +91,14 @@ export function ChatMessages({
         <div className="flex flex-col items-center justify-center h-full space-y-4 py-8">
           <div className="text-center space-y-2">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
-            <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>Comienza una conversación</h3>
+            <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
             <p className={`${compact ? 'text-xs' : 'text-sm'} text-muted-foreground max-w-md`}>
-              Pregunta sobre empresas del IBEX y su reputación según las IAs
+              {tr.askAboutCompanies}
             </p>
           </div>
           
           <div className="grid grid-cols-1 gap-2 w-full">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Sugerencias:</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1">{tr.suggestions}</p>
             {starterPrompts.slice(0, compact ? 3 : 5).map((prompt, idx) => (
               <Button
                 key={idx}
