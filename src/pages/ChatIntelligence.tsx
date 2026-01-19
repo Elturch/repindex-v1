@@ -14,6 +14,7 @@ import { useChatContext } from "@/contexts/ChatContext";
 import { usePageContext } from "@/hooks/usePageContext";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { getChatTranslations } from "@/lib/chatTranslations";
 
 export default function ChatIntelligence() {
   const {
@@ -33,6 +34,7 @@ export default function ChatIntelligence() {
     setLanguage,
   } = useChatContext();
   const pageContext = usePageContext(undefined, language);
+  const tr = getChatTranslations(language.code);
 
   // Update page context and close floating chat when on full page
   useEffect(() => {
@@ -49,10 +51,10 @@ export default function ChatIntelligence() {
         {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold tracking-tight">
-            Agente Rix
+            {tr.pageTitle}
           </h1>
           <p className="text-sm text-muted-foreground">
-            Pregunta sobre empresas, tendencias, comparaciones y análisis de reputación
+            {tr.pageSubtitle}
           </p>
         </div>
 
@@ -66,7 +68,7 @@ export default function ChatIntelligence() {
             className="gap-2"
           >
             <Trash2 className="h-4 w-4" />
-            Nueva Conversación
+            {tr.newConversation}
           </Button>
         </div>
 
@@ -77,10 +79,10 @@ export default function ChatIntelligence() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <Bot className="h-5 w-5" />
-                  Conversación
+                  {tr.conversation}
                 </CardTitle>
                 <CardDescription>
-                  Tu asistente inteligente para analizar datos de RepIndex
+                  {tr.assistantDescription}
                 </CardDescription>
               </div>
               
@@ -92,24 +94,24 @@ export default function ChatIntelligence() {
                         <DropdownMenuTrigger asChild>
                           <Button variant="outline" size="sm" className="gap-2">
                             <Download className="h-4 w-4" />
-                            Exportar
+                            {tr.export}
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-background border z-50">
                           <DropdownMenuItem onClick={downloadAsTxt}>
-                            Descargar como TXT
+                            {tr.downloadTxt}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={downloadAsJson}>
-                            Descargar como JSON
+                            {tr.downloadJson}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={downloadAsHtml}>
-                            Descargar como HTML
+                            {tr.downloadHtml}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Guardar conversación para imprimir o compartir</p>
+                      <p>{tr.exportTooltip}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -127,6 +129,7 @@ export default function ChatIntelligence() {
               onStarterPrompt={sendMessage}
               compact={false}
               sessionId={sessionId}
+              languageCode={language.code}
             />
 
             {/* Input Area */}
@@ -134,7 +137,6 @@ export default function ChatIntelligence() {
               <ChatInput
                 onSend={sendMessage}
                 isLoading={isLoading}
-                placeholder="Pregunta al Agente Rix sobre empresas, rankings o tendencias..."
                 language={language}
                 onLanguageChange={setLanguage}
               />
