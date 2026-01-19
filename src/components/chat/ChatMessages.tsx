@@ -210,6 +210,7 @@ export function ChatMessages({
                   onEnrich={(roleId) => onEnrichResponse(roleId, idx)}
                   disabled={isLoading}
                   compact={compact}
+                  languageCode={languageCode}
                 />
               )}
 
