@@ -65,54 +65,51 @@ export const ApiCostDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Calculate date range
-      const now = new Date();
-      let startDate: Date | null = null;
+      // Map period to API format
+      const periodMap: Record<TimePeriod, string> = {
+        'today': '24h',
+        '7d': '7d',
+        '30d': '30d',
+        '90d': '90d',
+        'all': '90d'
+      };
+
+      // Fetch usage logs via edge function
+      const logsResponse = await supabase.functions.invoke('admin-api-data', {
+        body: null,
+        method: 'GET',
+      });
+
+      // Use custom fetch for GET requests with query params
+      const baseUrl = `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/admin-api-data`;
       
-      switch (period) {
-        case 'today':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          break;
-        case '7d':
-          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case '30d':
-          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          break;
-        case '90d':
-          startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-          break;
-        default:
-          startDate = null;
+      const [logsRes, configRes] = await Promise.all([
+        fetch(`${baseUrl}/usage-logs?period=${periodMap[period]}`, {
+          headers: { 'Content-Type': 'application/json' }
+        }),
+        fetch(`${baseUrl}/cost-config`, {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      ]);
+
+      if (!logsRes.ok) {
+        const err = await logsRes.json();
+        throw new Error(err.error || 'Error fetching logs');
+      }
+      if (!configRes.ok) {
+        const err = await configRes.json();
+        throw new Error(err.error || 'Error fetching config');
       }
 
-      // Fetch usage logs
-      let logsQuery = supabase
-        .from('api_usage_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1000);
+      const logsData = await logsRes.json();
+      const configData = await configRes.json();
 
-      if (startDate) {
-        logsQuery = logsQuery.gte('created_at', startDate.toISOString());
-      }
-
-      const { data: logs, error: logsError } = await logsQuery;
-      if (logsError) throw logsError;
-      setUsageLogs(logs || []);
-
-      // Fetch cost config
-      const { data: config, error: configError } = await supabase
-        .from('api_cost_config')
-        .select('*')
-        .order('provider', { ascending: true });
-
-      if (configError) throw configError;
-      setCostConfig(config || []);
+      setUsageLogs(logsData.data || []);
+      setCostConfig(configData.data || []);
 
       // Initialize editing state
       const editState: Record<string, { input: string; output: string }> = {};
-      (config || []).forEach(c => {
+      (configData.data || []).forEach((c: ApiCostConfig) => {
         editState[c.id] = {
           input: c.input_cost_per_million.toString(),
           output: c.output_cost_per_million.toString(),
@@ -122,7 +119,7 @@ export const ApiCostDashboard: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error fetching API cost data:', error);
-      toast({ title: 'Error', description: 'No se pudieron cargar los datos', variant: 'destructive' });
+      toast({ title: 'Error', description: error.message || 'No se pudieron cargar los datos', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -254,28 +251,34 @@ export const ApiCostDashboard: React.FC = () => {
       .sort((a, b) => b.value - a.value);
   }, [usageLogs]);
 
-  // Save cost config
+  // Save cost config via edge function
   const handleSaveConfig = async (configId: string) => {
     setSavingConfig(true);
     try {
       const edit = editingConfig[configId];
       if (!edit) return;
 
-      const { error } = await supabase
-        .from('api_cost_config')
-        .update({
+      const baseUrl = `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/admin-api-data`;
+      const res = await fetch(`${baseUrl}/cost-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: configId,
           input_cost_per_million: parseFloat(edit.input),
           output_cost_per_million: parseFloat(edit.output),
-          updated_at: new Date().toISOString(),
         })
-        .eq('id', configId);
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Error saving config');
+      }
+
       toast({ title: 'Guardado', description: 'Configuración de precios actualizada' });
       fetchData();
     } catch (error: any) {
       console.error('Error saving config:', error);
-      toast({ title: 'Error', description: 'No se pudo guardar', variant: 'destructive' });
+      toast({ title: 'Error', description: error.message || 'No se pudo guardar', variant: 'destructive' });
     } finally {
       setSavingConfig(false);
     }

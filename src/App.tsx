@@ -66,14 +66,8 @@ const App = () => (
                 {/* Admin routes - only available in Preview/development */}
                 {isDevOrPreview() && (
                   <>
-                    <Route
-                      path="/insert-rix"
-                      element={<ProtectedRoute><InsertRixResults /></ProtectedRoute>}
-                    />
-                    <Route
-                      path="/admin"
-                      element={<ProtectedRoute><Admin /></ProtectedRoute>}
-                    />
+                    <Route path="/insert-rix" element={<InsertRixResults />} />
+                    <Route path="/admin" element={<Admin />} />
                   </>
                 )}
                 
