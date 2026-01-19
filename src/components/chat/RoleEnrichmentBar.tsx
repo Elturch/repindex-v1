@@ -15,20 +15,25 @@ import {
   getFeaturedRoles,
   type ChatRole 
 } from "@/lib/chatRoles";
+import { getChatTranslations } from "@/lib/chatTranslations";
 
 interface RoleEnrichmentBarProps {
   onEnrich: (roleId: string) => void;
   disabled?: boolean;
   compact?: boolean;
+  languageCode?: string;
 }
 
 export function RoleEnrichmentBar({ 
   onEnrich, 
   disabled = false,
-  compact = false 
+  compact = false,
+  languageCode = 'es'
 }: RoleEnrichmentBarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAllRoles, setShowAllRoles] = useState(false);
+  
+  const tr = getChatTranslations(languageCode);
 
   const featuredRoles = getFeaturedRoles();
   const specializedRoles = CHAT_ROLES.filter(r => r.id !== 'general');
@@ -62,11 +67,11 @@ export function RoleEnrichmentBar({
               disabled={disabled}
             >
               <Theater className="h-3 w-3" />
-              Adaptar respuesta
+              {tr.adaptResponse}
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-64 p-2" align="start">
-            <p className="text-xs font-medium mb-2">Adapta a tu rol:</p>
+            <p className="text-xs font-medium mb-2">{tr.adaptToYourRole}</p>
             <div className="grid grid-cols-2 gap-1">
               {featuredRoles.map((role) => (
                 <Button
@@ -93,12 +98,13 @@ export function RoleEnrichmentBar({
       <div className="flex items-center gap-2 mb-2">
         <Theater className="h-4 w-4 text-primary" />
         <span className="text-sm font-semibold text-foreground">
-          Generar informe ejecutivo completo
+          {tr.generateExecutiveReport}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground mb-3">
-        Pulsa un rol para recibir un <strong>informe expandido</strong> (2500+ palabras) con análisis específico, tablas, riesgos y plan de acción:
-      </p>
+      <p 
+        className="text-xs text-muted-foreground mb-3"
+        dangerouslySetInnerHTML={{ __html: tr.selectRoleForReport }}
+      />
 
       <div className="flex flex-wrap gap-2">
         {featuredRoles.map((role) => (
@@ -123,7 +129,7 @@ export function RoleEnrichmentBar({
               className="h-8 text-xs gap-1 hover:bg-accent"
               disabled={disabled}
             >
-              <span>+ Más roles</span>
+              <span>{tr.moreRoles}</span>
               <ChevronRight className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
@@ -131,10 +137,10 @@ export function RoleEnrichmentBar({
             <div className="p-3 border-b border-border">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <h4 className="font-semibold text-sm">Informes por rol profesional</h4>
+                <h4 className="font-semibold text-sm">{tr.reportsByProfessionalRole}</h4>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Cada rol genera un informe ejecutivo completo con perspectiva específica
+                {tr.eachRoleGenerates}
               </p>
             </div>
             <ScrollArea className="h-[320px]">
