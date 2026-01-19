@@ -216,6 +216,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     try {
+      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName);
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
           question,
@@ -283,7 +284,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord]);
+  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language]);
 
   // Enrich a response with a specific professional role perspective
   const enrichResponse = useCallback(async (roleId: string, messageIndex: number) => {
@@ -386,7 +387,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, sessionId, toast, currentUserId]);
+  }, [messages, sessionId, toast, currentUserId, language]);
 
   const clearConversation = useCallback(() => {
     setMessages([]);
@@ -823,9 +824,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   // Language setter with persistence
   const setLanguage = useCallback((newLanguage: ChatLanguage) => {
+    console.log('[ChatContext] Language changed:', newLanguage.code, newLanguage.nativeName);
     setLanguageState(newLanguage);
     saveLanguagePreference(newLanguage.code);
-  }, []);
+    toast({
+      title: 'Idioma cambiado',
+      description: `Agente Rix responderá en: ${newLanguage.nativeName}`,
+    });
+  }, [toast]);
 
   return (
     <ChatContext.Provider

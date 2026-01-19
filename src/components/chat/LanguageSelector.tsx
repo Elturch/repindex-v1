@@ -49,7 +49,7 @@ export function LanguageSelector({
             {CHAT_LANGUAGES.map((language) => (
               <DropdownMenuItem
                 key={language.code}
-                onClick={() => onLanguageChange(language)}
+                onSelect={() => onLanguageChange(language)}
                 className={cn(
                   "cursor-pointer gap-2",
                   selectedLanguage.code === language.code && "bg-primary/10"
