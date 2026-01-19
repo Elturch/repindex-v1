@@ -714,7 +714,7 @@ La respuesta original contiene datos que DEBES mantener y EXPANDIR significativa
 ---
 
 # 📋 INFORME EJECUTIVO DE REPUTACIÓN CORPORATIVA
-## Alta Dirección - Análisis RepIndex
+## Alta Dirección de ${roleName} - Análisis RepIndex
 
 ---
 
