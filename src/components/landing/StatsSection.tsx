@@ -61,7 +61,7 @@ function AnimatedCounter({ value, suffix = "" }: { value: string; suffix?: strin
   }, [isInView, numericValue]);
 
   return (
-    <span ref={ref}>
+    <span ref={ref} translate="no" className="tabular-nums">
       {count}{suffix}
     </span>
   );

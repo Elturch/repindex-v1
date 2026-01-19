@@ -9,6 +9,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { FloatingChat } from "@/components/chat/FloatingChat";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
 import InsertRixResults from "./pages/InsertRixResults";
@@ -26,6 +27,7 @@ import { isDevOrPreview } from "@/lib/env";
 const queryClient = new QueryClient();
 
 const App = () => (
+  <ErrorBoundary>
   <HelmetProvider>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
@@ -80,6 +82,7 @@ const App = () => (
       </ThemeProvider>
     </QueryClientProvider>
   </HelmetProvider>
+  </ErrorBoundary>
 );
 
 export default App;
