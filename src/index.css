@@ -458,3 +458,17 @@ All colors MUST be HSL.
     }
   }
 }
+
+/* Browser translation protection */
+@layer base {
+  /* Prevent translation on protected elements */
+  .notranslate,
+  [translate="no"] {
+    font-family: inherit !important;
+  }
+  
+  /* Protect dynamic counters and numeric values */
+  .tabular-nums[translate="no"] {
+    font-variant-numeric: tabular-nums;
+  }
+}

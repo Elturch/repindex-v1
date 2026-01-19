@@ -200,7 +200,7 @@ export function FloatingChat() {
               >
                 <Badge 
                   variant="destructive" 
-                  className="h-5 min-w-5 px-1.5 text-xs font-bold animate-pulse"
+                  className="h-5 min-w-5 px-1.5 text-xs font-bold animate-pulse tabular-nums"
                 >
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </Badge>
