@@ -1,39 +1,26 @@
 import { useEffect } from "react";
-import { Layout } from "@/components/layout/Layout";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bot, Download, Trash2 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useChatContext } from "@/contexts/ChatContext";
+import { useChat } from "@/contexts/ChatContext";
 import { usePageContext } from "@/hooks/usePageContext";
-import { ChatMessages } from "@/components/chat/ChatMessages";
-import { ChatInput } from "@/components/chat/ChatInput";
+import ChatMessages from "@/components/chat/ChatMessages";
+import ChatInput from "@/components/chat/ChatInput";
+import { Helmet } from "react-helmet-async";
+import { Bot } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export default function ChatIntelligence() {
-  const {
-    sessionId,
-    messages,
-    isLoading,
+const ChatIntelligence = () => {
+  const { 
+    messages, 
+    sendMessage, 
+    isLoading, 
+    suggestedQuestions, 
+    startNewConversation, 
+    enrichResponse, 
+    sessionId, 
     isLoadingHistory,
-    sendMessage,
-    enrichResponse,
-    clearConversation,
-    setPageContext,
-    setIsFloatingOpen,
-    downloadAsTxt,
-    downloadAsJson,
-    downloadAsHtml,
     language,
-    setLanguage,
-  } = useChatContext();
-
-  const pageContext = usePageContext();
+    setLanguage 
+  } = useChat();
+  const pageContext = usePageContext(undefined, language);
 
   // Update page context and close floating chat when on full page
   useEffect(() => {

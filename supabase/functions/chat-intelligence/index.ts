@@ -2314,62 +2314,62 @@ Por favor, responde a la pregunta usando SOLO la información del contexto anter
     (dataInsights.patterns.length > 0 || dataInsights.anomalies.length > 0 || dataInsights.surprises.length > 0);
   
   const dataDiscoveriesPrompt = hasQualityData 
-    ? `Eres un ANALISTA DE DATOS EXPERTO que ha descubierto patrones ocultos analizando ${dataInsights.coverageStats?.full || 'múltiples'} empresas con COBERTURA COMPLETA de los 4 modelos de IA. Tu trabajo es generar 3 preguntas que SORPRENDAN al usuario revelando insights que NO son obvios a simple vista.
+    ? `You are an EXPERT DATA ANALYST who has discovered hidden patterns analyzing ${dataInsights.coverageStats?.full || 'multiple'} companies with COMPLETE COVERAGE from all 4 AI models. Generate 3 questions that SURPRISE the user by revealing non-obvious insights.
 
-🔬 DESCUBRIMIENTOS VERIFICADOS (basados SOLO en empresas con datos de ChatGPT + Perplexity + Gemini + DeepSeek):
+🔬 VERIFIED DISCOVERIES (based ONLY on companies with data from ChatGPT + Perplexity + Gemini + DeepSeek):
 
-📊 PATRONES DETECTADOS:
+📊 DETECTED PATTERNS:
 ${dataInsights.patterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}
 
-⚠️ ANOMALÍAS ENCONTRADAS:
-${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join('\n') : '- Sin anomalías significativas con datos sólidos'}
+⚠️ ANOMALIES FOUND:
+${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join('\n') : '- No significant anomalies with solid data'}
 
-💡 SORPRESAS EN LOS DATOS:
-${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join('\n') : '- Sin sorpresas destacables con datos completos'}
+💡 DATA SURPRISES:
+${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join('\n') : '- No notable surprises with complete data'}
 
-🎯 DIVERGENCIAS MÁXIMAS ENTRE MODELOS (4 modelos analizados):
+🎯 MAXIMUM DIVERGENCES BETWEEN MODELS (4 models analyzed):
 ${dataInsights.modelDivergences?.length > 0 
-  ? dataInsights.modelDivergences.map((d, i) => `${i + 1}. ${d.company}: ${d.models} = ${d.maxDiff} pts diferencia`).join('\n')
-  : '- Consenso alto entre modelos'}
+  ? dataInsights.modelDivergences.map((d, i) => `${i + 1}. ${d.company}: ${d.models} = ${d.maxDiff} pts difference`).join('\n')
+  : '- High consensus between models'}
 
-📈 CALIDAD DE DATOS: ${dataInsights.coverageStats?.full}/${dataInsights.coverageStats?.total} empresas con cobertura completa de 4 modelos
+📈 DATA QUALITY: ${dataInsights.coverageStats?.full}/${dataInsights.coverageStats?.total} companies with complete 4-model coverage
 
-TEMAS YA DISCUTIDOS (EVITAR REPETIR):
-${[...discussedTopics].slice(0, 10).join(', ') || 'Ninguno específico aún'}
+TOPICS ALREADY DISCUSSED (AVOID REPEATING):
+${[...discussedTopics].slice(0, 10).join(', ') || 'None specific yet'}
 
-PREGUNTA ACTUAL DEL USUARIO: "${question}"
+CURRENT USER QUESTION: "${question}"
 
-🧠 TU MISIÓN: Genera 3 preguntas que:
+🧠 YOUR MISSION: Generate 3 questions that:
 
-1. **REVELEN DATOS OCULTOS**: Usa SOLO los descubrimientos verificados de arriba (nunca inventes)
-2. **SORPRENDAN CON HECHOS CONCRETOS**: Cada pregunta debe mencionar datos específicos
-3. **SEAN IMPOSIBLES DE IGNORAR**: Preguntas que generen curiosidad inmediata
+1. **REVEAL HIDDEN DATA**: Use ONLY the verified discoveries above (never invent)
+2. **SURPRISE WITH CONCRETE FACTS**: Each question must mention specific data
+3. **BE IMPOSSIBLE TO IGNORE**: Questions that generate immediate curiosity
 
-❌ PROHIBIDO:
-- Preguntas genéricas o que el usuario podría adivinar
-- Inventar datos o empresas que no aparecen arriba
-- Repetir empresas o temas ya discutidos
-- Preguntas basadas en datos incompletos o parciales
+❌ FORBIDDEN:
+- Generic questions the user could guess
+- Inventing data or companies not listed above
+- Repeating companies or topics already discussed
+- Questions based on incomplete or partial data
 
-✅ FORMATO IDEAL:
-- "¿Por qué ${dataInsights.modelDivergences?.[0]?.company || '[empresa]'} genera tanta discordia entre los modelos (${dataInsights.modelDivergences?.[0]?.maxDiff || 'X'} puntos de diferencia)?"
-- "¿Sabías que ${dataInsights.patterns[0] || '[patrón detectado]'}? ¿Quieres profundizar?"
+🌐 CRITICAL - LANGUAGE: Generate ALL questions in ${languageName} (${language}). Every single question MUST be written in ${languageName}.
 
-Responde SOLO con un array JSON de 3 preguntas basadas en los DATOS VERIFICADOS:
-["pregunta 1", "pregunta 2", "pregunta 3"]`
-    : `Genera 3 preguntas genéricas pero útiles sobre análisis de reputación corporativa para las empresas del IBEX35 y empresas españolas.
+Respond ONLY with a JSON array of 3 questions in ${languageName}:
+["question 1", "question 2", "question 3"]`
+    : `Generate 3 generic but useful questions about corporate reputation analysis for IBEX35 and Spanish companies.
 
-PREGUNTA ACTUAL DEL USUARIO: "${question}"
+CURRENT USER QUESTION: "${question}"
 
-Evita: preguntas obvias como "¿Cuál es el top 5?". 
-Sugiere: comparativas sectoriales, divergencias entre modelos de IA, empresas no cotizadas vs IBEX35.
+Avoid: obvious questions like "What's the top 5?". 
+Suggest: sector comparisons, AI model divergences, non-listed vs IBEX35 companies.
 
-Responde SOLO con un array JSON de 3 strings:
-["pregunta 1", "pregunta 2", "pregunta 3"]`;
+🌐 CRITICAL - LANGUAGE: Generate ALL questions in ${languageName} (${language}). Every single question MUST be written in ${languageName}.
+
+Respond ONLY with a JSON array of 3 strings in ${languageName}:
+["question 1", "question 2", "question 3"]`;
 
   try {
     const questionsMessages = [
-      { role: 'system', content: 'Eres un analista de datos que genera preguntas basadas en descubrimientos REALES. Cada pregunta debe revelar un insight oculto en los datos. Responde SOLO con el array JSON.' },
+      { role: 'system', content: `You are a data analyst who generates questions based on REAL discoveries. Each question must reveal a hidden insight in the data. IMPORTANT: Generate all questions in ${languageName}. Respond ONLY with the JSON array.` },
       { role: 'user', content: dataDiscoveriesPrompt }
     ];
 

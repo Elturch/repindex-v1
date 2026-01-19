@@ -35,7 +35,7 @@ export function FloatingChat() {
   } = useChatContext();
   
   const { isAuthenticated } = useAuth();
-  const pageContext = usePageContext();
+  const pageContext = usePageContext(undefined, language);
   const hasSeenOnboarding = useChatOnboardingSeen();
   const { 
     notifications, 
