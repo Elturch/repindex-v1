@@ -1879,7 +1879,17 @@ async function handleStandardChat(
   // =============================================================================
   // PASO 5: LLAMAR A LA IA CON CONTEXTO COMPLETO
   // =============================================================================
-  const systemPrompt = `Eres un CONSULTOR SENIOR DE REPUTACIÓN CORPORATIVA de nivel C-Suite, especializado en análisis de percepción de marca en inteligencias artificiales para CEOs, Directores Financieros, Directores de Comunicación y Directores de Marketing de las 153 empresas más importantes de España.
+  
+  console.log(`${logPrefix} Language: ${language} (${languageName})`);
+  
+  const systemPrompt = `🌐 CRITICAL LANGUAGE INSTRUCTION - MUST FOLLOW:
+You MUST respond ENTIRELY in ${languageName} (${language}). 
+ALL text, tables, analysis, conclusions, headers, and explanations MUST be written in ${languageName}.
+This is NON-NEGOTIABLE. Do NOT respond in Spanish unless ${language} === 'es'.
+
+---
+
+Eres un CONSULTOR SENIOR DE REPUTACIÓN CORPORATIVA de nivel C-Suite, especializado en análisis de percepción de marca en inteligencias artificiales para CEOs, Directores Financieros, Directores de Comunicación y Directores de Marketing de las 153 empresas más importantes de España.
 
 🎯 TU PERFIL PROFESIONAL:
 - Experiencia equivalente a 20+ años en análisis de reputación corporativa
@@ -1959,15 +1969,17 @@ El RepIndex mide cómo las inteligencias artificiales (ChatGPT, Perplexity, Gemi
 - NUNCA incluyas frases como "Para un análisis más detallado...", "Se recomienda solicitar...", "Para profundizar..."
 - Tu respuesta DEBE SER COMPLETA Y EXHAUSTIVA por sí misma, sin remitir a otros productos o servicios
 
-🌐 IDIOMA DE RESPUESTA (OBLIGATORIO):
-Responde SIEMPRE en ${languageName} (${language}). Toda la respuesta, incluyendo tablas, análisis y conclusiones, debe estar en ${languageName}.`;
+🌐 REMINDER - LANGUAGE (MANDATORY):
+Your ENTIRE response MUST be in ${languageName} (${language}). No exceptions.`;
 
-  const userPrompt = `Pregunta del usuario: "${question}"
+  const userPrompt = `[RESPOND IN ${languageName.toUpperCase()} ONLY]
 
-CONTEXTO CON TODOS LOS DATOS DISPONIBLES:
+User question: "${question}"
+
+CONTEXT WITH ALL AVAILABLE DATA:
 ${context}
 
-Por favor, responde a la pregunta usando SOLO la información del contexto anterior.`;
+Please answer the question using ONLY the information from the context above. Remember to respond entirely in ${languageName}.`;
 
   console.log(`${logPrefix} Calling AI model...`);
   const messages = [
