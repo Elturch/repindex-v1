@@ -637,7 +637,9 @@ serve(async (req) => {
       openAIApiKey,
       sessionId,
       logPrefix,
-      userId
+      userId,
+      language,
+      languageName
     );
 
   } catch (error) {
@@ -1335,7 +1337,9 @@ async function handleStandardChat(
   openAIApiKey: string,
   sessionId: string | undefined,
   logPrefix: string,
-  userId: string | null
+  userId: string | null,
+  language: string = 'es',
+  languageName: string = 'Español'
 ) {
   // =============================================================================
   // PASO 0: DETECTAR EMPRESAS MENCIONADAS EN LA PREGUNTA
