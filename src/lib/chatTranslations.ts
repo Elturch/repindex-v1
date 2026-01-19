@@ -51,6 +51,8 @@ export interface ChatUITranslations {
   responsesLessPrecise: string;
   languageChanged: string;
   willRespondIn: string;
+  analyzingData: string;
+  consultingDatabase: string;
   
   // Role enrichment
   adaptResponseFor: string;
@@ -104,6 +106,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'Las respuestas pueden ser menos precisas temporalmente',
     languageChanged: 'Idioma cambiado',
     willRespondIn: 'Agente Rix responderá en: {language}',
+    analyzingData: 'Analizando datos...',
+    consultingDatabase: 'Consultando base de datos',
     adaptResponseFor: 'Adaptar respuesta para:',
     enrichedResponse: 'Respuesta enriquecida',
     viewOriginal: 'Ver original',
@@ -149,6 +153,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'Responses may be less precise temporarily',
     languageChanged: 'Language changed',
     willRespondIn: 'Rix Agent will respond in: {language}',
+    analyzingData: 'Analyzing data...',
+    consultingDatabase: 'Querying database',
     adaptResponseFor: 'Adapt response for:',
     enrichedResponse: 'Enriched response',
     viewOriginal: 'View original',
@@ -194,6 +200,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'Les réponses peuvent être moins précises temporairement',
     languageChanged: 'Langue changée',
     willRespondIn: 'Agent Rix répondra en: {language}',
+    analyzingData: 'Analyse des données...',
+    consultingDatabase: 'Consultation de la base de données',
     adaptResponseFor: 'Adapter la réponse pour:',
     enrichedResponse: 'Réponse enrichie',
     viewOriginal: 'Voir l\'original',
@@ -239,6 +247,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'Antworten können vorübergehend weniger präzise sein',
     languageChanged: 'Sprache geändert',
     willRespondIn: 'Rix Agent wird antworten in: {language}',
+    analyzingData: 'Daten werden analysiert...',
+    consultingDatabase: 'Datenbank wird abgefragt',
     adaptResponseFor: 'Antwort anpassen für:',
     enrichedResponse: 'Erweiterte Antwort',
     viewOriginal: 'Original anzeigen',
@@ -284,6 +294,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'As respostas podem ser menos precisas temporariamente',
     languageChanged: 'Idioma alterado',
     willRespondIn: 'Agente Rix responderá em: {language}',
+    analyzingData: 'Analisando dados...',
+    consultingDatabase: 'Consultando banco de dados',
     adaptResponseFor: 'Adaptar resposta para:',
     enrichedResponse: 'Resposta enriquecida',
     viewOriginal: 'Ver original',
@@ -329,6 +341,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'Le risposte potrebbero essere meno precise temporaneamente',
     languageChanged: 'Lingua cambiata',
     willRespondIn: 'Agente Rix risponderà in: {language}',
+    analyzingData: 'Analisi dei dati...',
+    consultingDatabase: 'Consultazione del database',
     adaptResponseFor: 'Adatta risposta per:',
     enrichedResponse: 'Risposta arricchita',
     viewOriginal: 'Vedi originale',
@@ -374,6 +388,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: 'قد تكون الردود أقل دقة مؤقتًا',
     languageChanged: 'تم تغيير اللغة',
     willRespondIn: 'سيستجيب وكيل ريكس بـ: {language}',
+    analyzingData: 'جارِ تحليل البيانات...',
+    consultingDatabase: 'جارِ الاستعلام من قاعدة البيانات',
     adaptResponseFor: 'تكييف الرد لـ:',
     enrichedResponse: 'رد معزز',
     viewOriginal: 'عرض الأصلي',
@@ -419,6 +435,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: '回复可能暂时不太精确',
     languageChanged: '语言已更改',
     willRespondIn: 'Rix代理将使用以下语言回复：{language}',
+    analyzingData: '正在分析数据...',
+    consultingDatabase: '正在查询数据库',
     adaptResponseFor: '为以下角色调整回复：',
     enrichedResponse: '增强回复',
     viewOriginal: '查看原文',
@@ -464,6 +482,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: '回答が一時的に不正確になる場合があります',
     languageChanged: '言語が変更されました',
     willRespondIn: 'Rixエージェントは以下の言語で応答します：{language}',
+    analyzingData: 'データを分析中...',
+    consultingDatabase: 'データベースに問い合わせ中',
     adaptResponseFor: '以下の役割に合わせて回答を調整：',
     enrichedResponse: '強化された回答',
     viewOriginal: '元を表示',
@@ -509,6 +529,8 @@ const translations: Record<string, ChatUITranslations> = {
     responsesLessPrecise: '응답이 일시적으로 덜 정확할 수 있습니다',
     languageChanged: '언어가 변경되었습니다',
     willRespondIn: 'Rix 에이전트가 다음 언어로 응답합니다: {language}',
+    analyzingData: '데이터 분석 중...',
+    consultingDatabase: '데이터베이스 조회 중',
     adaptResponseFor: '다음 역할에 맞게 응답 조정:',
     enrichedResponse: '강화된 응답',
     viewOriginal: '원본 보기',
