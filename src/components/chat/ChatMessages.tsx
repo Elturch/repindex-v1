@@ -233,8 +233,8 @@ export function ChatMessages({
               <div className="flex items-center gap-2">
                 <RefreshCw className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-primary animate-spin`} />
                 <div>
-                  <span className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-foreground`}>Analizando datos...</span>
-                  {!compact && <p className="text-xs text-muted-foreground mt-1">Consultando base de datos</p>}
+                  <span className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-foreground`}>{tr.analyzingData}</span>
+                  {!compact && <p className="text-xs text-muted-foreground mt-1">{tr.consultingDatabase}</p>}
                 </div>
               </div>
             </div>
