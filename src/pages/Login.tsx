@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mail, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { isDevOrPreview } from '@/lib/env';
 
 type LoginState = 'idle' | 'sending' | 'sent' | 'error';
 
@@ -17,8 +18,15 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Redirect if already authenticated
+  // In dev/preview mode, skip login entirely and go to dashboard
   useEffect(() => {
+    if (isDevOrPreview()) {
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
+      return;
+    }
+    
+    // Redirect if already authenticated
     if (!isLoading && isAuthenticated) {
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
       navigate(from, { replace: true });
