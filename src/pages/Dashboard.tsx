@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useRixRuns } from "@/hooks/useRixRuns";
@@ -27,6 +27,7 @@ import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
+import { trackDashboardFilter, trackCompanyDetailView } from "@/lib/gtmEvents";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -44,9 +45,36 @@ export function Dashboard() {
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
   const { setPageContext } = useChatContext();
 
-  const handleRowClick = (rixRunId: string) => {
+  const handleRowClick = (rixRunId: string, companyName: string, ticker: string, modelName: string) => {
+    trackCompanyDetailView(ticker || 'unknown', companyName || 'unknown', modelName || 'unknown');
     navigate(`/rix-run/${rixRunId}`);
   };
+
+  // GTM tracking handlers for filters
+  const handleAIFilterChange = useCallback((value: AIFilter) => {
+    setAIFilter(value);
+    trackDashboardFilter('ai_model', value);
+  }, []);
+
+  const handleCompanyFilterChange = useCallback((value: string) => {
+    setCompanyFilter(value);
+    trackDashboardFilter('company', value);
+  }, []);
+
+  const handleSectorFilterChange = useCallback((value: string) => {
+    setSectorFilter(value);
+    trackDashboardFilter('sector', value);
+  }, []);
+
+  const handleIbexFamilyFilterChange = useCallback((value: string) => {
+    setIbexFamilyFilter(value);
+    trackDashboardFilter('ibex_family', value);
+  }, []);
+
+  const handleBatchFilterChange = useCallback((value: string) => {
+    setBatchFilter(value);
+    trackDashboardFilter('batch_date', value);
+  }, []);
 
   const formatDateRange = (from?: string, to?: string) => {
     if (!from && !to) return "N/A";
@@ -319,7 +347,7 @@ export function Dashboard() {
               <Button
                 variant={aiFilter === "all" ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setAIFilter("all")}
+                onClick={() => handleAIFilterChange("all")}
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <BarChart3 className="h-4 w-4" />
@@ -328,7 +356,7 @@ export function Dashboard() {
               <Button
                 variant={aiFilter === "ChatGPT" ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setAIFilter("ChatGPT")}
+                onClick={() => handleAIFilterChange("ChatGPT")}
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <ChatGPTIcon className="h-4 w-4" />
@@ -337,7 +365,7 @@ export function Dashboard() {
               <Button
                 variant={aiFilter === "Google Gemini" ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setAIFilter("Google Gemini")}
+                onClick={() => handleAIFilterChange("Google Gemini")}
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <GeminiIcon className="h-4 w-4" />
@@ -346,7 +374,7 @@ export function Dashboard() {
               <Button
                 variant={aiFilter === "Perplexity" ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setAIFilter("Perplexity")}
+                onClick={() => handleAIFilterChange("Perplexity")}
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <PerplexityIcon className="h-4 w-4" />
@@ -355,7 +383,7 @@ export function Dashboard() {
               <Button
                 variant={aiFilter === "Deepseek" ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setAIFilter("Deepseek")}
+                onClick={() => handleAIFilterChange("Deepseek")}
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <DeepseekIcon className="h-4 w-4" />
@@ -409,12 +437,12 @@ export function Dashboard() {
                     <CommandList>
                       <CommandEmpty>No se encontró empresa.</CommandEmpty>
                       <CommandGroup>
-                        <CommandItem value="all" onSelect={() => setCompanyFilter("all")}>
+                        <CommandItem value="all" onSelect={() => handleCompanyFilterChange("all")}>
                           <Check className={cn("mr-2 h-4 w-4", companyFilter === "all" ? "opacity-100" : "opacity-0")} />
                           Todas las empresas
                         </CommandItem>
                         {companies?.map((company) => (
-                          <CommandItem key={company.issuer_id} value={company.issuer_name} onSelect={(value) => setCompanyFilter(value)}>
+                          <CommandItem key={company.issuer_id} value={company.issuer_name} onSelect={(value) => handleCompanyFilterChange(value)}>
                             <Check className={cn("mr-2 h-4 w-4", companyFilter === company.issuer_name ? "opacity-100" : "opacity-0")} />
                             {company.issuer_name} ({company.ticker})
                           </CommandItem>
@@ -442,12 +470,12 @@ export function Dashboard() {
                     <CommandList>
                       <CommandEmpty>No se encontró sector.</CommandEmpty>
                       <CommandGroup>
-                        <CommandItem value="all" onSelect={() => setSectorFilter("all")}>
+                        <CommandItem value="all" onSelect={() => handleSectorFilterChange("all")}>
                           <Check className={cn("mr-2 h-4 w-4", sectorFilter === "all" ? "opacity-100" : "opacity-0")} />
                           Todos los sectores
                         </CommandItem>
                         {sectorCategories?.map((sector) => (
-                          <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => setSectorFilter(value)}>
+                          <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => handleSectorFilterChange(value)}>
                             <Check className={cn("mr-2 h-4 w-4", sectorFilter === sector.sector_category ? "opacity-100" : "opacity-0")} />
                             {sector.sector_category}
                           </CommandItem>
@@ -475,12 +503,12 @@ export function Dashboard() {
                     <CommandList>
                       <CommandEmpty>No se encontró familia IBEX.</CommandEmpty>
                       <CommandGroup>
-                        <CommandItem value="all" onSelect={() => setIbexFamilyFilter("all")}>
+                        <CommandItem value="all" onSelect={() => handleIbexFamilyFilterChange("all")}>
                           <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "all" ? "opacity-100" : "opacity-0")} />
                           Todas las familias IBEX
                         </CommandItem>
                         {ibexFamilyCategories?.map((ibex) => (
-                          <CommandItem key={ibex.ibex_family_code} value={ibex.ibex_family_code} onSelect={(value) => setIbexFamilyFilter(value)}>
+                          <CommandItem key={ibex.ibex_family_code} value={ibex.ibex_family_code} onSelect={(value) => handleIbexFamilyFilterChange(value)}>
                             <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === ibex.ibex_family_code ? "opacity-100" : "opacity-0")} />
                             {ibex.ibex_family_code}
                           </CommandItem>
@@ -495,7 +523,7 @@ export function Dashboard() {
             {/* Batch Filter */}
             <div className="flex items-center gap-1.5">
               <CalendarDays className="h-4 w-4 text-muted-foreground hidden sm:block" />
-              <Select value={batchFilter} onValueChange={setBatchFilter}>
+              <Select value={batchFilter} onValueChange={handleBatchFilterChange}>
                 <SelectTrigger className="w-48 sm:w-64 text-xs sm:text-sm">
                   <SelectValue placeholder="Fecha de análisis" />
                 </SelectTrigger>
@@ -570,7 +598,12 @@ export function Dashboard() {
                       <TableRow
                         key={rixRun.id}
                         className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
-                        onClick={() => handleRowClick(rixRun.id)}
+                        onClick={() => handleRowClick(
+                          rixRun.id, 
+                          rixRun["03_target_name"] || '', 
+                          rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"] || '',
+                          rixRun["02_model_name"] || ''
+                        )}
                       >
                         <TableCell>
                           <div>
@@ -675,7 +708,12 @@ export function Dashboard() {
                   <Card 
                     key={rixRun.id} 
                     className="cursor-pointer shadow-soft hover:shadow-medium border-border/50 transition-all duration-200 hover:-translate-y-0.5"
-                    onClick={() => handleRowClick(rixRun.id)}
+                    onClick={() => handleRowClick(
+                      rixRun.id,
+                      rixRun["03_target_name"] || '',
+                      rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"] || '',
+                      rixRun["02_model_name"] || ''
+                    )}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
