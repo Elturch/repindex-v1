@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight, Clock } from "lucide-react";
+import { ArrowRight, Clock, Calendar } from "lucide-react";
 import { trackNewsClick } from "@/lib/gtmEvents";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface RelatedArticle {
   id: string;
@@ -126,12 +128,18 @@ export function RelatedNews({ currentSlug, category, companies }: RelatedNewsPro
               className="group block p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
               onClick={() => trackNewsClick(article.slug, article.headline, article.category || 'unknown')}
             >
-              {/* Category */}
-              <div className="flex items-center gap-2 mb-2">
+              {/* Category + Date */}
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <Badge variant="secondary" className="text-[10px] font-medium">
                   {catConfig?.emoji} {catConfig?.label || article.category}
                 </Badge>
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                {article.published_at && (
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {format(new Date(article.published_at), "d MMM yyyy", { locale: es })}
+                  </span>
+                )}
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   {article.reading_time_minutes} min
                 </span>

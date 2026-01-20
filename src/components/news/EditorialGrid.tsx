@@ -101,15 +101,27 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
   const isEven = index % 2 === 0;
   const companies = story.companies || [];
+  
+  const formattedDate = story.publishedAt 
+    ? format(new Date(story.publishedAt), "d MMM yyyy", { locale: es })
+    : null;
 
   return (
     <>
       <article className={`grid lg:grid-cols-3 gap-6 pb-8 border-b print:pb-4 print:break-inside-avoid ${isEven ? '' : 'lg:grid-flow-dense'}`}>
         {/* Content */}
         <div className={`lg:col-span-2 space-y-3 ${isEven ? '' : 'lg:col-start-2'}`}>
-          <span className="text-xs font-bold uppercase tracking-widest text-primary">
-            {categoryLabel}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-widest text-primary">
+              {categoryLabel}
+            </span>
+            {formattedDate && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {formattedDate}
+              </span>
+            )}
+          </div>
           
           {story.slug ? (
             <Link 
@@ -201,6 +213,10 @@ function SecondaryStoryCard({ story }: { story: Story }) {
   const [showVerification, setShowVerification] = useState(false);
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
   const companies = story.companies || [];
+  
+  const formattedDate = story.publishedAt 
+    ? format(new Date(story.publishedAt), "d MMM", { locale: es })
+    : null;
 
   return (
     <>
@@ -217,9 +233,16 @@ function SecondaryStoryCard({ story }: { story: Story }) {
           )}
           
           <div className="flex-1">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              {categoryLabel}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                {categoryLabel}
+              </span>
+              {formattedDate && (
+                <span className="text-[10px] text-muted-foreground/70">
+                  · {formattedDate}
+                </span>
+              )}
+            </div>
             
             {story.slug ? (
               <Link 
@@ -298,6 +321,10 @@ function SecondaryStoryCard({ story }: { story: Story }) {
 
 function TertiaryStoryCard({ story }: { story: Story }) {
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
+  
+  const formattedDate = story.publishedAt 
+    ? format(new Date(story.publishedAt), "d MMM", { locale: es })
+    : null;
 
   return (
     <article className="space-y-2 pb-4 border-b print:pb-2 print:break-inside-avoid">
@@ -313,9 +340,14 @@ function TertiaryStoryCard({ story }: { story: Story }) {
         )}
         
         <div className="flex-1 min-w-0">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-            {categoryLabel}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              {categoryLabel}
+            </span>
+            {formattedDate && (
+              <span className="text-[9px] text-muted-foreground/70">· {formattedDate}</span>
+            )}
+          </div>
           {story.slug ? (
             <Link 
               to={`/noticias/${story.slug}`} 
