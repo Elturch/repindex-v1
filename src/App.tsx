@@ -22,6 +22,7 @@ import Login from "./pages/Login";
 import MyDocuments from "./pages/MyDocuments";
 import MyConversations from "./pages/MyConversations";
 import Admin from "./pages/Admin";
+import Methodology from "./pages/Methodology";
 import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
@@ -41,6 +42,7 @@ const App = () => (
                 {/* Public routes */}
                 <Route path="/" element={<Landing />} />
                 <Route path="/noticias" element={<WeeklyNews />} />
+                <Route path="/metodologia" element={<Methodology />} />
                 <Route path="/login" element={<Login />} />
                 
                 {/* Protected routes */}
