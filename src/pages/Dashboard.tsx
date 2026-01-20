@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { useRixRuns } from "@/hooks/useRixRuns";
@@ -6,6 +6,7 @@ import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
 import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AIFilter } from "@/components/layout/Header";
@@ -226,6 +227,39 @@ export function Dashboard() {
       return 0;
     });
   }, [rixRuns, batchFilter]);
+
+  // Progressive loading for better perceived performance
+  const {
+    visibleItems: visibleRixRuns,
+    hasMore,
+    remainingCount,
+    isLoadingMore,
+    loadMore,
+    loadAll,
+  } = useProgressiveLoad(sortedRixRuns, {
+    initialBatchSize: 25,
+    incrementSize: 25,
+    delay: 50,
+  });
+
+  // Intersection observer for infinite scroll
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, loadMore]);
 
   // Update chat context with current filters
   useEffect(() => {
@@ -594,7 +628,7 @@ export function Dashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedRixRuns.map((rixRun) => (
+                    {visibleRixRuns.map((rixRun) => (
                       <TableRow
                         key={rixRun.id}
                         className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
@@ -699,12 +733,38 @@ export function Dashboard() {
                     ))}
                   </TableBody>
                 </Table>
+                
+                {/* Load more indicator for table view */}
+                <div ref={viewMode === "list" ? loadMoreRef : undefined} className="py-4">
+                  {hasMore && (
+                    <div className="flex items-center justify-center gap-3">
+                      {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Cargando más...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground">
+                            Mostrando {visibleRixRuns.length} de {sortedRixRuns.length}
+                          </span>
+                          <Button variant="outline" size="sm" onClick={loadMore}>
+                            Cargar más ({remainingCount})
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={loadAll}>
+                            Cargar todos
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {viewMode === "cards" && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {sortedRixRuns.map((rixRun) => (
+                {visibleRixRuns.map((rixRun) => (
                   <Card 
                     key={rixRun.id} 
                     className="cursor-pointer shadow-soft hover:shadow-medium border-border/50 transition-all duration-200 hover:-translate-y-0.5"
@@ -857,6 +917,35 @@ export function Dashboard() {
                      </CardContent>
                   </Card>
                 ))}
+                
+                {/* Load more indicator for cards view */}
+                <div 
+                  ref={viewMode === "cards" ? loadMoreRef : undefined} 
+                  className="col-span-full py-4"
+                >
+                  {hasMore && (
+                    <div className="flex items-center justify-center gap-3">
+                      {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Cargando más...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground">
+                            Mostrando {visibleRixRuns.length} de {sortedRixRuns.length}
+                          </span>
+                          <Button variant="outline" size="sm" onClick={loadMore}>
+                            Cargar más ({remainingCount})
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={loadAll}>
+                            Cargar todos
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </>
