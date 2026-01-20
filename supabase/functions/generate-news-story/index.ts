@@ -197,12 +197,12 @@ serve(async (req) => {
       throw new Error('No se pudieron obtener datos de la semana');
     }
 
-    // Get API keys
-    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+    // Get Lovable AI API key (has access to Gemini 3 Pro)
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     
-    if (!geminiApiKey) {
-      throw new Error('GOOGLE_GEMINI_API_KEY no configurada');
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY no configurada');
     }
     if (!openAIApiKey) {
       throw new Error('OPENAI_API_KEY no configurada (necesaria para embeddings)');
@@ -235,12 +235,11 @@ ${qualitativeContext}
     console.log(`Full context length: ${fullContext.length} characters`);
 
     // =========================================================================
-    // PASO 3: Generar noticias con Gemini 2.5 Pro
+    // PASO 3: Generar noticias con Gemini 3 Pro via Lovable AI Gateway
     // =========================================================================
-    console.log('Generating premium news with Google Gemini 2.5 Pro...');
+    console.log('Generating premium news with Gemini 3 Pro via Lovable AI Gateway...');
     
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent?key=${geminiApiKey}`,
+    const geminiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -339,7 +338,7 @@ ${qualitativeContext}
       news: newsData,
       storiesCount: (newsData.stories?.length || 0) + 1,
       briefNewsCount: newsData.briefNews?.length || 0,
-      model: 'gemini-2.5-pro-preview-05-06'
+      model: 'gemini-1.5-pro'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
