@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { MiniBarChart, MiniLineChart, MiniPieChart, MiniRadarChart } from "./MiniCharts";
 import { DataVerificationModal } from "./DataVerificationModal";
 import { Button } from "@/components/ui/button";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Calendar, Clock, ArrowRight } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface ChartData {
   type: 'pie' | 'line' | 'radar' | 'bar';
@@ -16,19 +19,51 @@ interface FeaturedStoryProps {
   dataHighlight: string;
   chartData?: ChartData;
   companies?: string[];
+  slug?: string;
+  publishedAt?: string;
 }
 
-export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, companies = [] }: FeaturedStoryProps) {
+export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, companies = [], slug, publishedAt }: FeaturedStoryProps) {
   const [showVerification, setShowVerification] = useState(false);
   const paragraphs = body.split('\n\n');
+  
+  const formattedDate = publishedAt 
+    ? format(new Date(publishedAt), "d 'de' MMMM 'de' yyyy", { locale: es })
+    : null;
+  
+  const readingTime = Math.ceil(body.split(/\s+/).length / 200);
   
   return (
     <>
       <article className="pb-10 border-b-2 border-foreground/20 print:pb-6 print:border-b">
+        {/* Date and reading time */}
+        {(formattedDate || slug) && (
+          <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4 print:mb-2">
+            {formattedDate && (
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-4 w-4" />
+                {formattedDate}
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4" />
+              {readingTime} min de lectura
+            </span>
+          </div>
+        )}
+        
         {/* Main headline */}
-        <h1 className="text-2xl md:text-3xl lg:text-4xl font-serif font-bold leading-[1.1] tracking-tight mb-6 print:text-2xl print:mb-4">
-          {headline}
-        </h1>
+        {slug ? (
+          <Link to={`/noticias/${slug}`} className="group">
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-serif font-bold leading-[1.1] tracking-tight mb-6 print:text-2xl print:mb-4 group-hover:text-primary transition-colors">
+              {headline}
+            </h1>
+          </Link>
+        ) : (
+          <h1 className="text-2xl md:text-3xl lg:text-4xl font-serif font-bold leading-[1.1] tracking-tight mb-6 print:text-2xl print:mb-4">
+            {headline}
+          </h1>
+        )}
         
         <div className="grid lg:grid-cols-3 gap-8 print:gap-4">
           {/* Main content - 2 cols */}
@@ -47,7 +82,20 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
               ))}
             </div>
 
-            <div className="flex items-center justify-end pt-4 print:pt-2">
+            <div className="flex items-center justify-between pt-4 print:pt-2">
+              {slug && (
+                <Button
+                  variant="link"
+                  asChild
+                  size="sm"
+                  className="gap-1 px-0 print:hidden"
+                >
+                  <Link to={`/noticias/${slug}`}>
+                    Leer artículo completo
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
               {companies.length > 0 && (
                 <Button
                   variant="outline"
@@ -56,13 +104,11 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
                   className="gap-2 print:hidden"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Verificar datos en el dashboard
+                  Verificar datos
                 </Button>
               )}
             </div>
           </div>
-
-          {/* Data visualization sidebar - 1 col */}
           <aside className="lg:col-span-1 print:break-inside-avoid">
             <div className="bg-muted/30 rounded-xl p-6 border sticky top-24 print:static print:p-4 print:rounded-lg">
               <div className="text-center mb-4">

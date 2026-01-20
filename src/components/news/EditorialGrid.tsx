@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { MiniBarChart, MiniLineChart, MiniPieChart, MiniRadarChart } from "./MiniCharts";
 import { DataVerificationModal } from "./DataVerificationModal";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Calendar, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface ChartData {
   type: 'pie' | 'line' | 'radar' | 'bar';
@@ -17,6 +20,8 @@ interface Story {
   dataHighlight: string;
   chartData?: ChartData;
   companies?: string[];
+  slug?: string;
+  publishedAt?: string;
 }
 
 interface EditorialGridProps {
