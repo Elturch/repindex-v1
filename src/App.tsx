@@ -19,6 +19,7 @@ import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
 import WeeklyNews from "./pages/WeeklyNews";
 import NewsArticleDetail from "./pages/NewsArticleDetail";
+import NewsArchive from "./pages/NewsArchive";
 import Login from "./pages/Login";
 import MyDocuments from "./pages/MyDocuments";
 import MyConversations from "./pages/MyConversations";
@@ -43,6 +44,7 @@ const App = () => (
                 {/* Public routes */}
                 <Route path="/" element={<Landing />} />
                 <Route path="/noticias" element={<WeeklyNews />} />
+                <Route path="/noticias/archivo" element={<NewsArchive />} />
                 <Route path="/noticias/:slug" element={<NewsArticleDetail />} />
                 <Route path="/metodologia" element={<Methodology />} />
                 <Route path="/login" element={<Login />} />
