@@ -4,15 +4,16 @@ import { Button } from './button';
 import { Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { getChatTranslations, type ChatUITranslations } from '@/lib/chatTranslations';
+import { getChatTranslations, t, type ChatUITranslations } from '@/lib/chatTranslations';
 
 interface MarkdownMessageProps {
   content: string;
   showDownload?: boolean;
   languageCode?: string;
+  roleName?: string; // Role name for PDF header (e.g., "CEO / Alta Dirección")
 }
 
-export function MarkdownMessage({ content, showDownload = false, languageCode = 'es' }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, showDownload = false, languageCode = 'es', roleName }: MarkdownMessageProps) {
   const { toast } = useToast();
   const tr = getChatTranslations(languageCode);
 
@@ -20,7 +21,7 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const fileName = `repindex_respuesta_${timestamp}.html`;
 
-    const htmlContent = generateExportHtml(content, tr, languageCode);
+    const htmlContent = generateExportHtml(content, tr, languageCode, roleName);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -227,7 +228,7 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
 }
 
 // Generate complete HTML document for export with premium RepIndex report styling
-function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string): string {
+function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string): string {
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
   const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
@@ -855,6 +856,7 @@ function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCo
     <div class="divider"></div>
     <div class="report-title">${tr.pdfReportTitle}</div>
     <div class="report-subtitle">${tr.pdfReportSubtitle}</div>
+    ${roleName ? `<div class="report-role" style="margin-top: 12px; padding: 10px 16px; background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(99, 102, 241, 0.15) 100%); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); display: inline-block;"><span style="font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">👤 ${t(tr.pdfPreparedFor, { role: roleName })}</span></div>` : ''}
     <div class="meta">
       <div class="meta-item"><span class="icon">📅</span> ${now}</div>
       <div class="meta-item"><span class="icon">📊</span> ${tr.pdfAnalysis}</div>
