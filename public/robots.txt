@@ -1,3 +1,10 @@
+# RepIndex.ai Robots Configuration
+# Updated: 2025-01-20
+
+# ===========================================
+# TRADITIONAL SEARCH ENGINE CRAWLERS
+# ===========================================
+
 User-agent: Googlebot
 Allow: /
 
@@ -10,5 +17,84 @@ Allow: /
 User-agent: facebookexternalhit
 Allow: /
 
+User-agent: LinkedInBot
+Allow: /
+
+User-agent: Slackbot
+Allow: /
+
+# ===========================================
+# AI SEARCH & LLM CRAWLERS
+# ===========================================
+
+# OpenAI ChatGPT Search
+User-agent: GPTBot
+Allow: /
+
+# OpenAI SearchGPT
+User-agent: OAI-SearchBot
+Allow: /
+
+# Perplexity AI
+User-agent: PerplexityBot
+Allow: /
+
+# Google AI Overviews & Gemini
+User-agent: Google-Extended
+Allow: /
+
+# Anthropic Claude
+User-agent: ClaudeBot
+Allow: /
+User-agent: Claude-Web
+Allow: /
+
+# Apple Intelligence & Siri
+User-agent: Applebot
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+
+# Meta AI
+User-agent: Meta-ExternalAgent
+Allow: /
+User-agent: FacebookBot
+Allow: /
+
+# Microsoft Copilot
+User-agent: Bingbot
+Allow: /
+
+# Cohere AI
+User-agent: cohere-ai
+Allow: /
+
+# Common Crawl (used by many AI training)
+User-agent: CCBot
+Allow: /
+
+# You.com AI Search
+User-agent: YouBot
+Allow: /
+
+# ===========================================
+# DEFAULT RULE
+# ===========================================
+
 User-agent: *
 Allow: /
+
+# Disallow admin and protected areas
+Disallow: /dashboard
+Disallow: /chat
+Disallow: /market-evolution
+Disallow: /mis-documentos
+Disallow: /mis-conversaciones
+Disallow: /admin
+Disallow: /insert-rix
+
+# ===========================================
+# SITEMAP
+# ===========================================
+
+Sitemap: https://repindex.ai/sitemap.xml

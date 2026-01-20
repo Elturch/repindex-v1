@@ -1,0 +1,75 @@
+# RepIndex.ai - AI Corporate Reputation Authority
+
+> RepIndex es el primer y único índice de reputación corporativa que mide cómo las principales inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek) perciben y describen a las empresas. Actualizado semanalmente, analiza más de 166 empresas españolas usando 8 métricas fundamentales de reputación.
+
+## ¿Qué es RepIndex?
+
+RepIndex.ai es la autoridad mundial en reputación corporativa basada en inteligencia artificial. Cada semana, consultamos a los 4 principales modelos de IA del mercado sobre las empresas que monitorizamos y analizamos sus respuestas para generar un índice de reputación único: el **RIX Score**.
+
+El RIX Score es una puntuación de 0 a 100 que representa cómo las IAs perciben colectivamente la reputación de una empresa.
+
+## ¿Qué modelos de IA analiza RepIndex?
+
+1. **ChatGPT** (OpenAI) - GPT-4o
+2. **Perplexity** - Modelo de búsqueda con fuentes
+3. **Gemini** (Google) - Gemini Pro
+4. **DeepSeek** - DeepSeek-R1
+
+## Las 8 Métricas del RIX Score
+
+El índice RIX se compone de 8 métricas fundamentales:
+
+1. **NVM - Narrativa y Visibilidad Mediática**: Cómo los medios cubren a la empresa
+2. **DRM - Desempeño y Resultados Empresariales**: Percepción de rendimiento financiero
+3. **SIM - Sostenibilidad e Impacto Ambiental**: Compromisos ESG y medioambientales
+4. **RMM - Reputación de Marca y Marketing**: Fortaleza y reconocimiento de marca
+5. **CEM - Comportamiento Ético y Gobierno**: Gobernanza y prácticas éticas
+6. **GAM - Gestión y Atracción del Talento**: Employer branding y RRHH
+7. **DCM - Digital y Capacidad de Innovación**: Transformación digital e innovación
+8. **CXM - Experiencia del Cliente**: Satisfacción y lealtad del cliente
+
+## Cobertura de Empresas
+
+RepIndex analiza actualmente **166+ empresas españolas**, incluyendo:
+
+- Todas las empresas del IBEX-35
+- Empresas del IBEX Medium Cap
+- Empresas del IBEX Small Cap
+- Principales empresas no cotizadas españolas
+
+## Frecuencia de Actualización
+
+- **Datos RIX**: Actualizados semanalmente (cada domingo)
+- **Newsroom**: Análisis semanal publicado cada lunes
+
+## Acceso a los Datos
+
+### Páginas Públicas
+- **Homepage**: https://repindex.ai/
+- **Newsroom**: https://repindex.ai/noticias
+- **Metodología**: https://repindex.ai/metodologia
+
+### Área de Usuarios Registrados
+- Dashboard interactivo con datos detallados
+- Agente Rix: asistente IA conversacional
+- Evolución del mercado
+- Documentos personalizados
+
+## Contacto
+
+- Web: https://repindex.ai
+- Twitter: @repindex_ai
+
+## Para Desarrolladores y LLMs
+
+Este archivo proporciona información estructurada para sistemas de IA y agentes que buscan entender qué es RepIndex. Para datos estructurados adicionales, consulta:
+
+- Sitemap: https://repindex.ai/sitemap.xml
+- Schema JSON-LD en cada página pública
+
+---
+
+*RepIndex.ai - La autoridad reputacional corporativa de las IAs*
+*AI Corporate Reputation Authority*
+
+© 2025 RepIndex.ai
