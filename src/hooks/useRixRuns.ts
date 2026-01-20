@@ -81,6 +81,23 @@ export interface RixRun {
   } | null;
 }
 
+// Columnas necesarias para el dashboard (excluye textos largos)
+const DASHBOARD_COLUMNS = `
+  id, created_at, updated_at, batch_execution_date,
+  "01_run_id", "02_model_name", "03_target_name", "04_target_type", "05_ticker",
+  "06_period_from", "07_period_to", "08_tz", "09_rix_score",
+  "17_flags", "18_subscores", "19_weights",
+  "23_nvm_score", "24_nvm_peso", "25_nvm_categoria",
+  "26_drm_score", "27_drm_peso", "28_drm_categoria",
+  "29_sim_score", "30_sim_peso", "31_sim_categoria",
+  "32_rmm_score", "33_rmm_peso", "34_rmm_categoria",
+  "35_cem_score", "36_cem_peso", "37_cem_categoria",
+  "38_gam_score", "39_gam_peso", "40_gam_categoria",
+  "41_dcm_score", "42_dcm_peso", "43_dcm_categoria",
+  "44_cxm_score", "45_cxm_peso", "46_cxm_categoria",
+  "47_fase", "51_rix_score_adjusted", "52_cxm_excluded"
+`.trim();
+
 // Helper function to fetch all records with pagination
 async function fetchAllRixRuns(weeksToLoad?: number) {
   const pageSize = 1000;
@@ -101,7 +118,7 @@ async function fetchAllRixRuns(weeksToLoad?: number) {
     
     let query = supabase
       .from("rix_runs")
-      .select("*")
+      .select(DASHBOARD_COLUMNS)
       .order("batch_execution_date", { ascending: false })
       .order("09_rix_score", { ascending: false });
     
@@ -135,7 +152,7 @@ export function useRixRuns(
   companyFilter?: string,
   sectorFilter?: string,
   ibexFamilyFilter?: string,
-  weeksToLoad: number = 6 // Cargar últimas 6 semanas para asegurar comparación estable
+  weeksToLoad: number = 4 // Cargar últimas 4 semanas (mejora velocidad)
 ) {
   return useQuery({
     queryKey: ["rix-runs", searchQuery, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, weeksToLoad],
