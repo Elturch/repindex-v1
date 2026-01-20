@@ -80,19 +80,16 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
               </p>
             )}
 
-            {/* CTA to read full article */}
-            <div className="flex items-center gap-4 pt-4 print:pt-2">
+            {/* CTA to read full article - subtle */}
+            <div className="flex items-center gap-4 pt-2">
               {slug && (
-                <Button
-                  asChild
-                  size="lg"
-                  className="gap-2"
+                <Link 
+                  to={`/noticias/${slug}`}
+                  className="text-sm text-primary hover:underline inline-flex items-center gap-1 font-medium"
                 >
-                  <Link to={`/noticias/${slug}`}>
-                    Leer artículo completo
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
+                  Continuar leyendo
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
               )}
               {companies.length > 0 && (
                 <Button
