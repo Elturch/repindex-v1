@@ -257,8 +257,11 @@ ${qualitativeContext}
             temperature: 0.8,
             topP: 0.95,
             topK: 40,
-            maxOutputTokens: 32000,
-            responseMimeType: "application/json"
+            maxOutputTokens: 65536,
+            responseMimeType: "application/json",
+            thinkingConfig: {
+              thinkingLevel: "low"
+            }
           },
           safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
