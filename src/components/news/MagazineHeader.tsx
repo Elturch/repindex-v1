@@ -1,7 +1,8 @@
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Printer } from "lucide-react";
+import { Printer, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Link } from "react-router-dom";
 
 interface MagazineHeaderProps {
   weekLabel: string;
@@ -19,21 +20,34 @@ export function MagazineHeader({ weekLabel, publishedAt }: MagazineHeaderProps) 
 
   return (
     <header className="text-center py-8 mb-8 border-b-2 border-foreground print:py-4 print:mb-4 print:border-b">
-      {/* Top bar with date and print button */}
+      {/* Top bar with date, archive and print button */}
       <div className="flex items-center justify-between mb-4 print:mb-2">
         <time className="text-xs uppercase tracking-widest text-muted-foreground">
           {formattedDate}
         </time>
         
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          onClick={handlePrint}
-          className="print:hidden gap-2 text-muted-foreground hover:text-foreground"
-        >
-          <Printer className="h-4 w-4" />
-          <span className="hidden sm:inline">Imprimir</span>
-        </Button>
+        <div className="flex items-center gap-2 print:hidden">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            asChild
+            className="gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <Link to="/noticias/archivo">
+              <Archive className="h-4 w-4" />
+              <span className="hidden sm:inline">Archivo</span>
+            </Link>
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handlePrint}
+            className="gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <Printer className="h-4 w-4" />
+            <span className="hidden sm:inline">Imprimir</span>
+          </Button>
+        </div>
         
         <span className="text-xs uppercase tracking-widest text-muted-foreground">
           Edición Semanal
