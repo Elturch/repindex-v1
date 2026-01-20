@@ -11,6 +11,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { MiniBarChart, MiniLineChart, MiniPieChart, MiniRadarChart } from "@/components/news/MiniCharts";
 import { DataVerificationModal } from "@/components/news/DataVerificationModal";
+import { RelatedNews } from "@/components/news/RelatedNews";
 import { useState, useEffect } from "react";
 import { Json } from "@/integrations/supabase/types";
 import { trackArticleView } from "@/lib/gtmEvents";
@@ -363,6 +364,13 @@ export default function NewsArticleDetail() {
             </div>
           </aside>
         </div>
+
+        {/* Related News Section - SEO Internal Linking */}
+        <RelatedNews 
+          currentSlug={article.slug}
+          category={article.category}
+          companies={article.companies}
+        />
       </article>
 
       {/* Data Verification Modal */}
