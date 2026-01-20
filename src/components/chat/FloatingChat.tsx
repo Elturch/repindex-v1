@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, Minimize2, Maximize2, Trash2, Sparkles, Lock, Bell } from "lucide-react";
+import { Bot, Minimize2, Maximize2, Trash2, Sparkles, Lock, Bell, Star, StarOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,9 @@ export function FloatingChat() {
     setPageContext,
     language,
     setLanguage,
+    isStarred,
+    toggleStar,
+    hasConversation,
   } = useChatContext();
   
   const { isAuthenticated } = useAuth();
@@ -254,6 +257,22 @@ export function FloatingChat() {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
+                    {/* Star/Save button - only show if there's a conversation and user is authenticated */}
+                    {hasConversation && (isAuthenticated || isDevOrPreview()) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={toggleStar}
+                        title={isStarred ? "Quitar de guardadas" : "Guardar conversación"}
+                      >
+                        {isStarred ? (
+                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        ) : (
+                          <StarOff className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                     {notifications.length > 0 && (
                       <Button
                         variant={showNotifications ? "secondary" : "ghost"}

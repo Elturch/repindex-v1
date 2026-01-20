@@ -42,6 +42,10 @@ interface ChatContextType {
   isFloatingOpen: boolean;
   setIsFloatingOpen: (open: boolean) => void;
   loadConversation: (sessionId: string) => void;
+  // Conversation state
+  isStarred: boolean;
+  toggleStar: () => Promise<void>;
+  hasConversation: boolean;
   // Language
   language: ChatLanguage;
   setLanguage: (language: ChatLanguage) => void;
@@ -73,6 +77,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [isStarred, setIsStarred] = useState(false);
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const { toast } = useToast();
   
@@ -141,6 +146,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   useEffect(() => {
     const loadHistory = async () => {
       try {
+        // Load messages
         const { data, error } = await supabase
           .from('chat_intelligence_sessions')
           .select('*')
@@ -156,6 +162,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
             suggestedQuestions: msg.suggested_questions as string[] | undefined,
           }));
           setMessages(loadedMessages);
+          
+          // Get conversation_id from first message if available
+          const convId = data[0].conversation_id;
+          if (convId) {
+            setConversationId(convId);
+            // Fetch starred status
+            const { data: convData } = await supabase
+              .from('user_conversations')
+              .select('is_starred')
+              .eq('id', convId)
+              .single();
+            if (convData) {
+              setIsStarred(convData.is_starred || false);
+            }
+          }
         }
       } catch (error) {
         console.error('Error loading chat history:', error);
@@ -392,6 +413,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const clearConversation = useCallback(() => {
     setMessages([]);
     setSessionId(crypto.randomUUID());
+    setConversationId(null);
+    setIsStarred(false);
     setIsLoadingHistory(false);
     toast({
       title: "Conversación limpiada",
@@ -402,8 +425,51 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const loadConversation = useCallback((newSessionId: string) => {
     setSessionId(newSessionId as `${string}-${string}-${string}-${string}-${string}`);
     setMessages([]);
+    setConversationId(null);
+    setIsStarred(false);
     setIsLoadingHistory(true);
   }, []);
+
+  // Toggle star status for current conversation
+  const toggleStar = useCallback(async () => {
+    if (!conversationId || !currentUserId) {
+      // No conversation saved yet, need to create one first
+      if (messages.length > 0) {
+        const convId = await ensureConversationRecord(messages[0]?.content?.slice(0, 50));
+        if (convId) {
+          const { error } = await supabase
+            .from('user_conversations')
+            .update({ is_starred: true })
+            .eq('id', convId);
+          
+          if (!error) {
+            setIsStarred(true);
+            toast({
+              title: "Conversación guardada",
+              description: "La conversación se ha añadido a tus guardadas",
+            });
+          }
+        }
+      }
+      return;
+    }
+
+    const newStarred = !isStarred;
+    const { error } = await supabase
+      .from('user_conversations')
+      .update({ is_starred: newStarred })
+      .eq('id', conversationId);
+
+    if (!error) {
+      setIsStarred(newStarred);
+      toast({
+        title: newStarred ? "Conversación guardada" : "Conversación desmarcada",
+        description: newStarred 
+          ? "La conversación se ha añadido a tus guardadas" 
+          : "La conversación ya no está guardada",
+      });
+    }
+  }, [conversationId, currentUserId, isStarred, messages, ensureConversationRecord, toast]);
 
   const generateFileName = (extension: string) => {
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm');
@@ -848,6 +914,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
         isFloatingOpen,
         setIsFloatingOpen,
         loadConversation,
+        isStarred,
+        toggleStar,
+        hasConversation: messages.length > 0,
         language,
         setLanguage,
         downloadAsTxt,
