@@ -792,6 +792,83 @@ export type Database = {
           },
         ]
       }
+      news_articles: {
+        Row: {
+          body: string
+          canonical_url: string | null
+          category: string | null
+          chart_data: Json | null
+          companies: string[] | null
+          created_at: string
+          data_highlight: string | null
+          headline: string
+          id: string
+          is_main_story: boolean | null
+          keywords: string[] | null
+          lead: string
+          meta_description: string | null
+          og_image_url: string | null
+          published_at: string | null
+          reading_time_minutes: number | null
+          slug: string
+          status: string | null
+          view_count: number | null
+          week_id: string | null
+        }
+        Insert: {
+          body: string
+          canonical_url?: string | null
+          category?: string | null
+          chart_data?: Json | null
+          companies?: string[] | null
+          created_at?: string
+          data_highlight?: string | null
+          headline: string
+          id?: string
+          is_main_story?: boolean | null
+          keywords?: string[] | null
+          lead: string
+          meta_description?: string | null
+          og_image_url?: string | null
+          published_at?: string | null
+          reading_time_minutes?: number | null
+          slug: string
+          status?: string | null
+          view_count?: number | null
+          week_id?: string | null
+        }
+        Update: {
+          body?: string
+          canonical_url?: string | null
+          category?: string | null
+          chart_data?: Json | null
+          companies?: string[] | null
+          created_at?: string
+          data_highlight?: string | null
+          headline?: string
+          id?: string
+          is_main_story?: boolean | null
+          keywords?: string[] | null
+          lead?: string
+          meta_description?: string | null
+          og_image_url?: string | null
+          published_at?: string | null
+          reading_time_minutes?: number | null
+          slug?: string
+          status?: string | null
+          view_count?: number | null
+          week_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "news_articles_week_id_fkey"
+            columns: ["week_id"]
+            isOneToOne: false
+            referencedRelation: "weekly_news"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_analytics: {
         Row: {
           campaign_id: string | null
@@ -2370,6 +2447,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_article_views: {
+        Args: { article_slug: string }
+        Returns: undefined
       }
       match_documents: {
         Args: { filter?: Json; match_count?: number; query_embedding: string }

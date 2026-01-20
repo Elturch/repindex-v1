@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.sanitize-rix-insert]
 verify_jwt = false
+
+[functions.generate-sitemap]
+verify_jwt = false

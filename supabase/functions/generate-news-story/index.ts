@@ -311,7 +311,8 @@ ${qualitativeContext}
     // PASO 4: Guardar en base de datos
     // =========================================================================
     if (saveToDb || trigger === 'cron') {
-      const { error: insertError } = await supabase
+      // First save to weekly_news
+      const { data: weeklyNewsRecord, error: insertError } = await supabase
         .from('weekly_news')
         .upsert({
           week_start: dataToProcess.weekStart,
@@ -328,12 +329,67 @@ ${qualitativeContext}
           keywords: newsData.keywords,
           status: 'published',
           published_at: new Date().toISOString()
-        }, { onConflict: 'week_start' });
+        }, { onConflict: 'week_start' })
+        .select('id')
+        .single();
 
       if (insertError) {
-        console.error('Error saving to database:', insertError);
+        console.error('Error saving weekly_news:', insertError);
       } else {
-        console.log('✅ News saved to database successfully');
+        console.log('✅ Weekly news saved to database');
+        
+        // Save individual articles to news_articles table
+        const weekId = weeklyNewsRecord?.id;
+        const publishedAt = new Date().toISOString();
+        const weekSuffix = dataToProcess.weekStart;
+        
+        // Save main story
+        if (newsData.mainStory && weekId) {
+          const mainSlug = `${newsData.mainStory.slug || 'destacado'}-${weekSuffix}`;
+          await supabase.from('news_articles').upsert({
+            week_id: weekId,
+            slug: mainSlug,
+            headline: newsData.mainStory.headline,
+            meta_description: newsData.mainStory.metaDescription,
+            lead: newsData.mainStory.lead,
+            body: newsData.mainStory.body,
+            data_highlight: newsData.mainStory.dataHighlight,
+            keywords: newsData.mainStory.keywords,
+            companies: newsData.mainStory.companies,
+            chart_data: newsData.mainStory.chartData,
+            category: 'destacado',
+            is_main_story: true,
+            reading_time_minutes: Math.ceil((newsData.mainStory.body?.split(/\s+/).length || 200) / 200),
+            published_at: publishedAt,
+            status: 'published',
+            canonical_url: `https://repindex.ai/noticias/${mainSlug}`
+          }, { onConflict: 'slug' });
+        }
+        
+        // Save each story
+        for (const story of (newsData.stories || [])) {
+          const storySlug = `${story.slug || story.category || 'noticia'}-${weekSuffix}`;
+          await supabase.from('news_articles').upsert({
+            week_id: weekId,
+            slug: storySlug,
+            headline: story.headline,
+            meta_description: story.metaDescription,
+            lead: story.lead || '',
+            body: story.body,
+            data_highlight: story.dataHighlight,
+            keywords: story.keywords,
+            companies: story.companies,
+            chart_data: story.chartData,
+            category: story.category,
+            is_main_story: false,
+            reading_time_minutes: Math.ceil((story.body?.split(/\s+/).length || 150) / 200),
+            published_at: publishedAt,
+            status: 'published',
+            canonical_url: `https://repindex.ai/noticias/${storySlug}`
+          }, { onConflict: 'slug' });
+        }
+        
+        console.log(`✅ Saved ${(newsData.stories?.length || 0) + 1} individual articles`);
       }
     }
 
