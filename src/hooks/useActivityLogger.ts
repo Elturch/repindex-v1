@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { trackPageView } from '@/lib/gtmEvents';
 
 interface EventData {
   [key: string]: string | number | boolean | null | undefined;
@@ -85,6 +86,15 @@ export function useActivityLogger() {
   }, [location.pathname]);
 
   const logPageView = useCallback(async (path: string) => {
+    // Determine section type based on path
+    const publicPaths = ['/', '/landing', '/noticias', '/login', '/metodologia'];
+    const sectionType = publicPaths.some(p => path === p || path.startsWith('/noticias/')) 
+      ? 'public' as const 
+      : 'private' as const;
+    
+    // Track in GTM
+    trackPageView(path, document.title, sectionType);
+    
     // Log time on previous page if exists
     if (lastPageView.current && lastPageView.current !== path) {
       const timeOnPage = Math.round((Date.now() - pageStartTime.current) / 1000);
