@@ -178,6 +178,7 @@ export function ChatMessages({
                   content={message.content} 
                   showDownload={true}
                   languageCode={languageCode}
+                  roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
                 />
               )}
               
