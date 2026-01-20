@@ -23,6 +23,7 @@ import NewsArchive from "./pages/NewsArchive";
 import Login from "./pages/Login";
 import MyDocuments from "./pages/MyDocuments";
 import MyConversations from "./pages/MyConversations";
+import UserProfile from "./pages/UserProfile";
 import Admin from "./pages/Admin";
 import Methodology from "./pages/Methodology";
 import { isDevOrPreview } from "@/lib/env";
@@ -67,6 +68,9 @@ const App = () => (
                 } />
                 <Route path="/mis-conversaciones" element={
                   <ProtectedRoute><MyConversations /></ProtectedRoute>
+                } />
+                <Route path="/perfil" element={
+                  <ProtectedRoute><UserProfile /></ProtectedRoute>
                 } />
                 
                 {/* Admin routes - only available in Preview/development */}

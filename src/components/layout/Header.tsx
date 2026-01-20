@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu } from "lucide-react";
+import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User } from "lucide-react";
 import repindexLogoText from "@/assets/repindex-logo-text-source.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -156,6 +156,10 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/perfil')}>
+                    <User className="mr-2 h-4 w-4" />
+                    Mi Perfil
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/mis-documentos')}>
                     <FileText className="mr-2 h-4 w-4" />
                     Mis Documentos
