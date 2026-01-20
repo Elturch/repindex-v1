@@ -143,20 +143,14 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
 
           <div className="flex items-center justify-between pt-2">
             {story.slug && (
-              <Button
-                variant="default"
-                asChild
-                size="sm"
-                className="gap-1 print:hidden"
+              <Link 
+                to={`/noticias/${story.slug}`}
+                onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown', true)}
+                className="text-sm text-primary hover:underline inline-flex items-center gap-1 font-medium"
               >
-                <Link 
-                  to={`/noticias/${story.slug}`}
-                  onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown', true)}
-                >
-                  Leer artículo completo
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+                Continuar leyendo
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
             )}
             {companies.length > 0 && (
               <Button
@@ -265,20 +259,14 @@ function SecondaryStoryCard({ story }: { story: Story }) {
           </div>
           <div className="flex items-center gap-1">
             {story.slug && (
-              <Button
-                variant="link"
-                asChild
-                size="sm"
-                className="gap-0.5 text-[10px] px-0 print:hidden"
+              <Link 
+                to={`/noticias/${story.slug}`}
+                onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown')}
+                className="text-xs text-primary hover:underline inline-flex items-center gap-0.5"
               >
-                <Link 
-                  to={`/noticias/${story.slug}`}
-                  onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown')}
-                >
-                  Leer más
-                  <ArrowRight className="h-3 w-3" />
-                </Link>
-              </Button>
+                Leer más
+                <ArrowRight className="h-3 w-3" />
+              </Link>
             )}
             {companies.length > 0 && (
               <Button

@@ -43,23 +43,29 @@ Transformar datos cuantitativos y análisis cualitativos del Vector Store de Rep
 
 ## CATEGORÍAS EDITORIALES (15 historias principales)
 
-1. **HISTORIA PRINCIPAL** (mainStory): La noticia más impactante de la semana. Merece desarrollo extenso (4-5 párrafos).
+IMPORTANTE: El homepage solo muestra titular, lead y primer párrafo. El lector entra al artículo completo para ver el desarrollo. Por tanto:
+- **mainStory**: body de 6-8 párrafos extensos, narrativa profunda
+- **Historias primarias (posiciones 1-3)**: body de 5-6 párrafos
+- **Historias secundarias (posiciones 4-8)**: body de 4-5 párrafos
+- **Historias terciarias (resto)**: body de 3-4 párrafos
 
-2-3. **MOVIMIENTOS ALCISTAS** (2x subidas): Empresas con mayor ascenso. ¿Qué hicieron bien? ¿Qué narrativa construyeron?
+1. **HISTORIA PRINCIPAL** (mainStory): La noticia más impactante de la semana. Desarrollo extenso (6-8 párrafos). Debe sentirse como un artículo de portada de revista financiera.
 
-4-5. **CAÍDAS SIGNIFICATIVAS** (2x bajadas): Descensos notables. ¿Qué falló? ¿Hay patrón? ¿Es reversible?
+2-3. **MOVIMIENTOS ALCISTAS** (2x subidas): Empresas con mayor ascenso. ¿Qué hicieron bien? ¿Qué narrativa construyeron? (5-6 párrafos)
 
-6-7. **FRACTURAS DE PERCEPCIÓN** (2x divergencia): Donde las IAs discrepan radicalmente. ¿Por qué ChatGPT ve algo que DeepSeek no? Esto es oro periodístico.
+4-5. **CAÍDAS SIGNIFICATIVAS** (2x bajadas): Descensos notables. ¿Qué falló? ¿Hay patrón? ¿Es reversible? (5-6 párrafos)
 
-8-9. **CONSENSOS ARTIFICIALES** (2x consenso): Unanimidad entre IAs. ¿Qué hace que todas coincidan? ¿Es buena o mala señal?
+6-7. **FRACTURAS DE PERCEPCIÓN** (2x divergencia): Donde las IAs discrepan radicalmente. ¿Por qué ChatGPT ve algo que DeepSeek no? Esto es oro periodístico. (4-5 párrafos)
 
-10-11. **PANORAMA SECTORIAL** (2x sector): Análisis de industrias. ¿Qué sector lidera? ¿Cuál está en crisis reputacional?
+8-9. **CONSENSOS ARTIFICIALES** (2x consenso): Unanimidad entre IAs. ¿Qué hace que todas coincidan? ¿Es buena o mala señal? (4-5 párrafos)
 
-12-13. **LA MENTE DE LAS MÁQUINAS** (2x modelo_ia): Comportamiento diferenciado de ChatGPT/Perplexity/Gemini/DeepSeek. ¿Quién es más crítico? ¿Más generoso?
+10-11. **PANORAMA SECTORIAL** (2x sector): Análisis de industrias. ¿Qué sector lidera? ¿Cuál está en crisis reputacional? (4-5 párrafos)
 
-14. **PULSO DEL IBEX-35** (1x ibex): El gran índice bajo la lupa de las IAs.
+12-13. **LA MENTE DE LAS MÁQUINAS** (2x modelo_ia): Comportamiento diferenciado de ChatGPT/Perplexity/Gemini/DeepSeek. (4-5 párrafos)
 
-15. **GIGANTES EN LA SOMBRA** (1x privadas): Empresas no cotizadas que merecen atención.
+14. **PULSO DEL IBEX-35** (1x ibex): El gran índice bajo la lupa de las IAs. (4-5 párrafos)
+
+15. **GIGANTES EN LA SOMBRA** (1x privadas): Empresas no cotizadas que merecen atención. (3-4 párrafos)
 
 ## NOTICIAS BREVES (20-25 items)
 
@@ -87,10 +93,16 @@ Usa este contexto cualitativo para:
 Cada noticia debe incluir:
 - **Titular**: 50-60 caracteres, keyword al inicio, gancho emocional
 - **Meta description**: 150-160 caracteres con "RepIndex", acción implícita
-- **Lead**: Responde Qué, Quién, Cuándo con dato concreto
-- **Body**: Desarrollo narrativo de 3-5 párrafos según importancia
+- **Lead**: Responde Qué, Quién, Cuándo con dato concreto (1-2 frases)
+- **Body**: Desarrollo narrativo EXTENSO según categoría (ver arriba). Mínimo 4 párrafos siempre. El body es lo que diferencia el artículo completo del preview de homepage.
 - **Keywords**: 3-5 términos para posicionamiento
 - **slug**: URL amigable
+
+CRÍTICO SOBRE EL BODY:
+- Cada párrafo debe tener 3-5 oraciones completas
+- Incluye citas textuales de las respuestas de las IAs cuando sea relevante
+- Añade análisis, contexto histórico, implicaciones futuras
+- El lector debe sentir que ganó algo al leer el artículo completo vs. solo el preview
 
 Keywords objetivo a distribuir:
 - "reputación corporativa IA"
