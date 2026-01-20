@@ -257,21 +257,34 @@ export function FloatingChat() {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    {/* Star/Save button - only show if there's a conversation and user is authenticated */}
-                    {hasConversation && (isAuthenticated || isDevOrPreview()) && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={toggleStar}
-                        title={isStarred ? "Quitar de guardadas" : "Guardar conversación"}
-                      >
-                        {isStarred ? (
-                          <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        ) : (
-                          <StarOff className="h-4 w-4" />
-                        )}
-                      </Button>
+                    {/* Star/Save button - always visible for authenticated users */}
+                    {(isAuthenticated || isDevOrPreview()) && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={toggleStar}
+                              disabled={!hasConversation}
+                            >
+                              {isStarred ? (
+                                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                              ) : (
+                                <StarOff className={`h-4 w-4 ${!hasConversation ? 'opacity-40' : ''}`} />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {!hasConversation 
+                              ? "Envía un mensaje para poder guardar" 
+                              : isStarred 
+                                ? "Quitar de guardadas" 
+                                : "Guardar conversación"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                     {notifications.length > 0 && (
                       <Button
