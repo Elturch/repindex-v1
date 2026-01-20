@@ -112,9 +112,17 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
             {categoryLabel}
           </span>
           
-          <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl">
-            {story.headline}
-          </h2>
+          {story.slug ? (
+            <Link to={`/noticias/${story.slug}`} className="block group">
+              <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl group-hover:text-primary transition-colors">
+                {story.headline}
+              </h2>
+            </Link>
+          ) : (
+            <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl">
+              {story.headline}
+            </h2>
+          )}
           
           {story.lead && (
             <p className="text-lg text-muted-foreground leading-relaxed font-serif print:text-base">
@@ -131,7 +139,20 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
             ))}
           </div>
 
-          <div className="flex items-center justify-end pt-2">
+          <div className="flex items-center justify-between pt-2">
+            {story.slug && (
+              <Button
+                variant="link"
+                asChild
+                size="sm"
+                className="gap-1 px-0 text-xs print:hidden"
+              >
+                <Link to={`/noticias/${story.slug}`}>
+                  Leer artículo completo
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            )}
             {companies.length > 0 && (
               <Button
                 variant="ghost"
@@ -202,9 +223,17 @@ function SecondaryStoryCard({ story }: { story: Story }) {
               {categoryLabel}
             </span>
             
-            <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base">
-              {story.headline}
-            </h3>
+            {story.slug ? (
+              <Link to={`/noticias/${story.slug}`} className="block group">
+                <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base group-hover:text-primary transition-colors">
+                  {story.headline}
+                </h3>
+              </Link>
+            ) : (
+              <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base">
+                {story.headline}
+              </h3>
+            )}
           </div>
         </div>
 
@@ -224,22 +253,37 @@ function SecondaryStoryCard({ story }: { story: Story }) {
           ))}
         </div>
 
-        {/* Data highlight + verification */}
+        {/* Data highlight + actions */}
         <div className="flex items-center justify-between gap-2">
           <div className="bg-muted/50 rounded px-3 py-2 text-xs border-l-2 border-primary flex-1">
             <p className="font-medium">{story.dataHighlight}</p>
           </div>
-          {companies.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowVerification(true)}
-              className="gap-1 text-[10px] text-muted-foreground hover:text-primary print:hidden"
-            >
-              <CheckCircle className="h-3 w-3" />
-              Verificar
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {story.slug && (
+              <Button
+                variant="link"
+                asChild
+                size="sm"
+                className="gap-0.5 text-[10px] px-0 print:hidden"
+              >
+                <Link to={`/noticias/${story.slug}`}>
+                  Leer más
+                  <ArrowRight className="h-3 w-3" />
+                </Link>
+              </Button>
+            )}
+            {companies.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowVerification(true)}
+                className="gap-1 text-[10px] text-muted-foreground hover:text-primary print:hidden"
+              >
+                <CheckCircle className="h-3 w-3" />
+                Verificar
+              </Button>
+            )}
+          </div>
         </div>
       </article>
 
@@ -277,9 +321,17 @@ function TertiaryStoryCard({ story }: { story: Story }) {
           <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
             {categoryLabel}
           </span>
-          <h4 className="text-sm font-semibold leading-tight print:text-xs">
-            {story.headline}
-          </h4>
+          {story.slug ? (
+            <Link to={`/noticias/${story.slug}`} className="block group">
+              <h4 className="text-sm font-semibold leading-tight print:text-xs group-hover:text-primary transition-colors">
+                {story.headline}
+              </h4>
+            </Link>
+          ) : (
+            <h4 className="text-sm font-semibold leading-tight print:text-xs">
+              {story.headline}
+            </h4>
+          )}
         </div>
       </div>
       
@@ -288,9 +340,16 @@ function TertiaryStoryCard({ story }: { story: Story }) {
         {firstParagraph}
       </p>
       
-      <p className="text-[10px] text-muted-foreground font-medium">
-        {story.dataHighlight}
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-muted-foreground font-medium">
+          {story.dataHighlight}
+        </p>
+        {story.slug && (
+          <Link to={`/noticias/${story.slug}`} className="text-[10px] text-primary hover:underline print:hidden">
+            Leer más →
+          </Link>
+        )}
+      </div>
     </article>
   );
 }

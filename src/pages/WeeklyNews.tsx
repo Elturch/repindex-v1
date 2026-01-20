@@ -432,11 +432,19 @@ export default function WeeklyNews() {
             dataHighlight={generatedNews.mainStory.dataHighlight}
             chartData={generatedNews.mainStory.chartData}
             companies={generatedNews.mainStory.companies}
+            slug={generatedNews.mainStory.slug ? `${generatedNews.mainStory.slug}-${storedNews?.week_start}` : undefined}
+            publishedAt={storedNews?.published_at}
           />
 
           {/* Editorial Grid */}
           <section className="py-8" aria-label="Noticias de la semana">
-            <EditorialGrid stories={generatedNews.stories} />
+            <EditorialGrid 
+              stories={generatedNews.stories.map(story => ({
+                ...story,
+                slug: story.slug ? `${story.slug}-${storedNews?.week_start}` : undefined,
+                publishedAt: storedNews?.published_at
+              }))} 
+            />
           </section>
 
           {/* Brief News Section */}
