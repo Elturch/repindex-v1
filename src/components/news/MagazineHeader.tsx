@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Printer, Archive } from "lucide-react";
+import { Printer, Archive, Rss } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 
@@ -26,12 +26,12 @@ export function MagazineHeader({ weekLabel, publishedAt }: MagazineHeaderProps) 
           {formattedDate}
         </time>
         
-        <div className="flex items-center gap-2 print:hidden">
+        <div className="flex items-center gap-1 sm:gap-2 print:hidden">
           <Button 
             variant="ghost" 
             size="sm" 
             asChild
-            className="gap-2 text-muted-foreground hover:text-foreground"
+            className="gap-1 sm:gap-2 text-muted-foreground hover:text-foreground px-2 sm:px-3"
           >
             <Link to="/noticias/archivo">
               <Archive className="h-4 w-4" />
@@ -41,8 +41,24 @@ export function MagazineHeader({ weekLabel, publishedAt }: MagazineHeaderProps) 
           <Button 
             variant="ghost" 
             size="sm" 
+            asChild
+            className="gap-1 sm:gap-2 text-muted-foreground hover:text-foreground px-2 sm:px-3"
+          >
+            <a 
+              href="https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/rss-feed" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              title="Suscríbete vía RSS"
+            >
+              <Rss className="h-4 w-4" />
+              <span className="hidden sm:inline">RSS</span>
+            </a>
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
             onClick={handlePrint}
-            className="gap-2 text-muted-foreground hover:text-foreground"
+            className="gap-1 sm:gap-2 text-muted-foreground hover:text-foreground px-2 sm:px-3"
           >
             <Printer className="h-4 w-4" />
             <span className="hidden sm:inline">Imprimir</span>
