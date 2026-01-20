@@ -527,7 +527,7 @@ export function Dashboard() {
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" role="combobox" className="w-40 sm:w-48 justify-between text-xs sm:text-sm">
-                    {ibexFamilyFilter === "all" ? "Todos los índices" : ibexFamilyFilter}
+                    {ibexFamilyFilter === "all" ? "Todos los índices" : ibexFamilyFilter === "no_cotizadas" ? "No cotizadas" : ibexFamilyFilter}
                     <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -540,6 +540,10 @@ export function Dashboard() {
                         <CommandItem value="all" onSelect={() => handleIbexFamilyFilterChange("all")}>
                           <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "all" ? "opacity-100" : "opacity-0")} />
                           Todos los índices
+                        </CommandItem>
+                        <CommandItem value="no_cotizadas" onSelect={() => handleIbexFamilyFilterChange("no_cotizadas")}>
+                          <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "no_cotizadas" ? "opacity-100" : "opacity-0")} />
+                          No cotizadas
                         </CommandItem>
                         {ibexFamilyCategories?.map((ibex) => (
                           <CommandItem key={ibex.ibex_family_code} value={ibex.ibex_family_code} onSelect={(value) => handleIbexFamilyFilterChange(value)}>
