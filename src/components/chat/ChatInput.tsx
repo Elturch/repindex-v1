@@ -1,5 +1,5 @@
 import { useState, KeyboardEvent, useEffect, useRef } from "react";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Send, FileText, Mic, MicOff } from "lucide-react";
@@ -74,7 +74,22 @@ export function ChatInput({
   const [speechSupported, setSpeechSupported] = useState(false);
   const [bulletinModeActive, setBulletinModeActive] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tr = getChatTranslations(language.code);
+
+  // Auto-resize textarea as user types
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const maxHeight = compact ? 120 : 150; // Max height in pixels
+      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    }
+  };
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [value]);
 
   useEffect(() => {
     // Check if speech recognition is supported
@@ -148,11 +163,12 @@ export function ChatInput({
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+    // Shift+Enter allows new line (default behavior)
   };
 
   const handleBulletinClick = () => {
@@ -230,15 +246,17 @@ export function ChatInput({
         </TooltipProvider>
       )}
 
-      <Input
+      <Textarea
+        ref={textareaRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={bulletinModeActive ? tr.inputPlaceholderBulletin : (isListening ? tr.inputListening : (placeholder || tr.inputPlaceholder))}
         disabled={isLoading}
+        rows={1}
         className={cn(
-          "flex-1 min-w-0",
-          compact && "text-sm",
+          "flex-1 min-w-0 resize-none overflow-y-auto min-h-[40px]",
+          compact && "text-sm min-h-[36px]",
           isListening && "border-red-500 ring-1 ring-red-500",
           bulletinModeActive && "border-primary ring-1 ring-primary"
         )}
