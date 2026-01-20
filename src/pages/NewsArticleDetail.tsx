@@ -13,6 +13,7 @@ import { MiniBarChart, MiniLineChart, MiniPieChart, MiniRadarChart } from "@/com
 import { DataVerificationModal } from "@/components/news/DataVerificationModal";
 import { useState, useEffect } from "react";
 import { Json } from "@/integrations/supabase/types";
+import { trackArticleView } from "@/lib/gtmEvents";
 
 interface ChartDataType {
   type: 'pie' | 'line' | 'radar' | 'bar';
@@ -91,12 +92,19 @@ export default function NewsArticleDetail() {
     enabled: !!slug,
   });
 
-  // Increment view count on mount
+  // Increment view count and track GTM event on mount
   useEffect(() => {
     if (slug) {
       supabase.rpc("increment_article_views", { article_slug: slug });
     }
   }, [slug]);
+
+  // Track article view in GTM when article loads
+  useEffect(() => {
+    if (article) {
+      trackArticleView(article.slug, article.headline, article.reading_time_minutes);
+    }
+  }, [article]);
 
   if (isLoading) {
     return (

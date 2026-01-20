@@ -6,7 +6,7 @@ import { CheckCircle, Calendar, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-
+import { trackNewsClick } from "@/lib/gtmEvents";
 interface ChartData {
   type: 'pie' | 'line' | 'radar' | 'bar';
   data: any[];
@@ -113,7 +113,11 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
           </span>
           
           {story.slug ? (
-            <Link to={`/noticias/${story.slug}`} className="block group">
+            <Link 
+              to={`/noticias/${story.slug}`} 
+              className="block group"
+              onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown', true)}
+            >
               <h2 className="text-2xl md:text-3xl font-serif font-bold leading-tight print:text-xl group-hover:text-primary transition-colors">
                 {story.headline}
               </h2>
@@ -147,7 +151,10 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
                 size="sm"
                 className="gap-1 px-0 text-xs print:hidden"
               >
-                <Link to={`/noticias/${story.slug}`}>
+                <Link 
+                  to={`/noticias/${story.slug}`}
+                  onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown', true)}
+                >
                   Leer artículo completo
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
@@ -224,7 +231,11 @@ function SecondaryStoryCard({ story }: { story: Story }) {
             </span>
             
             {story.slug ? (
-              <Link to={`/noticias/${story.slug}`} className="block group">
+              <Link 
+                to={`/noticias/${story.slug}`} 
+                className="block group"
+                onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown')}
+              >
                 <h3 className="text-lg font-serif font-semibold leading-tight mt-1 print:text-base group-hover:text-primary transition-colors">
                   {story.headline}
                 </h3>
@@ -266,7 +277,10 @@ function SecondaryStoryCard({ story }: { story: Story }) {
                 size="sm"
                 className="gap-0.5 text-[10px] px-0 print:hidden"
               >
-                <Link to={`/noticias/${story.slug}`}>
+                <Link 
+                  to={`/noticias/${story.slug}`}
+                  onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown')}
+                >
                   Leer más
                   <ArrowRight className="h-3 w-3" />
                 </Link>
@@ -322,7 +336,11 @@ function TertiaryStoryCard({ story }: { story: Story }) {
             {categoryLabel}
           </span>
           {story.slug ? (
-            <Link to={`/noticias/${story.slug}`} className="block group">
+            <Link 
+              to={`/noticias/${story.slug}`} 
+              className="block group"
+              onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown')}
+            >
               <h4 className="text-sm font-semibold leading-tight print:text-xs group-hover:text-primary transition-colors">
                 {story.headline}
               </h4>
@@ -345,7 +363,11 @@ function TertiaryStoryCard({ story }: { story: Story }) {
           {story.dataHighlight}
         </p>
         {story.slug && (
-          <Link to={`/noticias/${story.slug}`} className="text-[10px] text-primary hover:underline print:hidden">
+          <Link 
+            to={`/noticias/${story.slug}`} 
+            className="text-[10px] text-primary hover:underline print:hidden"
+            onClick={() => trackNewsClick(story.slug!, story.headline, story.category || 'unknown')}
+          >
             Leer más →
           </Link>
         )}

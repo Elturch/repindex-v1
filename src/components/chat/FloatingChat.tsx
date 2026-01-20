@@ -16,6 +16,7 @@ import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTo
 import { NotificationsPanel } from "./NotificationsPanel";
 import { isDevOrPreview } from "@/lib/env";
 import { getChatTranslations } from "@/lib/chatTranslations";
+import { trackChatToggle, trackChatMessage, trackChatSuggestionClick } from "@/lib/gtmEvents";
 
 export function FloatingChat() {
   const navigate = useNavigate();
@@ -113,10 +114,26 @@ export function FloatingChat() {
   const handleOpenChat = () => {
     setIsFloatingOpen(true);
     setShowOnboarding(false);
+    trackChatToggle(true);
     // Auto-show notifications panel if there are unread notifications
     if (unreadCount > 0) {
       setShowNotifications(true);
     }
+  };
+
+  const handleCloseChat = () => {
+    setIsFloatingOpen(false);
+    trackChatToggle(false);
+  };
+
+  const handleSendMessage = (message: string, options?: { bulletinMode?: boolean }) => {
+    trackChatMessage(message.length, hasDynamicContext);
+    sendMessage(message, options);
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    trackChatSuggestionClick(suggestion);
+    sendMessage(suggestion);
   };
 
   return (
@@ -264,7 +281,7 @@ export function FloatingChat() {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
-                      onClick={() => setIsFloatingOpen(false)}
+                      onClick={handleCloseChat}
                       title="Minimizar"
                     >
                       <Minimize2 className="h-4 w-4" />
@@ -321,10 +338,10 @@ export function FloatingChat() {
                       messages={messages}
                       isLoading={isLoading}
                       isLoadingHistory={isLoadingHistory}
-                      onSuggestedQuestion={sendMessage}
+                      onSuggestedQuestion={handleSuggestionClick}
                       onEnrichResponse={enrichResponse}
                       starterPrompts={pageContext.suggestions}
-                      onStarterPrompt={sendMessage}
+                      onStarterPrompt={handleSuggestionClick}
                       compact={true}
                       sessionId={sessionId}
                       languageCode={language.code}
@@ -332,7 +349,7 @@ export function FloatingChat() {
                     
                     <div className="mt-3">
                       <ChatInput
-                        onSend={sendMessage}
+                        onSend={handleSendMessage}
                         isLoading={isLoading}
                         compact={true}
                         language={language}
