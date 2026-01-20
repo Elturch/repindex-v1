@@ -1722,10 +1722,25 @@ const Admin: React.FC = () => {
                         {/* Expanded members list */}
                         {isExpanded && (
                           <div className="mt-4 border-t pt-4">
-                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                              <Users className="h-4 w-4 text-muted-foreground" />
-                              Miembros ({companyUsers.length})
-                            </h4>
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-sm font-semibold flex items-center gap-2">
+                                <Users className="h-4 w-4 text-muted-foreground" />
+                                Miembros ({companyUsers.length})
+                              </h4>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="gap-1"
+                                onClick={() => {
+                                  setUserForm(f => ({ ...f, company_id: company.id, is_individual: false }));
+                                  setShowUserForm(true);
+                                  setActiveTab('users');
+                                }}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Añadir usuario
+                              </Button>
+                            </div>
                             {companyUsers.length > 0 ? (
                               <div className="border rounded-lg divide-y">
                                 {companyUsers.map((user) => (
