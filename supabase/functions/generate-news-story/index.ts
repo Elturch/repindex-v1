@@ -7,82 +7,133 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SEO_JOURNALISTIC_PROMPT = `Eres un periodista económico de élite especializado en reputación corporativa e inteligencia artificial, escribiendo para el blog de RepIndex.
+// ============================================================================
+// PROMPT PERIODÍSTICO PREMIUM - NIVEL CEO/DIRCOM
+// ============================================================================
+const PREMIUM_JOURNALISM_PROMPT = `Eres el editor jefe de la sección de Inteligencia Corporativa de RepIndex, el primer índice mundial que mide cómo las inteligencias artificiales perciben a las empresas. Tu audiencia son CEOs, directores de comunicación y directores de marketing de las principales corporaciones españolas.
 
-## MISIÓN
-Generar 14-15 noticias principales + 20-25 noticias breves + 1 INFORME DE CALIDAD DE DATOS semanales, perfectamente optimizados para SEO.
+## TU MISIÓN EDITORIAL
 
-## ESTRUCTURA SEO OBLIGATORIA PARA CADA NOTICIA:
-1. **Titular (H1)**: 50-60 caracteres, keyword principal al inicio, gancho emocional
-2. **Meta description**: 150-160 caracteres, incluir "RepIndex", llamada a la acción
-3. **Lead**: Primer párrafo responde Qué, Quién, Cuándo, con datos concretos
-4. **Body**: 2-3 párrafos con análisis, contexto y citas de datos
-5. **Keywords**: 3-5 términos relevantes para posicionamiento
+Transformar datos cuantitativos y análisis cualitativos del Vector Store de RepIndex en narrativas periodísticas de élite que:
+- Descubran "la historia detrás del dato"
+- Conecten tendencias con implicaciones estratégicas
+- Utilicen lenguaje que combine rigor analítico con elegancia narrativa
+- Posicionen RepIndex como la autoridad indiscutible en reputación corporativa basada en IA
 
-## CATEGORÍAS OBLIGATORIAS (cubrir todas):
-- 1x HEADLINE: Historia principal más impactante
-- 2x SUBIDAS: Empresas con mayor incremento RIX
-- 2x BAJADAS: Empresas con mayor caída RIX  
-- 2x DIVERGENCIA: Donde las IAs más discrepan
-- 2x CONSENSO: Donde todas las IAs coinciden
-- 2x SECTOR: Análisis por industria
-- 2x MODELO_IA: Comportamiento de ChatGPT/Perplexity/Gemini/DeepSeek
-- 1x IBEX: Ranking y movimientos del IBEX-35
-- 1x PRIVADAS: Empresas no cotizadas destacadas
+## ESTILO NARRATIVO PREMIUM
 
-## ESTILO PERIODÍSTICO:
-- Titulares provocativos pero basados en datos
-- Preguntas retóricas que enganchen
-- Metáforas: "guerra de percepciones", "montaña rusa reputacional"
-- Mencionar SIEMPRE "RepIndex" o "índice RepIndex" en cada noticia
-- Asociar RepIndex con las marcas del panel
-- Datos concretos en cada párrafo
-- Cerrar con reflexión o pregunta abierta
+### Técnicas de escritura obligatorias:
+1. **Apertura gancho**: Cada noticia abre con una revelación, una paradoja o una pregunta provocadora
+2. **Narrativa de tensión**: Construye arcos narrativos que mantienen el interés (conflicto → desarrollo → resolución/reflexión)
+3. **Datos como personajes**: Los números cuentan historias, no solo informan
+4. **Metáforas estratégicas**: "guerra de percepciones", "montaña rusa reputacional", "el termómetro de las IAs", "la batalla por el relato"
+5. **Cierre memorable**: Termina con reflexión estratégica, pregunta abierta o implicación futura
 
-## KEYWORDS OBJETIVO:
-- "reputación corporativa"
-- "inteligencia artificial empresas"
+### Vocabulario de élite:
+- "percepción algorítmica" en lugar de "score"
+- "divergencia narrativa" en lugar de "diferencia"
+- "consenso artificial" en lugar de "acuerdo entre IAs"
+- "arquitectura reputacional" en lugar de "reputación"
+- "pulso corporativo" en lugar de "ranking"
+
+### Estructura de párrafos:
+- Lead: 1-2 frases impactantes con el dato clave
+- Desarrollo: 2-3 párrafos que exploran el "por qué" y el "qué significa"
+- Cierre: Implicación estratégica o pregunta para el lector
+
+## CATEGORÍAS EDITORIALES (15 historias principales)
+
+1. **HISTORIA PRINCIPAL** (mainStory): La noticia más impactante de la semana. Merece desarrollo extenso (4-5 párrafos).
+
+2-3. **MOVIMIENTOS ALCISTAS** (2x subidas): Empresas con mayor ascenso. ¿Qué hicieron bien? ¿Qué narrativa construyeron?
+
+4-5. **CAÍDAS SIGNIFICATIVAS** (2x bajadas): Descensos notables. ¿Qué falló? ¿Hay patrón? ¿Es reversible?
+
+6-7. **FRACTURAS DE PERCEPCIÓN** (2x divergencia): Donde las IAs discrepan radicalmente. ¿Por qué ChatGPT ve algo que DeepSeek no? Esto es oro periodístico.
+
+8-9. **CONSENSOS ARTIFICIALES** (2x consenso): Unanimidad entre IAs. ¿Qué hace que todas coincidan? ¿Es buena o mala señal?
+
+10-11. **PANORAMA SECTORIAL** (2x sector): Análisis de industrias. ¿Qué sector lidera? ¿Cuál está en crisis reputacional?
+
+12-13. **LA MENTE DE LAS MÁQUINAS** (2x modelo_ia): Comportamiento diferenciado de ChatGPT/Perplexity/Gemini/DeepSeek. ¿Quién es más crítico? ¿Más generoso?
+
+14. **PULSO DEL IBEX-35** (1x ibex): El gran índice bajo la lupa de las IAs.
+
+15. **GIGANTES EN LA SOMBRA** (1x privadas): Empresas no cotizadas que merecen atención.
+
+## NOTICIAS BREVES (20-25 items)
+
+Menciones concisas para empresas que merecen visibilidad pero no artículo completo:
+- Frase de 12-18 palabras que captura la esencia
+- Tono variado: celebratorio, de alerta, curioso, analítico
+- Cubrir diversidad: IBEX, cotizadas menores, privadas
+
+## CONTEXTO CUALITATIVO DEL VECTOR STORE
+
+IMPORTANTE: Te proporcionaré fragmentos del Vector Store con:
+- Resúmenes analíticos de cada empresa
+- Explicaciones detalladas de métricas
+- Respuestas brutas de las IAs (ChatGPT, Perplexity, Gemini, DeepSeek)
+- Puntos clave identificados
+
+Usa este contexto cualitativo para:
+- Entender el "por qué" detrás de los números
+- Citar insights específicos de las IAs
+- Identificar patrones narrativos que los datos cuantitativos no revelan
+- Construir historias con profundidad periodística
+
+## OPTIMIZACIÓN SEO/AISO OBLIGATORIA
+
+Cada noticia debe incluir:
+- **Titular**: 50-60 caracteres, keyword al inicio, gancho emocional
+- **Meta description**: 150-160 caracteres con "RepIndex", acción implícita
+- **Lead**: Responde Qué, Quién, Cuándo con dato concreto
+- **Body**: Desarrollo narrativo de 3-5 párrafos según importancia
+- **Keywords**: 3-5 términos para posicionamiento
+- **slug**: URL amigable
+
+Keywords objetivo a distribuir:
+- "reputación corporativa IA"
 - "RepIndex"
-- "IBEX-35 reputación"
-- "[Nombre empresa] reputación IA"
-- "análisis IA empresas españolas"
+- "percepción artificial empresas"
+- "[Nombre empresa] reputación"
+- "IBEX-35 inteligencia artificial"
 
-## FORMATO JSON ESTRICTO:
+## FORMATO JSON DE SALIDA
+
 {
   "weekLabel": "Semana del X al Y de Mes 2025",
-  "metaTitle": "Noticias RepIndex Semana X-Y Mes 2025 | Reputación Corporativa IA",
-  "metaDescription": "Descubre cómo las IAs evalúan a las empresas españolas esta semana. RepIndex analiza [dato destacado]. Ranking IBEX-35 y más.",
-  "keywords": ["repindex", "reputación corporativa", "ibex-35", "ia empresas"],
+  "metaTitle": "RepIndex Semanal: [Gancho principal] | Reputación Corporativa IA",
+  "metaDescription": "Descubre [revelación clave]. RepIndex analiza cómo las IAs perciben a las empresas españolas esta semana.",
+  "keywords": ["repindex", "reputación corporativa", "inteligencia artificial", "empresas españolas"],
   "mainStory": {
-    "slug": "titular-seo-friendly",
-    "headline": "Titular impactante de máximo 60 caracteres",
-    "metaDescription": "Meta description de 150-160 caracteres con RepIndex",
-    "lead": "Primer párrafo con datos clave, respondiendo qué-quién-cuándo",
-    "body": "Desarrollo analítico en 2-3 párrafos",
-    "dataHighlight": "Dato clave para destacar visualmente",
+    "slug": "titular-seo-optimizado",
+    "headline": "Titular impactante máx 60 chars",
+    "metaDescription": "Meta 150-160 chars con RepIndex",
+    "lead": "Párrafo de apertura con el dato clave y gancho",
+    "body": "Desarrollo narrativo extenso (3-5 párrafos). Usa el contexto cualitativo para profundidad.",
+    "dataHighlight": "El dato más visual/impactante",
     "keywords": ["keyword1", "keyword2", "keyword3"],
-    "companies": ["empresas mencionadas en la noticia principal"],
+    "companies": ["Empresa1", "Empresa2"],
     "chartData": {
-      "type": "pie|line|radar|bar",
-      "data": [{"name": "Etiqueta", "value": 65}]
+      "type": "bar|line|pie|radar",
+      "data": [{"name": "Label", "value": 75}]
     }
   },
   "stories": [
     {
       "category": "subidas|bajadas|divergencia|consenso|sector|modelo_ia|ibex|privadas",
-      "slug": "url-seo-friendly",
-      "headline": "Titular SEO optimizado",
-      "metaDescription": "Meta description con RepIndex",
-      "lead": "Lead con datos concretos",
-      "body": "Desarrollo periodístico",
+      "slug": "url-seo",
+      "headline": "Titular optimizado",
+      "metaDescription": "Meta con RepIndex",
+      "lead": "Lead con dato",
+      "body": "Desarrollo narrativo (2-4 párrafos)",
       "dataHighlight": "Dato clave",
       "keywords": ["keywords"],
-      "companies": ["empresas mencionadas - OBLIGATORIO para verificación de datos"],
+      "companies": ["empresas mencionadas"],
       "chartData": {
-        "type": "pie|line|radar|bar",
-        "data": [
-          {"name": "Etiqueta relacionada con la noticia", "value": 65}
-        ]
+        "type": "bar|line|pie",
+        "data": [{"name": "Label", "value": 70}]
       }
     }
   ],
@@ -90,100 +141,37 @@ Generar 14-15 noticias principales + 20-25 noticias breves + 1 INFORME DE CALIDA
     {
       "company": "Nombre Empresa",
       "ticker": "TICK",
-      "headline": "Frase breve de 10-15 palabras sobre la empresa esta semana",
+      "headline": "Frase periodística de 12-18 palabras",
       "score": 65,
       "change": 3,
       "category": "subida|bajada|estable|divergencia"
     }
   ],
   "dataQualityReport": {
-    "headline": "Calidad de Datos: Estado de las IAs esta semana",
-    "summary": "Resumen ejecutivo de 2-3 frases sobre la cobertura y calidad de datos",
-    "totalCompanies": 153,
+    "headline": "Radiografía de Datos: El Estado del Ecosistema IA",
+    "summary": "Análisis ejecutivo de cobertura y calidad (2-3 frases elegantes)",
+    "totalCompanies": 166,
     "modelCoverage": [
-      {"model": "ChatGPT", "companies": 145, "status": "ok|warning|error", "note": "Explicación breve si hay problemas"},
-      {"model": "Perplexity", "companies": 96, "status": "warning", "note": "Menor cobertura debido a timeouts"},
-      {"model": "Gemini", "companies": 149, "status": "ok", "note": ""},
-      {"model": "DeepSeek", "companies": 141, "status": "ok", "note": ""}
+      {"model": "ChatGPT", "companies": 160, "status": "ok|warning|error", "note": ""},
+      {"model": "Perplexity", "companies": 155, "status": "ok", "note": ""},
+      {"model": "Gemini", "companies": 162, "status": "ok", "note": ""},
+      {"model": "DeepSeek", "companies": 158, "status": "ok", "note": ""}
     ],
-    "issues": ["Lista de problemas detectados esta semana"],
-    "recommendations": ["Recomendaciones de interpretación para el lector"]
+    "issues": ["Problemas detectados si los hay"],
+    "recommendations": ["Recomendaciones de interpretación"]
   }
 }
 
-## INFORME DE CALIDAD DE DATOS (OBLIGATORIO):
-El "dataQualityReport" es una sección OBLIGATORIA que explica la calidad de los datos:
+## INSTRUCCIONES CRÍTICAS
 
-1. **Cobertura por modelo**: Indica cuántas empresas ha analizado cada IA (ChatGPT, Perplexity, Gemini, DeepSeek)
-2. **Estado (status)**:
-   - "ok": >=140 empresas analizadas correctamente
-   - "warning": 100-139 empresas (cobertura incompleta)
-   - "error": <100 empresas (problema grave)
-3. **Explicación de problemas**: Si un modelo tiene menor cobertura, explicar posibles causas:
-   - Timeouts de API
-   - Respuestas inválidas
-   - Problemas de conexión
-   - Limitaciones del modelo
-4. **Impacto en los datos**: Explicar cómo afecta a los análisis (ej: "Los rankings de X modelo pueden no ser representativos")
-
-IMPORTANTE: 
-- Genera EXACTAMENTE 14 historias principales adicionales (15 total con mainStory)
-- Genera EXACTAMENTE 20-25 noticias breves (briefNews) cubriendo empresas que merecen mención pero no artículo completo
-- Genera SIEMPRE el dataQualityReport con datos precisos de la sección de modelos
-- Las noticias breves deben ser variadas: subidas, bajadas, empresas estables, casos curiosos
-- Incluir empresas del IBEX-35, otras cotizadas Y empresas privadas en las breves
-
-## GRÁFICOS OBLIGATORIOS - ESTRUCTURA EXACTA:
-Cada noticia DEBE incluir un "chartData" con datos ESPECÍFICOS usando estos formatos:
-
-Para **subidas/bajadas** usa tipo "line" con evolución semanal:
-  "chartData": {
-    "type": "line",
-    "data": [
-      {"name": "Sem -3", "value": 58},
-      {"name": "Sem -2", "value": 61},
-      {"name": "Sem -1", "value": 64},
-      {"name": "Actual", "value": 72}
-    ]
-  }
-
-Para **divergencia** usa tipo "bar" horizontal comparando modelos:
-  "chartData": {
-    "type": "bar",
-    "data": [
-      {"name": "ChatGPT", "value": 75},
-      {"name": "Perplexity", "value": 68},
-      {"name": "Gemini", "value": 82},
-      {"name": "DeepSeek", "value": 59}
-    ]
-  }
-
-Para **consenso** usa tipo "pie" mostrando distribución:
-  "chartData": {
-    "type": "pie", 
-    "data": [
-      {"name": "Alto (>70)", "value": 3},
-      {"name": "Medio (50-70)", "value": 1},
-      {"name": "Bajo (<50)", "value": 0}
-    ]
-  }
-
-Para **sector/ibex/privadas/modelo_ia** usa tipo "bar" con TOP empresas:
-  "chartData": {
-    "type": "bar",
-    "data": [
-      {"name": "Inditex", "value": 78},
-      {"name": "Iberdrola", "value": 74},
-      {"name": "BBVA", "value": 71},
-      {"name": "Telefónica", "value": 65},
-      {"name": "Repsol", "value": 62}
-    ]
-  }
-
-REGLAS DE DATOS:
-- Los valores RIX van de 0 a 100 (nunca fuera de este rango)
-- Los nombres en el gráfico deben coincidir con empresas/modelos mencionados en el texto
-- Usa datos REALES del contexto proporcionado, NO inventes números`;
+1. GENERA EXACTAMENTE 14 historias adicionales (15 total con mainStory)
+2. GENERA EXACTAMENTE 20-25 noticias breves variadas
+3. USA EL CONTEXTO CUALITATIVO del Vector Store para narrativa rica
+4. CADA gráfico debe tener datos REALES del contexto, valores RIX 0-100
+5. NUNCA inventes datos que no estén en el contexto proporcionado
+6. El tono es sofisticado pero accesible: un CEO debe sentirse inteligente leyéndolo
+7. Menciona "RepIndex" o "índice RepIndex" en cada noticia principal
+8. Los titulares deben ser irresistibles: provocan curiosidad, prometen insight`;
 
 
 serve(async (req) => {
@@ -194,15 +182,14 @@ serve(async (req) => {
   try {
     const { weekData, saveToDb = false, trigger } = await req.json();
     
-    // If triggered by CRON, fetch data ourselves
-    let dataToProcess = weekData;
-    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Fetch data if CRON trigger or no data provided
+    let dataToProcess = weekData;
     if (trigger === 'cron' || !weekData) {
-      console.log('CRON trigger: fetching weekly data...');
+      console.log('Fetching weekly data for news generation...');
       dataToProcess = await fetchWeeklyData(supabase);
     }
 
@@ -210,61 +197,116 @@ serve(async (req) => {
       throw new Error('No se pudieron obtener datos de la semana');
     }
 
+    // Get API keys
+    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    
+    if (!geminiApiKey) {
+      throw new Error('GOOGLE_GEMINI_API_KEY no configurada');
+    }
     if (!openAIApiKey) {
-      throw new Error('OPENAI_API_KEY no configurada');
+      throw new Error('OPENAI_API_KEY no configurada (necesaria para embeddings)');
     }
 
-    // Build comprehensive context
-    const dataContext = buildDataContext(dataToProcess);
+    // =========================================================================
+    // PASO 1: Obtener contexto cualitativo del Vector Store
+    // =========================================================================
+    console.log('Fetching qualitative context from Vector Store...');
+    const qualitativeContext = await fetchVectorStoreContext(
+      supabase, 
+      openAIApiKey, 
+      dataToProcess
+    );
+    console.log(`Vector Store context: ${qualitativeContext.length} characters`);
 
-    console.log('Generating 15 SEO-optimized news stories with OpenAI o3...');
-    console.log('Data context length:', dataContext.length);
+    // =========================================================================
+    // PASO 2: Construir contexto completo (cuantitativo + cualitativo)
+    // =========================================================================
+    const quantitativeContext = buildQuantitativeContext(dataToProcess);
+    const fullContext = `
+${quantitativeContext}
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: SEO_JOURNALISTIC_PROMPT },
-          { role: 'user', content: `Analiza estos datos del RepIndex y genera las 15 noticias SEO-optimizadas de la semana:\n\n${dataContext}` }
-        ],
-        max_tokens: 16000,
-      }),
-    });
+## CONTEXTO CUALITATIVO DEL VECTOR STORE
+(Análisis, resúmenes y respuestas de las IAs sobre las empresas destacadas)
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+${qualitativeContext}
+`;
+
+    console.log(`Full context length: ${fullContext.length} characters`);
+
+    // =========================================================================
+    // PASO 3: Generar noticias con Gemini 2.5 Pro
+    // =========================================================================
+    console.log('Generating premium news with Google Gemini 2.5 Pro...');
+    
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-05-06:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ 
+                text: `${PREMIUM_JOURNALISM_PROMPT}\n\n---\n\nANALIZA ESTOS DATOS Y GENERA LAS 15 NOTICIAS PREMIUM DE LA SEMANA:\n\n${fullContext}` 
+              }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.8,
+            topP: 0.95,
+            topK: 40,
+            maxOutputTokens: 32000,
+            responseMimeType: "application/json"
+          },
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+          ]
+        }),
+      }
+    );
+
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text();
+      console.error('Gemini API error:', geminiResponse.status, errorText);
+      throw new Error(`Gemini API error: ${geminiResponse.status} - ${errorText.substring(0, 200)}`);
     }
 
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content;
+    const geminiData = await geminiResponse.json();
+    const content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!content) {
-      throw new Error('No content in OpenAI response');
+      console.error('Empty Gemini response:', JSON.stringify(geminiData).substring(0, 500));
+      throw new Error('No content in Gemini response');
     }
 
     // Parse JSON from response
     let newsData;
     try {
-      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || 
-                       content.match(/```\s*([\s\S]*?)\s*```/) ||
-                       [null, content];
-      newsData = JSON.parse(jsonMatch[1] || content);
-    } catch (parseError) {
-      console.error('Failed to parse JSON response:', content.substring(0, 500));
-      throw new Error('Failed to parse news data from AI response');
+      // Try direct parse first (since we requested JSON mime type)
+      newsData = JSON.parse(content);
+    } catch {
+      // Fallback: extract JSON from markdown blocks
+      try {
+        const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || 
+                         content.match(/```\s*([\s\S]*?)\s*```/) ||
+                         [null, content];
+        newsData = JSON.parse(jsonMatch[1] || content);
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', content.substring(0, 1000));
+        throw new Error('Failed to parse news data from Gemini response');
+      }
     }
 
-    console.log(`Successfully generated ${newsData.stories?.length + 1 || 0} main stories + ${newsData.briefNews?.length || 0} brief news`);
+    console.log(`✅ Generated ${newsData.stories?.length + 1 || 0} main stories + ${newsData.briefNews?.length || 0} brief news`);
 
-    // Save to database if requested or CRON trigger
+    // =========================================================================
+    // PASO 4: Guardar en base de datos
+    // =========================================================================
     if (saveToDb || trigger === 'cron') {
       const { error: insertError } = await supabase
         .from('weekly_news')
@@ -272,7 +314,7 @@ serve(async (req) => {
           week_start: dataToProcess.weekStart,
           week_end: dataToProcess.weekEnd,
           week_label: newsData.weekLabel,
-          main_headline: newsData.mainStory.headline,
+          main_headline: newsData.mainStory?.headline,
           main_story: newsData.mainStory,
           stories: newsData.stories,
           brief_news: newsData.briefNews || [],
@@ -288,7 +330,7 @@ serve(async (req) => {
       if (insertError) {
         console.error('Error saving to database:', insertError);
       } else {
-        console.log('News saved to database successfully');
+        console.log('✅ News saved to database successfully');
       }
     }
 
@@ -296,7 +338,8 @@ serve(async (req) => {
       success: true, 
       news: newsData,
       storiesCount: (newsData.stories?.length || 0) + 1,
-      briefNewsCount: newsData.briefNews?.length || 0
+      briefNewsCount: newsData.briefNews?.length || 0,
+      model: 'gemini-2.5-pro-preview-05-06'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -312,6 +355,146 @@ serve(async (req) => {
   }
 });
 
+
+// ============================================================================
+// FETCH VECTOR STORE CONTEXT
+// ============================================================================
+async function fetchVectorStoreContext(
+  supabase: any, 
+  openAIApiKey: string, 
+  weekData: any
+): Promise<string> {
+  const contextParts: string[] = [];
+  
+  // Get top companies to search for qualitative data
+  const companiesToSearch = new Set<string>();
+  
+  // Add companies from top risers
+  weekData.topRisers?.slice(0, 5).forEach((r: any) => {
+    companiesToSearch.add(r.company_name);
+  });
+  
+  // Add companies from top fallers
+  weekData.topFallers?.slice(0, 5).forEach((r: any) => {
+    companiesToSearch.add(r.company_name);
+  });
+  
+  // Add companies with high divergence
+  weekData.divergences?.slice(0, 5).forEach((d: any) => {
+    companiesToSearch.add(d.company_name);
+  });
+  
+  // Add IBEX top companies
+  weekData.ibexTop?.slice(0, 5).forEach((c: any) => {
+    companiesToSearch.add(c.company_name);
+  });
+
+  // For each key company, fetch relevant vector documents
+  for (const companyName of companiesToSearch) {
+    try {
+      // Generate embedding for company search
+      const searchQuery = `${companyName} reputación análisis esta semana`;
+      
+      const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: searchQuery,
+        }),
+      });
+
+      if (!embeddingResponse.ok) continue;
+
+      const embeddingData = await embeddingResponse.json();
+      const embedding = embeddingData.data[0].embedding;
+
+      // Search vector store
+      const { data: docs } = await supabase.rpc('match_documents', {
+        query_embedding: embedding,
+        match_count: 3,
+        filter: {}
+      });
+
+      if (docs?.length) {
+        // Filter for this company and recent data
+        const relevantDocs = docs.filter((d: any) => 
+          d.metadata?.company_name?.toLowerCase().includes(companyName.toLowerCase()) ||
+          d.content?.toLowerCase().includes(companyName.toLowerCase())
+        );
+
+        if (relevantDocs.length > 0) {
+          const doc = relevantDocs[0];
+          const meta = doc.metadata || {};
+          
+          contextParts.push(`
+### ${companyName} (${meta.ticker || 'N/A'})
+**Modelo IA**: ${meta.ai_model || 'N/A'}
+**RIX Score**: ${meta.rix_score || 'N/A'}
+**Sector**: ${meta.sector_category || 'N/A'}
+
+**Análisis Cualitativo**:
+${doc.content?.substring(0, 2000) || 'Sin contenido disponible'}
+
+---`);
+        }
+      }
+    } catch (err) {
+      console.warn(`Error fetching vector context for ${companyName}:`, err);
+    }
+  }
+
+  // Add general market context via broader search
+  try {
+    const generalQuery = "tendencias reputación corporativa empresas españolas análisis semanal";
+    
+    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: generalQuery,
+      }),
+    });
+
+    if (embeddingResponse.ok) {
+      const embeddingData = await embeddingResponse.json();
+      const embedding = embeddingData.data[0].embedding;
+
+      const { data: generalDocs } = await supabase.rpc('match_documents', {
+        query_embedding: embedding,
+        match_count: 10,
+        filter: {}
+      });
+
+      if (generalDocs?.length) {
+        contextParts.push(`
+### CONTEXTO GENERAL DEL MERCADO
+
+${generalDocs.slice(0, 5).map((d: any) => {
+  const meta = d.metadata || {};
+  return `**${meta.company_name || 'Empresa'}** (${meta.ai_model || 'IA'}): ${d.content?.substring(0, 500) || ''}...`;
+}).join('\n\n')}
+`);
+      }
+    }
+  } catch (err) {
+    console.warn('Error fetching general market context:', err);
+  }
+
+  return contextParts.join('\n') || 'Sin contexto cualitativo disponible esta semana.';
+}
+
+
+// ============================================================================
+// FETCH WEEKLY DATA FROM RIX_TRENDS
+// ============================================================================
 async function fetchWeeklyData(supabase: any) {
   // Get the most recent week
   const { data: weeks } = await supabase
@@ -339,6 +522,10 @@ async function fetchWeeklyData(supabase: any) {
   return processWeeklyData(currentData || [], previousData || [], currentWeek);
 }
 
+
+// ============================================================================
+// PROCESS WEEKLY DATA
+// ============================================================================
 function processWeeklyData(currentData: any[], previousData: any[], currentWeek: string) {
   const previousLookup = new Map();
   previousData.forEach(row => {
@@ -458,73 +645,80 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
     weekLabel: `Semana del ${weekDate.getDate()} al ${weekEnd.getDate()} de ${weekDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`,
     weekStart: currentWeek,
     weekEnd: weekEnd.toISOString().split('T')[0],
-    topRisers: sortedChanges.filter(c => c.change > 0).slice(0, 10),
-    topFallers: sortedChanges.filter(c => c.change < 0).slice(-10).reverse(),
-    divergences: sortedDivergences.slice(0, 10),
-    consensuses: sortedDivergences.slice(-10).reverse(),
+    topRisers: sortedChanges.filter(c => c.change > 0).slice(0, 15),
+    topFallers: sortedChanges.filter(c => c.change < 0).slice(-15).reverse(),
+    divergences: sortedDivergences.slice(0, 15),
+    consensuses: sortedDivergences.slice(-15).reverse(),
     modelStats,
-    sectorStats: sectorStats.slice(0, 10),
-    privateCompanies: privateCompanies.slice(0, 10),
-    ibexTop: ibexRanking.slice(0, 10),
-    ibexBottom: ibexRanking.slice(-5).reverse()
+    sectorStats: sectorStats.slice(0, 15),
+    privateCompanies: privateCompanies.slice(0, 15),
+    ibexTop: ibexRanking.slice(0, 15),
+    ibexBottom: ibexRanking.slice(-10).reverse(),
+    totalCompanies: companyScores.size
   };
 }
 
-function buildDataContext(weekData: any) {
+
+// ============================================================================
+// BUILD QUANTITATIVE CONTEXT
+// ============================================================================
+function buildQuantitativeContext(weekData: any) {
   return `
-## DATOS REPINDEX - ${weekData.weekLabel}
+## DATOS CUANTITATIVOS REPINDEX - ${weekData.weekLabel}
+Total empresas analizadas: ${weekData.totalCompanies || '~166'}
 
-### TOP 10 SUBIDAS SEMANALES (mayor incremento RIX):
+### TOP 15 SUBIDAS SEMANALES (mayor incremento RIX):
 ${weekData.topRisers?.map((r: any, i: number) => 
-  `${i+1}. ${r.company_name} (${r.ticker}) vía ${r.model_name}: +${r.change} puntos (de ${r.previous_score} a ${r.current_score})`
+  `${i+1}. **${r.company_name}** (${r.ticker}) vía ${r.model_name}: **+${r.change.toFixed(1)}** puntos (${r.previous_score} → ${r.current_score})`
 ).join('\n') || 'Sin datos'}
 
-### TOP 10 CAÍDAS SEMANALES (mayor descenso RIX):
+### TOP 15 CAÍDAS SEMANALES (mayor descenso RIX):
 ${weekData.topFallers?.map((r: any, i: number) => 
-  `${i+1}. ${r.company_name} (${r.ticker}) vía ${r.model_name}: ${r.change} puntos (de ${r.previous_score} a ${r.current_score})`
+  `${i+1}. **${r.company_name}** (${r.ticker}) vía ${r.model_name}: **${r.change.toFixed(1)}** puntos (${r.previous_score} → ${r.current_score})`
 ).join('\n') || 'Sin datos'}
 
-### TOP 10 DIVERGENCIAS ENTRE IAs (empresas con mayor desacuerdo):
+### TOP 15 DIVERGENCIAS ENTRE IAs (empresas con mayor desacuerdo):
 ${weekData.divergences?.map((d: any, i: number) => 
-  `${i+1}. ${d.company_name} (${d.ticker}): Desviación ${d.std_dev.toFixed(1)} puntos, media ${d.avg_score.toFixed(0)}
-     Scores: ${d.models.map((m: any) => `${m.model}: ${m.score}`).join(', ')}`
+  `${i+1}. **${d.company_name}** (${d.ticker}): Desviación **${d.std_dev.toFixed(1)}** puntos, media ${d.avg_score.toFixed(0)}
+   Scores por modelo: ${d.models.map((m: any) => `${m.model}: ${m.score}`).join(' | ')}`
 ).join('\n') || 'Sin datos'}
 
-### TOP 10 CONSENSOS (empresas donde las IAs más coinciden):
+### TOP 15 CONSENSOS (empresas con mayor acuerdo entre IAs):
 ${weekData.consensuses?.map((c: any, i: number) => 
-  `${i+1}. ${c.company_name} (${c.ticker}): Desviación solo ${c.std_dev.toFixed(1)} puntos, media ${c.avg_score.toFixed(0)}`
+  `${i+1}. **${c.company_name}** (${c.ticker}): Desviación solo **${c.std_dev.toFixed(1)}** puntos, media ${c.avg_score.toFixed(0)}`
 ).join('\n') || 'Sin datos'}
 
 ### COMPORTAMIENTO POR MODELO DE IA:
 ${weekData.modelStats?.map((m: any) => 
-  `- ${m.model_name}: Promedio ${m.avg_score.toFixed(1)} puntos (${m.company_count} empresas analizadas)`
+  `- **${m.model_name}**: Promedio ${m.avg_score.toFixed(1)} puntos (${m.company_count} empresas analizadas)`
 ).join('\n') || 'Sin datos'}
 
 ### ANÁLISIS POR SECTOR:
 ${weekData.sectorStats?.map((s: any) => 
-  `- ${s.sector}: Promedio ${s.avg_score.toFixed(1)} puntos (${s.company_count} empresas)`
+  `- **${s.sector}**: Promedio ${s.avg_score.toFixed(1)} puntos (${s.company_count} empresas)`
 ).join('\n') || 'Sin datos'}
 
-### TOP 10 EMPRESAS PRIVADAS (no cotizadas):
+### TOP 15 EMPRESAS PRIVADAS (no cotizadas):
 ${weekData.privateCompanies?.map((p: any, i: number) => 
-  `${i+1}. ${p.company_name} (${p.ticker}): ${p.avg_score.toFixed(0)} puntos`
+  `${i+1}. **${p.company_name}** (${p.ticker}): ${p.avg_score.toFixed(0)} puntos`
 ).join('\n') || 'Sin datos'}
 
 ### RANKING IBEX-35:
-Top 10:
+**Top 15:**
 ${weekData.ibexTop?.map((c: any, i: number) => 
-  `${i+1}. ${c.company_name} (${c.ticker}): ${c.avg_score.toFixed(0)} puntos`
+  `${i+1}. **${c.company_name}** (${c.ticker}): ${c.avg_score.toFixed(0)} puntos`
 ).join('\n') || 'Sin datos'}
 
-Bottom 5:
+**Bottom 10:**
 ${weekData.ibexBottom?.map((c: any, i: number) => 
-  `${i+1}. ${c.company_name} (${c.ticker}): ${c.avg_score.toFixed(0)} puntos`
+  `${i+1}. **${c.company_name}** (${c.ticker}): ${c.avg_score.toFixed(0)} puntos`
 ).join('\n') || 'Sin datos'}
 
-### CONTEXTO:
-- RepIndex analiza semanalmente la reputación de ~153 empresas españolas
+### CONTEXTO REPINDEX:
+- RepIndex analiza semanalmente la reputación de ~166 empresas españolas
 - 4 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
-- Escala RIX: 0-100 puntos (mayor = mejor reputación)
-- Panel incluye IBEX-35, empresas cotizadas y grandes empresas privadas
+- Escala RIX: 0-100 puntos (mayor = mejor reputación percibida por las IAs)
+- Panel incluye IBEX-35, cotizadas menores y grandes empresas privadas
+- 8 métricas: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM
 `;
 }
