@@ -282,8 +282,9 @@ serve(async (req) => {
         const userName = profile.full_name || profile.email.split('@')[0];
 
         // Send email via Resend with custom template
+        // IMPORTANT: Domain must be verified in Resend Dashboard: https://resend.com/domains
         const { data: emailData, error: emailError } = await resend.emails.send({
-          from: "RepIndex <onboarding@resend.dev>", // Use verified domain when available
+          from: "RepIndex <no-reply@repindex.ai>",
           to: [profile.email],
           subject: "Tu acceso a RepIndex",
           html: generateMagicLinkEmail(userName, magicLink),
