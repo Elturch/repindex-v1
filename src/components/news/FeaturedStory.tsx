@@ -68,10 +68,17 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
         <div className="grid lg:grid-cols-3 gap-8 print:gap-4">
           {/* Main content - 2 cols */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Lead paragraph only - no full body on homepage */}
+            {/* Lead paragraph */}
             <p className="text-xl md:text-2xl text-foreground/90 leading-relaxed font-serif print:text-base">
               {lead}
             </p>
+            
+            {/* First paragraph preview from body */}
+            {body && (
+              <p className="text-base text-foreground/70 leading-relaxed print:text-sm">
+                {body.split('\n\n')[0]}
+              </p>
+            )}
 
             {/* CTA to read full article */}
             <div className="flex items-center gap-4 pt-4 print:pt-2">
