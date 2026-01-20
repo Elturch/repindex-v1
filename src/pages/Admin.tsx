@@ -35,7 +35,9 @@ import {
   Send,
   Bell,
   Megaphone,
-  Activity
+  Activity,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -144,6 +146,7 @@ const Admin: React.FC = () => {
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [savingCompany, setSavingCompany] = useState(false);
+  const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState({
     company_name: '',
     ticker: '',
@@ -1668,41 +1671,99 @@ const Admin: React.FC = () => {
               </Card>
             ) : (
               <div className="space-y-3">
-                {companies.map((company) => (
-                  <Card key={company.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="flex items-center justify-between p-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <Building2 className="h-5 w-5 text-primary" />
+                {companies.map((company) => {
+                  const companyUsers = users.filter(u => u.company_id === company.id);
+                  const isExpanded = expandedCompanyId === company.id;
+                  return (
+                    <Card key={company.id} className="hover:shadow-md transition-shadow">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                              <Building2 className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{company.company_name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {company.contact_email || 'Sin email'}
+                                {company.ticker && ` · ${company.ticker}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={company.is_active ? 'default' : 'secondary'}>
+                              {company.is_active ? 'Activa' : 'Inactiva'}
+                            </Badge>
+                            <Badge variant="outline" className={company.plan_type === 'premium' ? 'border-amber-500 text-amber-600' : company.plan_type === 'enterprise' ? 'border-purple-500 text-purple-600' : ''}>
+                              {company.plan_type}
+                            </Badge>
+                            {company.monthly_fee === 0 && company.plan_type !== 'basic' && (
+                              <Badge variant="outline" className="border-green-500 text-green-600">
+                                <Gift className="h-3 w-3 mr-1" />
+                                Cortesía
+                              </Badge>
+                            )}
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => setExpandedCompanyId(isExpanded ? null : company.id)}
+                              className="gap-1"
+                            >
+                              <Users className="h-4 w-4" />
+                              <span className="text-xs">{companyUsers.length}</span>
+                              {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEditCompany(company)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{company.company_name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {company.contact_email || 'Sin email'}
-                            {company.ticker && ` · ${company.ticker}`}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={company.is_active ? 'default' : 'secondary'}>
-                          {company.is_active ? 'Activa' : 'Inactiva'}
-                        </Badge>
-                        <Badge variant="outline" className={company.plan_type === 'premium' ? 'border-amber-500 text-amber-600' : company.plan_type === 'enterprise' ? 'border-purple-500 text-purple-600' : ''}>
-                          {company.plan_type}
-                        </Badge>
-                        {company.monthly_fee === 0 && company.plan_type !== 'basic' && (
-                          <Badge variant="outline" className="border-green-500 text-green-600">
-                            <Gift className="h-3 w-3 mr-1" />
-                            Cortesía
-                          </Badge>
+                        
+                        {/* Expanded members list */}
+                        {isExpanded && (
+                          <div className="mt-4 border-t pt-4">
+                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                              <Users className="h-4 w-4 text-muted-foreground" />
+                              Miembros ({companyUsers.length})
+                            </h4>
+                            {companyUsers.length > 0 ? (
+                              <div className="border rounded-lg divide-y">
+                                {companyUsers.map((user) => (
+                                  <div key={user.id} className="flex items-center justify-between p-3 hover:bg-muted/30">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                        <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-sm">{user.full_name || 'Sin nombre'}</p>
+                                        <p className="text-xs text-muted-foreground">{user.email}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
+                                        {user.is_active ? 'Activo' : 'Inactivo'}
+                                      </Badge>
+                                      <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button variant="ghost" size="sm" onClick={() => handleSendMagicLink(user.id, user.email)} title="Enviar Magic Link">
+                                        <Mail className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground italic py-3 text-center bg-muted/20 rounded-lg">
+                                Sin usuarios asignados
+                              </p>
+                            )}
+                          </div>
                         )}
-                        <Button variant="ghost" size="sm" onClick={() => openEditCompany(company)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
