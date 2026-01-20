@@ -119,6 +119,7 @@ const MyConversations: React.FC = () => {
     if (loadConversation) {
       loadConversation(conv.session_id);
     }
+    // Navigate to chat and ensure the floating chat opens
     navigate('/chat');
   };
 
