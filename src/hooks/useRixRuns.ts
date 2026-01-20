@@ -168,7 +168,7 @@ export function useRixRuns(
       // Get repindex data to join with rix_runs
       const { data: repindexData, error: repindexError } = await supabase
         .from("repindex_root_issuers")
-        .select("ticker, ibex_family_code, sector_category");
+        .select("ticker, ibex_family_code, sector_category, cotiza_en_bolsa");
 
       if (repindexError) {
         console.error("Error fetching repindex data:", repindexError);
@@ -182,7 +182,8 @@ export function useRixRuns(
           repindexMap.set(item.ticker, {
             ticker: item.ticker,
             ibex_family_code: item.ibex_family_code,
-            sector_category: item.sector_category
+            sector_category: item.sector_category,
+            cotiza_en_bolsa: item.cotiza_en_bolsa
           });
         });
       }
@@ -478,9 +479,16 @@ export function useRixRuns(
       }
 
       if (ibexFamilyFilter && ibexFamilyFilter !== "all") {
-        filteredData = filteredData?.filter(rixRun => 
-          rixRun.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter
-        );
+        if (ibexFamilyFilter === "no_cotizadas") {
+          // Filter non-traded companies
+          filteredData = filteredData?.filter(rixRun => 
+            rixRun.repindex_root_issuers?.cotiza_en_bolsa === false
+          );
+        } else {
+          filteredData = filteredData?.filter(rixRun => 
+            rixRun.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter
+          );
+        }
       }
 
       return filteredData as RixRun[];
