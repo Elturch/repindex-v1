@@ -152,6 +152,37 @@ export default function NewsArticleDetail() {
   // Split body into paragraphs
   const paragraphs = article.body.split('\n\n').filter(p => p.trim());
 
+  // Schema.org BreadcrumbList
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Inicio",
+        "item": "https://repindex.ai"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Noticias",
+        "item": "https://repindex.ai/noticias"
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "name": categoryConfig.label,
+        "item": `https://repindex.ai/noticias?categoria=${article.category || 'destacado'}`
+      },
+      {
+        "@type": "ListItem",
+        "position": 4,
+        "name": article.headline
+      }
+    ]
+  };
+
   // Schema.org NewsArticle
   const newsArticleSchema = {
     "@context": "https://schema.org",
@@ -207,19 +238,64 @@ export default function NewsArticleDetail() {
         <meta name="twitter:title" content={article.headline} />
         <meta name="twitter:description" content={article.meta_description || article.lead} />
         
-        {/* Schema.org */}
+        {/* Schema.org Breadcrumbs */}
+        <script type="application/ld+json">
+          {JSON.stringify(breadcrumbSchema)}
+        </script>
+        
+        {/* Schema.org NewsArticle */}
         <script type="application/ld+json">
           {JSON.stringify(newsArticleSchema)}
         </script>
       </Helmet>
 
       <article className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Breadcrumb */}
-        <nav className="mb-6">
-          <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2">
+        {/* Visual Breadcrumb Navigation */}
+        <nav aria-label="Breadcrumb" className="mb-6">
+          <ol className="flex items-center flex-wrap gap-1 text-sm" itemScope itemType="https://schema.org/BreadcrumbList">
+            <li itemProp="itemListElement" itemScope itemType="https://schema.org/ListItem">
+              <Link 
+                to="/" 
+                itemProp="item"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span itemProp="name">Inicio</span>
+              </Link>
+              <meta itemProp="position" content="1" />
+            </li>
+            <li className="text-muted-foreground/50 mx-1">/</li>
+            <li itemProp="itemListElement" itemScope itemType="https://schema.org/ListItem">
+              <Link 
+                to="/noticias" 
+                itemProp="item"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span itemProp="name">Noticias</span>
+              </Link>
+              <meta itemProp="position" content="2" />
+            </li>
+            <li className="text-muted-foreground/50 mx-1">/</li>
+            <li itemProp="itemListElement" itemScope itemType="https://schema.org/ListItem">
+              <span 
+                className="text-muted-foreground"
+                itemProp="item"
+              >
+                <span itemProp="name">{categoryConfig.label}</span>
+              </span>
+              <meta itemProp="position" content="3" />
+            </li>
+            <li className="text-muted-foreground/50 mx-1">/</li>
+            <li itemProp="itemListElement" itemScope itemType="https://schema.org/ListItem" className="text-foreground font-medium truncate max-w-[200px] sm:max-w-xs">
+              <span itemProp="name">{article.headline}</span>
+              <meta itemProp="position" content="4" />
+            </li>
+          </ol>
+          
+          {/* Back button for mobile */}
+          <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2 mt-2 sm:hidden">
             <Link to="/noticias">
               <ArrowLeft className="h-4 w-4" />
-              Todas las noticias
+              Volver
             </Link>
           </Button>
         </nav>
