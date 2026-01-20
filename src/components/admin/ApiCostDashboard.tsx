@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, DollarSign, Zap, Hash, TrendingUp, RefreshCw, Save, Activity } from 'lucide-react';
+import { Loader2, DollarSign, Zap, Hash, TrendingUp, RefreshCw, Save, Activity, Users, AlertTriangle, Clock, Target } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 
 interface ApiUsageLog {
   id: string;
@@ -35,6 +35,48 @@ interface ApiCostConfig {
   updated_at: string;
 }
 
+interface UserStats {
+  user_id: string | null;
+  email: string;
+  full_name: string | null;
+  total_cost: number;
+  total_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  actions: Record<string, number>;
+  avg_cost_per_call: number;
+  first_call: string;
+  last_call: string;
+}
+
+interface UserStatsSummary {
+  total_authenticated_users: number;
+  anonymous_sessions: number;
+  total_cost: number;
+  avg_cost_per_user: number;
+  top_user: { email: string; cost: number } | null;
+}
+
+interface ActionMetric {
+  action_type: string;
+  total_calls: number;
+  total_cost: number;
+  avg_cost: number;
+  median_cost: number;
+  p95_cost: number;
+  avg_input_tokens: number;
+  avg_output_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+}
+
+interface PeakUsage {
+  hour: string;
+  cost: number;
+  calls: number;
+  tokens: number;
+}
+
 interface DailyStats {
   date: string;
   label: string;
@@ -56,6 +98,11 @@ export const ApiCostDashboard: React.FC = () => {
   const [usageLogs, setUsageLogs] = useState<ApiUsageLog[]>([]);
   const [costConfig, setCostConfig] = useState<ApiCostConfig[]>([]);
   const [editingConfig, setEditingConfig] = useState<Record<string, { input: string; output: string }>>({});
+  const [userStats, setUserStats] = useState<UserStats[]>([]);
+  const [userSummary, setUserSummary] = useState<UserStatsSummary | null>(null);
+  const [actionMetrics, setActionMetrics] = useState<ActionMetric[]>([]);
+  const [peakUsage, setPeakUsage] = useState<PeakUsage | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
 
   // Fetch data
   useEffect(() => {
@@ -65,7 +112,6 @@ export const ApiCostDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Map period to API format
       const periodMap: Record<TimePeriod, string> = {
         'today': '24h',
         '7d': '7d',
@@ -74,14 +120,19 @@ export const ApiCostDashboard: React.FC = () => {
         'all': '90d'
       };
 
-      // Use custom fetch for GET requests with query params
       const baseUrl = `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/admin-api-data`;
       
-      const [logsRes, configRes] = await Promise.all([
+      const [logsRes, configRes, userStatsRes, actionMetricsRes] = await Promise.all([
         fetch(`${baseUrl}/usage-logs?period=${periodMap[period]}`, {
           headers: { 'Content-Type': 'application/json' }
         }),
         fetch(`${baseUrl}/cost-config`, {
+          headers: { 'Content-Type': 'application/json' }
+        }),
+        fetch(`${baseUrl}/user-stats?period=${periodMap[period]}`, {
+          headers: { 'Content-Type': 'application/json' }
+        }),
+        fetch(`${baseUrl}/action-metrics?period=${periodMap[period]}`, {
           headers: { 'Content-Type': 'application/json' }
         })
       ]);
@@ -97,9 +148,15 @@ export const ApiCostDashboard: React.FC = () => {
 
       const logsData = await logsRes.json();
       const configData = await configRes.json();
+      const userStatsData = userStatsRes.ok ? await userStatsRes.json() : { data: { users: [], summary: null } };
+      const actionMetricsData = actionMetricsRes.ok ? await actionMetricsRes.json() : { data: { actions: [], peak_usage: null } };
 
       setUsageLogs(logsData.data || []);
       setCostConfig(configData.data || []);
+      setUserStats(userStatsData.data?.users || []);
+      setUserSummary(userStatsData.data?.summary || null);
+      setActionMetrics(actionMetricsData.data?.actions || []);
+      setPeakUsage(actionMetricsData.data?.peak_usage || null);
 
       // Initialize editing state
       const editState: Record<string, { input: string; output: string }> = {};
@@ -126,7 +183,6 @@ export const ApiCostDashboard: React.FC = () => {
     const totalInputTokens = usageLogs.reduce((sum, log) => sum + (log.input_tokens || 0), 0);
     const totalOutputTokens = usageLogs.reduce((sum, log) => sum + (log.output_tokens || 0), 0);
     
-    // Days in period
     const daysInPeriod = period === 'today' ? 1 : period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 365;
     const avgDailyCost = totalCost / daysInPeriod;
 
@@ -142,8 +198,6 @@ export const ApiCostDashboard: React.FC = () => {
   // Daily breakdown for chart
   const dailyStats = useMemo(() => {
     const dailyMap = new Map<string, DailyStats>();
-    
-    // Generate dates for the period
     const now = new Date();
     const daysToShow = period === 'today' ? 1 : period === '7d' ? 7 : period === '30d' ? 30 : 14;
     
@@ -155,7 +209,6 @@ export const ApiCostDashboard: React.FC = () => {
       dailyMap.set(dateStr, { date: dateStr, label, openai: 0, gemini: 0, total: 0, calls: 0 });
     }
 
-    // Aggregate by day
     usageLogs.forEach(log => {
       const dateStr = log.created_at.split('T')[0];
       const day = dailyMap.get(dateStr);
@@ -222,30 +275,26 @@ export const ApiCostDashboard: React.FC = () => {
       .sort((a, b) => b.value - a.value);
   }, [usageLogs]);
 
-  // Breakdown by action type
-  const actionBreakdown = useMemo(() => {
-    const actionMap = new Map<string, { calls: number; cost: number }>();
+  // User distribution for pie chart
+  const userDistribution = useMemo(() => {
+    if (userStats.length === 0) return [];
     
-    usageLogs.forEach(log => {
-      const action = log.action_type;
-      if (!actionMap.has(action)) {
-        actionMap.set(action, { calls: 0, cost: 0 });
-      }
-      const entry = actionMap.get(action)!;
-      entry.calls++;
-      entry.cost += Number(log.estimated_cost_usd || 0);
-    });
+    const topUsers = userStats.slice(0, 5);
+    const otherCost = userStats.slice(5).reduce((sum, u) => sum + u.total_cost, 0);
+    
+    const distribution = topUsers.map(u => ({
+      name: u.full_name || u.email.split('@')[0] || 'Anónimo',
+      value: u.total_cost,
+    }));
+    
+    if (otherCost > 0) {
+      distribution.push({ name: 'Otros', value: otherCost });
+    }
+    
+    return distribution;
+  }, [userStats]);
 
-    return Array.from(actionMap.entries())
-      .map(([name, data]) => ({
-        name,
-        value: data.cost,
-        calls: data.calls,
-      }))
-      .sort((a, b) => b.value - a.value);
-  }, [usageLogs]);
-
-  // Save cost config via edge function
+  // Save cost config
   const handleSaveConfig = async (configId: string) => {
     setSavingConfig(true);
     try {
@@ -290,6 +339,34 @@ export const ApiCostDashboard: React.FC = () => {
     return tokens.toString();
   };
 
+  // Cost alert thresholds
+  const costAlerts = useMemo(() => {
+    const alerts: { type: 'warning' | 'danger'; message: string }[] = [];
+    
+    // Daily average exceeds threshold
+    if (summaryStats.avgDailyCost > 5) {
+      alerts.push({ type: 'warning', message: `Gasto diario promedio alto: ${formatCost(summaryStats.avgDailyCost)}/día` });
+    }
+    if (summaryStats.avgDailyCost > 10) {
+      alerts.push({ type: 'danger', message: `¡Gasto diario crítico: ${formatCost(summaryStats.avgDailyCost)}/día!` });
+    }
+
+    // Single user consuming >30% of total
+    if (userStats.length > 0 && userSummary) {
+      const topUserPercentage = (userStats[0].total_cost / userSummary.total_cost) * 100;
+      if (topUserPercentage > 30) {
+        alerts.push({ type: 'warning', message: `Usuario ${userStats[0].email} consume ${topUserPercentage.toFixed(1)}% del total` });
+      }
+    }
+
+    // Peak usage detected
+    if (peakUsage && peakUsage.cost > 2) {
+      alerts.push({ type: 'warning', message: `Pico de uso: ${formatCost(peakUsage.cost)} en una hora (${peakUsage.calls} llamadas)` });
+    }
+
+    return alerts;
+  }, [summaryStats, userStats, userSummary, peakUsage]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -304,7 +381,7 @@ export const ApiCostDashboard: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Control de Gastos API</h2>
-          <p className="text-muted-foreground">Monitoriza el consumo de OpenAI y Google Gemini</p>
+          <p className="text-muted-foreground">Monitoriza el consumo de IAs y analiza costes por usuario</p>
         </div>
         <div className="flex items-center gap-4">
           <Select value={period} onValueChange={(v) => setPeriod(v as TimePeriod)}>
@@ -326,268 +403,569 @@ export const ApiCostDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              Gasto Total
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCost(summaryStats.totalCost)}</div>
-            <p className="text-xs text-muted-foreground">
-              ~{formatCost(summaryStats.avgDailyCost)}/día promedio
-            </p>
-          </CardContent>
-        </Card>
+      {/* Alerts */}
+      {costAlerts.length > 0 && (
+        <div className="space-y-2">
+          {costAlerts.map((alert, idx) => (
+            <div
+              key={idx}
+              className={`flex items-center gap-2 p-3 rounded-lg ${
+                alert.type === 'danger' 
+                  ? 'bg-destructive/10 text-destructive border border-destructive/20' 
+                  : 'bg-yellow-500/10 text-yellow-600 border border-yellow-500/20'
+              }`}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              <span className="text-sm font-medium">{alert.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Zap className="h-4 w-4" />
-              Llamadas API
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summaryStats.totalCalls.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              En el período seleccionado
-            </p>
-          </CardContent>
-        </Card>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview">Resumen</TabsTrigger>
+          <TabsTrigger value="users">Por Usuario</TabsTrigger>
+          <TabsTrigger value="actions">Por Acción</TabsTrigger>
+          <TabsTrigger value="config">Configuración</TabsTrigger>
+        </TabsList>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Hash className="h-4 w-4" />
-              Tokens Entrada
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatTokens(summaryStats.totalInputTokens)}</div>
-            <p className="text-xs text-muted-foreground">
-              Prompts enviados
-            </p>
-          </CardContent>
-        </Card>
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Gasto Total
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCost(summaryStats.totalCost)}</div>
+                <p className="text-xs text-muted-foreground">
+                  ~{formatCost(summaryStats.avgDailyCost)}/día promedio
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              Tokens Salida
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatTokens(summaryStats.totalOutputTokens)}</div>
-            <p className="text-xs text-muted-foreground">
-              Respuestas generadas
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Zap className="h-4 w-4" />
+                  Llamadas API
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.totalCalls.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                  {userSummary ? `${userSummary.total_authenticated_users} usuarios autenticados` : 'En el período'}
+                </p>
+              </CardContent>
+            </Card>
 
-      {/* Daily Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            Evolución del Gasto
-          </CardTitle>
-          <CardDescription>Gasto diario por proveedor (USD)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyStats}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="label" className="text-xs" />
-                <YAxis tickFormatter={(v) => `$${v.toFixed(2)}`} className="text-xs" />
-                <Tooltip 
-                  formatter={(value: number) => formatCost(value)}
-                  labelFormatter={(label) => `Fecha: ${label}`}
-                />
-                <Legend />
-                <Bar dataKey="openai" name="OpenAI" fill="#6366f1" stackId="a" />
-                <Bar dataKey="gemini" name="Gemini" fill="#22c55e" stackId="a" />
-              </BarChart>
-            </ResponsiveContainer>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Coste/Usuario
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {userSummary ? formatCost(userSummary.avg_cost_per_user) : '$0.00'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Promedio por usuario activo
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Pico de Uso
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {peakUsage ? formatCost(peakUsage.cost) : '$0.00'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {peakUsage ? `${peakUsage.calls} llamadas en 1h` : 'Sin datos de pico'}
+                </p>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Breakdown Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* By Model Pie Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Distribución por Modelo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={modelBreakdown}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label={({ name, percent }) => `${name.split('/')[1] || name} (${(percent * 100).toFixed(0)}%)`}
-                  >
-                    {modelBreakdown.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => formatCost(value)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+          {/* Daily Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Evolución del Gasto
+              </CardTitle>
+              <CardDescription>Gasto diario por proveedor (USD)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyStats}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="label" className="text-xs" />
+                    <YAxis tickFormatter={(v) => `$${v.toFixed(2)}`} className="text-xs" />
+                    <Tooltip 
+                      formatter={(value: number) => formatCost(value)}
+                      labelFormatter={(label) => `Fecha: ${label}`}
+                    />
+                    <Legend />
+                    <Bar dataKey="openai" name="OpenAI" fill="#6366f1" stackId="a" />
+                    <Bar dataKey="gemini" name="Gemini" fill="#22c55e" stackId="a" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* By Action Type */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Por Tipo de Acción</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={actionBreakdown} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis type="number" tickFormatter={(v) => formatCost(v)} />
-                  <YAxis type="category" dataKey="name" width={100} className="text-xs" />
-                  <Tooltip 
-                    formatter={(value: number, name: string, props: any) => [
-                      `${formatCost(value)} (${props.payload.calls} llamadas)`,
-                      'Coste'
-                    ]}
-                  />
-                  <Bar dataKey="value" fill="#8b5cf6" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          {/* Breakdown Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* By Model Pie Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Distribución por Modelo</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={modelBreakdown}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={({ name, percent }) => `${name.split('/')[1] || name} (${(percent * 100).toFixed(0)}%)`}
+                      >
+                        {modelBreakdown.map((_, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => formatCost(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
 
-      {/* Function Breakdown Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Desglose por Edge Function</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Edge Function</TableHead>
-                <TableHead className="text-right">Llamadas</TableHead>
-                <TableHead className="text-right">Tokens In</TableHead>
-                <TableHead className="text-right">Tokens Out</TableHead>
-                <TableHead className="text-right">Coste</TableHead>
-                <TableHead className="text-right">% Total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {functionBreakdown.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
-                    No hay datos para el período seleccionado
-                  </TableCell>
-                </TableRow>
-              ) : (
-                functionBreakdown.map((func) => (
-                  <TableRow key={func.name}>
-                    <TableCell className="font-medium">{func.name}</TableCell>
-                    <TableCell className="text-right">{func.calls.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">{formatTokens(func.inputTokens)}</TableCell>
-                    <TableCell className="text-right">{formatTokens(func.outputTokens)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCost(func.cost)}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge variant="secondary">{func.percentage.toFixed(1)}%</Badge>
-                    </TableCell>
+            {/* User Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Distribución por Usuario</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  {userDistribution.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={userDistribution}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                        >
+                          {userDistribution.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => formatCost(value)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      No hay datos de usuarios
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Function Breakdown Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Desglose por Edge Function</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Edge Function</TableHead>
+                    <TableHead className="text-right">Llamadas</TableHead>
+                    <TableHead className="text-right">Tokens In</TableHead>
+                    <TableHead className="text-right">Tokens Out</TableHead>
+                    <TableHead className="text-right">Coste</TableHead>
+                    <TableHead className="text-right">% Total</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {functionBreakdown.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No hay datos para el período seleccionado
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    functionBreakdown.map((func) => (
+                      <TableRow key={func.name}>
+                        <TableCell className="font-medium">{func.name}</TableCell>
+                        <TableCell className="text-right">{func.calls.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{formatTokens(func.inputTokens)}</TableCell>
+                        <TableCell className="text-right">{formatTokens(func.outputTokens)}</TableCell>
+                        <TableCell className="text-right font-medium">{formatCost(func.cost)}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary">{func.percentage.toFixed(1)}%</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Cost Configuration */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Configuración de Precios</CardTitle>
-          <CardDescription>Ajusta los precios por millón de tokens para cada modelo</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Proveedor</TableHead>
-                <TableHead>Modelo</TableHead>
-                <TableHead>Input ($/1M tokens)</TableHead>
-                <TableHead>Output ($/1M tokens)</TableHead>
-                <TableHead>Última actualización</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {costConfig.map((config) => (
-                <TableRow key={config.id}>
-                  <TableCell>
-                    <Badge variant={config.provider === 'openai' ? 'default' : 'secondary'}>
-                      {config.provider}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">{config.model}</TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      step="0.001"
-                      value={editingConfig[config.id]?.input || ''}
-                      onChange={(e) => setEditingConfig(prev => ({
-                        ...prev,
-                        [config.id]: { ...prev[config.id], input: e.target.value }
-                      }))}
-                      className="w-24"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      step="0.001"
-                      value={editingConfig[config.id]?.output || ''}
-                      onChange={(e) => setEditingConfig(prev => ({
-                        ...prev,
-                        [config.id]: { ...prev[config.id], output: e.target.value }
-                      }))}
-                      className="w-24"
-                    />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {new Date(config.updated_at).toLocaleDateString('es-ES')}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleSaveConfig(config.id)}
-                      disabled={savingConfig}
-                    >
-                      <Save className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        {/* Users Tab */}
+        <TabsContent value="users" className="space-y-6">
+          {/* User Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Usuarios Autenticados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userSummary?.total_authenticated_users || 0}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Sesiones Anónimas</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{userSummary?.anonymous_sessions || 0}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Coste Medio/Usuario</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCost(userSummary?.avg_cost_per_user || 0)}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Top Usuario</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-bold truncate">{userSummary?.top_user?.email || '-'}</div>
+                <p className="text-xs text-muted-foreground">{formatCost(userSummary?.top_user?.cost || 0)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* User Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Usuarios Más Activos
+              </CardTitle>
+              <CardDescription>Top 50 usuarios por gasto total en el período</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Usuario</TableHead>
+                    <TableHead className="text-right">Llamadas</TableHead>
+                    <TableHead className="text-right">Coste Total</TableHead>
+                    <TableHead className="text-right">Coste/Llamada</TableHead>
+                    <TableHead className="text-right">% del Total</TableHead>
+                    <TableHead>Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {userStats.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No hay datos de usuarios
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    userStats.slice(0, 20).map((user, idx) => {
+                      const percentage = userSummary 
+                        ? (user.total_cost / userSummary.total_cost) * 100 
+                        : 0;
+                      return (
+                        <TableRow key={user.user_id || `anon-${idx}`}>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{user.full_name || user.email}</span>
+                              {user.full_name && (
+                                <span className="text-xs text-muted-foreground">{user.email}</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">{user.total_calls.toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-medium">{formatCost(user.total_cost)}</TableCell>
+                          <TableCell className="text-right">{formatCost(user.avg_cost_per_call)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Progress value={percentage} className="w-16 h-2" />
+                              <span className="text-xs w-12 text-right">{percentage.toFixed(1)}%</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(user.actions).slice(0, 3).map(([action, count]) => (
+                                <Badge key={action} variant="outline" className="text-xs">
+                                  {action}: {count}
+                                </Badge>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Actions Tab */}
+        <TabsContent value="actions" className="space-y-6">
+          {/* Action Metrics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {actionMetrics.slice(0, 3).map((action) => (
+              <Card key={action.action_type}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium capitalize flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    {action.action_type}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Coste medio:</span>
+                      <span className="font-bold">{formatCost(action.avg_cost)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">P95:</span>
+                      <span>{formatCost(action.p95_cost)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total:</span>
+                      <span>{formatCost(action.total_cost)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Llamadas:</span>
+                      <span>{action.total_calls.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Peak Usage Alert */}
+          {peakUsage && (
+            <Card className="border-yellow-500/20 bg-yellow-500/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-yellow-600">
+                  <Clock className="h-5 w-5" />
+                  Pico de Uso Detectado
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-4 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-bold">{peakUsage.hour.split('T')[1]}:00</div>
+                    <div className="text-xs text-muted-foreground">{peakUsage.hour.split('T')[0]}</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{formatCost(peakUsage.cost)}</div>
+                    <div className="text-xs text-muted-foreground">Coste en 1h</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{peakUsage.calls}</div>
+                    <div className="text-xs text-muted-foreground">Llamadas</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{formatTokens(peakUsage.tokens)}</div>
+                    <div className="text-xs text-muted-foreground">Tokens</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Action Details Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Métricas Detalladas por Acción</CardTitle>
+              <CardDescription>Análisis de coste y tokens por tipo de acción</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Acción</TableHead>
+                    <TableHead className="text-right">Llamadas</TableHead>
+                    <TableHead className="text-right">Coste Total</TableHead>
+                    <TableHead className="text-right">Coste Medio</TableHead>
+                    <TableHead className="text-right">Mediana</TableHead>
+                    <TableHead className="text-right">P95</TableHead>
+                    <TableHead className="text-right">Tokens In Avg</TableHead>
+                    <TableHead className="text-right">Tokens Out Avg</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {actionMetrics.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        No hay datos de acciones
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    actionMetrics.map((action) => (
+                      <TableRow key={action.action_type}>
+                        <TableCell className="font-medium capitalize">{action.action_type}</TableCell>
+                        <TableCell className="text-right">{action.total_calls.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-medium">{formatCost(action.total_cost)}</TableCell>
+                        <TableCell className="text-right">{formatCost(action.avg_cost)}</TableCell>
+                        <TableCell className="text-right">{formatCost(action.median_cost)}</TableCell>
+                        <TableCell className="text-right">{formatCost(action.p95_cost)}</TableCell>
+                        <TableCell className="text-right">{formatTokens(Math.round(action.avg_input_tokens))}</TableCell>
+                        <TableCell className="text-right">{formatTokens(Math.round(action.avg_output_tokens))}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Projection Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Proyecciones de Escalabilidad</CardTitle>
+              <CardDescription>Estimación de costes si el uso aumenta</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                  <div className="text-sm text-muted-foreground">Actual (30d)</div>
+                  <div className="text-2xl font-bold mt-1">{formatCost(summaryStats.totalCost)}</div>
+                </div>
+                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                  <div className="text-sm text-muted-foreground">Si uso x2</div>
+                  <div className="text-2xl font-bold mt-1 text-yellow-600">{formatCost(summaryStats.totalCost * 2)}</div>
+                </div>
+                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                  <div className="text-sm text-muted-foreground">Si uso x5</div>
+                  <div className="text-2xl font-bold mt-1 text-orange-600">{formatCost(summaryStats.totalCost * 5)}</div>
+                </div>
+                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                  <div className="text-sm text-muted-foreground">Si uso x10</div>
+                  <div className="text-2xl font-bold mt-1 text-red-600">{formatCost(summaryStats.totalCost * 10)}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Config Tab */}
+        <TabsContent value="config" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuración de Precios</CardTitle>
+              <CardDescription>Ajusta los precios por millón de tokens para cada modelo</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead>Modelo</TableHead>
+                    <TableHead>Input ($/1M tokens)</TableHead>
+                    <TableHead>Output ($/1M tokens)</TableHead>
+                    <TableHead>Última actualización</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {costConfig.map((config) => (
+                    <TableRow key={config.id}>
+                      <TableCell>
+                        <Badge variant={config.provider === 'openai' ? 'default' : 'secondary'}>
+                          {config.provider}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{config.model}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.001"
+                          value={editingConfig[config.id]?.input || ''}
+                          onChange={(e) => setEditingConfig(prev => ({
+                            ...prev,
+                            [config.id]: { ...prev[config.id], input: e.target.value }
+                          }))}
+                          className="w-24"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.001"
+                          value={editingConfig[config.id]?.output || ''}
+                          onChange={(e) => setEditingConfig(prev => ({
+                            ...prev,
+                            [config.id]: { ...prev[config.id], output: e.target.value }
+                          }))}
+                          className="w-24"
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {new Date(config.updated_at).toLocaleDateString('es-ES')}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSaveConfig(config.id)}
+                          disabled={savingConfig}
+                        >
+                          <Save className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
