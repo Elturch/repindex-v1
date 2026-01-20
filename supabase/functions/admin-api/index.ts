@@ -197,6 +197,19 @@ serve(async (req) => {
         );
         
         if (inviteError) {
+          // Handle rate limiting
+          if (inviteError.code === "over_email_send_rate_limit" || inviteError.message?.includes("security purposes")) {
+            return new Response(
+              JSON.stringify({ 
+                error: "Por seguridad, debes esperar 60 segundos entre envíos de email. Inténtalo de nuevo en un momento." 
+              }),
+              { 
+                status: 429, 
+                headers: { ...corsHeaders, "Content-Type": "application/json" } 
+              }
+            );
+          }
+          
           // If user already confirmed, use generateLink + native OTP email
           if (inviteError.code === "email_exists" || inviteError.message?.includes("already")) {
             // For existing users, generate OTP link via admin API
@@ -208,7 +221,21 @@ serve(async (req) => {
               },
             });
             
-            if (otpError) throw otpError;
+            // Handle rate limiting on generateLink
+            if (otpError) {
+              if (otpError.code === "over_email_send_rate_limit" || otpError.message?.includes("security purposes")) {
+                return new Response(
+                  JSON.stringify({ 
+                    error: "Por seguridad, debes esperar 60 segundos entre envíos de email. Inténtalo de nuevo en un momento." 
+                  }),
+                  { 
+                    status: 429, 
+                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                  }
+                );
+              }
+              throw otpError;
+            }
             
             // Use signInWithOtp which sends email via Supabase's built-in system
             const anonClient = createClient(
@@ -223,7 +250,21 @@ serve(async (req) => {
               },
             });
             
-            if (signInError) throw signInError;
+            // Handle rate limiting on signInWithOtp
+            if (signInError) {
+              if (signInError.code === "over_email_send_rate_limit" || signInError.message?.includes("security purposes")) {
+                return new Response(
+                  JSON.stringify({ 
+                    error: "Por seguridad, debes esperar 60 segundos entre envíos de email. Inténtalo de nuevo en un momento." 
+                  }),
+                  { 
+                    status: 429, 
+                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
+                  }
+                );
+              }
+              throw signInError;
+            }
           } else {
             throw inviteError;
           }
