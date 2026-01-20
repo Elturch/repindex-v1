@@ -3,6 +3,13 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+// Extend Window interface for GTM dataLayer
+declare global {
+  interface Window {
+    dataLayer: Record<string, unknown>[];
+  }
+}
+
 interface UserProfile {
   id: string;
   email: string;
@@ -117,9 +124,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setTimeout(() => {
             fetchProfile(session.user.id);
           }, 0);
+
+          // Push GTM dataLayer for login/signup events
+          if (typeof window !== 'undefined' && window.dataLayer) {
+            if (event === 'SIGNED_IN') {
+              window.dataLayer.push({
+                'event': 'login',
+                'user_id': session.user.id,
+                'user_logged_in': true,
+                'section_type': 'private'
+              });
+            } else if (event === 'USER_UPDATED' && !user) {
+              // First time user setup (sign up)
+              window.dataLayer.push({
+                'event': 'sign_up',
+                'user_id': session.user.id,
+                'user_logged_in': true,
+                'section_type': 'private'
+              });
+            }
+          }
         } else {
           setProfile(null);
           setCompany(null);
+          
+          // Update dataLayer on logout
+          if (typeof window !== 'undefined' && window.dataLayer) {
+            window.dataLayer.push({
+              'user_logged_in': false,
+              'user_id': '',
+              'section_type': 'public'
+            });
+          }
         }
 
         if (event === 'SIGNED_OUT') {
