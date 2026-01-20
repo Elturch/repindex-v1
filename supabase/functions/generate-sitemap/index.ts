@@ -50,6 +50,12 @@ serve(async (req) => {
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>https://repindex.ai/noticias/archivo</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://repindex.ai/metodologia</loc>
     <lastmod>${today}</lastmod>
     <changefreq>monthly</changefreq>
@@ -63,18 +69,24 @@ serve(async (req) => {
   </url>
 `;
 
-    // Add each article
+    // Add each article with news sitemap extensions
     for (const article of articles || []) {
       const publishedDate = article.published_at 
         ? new Date(article.published_at).toISOString().split('T')[0]
         : today;
       
+      // Recent articles (last 7 days) get higher priority
+      const isRecent = article.published_at && 
+        (new Date().getTime() - new Date(article.published_at).getTime()) < 7 * 24 * 60 * 60 * 1000;
+      const priority = isRecent ? '0.8' : '0.6';
+      const changefreq = isRecent ? 'daily' : 'monthly';
+      
       sitemap += `
   <url>
     <loc>https://repindex.ai/noticias/${article.slug}</loc>
     <lastmod>${publishedDate}</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <changefreq>${changefreq}</changefreq>
+    <priority>${priority}</priority>
   </url>`;
     }
 
