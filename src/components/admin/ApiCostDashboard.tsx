@@ -74,12 +74,6 @@ export const ApiCostDashboard: React.FC = () => {
         'all': '90d'
       };
 
-      // Fetch usage logs via edge function
-      const logsResponse = await supabase.functions.invoke('admin-api-data', {
-        body: null,
-        method: 'GET',
-      });
-
       // Use custom fetch for GET requests with query params
       const baseUrl = `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/admin-api-data`;
       
