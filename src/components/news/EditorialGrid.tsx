@@ -127,10 +127,17 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
             </h2>
           )}
           
-          {/* Lead paragraph only - no full body on homepage */}
+          {/* Lead paragraph + first body paragraph preview */}
           {story.lead && (
             <p className="text-lg text-muted-foreground leading-relaxed font-serif print:text-base">
               {story.lead}
+            </p>
+          )}
+          
+          {/* First paragraph preview */}
+          {story.body && (
+            <p className="text-base text-foreground/70 leading-relaxed print:text-sm">
+              {story.body.split('\n\n')[0]}
             </p>
           )}
 
@@ -238,10 +245,16 @@ function SecondaryStoryCard({ story }: { story: Story }) {
           </div>
         </div>
 
-        {/* Lead only - no body paragraphs */}
+        {/* Lead + first paragraph preview */}
         {story.lead && (
           <p className="text-sm text-muted-foreground leading-relaxed print:text-xs">
             {story.lead}
+          </p>
+        )}
+        
+        {story.body && (
+          <p className="text-sm text-foreground/70 leading-relaxed line-clamp-2 print:text-xs">
+            {story.body.split('\n\n')[0]}
           </p>
         )}
 
@@ -333,7 +346,7 @@ function TertiaryStoryCard({ story }: { story: Story }) {
         </div>
       </div>
       
-      {/* Lead excerpt only - no body paragraph */}
+      {/* Lead excerpt for tertiary cards */}
       {story.lead && (
         <p className="text-xs text-foreground/70 leading-relaxed line-clamp-2 print:line-clamp-2">
           {story.lead}
