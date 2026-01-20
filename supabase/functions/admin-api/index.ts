@@ -1,10 +1,74 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Resend } from "npm:resend@4.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Generate RepIndex branded magic link email
+const generateMagicLinkEmail = (userName: string, magicLink: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width:520px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+          <!-- Header -->
+          <tr>
+            <td style="background:#1e293b;padding:24px 32px;text-align:center;">
+              <img src="https://repindex-v1.lovable.app/assets/repindex-logo-text-transparent.png" alt="RepIndex" height="32" style="height:32px;">
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding:40px 32px;">
+              <h1 style="margin:0 0 16px;font-size:24px;color:#1e293b;">Accede a tu cuenta</h1>
+              <p style="margin:0 0 24px;font-size:16px;color:#475569;line-height:1.6;">
+                Hola ${userName || 'Usuario'},
+              </p>
+              <p style="margin:0 0 32px;font-size:16px;color:#475569;line-height:1.6;">
+                Haz clic en el botón para acceder a RepIndex. Este enlace es válido durante 24 horas.
+              </p>
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="${magicLink}" style="display:inline-block;background:#2563eb;color:#fff;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;">
+                      Acceder a RepIndex
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <!-- Fallback link -->
+              <p style="margin:32px 0 0;font-size:14px;color:#94a3b8;line-height:1.5;">
+                Si el botón no funciona, copia este enlace:<br>
+                <a href="${magicLink}" style="color:#2563eb;word-break:break-all;">${magicLink}</a>
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f8fafc;padding:24px 32px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;line-height:1.5;">
+                Este email fue enviado por RepIndex.<br>
+                Si no solicitaste este acceso, puedes ignorar este mensaje.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -178,6 +242,13 @@ serve(async (req) => {
       }
 
       case "send_magic_link": {
+        // Initialize Resend
+        const resendApiKey = Deno.env.get("RESEND_API_KEY");
+        if (!resendApiKey) {
+          throw new Error("RESEND_API_KEY no está configurada");
+        }
+        const resend = new Resend(resendApiKey);
+
         // Get user profile
         const { data: profile, error: profileError } = await supabaseAdmin
           .from("user_profiles")
@@ -186,92 +257,49 @@ serve(async (req) => {
           .single();
         
         if (profileError) throw profileError;
+        if (!profile?.email) throw new Error("Usuario no encontrado o sin email");
 
-        // Use Supabase's native magic link via inviteUserByEmail (sends email automatically)
-        // This bypasses the need for Resend
-        const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-          profile.email,
-          {
-            redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
-          }
-        );
+        // Generate magic link using Supabase Admin API (without sending email)
+        const redirectTo = data.redirect_to || "https://repindex-v1.lovable.app/dashboard";
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: "magiclink",
+          email: profile.email,
+          options: {
+            redirectTo,
+          },
+        });
         
-        if (inviteError) {
-          // Handle rate limiting
-          if (inviteError.code === "over_email_send_rate_limit" || inviteError.message?.includes("security purposes")) {
-            return new Response(
-              JSON.stringify({ 
-                error: "Por seguridad, debes esperar 60 segundos entre envíos de email. Inténtalo de nuevo en un momento." 
-              }),
-              { 
-                status: 429, 
-                headers: { ...corsHeaders, "Content-Type": "application/json" } 
-              }
-            );
-          }
-          
-          // If user already confirmed, use generateLink + native OTP email
-          if (inviteError.code === "email_exists" || inviteError.message?.includes("already")) {
-            // For existing users, generate OTP link via admin API
-            const { error: otpError } = await supabaseAdmin.auth.admin.generateLink({
-              type: "magiclink",
-              email: profile.email,
-              options: {
-                redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
-              },
-            });
-            
-            // Handle rate limiting on generateLink
-            if (otpError) {
-              if (otpError.code === "over_email_send_rate_limit" || otpError.message?.includes("security purposes")) {
-                return new Response(
-                  JSON.stringify({ 
-                    error: "Por seguridad, debes esperar 60 segundos entre envíos de email. Inténtalo de nuevo en un momento." 
-                  }),
-                  { 
-                    status: 429, 
-                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
-                  }
-                );
-              }
-              throw otpError;
-            }
-            
-            // Use signInWithOtp which sends email via Supabase's built-in system
-            const anonClient = createClient(
-              Deno.env.get("SUPABASE_URL")!,
-              Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!
-            );
-            
-            const { error: signInError } = await anonClient.auth.signInWithOtp({
-              email: profile.email,
-              options: {
-                emailRedirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
-              },
-            });
-            
-            // Handle rate limiting on signInWithOtp
-            if (signInError) {
-              if (signInError.code === "over_email_send_rate_limit" || signInError.message?.includes("security purposes")) {
-                return new Response(
-                  JSON.stringify({ 
-                    error: "Por seguridad, debes esperar 60 segundos entre envíos de email. Inténtalo de nuevo en un momento." 
-                  }),
-                  { 
-                    status: 429, 
-                    headers: { ...corsHeaders, "Content-Type": "application/json" } 
-                  }
-                );
-              }
-              throw signInError;
-            }
-          } else {
-            throw inviteError;
-          }
+        if (linkError) {
+          console.error("Error generating magic link:", linkError);
+          throw new Error(`Error generando enlace de acceso: ${linkError.message}`);
         }
+
+        if (!linkData?.properties?.action_link) {
+          throw new Error("No se pudo generar el enlace de acceso");
+        }
+
+        const magicLink = linkData.properties.action_link;
+        const userName = profile.full_name || profile.email.split('@')[0];
+
+        // Send email via Resend with custom template
+        const { data: emailData, error: emailError } = await resend.emails.send({
+          from: "RepIndex <onboarding@resend.dev>", // Use verified domain when available
+          to: [profile.email],
+          subject: "Tu acceso a RepIndex",
+          html: generateMagicLinkEmail(userName, magicLink),
+        });
+
+        if (emailError) {
+          console.error("Resend error:", emailError);
+          throw new Error(`Error enviando email: ${emailError.message}`);
+        }
+
+        console.log(`Magic link sent via Resend to ${profile.email}:`, emailData);
         
         return new Response(JSON.stringify({ 
-          message: "Magic link enviado a " + profile.email 
+          success: true,
+          message: `Magic link enviado a ${profile.email}`,
+          email_id: emailData?.id 
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
