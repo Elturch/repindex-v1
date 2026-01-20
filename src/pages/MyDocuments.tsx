@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { useProgressiveLoad } from '@/hooks/useProgressiveLoad';
 import { 
   FileText, 
   Download, 
@@ -164,7 +165,32 @@ const MyDocuments: React.FC = () => {
   });
 
   const starredDocs = filteredDocuments.filter(d => d.is_starred);
-  const regularDocs = filteredDocuments.filter(d => !d.is_starred);
+  const allRegularDocs = filteredDocuments.filter(d => !d.is_starred);
+
+  // Progressive loading for regular docs
+  const {
+    visibleItems: regularDocs,
+    hasMore,
+    remainingCount,
+    isLoadingMore,
+    loadMore,
+    loadAll,
+  } = useProgressiveLoad(allRegularDocs, { initialBatchSize: 12, incrementSize: 12 });
+
+  // Intersection observer for infinite scroll
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, loadMore]);
 
   return (
     <Layout title="Mis Documentos">
@@ -280,6 +306,32 @@ const MyDocuments: React.FC = () => {
                       getDocTypeLabel={getDocTypeLabel}
                     />
                   ))}
+                </div>
+                
+                {/* Load more indicator */}
+                <div ref={loadMoreRef} className="py-4">
+                  {hasMore && (
+                    <div className="flex items-center justify-center gap-3">
+                      {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Cargando más...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground">
+                            Mostrando {regularDocs.length} de {allRegularDocs.length}
+                          </span>
+                          <Button variant="outline" size="sm" onClick={loadMore}>
+                            Cargar más ({remainingCount})
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={loadAll}>
+                            Cargar todos
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

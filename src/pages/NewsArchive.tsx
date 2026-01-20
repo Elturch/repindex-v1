@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
@@ -7,10 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar, Clock, ArrowLeft, ChevronDown, Eye } from "lucide-react";
-import { format, parseISO, startOfWeek, startOfMonth, getYear, getMonth } from "date-fns";
+import { Calendar, Clock, ArrowLeft, Eye, Loader2 } from "lucide-react";
+import { format, parseISO, startOfWeek, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 import { trackNewsClick } from "@/lib/gtmEvents";
+import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
 import {
   Select,
   SelectContent,
@@ -106,6 +107,37 @@ export default function NewsArchive() {
 
     return groups;
   }, [filteredArticles, viewMode]);
+
+  // Convert to array for progressive loading
+  const groupEntries = useMemo(() => 
+    Array.from(groupedArticles.entries()),
+    [groupedArticles]
+  );
+
+  // Progressive loading for groups
+  const {
+    visibleItems: visibleGroups,
+    hasMore,
+    remainingCount,
+    isLoadingMore,
+    loadMore,
+    loadAll,
+  } = useProgressiveLoad(groupEntries, { initialBatchSize: 8, incrementSize: 8 });
+
+  // Intersection observer for infinite scroll
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, loadMore]);
 
   // Format group header
   const formatGroupHeader = (key: string): string => {
@@ -207,7 +239,7 @@ export default function NewsArchive() {
         {/* Grouped Articles */}
         {!isLoading && (
           <div className="space-y-10">
-            {Array.from(groupedArticles.entries()).map(([key, groupArticles]) => (
+            {visibleGroups.map(([key, groupArticles]) => (
               <section key={key}>
                 {/* Group Header */}
                 <div className="flex items-center gap-3 mb-4 pb-2 border-b">
@@ -273,6 +305,32 @@ export default function NewsArchive() {
                 </div>
               </section>
             ))}
+
+            {/* Load more indicator */}
+            <div ref={loadMoreRef} className="py-4">
+              {hasMore && (
+                <div className="flex items-center justify-center gap-3">
+                  {isLoadingMore ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">Cargando más...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground">
+                        Mostrando {visibleGroups.length} de {groupEntries.length} semanas
+                      </span>
+                      <Button variant="outline" size="sm" onClick={loadMore}>
+                        Cargar más ({remainingCount})
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={loadAll}>
+                        Cargar todos
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {groupedArticles.size === 0 && !isLoading && (
               <div className="text-center py-16">

@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useProgressiveLoad } from '@/hooks/useProgressiveLoad';
 import { 
   MessageSquare, 
   Star, 
@@ -128,7 +129,32 @@ const MyConversations: React.FC = () => {
   );
 
   const starredConvs = filteredConversations.filter(c => c.is_starred);
-  const regularConvs = filteredConversations.filter(c => !c.is_starred);
+  const allRegularConvs = filteredConversations.filter(c => !c.is_starred);
+
+  // Progressive loading for regular conversations
+  const {
+    visibleItems: regularConvs,
+    hasMore,
+    remainingCount,
+    isLoadingMore,
+    loadMore,
+    loadAll,
+  } = useProgressiveLoad(allRegularConvs, { initialBatchSize: 15, incrementSize: 15 });
+
+  // Intersection observer for infinite scroll
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    );
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore, loadMore]);
 
   return (
     <Layout title="Mis Conversaciones">
@@ -213,6 +239,32 @@ const MyConversations: React.FC = () => {
                       onOpen={openConversation}
                     />
                   ))}
+                </div>
+                
+                {/* Load more indicator */}
+                <div ref={loadMoreRef} className="py-4">
+                  {hasMore && (
+                    <div className="flex items-center justify-center gap-3">
+                      {isLoadingMore ? (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Cargando más...</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-muted-foreground">
+                            Mostrando {regularConvs.length} de {allRegularConvs.length}
+                          </span>
+                          <Button variant="outline" size="sm" onClick={loadMore}>
+                            Cargar más ({remainingCount})
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={loadAll}>
+                            Cargar todos
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
