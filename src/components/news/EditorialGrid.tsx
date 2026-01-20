@@ -99,7 +99,6 @@ export function EditorialGrid({ stories }: EditorialGridProps) {
 function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
   const [showVerification, setShowVerification] = useState(false);
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
-  const paragraphs = story.body.split('\n\n');
   const isEven = index % 2 === 0;
   const companies = story.companies || [];
 
@@ -128,28 +127,20 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
             </h2>
           )}
           
+          {/* Lead paragraph only - no full body on homepage */}
           {story.lead && (
             <p className="text-lg text-muted-foreground leading-relaxed font-serif print:text-base">
               {story.lead}
             </p>
           )}
 
-          {/* Full narrative body */}
-          <div className="prose dark:prose-invert max-w-none">
-            {paragraphs.map((paragraph, i) => (
-              <p key={i} className="text-foreground/80 leading-relaxed mb-3 last:mb-0 print:text-sm print:mb-2">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-
           <div className="flex items-center justify-between pt-2">
             {story.slug && (
               <Button
-                variant="link"
+                variant="default"
                 asChild
                 size="sm"
-                className="gap-1 px-0 text-xs print:hidden"
+                className="gap-1 print:hidden"
               >
                 <Link 
                   to={`/noticias/${story.slug}`}
@@ -208,7 +199,6 @@ function PrimaryStoryCard({ story, index }: { story: Story; index: number }) {
 function SecondaryStoryCard({ story }: { story: Story }) {
   const [showVerification, setShowVerification] = useState(false);
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
-  const paragraphs = story.body.split('\n\n').slice(0, 2);
   const companies = story.companies || [];
 
   return (
@@ -248,21 +238,12 @@ function SecondaryStoryCard({ story }: { story: Story }) {
           </div>
         </div>
 
-        {/* Lead */}
+        {/* Lead only - no body paragraphs */}
         {story.lead && (
           <p className="text-sm text-muted-foreground leading-relaxed print:text-xs">
             {story.lead}
           </p>
         )}
-
-        {/* Abbreviated body */}
-        <div className="text-sm text-foreground/70 leading-relaxed print:text-xs">
-          {paragraphs.map((paragraph, i) => (
-            <p key={i} className="mb-2 last:mb-0">
-              {paragraph}
-            </p>
-          ))}
-        </div>
 
         {/* Data highlight + actions */}
         <div className="flex items-center justify-between gap-2">
@@ -316,7 +297,6 @@ function SecondaryStoryCard({ story }: { story: Story }) {
 
 function TertiaryStoryCard({ story }: { story: Story }) {
   const categoryLabel = categoryLabels[story.category?.toLowerCase()] || story.category?.toUpperCase();
-  const firstParagraph = story.body.split('\n\n')[0];
 
   return (
     <article className="space-y-2 pb-4 border-b print:pb-2 print:break-inside-avoid">
@@ -353,10 +333,12 @@ function TertiaryStoryCard({ story }: { story: Story }) {
         </div>
       </div>
       
-      {/* Brief narrative */}
-      <p className="text-xs text-foreground/70 leading-relaxed line-clamp-3 print:line-clamp-2">
-        {firstParagraph}
-      </p>
+      {/* Lead excerpt only - no body paragraph */}
+      {story.lead && (
+        <p className="text-xs text-foreground/70 leading-relaxed line-clamp-2 print:line-clamp-2">
+          {story.lead}
+        </p>
+      )}
       
       <div className="flex items-center justify-between">
         <p className="text-[10px] text-muted-foreground font-medium">

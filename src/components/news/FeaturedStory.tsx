@@ -25,12 +25,12 @@ interface FeaturedStoryProps {
 
 export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, companies = [], slug, publishedAt }: FeaturedStoryProps) {
   const [showVerification, setShowVerification] = useState(false);
-  const paragraphs = body.split('\n\n');
   
   const formattedDate = publishedAt 
     ? format(new Date(publishedAt), "d 'de' MMMM 'de' yyyy", { locale: es })
     : null;
   
+  // Calculate reading time from full body for display
   const readingTime = Math.ceil(body.split(/\s+/).length / 200);
   
   return (
@@ -68,27 +68,18 @@ export function FeaturedStory({ headline, lead, body, dataHighlight, chartData, 
         <div className="grid lg:grid-cols-3 gap-8 print:gap-4">
           {/* Main content - 2 cols */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Lead paragraph - larger, bold */}
+            {/* Lead paragraph only - no full body on homepage */}
             <p className="text-xl md:text-2xl text-foreground/90 leading-relaxed font-serif print:text-base">
               {lead}
             </p>
-            
-            {/* Full body narrative */}
-            <div className="prose prose-lg dark:prose-invert max-w-none print:prose-sm">
-              {paragraphs.map((paragraph, i) => (
-                <p key={i} className="text-foreground/80 leading-relaxed mb-4 last:mb-0 text-base print:text-sm print:mb-2">
-                  {paragraph}
-                </p>
-              ))}
-            </div>
 
-            <div className="flex items-center justify-between pt-4 print:pt-2">
+            {/* CTA to read full article */}
+            <div className="flex items-center gap-4 pt-4 print:pt-2">
               {slug && (
                 <Button
-                  variant="link"
                   asChild
-                  size="sm"
-                  className="gap-1 px-0 print:hidden"
+                  size="lg"
+                  className="gap-2"
                 >
                   <Link to={`/noticias/${slug}`}>
                     Leer artículo completo
