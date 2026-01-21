@@ -64,23 +64,148 @@ export interface RixRunV2 {
   batch_execution_date: string;
   created_at: string;
   updated_at: string;
+  
+  // Joined issuer data
+  repindex_root_issuers?: {
+    ticker: string;
+    issuer_name: string;
+    sector_category: string | null;
+    ibex_family_code: string | null;
+  } | null;
+  
+  // Computed fields
+  displayRixScore?: number | null;
+  isDataInvalid?: boolean;
+  batchNumber?: number;
+  batchLabel?: string;
 }
 
 interface UseRixRunsV2Options {
   sourcePipeline?: 'make_original' | 'lovable_v2' | 'all';
   ticker?: string;
+  modelFilter?: string;
+  companyFilter?: string;
+  sectorFilter?: string;
+  ibexFamilyFilter?: string;
   limit?: number;
 }
 
+function mapRowToRixRunV2(row: any): RixRunV2 {
+  const rixScore = row['09_rix_score'];
+  const rixScoreAdjusted = row['51_rix_score_adjusted'];
+  const cxmExcluded = row['52_cxm_excluded'];
+  const rmmScore = row['32_rmm_score'];
+  
+  // Data is invalid if RMM is 0 or null (same logic as original)
+  const isDataInvalid = rmmScore === 0 || rmmScore === null;
+  
+  // Use adjusted score if CXM is excluded, otherwise use base score
+  const displayRixScore = cxmExcluded ? rixScoreAdjusted : rixScore;
+  
+  // Calculate batch number from batch_execution_date
+  const batchDate = row.batch_execution_date ? new Date(row.batch_execution_date) : null;
+  let batchNumber: number | undefined;
+  let batchLabel: string | undefined;
+  
+  if (batchDate) {
+    // Week number calculation (ISO week)
+    const startOfYear = new Date(batchDate.getFullYear(), 0, 1);
+    const days = Math.floor((batchDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+    batchNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    batchLabel = `Semana ${batchNumber} (${batchDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })})`;
+  }
+
+  return {
+    id: row.id,
+    run_id: row['01_run_id'],
+    model_name: row['02_model_name'],
+    target_name: row['03_target_name'],
+    target_type: row['04_target_type'],
+    ticker: row['05_ticker'],
+    period_from: row['06_period_from'],
+    period_to: row['07_period_to'],
+    rix_score: rixScore,
+    rix_score_adjusted: rixScoreAdjusted,
+    resumen: row['10_resumen'],
+    puntos_clave: (row['11_puntos_clave'] as string[] | null),
+    nvm_score: row['23_nvm_score'],
+    nvm_peso: row['24_nvm_peso'],
+    nvm_categoria: row['25_nvm_categoria'],
+    drm_score: row['26_drm_score'],
+    drm_peso: row['27_drm_peso'],
+    drm_categoria: row['28_drm_categoria'],
+    sim_score: row['29_sim_score'],
+    sim_peso: row['30_sim_peso'],
+    sim_categoria: row['31_sim_categoria'],
+    rmm_score: row['32_rmm_score'],
+    rmm_peso: row['33_rmm_peso'],
+    rmm_categoria: row['34_rmm_categoria'],
+    cem_score: row['35_cem_score'],
+    cem_peso: row['36_cem_peso'],
+    cem_categoria: row['37_cem_categoria'],
+    gam_score: row['38_gam_score'],
+    gam_peso: row['39_gam_peso'],
+    gam_categoria: row['40_gam_categoria'],
+    dcm_score: row['41_dcm_score'],
+    dcm_peso: row['42_dcm_peso'],
+    dcm_categoria: row['43_dcm_categoria'],
+    cxm_score: row['44_cxm_score'],
+    cxm_peso: row['45_cxm_peso'],
+    cxm_categoria: row['46_cxm_categoria'],
+    cxm_excluded: cxmExcluded,
+    res_gpt_bruto: row['20_res_gpt_bruto'],
+    res_perplex_bruto: row['21_res_perplex_bruto'],
+    res_gemini_bruto: row['22_res_gemini_bruto'],
+    res_deepseek_bruto: row['23_res_deepseek_bruto'],
+    respuesta_bruto_claude: row.respuesta_bruto_claude,
+    respuesta_bruto_grok: row.respuesta_bruto_grok,
+    respuesta_bruto_qwen: row.respuesta_bruto_qwen,
+    flags: (row['17_flags'] as string[] | null),
+    palabras: row['12_palabras'],
+    num_fechas: row['13_num_fechas'],
+    num_citas: row['14_num_citas'],
+    source_pipeline: row.source_pipeline,
+    execution_time_ms: row.execution_time_ms,
+    model_errors: (row.model_errors as Record<string, string> | null),
+    search_completed_at: row.search_completed_at,
+    analysis_completed_at: row.analysis_completed_at,
+    batch_execution_date: row.batch_execution_date,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    repindex_root_issuers: row.repindex_root_issuers,
+    displayRixScore,
+    isDataInvalid,
+    batchNumber,
+    batchLabel,
+  };
+}
+
 export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
-  const { sourcePipeline = 'all', ticker, limit = 100 } = options;
+  const { 
+    sourcePipeline = 'all', 
+    ticker, 
+    modelFilter = 'all',
+    companyFilter = 'all',
+    sectorFilter = 'all',
+    ibexFamilyFilter = 'all',
+    limit = 500 
+  } = options;
 
   return useQuery({
-    queryKey: ['rix-runs-v2', sourcePipeline, ticker, limit],
+    queryKey: ['rix-runs-v2', sourcePipeline, ticker, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, limit],
     queryFn: async (): Promise<RixRunV2[]> => {
       let query = supabase
         .from('rix_runs_v2')
-        .select('*')
+        .select(`
+          *,
+          repindex_root_issuers!left (
+            ticker,
+            issuer_name,
+            sector_category,
+            ibex_family_code
+          )
+        `)
+        .order('batch_execution_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -99,65 +224,38 @@ export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
         throw error;
       }
 
-      // Map database column names to interface
-      return (data || []).map((row: any) => ({
-        id: row.id,
-        run_id: row['01_run_id'],
-        model_name: row['02_model_name'],
-        target_name: row['03_target_name'],
-        target_type: row['04_target_type'],
-        ticker: row['05_ticker'],
-        period_from: row['06_period_from'],
-        period_to: row['07_period_to'],
-        rix_score: row['09_rix_score'],
-        rix_score_adjusted: row['51_rix_score_adjusted'],
-        resumen: row['10_resumen'],
-        puntos_clave: (row['11_puntos_clave'] as string[] | null),
-        nvm_score: row['23_nvm_score'],
-        nvm_peso: row['24_nvm_peso'],
-        nvm_categoria: row['25_nvm_categoria'],
-        drm_score: row['26_drm_score'],
-        drm_peso: row['27_drm_peso'],
-        drm_categoria: row['28_drm_categoria'],
-        sim_score: row['29_sim_score'],
-        sim_peso: row['30_sim_peso'],
-        sim_categoria: row['31_sim_categoria'],
-        rmm_score: row['32_rmm_score'],
-        rmm_peso: row['33_rmm_peso'],
-        rmm_categoria: row['34_rmm_categoria'],
-        cem_score: row['35_cem_score'],
-        cem_peso: row['36_cem_peso'],
-        cem_categoria: row['37_cem_categoria'],
-        gam_score: row['38_gam_score'],
-        gam_peso: row['39_gam_peso'],
-        gam_categoria: row['40_gam_categoria'],
-        dcm_score: row['41_dcm_score'],
-        dcm_peso: row['42_dcm_peso'],
-        dcm_categoria: row['43_dcm_categoria'],
-        cxm_score: row['44_cxm_score'],
-        cxm_peso: row['45_cxm_peso'],
-        cxm_categoria: row['46_cxm_categoria'],
-        cxm_excluded: row['52_cxm_excluded'],
-        res_gpt_bruto: row['20_res_gpt_bruto'],
-        res_perplex_bruto: row['21_res_perplex_bruto'],
-        res_gemini_bruto: row['22_res_gemini_bruto'],
-        res_deepseek_bruto: row['23_res_deepseek_bruto'],
-        respuesta_bruto_claude: row.respuesta_bruto_claude,
-        respuesta_bruto_grok: row.respuesta_bruto_grok,
-        respuesta_bruto_qwen: row.respuesta_bruto_qwen,
-        flags: (row['17_flags'] as string[] | null),
-        palabras: row['12_palabras'],
-        num_fechas: row['13_num_fechas'],
-        num_citas: row['14_num_citas'],
-        source_pipeline: row.source_pipeline,
-        execution_time_ms: row.execution_time_ms,
-        model_errors: (row.model_errors as Record<string, string> | null),
-        search_completed_at: row.search_completed_at,
-        analysis_completed_at: row.analysis_completed_at,
-        batch_execution_date: row.batch_execution_date,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }));
+      // Map and filter data
+      let runs = (data || []).map(mapRowToRixRunV2);
+      
+      // Apply model filter
+      if (modelFilter !== 'all') {
+        runs = runs.filter(run => {
+          const modelName = run.model_name?.toLowerCase() || '';
+          const filterLower = modelFilter.toLowerCase();
+          return modelName.includes(filterLower);
+        });
+      }
+      
+      // Apply company filter
+      if (companyFilter !== 'all') {
+        runs = runs.filter(run => run.target_name === companyFilter);
+      }
+      
+      // Apply sector filter
+      if (sectorFilter !== 'all') {
+        runs = runs.filter(run => run.repindex_root_issuers?.sector_category === sectorFilter);
+      }
+      
+      // Apply ibex family filter
+      if (ibexFamilyFilter !== 'all') {
+        if (ibexFamilyFilter === 'no_cotizadas') {
+          runs = runs.filter(run => !run.repindex_root_issuers?.ibex_family_code);
+        } else {
+          runs = runs.filter(run => run.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter);
+        }
+      }
+
+      return runs;
     },
   });
 }
@@ -170,7 +268,15 @@ export function useRixRunV2(id: string | undefined) {
 
       const { data, error } = await supabase
         .from('rix_runs_v2')
-        .select('*')
+        .select(`
+          *,
+          repindex_root_issuers!left (
+            ticker,
+            issuer_name,
+            sector_category,
+            ibex_family_code
+          )
+        `)
         .eq('id', id)
         .single();
 
@@ -181,65 +287,7 @@ export function useRixRunV2(id: string | undefined) {
 
       if (!data) return null;
 
-      // Map database column names to interface
-      return {
-        id: data.id,
-        run_id: data['01_run_id'],
-        model_name: data['02_model_name'],
-        target_name: data['03_target_name'],
-        target_type: data['04_target_type'],
-        ticker: data['05_ticker'],
-        period_from: data['06_period_from'],
-        period_to: data['07_period_to'],
-        rix_score: data['09_rix_score'],
-        rix_score_adjusted: data['51_rix_score_adjusted'],
-        resumen: data['10_resumen'],
-        puntos_clave: (data['11_puntos_clave'] as string[] | null),
-        nvm_score: data['23_nvm_score'],
-        nvm_peso: data['24_nvm_peso'],
-        nvm_categoria: data['25_nvm_categoria'],
-        drm_score: data['26_drm_score'],
-        drm_peso: data['27_drm_peso'],
-        drm_categoria: data['28_drm_categoria'],
-        sim_score: data['29_sim_score'],
-        sim_peso: data['30_sim_peso'],
-        sim_categoria: data['31_sim_categoria'],
-        rmm_score: data['32_rmm_score'],
-        rmm_peso: data['33_rmm_peso'],
-        rmm_categoria: data['34_rmm_categoria'],
-        cem_score: data['35_cem_score'],
-        cem_peso: data['36_cem_peso'],
-        cem_categoria: data['37_cem_categoria'],
-        gam_score: data['38_gam_score'],
-        gam_peso: data['39_gam_peso'],
-        gam_categoria: data['40_gam_categoria'],
-        dcm_score: data['41_dcm_score'],
-        dcm_peso: data['42_dcm_peso'],
-        dcm_categoria: data['43_dcm_categoria'],
-        cxm_score: data['44_cxm_score'],
-        cxm_peso: data['45_cxm_peso'],
-        cxm_categoria: data['46_cxm_categoria'],
-        cxm_excluded: data['52_cxm_excluded'],
-        res_gpt_bruto: data['20_res_gpt_bruto'],
-        res_perplex_bruto: data['21_res_perplex_bruto'],
-        res_gemini_bruto: data['22_res_gemini_bruto'],
-        res_deepseek_bruto: data['23_res_deepseek_bruto'],
-        respuesta_bruto_claude: data.respuesta_bruto_claude,
-        respuesta_bruto_grok: data.respuesta_bruto_grok,
-        respuesta_bruto_qwen: data.respuesta_bruto_qwen,
-        flags: (data['17_flags'] as string[] | null),
-        palabras: data['12_palabras'],
-        num_fechas: data['13_num_fechas'],
-        num_citas: data['14_num_citas'],
-        source_pipeline: data.source_pipeline,
-        execution_time_ms: data.execution_time_ms,
-        model_errors: (data.model_errors as Record<string, string> | null),
-        search_completed_at: data.search_completed_at,
-        analysis_completed_at: data.analysis_completed_at,
-        batch_execution_date: data.batch_execution_date,
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-      };
+      return mapRowToRixRunV2(data);
     },
     enabled: !!id,
   });
