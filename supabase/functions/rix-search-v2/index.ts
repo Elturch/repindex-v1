@@ -461,6 +461,50 @@ declare const EdgeRuntime: {
   waitUntil: (promise: Promise<any>) => void;
 };
 
+// Fetch stock prices from EODHD via our edge function
+interface StockPriceResult {
+  precio_cierre: string;
+  minimo_52_semanas: string | null;
+}
+
+async function fetchStockPrice(
+  ticker: string,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<StockPriceResult | null> {
+  try {
+    console.log(`[rix-search-v2] Fetching stock price for ${ticker}`);
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/fetch-stock-prices`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tickers: [ticker] }),
+    });
+
+    if (!response.ok) {
+      console.error(`[rix-search-v2] fetch-stock-prices failed: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const priceData = data.prices?.[ticker];
+    
+    if (priceData && priceData.precio_cierre !== 'NC') {
+      console.log(`[rix-search-v2] Got price for ${ticker}: ${priceData.precio_cierre}€`);
+      return priceData;
+    }
+    
+    console.log(`[rix-search-v2] No price available for ${ticker}`);
+    return null;
+  } catch (error: any) {
+    console.error(`[rix-search-v2] Error fetching price for ${ticker}:`, error.message);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -528,6 +572,29 @@ serve(async (req) => {
     sunday.setDate(now.getDate() - dayOfWeek);
     sunday.setHours(0, 0, 0, 0);
 
+    // Check if company is listed and fetch stock prices
+    let stockPrice: StockPriceResult | null = null;
+    let isListed = false;
+    
+    try {
+      const { data: issuerData } = await supabase
+        .from('repindex_root_issuers')
+        .select('cotiza_en_bolsa')
+        .eq('ticker', ticker)
+        .single();
+      
+      isListed = issuerData?.cotiza_en_bolsa === true;
+      
+      if (isListed) {
+        console.log(`[rix-search-v2] ${ticker} is listed, fetching stock price...`);
+        stockPrice = await fetchStockPrice(ticker, supabaseUrl, supabaseServiceKey);
+      } else {
+        console.log(`[rix-search-v2] ${ticker} is not listed, skipping stock price`);
+      }
+    } catch (err: any) {
+      console.warn(`[rix-search-v2] Error checking listing status for ${ticker}:`, err.message);
+    }
+
     // NEW ARCHITECTURE: Create 7 independent rows, one per model
     const insertedRecords: { id: string; model_name: string; success: boolean; error?: string }[] = [];
     const modelErrors: Record<string, string> = {};
@@ -559,6 +626,9 @@ serve(async (req) => {
         [config.dbColumn]: result.response || null,
         // Track individual model error if any
         'model_errors': result.error ? { [modelName]: result.error } : null,
+        // Stock price columns for listed companies
+        '48_precio_accion': stockPrice?.precio_cierre || (isListed ? null : 'NC'),
+        '59_precio_minimo_52_semanas': stockPrice?.minimo_52_semanas || null,
       };
 
       try {
