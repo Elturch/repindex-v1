@@ -50,10 +50,6 @@ const RIX_ANALYSIS_TOOL = {
           type: "integer",
           description: "Number of citations/sources",
         },
-        num_posts_social: {
-          type: "integer",
-          description: "Number of social media posts cited",
-        },
         temporal_alignment: {
           type: "number",
           description: "Proportion of facts within date window (0-1)",
@@ -173,6 +169,10 @@ const RIX_ANALYSIS_TOOL = {
           type: "number",
           description: "52-week low stock price if applicable, null otherwise",
         },
+        precio_accion_interanual: {
+          type: "string",
+          description: "Year-over-year stock price change description",
+        },
         accion_vs_reputacion: {
           type: "string",
           description: "Analysis of stock vs reputation correlation",
@@ -194,7 +194,7 @@ const RIX_ANALYSIS_TOOL = {
       },
       required: [
         "rix_score", "resumen", "puntos_clave",
-        "palabras", "num_fechas", "num_citas", "num_posts_social",
+        "palabras", "num_fechas", "num_citas",
         "temporal_alignment", "citation_density",
         "nvm_score", "nvm_categoria",
         "drm_score", "drm_categoria",
@@ -210,7 +210,18 @@ const RIX_ANALYSIS_TOOL = {
   },
 };
 
-// Full analysis prompt implementing ORG_RIXSchema_V2 specifications
+// Mapping of model names to their response columns
+const MODEL_RESPONSE_MAP: Record<string, string> = {
+  'ChatGPT': '20_res_gpt_bruto',
+  'Perplexity': '21_res_perplex_bruto',
+  'Google Gemini': '22_res_gemini_bruto',
+  'Deepseek': '23_res_deepseek_bruto',
+  'Claude': 'respuesta_bruto_claude',
+  'Grok': 'respuesta_bruto_grok',
+  'Qwen': 'respuesta_bruto_qwen',
+};
+
+// Full analysis prompt implementing ORG_RIXSchema_V2 specifications - NOW FOR SINGLE MODEL
 const buildAnalysisPrompt = (
   issuerName: string,
   ticker: string,
@@ -218,13 +229,12 @@ const buildAnalysisPrompt = (
   dateTo: string,
   cotiza: boolean,
   weights: Record<string, number>,
-  perplexityResponse: string | null,
-  grokResponse: string | null,
-  deepseekResponse: string | null
+  modelName: string,
+  rawResponse: string
 ): string => `
 INSTRUCCIONES (lee y cumple estrictamente):
 
-Eres evaluador de RepIndex. Debes evaluar EXCLUSIVAMENTE el texto de las respuestas orgánicas de IAs sobre la reputación de una marca en una semana dada.
+Eres evaluador de RepIndex. Debes evaluar EXCLUSIVAMENTE el texto de la respuesta orgánica de ${modelName} sobre la reputación de una marca en una semana dada.
 
 PROHIBIDO navegar o añadir información externa. Trabaja SOLO con el texto proporcionado.
 
@@ -238,6 +248,7 @@ VENTANA Y METADATOS:
 • Ventana: ${dateFrom}..${dateTo}
 • Cotiza: ${cotiza ? 'Sí' : 'No'}
 • Pesos: ${JSON.stringify(weights)}
+• Modelo evaluado: ${modelName}
 
 DEFINICIONES DE MÉTRICAS (0–100):
 
@@ -278,24 +289,16 @@ CONTADORES A CALCULAR:
 - palabras: total de palabras analizadas
 - num_fechas: fechas específicas encontradas
 - num_citas: número de fuentes/URLs
-- num_posts_social: menciones de redes sociales
 - temporal_alignment: proporción de hechos en ventana (0-1)
 - citation_density: densidad de citas (0-1)
 
-=== RESPUESTAS ORGÁNICAS A EVALUAR ===
+=== RESPUESTA DE ${modelName.toUpperCase()} A EVALUAR ===
 
---- PERPLEXITY SONAR PRO ---
-${perplexityResponse || 'No disponible'}
+${rawResponse}
 
---- GROK 3 ---
-${grokResponse || 'No disponible'}
+=== FIN DE RESPUESTA ===
 
---- DEEPSEEK ---
-${deepseekResponse || 'No disponible'}
-
-=== FIN DE RESPUESTAS ===
-
-Consolida la información de todos los modelos, identifica consensos y divergencias.
+Analiza esta respuesta individual y genera el RIX score correspondiente a este modelo.
 Usa la función submit_rix_analysis para enviar tu análisis estructurado.
 `;
 
@@ -412,6 +415,33 @@ serve(async (req) => {
       );
     }
 
+    // Determine which model this row belongs to and get its response
+    const modelName = record['02_model_name'] as string;
+    const responseColumn = MODEL_RESPONSE_MAP[modelName];
+    
+    if (!responseColumn) {
+      console.error(`[rix-analyze-v2] Unknown model name: ${modelName}`);
+      return new Response(
+        JSON.stringify({ error: `Unknown model name: ${modelName}. Valid models: ${Object.keys(MODEL_RESPONSE_MAP).join(', ')}` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const rawResponse = record[responseColumn] as string | null;
+
+    if (!rawResponse) {
+      console.error(`[rix-analyze-v2] No raw response found for model ${modelName} in column ${responseColumn}`);
+      return new Response(
+        JSON.stringify({ 
+          error: `No raw response found for model ${modelName}`,
+          details: `Column ${responseColumn} is empty`,
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[rix-analyze-v2] Analyzing ${modelName} response (${rawResponse.length} chars)`);
+
     // Check if company is traded
     const { data: issuerData } = await supabase
       .from('repindex_root_issuers')
@@ -421,7 +451,7 @@ serve(async (req) => {
 
     const cotiza = issuerData?.cotiza_en_bolsa ?? false;
 
-    // Build analysis prompt
+    // Build analysis prompt for SINGLE MODEL response
     const analysisPrompt = buildAnalysisPrompt(
       record['03_target_name'] || 'Unknown',
       record['05_ticker'] || 'N/A',
@@ -429,9 +459,8 @@ serve(async (req) => {
       record['07_period_to'] || '',
       cotiza,
       DEFAULT_WEIGHTS,
-      record['21_res_perplex_bruto'],
-      record['respuesta_bruto_grok'],
-      record['23_res_deepseek_bruto']
+      modelName,
+      rawResponse
     );
 
     // Call GPT-4o with tool calling
@@ -443,7 +472,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('[rix-analyze-v2] Calling GPT-4o with full ORG_RIXSchema_V2 tool...');
+    console.log(`[rix-analyze-v2] Calling GPT-4o to analyze ${modelName} response...`);
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -482,7 +511,7 @@ serve(async (req) => {
     }
 
     const analysis = JSON.parse(toolCall.function.arguments);
-    console.log('[rix-analyze-v2] Analysis received, processing...');
+    console.log(`[rix-analyze-v2] Analysis received for ${modelName}, processing...`);
 
     // Calculate effective weights and final RIX score
     const cxmExcluded = analysis.cxm_categoria === 'no_aplica' || analysis.cxm_score === -1;
@@ -498,12 +527,12 @@ serve(async (req) => {
       flags.push('sim_bajo');
     }
 
-    // Map to database columns
+    // Map to database columns - CORRECTED column names
     const updateData: Record<string, any> = {
       '09_rix_score': finalRixScore,
       '10_resumen': analysis.resumen,
       '11_puntos_clave': analysis.puntos_clave,
-      '23_explicacion': analysis.explicacion || [],
+      '22_explicacion': analysis.explicacion || [],  // FIXED: was 23_explicacion
       
       // Counters
       '12_palabras': analysis.palabras,
@@ -553,10 +582,11 @@ serve(async (req) => {
       '46_cxm_categoria': analysis.cxm_categoria,
       '52_cxm_excluded': cxmExcluded,
       
-      // Stock data
+      // Stock data - CORRECTED column names
       '48_precio_accion': analysis.precio_accion_semana,
-      '49_precio_minimo_52s': analysis.precio_minimo_accion_year,
-      '50_accion_vs_reputacion': analysis.accion_vs_reputacion,
+      '59_precio_minimo_52_semanas': analysis.precio_minimo_accion_year,  // FIXED: was 49_precio_minimo_52s
+      '49_reputacion_vs_precio': analysis.accion_vs_reputacion,  // FIXED: was 50_accion_vs_reputacion
+      '50_precio_accion_interanual': analysis.precio_accion_interanual,  // ADDED: missing column
       
       // Flags and weights
       '17_flags': flags,
@@ -582,12 +612,13 @@ serve(async (req) => {
     }
 
     const totalTime = Date.now() - startTime;
-    console.log(`[rix-analyze-v2] Analysis completed in ${totalTime}ms. RIX: ${finalRixScore}`);
+    console.log(`[rix-analyze-v2] Analysis completed for ${modelName} in ${totalTime}ms. RIX: ${finalRixScore}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         record_id,
+        model_name: modelName,
         rix_score: finalRixScore,
         cxm_excluded: cxmExcluded,
         analysis_time_ms: totalTime,
@@ -605,7 +636,6 @@ serve(async (req) => {
           palabras: analysis.palabras,
           num_fechas: analysis.num_fechas,
           num_citas: analysis.num_citas,
-          num_posts_social: analysis.num_posts_social,
           temporal_alignment: analysis.temporal_alignment,
           citation_density: analysis.citation_density,
         },

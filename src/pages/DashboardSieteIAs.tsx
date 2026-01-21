@@ -32,14 +32,20 @@ interface SearchModelInfo {
 }
 
 const SEARCH_MODELS: SearchModelInfo[] = [
-  { name: 'perplexity-sonar-pro', displayName: 'Perplexity Sonar Pro', icon: <PerplexityIcon size={20} />, color: 'bg-cyan-500', responseKey: 'res_perplex_bruto' },
-  { name: 'grok-3', displayName: 'Grok 3', icon: <GrokIcon size={20} />, color: 'bg-gray-800', responseKey: 'respuesta_bruto_grok' },
-  { name: 'deepseek-chat', displayName: 'DeepSeek', icon: <DeepseekIcon size={20} />, color: 'bg-indigo-500', responseKey: 'res_deepseek_bruto' },
-  { name: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini', icon: <ChatGPTIcon size={20} />, color: 'bg-green-600', responseKey: 'res_gpt_bruto' },
-  { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', icon: <GeminiIcon size={20} />, color: 'bg-blue-500', responseKey: 'res_gemini_bruto' },
-  { name: 'claude-sonnet', displayName: 'Claude Sonnet', icon: <ClaudeIcon size={20} />, color: 'bg-orange-500', responseKey: 'respuesta_bruto_claude' },
-  { name: 'qwen-max', displayName: 'Qwen Max', icon: <QwenIcon size={20} />, color: 'bg-purple-500', responseKey: 'respuesta_bruto_qwen' },
+  { name: 'perplexity-sonar-pro', displayName: 'Perplexity', icon: <PerplexityIcon size={20} />, color: 'bg-cyan-500', responseKey: 'res_perplex_bruto' },
+  { name: 'grok-3', displayName: 'Grok', icon: <GrokIcon size={20} />, color: 'bg-gray-800', responseKey: 'respuesta_bruto_grok' },
+  { name: 'deepseek-chat', displayName: 'Deepseek', icon: <DeepseekIcon size={20} />, color: 'bg-indigo-500', responseKey: 'res_deepseek_bruto' },
+  { name: 'gpt-4.1-mini', displayName: 'ChatGPT', icon: <ChatGPTIcon size={20} />, color: 'bg-green-600', responseKey: 'res_gpt_bruto' },
+  { name: 'gemini-2.0-flash', displayName: 'Google Gemini', icon: <GeminiIcon size={20} />, color: 'bg-blue-500', responseKey: 'res_gemini_bruto' },
+  { name: 'claude-sonnet', displayName: 'Claude', icon: <ClaudeIcon size={20} />, color: 'bg-orange-500', responseKey: 'respuesta_bruto_claude' },
+  { name: 'qwen-max', displayName: 'Qwen', icon: <QwenIcon size={20} />, color: 'bg-purple-500', responseKey: 'respuesta_bruto_qwen' },
 ];
+
+// Helper to get icon for a model name
+const getModelIcon = (modelName: string) => {
+  const model = SEARCH_MODELS.find(m => m.displayName === modelName);
+  return model?.icon || null;
+};
 
 const SUBSCORE_LABELS: Record<string, { label: string; sigla: string }> = {
   nvm: { label: 'Calidad de la narrativa', sigla: 'NVM' },
@@ -57,8 +63,9 @@ export default function DashboardSieteIAs() {
   const [selectedTicker, setSelectedTicker] = useState<string>("");
   const [isSearching, setIsSearching] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [lastSearchResult, setLastSearchResult] = useState<any>(null);
-  const [lastAnalysisResult, setLastAnalysisResult] = useState<any>(null);
+  const [lastAnalysisResults, setLastAnalysisResults] = useState<any[]>([]);
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: v2Runs, isLoading: runsLoading, refetch: refetchRuns } = useRixRunsV2({ 
@@ -81,6 +88,7 @@ export default function DashboardSieteIAs() {
 
     setIsSearching(true);
     setLastSearchResult(null);
+    setLastAnalysisResults([]);
 
     try {
       const { data, error } = await supabase.functions.invoke('rix-search-v2', {
@@ -95,7 +103,7 @@ export default function DashboardSieteIAs() {
       setLastSearchResult(data);
       toast({ 
         title: "Búsqueda completada",
-        description: `${data.models_succeeded}/${data.models_called} modelos con Internet respondieron correctamente`,
+        description: `${data.models_succeeded}/${data.models_called} modelos respondieron. ${data.records_created} rows creadas.`,
       });
       
       refetchRuns();
@@ -111,9 +119,9 @@ export default function DashboardSieteIAs() {
     }
   };
 
+  // Analyze a single record
   const handleAnalyze = async (recordId: string) => {
     setIsAnalyzing(true);
-    setLastAnalysisResult(null);
 
     try {
       const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
@@ -122,13 +130,13 @@ export default function DashboardSieteIAs() {
 
       if (error) throw error;
 
-      setLastAnalysisResult(data);
       toast({ 
         title: "Análisis completado",
-        description: `RIX Score: ${data.rix_score}`,
+        description: `${data.model_name}: RIX Score ${data.rix_score}`,
       });
       
       refetchRuns();
+      return data;
     } catch (error: any) {
       console.error('Analysis error:', error);
       toast({ 
@@ -136,63 +144,138 @@ export default function DashboardSieteIAs() {
         description: error.message,
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const renderSearchModelResponses = (run: RixRunV2) => (
-    <Accordion type="multiple" className="w-full">
-      {SEARCH_MODELS.map((model) => {
-        const response = run[model.responseKey] as string | null;
-        const hasResponse = !!response && response.length > 0;
-        const errors = run.model_errors as Record<string, string> | null;
-        const error = errors?.[model.name];
+  // Batch analyze all records from Phase 1
+  const handleBatchAnalyze = async () => {
+    if (!lastSearchResult?.record_ids?.length) {
+      toast({ title: "No hay registros para analizar", variant: "destructive" });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisProgress({ current: 0, total: lastSearchResult.record_ids.length });
+    const results: any[] = [];
+
+    try {
+      for (let i = 0; i < lastSearchResult.record_ids.length; i++) {
+        const recordId = lastSearchResult.record_ids[i];
+        setAnalysisProgress({ current: i + 1, total: lastSearchResult.record_ids.length });
         
-        return (
-          <AccordionItem key={model.name} value={model.name}>
-            <AccordionTrigger className="hover:no-underline">
-              <div className="flex items-center gap-2">
-                {model.icon}
-                <span className="font-medium">{model.displayName}</span>
-                <Badge variant="outline" className="ml-1 text-xs">
-                  Internet ✓
-                </Badge>
-                {hasResponse ? (
-                  <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200">
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    {response.length} chars
-                  </Badge>
-                ) : error ? (
-                  <Badge variant="outline" className="ml-2 bg-red-50 text-red-700 border-red-200">
-                    <XCircle className="w-3 h-3 mr-1" />
-                    Error
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="ml-2 bg-gray-50 text-gray-500">
-                    Sin respuesta
-                  </Badge>
-                )}
-              </div>
-            </AccordionTrigger>
-            <AccordionContent>
-              {hasResponse ? (
-                <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg max-h-96 overflow-auto">
-                  {response}
-                </pre>
-              ) : error ? (
-                <div className="text-sm text-red-600 bg-red-50 p-4 rounded-lg">
-                  <strong>Error:</strong> {error}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground p-4">No hay respuesta disponible</p>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        );
-      })}
-    </Accordion>
-  );
+        const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
+          body: { record_id: recordId },
+        });
+
+        if (error) {
+          console.error(`Analysis error for ${recordId}:`, error);
+          results.push({ recordId, success: false, error: error.message });
+        } else {
+          results.push({ recordId, success: true, ...data });
+        }
+      }
+
+      setLastAnalysisResults(results);
+      const successCount = results.filter(r => r.success).length;
+      
+      toast({ 
+        title: "Análisis batch completado",
+        description: `${successCount}/${results.length} modelos analizados correctamente`,
+      });
+      
+      refetchRuns();
+    } catch (error: any) {
+      console.error('Batch analysis error:', error);
+      toast({ 
+        title: "Error en análisis batch",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+      setAnalysisProgress({ current: 0, total: 0 });
+    }
+  };
+
+  const renderSearchModelResponses = (run: RixRunV2) => {
+    // In new architecture, each run has only ONE response column populated
+    const modelName = run.model_name;
+    const model = SEARCH_MODELS.find(m => m.displayName === modelName);
+    
+    if (!model) {
+      // Fallback for old consolidated runs - show all columns
+      return (
+        <Accordion type="multiple" className="w-full">
+          {SEARCH_MODELS.map((m) => {
+            const response = run[m.responseKey] as string | null;
+            const hasResponse = !!response && response.length > 0;
+            
+            return (
+              <AccordionItem key={m.name} value={m.name}>
+                <AccordionTrigger className="hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    {m.icon}
+                    <span className="font-medium">{m.displayName}</span>
+                    {hasResponse ? (
+                      <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200">
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        {response.length} chars
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="ml-2 bg-gray-50 text-gray-500">
+                        Sin respuesta
+                      </Badge>
+                    )}
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent>
+                  {hasResponse ? (
+                    <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg max-h-96 overflow-auto">
+                      {response}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-muted-foreground p-4">No hay respuesta disponible</p>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      );
+    }
+
+    // New architecture: single model per row
+    const response = run[model.responseKey] as string | null;
+    const hasResponse = !!response && response.length > 0;
+    
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+          {model.icon}
+          <span className="font-medium">{model.displayName}</span>
+          <Badge variant="outline" className="ml-1 text-xs">Internet ✓</Badge>
+          {hasResponse ? (
+            <Badge variant="outline" className="ml-auto bg-green-50 text-green-700 border-green-200">
+              <CheckCircle2 className="w-3 h-3 mr-1" />
+              {response.length} chars
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="ml-auto bg-gray-50 text-gray-500">
+              Sin respuesta
+            </Badge>
+          )}
+        </div>
+        {hasResponse && (
+          <pre className="whitespace-pre-wrap text-sm bg-muted/50 p-4 rounded-lg max-h-64 overflow-auto">
+            {response}
+          </pre>
+        )}
+      </div>
+    );
+  };
 
   const renderSubscores = (run: RixRunV2) => {
     const subscores = [
@@ -240,12 +323,21 @@ export default function DashboardSieteIAs() {
   const renderComparison = () => {
     if (!makeRuns?.length || !v2Runs?.length) return null;
 
-    const latestV2 = v2Runs.find(r => r.ticker === selectedTicker);
+    // Get V2 runs for selected ticker
+    const v2RunsForTicker = v2Runs.filter(r => r.ticker === selectedTicker);
     const latestMake = makeRuns[0];
 
-    if (!latestV2 || !latestMake) return null;
+    if (!v2RunsForTicker.length || !latestMake) return null;
 
-    const delta = (latestV2.rix_score || 0) - (latestMake.rix_score || 0);
+    // Calculate average RIX score across all 7 models for V2
+    const v2Scores = v2RunsForTicker
+      .filter(r => r.rix_score !== null)
+      .map(r => r.rix_score!);
+    const avgV2Score = v2Scores.length > 0 
+      ? Math.round(v2Scores.reduce((a, b) => a + b, 0) / v2Scores.length)
+      : null;
+
+    const delta = avgV2Score !== null ? avgV2Score - (latestMake.rix_score || 0) : 0;
     const deltaClass = delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-gray-600';
 
     return (
@@ -253,51 +345,56 @@ export default function DashboardSieteIAs() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Comparación Make vs Lovable V2
+            Comparación Make vs Lovable V2 (7 modelos)
           </CardTitle>
           <CardDescription>
-            Arquitectura de 2 fases: Búsqueda (7 modelos con Internet) → Análisis (GPT-4o)
+            Arquitectura 1 row = 1 modelo. V2 muestra promedio de {v2Scores.length} modelos analizados.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Métrica</TableHead>
-                <TableHead className="text-center">Make (Original)</TableHead>
-                <TableHead className="text-center">Lovable V2</TableHead>
-                <TableHead className="text-center">Delta</TableHead>
+                <TableHead>Modelo</TableHead>
+                <TableHead className="text-center">RIX Score</TableHead>
+                <TableHead>Estado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               <TableRow className="bg-muted/50">
-                <TableCell className="font-bold">RIX Score Total</TableCell>
+                <TableCell className="font-bold">Make (Original)</TableCell>
                 <TableCell className="text-center font-bold">{latestMake.rix_score ?? '-'}</TableCell>
-                <TableCell className="text-center font-bold">{latestV2.rix_score ?? '-'}</TableCell>
-                <TableCell className={`text-center font-bold ${deltaClass}`}>
-                  {delta > 0 ? '+' : ''}{delta}
+                <TableCell>
+                  <Badge variant="outline">{latestMake.model_name}</Badge>
                 </TableCell>
               </TableRow>
-              {Object.keys(SUBSCORE_LABELS).map(key => {
-                const makeScore = latestMake[`${key}_score` as keyof RixRunV2] as number | null;
-                const v2Score = latestV2[`${key}_score` as keyof RixRunV2] as number | null;
-                const scoreDelta = (v2Score || 0) - (makeScore || 0);
-                const scoreDeltaClass = scoreDelta > 0 ? 'text-green-600' : scoreDelta < 0 ? 'text-red-600' : 'text-gray-600';
-                
-                return (
-                  <TableRow key={key}>
-                    <TableCell>
-                      <span className="font-semibold">{SUBSCORE_LABELS[key].sigla}</span>
-                      <span className="text-muted-foreground ml-1">({SUBSCORE_LABELS[key].label})</span>
-                    </TableCell>
-                    <TableCell className="text-center">{makeScore ?? '-'}</TableCell>
-                    <TableCell className="text-center">{v2Score ?? '-'}</TableCell>
-                    <TableCell className={`text-center ${scoreDeltaClass}`}>
-                      {scoreDelta > 0 ? '+' : ''}{scoreDelta}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {v2RunsForTicker.map(run => (
+                <TableRow key={run.id}>
+                  <TableCell className="flex items-center gap-2">
+                    {getModelIcon(run.model_name || '')}
+                    <span>{run.model_name}</span>
+                  </TableCell>
+                  <TableCell className="text-center font-bold">{run.rix_score ?? '-'}</TableCell>
+                  <TableCell>
+                    {run.analysis_completed_at ? (
+                      <Badge variant="default" className="bg-green-600">Analizado</Badge>
+                    ) : (
+                      <Badge variant="secondary">Pendiente</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {avgV2Score !== null && (
+                <TableRow className="bg-blue-50 dark:bg-blue-950/20">
+                  <TableCell className="font-bold">Promedio V2</TableCell>
+                  <TableCell className="text-center font-bold text-blue-600">{avgV2Score}</TableCell>
+                  <TableCell>
+                    <span className={`font-medium ${deltaClass}`}>
+                      {delta > 0 ? '+' : ''}{delta} vs Make
+                    </span>
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -313,7 +410,7 @@ export default function DashboardSieteIAs() {
           <div>
             <h1 className="text-3xl font-bold">Dashboard RIX V2 - 7 IAs</h1>
             <p className="text-muted-foreground">
-              Pipeline de 2 fases: Búsqueda (Perplexity, Grok, DeepSeek, GPT-4o, Gemini, Claude, Qwen) → Análisis (GPT-4o con ORG_RIXSchema_V2)
+              Arquitectura 1 row = 1 modelo. Fase 1: Búsqueda → 7 rows. Fase 2: Análisis individual por modelo.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -323,7 +420,7 @@ export default function DashboardSieteIAs() {
             </Badge>
             <Badge variant="outline" className="px-3 py-1">
               <BarChart2 className="w-3 h-3 mr-1" />
-              GPT-4o análisis
+              1 row por modelo
             </Badge>
           </div>
         </div>
@@ -350,9 +447,9 @@ export default function DashboardSieteIAs() {
               Panel de Ejecución
             </CardTitle>
             <CardDescription>
-              <strong>Fase 1:</strong> Búsqueda con 7 modelos que tienen acceso a Internet.
+              <strong>Fase 1:</strong> Búsqueda con 7 modelos → crea 7 rows independientes.
               <br />
-              <strong>Fase 2:</strong> Análisis con GPT-4o usando tool calling para generar el JSON del ORG_RIXSchema_V2.
+              <strong>Fase 2:</strong> Análisis individual de cada row con GPT-4o.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -387,7 +484,7 @@ export default function DashboardSieteIAs() {
                 ) : (
                   <>
                     <Search className="h-4 w-4" />
-                    Fase 1: Búsqueda (7 modelos)
+                    Fase 1: Búsqueda (7 rows)
                   </>
                 )}
               </Button>
@@ -407,7 +504,7 @@ export default function DashboardSieteIAs() {
                       {lastSearchResult.total_time_ms}ms
                     </Badge>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                     <div className="text-center">
                       <div className="text-2xl font-bold text-green-600">
                         {lastSearchResult.models_succeeded}
@@ -421,24 +518,33 @@ export default function DashboardSieteIAs() {
                       <div className="text-xs text-muted-foreground">Errores</div>
                     </div>
                     <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {lastSearchResult.records_created}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Rows creadas</div>
+                    </div>
+                    <div className="text-center">
                       <div className="text-2xl font-bold">
                         {lastSearchResult.models_called}
                       </div>
-                      <div className="text-xs text-muted-foreground">Total</div>
+                      <div className="text-xs text-muted-foreground">Total modelos</div>
                     </div>
                     <div>
                       <Button 
                         size="sm" 
-                        onClick={() => handleAnalyze(lastSearchResult.id)}
-                        disabled={isAnalyzing}
+                        onClick={handleBatchAnalyze}
+                        disabled={isAnalyzing || !lastSearchResult.record_ids?.length}
                         className="w-full gap-1"
                       >
                         {isAnalyzing ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {analysisProgress.current}/{analysisProgress.total}
+                          </>
                         ) : (
                           <>
                             <BarChart2 className="h-4 w-4" />
-                            Fase 2: Análisis
+                            Fase 2: Analizar ({lastSearchResult.record_ids?.length || 0})
                           </>
                         )}
                       </Button>
@@ -447,23 +553,19 @@ export default function DashboardSieteIAs() {
                   
                   {/* Model Results Summary */}
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(lastSearchResult.model_results || {}).map(([model, result]: [string, any]) => (
+                    {lastSearchResult.inserted_records?.map((record: any) => (
                       <Badge 
-                        key={model} 
-                        variant={result.success ? "default" : "destructive"}
+                        key={record.model_name} 
+                        variant={record.success ? "default" : "destructive"}
                         className="gap-1"
                       >
-                        {result.success ? (
+                        {getModelIcon(record.model_name)}
+                        {record.success ? (
                           <CheckCircle2 className="w-3 h-3" />
                         ) : (
                           <XCircle className="w-3 h-3" />
                         )}
-                        {model}
-                        {result.success && (
-                          <span className="text-xs opacity-70">
-                            ({result.response_length} chars)
-                          </span>
-                        )}
+                        {record.model_name}
                       </Badge>
                     ))}
                   </div>
@@ -471,40 +573,43 @@ export default function DashboardSieteIAs() {
               </Card>
             )}
 
-            {/* Last Analysis Result */}
-            {lastAnalysisResult && (
+            {/* Batch Analysis Results */}
+            {lastAnalysisResults.length > 0 && (
               <Card className="bg-green-50 dark:bg-green-950/20 border-green-200">
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
                       <BarChart2 className="h-4 w-4" />
-                      Resultado Fase 2: Análisis ORG_RIXSchema_V2
+                      Resultado Fase 2: Análisis de {lastAnalysisResults.length} modelos
                     </h4>
-                    <Badge className="bg-green-600">
-                      RIX: {lastAnalysisResult.rix_score}
-                    </Badge>
                   </div>
-                  <div className="text-sm text-green-700 dark:text-green-300 space-y-1">
-                    {lastAnalysisResult.cxm_excluded && <p>• CXM excluido (no cotiza)</p>}
-                    <p>• Tiempo de análisis: {lastAnalysisResult.analysis_time_ms}ms</p>
-                    {lastAnalysisResult.flags?.length > 0 && (
-                      <p>• Flags: {lastAnalysisResult.flags.join(', ')}</p>
-                    )}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {lastAnalysisResults.map((result, i) => (
+                      <div key={i} className="bg-white/50 rounded p-3 flex items-center gap-2">
+                        {getModelIcon(result.model_name)}
+                        <div>
+                          <div className="font-bold text-lg">{result.rix_score || '-'}</div>
+                          <div className="text-xs text-muted-foreground">{result.model_name}</div>
+                        </div>
+                        {result.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-600 ml-auto" />
+                        ) : (
+                          <XCircle className="w-4 h-4 text-red-600 ml-auto" />
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  {lastAnalysisResult.counters && (
-                    <div className="grid grid-cols-3 gap-2 mt-3">
-                      <div className="text-center bg-white/50 rounded p-2">
-                        <div className="font-bold">{lastAnalysisResult.counters.num_citas}</div>
-                        <div className="text-xs text-muted-foreground">Citas</div>
-                      </div>
-                      <div className="text-center bg-white/50 rounded p-2">
-                        <div className="font-bold">{lastAnalysisResult.counters.num_fechas}</div>
-                        <div className="text-xs text-muted-foreground">Fechas</div>
-                      </div>
-                      <div className="text-center bg-white/50 rounded p-2">
-                        <div className="font-bold">{Math.round((lastAnalysisResult.counters.temporal_alignment || 0) * 100)}%</div>
-                        <div className="text-xs text-muted-foreground">Alineación</div>
-                      </div>
+                  {lastAnalysisResults.filter(r => r.success).length > 0 && (
+                    <div className="mt-3 text-center">
+                      <span className="text-sm text-muted-foreground">Promedio: </span>
+                      <span className="font-bold text-lg">
+                        {Math.round(
+                          lastAnalysisResults
+                            .filter(r => r.success && r.rix_score)
+                            .reduce((a, b) => a + b.rix_score, 0) / 
+                          lastAnalysisResults.filter(r => r.success && r.rix_score).length
+                        )}
+                      </span>
                     </div>
                   )}
                 </CardContent>
@@ -534,19 +639,23 @@ export default function DashboardSieteIAs() {
                 </p>
               </Card>
             ) : (
-              v2Runs?.filter(run => !selectedTicker || run.ticker === selectedTicker).slice(0, 5).map((run) => (
+              v2Runs?.filter(run => !selectedTicker || run.ticker === selectedTicker).slice(0, 14).map((run) => (
                 <Card key={run.id}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="flex items-center gap-2">
-                          {run.target_name}
-                          <Badge variant="outline">{run.ticker}</Badge>
-                        </CardTitle>
-                        <CardDescription>
-                          {new Date(run.created_at).toLocaleString('es-ES')}
-                          {run.execution_time_ms && ` • ${run.execution_time_ms}ms`}
-                        </CardDescription>
+                      <div className="flex items-center gap-3">
+                        {getModelIcon(run.model_name || '')}
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            {run.target_name}
+                            <Badge variant="outline">{run.ticker}</Badge>
+                            <Badge variant="secondary">{run.model_name}</Badge>
+                          </CardTitle>
+                          <CardDescription>
+                            {new Date(run.created_at).toLocaleString('es-ES')}
+                            {run.execution_time_ms && ` • ${run.execution_time_ms}ms`}
+                          </CardDescription>
+                        </div>
                       </div>
                       <div className="text-right">
                         {run.rix_score !== null ? (
@@ -607,9 +716,9 @@ export default function DashboardSieteIAs() {
                       </div>
                     )}
 
-                    {/* Model Responses */}
+                    {/* Model Response */}
                     <div>
-                      <h4 className="font-semibold mb-3">Fase 1: Respuestas de Búsqueda (7 modelos con Internet)</h4>
+                      <h4 className="font-semibold mb-3">Respuesta de Búsqueda</h4>
                       {renderSearchModelResponses(run)}
                     </div>
                   </CardContent>
@@ -633,12 +742,13 @@ export default function DashboardSieteIAs() {
           <TabsContent value="history">
             <Card>
               <CardHeader>
-                <CardTitle>Historial de Ejecuciones V2</CardTitle>
+                <CardTitle>Historial de Ejecuciones V2 (1 row = 1 modelo)</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Modelo</TableHead>
                       <TableHead>Empresa</TableHead>
                       <TableHead>Ticker</TableHead>
                       <TableHead className="text-center">RIX</TableHead>
@@ -650,7 +760,11 @@ export default function DashboardSieteIAs() {
                   <TableBody>
                     {v2Runs?.map((run) => (
                       <TableRow key={run.id}>
-                        <TableCell className="font-medium">{run.target_name}</TableCell>
+                        <TableCell className="flex items-center gap-2">
+                          {getModelIcon(run.model_name || '')}
+                          <span className="font-medium">{run.model_name}</span>
+                        </TableCell>
+                        <TableCell>{run.target_name}</TableCell>
                         <TableCell>{run.ticker}</TableCell>
                         <TableCell className="text-center font-bold">
                           {run.rix_score || '-'}
