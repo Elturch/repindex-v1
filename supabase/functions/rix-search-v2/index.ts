@@ -324,6 +324,66 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   },
 ];
 
+// Mapping from model name to cost config provider/model
+const MODEL_COST_MAP: Record<string, { provider: string; model: string }> = {
+  'perplexity-sonar-pro': { provider: 'perplexity', model: 'sonar-pro' },
+  'grok-3': { provider: 'xai', model: 'grok-3' },
+  'deepseek-chat': { provider: 'deepseek', model: 'deepseek-chat' },
+  'gemini-2.5-pro': { provider: 'gemini', model: 'gemini-2.5-pro-preview-05-06' },
+  'claude-opus-4': { provider: 'anthropic', model: 'claude-opus-4-20250514' },
+  'gpt-4.1-mini': { provider: 'openai', model: 'gpt-4.1-mini' },
+  'qwen-max': { provider: 'alibaba', model: 'qwen-max' },
+};
+
+// Helper to log API usage for cost tracking
+async function logApiUsage(
+  supabase: any,
+  config: SearchModelConfig,
+  response: string | undefined,
+  ticker: string,
+  success: boolean
+): Promise<void> {
+  try {
+    const costMapping = MODEL_COST_MAP[config.name];
+    if (!costMapping) return;
+
+    // Estimate tokens (rough: 1 token ≈ 4 chars for input, 3.5 for output)
+    const inputTokens = Math.ceil(2000 / 4); // Approximate prompt size
+    const outputTokens = response ? Math.ceil(response.length / 3.5) : 0;
+
+    // Get cost config
+    const { data: costConfig } = await supabase
+      .from('api_cost_config')
+      .select('input_cost_per_million, output_cost_per_million')
+      .eq('provider', costMapping.provider)
+      .eq('model', costMapping.model)
+      .single();
+
+    const inputCost = costConfig ? (inputTokens / 1_000_000) * costConfig.input_cost_per_million : 0;
+    const outputCost = costConfig ? (outputTokens / 1_000_000) * costConfig.output_cost_per_million : 0;
+    const totalCost = inputCost + outputCost;
+
+    await supabase.from('api_usage_logs').insert({
+      edge_function: 'rix-search-v2',
+      provider: costMapping.provider,
+      model: costMapping.model,
+      action_type: 'rix_search',
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated_cost_usd: totalCost,
+      pipeline_stage: 'search',
+      ticker: ticker,
+      metadata: {
+        model_name: config.displayName,
+        success,
+        response_length: response?.length || 0,
+      },
+    });
+  } catch (err) {
+    console.error(`[rix-search-v2] Cost logging error for ${config.name}:`, err);
+  }
+}
+
 async function callSearchModel(
   config: SearchModelConfig, 
   prompt: string
@@ -538,6 +598,11 @@ serve(async (req) => {
               triggerAnalysis(insertedRecord.id, supabaseUrl, supabaseServiceKey);
             }
           }
+          
+          // Log API usage for cost tracking
+          EdgeRuntime.waitUntil(
+            logApiUsage(supabase, config, result.response, ticker, result.success)
+          );
         }
       } catch (err: any) {
         console.error(`[rix-search-v2] Exception inserting ${config.displayName}:`, err);

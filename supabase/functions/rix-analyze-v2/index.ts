@@ -611,6 +611,39 @@ serve(async (req) => {
       );
     }
 
+    // Log API usage for cost tracking (GPT-4o analysis)
+    const analysisInputTokens = Math.ceil(analysisPrompt.length / 4);
+    const analysisOutputTokens = Math.ceil(JSON.stringify(analysis).length / 3.5);
+    
+    // Get cost config for GPT-4o
+    const { data: costConfig } = await supabase
+      .from('api_cost_config')
+      .select('input_cost_per_million, output_cost_per_million')
+      .eq('provider', 'openai')
+      .eq('model', 'gpt-4o')
+      .single();
+
+    const inputCost = costConfig ? (analysisInputTokens / 1_000_000) * costConfig.input_cost_per_million : 0;
+    const outputCost = costConfig ? (analysisOutputTokens / 1_000_000) * costConfig.output_cost_per_million : 0;
+    const totalCost = inputCost + outputCost;
+
+    await supabase.from('api_usage_logs').insert({
+      edge_function: 'rix-analyze-v2',
+      provider: 'openai',
+      model: 'gpt-4o',
+      action_type: 'rix_analysis',
+      input_tokens: analysisInputTokens,
+      output_tokens: analysisOutputTokens,
+      estimated_cost_usd: totalCost,
+      pipeline_stage: 'analysis',
+      ticker: record['05_ticker'],
+      metadata: {
+        model_name: modelName,
+        rix_score: finalRixScore,
+        record_id,
+      },
+    });
+
     const totalTime = Date.now() - startTime;
     console.log(`[rix-analyze-v2] Analysis completed for ${modelName} in ${totalTime}ms. RIX: ${finalRixScore}`);
 
