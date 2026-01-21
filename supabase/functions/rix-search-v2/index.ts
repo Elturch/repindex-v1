@@ -370,6 +370,37 @@ async function callSearchModel(
   }
 }
 
+// Helper function to trigger Phase 2 analysis after insert (fire-and-forget)
+async function triggerAnalysis(recordId: string, supabaseUrl: string, serviceKey: string): Promise<void> {
+  try {
+    console.log(`[rix-search-v2] Triggering Phase 2 analysis for record: ${recordId}`);
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ record_id: recordId }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[rix-search-v2] Phase 2 failed for ${recordId}:`, errorText.substring(0, 200));
+    } else {
+      const result = await response.json();
+      console.log(`[rix-search-v2] Phase 2 completed for ${recordId}: RIX=${result.rix_score || 'N/A'}`);
+    }
+  } catch (error: any) {
+    console.error(`[rix-search-v2] Phase 2 error for ${recordId}:`, error.message);
+  }
+}
+
+// Declare EdgeRuntime for background tasks (Deno edge runtime)
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<any>) => void;
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -492,6 +523,21 @@ serve(async (req) => {
             model_name: config.displayName,
             success: true,
           });
+          
+          // PHASE 2 AUTOMATION: Trigger analysis immediately after successful insert
+          // Using fire-and-forget pattern with EdgeRuntime.waitUntil for background execution
+          if (hasResponse && insertedRecord.id) {
+            try {
+              EdgeRuntime.waitUntil(
+                triggerAnalysis(insertedRecord.id, supabaseUrl, supabaseServiceKey)
+              );
+              console.log(`[rix-search-v2] Phase 2 queued for ${config.displayName}`);
+            } catch (waitUntilError) {
+              // Fallback: if EdgeRuntime.waitUntil is not available, fire without waiting
+              console.log(`[rix-search-v2] EdgeRuntime.waitUntil not available, using fallback for ${config.displayName}`);
+              triggerAnalysis(insertedRecord.id, supabaseUrl, supabaseServiceKey);
+            }
+          }
         }
       } catch (err: any) {
         console.error(`[rix-search-v2] Exception inserting ${config.displayName}:`, err);
