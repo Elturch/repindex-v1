@@ -47,7 +47,8 @@ import { AnalyticsDashboard } from '@/components/admin/AnalyticsDashboard';
 import { InboundDashboard } from '@/components/admin/InboundDashboard';
 import { FeedbackPanel } from '@/components/admin/FeedbackPanel';
 import { ApiCostDashboard } from '@/components/admin/ApiCostDashboard';
-import { DollarSign } from 'lucide-react';
+import { SweepMonitorPanel } from '@/components/admin/SweepMonitorPanel';
+import { DollarSign, Radar } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -933,6 +934,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="api-costs" className="flex items-center gap-1.5 px-3 text-xs">
               <DollarSign className="h-3.5 w-3.5" />
               Gastos API
+            </TabsTrigger>
+            <TabsTrigger value="sweep-monitor" className="flex items-center gap-1.5 px-3 text-xs">
+              <Radar className="h-3.5 w-3.5" />
+              Barrido V2
             </TabsTrigger>
           </TabsList>
 
@@ -2928,6 +2933,11 @@ const Admin: React.FC = () => {
           {/* ==================== GASTOS API ==================== */}
           <TabsContent value="api-costs">
             <ApiCostDashboard />
+          </TabsContent>
+
+          {/* ==================== SWEEP MONITOR V2 ==================== */}
+          <TabsContent value="sweep-monitor">
+            <SweepMonitorPanel />
           </TabsContent>
         </Tabs>
       </div>
