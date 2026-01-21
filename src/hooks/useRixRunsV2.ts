@@ -194,17 +194,10 @@ export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
   return useQuery({
     queryKey: ['rix-runs-v2', sourcePipeline, ticker, modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, limit],
     queryFn: async (): Promise<RixRunV2[]> => {
+      // Fetch rix_runs_v2
       let query = supabase
         .from('rix_runs_v2')
-        .select(`
-          *,
-          repindex_root_issuers!left (
-            ticker,
-            issuer_name,
-            sector_category,
-            ibex_family_code
-          )
-        `)
+        .select('*')
         .order('batch_execution_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -218,14 +211,27 @@ export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
       }
 
       const { data, error } = await query;
-
+      
       if (error) {
         console.error('Error fetching rix_runs_v2:', error);
         throw error;
       }
 
-      // Map and filter data
-      let runs = (data || []).map(mapRowToRixRunV2);
+      // Fetch issuers separately for manual join
+      const { data: issuers } = await supabase
+        .from('repindex_root_issuers')
+        .select('ticker, issuer_name, sector_category, ibex_family_code');
+      
+      // Create a map for quick lookup
+      const issuerMap = new Map(
+        (issuers || []).map(i => [i.ticker, i])
+      );
+
+      // Map and filter data with manual issuer join
+      let runs = (data || []).map(row => {
+        const issuer = issuerMap.get(row['05_ticker']);
+        return mapRowToRixRunV2({ ...row, repindex_root_issuers: issuer || null });
+      });
       
       // Apply model filter
       if (modelFilter !== 'all') {
@@ -268,15 +274,7 @@ export function useRixRunV2(id: string | undefined) {
 
       const { data, error } = await supabase
         .from('rix_runs_v2')
-        .select(`
-          *,
-          repindex_root_issuers!left (
-            ticker,
-            issuer_name,
-            sector_category,
-            ibex_family_code
-          )
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
@@ -287,7 +285,18 @@ export function useRixRunV2(id: string | undefined) {
 
       if (!data) return null;
 
-      return mapRowToRixRunV2(data);
+      // Fetch issuer data separately
+      let issuer = null;
+      if (data['05_ticker']) {
+        const { data: issuerData } = await supabase
+          .from('repindex_root_issuers')
+          .select('ticker, issuer_name, sector_category, ibex_family_code')
+          .eq('ticker', data['05_ticker'])
+          .single();
+        issuer = issuerData;
+      }
+
+      return mapRowToRixRunV2({ ...data, repindex_root_issuers: issuer });
     },
     enabled: !!id,
   });
