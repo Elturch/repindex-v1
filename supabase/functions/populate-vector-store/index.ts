@@ -12,10 +12,13 @@ const MAX_RAW_RESPONSE_LENGTH = 8000;
 const BATCH_SIZE = 100; // Documents per execution
 const MAX_EXECUTION_TIME = 45000; // 45 seconds (safe margin before timeout)
 
+// New models added in the 7 IA system (January 2026)
+const NEW_MODELS = ['Claude', 'Grok', 'Qwen'];
+
 // Background processing function - INCREMENTAL ONLY (never deletes)
 async function processVectorStore(includeRawResponses: boolean) {
   const startTime = Date.now();
-  console.log('Starting incremental vector store population...');
+  console.log('Starting incremental vector store population (multi-table: rix_runs + rix_runs_v2)...');
   
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -61,37 +64,86 @@ async function processVectorStore(includeRawResponses: boolean) {
     
     console.log(`Found ${existingRunIds.size} existing documents`);
 
-    // Get ALL rix_runs using pagination (Supabase default limit is 1000)
-    console.log('Fetching all rix_runs...');
-    const allRixRuns: any[] = [];
-    let rixOffset = 0;
-    const rixBatchSize = 1000;
+    // ==========================================================================
+    // FETCH FROM BOTH TABLES: rix_runs (original) + rix_runs_v2 (7 IAs)
+    // ==========================================================================
+    console.log('Fetching all rix_runs from BOTH tables...');
     
-    while (true) {
-      const { data: rixRuns, error: rixError } = await supabaseClient
-        .from('rix_runs')
-        .select('*')
-        .not('10_resumen', 'is', null)
-        .range(rixOffset, rixOffset + rixBatchSize - 1);
+    // Fetch from rix_runs (original Make.com data)
+    const fetchRixRunsOriginal = async () => {
+      const allRixRuns: any[] = [];
+      let rixOffset = 0;
+      const rixBatchSize = 1000;
+      
+      while (true) {
+        const { data: rixRuns, error: rixError } = await supabaseClient
+          .from('rix_runs')
+          .select('*')
+          .not('10_resumen', 'is', null)
+          .range(rixOffset, rixOffset + rixBatchSize - 1);
 
-      if (rixError) {
-        console.error('Error fetching rix_runs:', rixError);
-        return { success: false, error: rixError.message };
+        if (rixError) {
+          console.error('Error fetching rix_runs:', rixError);
+          throw rixError;
+        }
+        
+        if (!rixRuns || rixRuns.length === 0) break;
+        
+        // Mark source table
+        allRixRuns.push(...rixRuns.map(r => ({ ...r, _source_table: 'rix_runs' })));
+        
+        if (rixRuns.length < rixBatchSize) break;
+        rixOffset += rixBatchSize;
       }
       
-      if (!rixRuns || rixRuns.length === 0) break;
-      
-      allRixRuns.push(...rixRuns);
-      console.log(`Fetched rix_runs batch: ${rixRuns.length} (total: ${allRixRuns.length})`);
-      
-      if (rixRuns.length < rixBatchSize) break;
-      rixOffset += rixBatchSize;
-    }
+      return allRixRuns;
+    };
 
+    // Fetch from rix_runs_v2 (new 7 IA system)
+    const fetchRixRunsV2 = async () => {
+      const allRixRunsV2: any[] = [];
+      let v2Offset = 0;
+      const v2BatchSize = 1000;
+      
+      while (true) {
+        const { data: rixRunsV2, error: v2Error } = await supabaseClient
+          .from('rix_runs_v2')
+          .select('*')
+          .not('10_resumen', 'is', null)
+          .range(v2Offset, v2Offset + v2BatchSize - 1);
+
+        if (v2Error) {
+          console.error('Error fetching rix_runs_v2:', v2Error);
+          throw v2Error;
+        }
+        
+        if (!rixRunsV2 || rixRunsV2.length === 0) break;
+        
+        // Mark source table
+        allRixRunsV2.push(...rixRunsV2.map(r => ({ ...r, _source_table: 'rix_runs_v2' })));
+        
+        if (rixRunsV2.length < v2BatchSize) break;
+        v2Offset += v2BatchSize;
+      }
+      
+      return allRixRunsV2;
+    };
+
+    // Fetch both tables in parallel
+    const [rixRunsOriginal, rixRunsV2] = await Promise.all([
+      fetchRixRunsOriginal(),
+      fetchRixRunsV2()
+    ]);
+
+    console.log(`Fetched from rix_runs (original): ${rixRunsOriginal.length} records`);
+    console.log(`Fetched from rix_runs_v2 (7 IAs): ${rixRunsV2.length} records`);
+
+    // Combine all runs
+    const allRixRuns = [...rixRunsOriginal, ...rixRunsV2];
     const totalRuns = allRixRuns.length;
     const pendingRuns = allRixRuns.filter(r => !existingRunIds.has(r.id));
     
-    console.log(`Total rix_runs: ${totalRuns}, Existing docs: ${existingRunIds.size}, Pending: ${pendingRuns.length}`);
+    console.log(`Total rix_runs (combined): ${totalRuns}, Existing docs: ${existingRunIds.size}, Pending: ${pendingRuns.length}`);
 
     if (pendingRuns.length === 0) {
       console.log('No pending documents to process!');
@@ -101,7 +153,9 @@ async function processVectorStore(includeRawResponses: boolean) {
         processed: 0, 
         remaining: 0,
         total: totalRuns,
-        existing: existingRunIds.size
+        existing: existingRunIds.size,
+        from_rix_runs: rixRunsOriginal.length,
+        from_rix_runs_v2: rixRunsV2.length
       };
     }
 
@@ -116,6 +170,7 @@ async function processVectorStore(includeRawResponses: boolean) {
 
     let documentsCreated = 0;
     let documentsErrored = 0;
+    let v2DocsCreated = 0;
 
     // Process batch with time limit
     const batchToProcess = pendingRuns.slice(0, BATCH_SIZE);
@@ -129,11 +184,24 @@ async function processVectorStore(includeRawResponses: boolean) {
 
       try {
         const issuerData = issuersMap.get(run["05_ticker"]);
+        const isV2 = run._source_table === 'rix_runs_v2';
+        const modelName = run["02_model_name"] || "N/A";
+        const isNewModel = NEW_MODELS.includes(modelName);
 
-        // Build RICH content
-        let content = `Empresa: ${run["03_target_name"] || "N/A"}\n`;
+        // Build RICH content with 7 IA system header for V2 records
+        let content = '';
+        
+        // Add system header for V2 records (the "snapshot")
+        if (isV2) {
+          content += `[SISTEMA REPINDEX 2.0 - 7 MODELOS DE IA]\n`;
+          content += `Este análisis utiliza el nuevo sistema avanzado RepIndex 2.0 con 7 modelos de IA:\n`;
+          content += `ChatGPT, Perplexity, Gemini, Deepseek, Claude, Grok y Qwen.\n`;
+          content += `Lanzamiento: Enero 2026\n\n`;
+        }
+        
+        content += `Empresa: ${run["03_target_name"] || "N/A"}\n`;
         content += `Ticker: ${run["05_ticker"] || "N/A"}\n`;
-        content += `Modelo IA: ${run["02_model_name"] || "N/A"}\n`;
+        content += `Modelo IA: ${modelName}\n`;
         content += `Período: ${run["06_period_from"]} - ${run["07_period_to"]}\n`;
         content += `RIX Score: ${run["09_rix_score"] || "N/A"}\n`;
         
@@ -182,8 +250,9 @@ async function processVectorStore(includeRawResponses: boolean) {
           content += `EXPLICACIÓN DEL ANÁLISIS:\n${run["22_explicacion"]}\n\n`;
         }
 
-        // Raw AI responses
+        // Raw AI responses (all 7 models)
         if (includeRawResponses) {
+          // Original 4 models
           if (run["20_res_gpt_bruto"]) {
             content += `RESPUESTA COMPLETA CHATGPT:\n${run["20_res_gpt_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
           }
@@ -195,6 +264,17 @@ async function processVectorStore(includeRawResponses: boolean) {
           }
           if (run["23_res_deepseek_bruto"]) {
             content += `RESPUESTA COMPLETA DEEPSEEK:\n${run["23_res_deepseek_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+          }
+          
+          // New 3 models (V2 system - 7 IAs)
+          if (run["respuesta_bruto_claude"]) {
+            content += `RESPUESTA COMPLETA CLAUDE:\n${run["respuesta_bruto_claude"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+          }
+          if (run["respuesta_bruto_grok"]) {
+            content += `RESPUESTA COMPLETA GROK:\n${run["respuesta_bruto_grok"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+          }
+          if (run["respuesta_bruto_qwen"]) {
+            content += `RESPUESTA COMPLETA QWEN:\n${run["respuesta_bruto_qwen"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
           }
         }
 
@@ -243,12 +323,12 @@ async function processVectorStore(includeRawResponses: boolean) {
         const embeddingData = await embeddingResponse.json();
         const embedding = embeddingData.data[0].embedding;
 
-        // Metadata
+        // Enhanced Metadata with 7 IA system info
         const metadata = {
           rix_run_id: run.id,
           company_name: run["03_target_name"],
           ticker: run["05_ticker"],
-          ai_model: run["02_model_name"],
+          ai_model: modelName,
           week_start: run["06_period_from"],
           week_end: run["07_period_to"],
           rix_score: run["09_rix_score"],
@@ -256,6 +336,14 @@ async function processVectorStore(includeRawResponses: boolean) {
           ibex_family_code: issuerData?.ibex_family_code,
           has_raw_responses: includeRawResponses,
           content_length: content.length,
+          
+          // NEW: 7 IA System metadata
+          source_table: run._source_table,
+          source_pipeline: run.source_pipeline || (isV2 ? 'lovable_v2' : 'make_original'),
+          is_7ia_system: isV2,
+          is_new_model: isNewModel,
+          system_version: isV2 ? '2.0-7ias' : '1.0-4ias',
+          
           scores: {
             nvm: run["23_nvm_score"],
             drm: run["26_drm_score"],
@@ -291,12 +379,13 @@ async function processVectorStore(includeRawResponses: boolean) {
           documentsErrored++;
         } else {
           documentsCreated++;
+          if (isV2) v2DocsCreated++;
         }
 
         // Progress log
         if (documentsCreated % 20 === 0) {
           const elapsed = Math.round((Date.now() - startTime) / 1000);
-          console.log(`Progress: ${documentsCreated} created, ${documentsErrored} errors, ${elapsed}s elapsed`);
+          console.log(`Progress: ${documentsCreated} created (${v2DocsCreated} V2), ${documentsErrored} errors, ${elapsed}s elapsed`);
         }
 
         // Small delay to avoid rate limits
@@ -311,16 +400,19 @@ async function processVectorStore(includeRawResponses: boolean) {
     const remaining = pendingRuns.length - documentsCreated;
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     
-    console.log(`BATCH COMPLETED: ${documentsCreated} created, ${documentsErrored} errors, ${remaining} remaining, ${elapsed}s`);
+    console.log(`BATCH COMPLETED: ${documentsCreated} created (${v2DocsCreated} from V2/7IAs), ${documentsErrored} errors, ${remaining} remaining, ${elapsed}s`);
     
     return {
       success: true,
       complete: remaining <= 0,
       processed: documentsCreated,
+      processed_v2: v2DocsCreated,
       errored: documentsErrored,
       remaining: Math.max(0, remaining),
       total: totalRuns,
       existing: existingRunIds.size + documentsCreated,
+      from_rix_runs: rixRunsOriginal.length,
+      from_rix_runs_v2: rixRunsV2.length,
       elapsed_seconds: elapsed,
     };
     

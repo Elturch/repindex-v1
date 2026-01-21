@@ -1654,10 +1654,20 @@ async function handleStandardChat(
         }
         
         // Raw text excerpt
-        const rawField = r["02_model_name"] === 'ChatGPT' ? r["20_res_gpt_bruto"] :
-                        r["02_model_name"] === 'Perplexity' ? r["21_res_perplex_bruto"] :
-                        r["02_model_name"] === 'Gemini' ? r["22_res_gemini_bruto"] :
-                        r["02_model_name"] === 'DeepSeek' ? r["23_res_deepseek_bruto"] : null;
+        // Map model name to raw response field (supports all 7 models)
+        const modelResponseMap: Record<string, string> = {
+          'ChatGPT': '20_res_gpt_bruto',
+          'Perplexity': '21_res_perplex_bruto',
+          'Google Gemini': '22_res_gemini_bruto',
+          'Gemini': '22_res_gemini_bruto',
+          'Deepseek': '23_res_deepseek_bruto',
+          'DeepSeek': '23_res_deepseek_bruto',
+          'Claude': 'respuesta_bruto_claude',
+          'Grok': 'respuesta_bruto_grok',
+          'Qwen': 'respuesta_bruto_qwen',
+        };
+        const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
+        const rawField = rawFieldKey ? r[rawFieldKey] : null;
         
         if (rawField) {
           context += `- **Texto original (extracto)**: ${rawField.substring(0, 800)}...\n`;
@@ -1899,7 +1909,13 @@ Eres un CONSULTOR SENIOR DE REPUTACIÓN CORPORATIVA de nivel C-Suite, especializ
 
 📊 SISTEMA REPINDEX - CONOCIMIENTO EXPERTO:
 
-El RepIndex mide cómo las inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek) perciben y representan la reputación de las empresas españolas. Es el primer sistema mundial que cuantifica la "reputación algorítmica" - cómo las IAs hablan de las empresas cuando millones de usuarios les preguntan.
+🚀 IMPORTANTE - EVOLUCIÓN DEL SISTEMA:
+- **RepIndex 1.0 (hasta Enero 2026)**: 4 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek)
+- **RepIndex 2.0 (desde Enero 2026)**: 7 modelos de IA (+Claude, Grok, Qwen)
+
+El nuevo sistema de 7 IAs proporciona una visión más completa y triangulada de la reputación corporativa al agregar 3 modelos adicionales de alto rendimiento: Claude (Anthropic), Grok (xAI) y Qwen (Alibaba).
+
+El RepIndex mide cómo las inteligencias artificiales perciben y representan la reputación de las empresas españolas. Es el primer sistema mundial que cuantifica la "reputación algorítmica" - cómo las IAs hablan de las empresas cuando millones de usuarios les preguntan.
 
 **Las 8 Métricas Dimensionales (0-100):**
 - **NVM (Narrative Visibility Metric)**: Visibilidad narrativa - cuánto y cómo aparece la empresa en las respuestas de IA
