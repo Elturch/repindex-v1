@@ -6,215 +6,144 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Search prompt template - based on the original PARI prompt
-const SEARCH_PROMPT = `Eres un analista de reputación corporativa. Analiza la presencia mediática de {{issuer_name}} (ticker: {{ticker}}) en los últimos 7 días.
+// Prompt de búsqueda completo según especificaciones
+const buildSearchPrompt = (issuerName: string, ticker: string, dateFrom: string, dateTo: string): string => `
+Eres ANALISTA DE REPUTACIÓN CORPORATIVA. 
+Objetivo: localizar TODAS las menciones que puedan impactar la reputación de ${issuerName} (${ticker}) en España durante la ventana: from ${dateFrom} to ${dateTo}.
 
-INSTRUCCIONES:
-1. Busca noticias, artículos y menciones recientes sobre esta empresa
-2. Identifica temas principales, sentimiento general y fuentes clave
-3. Proporciona un análisis estructurado de su percepción pública actual
+INSTRUCCIONES ESTRICTAS:
 
-FORMATO DE RESPUESTA:
-Proporciona tu análisis en formato estructurado incluyendo:
-- Resumen ejecutivo (2-3 oraciones)
-- Puntos clave (lista de 3-5 puntos)
-- Sentimiento general (positivo/neutro/negativo)
-- Fuentes principales mencionadas
-- Controversias o riesgos detectados (si los hay)
-- Fortalezas reputacionales observadas
+Fuentes obligatorias:
+• Prensa económica Tier-1 (Expansión, Cinco Días, El Economista, Reuters, Bloomberg, FT, WSJ)
+• Reguladores (CNMV, BME, SEC si aplica)
+• Redes sociales abiertas (X/Twitter, Instagram, LinkedIn, TikTok, Reddit, Forocoches, Rankia)
+• Blogs sectoriales o foros especializados (Tier-3)
 
-Empresa a analizar: {{issuer_name}}
-Ticker: {{ticker}}
-Periodo: últimos 7 días`;
+Requiere al menos 5 citas fechadas <7 días, incluyendo URL y hora.
 
-interface ModelConfig {
+Si no hallas menciones en prensa/regulador, intensifica búsqueda social (mín. 3 posts relevantes).
+
+EXCLUYE citas anteriores a ${dateFrom} salvo que expliquen una tendencia actual (máx. 1 párrafo "Contexto").
+
+Devuelve JSON con campos:
+• "menciones": array de objetos {fecha, fuente, tier, titular, url, resumen_impacto, sentimiento(-1..+1)}
+• "sinshallazgo": "No" | "Sí" (si ninguna mención <7 días)
+• "nota_metodologica": aclaraciones sobre límites o incertidumbre.
+
+Responde en Español. No añadas texto fuera del JSON.
+`;
+
+// Solo modelos con acceso real a Internet
+interface SearchModelConfig {
   name: string;
-  endpoint: string;
+  displayName: string;
   apiKeyEnv: string;
-  buildRequest: (prompt: string) => { headers: Record<string, string>; body: string };
+  endpoint: string;
+  buildRequest: (prompt: string) => object;
   parseResponse: (data: any) => string;
 }
 
-const getModelConfigs = (): ModelConfig[] => [
+const getSearchModelConfigs = (): SearchModelConfig[] => [
   {
-    name: 'gpt-4o',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    apiKeyEnv: 'OPENAI_API_KEY',
+    name: 'perplexity-sonar-pro',
+    displayName: 'Perplexity Sonar Pro',
+    apiKeyEnv: 'PERPLEXITY_API_KEY',
+    endpoint: 'https://api.perplexity.ai/chat/completions',
     buildRequest: (prompt: string) => ({
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
+      model: 'sonar-pro',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.1,
+      max_tokens: 4000,
+      search_recency_filter: 'week',
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
   {
-    name: 'gemini-1.5-flash',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-    apiKeyEnv: 'GOOGLE_GEMINI_API_KEY',
+    name: 'grok-3',
+    displayName: 'Grok 3 (xAI)',
+    apiKeyEnv: 'XAI_API_KEY',
+    endpoint: 'https://api.x.ai/v1/chat/completions',
     buildRequest: (prompt: string) => ({
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 4000,
-        },
-      }),
-    }),
-    parseResponse: (data: any) => data.candidates?.[0]?.content?.parts?.[0]?.text || '',
-  },
-  {
-    name: 'sonar',
-    endpoint: 'https://api.perplexity.ai/chat/completions',
-    apiKeyEnv: 'PERPLEXITY_API_KEY',
-    buildRequest: (prompt: string) => ({
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('PERPLEXITY_API_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
+      model: 'grok-3',
+      messages: [
+        { role: 'system', content: 'You are a corporate reputation analyst with real-time access to X/Twitter and web sources. Always include URLs and dates in your analysis. Respond in Spanish.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.1,
+      max_tokens: 4000,
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
   {
     name: 'deepseek-chat',
-    endpoint: 'https://api.deepseek.com/chat/completions',
+    displayName: 'DeepSeek',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
+    endpoint: 'https://api.deepseek.com/chat/completions',
     buildRequest: (prompt: string) => ({
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('DEEPSEEK_API_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
-    }),
-    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
-  },
-  {
-    name: 'claude-sonnet',
-    endpoint: 'https://api.anthropic.com/v1/messages',
-    apiKeyEnv: 'ANTHROPIC_API_KEY',
-    buildRequest: (prompt: string) => ({
-      headers: {
-        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY') || '',
-        'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    }),
-    parseResponse: (data: any) => data.content?.[0]?.text || '',
-  },
-  {
-    name: 'grok-3',
-    endpoint: 'https://api.x.ai/v1/chat/completions',
-    apiKeyEnv: 'XAI_API_KEY',
-    buildRequest: (prompt: string) => ({
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('XAI_API_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'grok-3',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
-    }),
-    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
-  },
-  {
-    name: 'qwen-max',
-    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
-    apiKeyEnv: 'DASHSCOPE_API_KEY',
-    buildRequest: (prompt: string) => ({
-      headers: {
-        'Authorization': `Bearer ${Deno.env.get('DASHSCOPE_API_KEY')}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'qwen-max',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: 'You are a corporate reputation analyst. Search the web thoroughly for recent mentions. Always include URLs and dates. Respond in Spanish.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.1,
+      max_tokens: 4000,
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
 ];
 
-async function callModel(config: ModelConfig, prompt: string): Promise<{ success: boolean; response?: string; error?: string; timeMs: number }> {
+async function callSearchModel(
+  config: SearchModelConfig, 
+  prompt: string
+): Promise<{ success: boolean; response?: string; error?: string; timeMs: number }> {
   const startTime = Date.now();
   
   try {
     const apiKey = Deno.env.get(config.apiKeyEnv);
     if (!apiKey) {
-      return { success: false, error: `Missing API key: ${config.apiKeyEnv}`, timeMs: Date.now() - startTime };
+      return { success: false, error: `Missing ${config.apiKeyEnv}`, timeMs: Date.now() - startTime };
     }
 
-    const { headers, body } = config.buildRequest(prompt);
-    
-    // Special case for Gemini - API key in URL
-    let url = config.endpoint;
-    if (config.name === 'gemini-1.5-flash') {
-      url = `${config.endpoint}?key=${Deno.env.get(config.apiKeyEnv)}`;
-    }
+    console.log(`[rix-search-v2] Calling ${config.displayName}...`);
 
-    console.log(`[${config.name}] Starting API call...`);
-    
-    const response = await fetch(url, {
+    const response = await fetch(config.endpoint, {
       method: 'POST',
-      headers,
-      body,
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config.buildRequest(prompt)),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[${config.name}] API error: ${response.status} - ${errorText}`);
+      console.error(`[rix-search-v2] ${config.displayName} error:`, response.status, errorText);
       return { success: false, error: `HTTP ${response.status}: ${errorText.substring(0, 200)}`, timeMs: Date.now() - startTime };
     }
 
     const data = await response.json();
     const content = config.parseResponse(data);
     
-    console.log(`[${config.name}] Success - ${content.length} chars in ${Date.now() - startTime}ms`);
-    
+    if (!content) {
+      return { success: false, error: 'Empty response', timeMs: Date.now() - startTime };
+    }
+
+    console.log(`[rix-search-v2] ${config.displayName} returned ${content.length} chars`);
     return { success: true, response: content, timeMs: Date.now() - startTime };
+
   } catch (error) {
-    console.error(`[${config.name}] Error:`, error);
+    console.error(`[rix-search-v2] ${config.displayName} exception:`, error);
     return { success: false, error: error.message, timeMs: Date.now() - startTime };
   }
 }
 
 serve(async (req) => {
-  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { ticker, issuer_name, week_start, week_end } = await req.json();
+    const { ticker, issuer_name } = await req.json();
 
     if (!ticker || !issuer_name) {
       return new Response(
@@ -224,17 +153,23 @@ serve(async (req) => {
     }
 
     console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker})`);
-    const totalStartTime = Date.now();
+    const startTime = Date.now();
 
-    // Build prompt
-    const prompt = SEARCH_PROMPT
-      .replace(/\{\{issuer_name\}\}/g, issuer_name)
-      .replace(/\{\{ticker\}\}/g, ticker);
+    // Calculate date range (last 7 days)
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const dateFrom = weekAgo.toISOString().split('T')[0];
+    const dateTo = now.toISOString().split('T')[0];
 
-    // Execute all 7 model calls in parallel
-    const modelConfigs = getModelConfigs();
+    // Build search prompt
+    const searchPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
+
+    // Get only search-capable models (3 models with internet access)
+    const modelConfigs = getSearchModelConfigs();
+
+    // Call all search models in parallel
     const results = await Promise.allSettled(
-      modelConfigs.map(config => callModel(config, prompt))
+      modelConfigs.map(config => callSearchModel(config, searchPrompt))
     );
 
     // Process results
@@ -242,94 +177,98 @@ serve(async (req) => {
     const modelErrors: Record<string, string> = {};
     
     results.forEach((result, index) => {
-      const modelName = modelConfigs[index].name;
+      const config = modelConfigs[index];
       if (result.status === 'fulfilled') {
-        modelResults[modelName] = result.value;
+        modelResults[config.name] = result.value;
         if (!result.value.success && result.value.error) {
-          modelErrors[modelName] = result.value.error;
+          modelErrors[config.name] = result.value.error;
         }
       } else {
-        modelResults[modelName] = { success: false, error: result.reason?.message || 'Unknown error', timeMs: 0 };
-        modelErrors[modelName] = result.reason?.message || 'Unknown error';
+        modelResults[config.name] = { 
+          success: false, 
+          error: result.reason?.message || 'Unknown error',
+          timeMs: 0 
+        };
+        modelErrors[config.name] = result.reason?.message || 'Unknown error';
       }
     });
-
-    console.log(`[rix-search-v2] All models completed in ${Date.now() - totalStartTime}ms`);
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Calculate dates
-    const now = new Date();
-    const periodFrom = week_start ? new Date(week_start) : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const periodTo = week_end ? new Date(week_end) : now;
+    // Calculate batch date (Sunday of current week)
+    const dayOfWeek = now.getDay();
+    const sunday = new Date(now);
+    sunday.setDate(now.getDate() - dayOfWeek);
+    sunday.setHours(0, 0, 0, 0);
 
-    // Insert record into rix_runs_v2
-    const insertData = {
-      '02_model_name': 'multi-model-v2',
+    // Prepare record for insertion - store raw responses from search models
+    const insertData: Record<string, any> = {
+      '02_model_name': 'consolidado_v2',
       '03_target_name': issuer_name,
       '04_target_type': 'company',
       '05_ticker': ticker,
-      '06_period_from': periodFrom.toISOString().split('T')[0],
-      '07_period_to': periodTo.toISOString().split('T')[0],
+      '06_period_from': dateFrom,
+      '07_period_to': dateTo,
       '08_tz': 'Europe/Madrid',
-      '20_res_gpt_bruto': modelResults['gpt-4o']?.response || null,
-      '21_res_perplex_bruto': modelResults['sonar']?.response || null,
-      '22_res_gemini_bruto': modelResults['gemini-1.5-flash']?.response || null,
-      '23_res_deepseek_bruto': modelResults['deepseek-chat']?.response || null,
-      'respuesta_bruto_claude': modelResults['claude-sonnet']?.response || null,
-      'respuesta_bruto_grok': modelResults['grok-3']?.response || null,
-      'respuesta_bruto_qwen': modelResults['qwen-max']?.response || null,
+      'batch_execution_date': sunday.toISOString(),
       'source_pipeline': 'lovable_v2',
-      'execution_time_ms': Date.now() - totalStartTime,
-      'model_errors': modelErrors,
+      'execution_time_ms': Date.now() - startTime,
       'search_completed_at': new Date().toISOString(),
-      'batch_execution_date': now.toISOString(),
+      // Store raw responses from the 3 search models
+      '21_res_perplex_bruto': modelResults['perplexity-sonar-pro']?.response || null,
+      'respuesta_bruto_grok': modelResults['grok-3']?.response || null,
+      '23_res_deepseek_bruto': modelResults['deepseek-chat']?.response || null,
+      // Track errors
+      'model_errors': Object.keys(modelErrors).length > 0 ? modelErrors : null,
     };
 
+    // Insert record
     const { data: insertedRecord, error: insertError } = await supabase
       .from('rix_runs_v2')
       .insert(insertData)
-      .select()
+      .select('id')
       .single();
 
     if (insertError) {
       console.error('[rix-search-v2] Insert error:', insertError);
       return new Response(
-        JSON.stringify({ error: 'Failed to save results', details: insertError }),
+        JSON.stringify({ error: 'Failed to save search results', details: insertError }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[rix-search-v2] Record saved with ID: ${insertedRecord.id}`);
-
-    // Build response summary
     const successCount = Object.values(modelResults).filter(r => r.success).length;
-    const summary = {
-      id: insertedRecord.id,
-      ticker,
-      issuer_name,
-      models_called: modelConfigs.length,
-      models_succeeded: successCount,
-      models_failed: modelConfigs.length - successCount,
-      total_time_ms: Date.now() - totalStartTime,
-      model_results: Object.fromEntries(
-        Object.entries(modelResults).map(([name, result]) => [
-          name,
-          {
-            success: result.success,
-            response_length: result.response?.length || 0,
-            time_ms: result.timeMs,
-            error: result.error,
-          }
-        ])
-      ),
-    };
+    const totalTime = Date.now() - startTime;
+
+    console.log(`[rix-search-v2] Search completed: ${successCount}/3 models succeeded in ${totalTime}ms`);
 
     return new Response(
-      JSON.stringify(summary),
+      JSON.stringify({
+        success: true,
+        id: insertedRecord.id,
+        record_id: insertedRecord.id,
+        issuer_name,
+        ticker,
+        date_range: { from: dateFrom, to: dateTo },
+        models_called: 3,
+        models_succeeded: successCount,
+        models_failed: 3 - successCount,
+        total_time_ms: totalTime,
+        model_results: Object.fromEntries(
+          Object.entries(modelResults).map(([name, r]) => [
+            name,
+            {
+              success: r.success,
+              response_length: r.response?.length || 0,
+              time_ms: r.timeMs,
+              error: r.error,
+            }
+          ])
+        ),
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
