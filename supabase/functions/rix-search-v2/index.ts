@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Prompt de búsqueda completo según especificaciones
+// Prompt genérico para la mayoría de modelos
 const buildSearchPrompt = (issuerName: string, ticker: string, dateFrom: string, dateTo: string): string => `
 Eres ANALISTA DE REPUTACIÓN CORPORATIVA. 
 Objetivo: localizar TODAS las menciones que puedan impactar la reputación de ${issuerName} (${ticker}) en España durante la ventana: from ${dateFrom} to ${dateTo}.
@@ -32,6 +32,53 @@ Devuelve JSON con campos:
 
 Responde en Español. No añadas texto fuera del JSON.
 `;
+
+// Prompt optimizado para Perplexity - diseñado para obtener más menciones
+const buildPerplexityPrompt = (issuerName: string, ticker: string): string => `Actúa como ANALISTA DE REPUTACIÓN CORPORATIVA especializado en monitorizar marcas en Internet.
+
+OBJETIVO: localizar el máximo número posible de menciones relevantes sobre la reputación de ${issuerName} (${ticker}) en España durante los ÚLTIMOS 7 DÍAS, contados hacia atrás desde la fecha de esta consulta.
+
+INSTRUCCIONES CLAVE:
+- Da prioridad absoluta al CRITERIO TEMPORAL: solo debes incluir menciones ocurridas en aproximadamente los últimos 7 días. Si no estás seguro de la fecha exacta, incluye solo aquellas que parezcan claramente recientes (últimos días) y explícalo en "nota_metodologica".
+- Considera cualquier tipo de fuente pública donde un usuario razonable pudiera hablar sobre la marca: prensa, blogs, foros, redes sociales, reseñas, noticias breves, hilos de discusión, etc. No te limites solo a medios Tier-1 o reguladores si eso reduce mucho el número de resultados.
+- Usa como fuentes recomendadas (cuando tengas contexto suficiente):
+  - Prensa económica y general (por ejemplo: Expansión, Cinco Días, El Economista, Reuters, Bloomberg, FT, WSJ, prensa nacional y regional española).
+  - Reguladores (CNMV, BME, SEC, u otros cuando sean relevantes para la marca).
+  - Redes sociales abiertas (X/Twitter, Instagram, LinkedIn, TikTok, Reddit, Forocoches, Rankia, foros similares).
+  - Blogs sectoriales, portales especializados, foros de usuarios, reseñas de clientes, comparadores, etc.
+- Debes intentar recoger TODAS las menciones relevantes que puedas dentro del límite de espacio de la respuesta, priorizando:
+  1) Impacto reputacional claro (críticas, quejas, escándalos, investigaciones, fallos de servicio, campañas polémicas, etc.).
+  2) Noticias de negocio que puedan influir en la percepción (resultados, operaciones corporativas, cambios en precios, sanciones, litigios, reconocimientos, premios, innovaciones destacadas, etc.).
+  3) Opiniones de usuarios o comunidades con tono muy negativo o muy positivo.
+- Procura llegar hasta 15–20 menciones si el espacio lo permite. Si no hay tantas, devuelve todas las que encuentres, aunque solo sean pocas. Si hay más de las que caben, selecciona las que tengan mayor impacto reputacional (positivo o negativo) y explica la limitación en "nota_metodologica".
+
+VENTANA TEMPORAL:
+- Limítate a aproximadamente los últimos 7 días. No incluyas menciones claramente anteriores, salvo que sean necesarias para explicar un contexto de tendencia que sigue activo ahora (en ese caso, marca ese contexto en un único objeto adicional o coméntalo en "nota_metodologica").
+
+SALIDA (MUY IMPORTANTE):
+- Devuelve SIEMPRE un JSON VÁLIDO con esta estructura exacta y sin ningún texto adicional antes o después:
+
+{
+  "menciones": [
+    {
+      "fecha": "YYYY-MM-DDThh:mm:ssZ (si no sabes la hora exacta, pon solo una hora aproximada)",
+      "fuente": "Nombre corto de la fuente o plataforma (por ejemplo: Expansión, Reddit, X/Twitter, CNMV, Trustpilot, etc.)",
+      "tier": "Describe de forma simple el tipo de fuente (por ejemplo: 'Prensa económica', 'Prensa general', 'Regulador', 'Red social', 'Foro especializado', 'Blog', 'Reseñas de clientes', etc.)",
+      "titular": "Título breve o descripción corta de la mención",
+      "url": "URL o identificador más cercano posible (si no dispones de una URL concreta, indícalo claramente)",
+      "resumen_impacto": "2–3 frases explicando qué se dice sobre la marca y por qué puede afectar a su reputación (positiva o negativamente)",
+      "sentimiento": "Número entre -1 y +1 que refleje el tono global de la mención: muy negativo ≈ -1, neutro ≈ 0, muy positivo ≈ +1"
+    }
+  ],
+  "sinshallazgo": "\"No\" si has encontrado al menos una mención mínimamente relevante en los últimos 7 días; en caso contrario \"Sí\"",
+  "nota_metodologica": "Explica brevemente las limitaciones de la búsqueda: si la fecha es aproximada, si las URLs son genéricas, si sólo has podido aportar ejemplos representativos en vez de una lista exhaustiva, etc."
+}
+
+REGLAS ADICIONALES:
+- No inventes hechos concretos sobre la marca que no sean razonablemente plausibles dentro del marco de los últimos 7 días.
+- Si no estás seguro de algún dato (fecha exacta, hora, URL concreta), utiliza valores aproximados y descríbelo en "nota_metodologica".
+- Si encuentras al menos 1 mención, establece siempre "sinshallazgo":"No" y céntrate en explicar las limitaciones de cobertura en vez de devolver un array vacío.
+- Escribe siempre en Español de España.`;
 
 // 7 modelos con acceso real a Internet
 interface SearchModelConfig {
@@ -322,15 +369,19 @@ serve(async (req) => {
     const dateFrom = weekAgo.toISOString().split('T')[0];
     const dateTo = now.toISOString().split('T')[0];
 
-    // Build search prompt
-    const searchPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
+    // Build prompts - Perplexity uses optimized prompt, others use generic
+    const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
+    const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
 
     // Get all 7 search-capable models
     const modelConfigs = getSearchModelConfigs();
 
-    // Call all search models in parallel
+    // Call all search models in parallel - use appropriate prompt per model
     const results = await Promise.allSettled(
-      modelConfigs.map(config => callSearchModel(config, searchPrompt))
+      modelConfigs.map(config => {
+        const prompt = config.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
+        return callSearchModel(config, prompt);
+      })
     );
 
     // Process results
