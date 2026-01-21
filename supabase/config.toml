@@ -35,3 +35,9 @@ verify_jwt = false
 
 [functions.rss-feed]
 verify_jwt = false
+
+[functions.rix-search-v2]
+verify_jwt = false
+
+[functions.rix-analyze-v2]
+verify_jwt = false
