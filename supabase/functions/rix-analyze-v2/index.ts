@@ -487,16 +487,30 @@ serve(async (req) => {
 
     const cotiza = issuerData?.cotiza_en_bolsa ?? false;
 
+    // Get stock price data from the record (populated by rix-search-v2)
+    const precioCierre = record['48_precio_accion'] as string | null;
+    const minimo52s = record['59_precio_minimo_52_semanas'] as string | null;
+    
+    let stockPriceData = 'No cotiza o precio no disponible';
+    if (cotiza && precioCierre && precioCierre !== 'NC') {
+      stockPriceData = `Precio cierre: ${precioCierre}€`;
+      if (minimo52s) {
+        stockPriceData += ` | Mínimo 52 semanas: ${minimo52s}€`;
+      }
+    }
+
     // Build analysis prompt for SINGLE MODEL response
     const analysisPrompt = buildAnalysisPrompt(
       record['03_target_name'] || 'Unknown',
       record['05_ticker'] || 'N/A',
       record['06_period_from'] || '',
       record['07_period_to'] || '',
+      record['08_tz'] || 'Europe/Madrid',
       cotiza,
       DEFAULT_WEIGHTS,
       modelName,
-      rawResponse
+      rawResponse,
+      stockPriceData
     );
 
     // Call GPT-4o with tool calling
@@ -563,12 +577,58 @@ serve(async (req) => {
       flags.push('sim_bajo');
     }
 
+    // Fetch momentum tips for listed companies with valid prices
+    let momentumAnalysis: string | null = null;
+    if (cotiza && precioCierre && precioCierre !== 'NC') {
+      try {
+        console.log(`[rix-analyze-v2] Fetching momentum tips for ${record['05_ticker']}...`);
+        
+        const momentumResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-momentum-tips`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ticker: record['05_ticker'],
+            company_name: record['03_target_name'],
+            precio_cierre: precioCierre,
+            minimo_52_semanas: minimo52s,
+            rix_score: finalRixScore,
+          }),
+        });
+
+        if (momentumResponse.ok) {
+          const momentumData = await momentumResponse.json();
+          if (momentumData.success && momentumData.momentum_analysis) {
+            // Format the momentum analysis with tips
+            let formattedAnalysis = momentumData.momentum_analysis;
+            if (momentumData.tips && momentumData.tips.length > 0) {
+              formattedAnalysis += '\n\n📊 **Tips verificados:**\n';
+              momentumData.tips.forEach((tip: string, idx: number) => {
+                formattedAnalysis += `${idx + 1}. ${tip}\n`;
+              });
+            }
+            if (momentumData.sources && momentumData.sources.length > 0) {
+              formattedAnalysis += `\n📰 Fuentes: ${momentumData.sources.join(', ')}`;
+            }
+            momentumAnalysis = formattedAnalysis;
+            console.log(`[rix-analyze-v2] Momentum tips received for ${record['05_ticker']}`);
+          }
+        } else {
+          console.warn(`[rix-analyze-v2] Momentum tips failed: ${momentumResponse.status}`);
+        }
+      } catch (momentumError: any) {
+        console.warn(`[rix-analyze-v2] Error fetching momentum tips:`, momentumError.message);
+      }
+    }
+
     // Map to database columns - CORRECTED column names
     const updateData: Record<string, any> = {
       '09_rix_score': finalRixScore,
       '10_resumen': analysis.resumen,
       '11_puntos_clave': analysis.puntos_clave,
-      '22_explicacion': analysis.explicacion || [],  // FIXED: was 23_explicacion
+      '22_explicacion': analysis.explicacion || [],
       
       // Counters
       '12_palabras': analysis.palabras,
@@ -618,11 +678,10 @@ serve(async (req) => {
       '46_cxm_categoria': analysis.cxm_categoria,
       '52_cxm_excluded': cxmExcluded,
       
-      // Stock data - CORRECTED column names
-      '48_precio_accion': analysis.precio_accion_semana,
-      '59_precio_minimo_52_semanas': analysis.precio_minimo_accion_year,  // FIXED: was 49_precio_minimo_52s
-      '49_reputacion_vs_precio': analysis.accion_vs_reputacion,  // FIXED: was 50_accion_vs_reputacion
-      '50_precio_accion_interanual': analysis.precio_accion_interanual,  // ADDED: missing column
+      // Stock data - Use momentum analysis if available, otherwise fallback to GPT-4o analysis
+      // Note: 48_precio_accion and 59_precio_minimo_52_semanas are already populated by rix-search-v2
+      '49_reputacion_vs_precio': momentumAnalysis || analysis.accion_vs_reputacion || null,
+      '50_precio_accion_interanual': analysis.precio_accion_interanual || null,
       
       // Flags and weights
       '17_flags': flags,
