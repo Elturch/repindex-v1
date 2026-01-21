@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,9 +63,11 @@ export default function DashboardSieteIAs() {
   const [selectedTicker, setSelectedTicker] = useState<string>("");
   const [isSearching, setIsSearching] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number; successes: number; failures: number }>({ current: 0, total: 0, successes: 0, failures: 0 });
   const [lastSearchResult, setLastSearchResult] = useState<any>(null);
   const [lastAnalysisResults, setLastAnalysisResults] = useState<any[]>([]);
+  const [pendingCount, setPendingCount] = useState<number>(0);
 
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: v2Runs, isLoading: runsLoading, refetch: refetchRuns } = useRixRunsV2({ 
@@ -77,6 +79,101 @@ export default function DashboardSieteIAs() {
     ticker: selectedTicker || undefined,
     limit: 10 
   });
+
+  // Fetch pending records count on mount
+  const fetchPendingCount = async () => {
+    const { count } = await supabase
+      .from('rix_runs_v2')
+      .select('*', { count: 'exact', head: true })
+      .not('search_completed_at', 'is', null)
+      .is('analysis_completed_at', null);
+    setPendingCount(count || 0);
+  };
+
+  // Batch analyze all pending records with throttling
+  const handleMassAnalyze = async () => {
+    setIsBatchAnalyzing(true);
+    setAnalysisProgress({ current: 0, total: 0, successes: 0, failures: 0 });
+
+    try {
+      // Fetch all pending record IDs
+      const { data: pendingRecords, error } = await supabase
+        .from('rix_runs_v2')
+        .select('id, "03_target_name", "02_model_name"')
+        .not('search_completed_at', 'is', null)
+        .is('analysis_completed_at', null)
+        .order('batch_execution_date', { ascending: false });
+
+      if (error) throw error;
+      if (!pendingRecords?.length) {
+        toast({ title: "No hay registros pendientes", description: "Todos los registros ya están analizados." });
+        setIsBatchAnalyzing(false);
+        return;
+      }
+
+      const total = pendingRecords.length;
+      setAnalysisProgress({ current: 0, total, successes: 0, failures: 0 });
+
+      let successes = 0;
+      let failures = 0;
+      const BATCH_SIZE = 5; // Process 5 at a time
+      const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds between batches
+
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = pendingRecords.slice(i, i + BATCH_SIZE);
+        
+        // Process batch in parallel
+        const results = await Promise.allSettled(
+          batch.map(record => 
+            supabase.functions.invoke('rix-analyze-v2', {
+              body: { record_id: record.id },
+            })
+          )
+        );
+
+        // Count successes and failures
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && !result.value.error) {
+            successes++;
+            console.log(`[Batch] Analyzed ${batch[idx]["03_target_name"]} - ${batch[idx]["02_model_name"]}: RIX=${result.value.data?.rix_score || 'N/A'}`);
+          } else {
+            failures++;
+            console.error(`[Batch] Failed ${batch[idx]["03_target_name"]} - ${batch[idx]["02_model_name"]}:`, 
+              result.status === 'rejected' ? result.reason : result.value.error);
+          }
+        });
+
+        setAnalysisProgress({ current: Math.min(i + BATCH_SIZE, total), total, successes, failures });
+
+        // Delay between batches to avoid rate limiting
+        if (i + BATCH_SIZE < total) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+        }
+      }
+
+      toast({ 
+        title: "Análisis masivo completado",
+        description: `${successes} exitosos, ${failures} fallidos de ${total} registros`,
+      });
+      
+      refetchRuns();
+      fetchPendingCount();
+    } catch (error: any) {
+      console.error('Mass analysis error:', error);
+      toast({ 
+        title: "Error en análisis masivo",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsBatchAnalyzing(false);
+    }
+  };
+
+  // Fetch pending count on mount
+  useEffect(() => {
+    fetchPendingCount();
+  }, []);
 
   const selectedCompany = companies?.find(c => c.ticker === selectedTicker);
 
@@ -158,13 +255,13 @@ export default function DashboardSieteIAs() {
     }
 
     setIsAnalyzing(true);
-    setAnalysisProgress({ current: 0, total: lastSearchResult.record_ids.length });
+    setAnalysisProgress({ current: 0, total: lastSearchResult.record_ids.length, successes: 0, failures: 0 });
     const results: any[] = [];
 
     try {
       for (let i = 0; i < lastSearchResult.record_ids.length; i++) {
         const recordId = lastSearchResult.record_ids[i];
-        setAnalysisProgress({ current: i + 1, total: lastSearchResult.record_ids.length });
+        setAnalysisProgress(prev => ({ ...prev, current: i + 1 }));
         
         const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
           body: { record_id: recordId },
@@ -173,8 +270,10 @@ export default function DashboardSieteIAs() {
         if (error) {
           console.error(`Analysis error for ${recordId}:`, error);
           results.push({ recordId, success: false, error: error.message });
+          setAnalysisProgress(prev => ({ ...prev, failures: prev.failures + 1 }));
         } else {
           results.push({ recordId, success: true, ...data });
+          setAnalysisProgress(prev => ({ ...prev, successes: prev.successes + 1 }));
         }
       }
 
@@ -196,7 +295,7 @@ export default function DashboardSieteIAs() {
       });
     } finally {
       setIsAnalyzing(false);
-      setAnalysisProgress({ current: 0, total: 0 });
+      setAnalysisProgress({ current: 0, total: 0, successes: 0, failures: 0 });
     }
   };
 
@@ -488,7 +587,57 @@ export default function DashboardSieteIAs() {
                   </>
                 )}
               </Button>
+
+              {/* Mass Analyze Pending Records Button */}
+              <Button 
+                onClick={handleMassAnalyze} 
+                disabled={isBatchAnalyzing || pendingCount === 0}
+                variant="secondary"
+                className="gap-2"
+              >
+                {isBatchAnalyzing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Analizando {analysisProgress.current}/{analysisProgress.total}
+                    <span className="text-xs ml-1">
+                      (✓{analysisProgress.successes} ✗{analysisProgress.failures})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <BarChart2 className="h-4 w-4" />
+                    Analizar Pendientes ({pendingCount})
+                  </>
+                )}
+              </Button>
             </div>
+
+            {/* Progress bar for mass analysis */}
+            {isBatchAnalyzing && analysisProgress.total > 0 && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Progreso análisis masivo</span>
+                  <span className="font-medium">
+                    {analysisProgress.current} / {analysisProgress.total} 
+                    ({Math.round((analysisProgress.current / analysisProgress.total) * 100)}%)
+                  </span>
+                </div>
+                <div className="w-full bg-secondary rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-primary transition-all duration-300 ease-out"
+                    style={{ width: `${(analysisProgress.current / analysisProgress.total) * 100}%` }}
+                  />
+                </div>
+                <div className="flex gap-4 text-sm">
+                  <span className="text-green-600 dark:text-green-400">
+                    ✓ {analysisProgress.successes} exitosos
+                  </span>
+                  <span className="text-red-600 dark:text-red-400">
+                    ✗ {analysisProgress.failures} fallidos
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Last Search Result */}
             {lastSearchResult && (
