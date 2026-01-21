@@ -522,7 +522,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[rix-analyze-v2] Calling GPT-4o to analyze ${modelName} response...`);
+    console.log(`[rix-analyze-v2] Calling GPT-5 to analyze ${modelName} response...`);
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -531,7 +531,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'gpt-5',
         messages: [{ role: 'user', content: analysisPrompt }],
         tools: [RIX_ANALYSIS_TOOL],
         tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
@@ -555,7 +555,7 @@ serve(async (req) => {
     if (!toolCall || toolCall.function.name !== 'submit_rix_analysis') {
       console.error('[rix-analyze-v2] No valid tool call in response');
       return new Response(
-        JSON.stringify({ error: 'No valid analysis returned from GPT-4o' }),
+        JSON.stringify({ error: 'No valid analysis returned from GPT-5' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
