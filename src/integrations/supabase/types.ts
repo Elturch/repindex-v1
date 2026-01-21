@@ -1481,6 +1481,219 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_runs_v2: {
+        Row: {
+          "01_run_id": string
+          "02_model_name": string | null
+          "03_target_name": string | null
+          "04_target_type": string | null
+          "05_ticker": string | null
+          "06_period_from": string | null
+          "07_period_to": string | null
+          "08_tz": string | null
+          "09_rix_score": number | null
+          "10_resumen": string | null
+          "11_puntos_clave": Json | null
+          "12_palabras": number | null
+          "13_num_fechas": number | null
+          "14_num_citas": number | null
+          "15_temporal_alignment": number | null
+          "16_citation_density": number | null
+          "17_flags": Json | null
+          "18_subscores": Json | null
+          "19_weights": Json | null
+          "20_res_gpt_bruto": string | null
+          "21_res_perplex_bruto": string | null
+          "22_explicacion": string | null
+          "22_res_gemini_bruto": string | null
+          "23_nvm_score": number | null
+          "23_res_deepseek_bruto": string | null
+          "24_nvm_peso": number | null
+          "25_explicaciones_detalladas": Json | null
+          "25_nvm_categoria": string | null
+          "26_drm_score": number | null
+          "27_drm_peso": number | null
+          "28_drm_categoria": string | null
+          "29_sim_score": number | null
+          "30_sim_peso": number | null
+          "31_sim_categoria": string | null
+          "32_rmm_score": number | null
+          "33_rmm_peso": number | null
+          "34_rmm_categoria": string | null
+          "35_cem_score": number | null
+          "36_cem_peso": number | null
+          "37_cem_categoria": string | null
+          "38_gam_score": number | null
+          "39_gam_peso": number | null
+          "40_gam_categoria": string | null
+          "41_dcm_score": number | null
+          "42_dcm_peso": number | null
+          "43_dcm_categoria": string | null
+          "44_cxm_score": number | null
+          "45_cxm_peso": number | null
+          "46_cxm_categoria": string | null
+          "47_fase": string | null
+          "48_precio_accion": string | null
+          "49_reputacion_vs_precio": string | null
+          "50_precio_accion_interanual": string | null
+          "51_rix_score_adjusted": number | null
+          "52_cxm_excluded": boolean | null
+          "59_precio_minimo_52_semanas": string | null
+          analysis_completed_at: string | null
+          batch_execution_date: string
+          created_at: string
+          execution_time_ms: number | null
+          id: string
+          model_errors: Json | null
+          respuesta_bruto_claude: string | null
+          respuesta_bruto_grok: string | null
+          respuesta_bruto_qwen: string | null
+          search_completed_at: string | null
+          source_pipeline: string
+          updated_at: string
+        }
+        Insert: {
+          "01_run_id"?: string
+          "02_model_name"?: string | null
+          "03_target_name"?: string | null
+          "04_target_type"?: string | null
+          "05_ticker"?: string | null
+          "06_period_from"?: string | null
+          "07_period_to"?: string | null
+          "08_tz"?: string | null
+          "09_rix_score"?: number | null
+          "10_resumen"?: string | null
+          "11_puntos_clave"?: Json | null
+          "12_palabras"?: number | null
+          "13_num_fechas"?: number | null
+          "14_num_citas"?: number | null
+          "15_temporal_alignment"?: number | null
+          "16_citation_density"?: number | null
+          "17_flags"?: Json | null
+          "18_subscores"?: Json | null
+          "19_weights"?: Json | null
+          "20_res_gpt_bruto"?: string | null
+          "21_res_perplex_bruto"?: string | null
+          "22_explicacion"?: string | null
+          "22_res_gemini_bruto"?: string | null
+          "23_nvm_score"?: number | null
+          "23_res_deepseek_bruto"?: string | null
+          "24_nvm_peso"?: number | null
+          "25_explicaciones_detalladas"?: Json | null
+          "25_nvm_categoria"?: string | null
+          "26_drm_score"?: number | null
+          "27_drm_peso"?: number | null
+          "28_drm_categoria"?: string | null
+          "29_sim_score"?: number | null
+          "30_sim_peso"?: number | null
+          "31_sim_categoria"?: string | null
+          "32_rmm_score"?: number | null
+          "33_rmm_peso"?: number | null
+          "34_rmm_categoria"?: string | null
+          "35_cem_score"?: number | null
+          "36_cem_peso"?: number | null
+          "37_cem_categoria"?: string | null
+          "38_gam_score"?: number | null
+          "39_gam_peso"?: number | null
+          "40_gam_categoria"?: string | null
+          "41_dcm_score"?: number | null
+          "42_dcm_peso"?: number | null
+          "43_dcm_categoria"?: string | null
+          "44_cxm_score"?: number | null
+          "45_cxm_peso"?: number | null
+          "46_cxm_categoria"?: string | null
+          "47_fase"?: string | null
+          "48_precio_accion"?: string | null
+          "49_reputacion_vs_precio"?: string | null
+          "50_precio_accion_interanual"?: string | null
+          "51_rix_score_adjusted"?: number | null
+          "52_cxm_excluded"?: boolean | null
+          "59_precio_minimo_52_semanas"?: string | null
+          analysis_completed_at?: string | null
+          batch_execution_date?: string
+          created_at?: string
+          execution_time_ms?: number | null
+          id?: string
+          model_errors?: Json | null
+          respuesta_bruto_claude?: string | null
+          respuesta_bruto_grok?: string | null
+          respuesta_bruto_qwen?: string | null
+          search_completed_at?: string | null
+          source_pipeline?: string
+          updated_at?: string
+        }
+        Update: {
+          "01_run_id"?: string
+          "02_model_name"?: string | null
+          "03_target_name"?: string | null
+          "04_target_type"?: string | null
+          "05_ticker"?: string | null
+          "06_period_from"?: string | null
+          "07_period_to"?: string | null
+          "08_tz"?: string | null
+          "09_rix_score"?: number | null
+          "10_resumen"?: string | null
+          "11_puntos_clave"?: Json | null
+          "12_palabras"?: number | null
+          "13_num_fechas"?: number | null
+          "14_num_citas"?: number | null
+          "15_temporal_alignment"?: number | null
+          "16_citation_density"?: number | null
+          "17_flags"?: Json | null
+          "18_subscores"?: Json | null
+          "19_weights"?: Json | null
+          "20_res_gpt_bruto"?: string | null
+          "21_res_perplex_bruto"?: string | null
+          "22_explicacion"?: string | null
+          "22_res_gemini_bruto"?: string | null
+          "23_nvm_score"?: number | null
+          "23_res_deepseek_bruto"?: string | null
+          "24_nvm_peso"?: number | null
+          "25_explicaciones_detalladas"?: Json | null
+          "25_nvm_categoria"?: string | null
+          "26_drm_score"?: number | null
+          "27_drm_peso"?: number | null
+          "28_drm_categoria"?: string | null
+          "29_sim_score"?: number | null
+          "30_sim_peso"?: number | null
+          "31_sim_categoria"?: string | null
+          "32_rmm_score"?: number | null
+          "33_rmm_peso"?: number | null
+          "34_rmm_categoria"?: string | null
+          "35_cem_score"?: number | null
+          "36_cem_peso"?: number | null
+          "37_cem_categoria"?: string | null
+          "38_gam_score"?: number | null
+          "39_gam_peso"?: number | null
+          "40_gam_categoria"?: string | null
+          "41_dcm_score"?: number | null
+          "42_dcm_peso"?: number | null
+          "43_dcm_categoria"?: string | null
+          "44_cxm_score"?: number | null
+          "45_cxm_peso"?: number | null
+          "46_cxm_categoria"?: string | null
+          "47_fase"?: string | null
+          "48_precio_accion"?: string | null
+          "49_reputacion_vs_precio"?: string | null
+          "50_precio_accion_interanual"?: string | null
+          "51_rix_score_adjusted"?: number | null
+          "52_cxm_excluded"?: boolean | null
+          "59_precio_minimo_52_semanas"?: string | null
+          analysis_completed_at?: string | null
+          batch_execution_date?: string
+          created_at?: string
+          execution_time_ms?: number | null
+          id?: string
+          model_errors?: Json | null
+          respuesta_bruto_claude?: string | null
+          respuesta_bruto_grok?: string | null
+          respuesta_bruto_qwen?: string | null
+          search_completed_at?: string | null
+          source_pipeline?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       rix_trends: {
         Row: {
           batch_week: string

@@ -26,6 +26,7 @@ import MyConversations from "./pages/MyConversations";
 import UserProfile from "./pages/UserProfile";
 import Admin from "./pages/Admin";
 import Methodology from "./pages/Methodology";
+import DashboardSieteIAs from "./pages/DashboardSieteIAs";
 import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
@@ -78,6 +79,7 @@ const App = () => (
                   <>
                     <Route path="/insert-rix" element={<InsertRixResults />} />
                     <Route path="/admin" element={<Admin />} />
+                    <Route path="/dashboard-siete-ias" element={<DashboardSieteIAs />} />
                   </>
                 )}
                 
