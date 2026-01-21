@@ -19,6 +19,7 @@ import {
   CheckCircle
 } from "lucide-react";
 import { useRixRunV2 } from "@/hooks/useRixRunsV2";
+import { useMarketAveragesV2 } from "@/hooks/useMarketAveragesV2";
 import { cn } from "@/lib/utils";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
@@ -36,6 +37,7 @@ export default function RixRunV2Detail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: run, isLoading, error } = useRixRunV2(id);
+  const { data: marketAverages } = useMarketAveragesV2(run?.period_from, run?.period_to);
   const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(true);
 
   if (isLoading) {
@@ -337,7 +339,7 @@ export default function RixRunV2Detail() {
             {/* Radar Chart */}
             <RadarChartComparison
               companyData={radarData}
-              marketAverages={null}
+              marketAverages={marketAverages || {}}
               companyName={run.target_name || "Empresa"}
               modelName={run.model_name || ""}
             />
