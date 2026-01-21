@@ -509,7 +509,6 @@ serve(async (req) => {
       '12_palabras': analysis.palabras,
       '13_num_fechas': analysis.num_fechas,
       '14_num_citas': analysis.num_citas,
-      '17_num_posts_social': analysis.num_posts_social,
       '15_temporal_alignment': analysis.temporal_alignment,
       '16_citation_density': analysis.citation_density,
       
