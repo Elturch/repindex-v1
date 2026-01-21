@@ -27,6 +27,8 @@ import UserProfile from "./pages/UserProfile";
 import Admin from "./pages/Admin";
 import Methodology from "./pages/Methodology";
 import DashboardSieteIAs from "./pages/DashboardSieteIAs";
+import DashboardV2 from "./pages/DashboardV2";
+import RixRunV2Detail from "./pages/RixRunV2Detail";
 import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
@@ -80,6 +82,8 @@ const App = () => (
                     <Route path="/insert-rix" element={<InsertRixResults />} />
                     <Route path="/admin" element={<Admin />} />
                     <Route path="/dashboard-siete-ias" element={<DashboardSieteIAs />} />
+                    <Route path="/dashboard-v2" element={<DashboardV2 />} />
+                    <Route path="/rix-run-v2/:id" element={<RixRunV2Detail />} />
                   </>
                 )}
                 

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User } from "lucide-react";
+import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User, Beaker } from "lucide-react";
+import { isDevOrPreview } from "@/lib/env";
 import repindexLogoText from "@/assets/repindex-logo-text-source.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -31,12 +32,20 @@ interface HeaderProps {
   className?: string;
 }
 
-const navItems = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
-  { path: "/chat", label: "Agente Rix", icon: Bot, protected: true },
-  { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
-  { path: "/noticias", label: "Newsroom", icon: Newspaper, protected: false },
-];
+const getNavItems = () => {
+  const items = [
+    { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
+    { path: "/chat", label: "Agente Rix", icon: Bot, protected: true },
+    { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
+    { path: "/noticias", label: "Newsroom", icon: Newspaper, protected: false },
+  ];
+  
+  if (isDevOrPreview()) {
+    items.push({ path: "/dashboard-v2", label: "V2 Lab", icon: Beaker, protected: true });
+  }
+  
+  return items;
+};
 
 export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   const { theme, setTheme } = useTheme();
@@ -44,6 +53,7 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   const location = useLocation();
   const { isAuthenticated, profile, company, signOut, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navItems = getNavItems();
 
   const toggleTheme = () => {
     setTheme(theme === "light" ? "dark" : "light");
