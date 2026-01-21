@@ -339,24 +339,6 @@ export const ApiCostDashboard: React.FC = () => {
     };
   }, [usageLogs]);
 
-  // User distribution for pie chart
-  const userDistribution = useMemo(() => {
-    if (userStats.length === 0) return [];
-    
-    const topUsers = userStats.slice(0, 5);
-    const otherCost = userStats.slice(5).reduce((sum, u) => sum + u.total_cost, 0);
-    
-    const distribution = topUsers.map(u => ({
-      name: u.full_name || u.email.split('@')[0] || 'Anónimo',
-      value: u.total_cost,
-    }));
-    
-    if (otherCost > 0) {
-      distribution.push({ name: 'Otros', value: otherCost });
-    }
-    
-    return distribution;
-  }, [userStats]);
 
   // Save cost config
   const handleSaveConfig = async (configId: string) => {
@@ -625,37 +607,59 @@ export const ApiCostDashboard: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* User Distribution */}
+            {/* User Top Costs Table */}
             <Card>
               <CardHeader>
-                <CardTitle>Distribución por Usuario</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  {userDistribution.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={userDistribution}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                        >
-                          {userDistribution.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value: number) => formatCost(value)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-muted-foreground">
-                      No hay datos de usuarios
-                    </div>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Top Usuarios por Coste</span>
+                  {userSummary && (
+                    <Badge variant="outline" className="text-xs">
+                      {userSummary.total_authenticated_users} usuarios · {userSummary.anonymous_sessions} anónimos
+                    </Badge>
                   )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="max-h-64 overflow-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-background">
+                      <TableRow>
+                        <TableHead className="text-xs">Usuario</TableHead>
+                        <TableHead className="text-right text-xs">Llamadas</TableHead>
+                        <TableHead className="text-right text-xs">Coste</TableHead>
+                        <TableHead className="text-right text-xs">%</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {userStats.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-8">
+                            No hay datos de usuarios
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        userStats.slice(0, 20).map((user, idx) => (
+                          <TableRow key={user.user_id || idx} className="text-xs">
+                            <TableCell className="max-w-[140px] truncate" title={user.email}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-muted-foreground text-[10px] w-4">{idx + 1}</span>
+                                <span className="truncate font-medium">
+                                  {user.full_name || user.email.split('@')[0]}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{user.total_calls}</TableCell>
+                            <TableCell className="text-right font-medium tabular-nums">{formatCost(user.total_cost)}</TableCell>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                              {userSummary && userSummary.total_cost > 0 
+                                ? `${((user.total_cost / userSummary.total_cost) * 100).toFixed(1)}%`
+                                : '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
                 </div>
               </CardContent>
             </Card>
