@@ -6,14 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { 
   ArrowLeft, 
   Beaker, 
@@ -21,9 +13,10 @@ import {
   CheckCircle2, 
   AlertTriangle, 
   ChevronDown,
+  ChevronUp,
   Timer,
-  FileText,
-  Flag
+  Flag,
+  CheckCircle
 } from "lucide-react";
 import { useRixRunV2 } from "@/hooks/useRixRunsV2";
 import { cn } from "@/lib/utils";
@@ -43,16 +36,17 @@ export default function RixRunV2Detail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: run, isLoading, error } = useRixRunV2(id);
-  const [metricsOpen, setMetricsOpen] = useState(true);
+  const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(true);
 
   if (isLoading) {
     return (
-      <Layout>
-        <div className="container py-6 space-y-6">
-          <Skeleton className="h-10 w-64" />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Skeleton className="h-[400px]" />
-            <Skeleton className="h-[400px]" />
+      <Layout title="RepIndex V2 - Detalle">
+        <div className="space-y-6">
+          <Skeleton className="h-8 w-64" />
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
           </div>
         </div>
       </Layout>
@@ -61,19 +55,18 @@ export default function RixRunV2Detail() {
 
   if (error || !run) {
     return (
-      <Layout>
-        <div className="container py-6">
-          <Card className="border-destructive">
-            <CardContent className="pt-6">
-              <p className="text-destructive">
-                {error ? `Error: ${error.message}` : "Registro no encontrado"}
-              </p>
-              <Button variant="outline" className="mt-4" onClick={() => navigate("/dashboard-v2")}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Volver al Dashboard V2
-              </Button>
-            </CardContent>
-          </Card>
+      <Layout title="RepIndex V2 - Detalle">
+        <div className="flex items-center justify-center py-8">
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <span>{error ? `Error: ${error.message}` : "Registro no encontrado"}</span>
+            </div>
+            <Button variant="outline" onClick={() => navigate("/dashboard-v2")}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Volver al Dashboard V2
+            </Button>
+          </div>
         </div>
       </Layout>
     );
@@ -90,45 +83,54 @@ export default function RixRunV2Detail() {
     });
   };
 
-  const formatDateShort = (date: string | null) => {
-    if (!date) return "—";
-    return new Date(date).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+  const formatDateRange = (from?: string | null, to?: string | null) => {
+    if (!from && !to) return "N/A";
+    if (!to) return from ? new Date(from).toLocaleDateString() : "N/A";
+    if (!from) return to ? new Date(to).toLocaleDateString() : "N/A";
+    
+    const fromDate = new Date(from).toLocaleDateString();
+    const toDate = new Date(to).toLocaleDateString();
+    return `${fromDate} - ${toDate}`;
   };
 
   const getScoreColor = (score: number | null) => {
     if (score === null) return "text-muted-foreground";
-    if (score >= 70) return "text-green-600";
-    if (score >= 50) return "text-yellow-600";
-    return "text-red-600";
+    if (score >= 70) return "text-good";
+    if (score >= 40) return "text-needs-improvement";
+    return "text-insufficient";
   };
 
-  const getCategoryBadge = (category: string | null) => {
-    if (!category) return null;
-    const variants: Record<string, "default" | "secondary" | "destructive"> = {
-      "Bueno": "default",
-      "Mejorable": "secondary",
-      "Insuficiente": "destructive",
-    };
-    return <Badge variant={variants[category] || "secondary"}>{category}</Badge>;
+  const getCategoryColor = (categoria?: string | null) => {
+    switch (categoria?.toLowerCase()) {
+      case "bueno":
+        return { text: "text-good", bg: "bg-good/10", border: "border-good" };
+      case "mejorable":
+        return { text: "text-needs-improvement", bg: "bg-needs-improvement/10", border: "border-needs-improvement" };
+      case "insuficiente":
+        return { text: "text-insufficient", bg: "bg-insufficient/10", border: "border-insufficient" };
+      default:
+        return { text: "text-muted-foreground", bg: "bg-muted/10", border: "border-muted" };
+    }
   };
 
-  // Metrics configuration
+  // Metrics configuration - matching RixRunDetail.tsx exactly
   const metrics = [
-    { key: "nvm", label: "Narrativa y Visibilidad Mediática", score: run.nvm_score, weight: run.nvm_peso, category: run.nvm_categoria },
-    { key: "drm", label: "Diversidad y Reputación de Medios", score: run.drm_score, weight: run.drm_peso, category: run.drm_categoria },
-    { key: "sim", label: "Sentimiento e Impacto del Mensaje", score: run.sim_score, weight: run.sim_peso, category: run.sim_categoria },
-    { key: "rmm", label: "Relevancia y Mensajes del Mercado", score: run.rmm_score, weight: run.rmm_peso, category: run.rmm_categoria },
-    { key: "cem", label: "Claridad y Efectividad del Mensaje", score: run.cem_score, weight: run.cem_peso, category: run.cem_categoria },
-    { key: "gam", label: "Gobernanza y Alineación de Marca", score: run.gam_score, weight: run.gam_peso, category: run.gam_categoria },
-    { key: "dcm", label: "Diferenciación y Comunicación de Mercado", score: run.dcm_score, weight: run.dcm_peso, category: run.dcm_categoria },
-    { key: "cxm", label: "Experiencia del Cliente", score: run.cxm_score, weight: run.cxm_peso, category: run.cxm_categoria, excluded: run.cxm_excluded },
+    { key: 'rix', label: 'Índice RIX', fullName: 'Reputation Index', score: run.displayRixScore ?? run.rix_score, peso: 100, categoria: (run.displayRixScore ?? run.rix_score) ? ((run.displayRixScore ?? run.rix_score)! >= 70 ? 'Bueno' : (run.displayRixScore ?? run.rix_score)! >= 40 ? 'Mejorable' : 'Insuficiente') : null },
+    { key: 'nvm', label: 'Calidad de la Narrativa', fullName: 'Narrative Value Metric', score: run.nvm_score, peso: run.nvm_peso, categoria: run.nvm_categoria },
+    { key: 'drm', label: 'Fortaleza de Evidencia', fullName: 'Data Reliability Metric', score: run.drm_score, peso: run.drm_peso, categoria: run.drm_categoria },
+    { key: 'sim', label: 'Autoridad de Fuentes', fullName: 'Source Integrity Metric', score: run.sim_score, peso: run.sim_peso, categoria: run.sim_categoria },
+    { key: 'rmm', label: 'Actualidad y Empuje', fullName: 'Reputational Momentum Metric', score: run.rmm_score, peso: run.rmm_peso, categoria: run.rmm_categoria },
+    { key: 'cem', label: 'Controversia y Riesgo', fullName: 'Controversy Exposure Metric', score: run.cem_score, peso: run.cem_peso, categoria: run.cem_categoria },
+    { key: 'gam', label: 'Independencia de Gobierno', fullName: 'Governance Autonomy Metric', score: run.gam_score, peso: run.gam_peso, categoria: run.gam_categoria },
+    { key: 'dcm', label: 'Integridad del Grafo', fullName: 'Data Consistency Metric', score: run.dcm_score, peso: run.dcm_peso, categoria: run.dcm_categoria },
+    { key: 'cxm', label: 'Ejecución Corporativa', fullName: 'Corporate Execution Metric', score: run.cxm_score, peso: run.cxm_peso, categoria: run.cxm_categoria, excluded: run.cxm_excluded },
   ];
 
-  // AI Responses configuration
+  // AI Responses configuration - 7 models
   const getAIResponses = () => {
     const responses: { model: string; content: string | null; icon: React.ComponentType<{ className?: string }> }[] = [
       { model: "ChatGPT", content: run.res_gpt_bruto, icon: ChatGPTIcon },
-      { model: "Gemini", content: run.res_gemini_bruto, icon: GeminiIcon },
+      { model: "Google Gemini", content: run.res_gemini_bruto, icon: GeminiIcon },
       { model: "Perplexity", content: run.res_perplex_bruto, icon: PerplexityIcon },
       { model: "Deepseek", content: run.res_deepseek_bruto, icon: DeepseekIcon },
       { model: "Claude", content: run.respuesta_bruto_claude, icon: ClaudeIcon },
@@ -156,7 +158,7 @@ export default function RixRunV2Detail() {
 
   // Prepare data for radar chart
   const radarData = {
-    rix: run.rix_score || 0,
+    rix: run.displayRixScore ?? run.rix_score ?? 0,
     nvm: run.nvm_score || 0,
     drm: run.drm_score || 0,
     sim: run.sim_score || 0,
@@ -167,49 +169,97 @@ export default function RixRunV2Detail() {
     cxm: run.cxm_score || 0,
   };
 
+  const normalizeFlag = (flag: string) => {
+    const flagMap: { [key: string]: string } = {
+      "datos_antiguos": "Datos Antiguos",
+      "dudas_no_aclaradas": "Dudas No Aclaradas", 
+      "cutoff_disclaimer": "Limitación de Fecha de Corte",
+      "low_quality_sources": "Fuentes de Baja Calidad",
+      "incomplete_data": "Datos Incompletos",
+      "temporal_mismatch": "Desajuste Temporal",
+      "insufficient_evidence": "Evidencia Insuficiente",
+      "conflicting_sources": "Fuentes Conflictivas",
+      "language_barriers": "Barreras de Idioma",
+      "regional_bias": "Sesgo Regional"
+    };
+    
+    return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
+
   return (
-    <Layout>
-      <div className="container py-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard-v2")} className="mb-2">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Volver al Dashboard V2
-            </Button>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">{run.target_name || "Sin nombre"}</h1>
-              <Badge variant="outline">{run.ticker}</Badge>
-              <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/30">
-                <Beaker className="h-3 w-3 mr-1" />
-                V2
-              </Badge>
-            </div>
-            <p className="text-muted-foreground mt-1">
-              {run.model_name} • {formatDateShort(run.period_from)} - {formatDateShort(run.period_to)}
-            </p>
+    <Layout title="RepIndex V2 - Detalle">
+      <div className="space-y-4">
+        {/* Header - Compact */}
+        <div className="flex items-center justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/dashboard-v2")}
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-sm">
+              {run.model_name || "N/A"}
+            </Badge>
+            <Badge variant="outline" className="bg-yellow-500/10 text-yellow-700 border-yellow-500/30">
+              <Beaker className="h-3 w-3 mr-1" />
+              V2
+            </Badge>
+            <Badge variant={run.source_pipeline === "lovable_v2" ? "default" : "secondary"}>
+              {run.source_pipeline}
+            </Badge>
           </div>
-          
-          {/* RIX Score */}
-          <Card className="min-w-[200px]">
-            <CardContent className="pt-6 text-center">
-              <div className={cn("text-5xl font-bold", getScoreColor(run.rix_score))}>
-                {run.rix_score ?? "—"}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">RIX Score</div>
-              {run.rix_score_adjusted && run.rix_score_adjusted !== run.rix_score && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  Ajustado: {run.rix_score_adjusted}
-                </div>
-              )}
-              {run.cxm_excluded && (
-                <Badge variant="secondary" className="mt-2">CXM Excluido</Badge>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Pipeline Metadata Card */}
+        {/* Company Info - Compact */}
+        <div className="flex items-center justify-between bg-muted/50 p-4 rounded-lg">
+          <div>
+            <h1 className="text-2xl font-bold">
+              {run.target_name}
+              {run.ticker && (
+                <span className="text-lg text-muted-foreground ml-2">
+                  ({run.ticker})
+                </span>
+              )}
+            </h1>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">
+                {formatDateRange(run.period_from, run.period_to)}
+              </p>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>IBEX Family: {run.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
+                <span>Sector: {run.repindex_root_issuers?.sector_category || "N/A"}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            {run.isDataInvalid ? (
+              <div className="flex flex-col items-end">
+                <AlertTriangle className="h-8 w-8 text-destructive" />
+                <span className="text-sm text-destructive font-medium">Datos inválidos</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col items-end">
+                  <div className={cn("text-4xl font-bold", getScoreColor(run.displayRixScore ?? run.rix_score))}>
+                    {run.displayRixScore ?? run.rix_score ?? 0}
+                  </div>
+                  <div className="text-sm text-muted-foreground">RIX Score</div>
+                  {run.cxm_excluded && (
+                    <div className="text-xs text-muted-foreground italic mt-1">
+                      (CXM no aplicable)
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Pipeline Metadata Card - V2 Specific */}
         <Card className="bg-muted/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -236,12 +286,12 @@ export default function RixRunV2Detail() {
                 <div className="font-medium flex items-center gap-1">
                   {run.search_completed_at ? (
                     <>
-                      <CheckCircle2 className="h-3 w-3 text-green-600" />
+                      <CheckCircle2 className="h-3 w-3 text-good" />
                       {formatDate(run.search_completed_at)}
                     </>
                   ) : (
                     <>
-                      <Clock className="h-3 w-3 text-yellow-600" />
+                      <Clock className="h-3 w-3 text-needs-improvement" />
                       Pendiente
                     </>
                   )}
@@ -252,12 +302,12 @@ export default function RixRunV2Detail() {
                 <div className="font-medium flex items-center gap-1">
                   {run.analysis_completed_at ? (
                     <>
-                      <CheckCircle2 className="h-3 w-3 text-green-600" />
+                      <CheckCircle2 className="h-3 w-3 text-good" />
                       {formatDate(run.analysis_completed_at)}
                     </>
                   ) : (
                     <>
-                      <Clock className="h-3 w-3 text-yellow-600" />
+                      <Clock className="h-3 w-3 text-needs-improvement" />
                       Pendiente
                     </>
                   )}
@@ -279,164 +329,186 @@ export default function RixRunV2Detail() {
         </Card>
 
         {/* Main Content Grid */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Radar Chart */}
-          <RadarChartComparison
-            companyData={radarData}
-            marketAverages={null}
-            companyName={run.target_name || "Empresa"}
-            modelName={run.model_name || ""}
-          />
-
-          {/* Executive Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Resumen Ejecutivo
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[300px]">
-                {run.resumen ? (
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{run.resumen}</p>
-                ) : (
-                  <p className="text-muted-foreground italic">Sin resumen disponible</p>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Detailed Metrics */}
-        <Collapsible open={metricsOpen} onOpenChange={setMetricsOpen}>
-          <Card>
-            <CollapsibleTrigger asChild>
-              <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                <div className="flex items-center justify-between">
-                  <CardTitle>Métricas Detalladas</CardTitle>
-                  <ChevronDown className={cn("h-5 w-5 transition-transform", metricsOpen && "rotate-180")} />
-                </div>
-                <CardDescription>8 dimensiones del índice de reputación</CardDescription>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Métrica</TableHead>
-                      <TableHead className="text-center">Score</TableHead>
-                      <TableHead className="text-center">Peso</TableHead>
-                      <TableHead className="text-center">Categoría</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {metrics.map((metric) => (
-                      <TableRow key={metric.key} className={metric.excluded ? "opacity-50" : ""}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium uppercase text-xs text-muted-foreground">{metric.key}</span>
-                            <span>{metric.label}</span>
-                            {metric.excluded && <Badge variant="outline" className="text-xs">Excluido</Badge>}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className={cn("text-lg font-bold", getScoreColor(metric.score))}>
-                            {metric.score ?? "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center text-muted-foreground">
-                          {metric.weight ?? "—"}%
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {getCategoryBadge(metric.category)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-
-        {/* Key Points */}
-        {parsePuntosClave().length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Puntos Clave</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2">
-                {parsePuntosClave().map((punto, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <span className="text-primary font-bold">•</span>
-                    <span className="text-sm">{punto}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* AI Responses */}
-        {aiResponses.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Análisis de 7 IAs</CardTitle>
-              <CardDescription>
-                {aiResponses.length} de 7 modelos con respuesta
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {aiResponses.map((response) => (
-                  <AIResponseDialog
-                    key={response.model}
-                    title={response.model}
-                    content={response.content || ""}
-                    icon={response.icon}
-                    periodFrom={run.period_from || undefined}
-                    periodTo={run.period_to || undefined}
-                  />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Stats and Flags */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <StatsPanel
-            palabras={run.palabras}
-            numFechas={run.num_fechas}
-            numCitas={run.num_citas}
-            temporalAlignment={null}
-            citationDensity={null}
-            flags={parseFlags()}
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           
-          {/* Quality Flags */}
-          {parseFlags().length > 0 && (
+          {/* Left Column - Radar Chart + Metrics */}
+          <div className="lg:col-span-2 space-y-4">
+            
+            {/* Radar Chart */}
+            <RadarChartComparison
+              companyData={radarData}
+              marketAverages={null}
+              companyName={run.target_name || "Empresa"}
+              modelName={run.model_name || ""}
+            />
+            
+            {/* Collapsible Metrics Table */}
+            <Collapsible open={!isMetricsCollapsed} onOpenChange={(open) => setIsMetricsCollapsed(!open)}>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="w-full justify-between p-3 h-auto">
+                      <CardTitle className="text-lg">Métricas Detalladas</CardTitle>
+                      {isMetricsCollapsed ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronUp className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                </CardHeader>
+                <CollapsibleContent>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left p-3 font-medium">Métrica</th>
+                            <th className="text-center p-3 font-medium w-20">Score</th>
+                            <th className="text-center p-3 font-medium w-20">Peso</th>
+                            <th className="text-center p-3 font-medium w-24">Categoría</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metrics.map((metric) => {
+                            const colors = getCategoryColor(metric.categoria);
+                            const isExcluded = metric.key === 'cxm' && run.cxm_excluded;
+
+                            return (
+                              <tr key={metric.key} className={cn("border-b hover:bg-muted/50", colors.bg, isExcluded && "opacity-50")}>
+                                <td className="p-3">
+                                  <div>
+                                    <div className="font-medium flex items-center gap-2">
+                                      {metric.label}
+                                      {isExcluded && <Badge variant="outline" className="text-xs">Excluido</Badge>}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">{metric.fullName}</div>
+                                  </div>
+                                </td>
+                                <td className={cn("p-3 text-center font-bold", colors.text)}>
+                                  {metric.score ?? 0}
+                                </td>
+                                <td className="p-3 text-center text-muted-foreground">
+                                  {metric.peso}%
+                                </td>
+                                <td className="p-3 text-center">
+                                  <Badge 
+                                    variant="outline" 
+                                    className={cn("text-xs", colors.text, colors.border)}
+                                  >
+                                    {metric.categoria || "—"}
+                                  </Badge>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+
+            {/* Summary and Key Points */}
+            {run.resumen && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    Resumen Ejecutivo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="max-h-[300px]">
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{run.resumen}</p>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Key Points */}
+            {parsePuntosClave().length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">Puntos Clave</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2">
+                    {parsePuntosClave().map((punto, index) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <span className="text-primary font-bold">•</span>
+                        <span className="text-sm">{punto}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Right Column - AI Responses & Stats */}
+          <div className="space-y-4">
+            
+            {/* AI Responses - 7 Models */}
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Flag className="h-5 w-5" />
-                  Flags de Calidad
-                </CardTitle>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Así contestó la IA ({aiResponses.length}/7)</CardTitle>
+                <CardDescription>Respuestas de los 7 modelos de IA</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {parseFlags().map((flag, index) => (
-                    <Badge key={index} variant="outline">
-                      {flag}
-                    </Badge>
-                  ))}
+                <div className="flex flex-col gap-2">
+                  {aiResponses.length > 0 ? (
+                    aiResponses.map((response) => (
+                      <AIResponseDialog
+                        key={response.model}
+                        title={response.model}
+                        content={response.content || ""}
+                        icon={response.icon}
+                        periodFrom={run.period_from || undefined}
+                        periodTo={run.period_to || undefined}
+                      />
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">
+                      No hay respuestas de IA disponibles
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          )}
+
+            {/* Stats Panel */}
+            <StatsPanel
+              palabras={run.palabras}
+              numFechas={run.num_fechas}
+              numCitas={run.num_citas}
+              temporalAlignment={null}
+              citationDensity={null}
+              flags={parseFlags()}
+            />
+
+            {/* Quality Flags */}
+            {parseFlags().length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Flag className="h-4 w-4" />
+                    Flags de Calidad
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {parseFlags().map((flag, index) => (
+                      <Badge key={index} variant="outline" className="bg-destructive/10 text-destructive border-destructive/30">
+                        {normalizeFlag(flag)}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
 
         {/* Debug Info */}
@@ -448,11 +520,11 @@ export default function RixRunV2Detail() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-muted-foreground">
               <div>
                 <div className="font-medium">ID</div>
-                <div className="font-mono truncate">{run.id}</div>
+                <div className="truncate">{run.id}</div>
               </div>
               <div>
                 <div className="font-medium">Run ID</div>
-                <div className="font-mono truncate">{run.run_id}</div>
+                <div className="truncate">{run.run_id}</div>
               </div>
               <div>
                 <div className="font-medium">Created</div>
