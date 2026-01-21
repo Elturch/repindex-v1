@@ -120,10 +120,10 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
-  // 4. GPT-4o Search Preview (OpenAI) - No soporta temperature
+  // 4. GPT-4.1 mini (OpenAI) - Con web search
   {
-    name: 'gpt-4o-search',
-    displayName: 'GPT-4o Search',
+    name: 'gpt-4.1-mini',
+    displayName: 'GPT-4.1 Mini',
     apiKeyEnv: 'OPENAI_API_KEY',
     endpoint: 'https://api.openai.com/v1/chat/completions',
     dbColumn: '20_res_gpt_bruto',
@@ -133,12 +133,12 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         'Content-Type': 'application/json',
       },
       body: {
-        model: 'gpt-4o-search-preview',
-        web_search_options: {},
+        model: 'gpt-4.1-mini',
         messages: [
           { role: 'system', content: 'Eres analista de reputación corporativa. Busca en Internet y proporciona URLs y fechas. Responde en español.' },
           { role: 'user', content: prompt }
         ],
+        temperature: 0.1,
         max_tokens: 4000,
       },
     }),
