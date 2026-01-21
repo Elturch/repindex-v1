@@ -19,18 +19,18 @@ export function useMarketAveragesV2(periodFrom?: string, periodTo?: string) {
         .from("rix_runs_v2")
         .select(`
           02_model_name,
-          rix_score,
-          nvm_score,
-          drm_score,
-          sim_score,
-          rmm_score,
-          cem_score,
-          gam_score,
-          dcm_score,
-          cxm_score
+          09_rix_score,
+          23_nvm_score,
+          26_drm_score,
+          29_sim_score,
+          32_rmm_score,
+          35_cem_score,
+          38_gam_score,
+          41_dcm_score,
+          44_cxm_score
         `)
-        .gte("period_from", periodFrom)
-        .lte("period_to", periodTo)
+        .gte("06_period_from", periodFrom)
+        .lte("07_period_to", periodTo)
         .not("analysis_completed_at", "is", null);
 
       if (error) {
@@ -50,15 +50,15 @@ export function useMarketAveragesV2(periodFrom?: string, periodTo?: string) {
 
       const averages: MarketAveragesV2 = {};
       const kpiFields = [
-        { key: "rix", field: "rix_score" },
-        { key: "nvm", field: "nvm_score" },
-        { key: "drm", field: "drm_score" },
-        { key: "sim", field: "sim_score" },
-        { key: "rmm", field: "rmm_score" },
-        { key: "cem", field: "cem_score" },
-        { key: "gam", field: "gam_score" },
-        { key: "dcm", field: "dcm_score" },
-        { key: "cxm", field: "cxm_score" },
+        { key: "rix", field: "09_rix_score" },
+        { key: "nvm", field: "23_nvm_score" },
+        { key: "drm", field: "26_drm_score" },
+        { key: "sim", field: "29_sim_score" },
+        { key: "rmm", field: "32_rmm_score" },
+        { key: "cem", field: "35_cem_score" },
+        { key: "gam", field: "38_gam_score" },
+        { key: "dcm", field: "41_dcm_score" },
+        { key: "cxm", field: "44_cxm_score" },
       ];
 
       kpiFields.forEach(({ key, field }) => {

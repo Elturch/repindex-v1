@@ -51,11 +51,17 @@ export interface RixRunV2 {
   respuesta_bruto_grok: string | null;
   respuesta_bruto_qwen: string | null;
   
+  // Explanations
+  explicacion: string | null;
+  explicaciones_detalladas: string[] | null;
+  
   // Metadata
   flags: string[] | null;
   palabras: number | null;
   num_fechas: number | null;
   num_citas: number | null;
+  temporal_alignment: number | null;
+  citation_density: number | null;
   source_pipeline: string;
   execution_time_ms: number | null;
   model_errors: Record<string, string> | null;
@@ -65,12 +71,18 @@ export interface RixRunV2 {
   created_at: string;
   updated_at: string;
   
+  // Price data
+  precio_accion: number | null;
+  precio_minimo_52_semanas: number | null;
+  reputacion_vs_precio: string | null;
+  
   // Joined issuer data
   repindex_root_issuers?: {
     ticker: string;
     issuer_name: string;
     sector_category: string | null;
     ibex_family_code: string | null;
+    cotiza_en_bolsa?: boolean;
   } | null;
   
   // Computed fields
@@ -160,10 +172,14 @@ function mapRowToRixRunV2(row: any): RixRunV2 {
     respuesta_bruto_claude: row.respuesta_bruto_claude,
     respuesta_bruto_grok: row.respuesta_bruto_grok,
     respuesta_bruto_qwen: row.respuesta_bruto_qwen,
+    explicacion: row['22_explicacion'],
+    explicaciones_detalladas: (row['25_explicaciones_detalladas'] as string[] | null),
     flags: (row['17_flags'] as string[] | null),
     palabras: row['12_palabras'],
     num_fechas: row['13_num_fechas'],
     num_citas: row['14_num_citas'],
+    temporal_alignment: row['15_temporal_alignment'],
+    citation_density: row['16_citation_density'],
     source_pipeline: row.source_pipeline,
     execution_time_ms: row.execution_time_ms,
     model_errors: (row.model_errors as Record<string, string> | null),
@@ -172,6 +188,9 @@ function mapRowToRixRunV2(row: any): RixRunV2 {
     batch_execution_date: row.batch_execution_date,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    precio_accion: row['48_precio_accion'],
+    precio_minimo_52_semanas: row['59_precio_minimo_52_semanas'],
+    reputacion_vs_precio: row['49_reputacion_vs_precio'],
     repindex_root_issuers: row.repindex_root_issuers,
     displayRixScore,
     isDataInvalid,
@@ -220,7 +239,7 @@ export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
       // Fetch issuers separately for manual join
       const { data: issuers } = await supabase
         .from('repindex_root_issuers')
-        .select('ticker, issuer_name, sector_category, ibex_family_code');
+        .select('ticker, issuer_name, sector_category, ibex_family_code, cotiza_en_bolsa');
       
       // Create a map for quick lookup
       const issuerMap = new Map(
@@ -290,7 +309,7 @@ export function useRixRunV2(id: string | undefined) {
       if (data['05_ticker']) {
         const { data: issuerData } = await supabase
           .from('repindex_root_issuers')
-          .select('ticker, issuer_name, sector_category, ibex_family_code')
+          .select('ticker, issuer_name, sector_category, ibex_family_code, cotiza_en_bolsa')
           .eq('ticker', data['05_ticker'])
           .single();
         issuer = issuerData;
