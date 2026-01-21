@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.rix-analyze-v2]
 verify_jwt = false
+
+[functions.rix-batch-orchestrator]
+verify_jwt = false
