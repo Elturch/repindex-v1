@@ -221,86 +221,122 @@ const MODEL_RESPONSE_MAP: Record<string, string> = {
   'Qwen': 'respuesta_bruto_qwen',
 };
 
-// Full analysis prompt implementing ORG_RIXSchema_V2 specifications - NOW FOR SINGLE MODEL
+// Full analysis prompt implementing ORG_RIXSchema_V2 - EXACT MAKE.COM ORIGINAL PROMPT
 const buildAnalysisPrompt = (
   issuerName: string,
   ticker: string,
   dateFrom: string,
   dateTo: string,
+  tz: string,
   cotiza: boolean,
   weights: Record<string, number>,
   modelName: string,
-  rawResponse: string
-): string => `
-INSTRUCCIONES (lee y cumple estrictamente):
+  rawResponse: string,
+  stockPriceData: string
+): string => `INSTRUCCIONES (lee y cumple estrictamente):
 
-Eres evaluador de RepIndex. Debes evaluar EXCLUSIVAMENTE el texto de la respuesta orgánica de ${modelName} sobre la reputación de una marca en una semana dada.
+Eres evaluador de RepIndex. Debes evaluar EXCLUSIVAMENTE el texto de una respuesta orgánica de una IA sobre la reputación de una marca/persona en una semana dada.
 
-PROHIBIDO navegar o añadir información externa. Trabaja SOLO con el texto proporcionado.
+PROHIBIDO navegar o añadir información externa. Trabaja SOLO con el texto entre las marcas COMIENZO/FIN.
 
-Devuelve tu análisis usando la función submit_rix_analysis.
+Devuelve tu análisis usando la función submit_rix_analysis que cumpla EXACTAMENTE el esquema ORG_PARISchema_V2.
 
-Redondea TODAS las puntuaciones a ENTEROS.
+Redondea todas las puntuaciones a ENTEROS. Si un componente no aplica (p. ej., Mercado para no cotizadas o si el texto no cubre mercado), marca la categoría "no_aplica" y redistribuye internamente su peso en el RIX entre los demás componentes de forma proporcional, en pesos y scores siempre devuelves números enteros o deja el campo vacío si no aplica.
 
 VENTANA Y METADATOS:
-• Marca/Persona: ${issuerName}
-• Ticker: ${ticker}
-• Ventana: ${dateFrom}..${dateTo}
-• Cotiza: ${cotiza ? 'Sí' : 'No'}
-• Pesos: ${JSON.stringify(weights)}
-• Modelo evaluado: ${modelName}
 
-DEFINICIONES DE MÉTRICAS (0–100):
+Marca/Persona: ${issuerName} | Tipo: marca
 
-• NVM (Narrative Value Metric) = clip0-100( 50·(s̄+1) − 20·c̄ − 30·h̄ )
-  s̄∈[-1,+1] tono medio; c̄∈[0,1] controversia; h̄∈[0,1] alucinación
+Ticker (si aplica): ${ticker}
 
-• DRM (Data Reliability Metric) = Primaria/oficial 40% + corroboración independiente 20% + claridad documental 30% + trazabilidad 10%
+Ventana: ${dateFrom}..${dateTo} (TZ=${tz})
 
-• SIM (Source Integrity Metric) = 100·(0.45·T1 + 0.30·T2 + 0.15·T3 + 0.10·T4)
-  Según tier de cada referencia
+Cotiza: ${cotiza ? 'Si' : 'No'}
 
-• RMM (Reputational Momentum Metric) = minmax0-100(0.6·coverage_temporal + 0.2·peso_T1_reciente + 0.2·log10(nº_menciones))
-  Si <50% hechos en ventana, RMM ≤ 69 y flag "datos_antiguos"
+Modelo evaluado: ${modelName}
 
-• CEM (Controversy Exposure Metric) = 100 − (0.5·J + 0.3·P + 0.2·L)
-  J/P/L∈[0,100] (judicial, político, laboral/social)
+Pesos de componentes (suman 100): ${JSON.stringify(weights)}
 
-• GAM (Governance Autonomy Metric) = Independencia, políticas, conflictos declarados
+DEFINICIONES DE MÉTRICAS (siempre 0–100; nombres EXACTOS):
 
-• DCM (Data Consistency Metric) = Coherencia de nombres/roles/fechas/cifras
+Calidad de la narrativa — Narrative Value Metric (NVM)
 
-• CXM (Corporate Execution Metric) = Impacto de mercado
-  Si cotiza y faltan precios, CXM_score = 25 (NO "no_aplica")
-  Si no cotiza, marca "no_aplica"
+NVM = clip0-100( 50·(s̄+1) − 20·c̄ − 30·h̄ ), con s̄∈[-1,+1] tono medio; c̄∈[0,1] controversia; h̄∈[0,1] alucinación/afirmaciones sin soporte.
 
-REGLAS DE NEGOCIO:
+Fortaleza de evidencia — Data Reliability Metric (DRM)
 
-1. Mínimo 3 citas con fecha dentro de la ventana; si no, flag "pocas_fechas" o "datos_antiguos"
-2. Si ticker-precio difiere >5% de BME/CNMV, resta 10 pts a DCM y flag "inconsistencias"
-3. SI DRM < 40 O SIM < 40, limita RIX a 64 máximo y añade flag correspondiente
-4. Si CXM es "no_aplica", redistribuye su peso proporcionalmente entre las otras métricas
-5. Clasifica cada métrica: "Bueno" (≥70), "Mejorable" (40-69), "Insuficiente" (<40)
+Primaria/oficial (40%), corroboración independiente (20%), claridad documental (30: medio+fecha), trazabilidad (10).
 
-FLAGS DISPONIBLES:
-["pocas_fechas", "sin_fuentes", "datos_antiguos", "respuesta_corta", "inconsistencias", "dudas_no_aclaradas", "confusion_alias", "cutoff_disclaimer", "alto_riesgo", "drm_bajo", "sim_bajo"]
+Mezcla de autoridad de fuentes — Source Integrity Metric (SIM)
 
-CONTADORES A CALCULAR:
-- palabras: total de palabras analizadas
-- num_fechas: fechas específicas encontradas
-- num_citas: número de fuentes/URLs
-- temporal_alignment: proporción de hechos en ventana (0-1)
-- citation_density: densidad de citas (0-1)
+Clasifica referencias citadas en Tiers: T1 (reguladores y Tier-1 financiero: CNMV/SEC, Reuters/Bloomberg/FT/WSJ, Expansión/Cinco Días/El Economista, casas de análisis), T2 (generalistas referencia), T3 (especializados verificados), T4 (opinión/redes). SIM=100·(0.45·T1+0.30·T2+0.15·T3+0.10·T4).
 
-=== RESPUESTA DE ${modelName.toUpperCase()} A EVALUAR ===
+Actualidad y empuje — Reputational Momentum Metric (RMM)
+
+En función de (i) % de menciones con fecha dentro de la ventana y (ii) señales de impulso reciente. Aprox: RMM ≈ minmax_0-100(0.7·coverage_temporal + 0.3·peso_T1_reciente).
+
+Controversia y riesgo legal (reverso) — Controversy Exposure Metric (CEM)
+
+CEM = 100 − (0.5·J + 0.3·P + 0.2·L), con J/P/L∈[0,100] (judicial, político, laboral/social) según el propio texto.
+
+Percepción de independencia de gobierno — Governance Autonomy Metric (GAM)
+
+Señales de independencia, políticas y conflictos declarados.
+
+Integridad del grafo de conocimiento — Data Consistency Metric (DCM)
+
+Coherencia de nombres/roles/fechas/cifras y consistencia interna.
+
+Impacto de mercado/ejecución — Corporate Execution Metric (CXM)
+
+0–100 si el texto integra cotización/ratings/eventos de mercado; Si un componente está en "no_aplica", calcula internamente los pesos efectivos para el resto de métricas como:
+
+w_eff[k] = (w[k] / (100 - w_no_aplica)) * 100
+
+(Nota: si hubiera varios "no_aplica", usa w_no_aplica = suma de sus pesos).
+
+Usa w_eff para calcular el RIX y devuelve en los campos xx_peso esos pesos efectivos redondeados a enteros de forma que sumen 100 (ajusta el residuo en la métrica con mayor peso).
+
+RIX (índice 0–100):
+
+RIX = suma ponderada de las 8 métricas usando weights recibidos. Si CXM es "no_aplica", reparte su peso proporcionalmente en el resto para el cálculo.
+
+PRECIO ACCION vs REPUTACION
+
+Analiza los valores reputacionales y relacionalos con el precio de la acción con un pequeño texto reflexivo, evalua el precio semanal de la acción y el mínimo de esa acción a 52 semanas y saca conclusiones.
+
+CONTADORES Y FLAGS:
+
+Calcula: palabras, num_fechas, num_citas, temporal_alignment (0..1), citation_density (0..1).
+
+flags: usa según proceda: "pocas_fechas", "sin_fuentes", "datos_antiguos", "respuesta_corta", "dudas_no_aclaradas", "confusion_alias", "cutoff_disclaimer".
+
+Clasifica cada sub-métrica en: "Bueno" (≥70), "Mejorable" (40–69), "Insuficiente" (<40) o "no_aplica".
+
+IMPORTANTE SOBRE LOS NOMBRES DE SUBSCORES (usa exactamente estas etiquetas):
+
+label: "Calidad de la narrativa" / label_en_sigla: "Narrative Value Metric — NVM"
+label: "Fortaleza de evidencia" / label_en_sigla: "Data Reliability Metric — DRM"
+label: "Mezcla de autoridad de fuentes" / label_en_sigla: "Source Integrity Metric — SIM"
+label: "Actualidad y empuje" / label_en_sigla: "Reputational Momentum Metric — RMM"
+label: "Controversia y riesgo legal (reverso)" / label_en_sigla: "Controversy Exposure Metric — CEM"
+label: "Percepción de independencia de gobierno" / label_en_sigla: "Governance Autonomy Metric — GAM"
+label: "Integridad del grafo de conocimiento" / label_en_sigla: "Data Consistency Metric — DCM"
+label: "Impacto de mercado/ejecución" / label_en_sigla: "Corporate Execution Metric — CXM"
+
+Si <50% de los hechos datados caen dentro de la ventana, limita RMM ≤ 69 y activa flag datos_antiguos.
+
+A CONTINUACIÓN, LA RESPUESTA ORGÁNICA A EVALUAR (usa SOLO esto):
+
+=== RESPUESTA_ORGANICA_COMIENZO ===
 
 ${rawResponse}
 
-=== FIN DE RESPUESTA ===
+precio acción: ${stockPriceData}
 
-Analiza esta respuesta individual y genera el RIX score correspondiente a este modelo.
-Usa la función submit_rix_analysis para enviar tu análisis estructurado.
-`;
+=== RESPUESTA_ORGANICA_FIN ===
+
+Usa la función submit_rix_analysis para enviar tu análisis estructurado.`;
 
 // Default weights
 const DEFAULT_WEIGHTS: Record<string, number> = {
