@@ -16,7 +16,10 @@ import {
   ChevronUp,
   Timer,
   Flag,
-  CheckCircle
+  CheckCircle,
+  TrendingUp,
+  DollarSign,
+  BookOpen
 } from "lucide-react";
 import { useRixRunV2 } from "@/hooks/useRixRunsV2";
 import { useMarketAveragesV2 } from "@/hooks/useMarketAveragesV2";
@@ -30,7 +33,7 @@ import { ClaudeIcon } from "@/components/ui/claude-icon";
 import { GrokIcon } from "@/components/ui/grok-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 import { RadarChartComparison } from "@/components/ui/radar-chart";
-import { StatsPanel } from "@/components/ui/stats-panel";
+import { GlossaryDialog } from "@/components/ui/glossary-dialog";
 import { useState } from "react";
 
 export default function RixRunV2Detail() {
@@ -131,12 +134,12 @@ export default function RixRunV2Detail() {
   // AI Responses configuration - 7 models
   const getAIResponses = () => {
     const responses: { model: string; content: string | null; icon: React.ComponentType<{ className?: string }> }[] = [
-      { model: "ChatGPT", content: run.res_gpt_bruto, icon: ChatGPTIcon },
-      { model: "Google Gemini", content: run.res_gemini_bruto, icon: GeminiIcon },
       { model: "Perplexity", content: run.res_perplex_bruto, icon: PerplexityIcon },
-      { model: "Deepseek", content: run.res_deepseek_bruto, icon: DeepseekIcon },
-      { model: "Claude", content: run.respuesta_bruto_claude, icon: ClaudeIcon },
       { model: "Grok", content: run.respuesta_bruto_grok, icon: GrokIcon },
+      { model: "Deepseek", content: run.res_deepseek_bruto, icon: DeepseekIcon },
+      { model: "ChatGPT", content: run.res_gpt_bruto, icon: ChatGPTIcon },
+      { model: "Gemini", content: run.res_gemini_bruto, icon: GeminiIcon },
+      { model: "Claude", content: run.respuesta_bruto_claude, icon: ClaudeIcon },
       { model: "Qwen", content: run.respuesta_bruto_qwen, icon: QwenIcon },
     ];
     return responses.filter(r => r.content);
@@ -155,6 +158,13 @@ export default function RixRunV2Detail() {
   const parseFlags = () => {
     if (!run.flags) return [];
     if (Array.isArray(run.flags)) return run.flags;
+    return [];
+  };
+
+  // Parse explicaciones_detalladas
+  const parseExplicacionesDetalladas = () => {
+    if (!run.explicaciones_detalladas) return [];
+    if (Array.isArray(run.explicaciones_detalladas)) return run.explicaciones_detalladas;
     return [];
   };
 
@@ -188,6 +198,8 @@ export default function RixRunV2Detail() {
     return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  const isListed = run.repindex_root_issuers?.cotiza_en_bolsa || run.precio_accion;
+
   return (
     <Layout title="RepIndex V2 - Detalle">
       <div className="space-y-4">
@@ -203,6 +215,7 @@ export default function RixRunV2Detail() {
             Volver
           </Button>
           <div className="flex items-center gap-2">
+            <GlossaryDialog />
             <Badge variant="secondary" className="text-sm">
               {run.model_name || "N/A"}
             </Badge>
@@ -234,6 +247,7 @@ export default function RixRunV2Detail() {
               <div className="flex gap-4 text-xs text-muted-foreground">
                 <span>IBEX Family: {run.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
                 <span>Sector: {run.repindex_root_issuers?.sector_category || "N/A"}</span>
+                {isListed && <Badge variant="outline" className="text-xs">Cotizada</Badge>}
               </div>
             </div>
           </div>
@@ -333,7 +347,7 @@ export default function RixRunV2Detail() {
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           
-          {/* Left Column - Radar Chart + Metrics */}
+          {/* Left Column - Radar Chart + Metrics + Content */}
           <div className="lg:col-span-2 space-y-4">
             
             {/* Radar Chart */}
@@ -433,17 +447,54 @@ export default function RixRunV2Detail() {
             {parsePuntosClave().length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">Puntos Clave</CardTitle>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-primary" />
+                    Puntos Clave
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-2">
                     {parsePuntosClave().map((punto, index) => (
                       <li key={index} className="flex items-start gap-2">
-                        <span className="text-primary font-bold">•</span>
-                        <span className="text-sm">{punto}</span>
+                        <div className="w-1.5 h-1.5 bg-primary rounded-full mt-2 flex-shrink-0" />
+                        <span className="text-sm leading-relaxed">{punto}</span>
                       </li>
                     ))}
                   </ul>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Momentum Analysis - Only for listed companies */}
+            {isListed && run.reputacion_vs_precio && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Análisis Reputación vs Precio
+                  </CardTitle>
+                  <CardDescription className="flex items-center gap-4">
+                    {run.precio_accion && (
+                      <span className="flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Precio actual: €{run.precio_accion.toFixed(3)}
+                      </span>
+                    )}
+                    {run.precio_minimo_52_semanas && (
+                      <span className="text-muted-foreground">
+                        Mín. 52 sem: €{run.precio_minimo_52_semanas.toFixed(3)}
+                      </span>
+                    )}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="max-h-[400px]">
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans bg-transparent p-0 m-0">
+                        {run.reputacion_vs_precio}
+                      </pre>
+                    </div>
+                  </ScrollArea>
                 </CardContent>
               </Card>
             )}
@@ -456,7 +507,7 @@ export default function RixRunV2Detail() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg">Así contestó la IA ({aiResponses.length}/7)</CardTitle>
-                <CardDescription>Respuestas de los 7 modelos de IA</CardDescription>
+                <CardDescription>Respuestas brutas de los 7 modelos de IA</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-col gap-2">
@@ -464,7 +515,7 @@ export default function RixRunV2Detail() {
                     aiResponses.map((response) => (
                       <AIResponseDialog
                         key={response.model}
-                        title={response.model}
+                        title={`Respuesta ${response.model}`}
                         content={response.content || ""}
                         icon={response.icon}
                         periodFrom={run.period_from || undefined}
@@ -480,15 +531,73 @@ export default function RixRunV2Detail() {
               </CardContent>
             </Card>
 
-            {/* Stats Panel */}
-            <StatsPanel
-              palabras={run.palabras}
-              numFechas={run.num_fechas}
-              numCitas={run.num_citas}
-              temporalAlignment={null}
-              citationDensity={null}
-              flags={parseFlags()}
-            />
+            {/* Methodological Explanation */}
+            {run.explicacion && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    Explicación Metodológica
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <AIResponseDialog
+                    title="Ver Explicación Completa"
+                    content={run.explicacion}
+                    periodFrom={run.period_from || undefined}
+                    periodTo={run.period_to || undefined}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Detailed Explanations by Metric */}
+            {parseExplicacionesDetalladas().length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">Análisis Detallado por Métrica</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <AIResponseDialog
+                    title="Ver Análisis Detallado"
+                    content={parseExplicacionesDetalladas().join('\n\n')}
+                    periodFrom={run.period_from || undefined}
+                    periodTo={run.period_to || undefined}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Statistics Panel */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Estadísticas de Análisis</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Palabras</div>
+                    <div className="font-semibold">{run.palabras || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Fechas</div>
+                    <div className="font-semibold">{run.num_fechas || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Citas</div>
+                    <div className="font-semibold">{run.num_citas || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Alineación</div>
+                    <div className="font-semibold">{((run.temporal_alignment || 0) * 100).toFixed(1)}%</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-sm">Densidad de Citas</div>
+                  <div className="font-semibold">{((run.citation_density || 0) * 100).toFixed(2)}%</div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Quality Flags */}
             {parseFlags().length > 0 && (

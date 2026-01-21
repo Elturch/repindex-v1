@@ -2,7 +2,13 @@ import React from "react";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MarketAverages } from "@/hooks/useMarketAverages";
+
+// Common type that works for both V1 and V2 market averages
+export interface RadarMarketAverages {
+  [key: string]: {
+    [model: string]: number;
+  };
+}
 
 interface RadarChartComparisonProps {
   companyData: {
@@ -16,7 +22,7 @@ interface RadarChartComparisonProps {
     dcm: number;
     cxm: number;
   };
-  marketAverages: MarketAverages;
+  marketAverages: RadarMarketAverages;
   companyName: string;
   modelName: string;
 }
