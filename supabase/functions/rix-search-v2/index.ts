@@ -120,7 +120,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
-  // 4. GPT-4o Search Preview (OpenAI)
+  // 4. GPT-4o Search Preview (OpenAI) - No soporta temperature
   {
     name: 'gpt-4o-search',
     displayName: 'GPT-4o Search',
@@ -139,7 +139,6 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
           { role: 'system', content: 'Eres analista de reputación corporativa. Busca en Internet y proporciona URLs y fechas. Responde en español.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.1,
         max_tokens: 4000,
       },
     }),
