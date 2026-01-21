@@ -7,47 +7,41 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Play, BarChart3, CheckCircle2, XCircle, Clock, Zap } from "lucide-react";
+import { Loader2, BarChart3, CheckCircle2, XCircle, Clock, Zap, Search, BarChart2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useRixRunsV2, RixRunV2 } from "@/hooks/useRixRunsV2";
 import { useCompanies } from "@/hooks/useCompanies";
 
-// Model icons
-import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
-import { GeminiIcon } from "@/components/ui/gemini-icon";
+// Model icons - only search-capable models
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
-import { ClaudeIcon } from "@/components/ui/claude-icon";
 import { GrokIcon } from "@/components/ui/grok-icon";
-import { QwenIcon } from "@/components/ui/qwen-icon";
 
-interface ModelInfo {
+// Search models - only these have real internet access
+interface SearchModelInfo {
   name: string;
+  displayName: string;
   icon: React.ReactNode;
   color: string;
   responseKey: keyof RixRunV2;
 }
 
-const MODEL_INFO: ModelInfo[] = [
-  { name: 'GPT-4o', icon: <ChatGPTIcon size={20} />, color: 'bg-emerald-500', responseKey: 'res_gpt_bruto' },
-  { name: 'Gemini', icon: <GeminiIcon size={20} />, color: 'bg-blue-500', responseKey: 'res_gemini_bruto' },
-  { name: 'Perplexity', icon: <PerplexityIcon size={20} />, color: 'bg-cyan-500', responseKey: 'res_perplex_bruto' },
-  { name: 'DeepSeek', icon: <DeepseekIcon size={20} />, color: 'bg-indigo-500', responseKey: 'res_deepseek_bruto' },
-  { name: 'Claude', icon: <ClaudeIcon size={20} />, color: 'bg-orange-500', responseKey: 'respuesta_bruto_claude' },
-  { name: 'Grok', icon: <GrokIcon size={20} />, color: 'bg-gray-800', responseKey: 'respuesta_bruto_grok' },
-  { name: 'Qwen', icon: <QwenIcon size={20} />, color: 'bg-purple-500', responseKey: 'respuesta_bruto_qwen' },
+const SEARCH_MODELS: SearchModelInfo[] = [
+  { name: 'perplexity-sonar-pro', displayName: 'Perplexity Sonar Pro', icon: <PerplexityIcon size={20} />, color: 'bg-cyan-500', responseKey: 'res_perplex_bruto' },
+  { name: 'grok-3', displayName: 'Grok 3', icon: <GrokIcon size={20} />, color: 'bg-gray-800', responseKey: 'respuesta_bruto_grok' },
+  { name: 'deepseek-chat', displayName: 'DeepSeek', icon: <DeepseekIcon size={20} />, color: 'bg-indigo-500', responseKey: 'res_deepseek_bruto' },
 ];
 
-const SUBSCORE_LABELS: Record<string, string> = {
-  nvm: 'News Volume & Media',
-  drm: 'Digital Reputation',
-  sim: 'Stakeholder Impact',
-  rmm: 'Risk Management',
-  cem: 'Corporate Ethics',
-  gam: 'Growth & Adaptability',
-  dcm: 'Digital Communication',
-  cxm: 'Customer Experience',
+const SUBSCORE_LABELS: Record<string, { label: string; sigla: string }> = {
+  nvm: { label: 'Calidad de la narrativa', sigla: 'NVM' },
+  drm: { label: 'Fortaleza de evidencia', sigla: 'DRM' },
+  sim: { label: 'Mezcla de autoridad', sigla: 'SIM' },
+  rmm: { label: 'Actualidad y empuje', sigla: 'RMM' },
+  cem: { label: 'Controversia (reverso)', sigla: 'CEM' },
+  gam: { label: 'Independencia de gobierno', sigla: 'GAM' },
+  dcm: { label: 'Integridad del grafo', sigla: 'DCM' },
+  cxm: { label: 'Impacto de mercado', sigla: 'CXM' },
 };
 
 export default function DashboardSieteIAs() {
@@ -93,7 +87,7 @@ export default function DashboardSieteIAs() {
       setLastSearchResult(data);
       toast({ 
         title: "Búsqueda completada",
-        description: `${data.models_succeeded}/${data.models_called} modelos respondieron correctamente`,
+        description: `${data.models_succeeded}/3 modelos con Internet respondieron correctamente`,
       });
       
       refetchRuns();
@@ -123,7 +117,7 @@ export default function DashboardSieteIAs() {
       setLastAnalysisResult(data);
       toast({ 
         title: "Análisis completado",
-        description: `RIX Score: ${data.rix_score_adjusted || data.rix_score}`,
+        description: `RIX Score: ${data.rix_score}`,
       });
       
       refetchRuns();
@@ -139,19 +133,23 @@ export default function DashboardSieteIAs() {
     }
   };
 
-  const renderModelResponses = (run: RixRunV2) => (
+  const renderSearchModelResponses = (run: RixRunV2) => (
     <Accordion type="multiple" className="w-full">
-      {MODEL_INFO.map((model) => {
+      {SEARCH_MODELS.map((model) => {
         const response = run[model.responseKey] as string | null;
         const hasResponse = !!response && response.length > 0;
-        const error = run.model_errors?.[model.name.toLowerCase().replace('-', '_')];
+        const errors = run.model_errors as Record<string, string> | null;
+        const error = errors?.[model.name];
         
         return (
           <AccordionItem key={model.name} value={model.name}>
             <AccordionTrigger className="hover:no-underline">
               <div className="flex items-center gap-2">
                 {model.icon}
-                <span className="font-medium">{model.name}</span>
+                <span className="font-medium">{model.displayName}</span>
+                <Badge variant="outline" className="ml-1 text-xs">
+                  Internet ✓
+                </Badge>
                 {hasResponse ? (
                   <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200">
                     <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -200,19 +198,29 @@ export default function DashboardSieteIAs() {
       { key: 'cxm', score: run.cxm_excluded ? null : run.cxm_score, categoria: run.cxm_categoria },
     ];
 
+    const getCategoryColor = (categoria: string | null) => {
+      if (!categoria) return 'bg-gray-100 text-gray-600';
+      if (categoria === 'Bueno') return 'bg-green-100 text-green-700';
+      if (categoria === 'Mejorable') return 'bg-yellow-100 text-yellow-700';
+      if (categoria === 'Insuficiente') return 'bg-red-100 text-red-700';
+      return 'bg-gray-100 text-gray-600';
+    };
+
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {subscores.map(({ key, score, categoria }) => (
           <Card key={key} className="p-4">
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">
-              {SUBSCORE_LABELS[key]}
+            <div className="flex items-center gap-1 text-xs text-muted-foreground uppercase tracking-wide">
+              <span className="font-bold">{SUBSCORE_LABELS[key].sigla}</span>
+              <span>-</span>
+              <span className="truncate">{SUBSCORE_LABELS[key].label}</span>
             </div>
             <div className="text-2xl font-bold mt-1">
               {score !== null ? score : 'N/A'}
             </div>
             {categoria && (
-              <Badge variant="secondary" className="mt-1 text-xs">
-                {categoria.replace('_', ' ')}
+              <Badge variant="secondary" className={`mt-1 text-xs ${getCategoryColor(categoria)}`}>
+                {categoria.replace(/_/g, ' ')}
               </Badge>
             )}
           </Card>
@@ -230,7 +238,7 @@ export default function DashboardSieteIAs() {
     if (!latestV2 || !latestMake) return null;
 
     const delta = (latestV2.rix_score || 0) - (latestMake.rix_score || 0);
-    const deltaClass = Math.abs(delta) > 5 ? 'text-red-600' : 'text-green-600';
+    const deltaClass = delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-gray-600';
 
     return (
       <Card className="mt-6">
@@ -239,6 +247,9 @@ export default function DashboardSieteIAs() {
             <BarChart3 className="h-5 w-5" />
             Comparación Make vs Lovable V2
           </CardTitle>
+          <CardDescription>
+            Arquitectura de 2 fases: Búsqueda (3 modelos con Internet) → Análisis (GPT-4o)
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -251,10 +262,10 @@ export default function DashboardSieteIAs() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableRow>
-                <TableCell className="font-medium">RIX Score</TableCell>
-                <TableCell className="text-center">{latestMake.rix_score ?? '-'}</TableCell>
-                <TableCell className="text-center">{latestV2.rix_score ?? '-'}</TableCell>
+              <TableRow className="bg-muted/50">
+                <TableCell className="font-bold">RIX Score Total</TableCell>
+                <TableCell className="text-center font-bold">{latestMake.rix_score ?? '-'}</TableCell>
+                <TableCell className="text-center font-bold">{latestV2.rix_score ?? '-'}</TableCell>
                 <TableCell className={`text-center font-bold ${deltaClass}`}>
                   {delta > 0 ? '+' : ''}{delta}
                 </TableCell>
@@ -263,11 +274,14 @@ export default function DashboardSieteIAs() {
                 const makeScore = latestMake[`${key}_score` as keyof RixRunV2] as number | null;
                 const v2Score = latestV2[`${key}_score` as keyof RixRunV2] as number | null;
                 const scoreDelta = (v2Score || 0) - (makeScore || 0);
-                const scoreDeltaClass = Math.abs(scoreDelta) > 5 ? 'text-red-600' : 'text-green-600';
+                const scoreDeltaClass = scoreDelta > 0 ? 'text-green-600' : scoreDelta < 0 ? 'text-red-600' : 'text-gray-600';
                 
                 return (
                   <TableRow key={key}>
-                    <TableCell>{SUBSCORE_LABELS[key]}</TableCell>
+                    <TableCell>
+                      <span className="font-semibold">{SUBSCORE_LABELS[key].sigla}</span>
+                      <span className="text-muted-foreground ml-1">({SUBSCORE_LABELS[key].label})</span>
+                    </TableCell>
                     <TableCell className="text-center">{makeScore ?? '-'}</TableCell>
                     <TableCell className="text-center">{v2Score ?? '-'}</TableCell>
                     <TableCell className={`text-center ${scoreDeltaClass}`}>
@@ -284,20 +298,24 @@ export default function DashboardSieteIAs() {
   };
 
   return (
-    <Layout title="Dashboard 7 IAs">
+    <Layout title="Dashboard RIX V2">
       <div className="container mx-auto py-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Dashboard 7 IAs</h1>
+            <h1 className="text-3xl font-bold">Dashboard RIX V2</h1>
             <p className="text-muted-foreground">
-              Pipeline RIX V2 con GPT-4o, Gemini, Perplexity, DeepSeek, Claude, Grok y Qwen
+              Pipeline de 2 fases: Búsqueda (Perplexity, Grok, DeepSeek) → Análisis (GPT-4o con ORG_RIXSchema_V2)
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="px-3 py-1">
-              <Zap className="w-3 h-3 mr-1" />
-              APIs Directas
+              <Search className="w-3 h-3 mr-1" />
+              3 modelos de búsqueda
+            </Badge>
+            <Badge variant="outline" className="px-3 py-1">
+              <BarChart2 className="w-3 h-3 mr-1" />
+              GPT-4o análisis
             </Badge>
           </div>
         </div>
@@ -305,9 +323,14 @@ export default function DashboardSieteIAs() {
         {/* Execution Panel */}
         <Card>
           <CardHeader>
-            <CardTitle>Panel de Ejecución</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              Panel de Ejecución
+            </CardTitle>
             <CardDescription>
-              Selecciona una empresa para ejecutar la búsqueda con los 7 modelos de IA
+              <strong>Fase 1:</strong> Búsqueda con 3 modelos que tienen acceso a Internet (Perplexity Sonar Pro, Grok 3, DeepSeek).
+              <br />
+              <strong>Fase 2:</strong> Análisis con GPT-4o usando tool calling para generar el JSON del ORG_RIXSchema_V2.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -337,12 +360,12 @@ export default function DashboardSieteIAs() {
                 {isSearching ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Buscando...
+                    Buscando con 3 IAs...
                   </>
                 ) : (
                   <>
-                    <Play className="h-4 w-4" />
-                    Ejecutar Búsqueda V2
+                    <Search className="h-4 w-4" />
+                    Fase 1: Búsqueda
                   </>
                 )}
               </Button>
@@ -353,7 +376,10 @@ export default function DashboardSieteIAs() {
               <Card className="bg-muted/50">
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold">Resultado de Búsqueda</h4>
+                    <h4 className="font-semibold flex items-center gap-2">
+                      <Search className="h-4 w-4" />
+                      Resultado Fase 1: Búsqueda
+                    </h4>
                     <Badge variant="outline">
                       <Clock className="w-3 h-3 mr-1" />
                       {lastSearchResult.total_time_ms}ms
@@ -383,12 +409,15 @@ export default function DashboardSieteIAs() {
                         size="sm" 
                         onClick={() => handleAnalyze(lastSearchResult.id)}
                         disabled={isAnalyzing}
-                        className="w-full"
+                        className="w-full gap-1"
                       >
                         {isAnalyzing ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          'Ejecutar Análisis'
+                          <>
+                            <BarChart2 className="h-4 w-4" />
+                            Fase 2: Análisis
+                          </>
                         )}
                       </Button>
                     </div>
@@ -425,17 +454,37 @@ export default function DashboardSieteIAs() {
               <Card className="bg-green-50 dark:bg-green-950/20 border-green-200">
                 <CardContent className="pt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold text-green-800 dark:text-green-200">
-                      Análisis Completado
+                    <h4 className="font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
+                      <BarChart2 className="h-4 w-4" />
+                      Resultado Fase 2: Análisis ORG_RIXSchema_V2
                     </h4>
                     <Badge className="bg-green-600">
-                      RIX: {lastAnalysisResult.rix_score_adjusted || lastAnalysisResult.rix_score}
+                      RIX: {lastAnalysisResult.rix_score}
                     </Badge>
                   </div>
-                  <div className="text-sm text-green-700 dark:text-green-300">
-                    {lastAnalysisResult.cxm_excluded && '(CXM excluido) '}
-                    Tiempo: {lastAnalysisResult.analysis_time_ms}ms
+                  <div className="text-sm text-green-700 dark:text-green-300 space-y-1">
+                    {lastAnalysisResult.cxm_excluded && <p>• CXM excluido (no cotiza)</p>}
+                    <p>• Tiempo de análisis: {lastAnalysisResult.analysis_time_ms}ms</p>
+                    {lastAnalysisResult.flags?.length > 0 && (
+                      <p>• Flags: {lastAnalysisResult.flags.join(', ')}</p>
+                    )}
                   </div>
+                  {lastAnalysisResult.counters && (
+                    <div className="grid grid-cols-3 gap-2 mt-3">
+                      <div className="text-center bg-white/50 rounded p-2">
+                        <div className="font-bold">{lastAnalysisResult.counters.num_citas}</div>
+                        <div className="text-xs text-muted-foreground">Citas</div>
+                      </div>
+                      <div className="text-center bg-white/50 rounded p-2">
+                        <div className="font-bold">{lastAnalysisResult.counters.num_fechas}</div>
+                        <div className="text-xs text-muted-foreground">Fechas</div>
+                      </div>
+                      <div className="text-center bg-white/50 rounded p-2">
+                        <div className="font-bold">{Math.round((lastAnalysisResult.counters.temporal_alignment || 0) * 100)}%</div>
+                        <div className="text-xs text-muted-foreground">Alineación</div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -480,18 +529,22 @@ export default function DashboardSieteIAs() {
                       <div className="text-right">
                         {run.rix_score !== null ? (
                           <div className="text-3xl font-bold">
-                            {run.rix_score_adjusted || run.rix_score}
+                            {run.rix_score}
                           </div>
                         ) : (
                           <Button 
                             size="sm" 
                             onClick={() => handleAnalyze(run.id)}
                             disabled={isAnalyzing}
+                            className="gap-1"
                           >
                             {isAnalyzing ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              'Analizar'
+                              <>
+                                <BarChart2 className="h-4 w-4" />
+                                Analizar
+                              </>
                             )}
                           </Button>
                         )}
@@ -505,7 +558,7 @@ export default function DashboardSieteIAs() {
                     {/* Summary */}
                     {run.resumen && (
                       <div>
-                        <h4 className="font-semibold mb-2">Resumen</h4>
+                        <h4 className="font-semibold mb-2">Resumen Ejecutivo</h4>
                         <p className="text-sm text-muted-foreground">{run.resumen}</p>
                       </div>
                     )}
@@ -513,7 +566,7 @@ export default function DashboardSieteIAs() {
                     {/* Subscores */}
                     {run.rix_score !== null && (
                       <div>
-                        <h4 className="font-semibold mb-3">Subscores</h4>
+                        <h4 className="font-semibold mb-3">Subscores ORG_RIXSchema_V2</h4>
                         {renderSubscores(run)}
                       </div>
                     )}
@@ -521,7 +574,7 @@ export default function DashboardSieteIAs() {
                     {/* Flags */}
                     {run.flags && run.flags.length > 0 && (
                       <div>
-                        <h4 className="font-semibold mb-2">Flags</h4>
+                        <h4 className="font-semibold mb-2">Flags de Calidad</h4>
                         <div className="flex flex-wrap gap-2">
                           {run.flags.map((flag, i) => (
                             <Badge key={i} variant="secondary">
@@ -534,8 +587,8 @@ export default function DashboardSieteIAs() {
 
                     {/* Model Responses */}
                     <div>
-                      <h4 className="font-semibold mb-3">Respuestas por Modelo</h4>
-                      {renderModelResponses(run)}
+                      <h4 className="font-semibold mb-3">Fase 1: Respuestas de Búsqueda (3 modelos con Internet)</h4>
+                      {renderSearchModelResponses(run)}
                     </div>
                   </CardContent>
                 </Card>
@@ -578,7 +631,7 @@ export default function DashboardSieteIAs() {
                         <TableCell className="font-medium">{run.target_name}</TableCell>
                         <TableCell>{run.ticker}</TableCell>
                         <TableCell className="text-center font-bold">
-                          {run.rix_score_adjusted || run.rix_score || '-'}
+                          {run.rix_score || '-'}
                         </TableCell>
                         <TableCell className="text-center">
                           {run.execution_time_ms ? `${run.execution_time_ms}ms` : '-'}

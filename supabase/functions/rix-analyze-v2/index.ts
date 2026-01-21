@@ -6,138 +6,196 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// RIX Analysis Schema for GPT-4o tool calling
+// Full ORG_RIXSchema_V2 Tool Definition for GPT-4o
 const RIX_ANALYSIS_TOOL = {
   type: "function",
   function: {
     name: "submit_rix_analysis",
-    description: "Submit the RIX reputational analysis scores for a company",
+    description: "Submit the complete RIX reputational analysis following ORG_RIXSchema_V2",
     parameters: {
       type: "object",
       properties: {
+        // Core RIX Score
         rix_score: {
           type: "integer",
-          description: "Overall RIX score (0-100)",
+          description: "Overall RIX score (0-100). If DRM<40 or SIM<40, cap at 64.",
           minimum: 0,
           maximum: 100,
         },
         resumen: {
           type: "string",
-          description: "Executive summary of the company's reputation (2-3 sentences)",
+          description: "Executive summary (2-3 sentences) of reputation status",
         },
         puntos_clave: {
           type: "array",
           items: { type: "string" },
-          description: "List of 3-5 key points about the company's reputation",
+          description: "3-5 key reputation points",
         },
+        explicacion: {
+          type: "array",
+          items: { type: "string" },
+          description: "Detailed methodology explanation for each subscore",
+        },
+        
+        // Counters
+        palabras: {
+          type: "integer",
+          description: "Word count of analyzed text",
+        },
+        num_fechas: {
+          type: "integer",
+          description: "Number of dates found in sources",
+        },
+        num_citas: {
+          type: "integer",
+          description: "Number of citations/sources",
+        },
+        num_posts_social: {
+          type: "integer",
+          description: "Number of social media posts cited",
+        },
+        temporal_alignment: {
+          type: "number",
+          description: "Proportion of facts within date window (0-1)",
+          minimum: 0,
+          maximum: 1,
+        },
+        citation_density: {
+          type: "number",
+          description: "Citation density metric (0-1)",
+          minimum: 0,
+          maximum: 1,
+        },
+        
+        // NVM - Narrative Value Metric
         nvm_score: {
           type: "integer",
-          description: "News Volume & Media Coverage score (0-100)",
+          description: "NVM score (0-100). Formula: clip0-100(50*(s̄+1) - 20*c̄ - 30*h̄)",
           minimum: 0,
           maximum: 100,
         },
         nvm_categoria: {
           type: "string",
-          enum: ["muy_alto", "alto", "medio", "bajo", "muy_bajo"],
-          description: "News Volume category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
+          description: "NVM category: Bueno(≥70), Mejorable(40-69), Insuficiente(<40)",
         },
+        
+        // DRM - Data Reliability Metric
         drm_score: {
           type: "integer",
-          description: "Digital Reputation Management score (0-100)",
+          description: "DRM score (0-100). Primary 40% + corroboration 20% + clarity 30% + traceability 10%",
           minimum: 0,
           maximum: 100,
         },
         drm_categoria: {
           type: "string",
-          enum: ["excelente", "bueno", "aceptable", "deficiente", "crítico"],
-          description: "Digital Reputation category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
         },
+        
+        // SIM - Source Integrity Metric
         sim_score: {
           type: "integer",
-          description: "Stakeholder Impact Measurement score (0-100)",
+          description: "SIM score (0-100). Formula: 100*(0.45*T1 + 0.30*T2 + 0.15*T3 + 0.10*T4)",
           minimum: 0,
           maximum: 100,
         },
         sim_categoria: {
           type: "string",
-          enum: ["muy_positivo", "positivo", "neutro", "negativo", "muy_negativo"],
-          description: "Stakeholder Impact category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
         },
+        
+        // RMM - Reputational Momentum Metric
         rmm_score: {
           type: "integer",
-          description: "Risk Management & Mitigation score (0-100)",
+          description: "RMM score (0-100). If <50% facts in window, cap at 69 and flag datos_antiguos",
           minimum: 0,
           maximum: 100,
         },
         rmm_categoria: {
           type: "string",
-          enum: ["excelente", "bueno", "aceptable", "deficiente", "crítico"],
-          description: "Risk Management category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
         },
+        
+        // CEM - Controversy Exposure Metric
         cem_score: {
           type: "integer",
-          description: "Corporate Ethics & Management score (0-100)",
+          description: "CEM score (0-100). Formula: 100 - (0.5*J + 0.3*P + 0.2*L)",
           minimum: 0,
           maximum: 100,
         },
         cem_categoria: {
           type: "string",
-          enum: ["ejemplar", "bueno", "aceptable", "cuestionable", "deficiente"],
-          description: "Corporate Ethics category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
         },
+        
+        // GAM - Governance Autonomy Metric
         gam_score: {
           type: "integer",
-          description: "Growth & Adaptability Metrics score (0-100)",
+          description: "GAM score (0-100). Independence, policies, declared conflicts",
           minimum: 0,
           maximum: 100,
         },
         gam_categoria: {
           type: "string",
-          enum: ["innovador", "adaptable", "estable", "rezagado", "estancado"],
-          description: "Growth & Adaptability category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
         },
+        
+        // DCM - Data Consistency Metric
         dcm_score: {
           type: "integer",
-          description: "Digital Communication & Marketing score (0-100)",
+          description: "DCM score (0-100). Coherence of names/roles/dates/figures",
           minimum: 0,
           maximum: 100,
         },
         dcm_categoria: {
           type: "string",
-          enum: ["líder", "avanzado", "competente", "básico", "deficiente"],
-          description: "Digital Communication category",
+          enum: ["Bueno", "Mejorable", "Insuficiente"],
         },
+        
+        // CXM - Corporate Execution Metric
         cxm_score: {
           type: "integer",
-          description: "Customer Experience Management score (0-100). Use -1 if not applicable (B2B companies)",
+          description: "CXM score (0-100) or -1 if not applicable. If traded and missing price, set to 25.",
           minimum: -1,
           maximum: 100,
         },
         cxm_categoria: {
           type: "string",
-          enum: ["excepcional", "bueno", "aceptable", "mejorable", "deficiente", "no_aplica"],
-          description: "Customer Experience category",
+          enum: ["Bueno", "Mejorable", "Insuficiente", "no_aplica"],
         },
+        
+        // Stock data
+        precio_accion_semana: {
+          type: "number",
+          description: "Weekly stock price if applicable, null otherwise",
+        },
+        precio_minimo_accion_year: {
+          type: "number",
+          description: "52-week low stock price if applicable, null otherwise",
+        },
+        accion_vs_reputacion: {
+          type: "string",
+          description: "Analysis of stock vs reputation correlation",
+        },
+        
+        // Flags
         flags: {
           type: "array",
-          items: { type: "string" },
-          description: "List of detected flags: controversia_activa, riesgo_reputacional, tendencia_positiva, liderazgo_sectorial, crisis_comunicacion, esg_destacado, innovacion_reconocida",
-        },
-        palabras: {
-          type: "integer",
-          description: "Approximate word count of the analysis",
-        },
-        num_fechas: {
-          type: "integer",
-          description: "Number of specific dates mentioned in sources",
-        },
-        num_citas: {
-          type: "integer",
-          description: "Number of sources/citations referenced",
+          items: { 
+            type: "string",
+            enum: [
+              "pocas_fechas", "sin_fuentes", "datos_antiguos", "respuesta_corta",
+              "inconsistencias", "dudas_no_aclaradas", "confusion_alias",
+              "cutoff_disclaimer", "alto_riesgo", "drm_bajo", "sim_bajo"
+            ]
+          },
+          description: "Quality and risk flags detected",
         },
       },
       required: [
         "rix_score", "resumen", "puntos_clave",
+        "palabras", "num_fechas", "num_citas", "num_posts_social",
+        "temporal_alignment", "citation_density",
         "nvm_score", "nvm_categoria",
         "drm_score", "drm_categoria",
         "sim_score", "sim_categoria",
@@ -146,124 +204,177 @@ const RIX_ANALYSIS_TOOL = {
         "gam_score", "gam_categoria",
         "dcm_score", "dcm_categoria",
         "cxm_score", "cxm_categoria",
-        "flags", "palabras", "num_fechas", "num_citas"
+        "flags"
       ],
     },
   },
 };
 
-const ANALYSIS_PROMPT = `Eres un analista experto en reputación corporativa. Analiza las siguientes respuestas de 7 modelos de IA sobre la empresa {{issuer_name}} ({{ticker}}) y genera una evaluación RIX consolidada.
+// Full analysis prompt implementing ORG_RIXSchema_V2 specifications
+const buildAnalysisPrompt = (
+  issuerName: string,
+  ticker: string,
+  dateFrom: string,
+  dateTo: string,
+  cotiza: boolean,
+  weights: Record<string, number>,
+  perplexityResponse: string | null,
+  grokResponse: string | null,
+  deepseekResponse: string | null
+): string => `
+INSTRUCCIONES (lee y cumple estrictamente):
 
-RESPUESTAS DE LOS MODELOS:
+Eres evaluador de RepIndex. Debes evaluar EXCLUSIVAMENTE el texto de las respuestas orgánicas de IAs sobre la reputación de una marca en una semana dada.
 
-=== GPT-4o ===
-{{gpt_response}}
+PROHIBIDO navegar o añadir información externa. Trabaja SOLO con el texto proporcionado.
 
-=== Gemini ===
-{{gemini_response}}
+Devuelve tu análisis usando la función submit_rix_analysis.
 
-=== Perplexity ===
-{{perplexity_response}}
+Redondea TODAS las puntuaciones a ENTEROS.
 
-=== DeepSeek ===
-{{deepseek_response}}
+VENTANA Y METADATOS:
+• Marca/Persona: ${issuerName}
+• Ticker: ${ticker}
+• Ventana: ${dateFrom}..${dateTo}
+• Cotiza: ${cotiza ? 'Sí' : 'No'}
+• Pesos: ${JSON.stringify(weights)}
 
-=== Claude ===
-{{claude_response}}
+DEFINICIONES DE MÉTRICAS (0–100):
 
-=== Grok ===
-{{grok_response}}
+• NVM (Narrative Value Metric) = clip0-100( 50·(s̄+1) − 20·c̄ − 30·h̄ )
+  s̄∈[-1,+1] tono medio; c̄∈[0,1] controversia; h̄∈[0,1] alucinación
 
-=== Qwen ===
-{{qwen_response}}
+• DRM (Data Reliability Metric) = Primaria/oficial 40% + corroboración independiente 20% + claridad documental 30% + trazabilidad 10%
 
-INSTRUCCIONES DE ANÁLISIS:
+• SIM (Source Integrity Metric) = 100·(0.45·T1 + 0.30·T2 + 0.15·T3 + 0.10·T4)
+  Según tier de cada referencia
 
-1. Consolida la información de todos los modelos
-2. Identifica consensos y divergencias entre modelos
-3. Genera puntuaciones para cada métrica RIX (0-100):
-   - NVM (News Volume & Media): Volumen y alcance de cobertura mediática
-   - DRM (Digital Reputation): Estado de la reputación digital
-   - SIM (Stakeholder Impact): Impacto en stakeholders (empleados, inversores, etc.)
-   - RMM (Risk Management): Gestión de riesgos reputacionales
-   - CEM (Corporate Ethics): Ética corporativa y gobernanza
-   - GAM (Growth & Adaptability): Capacidad de crecimiento e innovación
-   - DCM (Digital Communication): Comunicación y marketing digital
-   - CXM (Customer Experience): Experiencia del cliente (usa -1 si es B2B puro)
+• RMM (Reputational Momentum Metric) = minmax0-100(0.6·coverage_temporal + 0.2·peso_T1_reciente + 0.2·log10(nº_menciones))
+  Si <50% hechos en ventana, RMM ≤ 69 y flag "datos_antiguos"
 
-4. REGLAS DE NEGOCIO:
-   - Si DRM < 40 O SIM < 40, el RIX total no puede superar 64
-   - Si CXM = "no_aplica", redistribuye su peso entre las otras métricas
-   - Identifica flags relevantes de la lista proporcionada
+• CEM (Controversy Exposure Metric) = 100 − (0.5·J + 0.3·P + 0.2·L)
+  J/P/L∈[0,100] (judicial, político, laboral/social)
 
-5. Usa la función submit_rix_analysis para enviar tu análisis estructurado.
+• GAM (Governance Autonomy Metric) = Independencia, políticas, conflictos declarados
 
-Empresa: {{issuer_name}}
-Ticker: {{ticker}}`;
+• DCM (Data Consistency Metric) = Coherencia de nombres/roles/fechas/cifras
 
-// Default weights for RIX calculation
-const DEFAULT_WEIGHTS = {
-  nvm: 10,
-  drm: 15,
-  sim: 15,
-  rmm: 15,
-  cem: 15,
-  gam: 10,
-  dcm: 10,
-  cxm: 10,
+• CXM (Corporate Execution Metric) = Impacto de mercado
+  Si cotiza y faltan precios, CXM_score = 25 (NO "no_aplica")
+  Si no cotiza, marca "no_aplica"
+
+REGLAS DE NEGOCIO:
+
+1. Mínimo 3 citas con fecha dentro de la ventana; si no, flag "pocas_fechas" o "datos_antiguos"
+2. Si ticker-precio difiere >5% de BME/CNMV, resta 10 pts a DCM y flag "inconsistencias"
+3. SI DRM < 40 O SIM < 40, limita RIX a 64 máximo y añade flag correspondiente
+4. Si CXM es "no_aplica", redistribuye su peso proporcionalmente entre las otras métricas
+5. Clasifica cada métrica: "Bueno" (≥70), "Mejorable" (40-69), "Insuficiente" (<40)
+
+FLAGS DISPONIBLES:
+["pocas_fechas", "sin_fuentes", "datos_antiguos", "respuesta_corta", "inconsistencias", "dudas_no_aclaradas", "confusion_alias", "cutoff_disclaimer", "alto_riesgo", "drm_bajo", "sim_bajo"]
+
+CONTADORES A CALCULAR:
+- palabras: total de palabras analizadas
+- num_fechas: fechas específicas encontradas
+- num_citas: número de fuentes/URLs
+- num_posts_social: menciones de redes sociales
+- temporal_alignment: proporción de hechos en ventana (0-1)
+- citation_density: densidad de citas (0-1)
+
+=== RESPUESTAS ORGÁNICAS A EVALUAR ===
+
+--- PERPLEXITY SONAR PRO ---
+${perplexityResponse || 'No disponible'}
+
+--- GROK 3 ---
+${grokResponse || 'No disponible'}
+
+--- DEEPSEEK ---
+${deepseekResponse || 'No disponible'}
+
+=== FIN DE RESPUESTAS ===
+
+Consolida la información de todos los modelos, identifica consensos y divergencias.
+Usa la función submit_rix_analysis para enviar tu análisis estructurado.
+`;
+
+// Default weights
+const DEFAULT_WEIGHTS: Record<string, number> = {
+  NVM: 15,
+  DRM: 15,
+  SIM: 12,
+  RMM: 12,
+  CEM: 12,
+  GAM: 12,
+  DCM: 12,
+  CXM: 10,
 };
 
-function calculateRixScore(analysis: any): { rixScore: number; adjustedRixScore: number; cxmExcluded: boolean; weights: Record<string, number> } {
-  const weights = { ...DEFAULT_WEIGHTS };
-  let cxmExcluded = false;
+function getCategory(score: number): string {
+  if (score >= 70) return 'Bueno';
+  if (score >= 40) return 'Mejorable';
+  return 'Insuficiente';
+}
 
-  // Handle CXM exclusion
+function calculateEffectiveWeights(analysis: any, baseWeights: Record<string, number>): Record<string, number> {
+  const weights = { ...baseWeights };
+  
   if (analysis.cxm_categoria === 'no_aplica' || analysis.cxm_score === -1) {
-    cxmExcluded = true;
-    // Redistribute CXM weight proportionally
-    const cxmWeight = weights.cxm;
-    delete weights.cxm;
-    const totalOtherWeights = Object.values(weights).reduce((a, b) => a + b, 0);
-    Object.keys(weights).forEach(key => {
-      weights[key] = Math.round(weights[key] * (100 / totalOtherWeights));
+    const cxmWeight = weights.CXM || 10;
+    delete weights.CXM;
+    
+    const totalOther = Object.values(weights).reduce((a, b) => a + b, 0);
+    const keys = Object.keys(weights);
+    
+    keys.forEach(key => {
+      weights[key] = Math.round(weights[key] * (100 / totalOther));
     });
+    
+    // Adjust rounding to ensure sum is 100
+    const currentSum = Object.values(weights).reduce((a, b) => a + b, 0);
+    if (currentSum !== 100) {
+      const maxKey = keys.reduce((a, b) => weights[a] > weights[b] ? a : b);
+      weights[maxKey] += 100 - currentSum;
+    }
   }
+  
+  return weights;
+}
 
-  // Calculate weighted score
+function calculateFinalRixScore(analysis: any, weights: Record<string, number>): number {
+  const scoreMap: Record<string, number> = {
+    NVM: analysis.nvm_score,
+    DRM: analysis.drm_score,
+    SIM: analysis.sim_score,
+    RMM: analysis.rmm_score,
+    CEM: analysis.cem_score,
+    GAM: analysis.gam_score,
+    DCM: analysis.dcm_score,
+    CXM: analysis.cxm_score >= 0 ? analysis.cxm_score : 0,
+  };
+  
   let totalScore = 0;
   let totalWeight = 0;
-
-  const scoreMap: Record<string, number> = {
-    nvm: analysis.nvm_score,
-    drm: analysis.drm_score,
-    sim: analysis.sim_score,
-    rmm: analysis.rmm_score,
-    cem: analysis.cem_score,
-    gam: analysis.gam_score,
-    dcm: analysis.dcm_score,
-    cxm: cxmExcluded ? 0 : analysis.cxm_score,
-  };
-
+  
   Object.entries(weights).forEach(([key, weight]) => {
     if (scoreMap[key] !== undefined && scoreMap[key] >= 0) {
       totalScore += scoreMap[key] * weight;
       totalWeight += weight;
     }
   });
-
-  const rixScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
-
+  
+  let rixScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
+  
   // Apply business rule: cap at 64 if DRM < 40 or SIM < 40
-  let adjustedRixScore = rixScore;
   if (analysis.drm_score < 40 || analysis.sim_score < 40) {
-    adjustedRixScore = Math.min(rixScore, 64);
+    rixScore = Math.min(rixScore, 64);
   }
-
-  return { rixScore, adjustedRixScore, cxmExcluded, weights };
+  
+  return rixScore;
 }
 
 serve(async (req) => {
-  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -281,7 +392,7 @@ serve(async (req) => {
     console.log(`[rix-analyze-v2] Starting analysis for record: ${record_id}`);
     const startTime = Date.now();
 
-    // Initialize Supabase client
+    // Initialize Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -301,17 +412,27 @@ serve(async (req) => {
       );
     }
 
+    // Check if company is traded
+    const { data: issuerData } = await supabase
+      .from('repindex_root_issuers')
+      .select('cotiza_en_bolsa')
+      .eq('ticker', record['05_ticker'])
+      .single();
+
+    const cotiza = issuerData?.cotiza_en_bolsa ?? false;
+
     // Build analysis prompt
-    const prompt = ANALYSIS_PROMPT
-      .replace(/\{\{issuer_name\}\}/g, record['03_target_name'] || 'Unknown')
-      .replace(/\{\{ticker\}\}/g, record['05_ticker'] || 'N/A')
-      .replace('{{gpt_response}}', record['20_res_gpt_bruto'] || 'No disponible')
-      .replace('{{gemini_response}}', record['22_res_gemini_bruto'] || 'No disponible')
-      .replace('{{perplexity_response}}', record['21_res_perplex_bruto'] || 'No disponible')
-      .replace('{{deepseek_response}}', record['23_res_deepseek_bruto'] || 'No disponible')
-      .replace('{{claude_response}}', record['respuesta_bruto_claude'] || 'No disponible')
-      .replace('{{grok_response}}', record['respuesta_bruto_grok'] || 'No disponible')
-      .replace('{{qwen_response}}', record['respuesta_bruto_qwen'] || 'No disponible');
+    const analysisPrompt = buildAnalysisPrompt(
+      record['03_target_name'] || 'Unknown',
+      record['05_ticker'] || 'N/A',
+      record['06_period_from'] || '',
+      record['07_period_to'] || '',
+      cotiza,
+      DEFAULT_WEIGHTS,
+      record['21_res_perplex_bruto'],
+      record['respuesta_bruto_grok'],
+      record['23_res_deepseek_bruto']
+    );
 
     // Call GPT-4o with tool calling
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -322,7 +443,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('[rix-analyze-v2] Calling GPT-4o with tool calling...');
+    console.log('[rix-analyze-v2] Calling GPT-4o with full ORG_RIXSchema_V2 tool...');
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -332,7 +453,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: 'user', content: analysisPrompt }],
         tools: [RIX_ANALYSIS_TOOL],
         tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
         temperature: 0.2,
@@ -361,51 +482,93 @@ serve(async (req) => {
     }
 
     const analysis = JSON.parse(toolCall.function.arguments);
-    console.log('[rix-analyze-v2] Analysis received:', JSON.stringify(analysis).substring(0, 200));
+    console.log('[rix-analyze-v2] Analysis received, processing...');
 
-    // Calculate RIX scores with business rules
-    const { rixScore, adjustedRixScore, cxmExcluded, weights } = calculateRixScore(analysis);
+    // Calculate effective weights and final RIX score
+    const cxmExcluded = analysis.cxm_categoria === 'no_aplica' || analysis.cxm_score === -1;
+    const effectiveWeights = calculateEffectiveWeights(analysis, DEFAULT_WEIGHTS);
+    const finalRixScore = calculateFinalRixScore(analysis, effectiveWeights);
 
-    // Update record with analysis results
-    const updateData = {
-      '09_rix_score': rixScore,
-      '51_rix_score_adjusted': adjustedRixScore,
+    // Add business rule flags
+    const flags = [...(analysis.flags || [])];
+    if (analysis.drm_score < 40 && !flags.includes('drm_bajo')) {
+      flags.push('drm_bajo');
+    }
+    if (analysis.sim_score < 40 && !flags.includes('sim_bajo')) {
+      flags.push('sim_bajo');
+    }
+
+    // Map to database columns
+    const updateData: Record<string, any> = {
+      '09_rix_score': finalRixScore,
       '10_resumen': analysis.resumen,
       '11_puntos_clave': analysis.puntos_clave,
-      '23_nvm_score': analysis.nvm_score,
-      '24_nvm_peso': weights.nvm || DEFAULT_WEIGHTS.nvm,
-      '25_nvm_categoria': analysis.nvm_categoria,
-      '26_drm_score': analysis.drm_score,
-      '27_drm_peso': weights.drm || DEFAULT_WEIGHTS.drm,
-      '28_drm_categoria': analysis.drm_categoria,
-      '29_sim_score': analysis.sim_score,
-      '30_sim_peso': weights.sim || DEFAULT_WEIGHTS.sim,
-      '31_sim_categoria': analysis.sim_categoria,
-      '32_rmm_score': analysis.rmm_score,
-      '33_rmm_peso': weights.rmm || DEFAULT_WEIGHTS.rmm,
-      '34_rmm_categoria': analysis.rmm_categoria,
-      '35_cem_score': analysis.cem_score,
-      '36_cem_peso': weights.cem || DEFAULT_WEIGHTS.cem,
-      '37_cem_categoria': analysis.cem_categoria,
-      '38_gam_score': analysis.gam_score,
-      '39_gam_peso': weights.gam || DEFAULT_WEIGHTS.gam,
-      '40_gam_categoria': analysis.gam_categoria,
-      '41_dcm_score': analysis.dcm_score,
-      '42_dcm_peso': weights.dcm || DEFAULT_WEIGHTS.dcm,
-      '43_dcm_categoria': analysis.dcm_categoria,
-      '44_cxm_score': cxmExcluded ? null : analysis.cxm_score,
-      '45_cxm_peso': cxmExcluded ? 0 : (weights.cxm || DEFAULT_WEIGHTS.cxm),
-      '46_cxm_categoria': analysis.cxm_categoria,
-      '52_cxm_excluded': cxmExcluded,
-      '17_flags': analysis.flags,
+      '23_explicacion': analysis.explicacion || [],
+      
+      // Counters
       '12_palabras': analysis.palabras,
       '13_num_fechas': analysis.num_fechas,
       '14_num_citas': analysis.num_citas,
-      '19_weights': weights,
+      '17_num_posts_social': analysis.num_posts_social,
+      '15_temporal_alignment': analysis.temporal_alignment,
+      '16_citation_density': analysis.citation_density,
+      
+      // NVM
+      '23_nvm_score': analysis.nvm_score,
+      '24_nvm_peso': effectiveWeights.NVM || DEFAULT_WEIGHTS.NVM,
+      '25_nvm_categoria': analysis.nvm_categoria,
+      
+      // DRM
+      '26_drm_score': analysis.drm_score,
+      '27_drm_peso': effectiveWeights.DRM || DEFAULT_WEIGHTS.DRM,
+      '28_drm_categoria': analysis.drm_categoria,
+      
+      // SIM
+      '29_sim_score': analysis.sim_score,
+      '30_sim_peso': effectiveWeights.SIM || DEFAULT_WEIGHTS.SIM,
+      '31_sim_categoria': analysis.sim_categoria,
+      
+      // RMM
+      '32_rmm_score': analysis.rmm_score,
+      '33_rmm_peso': effectiveWeights.RMM || DEFAULT_WEIGHTS.RMM,
+      '34_rmm_categoria': analysis.rmm_categoria,
+      
+      // CEM
+      '35_cem_score': analysis.cem_score,
+      '36_cem_peso': effectiveWeights.CEM || DEFAULT_WEIGHTS.CEM,
+      '37_cem_categoria': analysis.cem_categoria,
+      
+      // GAM
+      '38_gam_score': analysis.gam_score,
+      '39_gam_peso': effectiveWeights.GAM || DEFAULT_WEIGHTS.GAM,
+      '40_gam_categoria': analysis.gam_categoria,
+      
+      // DCM
+      '41_dcm_score': analysis.dcm_score,
+      '42_dcm_peso': effectiveWeights.DCM || DEFAULT_WEIGHTS.DCM,
+      '43_dcm_categoria': analysis.dcm_categoria,
+      
+      // CXM
+      '44_cxm_score': cxmExcluded ? null : analysis.cxm_score,
+      '45_cxm_peso': cxmExcluded ? 0 : (effectiveWeights.CXM || DEFAULT_WEIGHTS.CXM),
+      '46_cxm_categoria': analysis.cxm_categoria,
+      '52_cxm_excluded': cxmExcluded,
+      
+      // Stock data
+      '48_precio_accion': analysis.precio_accion_semana,
+      '49_precio_minimo_52s': analysis.precio_minimo_accion_year,
+      '50_accion_vs_reputacion': analysis.accion_vs_reputacion,
+      
+      // Flags and weights
+      '17_flags': flags,
+      '19_weights': effectiveWeights,
+      
+      // Timestamps
       'analysis_completed_at': new Date().toISOString(),
       'updated_at': new Date().toISOString(),
     };
 
+    // Update record
     const { error: updateError } = await supabase
       .from('rix_runs_v2')
       .update(updateData)
@@ -419,16 +582,16 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[rix-analyze-v2] Analysis completed in ${Date.now() - startTime}ms`);
+    const totalTime = Date.now() - startTime;
+    console.log(`[rix-analyze-v2] Analysis completed in ${totalTime}ms. RIX: ${finalRixScore}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         record_id,
-        rix_score: rixScore,
-        rix_score_adjusted: adjustedRixScore,
+        rix_score: finalRixScore,
         cxm_excluded: cxmExcluded,
-        analysis_time_ms: Date.now() - startTime,
+        analysis_time_ms: totalTime,
         subscores: {
           nvm: analysis.nvm_score,
           drm: analysis.drm_score,
@@ -439,7 +602,16 @@ serve(async (req) => {
           dcm: analysis.dcm_score,
           cxm: cxmExcluded ? 'N/A' : analysis.cxm_score,
         },
-        flags: analysis.flags,
+        counters: {
+          palabras: analysis.palabras,
+          num_fechas: analysis.num_fechas,
+          num_citas: analysis.num_citas,
+          num_posts_social: analysis.num_posts_social,
+          temporal_alignment: analysis.temporal_alignment,
+          citation_density: analysis.citation_density,
+        },
+        flags,
+        effective_weights: effectiveWeights,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
