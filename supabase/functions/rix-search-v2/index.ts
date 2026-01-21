@@ -80,7 +80,7 @@ REGLAS ADICIONALES:
 - Si encuentras al menos 1 mención, establece siempre "sinshallazgo":"No" y céntrate en explicar las limitaciones de cobertura en vez de devolver un array vacío.
 - Escribe siempre en Español de España.`;
 
-// 7 modelos con acceso real a Internet
+// 7 modelos con acceso real a Internet - ahora con display name para guardar en 02_model_name
 interface SearchModelConfig {
   name: string;
   displayName: string;
@@ -95,7 +95,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 1. Perplexity Sonar Pro - Funciona ✅
   {
     name: 'perplexity-sonar-pro',
-    displayName: 'Perplexity Sonar Pro',
+    displayName: 'Perplexity',
     apiKeyEnv: 'PERPLEXITY_API_KEY',
     endpoint: 'https://api.perplexity.ai/chat/completions',
     dbColumn: '21_res_perplex_bruto',
@@ -122,7 +122,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 2. Grok 3 (xAI) - Funciona ✅
   {
     name: 'grok-3',
-    displayName: 'Grok 3 (xAI)',
+    displayName: 'Grok',
     apiKeyEnv: 'XAI_API_KEY',
     endpoint: 'https://api.x.ai/v1/chat/completions',
     dbColumn: 'respuesta_bruto_grok',
@@ -146,7 +146,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 3. DeepSeek - Funciona ✅
   {
     name: 'deepseek-chat',
-    displayName: 'DeepSeek',
+    displayName: 'Deepseek',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     endpoint: 'https://api.deepseek.com/chat/completions',
     dbColumn: '23_res_deepseek_bruto',
@@ -170,7 +170,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 4. GPT-4.1 mini (OpenAI) - Con web search
   {
     name: 'gpt-4.1-mini',
-    displayName: 'GPT-4.1 Mini',
+    displayName: 'ChatGPT',
     apiKeyEnv: 'OPENAI_API_KEY',
     endpoint: 'https://api.openai.com/v1/chat/completions',
     dbColumn: '20_res_gpt_bruto',
@@ -194,7 +194,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 5. Gemini 2.0 Flash (Google) - Con Google Search grounding
   {
     name: 'gemini-2.0-flash',
-    displayName: 'Gemini 2.0 Flash',
+    displayName: 'Google Gemini',
     apiKeyEnv: 'GOOGLE_GEMINI_API_KEY',
     endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
     dbColumn: '22_res_gemini_bruto',
@@ -228,7 +228,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 6. Claude 3.7 Sonnet (Anthropic) - Con web search beta
   {
     name: 'claude-sonnet',
-    displayName: 'Claude Sonnet',
+    displayName: 'Claude',
     apiKeyEnv: 'ANTHROPIC_API_KEY',
     endpoint: 'https://api.anthropic.com/v1/messages',
     dbColumn: 'respuesta_bruto_claude',
@@ -262,7 +262,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 7. Qwen Max (Alibaba DashScope) - Con enable_search
   {
     name: 'qwen-max',
-    displayName: 'Qwen Max',
+    displayName: 'Qwen',
     apiKeyEnv: 'DASHSCOPE_API_KEY',
     endpoint: 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
     dbColumn: 'respuesta_bruto_qwen',
@@ -360,7 +360,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker}) with 7 models`);
+    console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker}) with 7 models - 1 row per model architecture`);
     const startTime = Date.now();
 
     // Calculate date range (last 7 days)
@@ -385,23 +385,19 @@ serve(async (req) => {
     );
 
     // Process results
-    const modelResults: Record<string, { success: boolean; response?: string; error?: string; timeMs: number }> = {};
-    const modelErrors: Record<string, string> = {};
+    const modelResults: Record<string, { success: boolean; response?: string; error?: string; timeMs: number; config: SearchModelConfig }> = {};
     
     results.forEach((result, index) => {
       const config = modelConfigs[index];
       if (result.status === 'fulfilled') {
-        modelResults[config.name] = result.value;
-        if (!result.value.success && result.value.error) {
-          modelErrors[config.name] = result.value.error;
-        }
+        modelResults[config.name] = { ...result.value, config };
       } else {
         modelResults[config.name] = { 
           success: false, 
           error: result.reason?.message || 'Unknown error',
-          timeMs: 0 
+          timeMs: 0,
+          config,
         };
-        modelErrors[config.name] = result.reason?.message || 'Unknown error';
       }
     });
 
@@ -416,55 +412,87 @@ serve(async (req) => {
     sunday.setDate(now.getDate() - dayOfWeek);
     sunday.setHours(0, 0, 0, 0);
 
-    // Prepare record for insertion - store raw responses from all 7 search models
-    const insertData: Record<string, any> = {
-      '02_model_name': 'consolidado_v2',
-      '03_target_name': issuer_name,
-      '04_target_type': 'company',
-      '05_ticker': ticker,
-      '06_period_from': dateFrom,
-      '07_period_to': dateTo,
-      '08_tz': 'Europe/Madrid',
-      'batch_execution_date': sunday.toISOString(),
-      'source_pipeline': 'lovable_v2',
-      'execution_time_ms': Date.now() - startTime,
-      'search_completed_at': new Date().toISOString(),
-      // Track errors
-      'model_errors': Object.keys(modelErrors).length > 0 ? modelErrors : null,
-    };
+    // NEW ARCHITECTURE: Create 7 independent rows, one per model
+    const insertedRecords: { id: string; model_name: string; success: boolean; error?: string }[] = [];
+    const modelErrors: Record<string, string> = {};
 
-    // Map each model's response to its database column
-    modelConfigs.forEach(config => {
-      const result = modelResults[config.name];
-      insertData[config.dbColumn] = result?.response || null;
-    });
+    for (const [modelName, result] of Object.entries(modelResults)) {
+      const config = result.config;
+      
+      // Only create row if we have a response (success or not, we track errors)
+      const hasResponse = result.success && result.response;
+      
+      if (!hasResponse && result.error) {
+        modelErrors[modelName] = result.error;
+      }
 
-    // Insert record
-    const { data: insertedRecord, error: insertError } = await supabase
-      .from('rix_runs_v2')
-      .insert(insertData)
-      .select('id')
-      .single();
+      // Prepare row data - each row has only ONE response column populated
+      const insertData: Record<string, any> = {
+        '02_model_name': config.displayName,  // Use displayName for compatibility with rix_runs
+        '03_target_name': issuer_name,
+        '04_target_type': 'company',
+        '05_ticker': ticker,
+        '06_period_from': dateFrom,
+        '07_period_to': dateTo,
+        '08_tz': 'Europe/Madrid',
+        'batch_execution_date': sunday.toISOString(),
+        'source_pipeline': 'lovable_v2',
+        'execution_time_ms': result.timeMs,
+        'search_completed_at': new Date().toISOString(),
+        // Only this model's column gets populated
+        [config.dbColumn]: result.response || null,
+        // Track individual model error if any
+        'model_errors': result.error ? { [modelName]: result.error } : null,
+      };
 
-    if (insertError) {
-      console.error('[rix-search-v2] Insert error:', insertError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to save search results', details: insertError }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      try {
+        const { data: insertedRecord, error: insertError } = await supabase
+          .from('rix_runs_v2')
+          .insert(insertData)
+          .select('id')
+          .single();
+
+        if (insertError) {
+          console.error(`[rix-search-v2] Insert error for ${config.displayName}:`, insertError);
+          insertedRecords.push({
+            id: '',
+            model_name: config.displayName,
+            success: false,
+            error: insertError.message,
+          });
+        } else {
+          console.log(`[rix-search-v2] Created row for ${config.displayName}: ${insertedRecord.id}`);
+          insertedRecords.push({
+            id: insertedRecord.id,
+            model_name: config.displayName,
+            success: true,
+          });
+        }
+      } catch (err: any) {
+        console.error(`[rix-search-v2] Exception inserting ${config.displayName}:`, err);
+        insertedRecords.push({
+          id: '',
+          model_name: config.displayName,
+          success: false,
+          error: err.message,
+        });
+      }
     }
 
     const successCount = Object.values(modelResults).filter(r => r.success).length;
     const totalModels = modelConfigs.length;
     const totalTime = Date.now() - startTime;
+    const insertedIds = insertedRecords.filter(r => r.success && r.id).map(r => r.id);
 
-    console.log(`[rix-search-v2] Search completed: ${successCount}/${totalModels} models succeeded in ${totalTime}ms`);
+    console.log(`[rix-search-v2] Search completed: ${successCount}/${totalModels} models succeeded, ${insertedIds.length} rows created in ${totalTime}ms`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        id: insertedRecord.id,
-        record_id: insertedRecord.id,
+        // Return array of IDs for Phase 2 batch analysis
+        record_ids: insertedIds,
+        records_created: insertedIds.length,
+        // Summary
         issuer_name,
         ticker,
         date_range: { from: dateFrom, to: dateTo },
@@ -472,6 +500,7 @@ serve(async (req) => {
         models_succeeded: successCount,
         models_failed: totalModels - successCount,
         total_time_ms: totalTime,
+        // Detailed results per model
         model_results: Object.fromEntries(
           Object.entries(modelResults).map(([name, r]) => [
             name,
@@ -480,9 +509,12 @@ serve(async (req) => {
               response_length: r.response?.length || 0,
               time_ms: r.timeMs,
               error: r.error,
+              record_id: insertedRecords.find(rec => rec.model_name === r.config.displayName)?.id || null,
             }
           ])
         ),
+        // All inserted records with their IDs
+        inserted_records: insertedRecords,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
