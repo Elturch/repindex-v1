@@ -191,12 +191,12 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
-  // 5. Gemini 2.0 Flash (Google) - Con Google Search grounding
+  // 5. Gemini 2.5 Pro (Google) - Con Google Search grounding
   {
-    name: 'gemini-2.0-flash',
+    name: 'gemini-2.5-pro',
     displayName: 'Google Gemini',
     apiKeyEnv: 'GOOGLE_GEMINI_API_KEY',
-    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
     dbColumn: '22_res_gemini_bruto',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
@@ -208,11 +208,16 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         tools: [{ google_search: {} }],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 4000,
+          maxOutputTokens: 8000,
         },
       },
     }),
     parseResponse: (data: any) => {
+      // Detectar bloqueos de seguridad
+      if (data.promptFeedback?.blockReason) {
+        console.error(`[Gemini] Prompt bloqueado: ${data.promptFeedback.blockReason}`);
+        return `[ERROR: Prompt bloqueado - ${data.promptFeedback.blockReason}]`;
+      }
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
       let sources = '';
@@ -225,9 +230,9 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return text + sources;
     },
   },
-  // 6. Claude 3.7 Sonnet (Anthropic) - Con web search beta
+  // 6. Claude Opus 4.1 (Anthropic) - Con web search beta
   {
-    name: 'claude-sonnet',
+    name: 'claude-opus',
     displayName: 'Claude',
     apiKeyEnv: 'ANTHROPIC_API_KEY',
     endpoint: 'https://api.anthropic.com/v1/messages',
@@ -240,23 +245,43 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         'Content-Type': 'application/json',
       },
       body: {
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
+        model: 'claude-opus-4-20250514',
+        max_tokens: 8192,
         tools: [{
           type: 'web_search_20250305',
           name: 'web_search',
-          max_uses: 5,
+          max_uses: 10,
         }],
         messages: [{ role: 'user', content: prompt }],
       },
     }),
     parseResponse: (data: any) => {
-      // Claude devuelve array de content blocks
       if (!data.content) return '';
-      return data.content
-        .filter((block: any) => block.type === 'text')
-        .map((block: any) => block.text)
-        .join('\n');
+      
+      let textContent = '';
+      const sources: string[] = [];
+      
+      for (const block of data.content) {
+        if (block.type === 'text') {
+          textContent += block.text + '\n';
+          // Extraer citas inline del bloque de texto
+          if (block.citations && Array.isArray(block.citations)) {
+            for (const citation of block.citations) {
+              if (citation.url) {
+                sources.push(`- ${citation.title || 'Fuente'}: ${citation.url}`);
+              }
+            }
+          }
+        }
+      }
+      
+      // Añadir fuentes únicas al final
+      const uniqueSources = [...new Set(sources)];
+      if (uniqueSources.length > 0) {
+        textContent += '\n\nFuentes encontradas:\n' + uniqueSources.join('\n');
+      }
+      
+      return textContent.trim();
     },
   },
   // 7. Qwen Max (Alibaba DashScope) - Con enable_search
