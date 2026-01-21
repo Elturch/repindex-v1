@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, DollarSign, Zap, Hash, TrendingUp, RefreshCw, Save, Activity, Users, AlertTriangle, Clock, Target } from 'lucide-react';
+import { Loader2, DollarSign, Zap, TrendingUp, RefreshCw, Save, Users, AlertTriangle, Clock, Target } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -275,6 +275,70 @@ export const ApiCostDashboard: React.FC = () => {
       .sort((a, b) => b.value - a.value);
   }, [usageLogs]);
 
+  // Pipeline V2 stats
+  const pipelineStats = useMemo(() => {
+    const pipelineLogs = usageLogs.filter(log => 
+      log.action_type === 'rix_search' || log.action_type === 'rix_analysis'
+    );
+
+    const searchLogs = pipelineLogs.filter(log => log.action_type === 'rix_search');
+    const analysisLogs = pipelineLogs.filter(log => log.action_type === 'rix_analysis');
+
+    const searchCost = searchLogs.reduce((sum, log) => sum + Number(log.estimated_cost_usd || 0), 0);
+    const analysisCost = analysisLogs.reduce((sum, log) => sum + Number(log.estimated_cost_usd || 0), 0);
+
+    // Group by model for search
+    const searchByModel = new Map<string, { calls: number; cost: number; tokens: number }>();
+    searchLogs.forEach(log => {
+      const model = `${log.provider}/${log.model}`;
+      const existing = searchByModel.get(model) || { calls: 0, cost: 0, tokens: 0 };
+      existing.calls++;
+      existing.cost += Number(log.estimated_cost_usd || 0);
+      existing.tokens += (log.input_tokens || 0) + (log.output_tokens || 0);
+      searchByModel.set(model, existing);
+    });
+
+    // Group by ticker
+    const tickerCosts = new Map<string, { searchCost: number; analysisCost: number; models: number }>();
+    pipelineLogs.forEach(log => {
+      const ticker = (log.metadata as any)?.ticker || (log as any).ticker || 'unknown';
+      const existing = tickerCosts.get(ticker) || { searchCost: 0, analysisCost: 0, models: 0 };
+      if (log.action_type === 'rix_search') {
+        existing.searchCost += Number(log.estimated_cost_usd || 0);
+        existing.models++;
+      } else {
+        existing.analysisCost += Number(log.estimated_cost_usd || 0);
+      }
+      tickerCosts.set(ticker, existing);
+    });
+
+    // Sort tickers by total cost
+    const topTickers = Array.from(tickerCosts.entries())
+      .map(([ticker, data]) => ({
+        ticker,
+        totalCost: data.searchCost + data.analysisCost,
+        searchCost: data.searchCost,
+        analysisCost: data.analysisCost,
+        models: data.models,
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 15);
+
+    return {
+      totalCost: searchCost + analysisCost,
+      searchCost,
+      analysisCost,
+      searchCalls: searchLogs.length,
+      analysisCalls: analysisLogs.length,
+      uniqueTickers: tickerCosts.size,
+      avgCostPerTicker: tickerCosts.size > 0 ? (searchCost + analysisCost) / tickerCosts.size : 0,
+      searchByModel: Array.from(searchByModel.entries())
+        .map(([model, data]) => ({ model, ...data }))
+        .sort((a, b) => b.cost - a.cost),
+      topTickers,
+    };
+  }, [usageLogs]);
+
   // User distribution for pie chart
   const userDistribution = useMemo(() => {
     if (userStats.length === 0) return [];
@@ -424,8 +488,9 @@ export const ApiCostDashboard: React.FC = () => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Resumen</TabsTrigger>
+          <TabsTrigger value="pipeline">Pipeline V2</TabsTrigger>
           <TabsTrigger value="users">Por Usuario</TabsTrigger>
           <TabsTrigger value="actions">Por Acción</TabsTrigger>
           <TabsTrigger value="config">Configuración</TabsTrigger>
@@ -630,6 +695,206 @@ export const ApiCostDashboard: React.FC = () => {
                         <TableCell className="text-right font-medium">{formatCost(func.cost)}</TableCell>
                         <TableCell className="text-right">
                           <Badge variant="secondary">{func.percentage.toFixed(1)}%</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Pipeline V2 Tab */}
+        <TabsContent value="pipeline" className="space-y-6">
+          {/* Pipeline Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Coste Total Pipeline
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCost(pipelineStats.totalCost)}</div>
+                <p className="text-xs text-muted-foreground">
+                  Búsquedas + Análisis RIX V2
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Zap className="h-4 w-4" />
+                  Coste Búsquedas
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-primary">{formatCost(pipelineStats.searchCost)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {pipelineStats.searchCalls} llamadas a 7 modelos
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  Coste Análisis
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-good">{formatCost(pipelineStats.analysisCost)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {pipelineStats.analysisCalls} análisis GPT-4o
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Coste/Empresa
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCost(pipelineStats.avgCostPerTicker)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {pipelineStats.uniqueTickers} empresas procesadas
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Search cost by model */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Coste por Modelo de Búsqueda</CardTitle>
+                <CardDescription>Desglose de gastos por cada IA en Phase 1</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {pipelineStats.searchByModel.length > 0 ? (
+                  <div className="space-y-3">
+                    {pipelineStats.searchByModel.map((item, idx) => (
+                      <div key={item.model} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                          />
+                          <span className="font-medium text-sm">{item.model}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-muted-foreground">{item.calls} llamadas</span>
+                          <span className="font-bold">{formatCost(item.cost)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground">
+                    No hay datos de búsquedas RIX V2
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Phase breakdown */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Distribución Search vs Analysis</CardTitle>
+                <CardDescription>Proporción de costes por fase del pipeline</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {pipelineStats.totalCost > 0 ? (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Phase 1: Búsquedas (7 modelos)</span>
+                        <span className="font-bold">{formatCost(pipelineStats.searchCost)}</span>
+                      </div>
+                      <Progress 
+                        value={(pipelineStats.searchCost / pipelineStats.totalCost) * 100} 
+                        className="h-3"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {((pipelineStats.searchCost / pipelineStats.totalCost) * 100).toFixed(1)}% del total
+                      </p>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Phase 2: Análisis GPT-4o</span>
+                        <span className="font-bold">{formatCost(pipelineStats.analysisCost)}</span>
+                      </div>
+                      <Progress 
+                        value={(pipelineStats.analysisCost / pipelineStats.totalCost) * 100} 
+                        className="h-3"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {((pipelineStats.analysisCost / pipelineStats.totalCost) * 100).toFixed(1)}% del total
+                      </p>
+                    </div>
+                    
+                    <div className="pt-4 border-t">
+                      <div className="grid grid-cols-2 gap-4 text-center">
+                        <div>
+                          <div className="text-2xl font-bold text-primary">{pipelineStats.searchCalls}</div>
+                          <p className="text-xs text-muted-foreground">Búsquedas realizadas</p>
+                        </div>
+                        <div>
+                          <div className="text-2xl font-bold text-good">{pipelineStats.analysisCalls}</div>
+                          <p className="text-xs text-muted-foreground">Análisis completados</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground">
+                    No hay datos del pipeline RIX V2
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top tickers by cost */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Empresas con Mayor Coste</CardTitle>
+              <CardDescription>Top 15 tickers por gasto total (búsqueda + análisis)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ticker</TableHead>
+                    <TableHead className="text-right">Coste Búsqueda</TableHead>
+                    <TableHead className="text-right">Coste Análisis</TableHead>
+                    <TableHead className="text-right">Coste Total</TableHead>
+                    <TableHead className="text-right">Modelos</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pipelineStats.topTickers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No hay datos de empresas procesadas
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    pipelineStats.topTickers.map((ticker) => (
+                      <TableRow key={ticker.ticker}>
+                        <TableCell className="font-medium">{ticker.ticker}</TableCell>
+                        <TableCell className="text-right">{formatCost(ticker.searchCost)}</TableCell>
+                        <TableCell className="text-right">{formatCost(ticker.analysisCost)}</TableCell>
+                        <TableCell className="text-right font-bold">{formatCost(ticker.totalCost)}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary">{ticker.models}</Badge>
                         </TableCell>
                       </TableRow>
                     ))

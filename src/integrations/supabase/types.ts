@@ -98,6 +98,7 @@ export type Database = {
       api_usage_logs: {
         Row: {
           action_type: string
+          batch_id: string | null
           created_at: string
           edge_function: string
           estimated_cost_usd: number
@@ -106,12 +107,15 @@ export type Database = {
           metadata: Json | null
           model: string
           output_tokens: number
+          pipeline_stage: string | null
           provider: string
           session_id: string | null
+          ticker: string | null
           user_id: string | null
         }
         Insert: {
           action_type: string
+          batch_id?: string | null
           created_at?: string
           edge_function: string
           estimated_cost_usd?: number
@@ -120,12 +124,15 @@ export type Database = {
           metadata?: Json | null
           model: string
           output_tokens?: number
+          pipeline_stage?: string | null
           provider: string
           session_id?: string | null
+          ticker?: string | null
           user_id?: string | null
         }
         Update: {
           action_type?: string
+          batch_id?: string | null
           created_at?: string
           edge_function?: string
           estimated_cost_usd?: number
@@ -134,8 +141,10 @@ export type Database = {
           metadata?: Json | null
           model?: string
           output_tokens?: number
+          pipeline_stage?: string | null
           provider?: string
           session_id?: string | null
+          ticker?: string | null
           user_id?: string | null
         }
         Relationships: []
