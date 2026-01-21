@@ -13,12 +13,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useRixRunsV2, RixRunV2 } from "@/hooks/useRixRunsV2";
 import { useCompanies } from "@/hooks/useCompanies";
 
-// Model icons - only search-capable models
+// Model icons - all 7 search-capable models
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 import { GrokIcon } from "@/components/ui/grok-icon";
+import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
+import { GeminiIcon } from "@/components/ui/gemini-icon";
+import { ClaudeIcon } from "@/components/ui/claude-icon";
+import { QwenIcon } from "@/components/ui/qwen-icon";
 
-// Search models - only these have real internet access
+// 7 Search models with real internet access
 interface SearchModelInfo {
   name: string;
   displayName: string;
@@ -31,6 +35,10 @@ const SEARCH_MODELS: SearchModelInfo[] = [
   { name: 'perplexity-sonar-pro', displayName: 'Perplexity Sonar Pro', icon: <PerplexityIcon size={20} />, color: 'bg-cyan-500', responseKey: 'res_perplex_bruto' },
   { name: 'grok-3', displayName: 'Grok 3', icon: <GrokIcon size={20} />, color: 'bg-gray-800', responseKey: 'respuesta_bruto_grok' },
   { name: 'deepseek-chat', displayName: 'DeepSeek', icon: <DeepseekIcon size={20} />, color: 'bg-indigo-500', responseKey: 'res_deepseek_bruto' },
+  { name: 'gpt-4o-search', displayName: 'GPT-4o Search', icon: <ChatGPTIcon size={20} />, color: 'bg-green-600', responseKey: 'res_gpt_bruto' },
+  { name: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', icon: <GeminiIcon size={20} />, color: 'bg-blue-500', responseKey: 'res_gemini_bruto' },
+  { name: 'claude-sonnet', displayName: 'Claude Sonnet', icon: <ClaudeIcon size={20} />, color: 'bg-orange-500', responseKey: 'respuesta_bruto_claude' },
+  { name: 'qwen-max', displayName: 'Qwen Max', icon: <QwenIcon size={20} />, color: 'bg-purple-500', responseKey: 'respuesta_bruto_qwen' },
 ];
 
 const SUBSCORE_LABELS: Record<string, { label: string; sigla: string }> = {
@@ -87,7 +95,7 @@ export default function DashboardSieteIAs() {
       setLastSearchResult(data);
       toast({ 
         title: "Búsqueda completada",
-        description: `${data.models_succeeded}/3 modelos con Internet respondieron correctamente`,
+        description: `${data.models_succeeded}/${data.models_called} modelos con Internet respondieron correctamente`,
       });
       
       refetchRuns();
@@ -248,7 +256,7 @@ export default function DashboardSieteIAs() {
             Comparación Make vs Lovable V2
           </CardTitle>
           <CardDescription>
-            Arquitectura de 2 fases: Búsqueda (3 modelos con Internet) → Análisis (GPT-4o)
+            Arquitectura de 2 fases: Búsqueda (7 modelos con Internet) → Análisis (GPT-4o)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -303,15 +311,15 @@ export default function DashboardSieteIAs() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Dashboard RIX V2</h1>
+            <h1 className="text-3xl font-bold">Dashboard RIX V2 - 7 IAs</h1>
             <p className="text-muted-foreground">
-              Pipeline de 2 fases: Búsqueda (Perplexity, Grok, DeepSeek) → Análisis (GPT-4o con ORG_RIXSchema_V2)
+              Pipeline de 2 fases: Búsqueda (Perplexity, Grok, DeepSeek, GPT-4o, Gemini, Claude, Qwen) → Análisis (GPT-4o con ORG_RIXSchema_V2)
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="px-3 py-1">
               <Search className="w-3 h-3 mr-1" />
-              3 modelos de búsqueda
+              7 modelos de búsqueda
             </Badge>
             <Badge variant="outline" className="px-3 py-1">
               <BarChart2 className="w-3 h-3 mr-1" />
@@ -319,6 +327,20 @@ export default function DashboardSieteIAs() {
             </Badge>
           </div>
         </div>
+
+        {/* Model Icons Grid */}
+        <Card className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+          <CardContent className="py-4">
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              {SEARCH_MODELS.map((model) => (
+                <div key={model.name} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm">
+                  {model.icon}
+                  <span className="text-sm font-medium">{model.displayName}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Execution Panel */}
         <Card>
@@ -328,7 +350,7 @@ export default function DashboardSieteIAs() {
               Panel de Ejecución
             </CardTitle>
             <CardDescription>
-              <strong>Fase 1:</strong> Búsqueda con 3 modelos que tienen acceso a Internet (Perplexity Sonar Pro, Grok 3, DeepSeek).
+              <strong>Fase 1:</strong> Búsqueda con 7 modelos que tienen acceso a Internet.
               <br />
               <strong>Fase 2:</strong> Análisis con GPT-4o usando tool calling para generar el JSON del ORG_RIXSchema_V2.
             </CardDescription>
@@ -360,12 +382,12 @@ export default function DashboardSieteIAs() {
                 {isSearching ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Buscando con 3 IAs...
+                    Buscando con 7 IAs...
                   </>
                 ) : (
                   <>
                     <Search className="h-4 w-4" />
-                    Fase 1: Búsqueda
+                    Fase 1: Búsqueda (7 modelos)
                   </>
                 )}
               </Button>
@@ -587,7 +609,7 @@ export default function DashboardSieteIAs() {
 
                     {/* Model Responses */}
                     <div>
-                      <h4 className="font-semibold mb-3">Fase 1: Respuestas de Búsqueda (3 modelos con Internet)</h4>
+                      <h4 className="font-semibold mb-3">Fase 1: Respuestas de Búsqueda (7 modelos con Internet)</h4>
                       {renderSearchModelResponses(run)}
                     </div>
                   </CardContent>
