@@ -193,7 +193,7 @@ const RIX_ANALYSIS_TOOL = {
         },
       },
       required: [
-        "rix_score", "resumen", "puntos_clave",
+        "rix_score", "resumen", "puntos_clave", "explicacion",
         "palabras", "num_fechas", "num_citas",
         "temporal_alignment", "citation_density",
         "nvm_score", "nvm_categoria",
