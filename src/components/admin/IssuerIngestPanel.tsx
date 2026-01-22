@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,18 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { 
   Plus, 
   Loader2, 
   CheckCircle, 
@@ -19,16 +31,41 @@ import {
   AlertTriangle,
   RefreshCw,
   Trash2,
-  Eye
+  Eye,
+  ChevronDown,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Info
 } from 'lucide-react';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+// Constants for dropdowns
+const SECTOR_CATEGORIES = [
+  'Banca y Servicios Financieros',
+  'Construcción e Infraestructuras',
+  'Energía y Gas',
+  'Hoteles y Turismo',
+  'Materias Primas y Siderurgia',
+  'Moda y Distribución',
+  'Salud y Farmacéutico',
+  'Telecomunicaciones y Tecnología',
+  'Otros Sectores'
+];
+
+const IBEX_FAMILY_OPTIONS = [
+  { code: 'IBEX-35', name: 'IBEX 35' },
+  { code: 'IBEX-MC', name: 'IBEX Medium Cap' },
+  { code: 'IBEX-SC', name: 'IBEX Small Cap' },
+  { code: 'BME-GROWTH', name: 'BME Growth' },
+  { code: 'MC-OTHER', name: 'Mercado Continuo (otros)' },
+  { code: 'NO-COTIZA', name: 'No cotiza en bolsa' }
+];
 
 interface CompanyInput {
   name: string;
@@ -50,6 +87,8 @@ interface GeneratedIssuer {
   languages: string[];
   fase: number;
   is_new_phase: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  verification_notes: string;
 }
 
 interface IngestResult {
@@ -63,6 +102,24 @@ interface IngestResult {
   phaseSummary: { fase: number; count: number }[];
 }
 
+// Confidence badge component
+const ConfidenceBadge: React.FC<{ confidence: 'high' | 'medium' | 'low' }> = ({ confidence }) => {
+  const config = {
+    high: { icon: ShieldCheck, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', label: 'Alta' },
+    medium: { icon: Shield, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400', label: 'Media' },
+    low: { icon: ShieldAlert, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', label: 'Baja' }
+  };
+  
+  const { icon: Icon, color, label } = config[confidence] || config.medium;
+  
+  return (
+    <Badge variant="outline" className={`${color} text-xs gap-1`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </Badge>
+  );
+};
+
 export const IssuerIngestPanel: React.FC = () => {
   const { toast } = useToast();
   const [companies, setCompanies] = useState<CompanyInput[]>([]);
@@ -73,6 +130,47 @@ export const IssuerIngestPanel: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<IngestResult | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [editedResults, setEditedResults] = useState<GeneratedIssuer[]>([]);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+
+  // Sync editedResults when previewResult changes
+  useEffect(() => {
+    if (previewResult?.results) {
+      setEditedResults([...previewResult.results]);
+      setExpandedRows(new Set());
+    }
+  }, [previewResult]);
+
+  // Handle field edits
+  const handleEditField = (index: number, field: keyof GeneratedIssuer, value: any) => {
+    setEditedResults(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      
+      // Auto-update ibex_family_category when code changes
+      if (field === 'ibex_family_code') {
+        const option = IBEX_FAMILY_OPTIONS.find(o => o.code === value);
+        if (option) {
+          updated[index].ibex_family_category = option.name;
+        }
+      }
+      
+      return updated;
+    });
+  };
+
+  // Toggle row expansion
+  const toggleRowExpansion = (index: number) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
 
   // Add single company
   const handleAddCompany = () => {
@@ -99,7 +197,6 @@ export const IssuerIngestPanel: React.FC = () => {
     const parsed: CompanyInput[] = [];
 
     for (const line of lines) {
-      // Format: "Nombre de empresa" or "Nombre de empresa (TICKER.MC)" or "Nombre de empresa (no cotiza)"
       const match = line.match(/^(.+?)(?:\s*\(([^)]+)\))?$/);
       if (match) {
         const name = match[1].trim();
@@ -166,7 +263,7 @@ export const IssuerIngestPanel: React.FC = () => {
             : 'Todas las empresas caben en fases existentes'
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Preview error:', error);
       toast({
         title: 'Error generando preview',
@@ -178,10 +275,10 @@ export const IssuerIngestPanel: React.FC = () => {
     }
   };
 
-  // Confirm and insert
+  // Confirm and insert with edited data
   const handleConfirmInsert = async () => {
-    if (!previewResult || previewResult.results.length === 0) {
-      toast({ title: 'Genera un preview primero', variant: 'destructive' });
+    if (editedResults.length === 0) {
+      toast({ title: 'No hay datos para insertar', variant: 'destructive' });
       return;
     }
 
@@ -189,7 +286,11 @@ export const IssuerIngestPanel: React.FC = () => {
 
     try {
       const { data, error } = await supabase.functions.invoke('ingest-new-issuer', {
-        body: { companies, mode: 'confirm' }
+        body: { 
+          companies, 
+          mode: 'confirm',
+          editedData: editedResults 
+        }
       });
 
       if (error) throw error;
@@ -204,8 +305,9 @@ export const IssuerIngestPanel: React.FC = () => {
       // Reset state
       setCompanies([]);
       setPreviewResult(null);
+      setEditedResults([]);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Confirm error:', error);
       toast({
         title: 'Error insertando empresas',
@@ -227,7 +329,7 @@ export const IssuerIngestPanel: React.FC = () => {
             Ingesta de Nuevas Empresas
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Añade empresas al sistema RIX con generación automática de metadatos por IA
+            Añade empresas al sistema RIX con generación automática de metadatos por IA (Gemini 3 Pro)
           </p>
         </div>
       </div>
@@ -366,7 +468,7 @@ export const IssuerIngestPanel: React.FC = () => {
                     {loading ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Generando con IA...
+                        Generando con Gemini 3 Pro...
                       </>
                     ) : (
                       <>
@@ -390,10 +492,10 @@ export const IssuerIngestPanel: React.FC = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Eye className="h-4 w-4" />
-                    Preview de Ingesta
+                    Preview de Ingesta (Editable)
                   </CardTitle>
                   <CardDescription>
-                    {previewResult.processed} empresa(s) procesada(s)
+                    {previewResult.processed} empresa(s) procesada(s) • Puedes editar los campos antes de confirmar
                     {previewResult.newPhasesCreated.length > 0 && (
                       <span className="text-amber-600 ml-2">
                         • {previewResult.newPhasesCreated.length} nueva(s) fase(s)
@@ -462,62 +564,164 @@ export const IssuerIngestPanel: React.FC = () => {
                 </Card>
               )}
 
-              {/* Results table */}
-              {previewResult.results.length > 0 && (
+              {/* Editable Results */}
+              {editedResults.length > 0 && (
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Datos Generados por IA</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      Datos Generados por IA
+                      <Badge variant="outline" className="text-xs font-normal">Editables</Badge>
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ScrollArea className="h-[350px]">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Empresa</TableHead>
-                            <TableHead>Ticker</TableHead>
-                            <TableHead>Sector</TableHead>
-                            <TableHead>IBEX</TableHead>
-                            <TableHead>Fase</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {previewResult.results.map((issuer, idx) => (
-                            <TableRow key={idx}>
-                              <TableCell className="font-medium">
-                                <div>
-                                  <p className="text-sm">{issuer.issuer_name}</p>
-                                  <p className="text-xs text-muted-foreground">{issuer.issuer_id}</p>
+                    <ScrollArea className="h-[450px]">
+                      <div className="space-y-3">
+                        <TooltipProvider>
+                          {editedResults.map((issuer, idx) => (
+                            <Collapsible
+                              key={idx}
+                              open={expandedRows.has(idx)}
+                              onOpenChange={() => toggleRowExpansion(idx)}
+                            >
+                              <div className="border rounded-lg p-3 space-y-3">
+                                {/* Main row */}
+                                <div className="flex items-start gap-3">
+                                  <div className="flex-1 space-y-3">
+                                    {/* Row 1: Name, Ticker, Confidence */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <Input
+                                        value={issuer.issuer_name}
+                                        onChange={(e) => handleEditField(idx, 'issuer_name', e.target.value)}
+                                        className="flex-1 min-w-[200px] h-8 text-sm font-medium"
+                                      />
+                                      <Input
+                                        value={issuer.ticker}
+                                        onChange={(e) => handleEditField(idx, 'ticker', e.target.value.toUpperCase())}
+                                        className="w-[100px] h-8 text-sm font-mono"
+                                      />
+                                      <ConfidenceBadge confidence={issuer.confidence || 'medium'} />
+                                      <Badge 
+                                        variant={issuer.is_new_phase ? 'destructive' : 'default'}
+                                        className="text-xs"
+                                      >
+                                        Fase {issuer.fase}
+                                        {issuer.is_new_phase && ' (nueva)'}
+                                      </Badge>
+                                    </div>
+                                    
+                                    {/* Row 2: Sector and IBEX */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <Select
+                                        value={issuer.sector_category}
+                                        onValueChange={(value) => handleEditField(idx, 'sector_category', value)}
+                                      >
+                                        <SelectTrigger className="w-[220px] h-8 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {SECTOR_CATEGORIES.map((sector) => (
+                                            <SelectItem key={sector} value={sector} className="text-xs">
+                                              {sector}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      
+                                      <Select
+                                        value={issuer.ibex_family_code}
+                                        onValueChange={(value) => handleEditField(idx, 'ibex_family_code', value)}
+                                      >
+                                        <SelectTrigger className="w-[180px] h-8 text-xs">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {IBEX_FAMILY_OPTIONS.map((option) => (
+                                            <SelectItem key={option.code} value={option.code} className="text-xs">
+                                              {option.name}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+
+                                      {issuer.verification_notes && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                              <Info className="h-4 w-4 text-muted-foreground" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="max-w-xs">
+                                            <p className="text-xs">{issuer.verification_notes}</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <CollapsibleTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <ChevronDown className={`h-4 w-4 transition-transform ${expandedRows.has(idx) ? 'rotate-180' : ''}`} />
+                                    </Button>
+                                  </CollapsibleTrigger>
                                 </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{issuer.ticker}</Badge>
-                              </TableCell>
-                              <TableCell className="text-xs">{issuer.sector_category}</TableCell>
-                              <TableCell>
-                                <Badge variant="secondary" className="text-xs">
-                                  {issuer.ibex_family_code}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge 
-                                  variant={issuer.is_new_phase ? 'destructive' : 'default'}
-                                  className="text-xs"
-                                >
-                                  {issuer.fase}
-                                  {issuer.is_new_phase && ' (nueva)'}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
+
+                                {/* Expanded content: Search terms */}
+                                <CollapsibleContent className="space-y-3">
+                                  <div className="border-t pt-3 grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-muted-foreground">Términos de inclusión</Label>
+                                      <Textarea
+                                        value={issuer.include_terms.join(', ')}
+                                        onChange={(e) => handleEditField(
+                                          idx, 
+                                          'include_terms', 
+                                          e.target.value.split(',').map(t => t.trim()).filter(Boolean)
+                                        )}
+                                        rows={2}
+                                        className="text-xs font-mono"
+                                        placeholder="Término 1, Término 2, ..."
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs text-muted-foreground">Términos de exclusión</Label>
+                                      <Textarea
+                                        value={issuer.exclude_terms.join(', ')}
+                                        onChange={(e) => handleEditField(
+                                          idx, 
+                                          'exclude_terms', 
+                                          e.target.value.split(',').map(t => t.trim()).filter(Boolean)
+                                        )}
+                                        rows={2}
+                                        className="text-xs font-mono"
+                                        placeholder="Término 1, Término 2, ..."
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Query de búsqueda</Label>
+                                    <Textarea
+                                      value={issuer.sample_query}
+                                      onChange={(e) => handleEditField(idx, 'sample_query', e.target.value)}
+                                      rows={2}
+                                      className="text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    <span className="font-medium">ID:</span> {issuer.issuer_id}
+                                  </div>
+                                </CollapsibleContent>
+                              </div>
+                            </Collapsible>
                           ))}
-                        </TableBody>
-                      </Table>
+                        </TooltipProvider>
+                      </div>
                     </ScrollArea>
 
                     {/* Confirm button */}
                     <div className="mt-4 pt-4 border-t flex gap-2">
                       <Button 
                         variant="outline"
-                        onClick={() => setPreviewResult(null)}
+                        onClick={() => { setPreviewResult(null); setEditedResults([]); }}
                         className="flex-1"
                       >
                         <RefreshCw className="h-4 w-4 mr-2" />
@@ -525,7 +729,7 @@ export const IssuerIngestPanel: React.FC = () => {
                       </Button>
                       <Button 
                         onClick={handleConfirmInsert}
-                        disabled={confirming || previewResult.results.length === 0}
+                        disabled={confirming || editedResults.length === 0}
                         className="flex-1"
                       >
                         {confirming ? (
@@ -536,7 +740,7 @@ export const IssuerIngestPanel: React.FC = () => {
                         ) : (
                           <>
                             <CheckCircle className="h-4 w-4 mr-2" />
-                            Confirmar Inserción
+                            Confirmar Inserción ({editedResults.length})
                           </>
                         )}
                       </Button>
