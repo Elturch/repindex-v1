@@ -327,21 +327,19 @@ export function SweepMonitorPanel() {
               )}
               <Button
                 onClick={handleLaunchNextPhase}
-                disabled={launching || launchingAll || isProcessing}
+                disabled={launching || launchingAll}
                 className="gap-2"
               >
                 {launching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : isProcessing ? (
-                  <Clock className="h-4 w-4 animate-pulse" />
                 ) : (
                   <Play className="h-4 w-4" />
                 )}
-                {isProcessing ? 'En curso...' : 'Siguiente Fase'}
+                Siguiente Fase
               </Button>
               <Button
                 onClick={handleLaunchAllPhasesStaggered}
-                disabled={launching || launchingAll || isProcessing}
+                disabled={launching || launchingAll}
                 variant="default"
                 className="gap-2"
               >
@@ -362,9 +360,9 @@ export function SweepMonitorPanel() {
               <span className="text-muted-foreground">Progreso general</span>
               <div className="flex items-center gap-4">
                 {isProcessing && (
-                  <Badge variant="outline" className="bg-primary/10 text-primary animate-pulse">
-                    <Clock className="h-3 w-3 mr-1" />
-                    Procesando...
+                  <Badge variant="outline" className="bg-needs-improvement/10 text-needs-improvement border-needs-improvement/30">
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    {status?.byStatus?.processing} en proceso (auto-reset si atascadas)
                   </Badge>
                 )}
                 <span className="font-medium">{status?.progress || 0}%</span>
