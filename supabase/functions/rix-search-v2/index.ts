@@ -284,6 +284,7 @@ const MODEL_COST_MAP: Record<string, { provider: string; model: string }> = {
 async function logApiUsage(
   supabase: any,
   config: SearchModelConfig,
+  prompt: string,
   response: string | undefined,
   ticker: string,
   success: boolean
@@ -292,11 +293,12 @@ async function logApiUsage(
     const costMapping = MODEL_COST_MAP[config.name];
     if (!costMapping) return;
 
-    // Estimate tokens (rough: 1 token ≈ 4 chars for input, 3.5 for output)
-    const inputTokens = Math.ceil(2000 / 4); // Approximate prompt size
+    // Estimate tokens more accurately from actual content
+    // Using 4 chars/token for input, 3.5 for output (industry standard estimation)
+    const inputTokens = Math.ceil(prompt.length / 4);
     const outputTokens = response ? Math.ceil(response.length / 3.5) : 0;
 
-    // Get cost config
+    // Get cost config from database
     const { data: costConfig } = await supabase
       .from('api_cost_config')
       .select('input_cost_per_million, output_cost_per_million')
@@ -322,6 +324,7 @@ async function logApiUsage(
         model_name: config.displayName,
         success,
         response_length: response?.length || 0,
+        prompt_length: prompt.length,
       },
     });
   } catch (err) {
@@ -614,9 +617,10 @@ serve(async (req) => {
             }
           }
           
-          // Log API usage for cost tracking
+          // Log API usage for cost tracking - pass actual prompt for accurate token counting
+          const usedPrompt = config.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
           EdgeRuntime.waitUntil(
-            logApiUsage(supabase, config, result.response, ticker, result.success)
+            logApiUsage(supabase, config, usedPrompt, result.response, ticker, result.success)
           );
         }
       } catch (err: any) {
