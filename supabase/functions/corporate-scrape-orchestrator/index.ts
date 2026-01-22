@@ -107,14 +107,21 @@ async function initializeSweep(
     return { initialized: false, totalCompanies: count || 0 };
   }
 
-  // Get all active companies
+  // Get all active companies - using status field
+  console.log(`[Orchestrator] Querying repindex_root_issuers for status=active`);
   const { data: companies, error } = await supabase
     .from('repindex_root_issuers')
     .select('ticker, issuer_name, website')
-    .eq('ibex_status', 'active_now');
+    .eq('status', 'active');
 
-  if (error || !companies) {
-    throw new Error(`Failed to fetch companies: ${error?.message}`);
+  if (error) {
+    console.error(`[Orchestrator] Query error:`, JSON.stringify(error));
+    throw new Error(`Failed to fetch companies: ${error.message}`);
+  }
+  
+  if (!companies) {
+    console.error(`[Orchestrator] No companies returned (null)`);
+    throw new Error('Failed to fetch companies: null result');
   }
 
   console.log(`[Orchestrator] Found ${companies.length} active companies`);
