@@ -147,26 +147,24 @@ export default function RixRunV2Detail() {
 
   const aiResponses = getAIResponses();
 
-  // Parse puntos_clave
-  const parsePuntosClave = () => {
-    if (!run.puntos_clave) return [];
-    if (Array.isArray(run.puntos_clave)) return run.puntos_clave;
+  // Safe array parser helper
+  const ensureStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.filter(v => typeof v === 'string');
+    if (typeof value === 'string') return [value];
     return [];
   };
+
+  // Parse puntos_clave
+  const parsePuntosClave = () => ensureStringArray(run.puntos_clave);
 
   // Parse flags
-  const parseFlags = () => {
-    if (!run.flags) return [];
-    if (Array.isArray(run.flags)) return run.flags;
-    return [];
-  };
+  const parseFlags = () => ensureStringArray(run.flags);
 
   // Parse explicaciones_detalladas
-  const parseExplicacionesDetalladas = () => {
-    if (!run.explicaciones_detalladas) return [];
-    if (Array.isArray(run.explicaciones_detalladas)) return run.explicaciones_detalladas;
-    return [];
-  };
+  const parseExplicacionesDetalladas = () => ensureStringArray(run.explicaciones_detalladas);
+
+  // Parse explicacion (can be array)
+  const parseExplicacion = () => ensureStringArray(run.explicacion);
 
   // Prepare data for radar chart
   const radarData = {
@@ -477,12 +475,12 @@ export default function RixRunV2Detail() {
                     {run.precio_accion && (
                       <span className="flex items-center gap-1">
                         <DollarSign className="h-3 w-3" />
-                        Precio actual: €{run.precio_accion.toFixed(3)}
+                        Precio actual: €{Number(run.precio_accion).toFixed(3)}
                       </span>
                     )}
                     {run.precio_minimo_52_semanas && (
                       <span className="text-muted-foreground">
-                        Mín. 52 sem: €{run.precio_minimo_52_semanas.toFixed(3)}
+                        Mín. 52 sem: €{Number(run.precio_minimo_52_semanas).toFixed(3)}
                       </span>
                     )}
                   </CardDescription>
@@ -532,7 +530,7 @@ export default function RixRunV2Detail() {
             </Card>
 
             {/* Methodological Explanation */}
-            {run.explicacion && (
+            {parseExplicacion().length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -543,7 +541,7 @@ export default function RixRunV2Detail() {
                 <CardContent>
                   <AIResponseDialog
                     title="Ver Explicación Completa"
-                    content={run.explicacion}
+                    content={parseExplicacion().join('\n\n')}
                     periodFrom={run.period_from || undefined}
                     periodTo={run.period_to || undefined}
                   />

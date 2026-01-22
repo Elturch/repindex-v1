@@ -52,7 +52,7 @@ export interface RixRunV2 {
   respuesta_bruto_qwen: string | null;
   
   // Explanations
-  explicacion: string | null;
+  explicacion: string[] | null;
   explicaciones_detalladas: string[] | null;
   
   // Metadata
@@ -172,7 +172,7 @@ function mapRowToRixRunV2(row: any): RixRunV2 {
     respuesta_bruto_claude: row.respuesta_bruto_claude,
     respuesta_bruto_grok: row.respuesta_bruto_grok,
     respuesta_bruto_qwen: row.respuesta_bruto_qwen,
-    explicacion: row['22_explicacion'],
+    explicacion: (row['22_explicacion'] as string[] | null),
     explicaciones_detalladas: (row['25_explicaciones_detalladas'] as string[] | null),
     flags: (row['17_flags'] as string[] | null),
     palabras: row['12_palabras'],
