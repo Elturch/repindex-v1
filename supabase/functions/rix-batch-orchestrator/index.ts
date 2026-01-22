@@ -345,6 +345,52 @@ async function resetFailedCompanies(
 }
 
 // ============================================================================
+// NUEVO: Resetea empresas atascadas en "processing" por más de X minutos
+// ============================================================================
+async function resetStuckProcessingCompanies(
+  supabase: ReturnType<typeof createClient>,
+  sweepId: string,
+  timeoutMinutes: number = 30
+): Promise<{ count: number; tickers: string[] }> {
+  const timeoutThreshold = new Date(Date.now() - timeoutMinutes * 60 * 1000).toISOString();
+  
+  // Primero obtener las empresas atascadas
+  const { data: stuckCompanies, error: selectError } = await supabase
+    .from('sweep_progress')
+    .select('id, ticker')
+    .eq('sweep_id', sweepId)
+    .eq('status', 'processing')
+    .lt('started_at', timeoutThreshold);
+
+  if (selectError || !stuckCompanies || stuckCompanies.length === 0) {
+    return { count: 0, tickers: [] };
+  }
+
+  const stuckIds = stuckCompanies.map(c => c.id);
+  const stuckTickers = stuckCompanies.map(c => c.ticker);
+
+  console.log(`[orchestrator] Found ${stuckCompanies.length} stuck companies: ${stuckTickers.join(', ')}`);
+
+  // Resetearlas a pending
+  const { error: updateError } = await supabase
+    .from('sweep_progress')
+    .update({ 
+      status: 'pending', 
+      started_at: null,
+      error_message: `Timeout reset - stuck in processing for ${timeoutMinutes}+ minutes`,
+    })
+    .in('id', stuckIds);
+
+  if (updateError) {
+    console.error(`[orchestrator] Error resetting stuck companies:`, updateError);
+    return { count: 0, tickers: [] };
+  }
+
+  console.log(`[orchestrator] Successfully reset ${stuckTickers.length} stuck companies`);
+  return { count: stuckTickers.length, tickers: stuckTickers };
+}
+
+// ============================================================================
 // DENO SERVER
 // ============================================================================
 Deno.serve(async (req) => {
@@ -479,6 +525,13 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ========== NUEVO: Auto-reset de empresas atascadas ==========
+    // Siempre revisar si hay empresas colgadas antes de procesar
+    const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 30);
+    if (stuckReset.count > 0) {
+      console.log(`[orchestrator] Auto-reset ${stuckReset.count} stuck companies: ${stuckReset.tickers.join(', ')}`);
+    }
+
     // ========== Modo: Ejecutar fase específica o siguiente pendiente ==========
     let targetFase = fase;
     
@@ -494,6 +547,7 @@ Deno.serve(async (req) => {
             sweepId,
             message: 'No pending phases. Sweep complete!',
             completed: true,
+            stuckReset: stuckReset.count > 0 ? stuckReset : undefined,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
