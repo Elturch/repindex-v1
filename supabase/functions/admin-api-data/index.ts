@@ -297,15 +297,51 @@ Deno.serve(async (req) => {
 
     // Route: GET /cost-config
     if (req.method === 'GET' && path === '/cost-config') {
-      const { data, error } = await supabaseAdmin
+      const period = url.searchParams.get('period') || '30d'
+      const dateFilter = getDateFilter(period)
+
+      // Get config data
+      const { data: configData, error: configError } = await supabaseAdmin
         .from('api_cost_config')
         .select('*')
         .order('provider', { ascending: true })
 
-      if (error) throw error
+      if (configError) throw configError
+
+      // Get token usage per model
+      const { data: usageLogs, error: usageError } = await supabaseAdmin
+        .from('api_usage_logs')
+        .select('provider, model, input_tokens, output_tokens')
+        .gte('created_at', dateFilter.toISOString())
+        .limit(50000)
+
+      if (usageError) throw usageError
+
+      // Aggregate tokens by model
+      const tokensByModel = new Map<string, { input_tokens: number; output_tokens: number; calls: number }>()
+      usageLogs?.forEach(log => {
+        const key = `${log.provider}|${log.model}`
+        const existing = tokensByModel.get(key) || { input_tokens: 0, output_tokens: 0, calls: 0 }
+        existing.input_tokens += log.input_tokens || 0
+        existing.output_tokens += log.output_tokens || 0
+        existing.calls++
+        tokensByModel.set(key, existing)
+      })
+
+      // Enrich config with token usage
+      const enrichedConfig = (configData || []).map(config => {
+        const key = `${config.provider}|${config.model}`
+        const usage = tokensByModel.get(key) || { input_tokens: 0, output_tokens: 0, calls: 0 }
+        return {
+          ...config,
+          total_input_tokens: usage.input_tokens,
+          total_output_tokens: usage.output_tokens,
+          total_calls: usage.calls,
+        }
+      })
       
       return new Response(
-        JSON.stringify({ data }),
+        JSON.stringify({ data: enrichedConfig }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
