@@ -1823,6 +1823,54 @@ export type Database = {
           },
         ]
       }
+      sweep_progress: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          error_message: string | null
+          fase: number
+          id: string
+          issuer_name: string | null
+          models_completed: number | null
+          retry_count: number | null
+          started_at: string | null
+          status: string
+          sweep_id: string
+          ticker: string
+          updated_at: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          fase: number
+          id?: string
+          issuer_name?: string | null
+          models_completed?: number | null
+          retry_count?: number | null
+          started_at?: string | null
+          status?: string
+          sweep_id: string
+          ticker: string
+          updated_at?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          fase?: number
+          id?: string
+          issuer_name?: string | null
+          models_completed?: number | null
+          retry_count?: number | null
+          started_at?: string | null
+          status?: string
+          sweep_id?: string
+          ticker?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       top_drivers: {
         Row: {
           delta_contrib_abs: number

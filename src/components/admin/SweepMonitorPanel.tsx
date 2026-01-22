@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,124 +13,102 @@ import {
   Loader2,
   BarChart3,
   Building2,
-  Timer,
-  Zap
+  Zap,
+  RotateCcw,
+  Layers
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
-interface ModelStats {
-  model: string;
-  totalRecords: number;
-  analyzed: number;
-  pendingAnalysis: number;
-  tickers: number;
-  lastCreated: string | null;
-}
-
 interface SweepStatus {
-  totalIssuers: number;
-  modelsData: ModelStats[];
-  isRunning: boolean;
-  lastSweepStart: string | null;
-  estimatedCompletion: string | null;
+  sweepId: string;
+  initialized: boolean;
+  totalCompanies: number;
+  byStatus: {
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+  };
+  byPhase: Record<number, number>;
+  progress: number;
 }
 
-const AI_MODELS = ['ChatGPT', 'Google Gemini', 'Perplexity', 'Deepseek', 'Grok', 'Qwen'];
+interface PhaseDetail {
+  fase: number;
+  total: number;
+  completed: number;
+  failed: number;
+  pending: number;
+}
+
+const TOTAL_PHASES = 34;
 
 export function SweepMonitorPanel() {
   const { toast } = useToast();
-  const [status, setStatus] = useState<SweepStatus>({
-    totalIssuers: 0,
-    modelsData: [],
-    isRunning: false,
-    lastSweepStart: null,
-    estimatedCompletion: null,
-  });
+  const [status, setStatus] = useState<SweepStatus | null>(null);
+  const [phaseDetails, setPhaseDetails] = useState<PhaseDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
-      // Get total issuers
-      const { count: totalIssuers } = await supabase
-        .from('repindex_root_issuers')
-        .select('*', { count: 'exact', head: true });
-
-      // Get current week's data by model
-      const { data: modelData, error } = await supabase
-        .from('rix_runs_v2')
-        .select('02_model_name, analysis_completed_at, search_completed_at, 05_ticker, created_at')
-        .gte('06_period_from', new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString());
+      // Obtener estado del orchestrator
+      const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { get_status: true },
+      });
 
       if (error) throw error;
 
-      // Group by model
-      const modelMap = new Map<string, {
-        records: number;
-        analyzed: number;
-        pending: number;
-        tickers: Set<string>;
-        lastCreated: Date | null;
-      }>();
-
-      AI_MODELS.forEach(model => {
-        modelMap.set(model, { records: 0, analyzed: 0, pending: 0, tickers: new Set(), lastCreated: null });
-      });
-
-      modelData?.forEach(row => {
-        const model = row['02_model_name'];
-        if (!AI_MODELS.includes(model)) return;
+      if (data.initialized) {
+        setStatus(data);
         
-        const stats = modelMap.get(model)!;
-        stats.records++;
-        stats.tickers.add(row['05_ticker']);
-        
-        if (row.analysis_completed_at) {
-          stats.analyzed++;
-        } else if (row.search_completed_at) {
-          stats.pending++;
+        // Obtener detalles por fase usando RPC o query directa con cast
+        // La tabla sweep_progress es nueva, usamos fetch directo al API
+        const response = await fetch(
+          `https://jzkjykmrwisijiqlwuua.supabase.co/rest/v1/sweep_progress?sweep_id=eq.${data.sweepId}&select=fase,status`,
+          {
+            headers: {
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU',
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        const progressData = await response.json() as Array<{ fase: number; status: string }>;
+
+        if (progressData && Array.isArray(progressData)) {
+          // Agrupar por fase
+          const phaseMap = new Map<number, { total: number; completed: number; failed: number; pending: number }>();
+          
+          progressData.forEach((p: { fase: number; status: string }) => {
+            const current = phaseMap.get(p.fase) || { total: 0, completed: 0, failed: 0, pending: 0 };
+            current.total++;
+            if (p.status === 'completed') current.completed++;
+            else if (p.status === 'failed') current.failed++;
+            else current.pending++;
+            phaseMap.set(p.fase, current);
+          });
+
+          const details: PhaseDetail[] = [];
+          phaseMap.forEach((value, fase) => {
+            details.push({ fase, ...value });
+          });
+          details.sort((a, b) => a.fase - b.fase);
+          setPhaseDetails(details);
         }
-
-        const createdAt = new Date(row.created_at);
-        if (!stats.lastCreated || createdAt > stats.lastCreated) {
-          stats.lastCreated = createdAt;
-        }
-      });
-
-      const modelsData: ModelStats[] = AI_MODELS.map(model => {
-        const stats = modelMap.get(model)!;
-        return {
-          model,
-          totalRecords: stats.records,
-          analyzed: stats.analyzed,
-          pendingAnalysis: stats.pending,
-          tickers: stats.tickers.size,
-          lastCreated: stats.lastCreated?.toISOString() || null,
-        };
-      });
-
-      // Check if sweep is running (recent activity in last 5 minutes)
-      const recentActivity = modelData?.some(row => {
-        const created = new Date(row.created_at);
-        return (Date.now() - created.getTime()) < 5 * 60 * 1000;
-      });
-
-      // Estimate completion based on progress
-      const totalExpected = (totalIssuers || 0) * 7;
-      const totalProcessed = modelsData.reduce((sum, m) => sum + m.analyzed, 0);
-      const processRate = 5; // ~5 companies per batch, 30s delay
-      const remainingBatches = Math.ceil(((totalIssuers || 0) - Math.max(...modelsData.map(m => m.tickers))) / 5);
-      const estimatedMinutes = remainingBatches * 0.5; // 30s per batch
-
-      setStatus({
-        totalIssuers: totalIssuers || 0,
-        modelsData,
-        isRunning: recentActivity || false,
-        lastSweepStart: modelsData[0]?.lastCreated || null,
-        estimatedCompletion: estimatedMinutes > 0 ? `~${Math.ceil(estimatedMinutes)} min` : null,
-      });
+      } else {
+        setStatus({
+          sweepId: data.sweepId,
+          initialized: false,
+          totalCompanies: 0,
+          byStatus: { pending: 0, processing: 0, completed: 0, failed: 0 },
+          byPhase: {},
+          progress: 0,
+        });
+        setPhaseDetails([]);
+      }
     } catch (error) {
       console.error('Error fetching sweep status:', error);
       toast({
@@ -142,43 +120,42 @@ export function SweepMonitorPanel() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     fetchStatus();
     
-    // Auto-refresh every 30 seconds if sweep is running
+    // Auto-refresh cada 15 segundos si hay procesamiento activo
     const interval = setInterval(() => {
-      if (status.isRunning) {
+      if (status?.byStatus?.processing && status.byStatus.processing > 0) {
         fetchStatus();
       }
-    }, 30000);
+    }, 15000);
 
     return () => clearInterval(interval);
-  }, [status.isRunning]);
+  }, [status?.byStatus?.processing, fetchStatus]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchStatus();
   };
 
-  const handleLaunchSweep = async () => {
+  const handleLaunchSweep = async (phasesPerRun: number = 6) => {
     setLaunching(true);
     try {
       const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
-        body: { trigger: 'manual', full_sweep: true },
+        body: { trigger: 'manual', phases_per_run: phasesPerRun },
       });
 
       if (error) throw error;
 
       toast({
-        title: 'Barrido iniciado',
-        description: `Procesando ${status.totalIssuers} empresas × 7 modelos. Tiempo estimado: ~${Math.ceil(status.totalIssuers / 5 * 0.5)} min`,
+        title: data.nextInvocationNeeded ? 'Barrido en progreso' : 'Barrido completado',
+        description: `Procesados: ${data.companiesCompleted} | Pendientes: ${data.companiesPending} | Fallidos: ${data.companiesFailed}`,
       });
 
-      // Start refreshing to show progress
-      setStatus(prev => ({ ...prev, isRunning: true }));
-      setTimeout(fetchStatus, 5000);
+      // Actualizar estado
+      setTimeout(fetchStatus, 2000);
     } catch (error: any) {
       console.error('Error launching sweep:', error);
       toast({
@@ -191,13 +168,32 @@ export function SweepMonitorPanel() {
     }
   };
 
-  const overallProgress = status.totalIssuers > 0
-    ? Math.round((Math.max(...status.modelsData.map(m => m.tickers)) / status.totalIssuers) * 100)
-    : 0;
+  const handleResetFailed = async () => {
+    setResetting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { reset_failed: true },
+      });
 
-  const totalAnalyzed = status.modelsData.reduce((sum, m) => sum + m.analyzed, 0);
-  const totalPending = status.modelsData.reduce((sum, m) => sum + m.pendingAnalysis, 0);
-  const totalExpected = status.totalIssuers * 7;
+      if (error) throw error;
+
+      toast({
+        title: 'Empresas reseteadas',
+        description: `${data.resetCount} empresas fallidas marcadas como pendientes`,
+      });
+
+      fetchStatus();
+    } catch (error: any) {
+      console.error('Error resetting failed:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo resetear',
+        variant: 'destructive',
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -209,6 +205,9 @@ export function SweepMonitorPanel() {
     );
   }
 
+  const isProcessing = status?.byStatus?.processing && status.byStatus.processing > 0;
+  const hasFailed = status?.byStatus?.failed && status.byStatus.failed > 0;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -218,10 +217,10 @@ export function SweepMonitorPanel() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Zap className="h-5 w-5 text-primary" />
-                Monitor de Barrido Semanal V2
+                Monitor de Barrido V2 por Fases
               </CardTitle>
               <CardDescription>
-                Pipeline RIX V2: {status.totalIssuers} empresas × 7 modelos de IA
+                Barrido: {status?.sweepId || 'N/A'} | Sistema robusto con persistencia y recuperación
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -234,19 +233,31 @@ export function SweepMonitorPanel() {
                 <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
                 Actualizar
               </Button>
+              {hasFailed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetFailed}
+                  disabled={resetting}
+                  className="text-needs-improvement"
+                >
+                  <RotateCcw className={cn("h-4 w-4 mr-2", resetting && "animate-spin")} />
+                  Reintentar fallidos ({status?.byStatus.failed})
+                </Button>
+              )}
               <Button
-                onClick={handleLaunchSweep}
-                disabled={launching || status.isRunning}
+                onClick={() => handleLaunchSweep(6)}
+                disabled={launching || isProcessing}
                 className="gap-2"
               >
                 {launching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : status.isRunning ? (
+                ) : isProcessing ? (
                   <Clock className="h-4 w-4 animate-pulse" />
                 ) : (
                   <Play className="h-4 w-4" />
                 )}
-                {status.isRunning ? 'En curso...' : 'Lanzar Barrido'}
+                {isProcessing ? 'En curso...' : status?.initialized ? 'Continuar Barrido' : 'Iniciar Barrido'}
               </Button>
             </div>
           </div>
@@ -257,111 +268,125 @@ export function SweepMonitorPanel() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Progreso general</span>
               <div className="flex items-center gap-4">
-                {status.isRunning && (
+                {isProcessing && (
                   <Badge variant="outline" className="bg-primary/10 text-primary animate-pulse">
                     <Clock className="h-3 w-3 mr-1" />
-                    En ejecución
+                    Procesando...
                   </Badge>
                 )}
-                <span className="font-medium">{overallProgress}%</span>
+                <span className="font-medium">{status?.progress || 0}%</span>
               </div>
             </div>
-            <Progress value={overallProgress} className="h-3" />
+            <Progress value={status?.progress || 0} className="h-3" />
             
             {/* Stats row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-3">
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <div className="text-2xl font-bold text-foreground">{status.totalIssuers}</div>
+                <div className="text-2xl font-bold text-foreground">{status?.totalCompanies || 0}</div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <Building2 className="h-3 w-3" />
-                  Empresas totales
+                  Total empresas
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-good/10">
-                <div className="text-2xl font-bold text-good">{totalAnalyzed}</div>
+                <div className="text-2xl font-bold text-good">{status?.byStatus?.completed || 0}</div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <CheckCircle2 className="h-3 w-3" />
-                  Analizados
-                </div>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-needs-improvement/10">
-                <div className="text-2xl font-bold text-needs-improvement">{totalPending}</div>
-                <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  Pendientes análisis
+                  Completados
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-primary/10">
-                <div className="text-2xl font-bold text-primary">{totalExpected}</div>
+                <div className="text-2xl font-bold text-primary">{status?.byStatus?.processing || 0}</div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-                  <BarChart3 className="h-3 w-3" />
-                  Registros esperados
+                  <Loader2 className="h-3 w-3" />
+                  Procesando
+                </div>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-needs-improvement/10">
+                <div className="text-2xl font-bold text-needs-improvement">{status?.byStatus?.pending || 0}</div>
+                <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  Pendientes
+                </div>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-destructive/10">
+                <div className="text-2xl font-bold text-destructive">{status?.byStatus?.failed || 0}</div>
+                <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Fallidos
                 </div>
               </div>
             </div>
-
-            {status.estimatedCompletion && status.isRunning && (
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground pt-2">
-                <Timer className="h-4 w-4" />
-                Tiempo estimado restante: {status.estimatedCompletion}
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Model breakdown */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Estado por Modelo de IA</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {status.modelsData.map((model) => {
-              const progress = status.totalIssuers > 0 
-                ? Math.round((model.tickers / status.totalIssuers) * 100) 
-                : 0;
-              const hasErrors = model.pendingAnalysis > 0 && model.analyzed === 0;
-              
-              return (
-                <div key={model.model} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{model.model}</span>
-                      {model.pendingAnalysis > 0 && (
-                        <Badge variant="outline" className="text-xs bg-needs-improvement/10 text-needs-improvement">
-                          {model.pendingAnalysis} pendientes
-                        </Badge>
-                      )}
-                      {hasErrors && (
-                        <AlertTriangle className="h-4 w-4 text-destructive" />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <span className="text-xs">
-                        {model.tickers}/{status.totalIssuers} empresas
-                      </span>
-                      <span className="font-medium text-foreground">{progress}%</span>
-                    </div>
-                  </div>
-                  <Progress 
-                    value={progress} 
+      {/* Phase visualization */}
+      {status?.initialized && phaseDetails.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Layers className="h-4 w-4" />
+              Progreso por Fase ({phaseDetails.length} fases activas)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 lg:grid-cols-17 gap-2">
+            {phaseDetails.map((phase) => {
+                const hasErrors = phase.failed > 0;
+                const isComplete = phase.completed === phase.total && phase.total > 0;
+                const isPending = phase.pending > 0;
+
+                return (
+                  <div
+                    key={phase.fase}
                     className={cn(
-                      "h-2",
-                      hasErrors && "bg-destructive/20"
-                    )} 
-                  />
-                  {model.lastCreated && (
-                    <div className="text-xs text-muted-foreground">
-                      Último registro: {new Date(model.lastCreated).toLocaleString('es-ES')}
+                      "relative p-2 rounded-lg text-center text-xs transition-all",
+                      isComplete && "bg-good/20 text-good",
+                      hasErrors && !isComplete && "bg-destructive/20 text-destructive",
+                      isPending && !hasErrors && !isComplete && "bg-muted text-muted-foreground",
+                      !isPending && !hasErrors && !isComplete && "bg-primary/20 text-primary"
+                    )}
+                    title={`Fase ${phase.fase}: ${phase.completed}/${phase.total} completados${hasErrors ? `, ${phase.failed} fallidos` : ''}`}
+                  >
+                    <div className="font-semibold">{phase.fase}</div>
+                    <div className="text-[10px] opacity-80">
+                      {phase.completed}/{phase.total}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                    {hasErrors && (
+                      <div className="absolute -top-1 -right-1">
+                        <span className="flex h-3 w-3 items-center justify-center rounded-full bg-destructive text-[8px] text-white">
+                          {phase.failed}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Legend */}
+            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t text-xs text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-good/20" />
+                <span>Completo</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-primary/20" />
+                <span>En progreso</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-muted" />
+                <span>Pendiente</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded bg-destructive/20" />
+                <span>Con errores</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick actions */}
       <Card>
@@ -373,26 +398,39 @@ export function SweepMonitorPanel() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => handleLaunchSweep(3)}
+              disabled={launching}
+            >
+              <Play className="h-4 w-4 mr-2" />
+              Procesar 3 fases (15 empresas)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleLaunchSweep(10)}
+              disabled={launching}
+            >
+              <Play className="h-4 w-4 mr-2" />
+              Procesar 10 fases (50 empresas)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => window.open('/dashboard-v2', '_blank')}
             >
               <BarChart3 className="h-4 w-4 mr-2" />
               Ver Dashboard V2
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                // Trigger analysis for pending records
-                toast({
-                  title: 'Funcionalidad próximamente',
-                  description: 'Analizar registros pendientes desde aquí',
-                });
-              }}
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Analizar pendientes ({totalPending})
-            </Button>
           </div>
+          
+          {!status?.initialized && (
+            <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+              <p>
+                <strong>Nota:</strong> El barrido para esta semana ({status?.sweepId}) aún no ha sido inicializado.
+                Haz clic en "Iniciar Barrido" para comenzar a procesar las {TOTAL_PHASES} fases de empresas.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
