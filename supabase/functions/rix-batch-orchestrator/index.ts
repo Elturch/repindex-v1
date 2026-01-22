@@ -436,12 +436,13 @@ async function resetFailedCompanies(
 }
 
 // ============================================================================
-// NUEVO: Resetea empresas atascadas en "processing" por más de X minutos
+// SISTEMA INFALIBLE: Resetea empresas atascadas en "processing"
+// Timeout reducido a 5 minutos para recuperación rápida
 // ============================================================================
 async function resetStuckProcessingCompanies(
   supabase: ReturnType<typeof createClient>,
   sweepId: string,
-  timeoutMinutes: number = 30
+  timeoutMinutes: number = 5  // REDUCIDO de 30 a 5 minutos para recuperación rápida
 ): Promise<{ count: number; tickers: string[] }> {
   const timeoutThreshold = new Date(Date.now() - timeoutMinutes * 60 * 1000).toISOString();
   
@@ -501,12 +502,14 @@ Deno.serve(async (req) => {
 
     let requestBody: { 
       trigger?: string;
-      fase?: number;           // Nueva: fase específica a procesar
+      fase?: number;
       test_mode?: boolean;
       reset_failed?: boolean;
       get_status?: boolean;
-      init_only?: boolean;     // Nueva: solo inicializar, no procesar
-      single_company?: boolean; // NUEVO: procesar solo 1 empresa
+      init_only?: boolean;
+      single_company?: boolean;
+      reset_stuck?: boolean;      // NUEVO: reset inmediato de zombis
+      reset_stuck_timeout?: number; // NUEVO: timeout personalizable
     } = {};
     
     try {
@@ -523,6 +526,8 @@ Deno.serve(async (req) => {
       get_status = false,
       init_only = false,
       single_company = false,
+      reset_stuck = false,
+      reset_stuck_timeout = 0,
     } = requestBody;
 
     const sweepId = getCurrentSweepId();
@@ -600,6 +605,23 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ========== NUEVO: Modo reset_stuck - Reset inmediato de zombis ==========
+    if (reset_stuck) {
+      const stuckResult = await resetStuckProcessingCompanies(supabase, sweepId, reset_stuck_timeout);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sweepId,
+          resetCount: stuckResult.count,
+          tickers: stuckResult.tickers,
+          message: stuckResult.count > 0 
+            ? `${stuckResult.count} empresas zombis reseteadas: ${stuckResult.tickers.join(', ')}`
+            : 'No hay empresas atascadas',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // ========== Modo: Test ==========
     if (test_mode) {
       await initializeSweepIfNeeded(supabase, sweepId);
@@ -618,9 +640,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ========== NUEVO: Auto-reset de empresas atascadas ==========
+    // ========== AUTO-RESET AGRESIVO: 5 minutos ==========
     // Siempre revisar si hay empresas colgadas antes de procesar
-    const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 30);
+    // Timeout reducido a 5 min para sistema infalible
+    const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
     if (stuckReset.count > 0) {
       console.log(`[orchestrator] Auto-reset ${stuckReset.count} stuck companies: ${stuckReset.tickers.join(', ')}`);
     }
