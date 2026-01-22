@@ -48,7 +48,8 @@ import { InboundDashboard } from '@/components/admin/InboundDashboard';
 import { FeedbackPanel } from '@/components/admin/FeedbackPanel';
 import { ApiCostDashboard } from '@/components/admin/ApiCostDashboard';
 import { SweepMonitorPanel } from '@/components/admin/SweepMonitorPanel';
-import { DollarSign, Radar } from 'lucide-react';
+import { IssuerIngestPanel } from '@/components/admin/IssuerIngestPanel';
+import { DollarSign, Radar, DatabaseBackup } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -938,6 +939,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="sweep-monitor" className="flex items-center gap-1.5 px-3 text-xs">
               <Radar className="h-3.5 w-3.5" />
               Barrido V2
+            </TabsTrigger>
+            <TabsTrigger value="issuer-ingest" className="flex items-center gap-1.5 px-3 text-xs">
+              <DatabaseBackup className="h-3.5 w-3.5" />
+              Ingesta
             </TabsTrigger>
           </TabsList>
 
@@ -2938,6 +2943,11 @@ const Admin: React.FC = () => {
           {/* ==================== SWEEP MONITOR V2 ==================== */}
           <TabsContent value="sweep-monitor">
             <SweepMonitorPanel />
+          </TabsContent>
+
+          {/* ==================== ISSUER INGEST ==================== */}
+          <TabsContent value="issuer-ingest">
+            <IssuerIngestPanel />
           </TabsContent>
         </Tabs>
       </div>

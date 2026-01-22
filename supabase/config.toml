@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.fetch-momentum-tips]
 verify_jwt = false
+
+[functions.ingest-new-issuer]
+verify_jwt = false
