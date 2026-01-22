@@ -33,6 +33,9 @@ interface ApiCostConfig {
   input_cost_per_million: number;
   output_cost_per_million: number;
   updated_at: string;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+  total_calls?: number;
 }
 
 interface UserStats {
@@ -1232,9 +1235,12 @@ export const ApiCostDashboard: React.FC = () => {
                   <TableRow>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>Modelo</TableHead>
-                    <TableHead>Input ($/1M tokens)</TableHead>
-                    <TableHead>Output ($/1M tokens)</TableHead>
-                    <TableHead>Última actualización</TableHead>
+                    <TableHead className="text-right">Tokens In</TableHead>
+                    <TableHead className="text-right">Tokens Out</TableHead>
+                    <TableHead className="text-right">Llamadas</TableHead>
+                    <TableHead>Input ($/1M)</TableHead>
+                    <TableHead>Output ($/1M)</TableHead>
+                    <TableHead>Actualización</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1260,6 +1266,15 @@ export const ApiCostDashboard: React.FC = () => {
                           {config.model}
                         </span>
                       </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatTokens(config.total_input_tokens || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatTokens(config.total_output_tokens || 0)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                        {(config.total_calls || 0).toLocaleString()}
+                      </TableCell>
                       <TableCell>
                         <Input
                           type="number"
@@ -1269,7 +1284,7 @@ export const ApiCostDashboard: React.FC = () => {
                             ...prev,
                             [config.id]: { ...prev[config.id], input: e.target.value }
                           }))}
-                          className="w-24"
+                          className="w-20"
                         />
                       </TableCell>
                       <TableCell>
@@ -1281,10 +1296,10 @@ export const ApiCostDashboard: React.FC = () => {
                             ...prev,
                             [config.id]: { ...prev[config.id], output: e.target.value }
                           }))}
-                          className="w-24"
+                          className="w-20"
                         />
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
+                      <TableCell className="text-muted-foreground text-xs">
                         {new Date(config.updated_at).toLocaleDateString('es-ES')}
                       </TableCell>
                       <TableCell>
