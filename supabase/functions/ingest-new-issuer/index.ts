@@ -192,7 +192,7 @@ Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin explicaciones
   // Use Google Gemini API directly
   const genAI = new GoogleGenerativeAI(geminiApiKey);
   const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-pro-preview-05-06",
+    model: "gemini-2.5-pro",
     generationConfig: {
       temperature: 0.2,
       maxOutputTokens: 1500,
