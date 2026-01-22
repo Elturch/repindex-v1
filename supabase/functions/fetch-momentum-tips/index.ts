@@ -203,13 +203,25 @@ serve(async (req) => {
       parsed.sources = [...new Set([...parsed.sources, ...citationDomains])].slice(0, 5);
     }
 
-    // Log API usage
+    // Log API usage with accurate cost from api_cost_config
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const inputTokens = Math.ceil(prompt.length / 4);
-    const outputTokens = Math.ceil(content.length / 4);
+    const outputTokens = Math.ceil(content.length / 3.5);
+
+    // Get cost config from database for accurate pricing
+    const { data: costConfig } = await supabase
+      .from('api_cost_config')
+      .select('input_cost_per_million, output_cost_per_million')
+      .eq('provider', 'perplexity')
+      .eq('model', 'sonar-pro')
+      .single();
+
+    const inputCost = costConfig ? (inputTokens / 1_000_000) * costConfig.input_cost_per_million : 0;
+    const outputCost = costConfig ? (outputTokens / 1_000_000) * costConfig.output_cost_per_million : 0;
+    const estimatedCost = inputCost + outputCost;
 
     await supabase.from('api_usage_logs').insert({
       edge_function: 'fetch-momentum-tips',
@@ -218,7 +230,7 @@ serve(async (req) => {
       action_type: 'momentum_analysis',
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      estimated_cost_usd: (inputTokens + outputTokens) * 0.000003, // ~$3/M tokens estimate
+      estimated_cost_usd: estimatedCost,
       pipeline_stage: 'momentum',
       ticker,
       metadata: {
@@ -226,6 +238,7 @@ serve(async (req) => {
         rix_score,
         response_time_ms: responseTime,
         citations_count: citations.length,
+        prompt_length: prompt.length,
       },
     });
 
