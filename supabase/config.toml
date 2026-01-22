@@ -56,3 +56,9 @@ verify_jwt = false
 
 [functions.refresh-issuer-status]
 verify_jwt = false
+
+[functions.firecrawl-corporate-scrape]
+verify_jwt = false
+
+[functions.corporate-scrape-orchestrator]
+verify_jwt = false

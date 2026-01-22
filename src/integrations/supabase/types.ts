@@ -499,6 +499,132 @@ export type Database = {
           },
         ]
       }
+      corporate_scrape_progress: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          issuer_name: string | null
+          retry_count: number | null
+          started_at: string | null
+          status: string | null
+          sweep_id: string
+          ticker: string
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          issuer_name?: string | null
+          retry_count?: number | null
+          started_at?: string | null
+          status?: string | null
+          sweep_id: string
+          ticker: string
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          issuer_name?: string | null
+          retry_count?: number | null
+          started_at?: string | null
+          status?: string | null
+          sweep_id?: string
+          ticker?: string
+          updated_at?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
+      corporate_snapshots: {
+        Row: {
+          ceo_name: string | null
+          chairman_name: string | null
+          company_description: string | null
+          created_at: string | null
+          employees_approx: number | null
+          error_message: string | null
+          extraction_confidence: Json | null
+          fiscal_year: string | null
+          founded_year: number | null
+          headquarters_city: string | null
+          headquarters_country: string | null
+          id: string
+          last_reported_revenue: string | null
+          mission_statement: string | null
+          other_executives: Json | null
+          pages_scraped: number | null
+          president_name: string | null
+          raw_markdown: string | null
+          scrape_status: string | null
+          snapshot_date: string
+          snapshot_date_only: string
+          source_urls: string[] | null
+          ticker: string
+          vision_statement: string | null
+        }
+        Insert: {
+          ceo_name?: string | null
+          chairman_name?: string | null
+          company_description?: string | null
+          created_at?: string | null
+          employees_approx?: number | null
+          error_message?: string | null
+          extraction_confidence?: Json | null
+          fiscal_year?: string | null
+          founded_year?: number | null
+          headquarters_city?: string | null
+          headquarters_country?: string | null
+          id?: string
+          last_reported_revenue?: string | null
+          mission_statement?: string | null
+          other_executives?: Json | null
+          pages_scraped?: number | null
+          president_name?: string | null
+          raw_markdown?: string | null
+          scrape_status?: string | null
+          snapshot_date?: string
+          snapshot_date_only?: string
+          source_urls?: string[] | null
+          ticker: string
+          vision_statement?: string | null
+        }
+        Update: {
+          ceo_name?: string | null
+          chairman_name?: string | null
+          company_description?: string | null
+          created_at?: string | null
+          employees_approx?: number | null
+          error_message?: string | null
+          extraction_confidence?: Json | null
+          fiscal_year?: string | null
+          founded_year?: number | null
+          headquarters_city?: string | null
+          headquarters_country?: string | null
+          id?: string
+          last_reported_revenue?: string | null
+          mission_statement?: string | null
+          other_executives?: Json | null
+          pages_scraped?: number | null
+          president_name?: string | null
+          raw_markdown?: string | null
+          scrape_status?: string | null
+          snapshot_date?: string
+          snapshot_date_only?: string
+          source_urls?: string[] | null
+          ticker?: string
+          vision_statement?: string | null
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           content: string | null
@@ -1012,6 +1138,7 @@ export type Database = {
           source_segment_detail: string | null
           status: string | null
           ticker: string
+          website: string | null
         }
         Insert: {
           cotiza_en_bolsa?: boolean
@@ -1035,6 +1162,7 @@ export type Database = {
           source_segment_detail?: string | null
           status?: string | null
           ticker: string
+          website?: string | null
         }
         Update: {
           cotiza_en_bolsa?: boolean
@@ -1058,6 +1186,7 @@ export type Database = {
           source_segment_detail?: string | null
           status?: string | null
           ticker?: string
+          website?: string | null
         }
         Relationships: []
       }
