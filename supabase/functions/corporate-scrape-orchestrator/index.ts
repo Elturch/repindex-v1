@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+declare const EdgeRuntime: { waitUntil: (promise: Promise<unknown>) => void };
+
 function getCurrentSweepId(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -12,9 +14,83 @@ function getCurrentSweepId(): string {
   return `corp-${year}-${month}`;
 }
 
-async function initializeSweepIfNeeded(
+// Search for company's official website using Firecrawl
+async function findCompanyWebsite(
+  companyName: string, 
+  ticker: string,
+  firecrawlApiKey: string
+): Promise<string | null> {
+  try {
+    console.log(`[WebsiteFinder] Searching for ${companyName} (${ticker}) official website`);
+    
+    // Search queries to try
+    const queries = [
+      `${companyName} sitio web oficial corporativo`,
+      `${companyName} official corporate website`,
+      `${ticker} investor relations website`,
+    ];
+
+    for (const query of queries) {
+      const response = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${firecrawlApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          limit: 5,
+          lang: 'es',
+          country: 'ES',
+        }),
+      });
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const results = data.data || [];
+
+      // Look for official corporate domains
+      for (const result of results) {
+        const url = result.url?.toLowerCase() || '';
+        const title = result.title?.toLowerCase() || '';
+        const companyLower = companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        
+        // Skip social media, Wikipedia, news sites
+        if (url.includes('wikipedia') || 
+            url.includes('linkedin') || 
+            url.includes('twitter') ||
+            url.includes('facebook') ||
+            url.includes('youtube') ||
+            url.includes('bloomberg') ||
+            url.includes('reuters') ||
+            url.includes('yahoo') ||
+            url.includes('investing.com')) {
+          continue;
+        }
+
+        // Check if URL or title contains company name
+        const urlDomain = new URL(result.url).hostname.replace('www.', '');
+        if (urlDomain.includes(companyLower.substring(0, 6)) || 
+            title.includes(companyName.toLowerCase())) {
+          console.log(`[WebsiteFinder] Found: ${result.url} for ${companyName}`);
+          return result.url;
+        }
+      }
+    }
+
+    console.log(`[WebsiteFinder] No official website found for ${companyName}`);
+    return null;
+  } catch (error) {
+    console.error(`[WebsiteFinder] Error searching for ${companyName}:`, error);
+    return null;
+  }
+}
+
+async function initializeSweep(
   supabase: ReturnType<typeof createClient>,
-  sweepId: string
+  sweepId: string,
+  firecrawlApiKey: string
 ): Promise<{ initialized: boolean; totalCompanies: number }> {
   // Check if sweep already exists
   const { data: existingProgress } = await supabase
@@ -24,159 +100,168 @@ async function initializeSweepIfNeeded(
     .limit(1);
 
   if (existingProgress && existingProgress.length > 0) {
-    // Count total companies in this sweep
     const { count } = await supabase
       .from('corporate_scrape_progress')
       .select('*', { count: 'exact', head: true })
       .eq('sweep_id', sweepId);
-
     return { initialized: false, totalCompanies: count || 0 };
   }
 
-  // Get all active companies with websites
+  // Get all active companies
   const { data: companies, error } = await supabase
     .from('repindex_root_issuers')
     .select('ticker, issuer_name, website')
-    .eq('ibex_status', 'active_now')
-    .not('website', 'is', null);
+    .eq('ibex_status', 'active_now');
 
-  if (error) {
-    console.error('[Orchestrator] Error fetching companies:', error);
-    throw new Error(`Failed to fetch companies: ${error.message}`);
+  if (error || !companies) {
+    throw new Error(`Failed to fetch companies: ${error?.message}`);
   }
 
-  if (!companies || companies.length === 0) {
-    console.log('[Orchestrator] No companies with websites found');
-    return { initialized: true, totalCompanies: 0 };
-  }
+  console.log(`[Orchestrator] Found ${companies.length} active companies`);
 
-  // Create progress entries for all companies
-  const progressEntries = companies.map(company => ({
-    sweep_id: sweepId,
-    ticker: company.ticker,
-    issuer_name: company.issuer_name,
-    website: company.website,
-    status: 'pending',
-  }));
+  // For companies without websites, try to find them
+  const progressEntries = [];
+  for (const company of companies) {
+    let website = company.website;
+    
+    if (!website) {
+      // Try to find the website
+      website = await findCompanyWebsite(company.issuer_name, company.ticker, firecrawlApiKey);
+      
+      // If found, update the issuer record
+      if (website) {
+        await supabase
+          .from('repindex_root_issuers')
+          .update({ website })
+          .eq('ticker', company.ticker);
+        console.log(`[Orchestrator] Updated website for ${company.ticker}: ${website}`);
+      }
+      
+      // Small delay between searches
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    progressEntries.push({
+      sweep_id: sweepId,
+      ticker: company.ticker,
+      issuer_name: company.issuer_name,
+      website: website || null,
+      status: website ? 'pending' : 'skipped', // Skip if no website found
+    });
+  }
 
   const { error: insertError } = await supabase
     .from('corporate_scrape_progress')
     .insert(progressEntries);
 
   if (insertError) {
-    console.error('[Orchestrator] Error creating progress entries:', insertError);
     throw new Error(`Failed to create progress entries: ${insertError.message}`);
   }
 
-  console.log(`[Orchestrator] Initialized sweep ${sweepId} with ${companies.length} companies`);
-  return { initialized: true, totalCompanies: companies.length };
+  const pendingCount = progressEntries.filter(e => e.status === 'pending').length;
+  console.log(`[Orchestrator] Initialized sweep ${sweepId} with ${pendingCount} companies to scrape`);
+  
+  return { initialized: true, totalCompanies: pendingCount };
 }
 
-async function getNextPendingCompany(
+async function processAllCompanies(
   supabase: ReturnType<typeof createClient>,
-  sweepId: string
-): Promise<{ ticker: string; issuer_name: string; website: string; progress_id: string } | null> {
-  const { data: pending, error } = await supabase
-    .from('corporate_scrape_progress')
-    .select('id, ticker, issuer_name, website')
-    .eq('sweep_id', sweepId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1);
-
-  if (error) {
-    console.error('[Orchestrator] Error fetching pending company:', error);
-    return null;
-  }
-
-  if (!pending || pending.length === 0) {
-    return null;
-  }
-
-  return {
-    progress_id: pending[0].id,
-    ticker: pending[0].ticker,
-    issuer_name: pending[0].issuer_name,
-    website: pending[0].website,
-  };
-}
-
-async function processCompany(
-  supabase: ReturnType<typeof createClient>,
-  progressId: string,
-  ticker: string,
-  issuerName: string,
-  website: string,
+  sweepId: string,
   supabaseUrl: string,
   serviceKey: string
-): Promise<{ success: boolean; error?: string }> {
-  // Mark as processing
-  await supabase
-    .from('corporate_scrape_progress')
-    .update({ status: 'processing', started_at: new Date().toISOString() })
-    .eq('id', progressId);
+): Promise<void> {
+  console.log(`[Orchestrator] Starting background processing for sweep ${sweepId}`);
+  
+  const DELAY_BETWEEN_COMPANIES_MS = 90000; // 90 seconds between companies
+  
+  while (true) {
+    // Get next pending company
+    const { data: pending, error } = await supabase
+      .from('corporate_scrape_progress')
+      .select('id, ticker, issuer_name, website')
+      .eq('sweep_id', sweepId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(1);
 
-  try {
-    console.log(`[Orchestrator] Processing ${ticker} (${issuerName})`);
+    if (error) {
+      console.error('[Orchestrator] Error fetching pending:', error);
+      break;
+    }
 
-    // Call the scrape function
-    const response = await fetch(`${supabaseUrl}/functions/v1/firecrawl-corporate-scrape`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ticker,
-        website,
-        issuer_name: issuerName,
-      }),
-    });
+    if (!pending || pending.length === 0) {
+      console.log('[Orchestrator] No more pending companies. Sweep complete!');
+      break;
+    }
 
-    const result = await response.json();
+    const company = pending[0];
+    console.log(`[Orchestrator] Processing ${company.ticker} (${company.issuer_name})`);
 
-    if (result.success) {
-      // Mark as completed
+    // Mark as processing
+    await supabase
+      .from('corporate_scrape_progress')
+      .update({ status: 'processing', started_at: new Date().toISOString() })
+      .eq('id', company.id);
+
+    try {
+      // Call the scrape function
+      const response = await fetch(`${supabaseUrl}/functions/v1/firecrawl-corporate-scrape`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${serviceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticker: company.ticker,
+          website: company.website,
+          issuer_name: company.issuer_name,
+        }),
+      });
+
+      const result = await response.json();
+
       await supabase
         .from('corporate_scrape_progress')
         .update({
-          status: 'completed',
+          status: result.success ? 'completed' : 'failed',
           completed_at: new Date().toISOString(),
+          error_message: result.error || null,
         })
-        .eq('id', progressId);
+        .eq('id', company.id);
 
-      console.log(`[Orchestrator] Completed ${ticker}`);
-      return { success: true };
-    } else {
-      // Mark as failed
+      console.log(`[Orchestrator] ${company.ticker}: ${result.success ? 'completed' : 'failed'}`);
+
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       await supabase
         .from('corporate_scrape_progress')
         .update({
           status: 'failed',
           completed_at: new Date().toISOString(),
-          error_message: result.error || 'Unknown error',
+          error_message: errorMsg,
         })
-        .eq('id', progressId);
-
-      console.log(`[Orchestrator] Failed ${ticker}: ${result.error}`);
-      return { success: false, error: result.error };
+        .eq('id', company.id);
+      console.error(`[Orchestrator] ${company.ticker} exception:`, err);
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    
-    // Mark as failed
-    await supabase
-      .from('corporate_scrape_progress')
-      .update({
-        status: 'failed',
-        completed_at: new Date().toISOString(),
-        error_message: errorMsg,
-      })
-      .eq('id', progressId);
 
-    console.error(`[Orchestrator] Exception processing ${ticker}:`, error);
-    return { success: false, error: errorMsg };
+    // Log progress
+    const { data: statusData } = await supabase
+      .from('corporate_scrape_progress')
+      .select('status')
+      .eq('sweep_id', sweepId);
+    
+    if (statusData) {
+      const completed = statusData.filter(s => s.status === 'completed').length;
+      const failed = statusData.filter(s => s.status === 'failed').length;
+      const pending = statusData.filter(s => s.status === 'pending').length;
+      console.log(`[Orchestrator] Progress: ${completed} completed, ${failed} failed, ${pending} pending`);
+    }
+
+    // Wait before next company to respect rate limits
+    await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_COMPANIES_MS));
   }
+
+  console.log(`[Orchestrator] Sweep ${sweepId} finished!`);
 }
 
 async function getSweepStatus(
@@ -188,25 +273,23 @@ async function getSweepStatus(
   processing: number;
   completed: number;
   failed: number;
+  skipped: number;
 }> {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('corporate_scrape_progress')
     .select('status')
     .eq('sweep_id', sweepId);
 
-  if (error || !data) {
-    return { total: 0, pending: 0, processing: 0, completed: 0, failed: 0 };
-  }
+  if (!data) return { total: 0, pending: 0, processing: 0, completed: 0, failed: 0, skipped: 0 };
 
-  const counts = {
+  return {
     total: data.length,
     pending: data.filter(d => d.status === 'pending').length,
     processing: data.filter(d => d.status === 'processing').length,
     completed: data.filter(d => d.status === 'completed').length,
     failed: data.filter(d => d.status === 'failed').length,
+    skipped: data.filter(d => d.status === 'skipped').length,
   };
-
-  return counts;
 }
 
 Deno.serve(async (req) => {
@@ -217,15 +300,16 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json().catch(() => ({}));
-    const mode = body.mode || 'process_one';
+    const mode = body.mode || 'get_status';
     const sweepId = body.sweep_id || getCurrentSweepId();
 
     console.log(`[Orchestrator] Mode: ${mode}, Sweep ID: ${sweepId}`);
 
-    // Get status
+    // Get status only
     if (mode === 'get_status') {
       const status = await getSweepStatus(supabase, sweepId);
       return new Response(
@@ -234,23 +318,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Initialize only
-    if (mode === 'init_only') {
-      const { initialized, totalCompanies } = await initializeSweepIfNeeded(supabase, sweepId);
-      return new Response(
-        JSON.stringify({
-          success: true,
-          sweep_id: sweepId,
-          initialized,
-          total_companies: totalCompanies,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Reset failed companies back to pending
+    // Reset failed companies
     if (mode === 'reset_failed') {
-      const { data: resetCount, error } = await supabase
+      const { data: resetData } = await supabase
         .from('corporate_scrape_progress')
         .update({ status: 'pending', error_message: null, retry_count: 1 })
         .eq('sweep_id', sweepId)
@@ -258,61 +328,99 @@ Deno.serve(async (req) => {
         .select();
 
       return new Response(
-        JSON.stringify({
-          success: !error,
-          sweep_id: sweepId,
-          reset_count: resetCount?.length || 0,
-        }),
+        JSON.stringify({ success: true, sweep_id: sweepId, reset_count: resetData?.length || 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Process a single company (default mode)
-    // First, ensure sweep is initialized
-    await initializeSweepIfNeeded(supabase, sweepId);
+    // Start full automated sweep (init + process all in background)
+    if (mode === 'start_full_sweep') {
+      // Initialize sweep (this includes finding websites)
+      const { totalCompanies } = await initializeSweep(supabase, sweepId, firecrawlApiKey);
 
-    // Get next pending company
-    const nextCompany = await getNextPendingCompany(supabase, sweepId);
+      if (totalCompanies === 0) {
+        return new Response(
+          JSON.stringify({ success: true, sweep_id: sweepId, message: 'No companies to process' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    if (!nextCompany) {
-      const status = await getSweepStatus(supabase, sweepId);
+      // Start background processing
+      EdgeRuntime.waitUntil(processAllCompanies(supabase, sweepId, supabaseUrl, supabaseServiceKey));
+
+      const estimatedHours = Math.ceil((totalCompanies * 90) / 3600); // 90 sec per company
+      
       return new Response(
         JSON.stringify({
           success: true,
           sweep_id: sweepId,
-          message: 'No pending companies',
-          status,
+          message: `Started automated sweep for ${totalCompanies} companies`,
+          estimated_completion_hours: estimatedHours,
+          status: await getSweepStatus(supabase, sweepId),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Process the company
-    const result = await processCompany(
-      supabase,
-      nextCompany.progress_id,
-      nextCompany.ticker,
-      nextCompany.issuer_name,
-      nextCompany.website,
-      supabaseUrl,
-      supabaseServiceKey
-    );
+    // Process single company (for CRON or manual trigger)
+    if (mode === 'process_one') {
+      // Initialize if needed
+      await initializeSweep(supabase, sweepId, firecrawlApiKey);
 
-    const status = await getSweepStatus(supabase, sweepId);
+      // Get next pending
+      const { data: pending } = await supabase
+        .from('corporate_scrape_progress')
+        .select('id, ticker, issuer_name, website')
+        .eq('sweep_id', sweepId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (!pending || pending.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, sweep_id: sweepId, message: 'No pending companies', status: await getSweepStatus(supabase, sweepId) }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const company = pending[0];
+      
+      // Process in background
+      EdgeRuntime.waitUntil((async () => {
+        await supabase
+          .from('corporate_scrape_progress')
+          .update({ status: 'processing', started_at: new Date().toISOString() })
+          .eq('id', company.id);
+
+        try {
+          const response = await fetch(`${supabaseUrl}/functions/v1/firecrawl-corporate-scrape`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${supabaseServiceKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker: company.ticker, website: company.website, issuer_name: company.issuer_name }),
+          });
+          const result = await response.json();
+          
+          await supabase
+            .from('corporate_scrape_progress')
+            .update({ status: result.success ? 'completed' : 'failed', completed_at: new Date().toISOString(), error_message: result.error || null })
+            .eq('id', company.id);
+        } catch (err) {
+          await supabase
+            .from('corporate_scrape_progress')
+            .update({ status: 'failed', completed_at: new Date().toISOString(), error_message: err instanceof Error ? err.message : 'Error' })
+            .eq('id', company.id);
+        }
+      })());
+
+      return new Response(
+        JSON.stringify({ success: true, sweep_id: sweepId, processing: company.ticker, status: await getSweepStatus(supabase, sweepId) }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     return new Response(
-      JSON.stringify({
-        success: result.success,
-        sweep_id: sweepId,
-        processed: {
-          ticker: nextCompany.ticker,
-          issuer_name: nextCompany.issuer_name,
-          result: result.success ? 'completed' : 'failed',
-          error: result.error,
-        },
-        status,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ success: false, error: 'Invalid mode. Use: get_status, start_full_sweep, process_one, reset_failed' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
