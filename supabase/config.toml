@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.ingest-new-issuer]
 verify_jwt = false
+
+[functions.refresh-issuer-status]
+verify_jwt = false
