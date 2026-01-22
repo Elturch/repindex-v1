@@ -16,7 +16,10 @@ import {
   Zap,
   RotateCcw,
   Layers,
-  Square
+  Square,
+  Activity,
+  Skull,
+  Timer
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -51,7 +54,17 @@ interface CascadeState {
   startTime: number | null;
 }
 
+interface RecentActivity {
+  ticker: string;
+  issuer_name: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 const TOTAL_PHASES = 34;
+const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
 
 export function SweepMonitorPanel() {
   const { toast } = useToast();
@@ -61,6 +74,11 @@ export function SweepMonitorPanel() {
   const [launching, setLaunching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resettingZombis, setResettingZombis] = useState(false);
+  
+  // Actividad reciente
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [processingCompanies, setProcessingCompanies] = useState<RecentActivity[]>([]);
   
   // Estado para cascada 1-empresa-a-la-vez
   const [cascade, setCascade] = useState<CascadeState>({
@@ -71,6 +89,29 @@ export function SweepMonitorPanel() {
     startTime: null,
   });
   const cascadeAbortRef = useRef(false);
+
+  // Obtener actividad reciente (últimas 10 empresas procesadas + en proceso)
+  const fetchRecentActivity = useCallback(async (sweepId: string) => {
+    try {
+      // Empresas en proceso
+      const processingRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/sweep_progress?sweep_id=eq.${sweepId}&status=eq.processing&select=ticker,issuer_name,status,started_at,completed_at&order=started_at.desc`,
+        { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
+      );
+      const processingData = await processingRes.json();
+      setProcessingCompanies(Array.isArray(processingData) ? processingData : []);
+
+      // Últimas 8 completadas
+      const recentRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/sweep_progress?sweep_id=eq.${sweepId}&status=eq.completed&select=ticker,issuer_name,status,started_at,completed_at&order=completed_at.desc&limit=8`,
+        { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
+      );
+      const recentData = await recentRes.json();
+      setRecentActivity(Array.isArray(recentData) ? recentData : []);
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+    }
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -84,16 +125,10 @@ export function SweepMonitorPanel() {
       if (data.initialized) {
         setStatus(data);
         
-        // Obtener detalles por fase usando RPC o query directa con cast
-        // La tabla sweep_progress es nueva, usamos fetch directo al API
+        // Obtener detalles por fase
         const response = await fetch(
-          `https://jzkjykmrwisijiqlwuua.supabase.co/rest/v1/sweep_progress?sweep_id=eq.${data.sweepId}&select=fase,status`,
-          {
-            headers: {
-              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU',
-              'Content-Type': 'application/json',
-            },
-          }
+          `${SUPABASE_URL}/rest/v1/sweep_progress?sweep_id=eq.${data.sweepId}&select=fase,status`,
+          { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
         );
         const progressData = await response.json() as Array<{ fase: number; status: string }>;
 
@@ -117,6 +152,9 @@ export function SweepMonitorPanel() {
           details.sort((a, b) => a.fase - b.fase);
           setPhaseDetails(details);
         }
+
+        // Obtener actividad reciente
+        await fetchRecentActivity(data.sweepId);
       } else {
         setStatus({
           sweepId: data.sweepId,
@@ -127,6 +165,8 @@ export function SweepMonitorPanel() {
           progress: 0,
         });
         setPhaseDetails([]);
+        setRecentActivity([]);
+        setProcessingCompanies([]);
       }
     } catch (error) {
       console.error('Error fetching sweep status:', error);
@@ -139,24 +179,53 @@ export function SweepMonitorPanel() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [toast]);
+  }, [toast, fetchRecentActivity]);
 
   useEffect(() => {
     fetchStatus();
     
-    // Auto-refresh cada 15 segundos si hay procesamiento activo
+    // Auto-refresh cada 10 segundos si hay procesamiento activo O si está en cascada
     const interval = setInterval(() => {
-      if (status?.byStatus?.processing && status.byStatus.processing > 0) {
+      if ((status?.byStatus?.processing && status.byStatus.processing > 0) || cascade.isRunning) {
         fetchStatus();
       }
-    }, 15000);
+    }, 10000);
 
     return () => clearInterval(interval);
-  }, [status?.byStatus?.processing, fetchStatus]);
+  }, [status?.byStatus?.processing, cascade.isRunning, fetchStatus]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchStatus();
+  };
+
+  // Reset inmediato de empresas zombis
+  const handleResetZombis = async () => {
+    setResettingZombis(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { reset_stuck: true, reset_stuck_timeout: 0 },  // timeout 0 = reset inmediato
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: data.resetCount > 0 ? '🔄 Zombis reseteados' : 'Sin zombis',
+        description: data.message,
+        variant: data.resetCount > 0 ? 'default' : 'default',
+      });
+
+      fetchStatus();
+    } catch (error: any) {
+      console.error('Error resetting stuck companies:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo resetear',
+        variant: 'destructive',
+      });
+    } finally {
+      setResettingZombis(false);
+    }
   };
 
   // Lanza UNA fase específica
@@ -517,7 +586,126 @@ export function SweepMonitorPanel() {
         </CardContent>
       </Card>
 
-      {/* Phase visualization */}
+      {/* NUEVO: Panel de Actividad en Tiempo Real */}
+      {status?.initialized && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Activity className="h-4 w-4 text-primary animate-pulse" />
+                Actividad en Tiempo Real
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetZombis}
+                  disabled={resettingZombis}
+                  className="text-destructive hover:bg-destructive/10"
+                >
+                  <Skull className={cn("h-4 w-4 mr-2", resettingZombis && "animate-spin")} />
+                  Resetear Zombis
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Empresas en proceso */}
+            {processingCompanies.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-muted-foreground">En proceso ahora:</div>
+                <div className="space-y-1">
+                  {processingCompanies.map((company) => {
+                    const startedAt = company.started_at ? new Date(company.started_at) : null;
+                    const elapsedMinutes = startedAt 
+                      ? Math.floor((Date.now() - startedAt.getTime()) / 60000)
+                      : 0;
+                    const isZombie = elapsedMinutes >= 5;
+                    
+                    return (
+                      <div 
+                        key={company.ticker}
+                        className={cn(
+                          "flex items-center justify-between p-2 rounded-lg",
+                          isZombie ? "bg-destructive/10 border border-destructive/30" : "bg-primary/10"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          <span className="font-medium">{company.ticker}</span>
+                          <span className="text-sm text-muted-foreground">{company.issuer_name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Timer className="h-3 w-3" />
+                          <span className={cn(
+                            "text-sm font-mono",
+                            isZombie ? "text-destructive font-bold" : "text-muted-foreground"
+                          )}>
+                            {elapsedMinutes} min
+                          </span>
+                          {isZombie && (
+                            <Badge variant="destructive" className="text-xs">ZOMBI</Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Últimas completadas */}
+            {recentActivity.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-muted-foreground">Últimas procesadas:</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {recentActivity.slice(0, 8).map((company) => {
+                    const completedAt = company.completed_at ? new Date(company.completed_at) : null;
+                    const timeStr = completedAt 
+                      ? completedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+                      : '';
+                    
+                    return (
+                      <div 
+                        key={company.ticker}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-good/10 text-sm"
+                      >
+                        <CheckCircle2 className="h-3 w-3 text-good" />
+                        <span className="font-medium">{company.ticker}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{timeStr}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Sin actividad */}
+            {processingCompanies.length === 0 && recentActivity.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground">
+                <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Sin actividad reciente</p>
+              </div>
+            )}
+
+            {/* Info de auto-reset */}
+            <div className="pt-2 border-t text-xs text-muted-foreground flex items-center gap-4">
+              <div className="flex items-center gap-1">
+                <Zap className="h-3 w-3" />
+                <span>Auto-reset: 5 min</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <RefreshCw className="h-3 w-3" />
+                <span>Auto-refresh: 10 seg</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3 text-good" />
+                <span>Sistema infalible activo</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {status?.initialized && phaseDetails.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
