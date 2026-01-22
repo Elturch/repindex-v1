@@ -50,6 +50,7 @@ import { ApiCostDashboard } from '@/components/admin/ApiCostDashboard';
 import { SweepMonitorPanel } from '@/components/admin/SweepMonitorPanel';
 import { IssuerIngestPanel } from '@/components/admin/IssuerIngestPanel';
 import { CronMonitorPanel } from '@/components/admin/CronMonitorPanel';
+import { CorporateScrapePanel } from '@/components/admin/CorporateScrapePanel';
 import { DollarSign, Radar, DatabaseBackup, Timer } from 'lucide-react';
 
 interface Company {
@@ -949,9 +950,11 @@ const Admin: React.FC = () => {
               <Timer className="h-3.5 w-3.5" />
               CRONs
             </TabsTrigger>
+            <TabsTrigger value="corporate-scrape" className="flex items-center gap-1.5 px-3 text-xs">
+              <Building2 className="h-3.5 w-3.5" />
+              Web Scrape
+            </TabsTrigger>
           </TabsList>
-
-          {/* ==================== PERFILES DE USUARIO ==================== */}
           <TabsContent value="profiles">
             <div className="flex justify-between items-center mb-4">
               <div>
@@ -2958,6 +2961,11 @@ const Admin: React.FC = () => {
           {/* ==================== CRON MONITOR ==================== */}
           <TabsContent value="cron-monitor">
             <CronMonitorPanel />
+          </TabsContent>
+
+          {/* ==================== CORPORATE SCRAPE ==================== */}
+          <TabsContent value="corporate-scrape">
+            <CorporateScrapePanel />
           </TabsContent>
         </Tabs>
       </div>
