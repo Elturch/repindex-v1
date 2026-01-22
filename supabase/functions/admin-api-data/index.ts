@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
         .select('*')
         .gte('created_at', dateFilter.toISOString())
         .order('created_at', { ascending: false })
+        .limit(10000)
 
       if (error) throw error
       
@@ -100,6 +101,7 @@ Deno.serve(async (req) => {
         .from('api_usage_logs')
         .select('user_id, session_id, estimated_cost_usd, input_tokens, output_tokens, action_type, created_at')
         .gte('created_at', dateFilter.toISOString())
+        .limit(10000)
 
       if (logsError) throw logsError
 
@@ -206,6 +208,7 @@ Deno.serve(async (req) => {
         .from('api_usage_logs')
         .select('action_type, estimated_cost_usd, input_tokens, output_tokens, created_at')
         .gte('created_at', dateFilter.toISOString())
+        .limit(10000)
 
       if (logsError) throw logsError
 
