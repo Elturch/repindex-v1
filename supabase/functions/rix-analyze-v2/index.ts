@@ -535,7 +535,6 @@ serve(async (req) => {
         messages: [{ role: 'user', content: analysisPrompt }],
         tools: [RIX_ANALYSIS_TOOL],
         tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
-        temperature: 0.2,
       }),
     });
 
