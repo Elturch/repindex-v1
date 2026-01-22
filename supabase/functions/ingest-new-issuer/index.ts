@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -116,10 +117,10 @@ async function getExistingIssuersContext(supabase: any): Promise<string> {
   return context;
 }
 
-// Generate issuer metadata using Gemini 3 Pro via Lovable AI Gateway
+// Generate issuer metadata using Google Gemini API directly
 async function generateIssuerMetadata(
   company: CompanyInput,
-  lovableApiKey: string,
+  geminiApiKey: string,
   existingIssuersContext: string
 ): Promise<Omit<GeneratedIssuer, 'fase' | 'is_new_phase'>> {
   const prompt = `Eres un experto analista del mercado bursátil español con acceso a información actualizada de BME (Bolsas y Mercados Españoles), IBEX 35, y el tejido empresarial español.
@@ -188,41 +189,23 @@ Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin explicaciones
   "verification_notes": "explicación breve de cómo verificaste los datos"
 }`;
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${lovableApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-3-pro-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'Eres un experto en el mercado bursátil español y empresas españolas. Tu conocimiento incluye qué empresas cotizan en BME, sus tickers oficiales, y su clasificación sectorial. Respondes SOLO con JSON válido, sin markdown ni explicaciones adicionales.'
-        },
-        { role: 'user', content: prompt }
-      ],
+  // Use Google Gemini API directly
+  const genAI = new GoogleGenerativeAI(geminiApiKey);
+  const model = genAI.getGenerativeModel({ 
+    model: "gemini-2.5-pro-preview-05-06",
+    generationConfig: {
       temperature: 0.2,
-      max_tokens: 1500,
-    }),
+      maxOutputTokens: 1500,
+    }
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('Lovable AI Gateway error:', response.status, error);
-    
-    if (response.status === 429) {
-      throw new Error('Rate limit exceeded. Please try again later.');
-    }
-    if (response.status === 402) {
-      throw new Error('Payment required. Please add funds to your Lovable AI workspace.');
-    }
-    throw new Error(`AI Gateway error: ${error}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content?.trim();
+  const systemPrompt = 'Eres un experto en el mercado bursátil español y empresas españolas. Tu conocimiento incluye qué empresas cotizan en BME, sus tickers oficiales, y su clasificación sectorial. Respondes SOLO con JSON válido, sin markdown ni explicaciones adicionales.';
+  
+  const fullPrompt = `${systemPrompt}\n\n${prompt}`;
+  
+  const result = await model.generateContent(fullPrompt);
+  const response = await result.response;
+  const content = response.text().trim();
   
   // Clean up potential markdown formatting
   let jsonContent = content;
@@ -422,14 +405,14 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
 
     if (!supabaseUrl || !serviceKey || !anonKey) {
       throw new Error('Missing Supabase configuration');
     }
 
-    if (!lovableApiKey) {
-      throw new Error('Missing LOVABLE_API_KEY');
+    if (!geminiApiKey) {
+      throw new Error('Missing GOOGLE_GEMINI_API_KEY');
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -534,8 +517,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Generate metadata using Gemini 3 Pro
-        const metadata = await generateIssuerMetadata(company, lovableApiKey, existingIssuersContext);
+        // Generate metadata using Google Gemini API
+        const metadata = await generateIssuerMetadata(company, geminiApiKey, existingIssuersContext);
         console.log(`Generated metadata for ${company.name}:`, JSON.stringify(metadata));
 
         // Validate AI response
