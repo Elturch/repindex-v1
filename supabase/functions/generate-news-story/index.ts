@@ -162,7 +162,7 @@ Keywords objetivo a distribuir:
   "dataQualityReport": {
     "headline": "Radiografía de Datos: El Estado del Ecosistema IA",
     "summary": "Análisis ejecutivo de cobertura y calidad (2-3 frases elegantes)",
-    "totalCompanies": 166,
+    "totalCompanies": 160,
     "modelCoverage": [
       {"model": "ChatGPT", "companies": 160, "status": "ok|warning|error", "note": ""},
       {"model": "Perplexity", "companies": 155, "status": "ok", "note": ""},
@@ -736,7 +736,7 @@ function processWeeklyData(currentData: any[], previousData: any[], currentWeek:
 function buildQuantitativeContext(weekData: any) {
   return `
 ## DATOS CUANTITATIVOS REPINDEX - ${weekData.weekLabel}
-Total empresas analizadas: ${weekData.totalCompanies || '~166'}
+Total empresas analizadas: ${weekData.totalCompanies || '~160'}
 
 ### TOP 15 SUBIDAS SEMANALES (mayor incremento RIX):
 ${weekData.topRisers?.map((r: any, i: number) => 
@@ -786,7 +786,7 @@ ${weekData.ibexBottom?.map((c: any, i: number) =>
 ).join('\n') || 'Sin datos'}
 
 ### CONTEXTO REPINDEX:
-- RepIndex analiza semanalmente la reputación de ~166 empresas españolas
+- RepIndex analiza semanalmente la reputación de más de 160 empresas españolas
 - 4 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
 - Escala RIX: 0-100 puntos (mayor = mejor reputación percibida por las IAs)
 - Panel incluye IBEX-35, cotizadas menores y grandes empresas privadas

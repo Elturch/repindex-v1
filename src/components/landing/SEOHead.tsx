@@ -1,7 +1,11 @@
 import { Helmet } from "react-helmet-async";
 import { getFAQSchema } from "./FAQSection";
+import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 
 export function SEOHead() {
+  const { data: issuerCount = 160 } = useIssuerCount();
+  const issuerCountFormatted = formatIssuerCount(issuerCount);
+  
   const organizationSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -48,7 +52,7 @@ export function SEOHead() {
     "@id": "https://repindex.ai/#dataset",
     "name": "RepIndex Corporate Reputation Index",
     "alternateName": "RIX Score Dataset",
-    "description": "Índice semanal de reputación corporativa basado en análisis de 4 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek) sobre más de 166 empresas españolas, incluyendo IBEX-35, IBEX Medium Cap e IBEX Small Cap.",
+    "description": `Índice semanal de reputación corporativa basado en análisis de 4 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek) sobre más de ${issuerCountFormatted} empresas españolas, incluyendo IBEX-35, IBEX Medium Cap e IBEX Small Cap.`,
     "url": "https://repindex.ai",
     "keywords": [
       "reputación corporativa",
@@ -128,7 +132,7 @@ export function SEOHead() {
     }
   };
 
-  const faqSchema = getFAQSchema();
+  const faqSchema = getFAQSchema(issuerCountFormatted);
 
   return (
     <Helmet>
@@ -136,7 +140,7 @@ export function SEOHead() {
       <title>RepIndex.ai - El Índice de Reputación Corporativa de las IAs</title>
       <meta 
         name="description" 
-        content="RepIndex es el primer índice mundial que mide la reputación corporativa según la percepción de ChatGPT, Perplexity, Gemini y DeepSeek. Analiza 166+ empresas españolas con 8 métricas semanalmente." 
+        content={`RepIndex es el primer índice mundial que mide la reputación corporativa según la percepción de ChatGPT, Perplexity, Gemini y DeepSeek. Analiza ${issuerCountFormatted} empresas españolas con 8 métricas semanalmente.`} 
       />
       <meta 
         name="keywords" 
@@ -152,7 +156,7 @@ export function SEOHead() {
       <meta property="og:type" content="website" />
       <meta property="og:url" content="https://repindex.ai/" />
       <meta property="og:title" content="RepIndex.ai - La Autoridad Reputacional Corporativa de las IAs" />
-      <meta property="og:description" content="El primer índice mundial que mide cómo ChatGPT, Perplexity, Gemini y DeepSeek perciben a las empresas. 166+ compañías analizadas semanalmente." />
+      <meta property="og:description" content={`El primer índice mundial que mide cómo ChatGPT, Perplexity, Gemini y DeepSeek perciben a las empresas. ${issuerCountFormatted} compañías analizadas semanalmente.`} />
       <meta property="og:image" content="https://repindex.ai/favicon.png" />
       <meta property="og:image:width" content="512" />
       <meta property="og:image:height" content="512" />
@@ -164,7 +168,7 @@ export function SEOHead() {
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:url" content="https://repindex.ai/" />
       <meta name="twitter:title" content="RepIndex.ai - La Autoridad Reputacional Corporativa de las IAs" />
-      <meta name="twitter:description" content="El primer índice mundial que mide cómo las IAs perciben a las empresas. 166+ compañías, 8 métricas, actualización semanal." />
+      <meta name="twitter:description" content={`El primer índice mundial que mide cómo las IAs perciben a las empresas. ${issuerCountFormatted} compañías, 8 métricas, actualización semanal.`} />
       <meta name="twitter:image" content="https://repindex.ai/favicon.png" />
       <meta name="twitter:site" content="@repindex_ai" />
       <meta name="twitter:creator" content="@repindex_ai" />
