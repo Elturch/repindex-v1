@@ -390,6 +390,48 @@ serve(async (req) => {
         });
       }
 
+      // ==================== CRON MANAGEMENT ====================
+      case "create_issuer_refresh_cron": {
+        const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+        if (!anonKey) throw new Error("Missing SUPABASE_ANON_KEY");
+        
+        // Monthly cron on 1st of each month at 03:00 UTC
+        const cronSql = `
+          SELECT cron.schedule(
+            'refresh-issuer-status-monthly',
+            '0 3 1 * *',
+            'SELECT net.http_post(url:=''${supabaseUrl}/functions/v1/refresh-issuer-status'', headers:=''{"Content-Type": "application/json", "Authorization": "Bearer ${anonKey}"}''::jsonb, body:=''{"batchSize": 50}''::jsonb)'
+          )
+        `;
+        
+        const { data: cronResult, error: cronError } = await supabaseAdmin.rpc('execute_sql', { sql_query: cronSql });
+        
+        if (cronError) throw cronError;
+        
+        console.log("Created monthly issuer refresh cron:", cronResult);
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          message: "CRON mensual para actualización de estado de emisores creado (día 1 de cada mes a las 03:00 UTC)"
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "list_cron_jobs": {
+        const sql = `SELECT jobid, jobname, schedule, active FROM cron.job ORDER BY jobname`;
+        const { data: jobs, error: jobsError } = await supabaseAdmin.rpc('execute_sql', { sql_query: sql });
+        
+        if (jobsError) throw jobsError;
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          jobs
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
