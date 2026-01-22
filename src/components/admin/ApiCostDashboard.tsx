@@ -90,6 +90,21 @@ type TimePeriod = 'today' | '7d' | '30d' | '90d' | 'all';
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
+// Legacy/blocked models that are no longer actively used
+const LEGACY_MODELS = [
+  { provider: 'anthropic', model: 'claude-opus-4-20250514' },
+  { provider: 'anthropic', model: 'claude-sonnet' },
+  { provider: 'anthropic', model: 'claude' },
+];
+
+// Helper to check if a model is legacy
+const isLegacyModel = (provider: string, model: string): boolean => {
+  return LEGACY_MODELS.some(
+    legacy => legacy.provider === provider.toLowerCase() || 
+              model.toLowerCase().includes('claude')
+  );
+};
+
 export const ApiCostDashboard: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -267,12 +282,23 @@ export const ApiCostDashboard: React.FC = () => {
     });
 
     return Array.from(modelMap.entries())
-      .map(([name, data]) => ({
-        name,
-        value: data.cost,
-        calls: data.calls,
-      }))
+      .map(([name, data]) => {
+        const [provider, model] = name.split('/');
+        return {
+          name,
+          value: data.cost,
+          calls: data.calls,
+          isLegacy: isLegacyModel(provider || '', model || name),
+        };
+      })
       .sort((a, b) => b.value - a.value);
+  }, [usageLogs]);
+
+  // Calculate legacy costs separately for visibility
+  const legacyCosts = useMemo(() => {
+    return usageLogs
+      .filter(log => isLegacyModel(log.provider, log.model))
+      .reduce((sum, log) => sum + Number(log.estimated_cost_usd || 0), 0);
   }, [usageLogs]);
 
   // Pipeline V2 stats
@@ -581,7 +607,14 @@ export const ApiCostDashboard: React.FC = () => {
             {/* By Model Pie Chart */}
             <Card>
               <CardHeader>
-                <CardTitle>Distribución por Modelo</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Distribución por Modelo</span>
+                  {legacyCosts > 0 && (
+                    <Badge variant="outline" className="text-xs bg-muted">
+                      Legacy: {formatCost(legacyCosts)}
+                    </Badge>
+                  )}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-64">
@@ -594,16 +627,34 @@ export const ApiCostDashboard: React.FC = () => {
                         cx="50%"
                         cy="50%"
                         outerRadius={80}
-                        label={({ name, percent }) => `${name.split('/')[1] || name} (${(percent * 100).toFixed(0)}%)`}
+                        label={({ name, percent, payload }) => {
+                          const modelName = name.split('/')[1] || name;
+                          const suffix = payload?.isLegacy ? ' ⚠️' : '';
+                          return `${modelName}${suffix} (${(percent * 100).toFixed(0)}%)`;
+                        }}
                       >
-                        {modelBreakdown.map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        {modelBreakdown.map((entry, index) => (
+                          <Cell 
+                            key={`cell-${index}`} 
+                            fill={entry.isLegacy ? '#9ca3af' : COLORS[index % COLORS.length]}
+                            opacity={entry.isLegacy ? 0.6 : 1}
+                          />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value: number) => formatCost(value)} />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => [
+                          formatCost(value),
+                          props?.payload?.isLegacy ? `${name} (Legacy)` : name
+                        ]} 
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
+                {modelBreakdown.some(m => m.isLegacy) && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    ⚠️ Modelos marcados como Legacy: coste histórico, ya no activos
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -1182,14 +1233,27 @@ export const ApiCostDashboard: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {costConfig.map((config) => (
-                    <TableRow key={config.id}>
+                  {costConfig.map((config) => {
+                    const isLegacy = isLegacyModel(config.provider, config.model);
+                    return (
+                    <TableRow key={config.id} className={isLegacy ? 'opacity-60 bg-muted/30' : ''}>
                       <TableCell>
-                        <Badge variant={config.provider === 'openai' ? 'default' : 'secondary'}>
-                          {config.provider}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={config.provider === 'openai' ? 'default' : 'secondary'}>
+                            {config.provider}
+                          </Badge>
+                          {isLegacy && (
+                            <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground">
+                              Legacy
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
-                      <TableCell className="font-medium">{config.model}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className={isLegacy ? 'line-through' : ''}>
+                          {config.model}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <Input
                           type="number"
@@ -1228,7 +1292,8 @@ export const ApiCostDashboard: React.FC = () => {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
