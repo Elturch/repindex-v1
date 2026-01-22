@@ -16,6 +16,7 @@ import {
   Building2,
   TrendingUp
 } from "lucide-react";
+import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 
 const metrics = [
   {
@@ -104,6 +105,9 @@ const aiModels = [
 ];
 
 export default function Methodology() {
+  const { data: issuerCount = 160 } = useIssuerCount();
+  const issuerCountFormatted = formatIssuerCount(issuerCount);
+  
   const methodologySchema = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -344,7 +348,7 @@ export default function Methodology() {
                   Cobertura de Empresas
                 </h2>
                 <div className="prose dark:prose-invert">
-                  <p>Actualmente analizamos <strong>más de 166 empresas españolas</strong>:</p>
+                  <p>Actualmente analizamos <strong>más de {issuerCountFormatted} empresas españolas</strong>:</p>
                   <ul>
                     <li>Todas las empresas del <strong>IBEX-35</strong></li>
                     <li>Empresas del <strong>IBEX Medium Cap</strong></li>

@@ -5,8 +5,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 
-const faqs = [
+const getfaqs = (issuerCount: string) => [
   {
     question: "¿Qué es el índice RIX?",
     answer: "El RIX (Reputation Index) es una puntuación de 0 a 100 que mide cómo las principales inteligencias artificiales (ChatGPT, Perplexity, Gemini y DeepSeek) perciben y describen la reputación de una empresa. Se calcula semanalmente analizando las respuestas de estos 4 modelos de IA sobre cada compañía."
@@ -21,7 +22,7 @@ const faqs = [
   },
   {
     question: "¿Qué empresas cubre RepIndex?",
-    answer: "Actualmente analizamos más de 166 empresas españolas, incluyendo todas las del IBEX-35, IBEX Medium Cap, IBEX Small Cap, y las principales empresas no cotizadas de España. Continuamente ampliamos la cobertura según la demanda."
+    answer: `Actualmente analizamos más de ${issuerCount} empresas españolas, incluyendo todas las del IBEX-35, IBEX Medium Cap, IBEX Small Cap, y las principales empresas no cotizadas de España. Continuamente ampliamos la cobertura según la demanda.`
   },
   {
     question: "¿Cuáles son las 8 métricas del RIX?",
@@ -34,7 +35,8 @@ const faqs = [
 ];
 
 // Generate FAQ Schema JSON-LD
-export function getFAQSchema() {
+export function getFAQSchema(issuerCount: string = "160") {
+  const faqs = getfaqs(issuerCount);
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -50,6 +52,9 @@ export function getFAQSchema() {
 }
 
 export function FAQSection() {
+  const { data: issuerCount = 160 } = useIssuerCount();
+  const faqs = getfaqs(formatIssuerCount(issuerCount));
+  
   return (
     <section className="py-16 px-4 bg-accent/5" aria-label="Preguntas frecuentes">
       <div className="container mx-auto max-w-4xl">

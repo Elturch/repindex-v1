@@ -2,9 +2,11 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { FaRobot, FaChartLine } from "react-icons/fa";
+import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 
 export function HeroSection() {
   const navigate = useNavigate();
+  const { data: issuerCount = 160 } = useIssuerCount();
   
   return (
     <section className="relative py-12 px-4 overflow-hidden bg-gradient-to-b from-background to-accent/5" aria-label="Hero principal">
@@ -46,7 +48,7 @@ export function HeroSection() {
             style={{ fontSize: 'clamp(0.75rem, 1.8vw, 0.95rem)' }}
           >
             <strong>RepIndex</strong> es el primer índice mundial que mide la reputación corporativa según la percepción de las principales inteligencias artificiales. 
-            Cada semana, analiza cómo <strong>ChatGPT, Perplexity, Gemini y DeepSeek</strong> evalúan a más de <strong>166 empresas españolas</strong> usando 
+            Cada semana, analiza cómo <strong>ChatGPT, Perplexity, Gemini y DeepSeek</strong> evalúan a más de <strong>{formatIssuerCount(issuerCount)} empresas españolas</strong> usando 
             8 métricas reputacionales, generando una puntuación <strong>RIX de 0 a 100</strong>.
           </motion.p>
 

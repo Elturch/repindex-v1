@@ -1,28 +1,12 @@
 import { motion, useInView } from "framer-motion";
 import { useRef, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useIssuerCount } from "@/hooks/useIssuerCount";
 
 interface Stat {
   value: string;
   label: string;
   suffix?: string;
-}
-
-function useCompanyCount() {
-  return useQuery({
-    queryKey: ['company-count'],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from('repindex_root_issuers')
-        .select('*', { count: 'exact', head: true });
-      
-      if (error) throw error;
-      return count || 166;
-    },
-    staleTime: 1000 * 60 * 60, // 1 hour
-  });
 }
 
 function getStats(companyCount: number): Stat[] {
@@ -68,7 +52,7 @@ function AnimatedCounter({ value, suffix = "" }: { value: string; suffix?: strin
 }
 
 export function StatsSection() {
-  const { data: companyCount = 166 } = useCompanyCount();
+  const { data: companyCount = 160 } = useIssuerCount();
   const stats = getStats(companyCount);
 
   return (
