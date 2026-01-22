@@ -285,11 +285,16 @@ export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
   });
 }
 
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function useRixRunV2(id: string | undefined) {
+  const isValidUUID = id ? UUID_REGEX.test(id) : false;
+  
   return useQuery({
     queryKey: ['rix-run-v2', id],
     queryFn: async (): Promise<RixRunV2 | null> => {
-      if (!id) return null;
+      if (!id || !isValidUUID) return null;
 
       const { data, error } = await supabase
         .from('rix_runs_v2')
@@ -317,6 +322,6 @@ export function useRixRunV2(id: string | undefined) {
 
       return mapRowToRixRunV2({ ...data, repindex_root_issuers: issuer });
     },
-    enabled: !!id,
+    enabled: isValidUUID,
   });
 }
