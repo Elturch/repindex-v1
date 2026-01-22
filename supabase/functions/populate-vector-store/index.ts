@@ -12,8 +12,8 @@ const MAX_RAW_RESPONSE_LENGTH = 8000;
 const BATCH_SIZE = 100; // Documents per execution
 const MAX_EXECUTION_TIME = 45000; // 45 seconds (safe margin before timeout)
 
-// New models added in the 7 IA system (January 2026)
-const NEW_MODELS = ['Claude', 'Grok', 'Qwen'];
+// New models added in the 6 IA system (January 2026)
+const NEW_MODELS = ['Grok', 'Qwen'];
 
 // Background processing function - INCREMENTAL ONLY (never deletes)
 async function processVectorStore(includeRawResponses: boolean) {
@@ -193,9 +193,9 @@ async function processVectorStore(includeRawResponses: boolean) {
         
         // Add system header for V2 records (the "snapshot")
         if (isV2) {
-          content += `[SISTEMA REPINDEX 2.0 - 7 MODELOS DE IA]\n`;
-          content += `Este análisis utiliza el nuevo sistema avanzado RepIndex 2.0 con 7 modelos de IA:\n`;
-          content += `ChatGPT, Perplexity, Gemini, Deepseek, Claude, Grok y Qwen.\n`;
+          content += `[SISTEMA REPINDEX 2.0 - 6 MODELOS DE IA]\n`;
+          content += `Este análisis utiliza el nuevo sistema avanzado RepIndex 2.0 con 6 modelos de IA:\n`;
+          content += `ChatGPT, Perplexity, Gemini, Deepseek, Grok y Qwen.\n`;
           content += `Lanzamiento: Enero 2026\n\n`;
         }
         
@@ -266,10 +266,7 @@ async function processVectorStore(includeRawResponses: boolean) {
             content += `RESPUESTA COMPLETA DEEPSEEK:\n${run["23_res_deepseek_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
           }
           
-          // New 3 models (V2 system - 7 IAs)
-          if (run["respuesta_bruto_claude"]) {
-            content += `RESPUESTA COMPLETA CLAUDE:\n${run["respuesta_bruto_claude"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
-          }
+          // New 2 models (V2 system - 6 IAs)
           if (run["respuesta_bruto_grok"]) {
             content += `RESPUESTA COMPLETA GROK:\n${run["respuesta_bruto_grok"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
           }

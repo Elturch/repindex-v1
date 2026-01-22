@@ -13,13 +13,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useRixRunsV2, RixRunV2 } from "@/hooks/useRixRunsV2";
 import { useCompanies } from "@/hooks/useCompanies";
 
-// Model icons - all 7 search-capable models
+// Model icons - all 6 search-capable models
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
 import { GrokIcon } from "@/components/ui/grok-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
-import { ClaudeIcon } from "@/components/ui/claude-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 
 // 7 Search models with real internet access
@@ -37,7 +36,6 @@ const SEARCH_MODELS: SearchModelInfo[] = [
   { name: 'deepseek-chat', displayName: 'Deepseek', icon: <DeepseekIcon size={20} />, color: 'bg-indigo-500', responseKey: 'res_deepseek_bruto' },
   { name: 'gpt-4.1-mini', displayName: 'ChatGPT', icon: <ChatGPTIcon size={20} />, color: 'bg-green-600', responseKey: 'res_gpt_bruto' },
   { name: 'gemini-2.0-flash', displayName: 'Google Gemini', icon: <GeminiIcon size={20} />, color: 'bg-blue-500', responseKey: 'res_gemini_bruto' },
-  { name: 'claude-sonnet', displayName: 'Claude', icon: <ClaudeIcon size={20} />, color: 'bg-orange-500', responseKey: 'respuesta_bruto_claude' },
   { name: 'qwen-max', displayName: 'Qwen', icon: <QwenIcon size={20} />, color: 'bg-purple-500', responseKey: 'respuesta_bruto_qwen' },
 ];
 

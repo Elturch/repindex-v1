@@ -21,11 +21,10 @@ import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
-import { ClaudeIcon } from "@/components/ui/claude-icon";
 import { GrokIcon } from "@/components/ui/grok-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 
-type AIFilterV2 = "all" | "ChatGPT" | "Gemini" | "Perplexity" | "Deepseek" | "Claude" | "Grok" | "Qwen";
+type AIFilterV2 = "all" | "ChatGPT" | "Gemini" | "Perplexity" | "Deepseek" | "Grok" | "Qwen";
 type PipelineFilter = "all" | "make_original" | "lovable_v2";
 
 export default function DashboardV2() {
@@ -230,8 +229,6 @@ export default function DashboardV2() {
       return { name: 'Perplexity', icon: PerplexityIcon, colorClass: 'text-blue-600 dark:text-blue-400' };
     } else if (normalizedModel.includes('deepseek')) {
       return { name: 'Deepseek', icon: DeepseekIcon, colorClass: 'text-[hsl(var(--deepseek))]' };
-    } else if (normalizedModel.includes('claude')) {
-      return { name: 'Claude', icon: ClaudeIcon, colorClass: 'text-orange-600 dark:text-orange-400' };
     } else if (normalizedModel.includes('grok')) {
       return { name: 'Grok', icon: GrokIcon, colorClass: 'text-gray-600 dark:text-gray-400' };
     } else if (normalizedModel.includes('qwen')) {
@@ -341,14 +338,6 @@ export default function DashboardV2() {
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <DeepseekIcon className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={aiFilter === "Claude" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setAIFilter("Claude")}
-                className="flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <ClaudeIcon className="h-4 w-4" />
               </Button>
               <Button
                 variant={aiFilter === "Grok" ? "default" : "ghost"}

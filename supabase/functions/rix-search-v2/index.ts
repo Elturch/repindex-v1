@@ -230,61 +230,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return text + sources;
     },
   },
-  // 6. Claude Opus 4.1 (Anthropic) - Con web search beta
-  {
-    name: 'claude-opus',
-    displayName: 'Claude',
-    apiKeyEnv: 'ANTHROPIC_API_KEY',
-    endpoint: 'https://api.anthropic.com/v1/messages',
-    dbColumn: 'respuesta_bruto_claude',
-    buildRequest: (prompt: string, apiKey: string) => ({
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'web-search-2025-03-05',
-        'Content-Type': 'application/json',
-      },
-      body: {
-        model: 'claude-opus-4-20250514',
-        max_tokens: 8192,
-        tools: [{
-          type: 'web_search_20250305',
-          name: 'web_search',
-          max_uses: 10,
-        }],
-        messages: [{ role: 'user', content: prompt }],
-      },
-    }),
-    parseResponse: (data: any) => {
-      if (!data.content) return '';
-      
-      let textContent = '';
-      const sources: string[] = [];
-      
-      for (const block of data.content) {
-        if (block.type === 'text') {
-          textContent += block.text + '\n';
-          // Extraer citas inline del bloque de texto
-          if (block.citations && Array.isArray(block.citations)) {
-            for (const citation of block.citations) {
-              if (citation.url) {
-                sources.push(`- ${citation.title || 'Fuente'}: ${citation.url}`);
-              }
-            }
-          }
-        }
-      }
-      
-      // Añadir fuentes únicas al final
-      const uniqueSources = [...new Set(sources)];
-      if (uniqueSources.length > 0) {
-        textContent += '\n\nFuentes encontradas:\n' + uniqueSources.join('\n');
-      }
-      
-      return textContent.trim();
-    },
-  },
-  // 7. Qwen Max (Alibaba DashScope) - Con enable_search
+  // 6. Qwen Max (Alibaba DashScope) - Con enable_search
   {
     name: 'qwen-max',
     displayName: 'Qwen',
@@ -330,7 +276,6 @@ const MODEL_COST_MAP: Record<string, { provider: string; model: string }> = {
   'grok-3': { provider: 'xai', model: 'grok-3' },
   'deepseek-chat': { provider: 'deepseek', model: 'deepseek-chat' },
   'gemini-2.5-pro': { provider: 'gemini', model: 'gemini-2.5-pro-preview-05-06' },
-  'claude-opus-4': { provider: 'anthropic', model: 'claude-opus-4-20250514' },
   'gpt-4.1-mini': { provider: 'openai', model: 'gpt-4.1-mini' },
   'qwen-max': { provider: 'alibaba', model: 'qwen-max' },
 };
