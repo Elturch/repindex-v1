@@ -475,12 +475,12 @@ export default function RixRunV2Detail() {
                     {run.precio_accion && (
                       <span className="flex items-center gap-1">
                         <DollarSign className="h-3 w-3" />
-                        Precio actual: €{Number(run.precio_accion).toFixed(3)}
+                        Precio actual: {Number(run.precio_accion).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 3 })}
                       </span>
                     )}
                     {run.precio_minimo_52_semanas && (
                       <span className="text-muted-foreground">
-                        Mín. 52 sem: €{Number(run.precio_minimo_52_semanas).toFixed(3)}
+                        Mín. 52 sem: {Number(run.precio_minimo_52_semanas).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 3 })}
                       </span>
                     )}
                   </CardDescription>
