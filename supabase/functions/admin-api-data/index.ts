@@ -308,30 +308,50 @@ Deno.serve(async (req) => {
 
       if (configError) throw configError
 
-      // Get token usage per model
+      // Get token usage per model from usage logs
       const { data: usageLogs, error: usageError } = await supabaseAdmin
         .from('api_usage_logs')
-        .select('provider, model, input_tokens, output_tokens')
+        .select('provider, model, input_tokens, output_tokens, estimated_cost_usd')
         .gte('created_at', dateFilter.toISOString())
         .limit(50000)
 
       if (usageError) throw usageError
 
-      // Aggregate tokens by model
-      const tokensByModel = new Map<string, { input_tokens: number; output_tokens: number; calls: number }>()
+      // Aggregate tokens by provider/model combination
+      const tokensByModel = new Map<string, { 
+        provider: string
+        model: string
+        input_tokens: number
+        output_tokens: number
+        calls: number
+        total_cost: number
+      }>()
+      
       usageLogs?.forEach(log => {
         const key = `${log.provider}|${log.model}`
-        const existing = tokensByModel.get(key) || { input_tokens: 0, output_tokens: 0, calls: 0 }
+        const existing = tokensByModel.get(key) || { 
+          provider: log.provider,
+          model: log.model,
+          input_tokens: 0, 
+          output_tokens: 0, 
+          calls: 0,
+          total_cost: 0
+        }
         existing.input_tokens += log.input_tokens || 0
         existing.output_tokens += log.output_tokens || 0
         existing.calls++
+        existing.total_cost += Number(log.estimated_cost_usd || 0)
         tokensByModel.set(key, existing)
       })
 
-      // Enrich config with token usage
+      // Convert to array and sort by total tokens
+      const modelUsage = Array.from(tokensByModel.values())
+        .sort((a, b) => (b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens))
+
+      // Enrich config with token usage for matching models
       const enrichedConfig = (configData || []).map(config => {
         const key = `${config.provider}|${config.model}`
-        const usage = tokensByModel.get(key) || { input_tokens: 0, output_tokens: 0, calls: 0 }
+        const usage = tokensByModel.get(key) || { input_tokens: 0, output_tokens: 0, calls: 0, total_cost: 0 }
         return {
           ...config,
           total_input_tokens: usage.input_tokens,
@@ -341,7 +361,10 @@ Deno.serve(async (req) => {
       })
       
       return new Response(
-        JSON.stringify({ data: enrichedConfig }),
+        JSON.stringify({ 
+          data: enrichedConfig,
+          model_usage: modelUsage
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

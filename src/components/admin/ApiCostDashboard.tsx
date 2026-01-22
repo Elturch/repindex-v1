@@ -89,6 +89,15 @@ interface DailyStats {
   calls: number;
 }
 
+interface ModelUsage {
+  provider: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  calls: number;
+  total_cost: number;
+}
+
 type TimePeriod = 'today' | '7d' | '30d' | '90d' | 'all';
 
 const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
@@ -120,6 +129,7 @@ export const ApiCostDashboard: React.FC = () => {
   const [userSummary, setUserSummary] = useState<UserStatsSummary | null>(null);
   const [actionMetrics, setActionMetrics] = useState<ActionMetric[]>([]);
   const [peakUsage, setPeakUsage] = useState<PeakUsage | null>(null);
+  const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
 
   // Fetch data
@@ -144,7 +154,7 @@ export const ApiCostDashboard: React.FC = () => {
         fetch(`${baseUrl}/usage-logs?period=${periodMap[period]}`, {
           headers: { 'Content-Type': 'application/json' }
         }),
-        fetch(`${baseUrl}/cost-config`, {
+        fetch(`${baseUrl}/cost-config?period=${periodMap[period]}`, {
           headers: { 'Content-Type': 'application/json' }
         }),
         fetch(`${baseUrl}/user-stats?period=${periodMap[period]}`, {
@@ -171,6 +181,7 @@ export const ApiCostDashboard: React.FC = () => {
 
       setUsageLogs(logsData.data || []);
       setCostConfig(configData.data || []);
+      setModelUsage(configData.model_usage || []);
       setUserStats(userStatsData.data?.users || []);
       setUserSummary(userStatsData.data?.summary || null);
       setActionMetrics(actionMetricsData.data?.actions || []);
@@ -1224,6 +1235,88 @@ export const ApiCostDashboard: React.FC = () => {
 
         {/* Config Tab */}
         <TabsContent value="config" className="space-y-6">
+          {/* Model Usage Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5" />
+                Consumo por Modelo de IA
+              </CardTitle>
+              <CardDescription>Tokens consumidos por cada API/modelo en el período seleccionado</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead>Modelo</TableHead>
+                    <TableHead className="text-right">Tokens Input</TableHead>
+                    <TableHead className="text-right">Tokens Output</TableHead>
+                    <TableHead className="text-right">Total Tokens</TableHead>
+                    <TableHead className="text-right">Llamadas</TableHead>
+                    <TableHead className="text-right">Coste</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {modelUsage.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground">
+                        No hay datos de uso en este período
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    modelUsage.map((usage, idx) => (
+                      <TableRow key={`${usage.provider}-${usage.model}-${idx}`}>
+                        <TableCell>
+                          <Badge variant={usage.provider === 'openai' ? 'default' : 'secondary'}>
+                            {usage.provider}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{usage.model}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {formatTokens(usage.input_tokens)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {formatTokens(usage.output_tokens)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm font-medium">
+                          {formatTokens(usage.input_tokens + usage.output_tokens)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                          {usage.calls.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCost(usage.total_cost)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                  {modelUsage.length > 0 && (
+                    <TableRow className="bg-muted/50 font-bold">
+                      <TableCell colSpan={2}>Total</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatTokens(modelUsage.reduce((sum, u) => sum + u.input_tokens, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatTokens(modelUsage.reduce((sum, u) => sum + u.output_tokens, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {formatTokens(modelUsage.reduce((sum, u) => sum + u.input_tokens + u.output_tokens, 0))}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {modelUsage.reduce((sum, u) => sum + u.calls, 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCost(modelUsage.reduce((sum, u) => sum + u.total_cost, 0))}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Pricing Config */}
           <Card>
             <CardHeader>
               <CardTitle>Configuración de Precios</CardTitle>
@@ -1235,9 +1328,6 @@ export const ApiCostDashboard: React.FC = () => {
                   <TableRow>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>Modelo</TableHead>
-                    <TableHead className="text-right">Tokens In</TableHead>
-                    <TableHead className="text-right">Tokens Out</TableHead>
-                    <TableHead className="text-right">Llamadas</TableHead>
                     <TableHead>Input ($/1M)</TableHead>
                     <TableHead>Output ($/1M)</TableHead>
                     <TableHead>Actualización</TableHead>
@@ -1266,15 +1356,6 @@ export const ApiCostDashboard: React.FC = () => {
                           {config.model}
                         </span>
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatTokens(config.total_input_tokens || 0)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatTokens(config.total_output_tokens || 0)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                        {(config.total_calls || 0).toLocaleString()}
-                      </TableCell>
                       <TableCell>
                         <Input
                           type="number"
@@ -1284,7 +1365,7 @@ export const ApiCostDashboard: React.FC = () => {
                             ...prev,
                             [config.id]: { ...prev[config.id], input: e.target.value }
                           }))}
-                          className="w-20"
+                          className="w-24"
                         />
                       </TableCell>
                       <TableCell>
@@ -1296,7 +1377,7 @@ export const ApiCostDashboard: React.FC = () => {
                             ...prev,
                             [config.id]: { ...prev[config.id], output: e.target.value }
                           }))}
-                          className="w-20"
+                          className="w-24"
                         />
                       </TableCell>
                       <TableCell className="text-muted-foreground text-xs">
