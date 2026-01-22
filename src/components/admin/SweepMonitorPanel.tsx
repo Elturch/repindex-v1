@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,8 @@ import {
   Building2,
   Zap,
   RotateCcw,
-  Layers
+  Layers,
+  Square
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -42,6 +43,14 @@ interface PhaseDetail {
   pending: number;
 }
 
+interface CascadeState {
+  isRunning: boolean;
+  currentTicker: string | null;
+  processedCount: number;
+  remaining: number;
+  startTime: number | null;
+}
+
 const TOTAL_PHASES = 34;
 
 export function SweepMonitorPanel() {
@@ -50,9 +59,18 @@ export function SweepMonitorPanel() {
   const [phaseDetails, setPhaseDetails] = useState<PhaseDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
-  const [launchingAll, setLaunchingAll] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  
+  // Estado para cascada 1-empresa-a-la-vez
+  const [cascade, setCascade] = useState<CascadeState>({
+    isRunning: false,
+    currentTicker: null,
+    processedCount: 0,
+    remaining: 0,
+    startTime: null,
+  });
+  const cascadeAbortRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -169,47 +187,129 @@ export function SweepMonitorPanel() {
     }
   };
 
-  // Lanza TODAS las fases de forma escalonada (cada 5 minutos)
-  const handleLaunchAllPhasesStaggered = async () => {
-    setLaunchingAll(true);
-    try {
-      // Primero inicializamos el sweep
-      await supabase.functions.invoke('rix-batch-orchestrator', {
-        body: { init_only: true },
-      });
+  // Procesar UNA empresa via single_company mode
+  const processOneCompany = async (): Promise<{
+    processed: boolean;
+    ticker: string | null;
+    success: boolean;
+    next_pending: boolean;
+    remaining: number;
+    error?: string;
+  }> => {
+    const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      body: { single_company: true },
+    });
+    
+    if (error) throw error;
+    return data;
+  };
 
-      // Obtener fases pendientes
-      const pendingPhases = phaseDetails.filter(p => p.pending > 0 || p.failed > 0).map(p => p.fase);
-      const allPhases = pendingPhases.length > 0 ? pendingPhases : Array.from({ length: TOTAL_PHASES }, (_, i) => i + 1);
-
+  // Lanza TODO el barrido empresa por empresa en cascada (evita timeouts)
+  const handleLaunchCascade = async () => {
+    // Si ya está corriendo, pausar
+    if (cascade.isRunning) {
+      cascadeAbortRef.current = true;
+      setCascade(prev => ({ ...prev, isRunning: false }));
       toast({
-        title: 'Lanzamiento escalonado iniciado',
-        description: `Se procesarán ${allPhases.length} fases de forma independiente. Primera fase lanzándose ahora...`,
+        title: 'Cascada pausada',
+        description: `Procesadas ${cascade.processedCount} empresas. Quedan ${cascade.remaining}.`,
       });
+      return;
+    }
 
-      // Lanzar la primera fase inmediatamente
-      if (allPhases.length > 0) {
-        supabase.functions.invoke('rix-batch-orchestrator', {
-          body: { trigger: 'staggered', fase: allPhases[0] },
-        }).catch(console.error);
+    // Iniciar cascada
+    cascadeAbortRef.current = false;
+    setCascade({
+      isRunning: true,
+      currentTicker: null,
+      processedCount: 0,
+      remaining: status?.byStatus?.pending || 0,
+      startTime: Date.now(),
+    });
+
+    toast({
+      title: 'Cascada iniciada',
+      description: 'Procesando empresas una por una para evitar timeouts...',
+    });
+
+    let processed = 0;
+    let remaining = status?.byStatus?.pending || 0;
+    let consecutiveErrors = 0;
+
+    try {
+      // Bucle de cascada: procesar empresa por empresa
+      while (remaining > 0 && !cascadeAbortRef.current) {
+        try {
+          const result = await processOneCompany();
+          
+          if (!result.processed) {
+            // No hay más empresas pendientes
+            break;
+          }
+
+          processed++;
+          remaining = result.remaining;
+          consecutiveErrors = 0;
+
+          setCascade(prev => ({
+            ...prev,
+            currentTicker: result.ticker,
+            processedCount: processed,
+            remaining: remaining,
+          }));
+
+          // Actualizar status cada 5 empresas
+          if (processed % 5 === 0) {
+            fetchStatus();
+          }
+
+          // Pequeña pausa de 1s entre empresas para no saturar
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+        } catch (err: any) {
+          console.error('Error processing company:', err);
+          consecutiveErrors++;
+          
+          // Si hay 3 errores consecutivos, pausar
+          if (consecutiveErrors >= 3) {
+            toast({
+              title: 'Cascada pausada por errores',
+              description: `${consecutiveErrors} errores consecutivos. Revisa los logs.`,
+              variant: 'destructive',
+            });
+            break;
+          }
+          
+          // Esperar más tiempo después de un error
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
       }
 
-      // Las demás fases se lanzan via CRON cada 5 minutos
-      toast({
-        title: 'Fases programadas',
-        description: `Las ${allPhases.length - 1} fases restantes se ejecutarán automáticamente cada 5 minutos vía CRON.`,
-      });
+      // Finalizar cascada
+      const wasAborted = cascadeAbortRef.current;
+      setCascade(prev => ({ ...prev, isRunning: false, currentTicker: null }));
+      fetchStatus();
 
-      setTimeout(fetchStatus, 3000);
+      if (!wasAborted && remaining === 0) {
+        toast({
+          title: '🎉 Barrido completado',
+          description: `Se procesaron ${processed} empresas exitosamente.`,
+        });
+      } else if (wasAborted) {
+        toast({
+          title: 'Cascada pausada',
+          description: `Procesadas ${processed} empresas. Quedan ${remaining}.`,
+        });
+      }
+
     } catch (error: any) {
-      console.error('Error launching staggered sweep:', error);
+      console.error('Error in cascade:', error);
+      setCascade(prev => ({ ...prev, isRunning: false }));
       toast({
-        title: 'Error',
-        description: error.message || 'No se pudo iniciar el barrido escalonado',
+        title: 'Error en cascada',
+        description: error.message || 'Error inesperado',
         variant: 'destructive',
       });
-    } finally {
-      setLaunchingAll(false);
     }
   };
 
@@ -327,7 +427,7 @@ export function SweepMonitorPanel() {
               )}
               <Button
                 onClick={handleLaunchNextPhase}
-                disabled={launching || launchingAll}
+                disabled={launching || cascade.isRunning}
                 className="gap-2"
               >
                 {launching ? (
@@ -338,17 +438,22 @@ export function SweepMonitorPanel() {
                 Siguiente Fase
               </Button>
               <Button
-                onClick={handleLaunchAllPhasesStaggered}
-                disabled={launching || launchingAll}
-                variant="default"
+                onClick={handleLaunchCascade}
+                disabled={launching}
+                variant={cascade.isRunning ? "destructive" : "default"}
                 className="gap-2"
               >
-                {launchingAll ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {cascade.isRunning ? (
+                  <>
+                    <Square className="h-4 w-4" />
+                    Pausar ({cascade.processedCount} / {cascade.processedCount + cascade.remaining})
+                  </>
                 ) : (
-                  <Layers className="h-4 w-4" />
+                  <>
+                    <Layers className="h-4 w-4" />
+                    Lanzar Todo (1x1)
+                  </>
                 )}
-                {launchingAll ? 'Iniciando...' : 'Lanzar Todo (Escalonado)'}
               </Button>
             </div>
           </div>
@@ -505,13 +610,22 @@ export function SweepMonitorPanel() {
               Siguiente fase pendiente
             </Button>
             <Button
-              variant="outline"
+              variant={cascade.isRunning ? "destructive" : "outline"}
               size="sm"
-              onClick={handleLaunchAllPhasesStaggered}
-              disabled={launchingAll}
+              onClick={handleLaunchCascade}
+              disabled={launching}
             >
-              <Layers className="h-4 w-4 mr-2" />
-              Barrido completo escalonado
+              {cascade.isRunning ? (
+                <>
+                  <Square className="h-4 w-4 mr-2" />
+                  Pausar cascada
+                </>
+              ) : (
+                <>
+                  <Layers className="h-4 w-4 mr-2" />
+                  Barrido completo (1x1)
+                </>
+              )}
             </Button>
             <Button
               variant="outline"

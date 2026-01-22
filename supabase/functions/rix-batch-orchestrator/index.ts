@@ -303,6 +303,97 @@ async function runSinglePhase(
 }
 
 // ============================================================================
+// NUEVA FUNCIÓN: Procesa UNA SOLA empresa (modo single_company)
+// ============================================================================
+async function runSingleCompany(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<{
+  sweepId: string;
+  processed: boolean;
+  ticker: string | null;
+  success: boolean;
+  error?: string;
+  next_pending: boolean;
+  remaining: number;
+  durationMs: number;
+}> {
+  const startTime = Date.now();
+  const sweepId = getCurrentSweepId();
+
+  console.log(`[single] Starting single company processing for ${sweepId}`);
+
+  // 1. Asegurar que el sweep está inicializado
+  await initializeSweepIfNeeded(supabase, sweepId);
+
+  // 2. Obtener UNA empresa pendiente (cualquier fase)
+  const { data: companies, error: fetchError } = await supabase
+    .from('sweep_progress')
+    .select('id, ticker, issuer_name, fase, retry_count')
+    .eq('sweep_id', sweepId)
+    .in('status', ['pending', 'failed'])
+    .lt('retry_count', 3)
+    .order('fase', { ascending: true })
+    .order('ticker', { ascending: true })
+    .limit(1);
+
+  if (fetchError || !companies || companies.length === 0) {
+    // Contar cuántas quedan pendientes
+    const { count: remaining } = await supabase
+      .from('sweep_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('sweep_id', sweepId)
+      .in('status', ['pending', 'failed']);
+
+    console.log(`[single] No pending companies found. Remaining: ${remaining || 0}`);
+    return {
+      sweepId,
+      processed: false,
+      ticker: null,
+      success: true,
+      next_pending: false,
+      remaining: remaining || 0,
+      durationMs: Date.now() - startTime,
+    };
+  }
+
+  const company = companies[0];
+  console.log(`[single] Processing ${company.ticker} (fase ${company.fase})`);
+
+  // 3. Procesar la empresa
+  const result = await processCompany(
+    supabase,
+    company.id,
+    company.ticker,
+    company.issuer_name || company.ticker,
+    supabaseUrl,
+    serviceKey
+  );
+
+  // 4. Contar cuántas quedan pendientes
+  const { count: remainingCount } = await supabase
+    .from('sweep_progress')
+    .select('*', { count: 'exact', head: true })
+    .eq('sweep_id', sweepId)
+    .in('status', ['pending', 'failed']);
+
+  const remaining = remainingCount || 0;
+  console.log(`[single] ${company.ticker} ${result.success ? 'completed' : 'failed'}. Remaining: ${remaining}`);
+
+  return {
+    sweepId,
+    processed: true,
+    ticker: company.ticker,
+    success: result.success,
+    error: result.error,
+    next_pending: remaining > 0,
+    remaining,
+    durationMs: Date.now() - startTime,
+  };
+}
+
+// ============================================================================
 // Obtener la SIGUIENTE fase pendiente (para modo automático sin especificar fase)
 // ============================================================================
 async function getNextPendingPhase(
@@ -415,6 +506,7 @@ Deno.serve(async (req) => {
       reset_failed?: boolean;
       get_status?: boolean;
       init_only?: boolean;     // Nueva: solo inicializar, no procesar
+      single_company?: boolean; // NUEVO: procesar solo 1 empresa
     } = {};
     
     try {
@@ -430,6 +522,7 @@ Deno.serve(async (req) => {
       reset_failed = false,
       get_status = false,
       init_only = false,
+      single_company = false,
     } = requestBody;
 
     const sweepId = getCurrentSweepId();
@@ -530,6 +623,20 @@ Deno.serve(async (req) => {
     const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 30);
     if (stuckReset.count > 0) {
       console.log(`[orchestrator] Auto-reset ${stuckReset.count} stuck companies: ${stuckReset.tickers.join(', ')}`);
+    }
+
+    // ========== NUEVO: Modo single_company ==========
+    // Procesa exactamente 1 empresa (evita timeouts)
+    if (single_company) {
+      const result = await runSingleCompany(supabase, supabaseUrl, supabaseServiceKey);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          ...result,
+          stuckReset: stuckReset.count > 0 ? stuckReset : undefined,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // ========== Modo: Ejecutar fase específica o siguiente pendiente ==========
