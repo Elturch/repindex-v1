@@ -380,15 +380,15 @@ async function insertIssuer(
       exclude_terms: issuer.exclude_terms,
       sample_query: issuer.sample_query,
       status: 'active',
+      ibex_status: issuer.ticker === 'NO-COTIZA' ? 'no_cotiza' : 'active_now',
       languages: issuer.languages,
       geography: issuer.geography,
       cotiza_en_bolsa: issuer.ticker !== 'NO-COTIZA',
       ibex_family_category: issuer.ibex_family_category,
       ibex_family_code: issuer.ibex_family_code,
       sector_category: issuer.sector_category,
-      verification_status: 'active',
       fase: issuer.fase,
-      created_at: new Date().toISOString()
+      notes: issuer.verification_notes || null
     });
 
   if (error) {
