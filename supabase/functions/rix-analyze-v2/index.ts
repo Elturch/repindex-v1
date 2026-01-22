@@ -403,12 +403,10 @@ function calculateFinalRixScore(analysis: any, weights: Record<string, number>):
     }
   });
   
-  let rixScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
+  const rixScore = totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0;
   
-  // Apply business rule: cap at 64 if DRM < 40 or SIM < 40
-  if (analysis.drm_score < 40 || analysis.sim_score < 40) {
-    rixScore = Math.min(rixScore, 64);
-  }
+  // Cap removed: GPT-5 applies its own judgment based on prompt instructions
+  // (historically in Make.com, only ~2.5% of runs were capped at 64 despite 92.6% having SIM<40)
   
   return rixScore;
 }
