@@ -305,36 +305,36 @@ Los titulares deben ser:
 
 [Entradilla explicando que el RIX no es un número arbitrario sino la suma de 8 dimensiones críticas]
 
-#### NVM (Visibilidad Narrativa): [Score]/100 — [Categoría]
-**Titular de métrica**: "[Empresa] [destaca/flaquea] en visibilidad: [dato clave]"
+#### Calidad de la Narrativa (NVM): [Score]/100 — [Categoría]
+**Titular de métrica**: "[Empresa] [destaca/flaquea] en narrativa: [dato clave]"
 [2-3 párrafos periodísticos sobre esta métrica: qué significa, por qué tiene este score, comparación con competidores, qué debería hacer]
 
-#### DRM (Resonancia Digital): [Score]/100 — [Categoría]
-**Titular de métrica**: "La huella digital de [Empresa]: [hallazgo principal]"
+#### Fortaleza de Evidencia (DRM): [Score]/100 — [Categoría]
+**Titular de métrica**: "La solidez documental de [Empresa]: [hallazgo principal]"
 [2-3 párrafos]
 
-#### SIM (Integridad del Sentimiento): [Score]/100 — [Categoría]
-**Titular de métrica**: "¿Cómo se sienten sobre [Empresa]? El veredicto de las IAs"
+#### Autoridad de Fuentes (SIM): [Score]/100 — [Categoría]
+**Titular de métrica**: "¿De dónde viene la información sobre [Empresa]? El análisis de fuentes"
 [2-3 párrafos]
 
-#### RMM (Momentum Reputacional): [Score]/100 — [Categoría]
+#### Actualidad y Empuje (RMM): [Score]/100 — [Categoría]
 **Titular de métrica**: "[Empresa] [gana/pierde] impulso: análisis del momentum"
 [2-3 párrafos]
 
-#### CEM (Exposición a Crisis): [Score]/100 — [Categoría]
+#### Controversia y Riesgo (CEM): [Score]/100 — [Categoría]
 **Titular de métrica**: "Nivel de alerta: ¿Está [Empresa] en zona de riesgo?"
 [2-3 párrafos]
 
-#### GAM (Asociación con Crecimiento): [Score]/100 — [Categoría]
-**Titular de métrica**: "Percepción de crecimiento: [lo que dicen los datos]"
+#### Independencia de Gobierno (GAM): [Score]/100 — [Categoría]
+**Titular de métrica**: "Percepción de gobernanza: [lo que dicen los datos]"
 [2-3 párrafos]
 
-#### DCM (Consistencia de Datos): [Score]/100 — [Categoría]
+#### Integridad del Grafo (DCM): [Score]/100 — [Categoría]
 **Titular de métrica**: "Coherencia informativa: el reto de [Empresa]"
 [2-3 párrafos]
 
-#### CXM (Experiencia de Cliente): [Score]/100 — [Categoría]
-**Titular de métrica**: "El cliente opina: percepción de experiencia en [Empresa]"
+#### Ejecución Corporativa (CXM): [Score]/100 — [Categoría]
+**Titular de métrica**: "El mercado opina: percepción de ejecución en [Empresa]"
 [2-3 párrafos]
 
 ---
@@ -470,15 +470,15 @@ Los titulares deben ser:
 ### Metodología RepIndex
 [Explicación breve del sistema de scoring]
 
-### Glosario
-- **NVM**: Narrative Visibility Metric - Mide cuánto y cómo aparece la empresa en las respuestas de las IAs
-- **DRM**: Digital Resonance Metric - Mide la amplificación digital de la marca
-- **SIM**: Sentiment Integrity Metric - Mide la coherencia y positividad del sentimiento
-- **RMM**: Reputation Momentum Metric - Mide la tendencia de la reputación
-- **CEM**: Crisis Exposure Metric - Mide vulnerabilidad a crisis
-- **GAM**: Growth Association Metric - Mide asociación con crecimiento
-- **DCM**: Data Consistency Metric - Mide consistencia de la información
-- **CXM**: Customer Experience Metric - Mide percepción de experiencia cliente
+### Glosario de Métricas
+- **Calidad de la Narrativa (NVM)**: Mide cuánto y cómo aparece la empresa en las respuestas de las IAs, evaluando tono y sentimiento
+- **Fortaleza de Evidencia (DRM)**: Mide la solidez documental y la calidad de las fuentes primarias citadas
+- **Autoridad de Fuentes (SIM)**: Mide la mezcla de fuentes por tiers (reguladores, prensa financiera, generalistas, redes)
+- **Actualidad y Empuje (RMM)**: Mide qué tan recientes son los datos y el momentum de la reputación
+- **Controversia y Riesgo (CEM)**: Mide exposición a riesgos judiciales, políticos y laborales (100 = sin riesgo)
+- **Independencia de Gobierno (GAM)**: Mide percepción de buenas prácticas de gobierno corporativo
+- **Integridad del Grafo (DCM)**: Mide la consistencia y coherencia de la información sobre la empresa
+- **Ejecución Corporativa (CXM)**: Mide percepción de la ejecución en mercado y resultados (solo cotizadas)
 
 ---
 

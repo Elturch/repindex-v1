@@ -27,16 +27,30 @@ interface RadarChartComparisonProps {
   modelName: string;
 }
 
-const kpiLabels = {
+// KPI labels with full descriptive names for radar chart (shortened for visual fit)
+const kpiLabels: Record<string, string> = {
   rix: "RIX",
-  nvm: "NVM",
-  drm: "DRM", 
-  sim: "SIM",
-  rmm: "RMM",
-  cem: "CEM",
-  gam: "GAM",
-  dcm: "DCM",
-  cxm: "CXM"
+  nvm: "Narrativa",
+  drm: "Evidencia", 
+  sim: "Fuentes",
+  rmm: "Actualidad",
+  cem: "Riesgo",
+  gam: "Gobierno",
+  dcm: "Consistencia",
+  cxm: "Mercado"
+};
+
+// Full descriptive names for tooltips and accessibility
+const kpiFullNames: Record<string, string> = {
+  rix: "Índice de Reputación (RIX)",
+  nvm: "Calidad de la Narrativa (NVM)",
+  drm: "Fortaleza de Evidencia (DRM)", 
+  sim: "Autoridad de Fuentes (SIM)",
+  rmm: "Actualidad y Empuje (RMM)",
+  cem: "Controversia y Riesgo (CEM)",
+  gam: "Independencia de Gobierno (GAM)",
+  dcm: "Integridad del Grafo (DCM)",
+  cxm: "Ejecución Corporativa (CXM)"
 };
 
 // Function to determine score category and color

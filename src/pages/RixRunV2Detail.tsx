@@ -118,17 +118,17 @@ export default function RixRunV2Detail() {
     }
   };
 
-  // Metrics configuration - matching RixRunDetail.tsx exactly
+  // Metrics configuration - descriptive names followed by acronyms for clarity
   const metrics = [
-    { key: 'rix', label: 'Índice RIX', fullName: 'Reputation Index', score: run.displayRixScore ?? run.rix_score, peso: 100, categoria: (run.displayRixScore ?? run.rix_score) ? ((run.displayRixScore ?? run.rix_score)! >= 70 ? 'Bueno' : (run.displayRixScore ?? run.rix_score)! >= 40 ? 'Mejorable' : 'Insuficiente') : null },
-    { key: 'nvm', label: 'Calidad de la Narrativa', fullName: 'Narrative Value Metric', score: run.nvm_score, peso: run.nvm_peso, categoria: run.nvm_categoria },
-    { key: 'drm', label: 'Fortaleza de Evidencia', fullName: 'Data Reliability Metric', score: run.drm_score, peso: run.drm_peso, categoria: run.drm_categoria },
-    { key: 'sim', label: 'Autoridad de Fuentes', fullName: 'Source Integrity Metric', score: run.sim_score, peso: run.sim_peso, categoria: run.sim_categoria },
-    { key: 'rmm', label: 'Actualidad y Empuje', fullName: 'Reputational Momentum Metric', score: run.rmm_score, peso: run.rmm_peso, categoria: run.rmm_categoria },
-    { key: 'cem', label: 'Controversia y Riesgo', fullName: 'Controversy Exposure Metric', score: run.cem_score, peso: run.cem_peso, categoria: run.cem_categoria },
-    { key: 'gam', label: 'Independencia de Gobierno', fullName: 'Governance Autonomy Metric', score: run.gam_score, peso: run.gam_peso, categoria: run.gam_categoria },
-    { key: 'dcm', label: 'Integridad del Grafo', fullName: 'Data Consistency Metric', score: run.dcm_score, peso: run.dcm_peso, categoria: run.dcm_categoria },
-    { key: 'cxm', label: 'Ejecución Corporativa', fullName: 'Corporate Execution Metric', score: run.cxm_score, peso: run.cxm_peso, categoria: run.cxm_categoria, excluded: run.cxm_excluded },
+    { key: 'rix', label: 'Índice de Reputación (RIX)', fullName: 'Reputation Index', score: run.displayRixScore ?? run.rix_score, peso: 100, categoria: (run.displayRixScore ?? run.rix_score) ? ((run.displayRixScore ?? run.rix_score)! >= 70 ? 'Bueno' : (run.displayRixScore ?? run.rix_score)! >= 40 ? 'Mejorable' : 'Insuficiente') : null },
+    { key: 'nvm', label: 'Calidad de la Narrativa (NVM)', fullName: 'Narrative Value Metric', score: run.nvm_score, peso: run.nvm_peso, categoria: run.nvm_categoria },
+    { key: 'drm', label: 'Fortaleza de Evidencia (DRM)', fullName: 'Data Reliability Metric', score: run.drm_score, peso: run.drm_peso, categoria: run.drm_categoria },
+    { key: 'sim', label: 'Autoridad de Fuentes (SIM)', fullName: 'Source Integrity Metric', score: run.sim_score, peso: run.sim_peso, categoria: run.sim_categoria },
+    { key: 'rmm', label: 'Actualidad y Empuje (RMM)', fullName: 'Reputational Momentum Metric', score: run.rmm_score, peso: run.rmm_peso, categoria: run.rmm_categoria },
+    { key: 'cem', label: 'Controversia y Riesgo (CEM)', fullName: 'Controversy Exposure Metric', score: run.cem_score, peso: run.cem_peso, categoria: run.cem_categoria },
+    { key: 'gam', label: 'Independencia de Gobierno (GAM)', fullName: 'Governance Autonomy Metric', score: run.gam_score, peso: run.gam_peso, categoria: run.gam_categoria },
+    { key: 'dcm', label: 'Integridad del Grafo (DCM)', fullName: 'Data Consistency Metric', score: run.dcm_score, peso: run.dcm_peso, categoria: run.dcm_categoria },
+    { key: 'cxm', label: 'Ejecución Corporativa (CXM)', fullName: 'Corporate Execution Metric', score: run.cxm_score, peso: run.cxm_peso, categoria: run.cxm_categoria, excluded: run.cxm_excluded },
   ];
 
   // AI Responses configuration - 7 models
