@@ -159,14 +159,32 @@ async function processVectorStore(includeRawResponses: boolean) {
       };
     }
 
-    // Get issuers data
+    // Get issuers data with websites
     const { data: issuers } = await supabaseClient
       .from('repindex_root_issuers')
-      .select('ticker, issuer_name, sector_category, ibex_family_code');
+      .select('ticker, issuer_name, sector_category, ibex_family_code, website');
 
     const issuersMap = new Map(
       issuers?.map(issuer => [issuer.ticker, issuer]) || []
     );
+
+    // Get latest corporate snapshots for each ticker
+    const { data: corporateSnapshots } = await supabaseClient
+      .from('corporate_snapshots')
+      .select('*')
+      .eq('scrape_status', 'success')
+      .order('snapshot_date', { ascending: false });
+
+    // Create map of latest snapshot per ticker
+    const snapshotsMap = new Map<string, any>();
+    if (corporateSnapshots) {
+      for (const snapshot of corporateSnapshots) {
+        if (!snapshotsMap.has(snapshot.ticker)) {
+          snapshotsMap.set(snapshot.ticker, snapshot);
+        }
+      }
+    }
+    console.log(`Loaded ${snapshotsMap.size} corporate snapshots for context enrichment`);
 
     let documentsCreated = 0;
     let documentsErrored = 0;
@@ -208,6 +226,41 @@ async function processVectorStore(includeRawResponses: boolean) {
         if (issuerData) {
           content += `Sector: ${issuerData.sector_category || "N/A"}\n`;
           content += `Familia IBEX: ${issuerData.ibex_family_code || "N/A"}\n`;
+          if (issuerData.website) {
+            content += `Web corporativa: ${issuerData.website}\n`;
+          }
+        }
+
+        // Add corporate snapshot data if available
+        const ticker = run["05_ticker"];
+        const corpSnapshot = ticker ? snapshotsMap.get(ticker) : null;
+        if (corpSnapshot) {
+          content += `\n[DATOS CORPORATIVOS VERIFICADOS - Actualizado: ${corpSnapshot.snapshot_date_only}]\n`;
+          if (corpSnapshot.president_name) {
+            content += `Presidente: ${corpSnapshot.president_name}\n`;
+          }
+          if (corpSnapshot.ceo_name) {
+            content += `CEO: ${corpSnapshot.ceo_name}\n`;
+          }
+          if (corpSnapshot.chairman_name) {
+            content += `Presidente del Consejo: ${corpSnapshot.chairman_name}\n`;
+          }
+          if (corpSnapshot.headquarters_city || corpSnapshot.headquarters_country) {
+            content += `Sede: ${corpSnapshot.headquarters_city || ''}, ${corpSnapshot.headquarters_country || ''}\n`;
+          }
+          if (corpSnapshot.employees_approx) {
+            content += `Empleados (aprox.): ${corpSnapshot.employees_approx.toLocaleString()}\n`;
+          }
+          if (corpSnapshot.founded_year) {
+            content += `Fundación: ${corpSnapshot.founded_year}\n`;
+          }
+          if (corpSnapshot.mission_statement) {
+            content += `Misión: ${corpSnapshot.mission_statement}\n`;
+          }
+          if (corpSnapshot.company_description) {
+            content += `Descripción: ${corpSnapshot.company_description}\n`;
+          }
+          content += `\n`;
         }
         content += `\n`;
         
