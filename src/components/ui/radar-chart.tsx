@@ -56,6 +56,11 @@ export function RadarChartComparison({
   companyName, 
   modelName 
 }: RadarChartComparisonProps) {
+  // Check if we have market data
+  const hasMarketData = marketAverages && Object.values(marketAverages).some(modelData => 
+    modelData && Object.values(modelData).some(value => value > 0)
+  );
+
   // Prepare data for radar chart
   const radarData = Object.keys(kpiLabels).map((key) => {
     const kpi = key as keyof typeof kpiLabels;
@@ -63,43 +68,15 @@ export function RadarChartComparison({
     return {
       kpi: kpiLabels[kpi],
       empresa: empresaScore,
-      mercado: Math.round(marketAverages[key]?.[modelName] || 0),
+      mercado: hasMarketData ? Math.round(marketAverages[key]?.[modelName] || 0) : 0,
     };
   });
-
-  // Check if we have market data
-  const hasMarketData = Object.values(marketAverages).some(modelData => 
-    Object.values(modelData).some(value => value > 0)
-  );
-
-  if (!hasMarketData) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            📊 Comparativa vs Mercado
-            <Badge variant="outline" className="text-xs">
-              {modelName}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            <div className="text-center">
-              <p className="text-sm">No hay datos suficientes del mercado para esta comparativa</p>
-              <p className="text-xs mt-2">Se necesitan más análisis del mismo periodo</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
-          📊 Comparativa vs Mercado
+          📊 {hasMarketData ? "Comparativa vs Mercado" : "Perfil de Métricas"}
           <Badge variant="outline" className="text-xs">
             {modelName}
           </Badge>
@@ -109,10 +86,12 @@ export function RadarChartComparison({
             <div className="w-3 h-3 rounded-full bg-gradient-to-r from-primary to-primary/80 shadow-sm"></div>
             <span className="font-medium text-foreground">{companyName}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-muted-foreground to-muted-foreground/60"></div>
-            <span className="text-muted-foreground">Promedio Mercado</span>
-          </div>
+          {hasMarketData && (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-gradient-to-r from-muted-foreground to-muted-foreground/60"></div>
+              <span className="text-muted-foreground">Promedio Mercado</span>
+            </div>
+          )}
         </div>
         
         {/* Color legend for KPI categories */}
@@ -130,6 +109,12 @@ export function RadarChartComparison({
             <span className="text-muted-foreground">&lt;40 pts</span>
           </div>
         </div>
+        
+        {!hasMarketData && (
+          <div className="text-xs text-muted-foreground mt-2 italic">
+            La comparativa con el mercado se mostrará cuando haya más datos del periodo
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <div className="h-[450px] sm:h-[500px] w-full">
@@ -190,51 +175,78 @@ export function RadarChartComparison({
                   );
                 }}
               />
-              <Radar
-                name="Promedio Mercado"
-                dataKey="mercado"
-                stroke="hsl(var(--muted-foreground))"
-                fill="hsl(var(--muted-foreground))"
-                fillOpacity={0.08}
-                strokeWidth={2}
-                strokeDasharray="8 4"
-                dot={{ 
-                  r: 4, 
-                  fill: "hsl(var(--muted-foreground))",
-                  stroke: "hsl(var(--background))",
-                  strokeWidth: 1
-                }}
-              />
+              {hasMarketData && (
+                <Radar
+                  name="Promedio Mercado"
+                  dataKey="mercado"
+                  stroke="hsl(var(--muted-foreground))"
+                  fill="hsl(var(--muted-foreground))"
+                  fillOpacity={0.08}
+                  strokeWidth={2}
+                  strokeDasharray="8 4"
+                  dot={{ 
+                    r: 4, 
+                    fill: "hsl(var(--muted-foreground))",
+                    stroke: "hsl(var(--background))",
+                    strokeWidth: 1
+                  }}
+                />
+              )}
             </RadarChart>
           </ResponsiveContainer>
         </div>
         
-        {/* Summary */}
-        <div className="mt-6 pt-4 border-t border-border/50">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-            <div className="text-center p-3 rounded-lg bg-good/5 border border-good/20">
-              <div className="text-muted-foreground text-xs">KPIs por encima</div>
-              <div className="font-bold text-lg text-good mt-1">
-                {radarData.filter(d => d.empresa > d.mercado).length}/9
+        {/* Summary - only show market comparison if we have market data */}
+        {hasMarketData ? (
+          <div className="mt-6 pt-4 border-t border-border/50">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              <div className="text-center p-3 rounded-lg bg-good/5 border border-good/20">
+                <div className="text-muted-foreground text-xs">KPIs por encima</div>
+                <div className="font-bold text-lg text-good mt-1">
+                  {radarData.filter(d => d.empresa > d.mercado).length}/9
+                </div>
               </div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-muted/30">
-              <div className="text-muted-foreground text-xs">Diferencia media</div>
-              <div className="font-bold text-lg text-foreground mt-1">
-                {Math.round(
-                  radarData.reduce((sum, d) => sum + (d.empresa - d.mercado), 0) / radarData.length
-                )}pts
+              <div className="text-center p-3 rounded-lg bg-muted/30">
+                <div className="text-muted-foreground text-xs">Diferencia media</div>
+                <div className="font-bold text-lg text-foreground mt-1">
+                  {Math.round(
+                    radarData.reduce((sum, d) => sum + (d.empresa - d.mercado), 0) / radarData.length
+                  )}pts
+                </div>
               </div>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-primary/5 border border-primary/20">
-              <div className="text-muted-foreground text-xs">RIX vs Mercado</div>
-              <div className={`font-bold text-lg mt-1 ${radarData[0]?.empresa > radarData[0]?.mercado ? 'text-good' : 'text-needs-improvement'}`}>
-                {radarData[0]?.empresa > radarData[0]?.mercado ? '+' : ''}
-                {Math.round((radarData[0]?.empresa || 0) - (radarData[0]?.mercado || 0))}pts
+              <div className="text-center p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="text-muted-foreground text-xs">RIX vs Mercado</div>
+                <div className={`font-bold text-lg mt-1 ${radarData[0]?.empresa > radarData[0]?.mercado ? 'text-good' : 'text-needs-improvement'}`}>
+                  {radarData[0]?.empresa > radarData[0]?.mercado ? '+' : ''}
+                  {Math.round((radarData[0]?.empresa || 0) - (radarData[0]?.mercado || 0))}pts
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-6 pt-4 border-t border-border/50">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+              <div className="text-center p-3 rounded-lg bg-good/5 border border-good/20">
+                <div className="text-muted-foreground text-xs">KPIs ≥70</div>
+                <div className="font-bold text-lg text-good mt-1">
+                  {radarData.filter(d => d.empresa >= 70).length}/9
+                </div>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-needs-improvement/5 border border-needs-improvement/20">
+                <div className="text-muted-foreground text-xs">KPIs 40-69</div>
+                <div className="font-bold text-lg text-needs-improvement mt-1">
+                  {radarData.filter(d => d.empresa >= 40 && d.empresa < 70).length}/9
+                </div>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-insufficient/5 border border-insufficient/20">
+                <div className="text-muted-foreground text-xs">KPIs &lt;40</div>
+                <div className="font-bold text-lg text-insufficient mt-1">
+                  {radarData.filter(d => d.empresa < 40).length}/9
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
