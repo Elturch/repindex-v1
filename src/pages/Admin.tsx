@@ -49,7 +49,8 @@ import { FeedbackPanel } from '@/components/admin/FeedbackPanel';
 import { ApiCostDashboard } from '@/components/admin/ApiCostDashboard';
 import { SweepMonitorPanel } from '@/components/admin/SweepMonitorPanel';
 import { IssuerIngestPanel } from '@/components/admin/IssuerIngestPanel';
-import { DollarSign, Radar, DatabaseBackup } from 'lucide-react';
+import { CronMonitorPanel } from '@/components/admin/CronMonitorPanel';
+import { DollarSign, Radar, DatabaseBackup, Timer } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -943,6 +944,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="issuer-ingest" className="flex items-center gap-1.5 px-3 text-xs">
               <DatabaseBackup className="h-3.5 w-3.5" />
               Ingesta
+            </TabsTrigger>
+            <TabsTrigger value="cron-monitor" className="flex items-center gap-1.5 px-3 text-xs">
+              <Timer className="h-3.5 w-3.5" />
+              CRONs
             </TabsTrigger>
           </TabsList>
 
@@ -2948,6 +2953,11 @@ const Admin: React.FC = () => {
           {/* ==================== ISSUER INGEST ==================== */}
           <TabsContent value="issuer-ingest">
             <IssuerIngestPanel />
+          </TabsContent>
+
+          {/* ==================== CRON MONITOR ==================== */}
+          <TabsContent value="cron-monitor">
+            <CronMonitorPanel />
           </TabsContent>
         </Tabs>
       </div>
