@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
           const profile = log.user_id ? userProfiles[log.user_id] : null
           userMap.set(key, {
             user_id: log.user_id,
-            email: profile?.email || (isAnonymous ? 'Anónimo' : 'Usuario no encontrado'),
+            email: profile?.email || (isAnonymous ? 'Infraestructura' : 'Usuario no encontrado'),
             full_name: profile?.full_name || null,
             total_cost: 0,
             total_calls: 0,
