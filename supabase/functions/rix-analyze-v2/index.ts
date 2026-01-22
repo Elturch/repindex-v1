@@ -216,7 +216,6 @@ const MODEL_RESPONSE_MAP: Record<string, string> = {
   'Perplexity': '21_res_perplex_bruto',
   'Google Gemini': '22_res_gemini_bruto',
   'Deepseek': '23_res_deepseek_bruto',
-  'Claude': 'respuesta_bruto_claude',
   'Grok': 'respuesta_bruto_grok',
   'Qwen': 'respuesta_bruto_qwen',
 };

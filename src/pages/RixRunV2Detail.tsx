@@ -29,7 +29,6 @@ import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
-import { ClaudeIcon } from "@/components/ui/claude-icon";
 import { GrokIcon } from "@/components/ui/grok-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 import { RadarChartComparison } from "@/components/ui/radar-chart";
@@ -131,7 +130,7 @@ export default function RixRunV2Detail() {
     { key: 'cxm', label: 'Ejecución Corporativa (CXM)', fullName: 'Corporate Execution Metric', score: run.cxm_score, peso: run.cxm_peso, categoria: run.cxm_categoria, excluded: run.cxm_excluded },
   ];
 
-  // AI Responses configuration - 7 models
+  // AI Responses configuration - 6 models
   const getAIResponses = () => {
     const responses: { model: string; content: string | null; icon: React.ComponentType<{ className?: string }> }[] = [
       { model: "Perplexity", content: run.res_perplex_bruto, icon: PerplexityIcon },
@@ -139,7 +138,6 @@ export default function RixRunV2Detail() {
       { model: "Deepseek", content: run.res_deepseek_bruto, icon: DeepseekIcon },
       { model: "ChatGPT", content: run.res_gpt_bruto, icon: ChatGPTIcon },
       { model: "Gemini", content: run.res_gemini_bruto, icon: GeminiIcon },
-      { model: "Claude", content: run.respuesta_bruto_claude, icon: ClaudeIcon },
       { model: "Qwen", content: run.respuesta_bruto_qwen, icon: QwenIcon },
     ];
     return responses.filter(r => r.content);

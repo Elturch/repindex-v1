@@ -47,7 +47,6 @@ export interface RixRunV2 {
   res_perplex_bruto: string | null;
   res_gemini_bruto: string | null;
   res_deepseek_bruto: string | null;
-  respuesta_bruto_claude: string | null;
   respuesta_bruto_grok: string | null;
   respuesta_bruto_qwen: string | null;
   
@@ -169,7 +168,6 @@ function mapRowToRixRunV2(row: any): RixRunV2 {
     res_perplex_bruto: row['21_res_perplex_bruto'],
     res_gemini_bruto: row['22_res_gemini_bruto'],
     res_deepseek_bruto: row['23_res_deepseek_bruto'],
-    respuesta_bruto_claude: row.respuesta_bruto_claude,
     respuesta_bruto_grok: row.respuesta_bruto_grok,
     respuesta_bruto_qwen: row.respuesta_bruto_qwen,
     explicacion: (row['22_explicacion'] as string[] | null),

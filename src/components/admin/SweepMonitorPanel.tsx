@@ -36,7 +36,7 @@ interface SweepStatus {
   estimatedCompletion: string | null;
 }
 
-const AI_MODELS = ['ChatGPT', 'Google Gemini', 'Perplexity', 'Deepseek', 'Claude', 'Grok', 'Qwen'];
+const AI_MODELS = ['ChatGPT', 'Google Gemini', 'Perplexity', 'Deepseek', 'Grok', 'Qwen'];
 
 export function SweepMonitorPanel() {
   const { toast } = useToast();

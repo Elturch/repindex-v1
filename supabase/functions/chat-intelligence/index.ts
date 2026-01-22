@@ -1662,7 +1662,6 @@ async function handleStandardChat(
           'Gemini': '22_res_gemini_bruto',
           'Deepseek': '23_res_deepseek_bruto',
           'DeepSeek': '23_res_deepseek_bruto',
-          'Claude': 'respuesta_bruto_claude',
           'Grok': 'respuesta_bruto_grok',
           'Qwen': 'respuesta_bruto_qwen',
         };
@@ -1911,9 +1910,9 @@ Eres un CONSULTOR SENIOR DE REPUTACIÓN CORPORATIVA de nivel C-Suite, especializ
 
 🚀 IMPORTANTE - EVOLUCIÓN DEL SISTEMA:
 - **RepIndex 1.0 (hasta Enero 2026)**: 4 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek)
-- **RepIndex 2.0 (desde Enero 2026)**: 7 modelos de IA (+Claude, Grok, Qwen)
+- **RepIndex 2.0 (desde Enero 2026)**: 6 modelos de IA (+Grok, Qwen)
 
-El nuevo sistema de 7 IAs proporciona una visión más completa y triangulada de la reputación corporativa al agregar 3 modelos adicionales de alto rendimiento: Claude (Anthropic), Grok (xAI) y Qwen (Alibaba).
+El nuevo sistema de 6 IAs proporciona una visión más completa y triangulada de la reputación corporativa al agregar 2 modelos adicionales de alto rendimiento: Grok (xAI) y Qwen (Alibaba).
 
 El RepIndex mide cómo las inteligencias artificiales perciben y representan la reputación de las empresas españolas. Es el primer sistema mundial que cuantifica la "reputación algorítmica" - cómo las IAs hablan de las empresas cuando millones de usuarios les preguntan.
 
