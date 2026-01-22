@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, DollarSign, Zap, TrendingUp, RefreshCw, Save, Users, AlertTriangle, Clock, Target } from 'lucide-react';
+import { Loader2, DollarSign, Zap, TrendingUp, RefreshCw, Save, Users, AlertTriangle, Clock, Target, Server } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -974,10 +974,11 @@ export const ApiCostDashboard: React.FC = () => {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Sesiones Anónimas</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">Infraestructura</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{userSummary?.anonymous_sessions || 0}</div>
+                <p className="text-xs text-muted-foreground">Sesiones de sistema</p>
               </CardContent>
             </Card>
             <Card>
@@ -1036,7 +1037,12 @@ export const ApiCostDashboard: React.FC = () => {
                         <TableRow key={user.user_id || `anon-${idx}`}>
                           <TableCell>
                             <div className="flex flex-col">
-                              <span className="font-medium">{user.full_name || user.email}</span>
+                              <div className="flex items-center gap-2">
+                                {user.email === 'Infraestructura' && (
+                                  <Server className="h-4 w-4 text-muted-foreground" />
+                                )}
+                                <span className="font-medium">{user.full_name || user.email}</span>
+                              </div>
                               {user.full_name && (
                                 <span className="text-xs text-muted-foreground">{user.email}</span>
                               )}
