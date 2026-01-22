@@ -50,6 +50,7 @@ export function SweepMonitorPanel() {
   const [phaseDetails, setPhaseDetails] = useState<PhaseDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [launching, setLaunching] = useState(false);
+  const [launchingAll, setLaunchingAll] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -140,27 +141,106 @@ export function SweepMonitorPanel() {
     fetchStatus();
   };
 
-  const handleLaunchSweep = async (phasesPerRun: number = 6) => {
+  // Lanza UNA fase específica
+  const handleLaunchPhase = async (fase: number) => {
     setLaunching(true);
     try {
       const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
-        body: { trigger: 'manual', phases_per_run: phasesPerRun },
+        body: { trigger: 'manual', fase },
       });
 
       if (error) throw error;
 
       toast({
-        title: data.nextInvocationNeeded ? 'Barrido en progreso' : 'Barrido completado',
-        description: `Procesados: ${data.companiesCompleted} | Pendientes: ${data.companiesPending} | Fallidos: ${data.companiesFailed}`,
+        title: `Fase ${fase} ${data.status === 'no_work' ? 'sin trabajo' : 'completada'}`,
+        description: `Procesados: ${data.companiesProcessed || 0} | Completados: ${data.companiesCompleted || 0} | Fallidos: ${data.companiesFailed || 0}`,
       });
 
-      // Actualizar estado
       setTimeout(fetchStatus, 2000);
     } catch (error: any) {
-      console.error('Error launching sweep:', error);
+      console.error('Error launching phase:', error);
       toast({
         title: 'Error',
-        description: error.message || 'No se pudo iniciar el barrido',
+        description: error.message || 'No se pudo procesar la fase',
+        variant: 'destructive',
+      });
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  // Lanza TODAS las fases de forma escalonada (cada 5 minutos)
+  const handleLaunchAllPhasesStaggered = async () => {
+    setLaunchingAll(true);
+    try {
+      // Primero inicializamos el sweep
+      await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { init_only: true },
+      });
+
+      // Obtener fases pendientes
+      const pendingPhases = phaseDetails.filter(p => p.pending > 0 || p.failed > 0).map(p => p.fase);
+      const allPhases = pendingPhases.length > 0 ? pendingPhases : Array.from({ length: TOTAL_PHASES }, (_, i) => i + 1);
+
+      toast({
+        title: 'Lanzamiento escalonado iniciado',
+        description: `Se procesarán ${allPhases.length} fases de forma independiente. Primera fase lanzándose ahora...`,
+      });
+
+      // Lanzar la primera fase inmediatamente
+      if (allPhases.length > 0) {
+        supabase.functions.invoke('rix-batch-orchestrator', {
+          body: { trigger: 'staggered', fase: allPhases[0] },
+        }).catch(console.error);
+      }
+
+      // Las demás fases se lanzan via CRON cada 5 minutos
+      toast({
+        title: 'Fases programadas',
+        description: `Las ${allPhases.length - 1} fases restantes se ejecutarán automáticamente cada 5 minutos vía CRON.`,
+      });
+
+      setTimeout(fetchStatus, 3000);
+    } catch (error: any) {
+      console.error('Error launching staggered sweep:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo iniciar el barrido escalonado',
+        variant: 'destructive',
+      });
+    } finally {
+      setLaunchingAll(false);
+    }
+  };
+
+  // Lanza la siguiente fase pendiente
+  const handleLaunchNextPhase = async () => {
+    setLaunching(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { trigger: 'manual' },
+      });
+
+      if (error) throw error;
+
+      if (data.completed) {
+        toast({
+          title: 'Barrido completado',
+          description: 'No hay más fases pendientes.',
+        });
+      } else {
+        toast({
+          title: `Fase ${data.fase} procesada`,
+          description: `Completados: ${data.companiesCompleted || 0} | Fallidos: ${data.companiesFailed || 0}`,
+        });
+      }
+
+      setTimeout(fetchStatus, 2000);
+    } catch (error: any) {
+      console.error('Error launching next phase:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo procesar la fase',
         variant: 'destructive',
       });
     } finally {
@@ -246,8 +326,8 @@ export function SweepMonitorPanel() {
                 </Button>
               )}
               <Button
-                onClick={() => handleLaunchSweep(6)}
-                disabled={launching || isProcessing}
+                onClick={handleLaunchNextPhase}
+                disabled={launching || launchingAll || isProcessing}
                 className="gap-2"
               >
                 {launching ? (
@@ -257,7 +337,20 @@ export function SweepMonitorPanel() {
                 ) : (
                   <Play className="h-4 w-4" />
                 )}
-                {isProcessing ? 'En curso...' : status?.initialized ? 'Continuar Barrido' : 'Iniciar Barrido'}
+                {isProcessing ? 'En curso...' : 'Siguiente Fase'}
+              </Button>
+              <Button
+                onClick={handleLaunchAllPhasesStaggered}
+                disabled={launching || launchingAll || isProcessing}
+                variant="default"
+                className="gap-2"
+              >
+                {launchingAll ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Layers className="h-4 w-4" />
+                )}
+                {launchingAll ? 'Iniciando...' : 'Lanzar Todo (Escalonado)'}
               </Button>
             </div>
           </div>
@@ -398,20 +491,29 @@ export function SweepMonitorPanel() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleLaunchSweep(3)}
+              onClick={() => handleLaunchPhase(1)}
               disabled={launching}
             >
               <Play className="h-4 w-4 mr-2" />
-              Procesar 3 fases (15 empresas)
+              Fase 1 (prueba)
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => handleLaunchSweep(10)}
+              onClick={handleLaunchNextPhase}
               disabled={launching}
             >
               <Play className="h-4 w-4 mr-2" />
-              Procesar 10 fases (50 empresas)
+              Siguiente fase pendiente
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLaunchAllPhasesStaggered}
+              disabled={launchingAll}
+            >
+              <Layers className="h-4 w-4 mr-2" />
+              Barrido completo escalonado
             </Button>
             <Button
               variant="outline"
