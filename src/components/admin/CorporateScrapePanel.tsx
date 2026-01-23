@@ -170,12 +170,18 @@ export function CorporateScrapePanel() {
     }
   }, [customSweepId]);
 
+  // Only auto-refresh when cascade is running - NO AUTOMATIC POLLING otherwise
   useEffect(() => {
     fetchData();
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(fetchData, 10000);
+  }, []);  // Only on mount
+
+  useEffect(() => {
+    // Only poll during active cascade
+    if (!cascade.isRunning) return;
+    
+    const interval = setInterval(fetchData, 15000); // 15s during cascade
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [cascade.isRunning, fetchData]);
 
   // ============================================================================
   // CASCADE LOGIC - Client-side loop for foolproof processing
