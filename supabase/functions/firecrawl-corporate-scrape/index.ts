@@ -52,6 +52,8 @@ const CORPORATE_PAGE_PATTERNS = [
   '/corporativo',
   '/corporate',
   '/equipo-directivo',
+  '/equipo-ejecutivo',  // Telefónica pattern
+  '/comite-ejecutivo',
   '/management',
   '/leadership',
   '/governance',
@@ -60,6 +62,8 @@ const CORPORATE_PAGE_PATTERNS = [
   '/junta-directiva',
   '/board',
   '/consejo-administracion',
+  '/nosotros',  // Common Spanish pattern
+  '/principales-datos',  // Telefónica uses this
 ];
 
 // Patrones para encontrar blogs/noticias corporativas
