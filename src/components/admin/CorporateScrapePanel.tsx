@@ -23,7 +23,8 @@ import {
   RotateCcw,
   Zap,
   Newspaper,
-  Clock
+  Clock,
+  Plus
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -75,6 +76,7 @@ export function CorporateScrapePanel() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [resettingFailed, setResettingFailed] = useState(false);
+  const [syncingNew, setSyncingNew] = useState(false);
   const [sweepId, setSweepId] = useState<string>('');
   const [customSweepId, setCustomSweepId] = useState('');
   const [status, setStatus] = useState<SweepStatus | null>(null);
@@ -347,6 +349,36 @@ export function CorporateScrapePanel() {
     }
   };
 
+  const syncNewCompanies = async () => {
+    setSyncingNew(true);
+    try {
+      const result = await invokeOrchestrator({ mode: 'sync_new', sweep_id: sweepId });
+
+      if (result.synced_count > 0) {
+        toast({
+          title: 'Sincronización completada',
+          description: `Se añadieron ${result.synced_count} nuevas empresas (${result.pending_added} pendientes, ${result.skipped_added} omitidas)`,
+        });
+      } else {
+        toast({
+          title: 'Sin cambios',
+          description: 'No hay nuevas empresas para sincronizar',
+        });
+      }
+
+      setTimeout(fetchData, 1000);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'No se pudieron sincronizar las nuevas empresas',
+        variant: 'destructive'
+      });
+      console.error('Sync error:', error);
+    } finally {
+      setSyncingNew(false);
+    }
+  };
+
   const getStatusBadge = (statusValue: string) => {
     switch (statusValue) {
       case 'completed':
@@ -418,10 +450,26 @@ export function CorporateScrapePanel() {
             Extracción automática de datos corporativos (1 empresa por invocación)
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={fetchData} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
+          </Button>
+          
+          {/* Sync new companies button */}
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={syncNewCompanies} 
+            disabled={syncingNew || cascade.isRunning}
+            className="border-green-300 text-green-700 hover:bg-green-50"
+          >
+            {syncingNew ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4 mr-2" />
+            )}
+            Sincronizar Nuevas
           </Button>
           
           {/* Scrape Mode Selector */}
