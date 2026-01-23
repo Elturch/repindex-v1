@@ -14,35 +14,40 @@ MISIÓN: Analizar EXHAUSTIVAMENTE TODAS las menciones sobre ${issuerName} (${tic
 
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║ ⚠️ EXTENSIÓN MÍNIMA OBLIGATORIA: 4,000 TOKENS (~16,000 caracteres)        ║
-║ ⚠️ NO ACORTES. Respuestas cortas serán RECHAZADAS.                        ║
+║ ⚠️ SIEMPRE DEBES RESPONDER. NUNCA devuelvas "no hay información"          ║
 ║ TEMPORALIDAD ESTRICTA: SOLO menciones del ${dateFrom} al ${dateTo}        ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
-INSTRUCCIÓN CRÍTICA DE EXTENSIÓN:
-- Tu respuesta DEBE tener MÍNIMO 4,000 tokens (aproximadamente 16,000-20,000 caracteres)
-- DESARROLLA cada mención con 4-6 párrafos completos de análisis
-- NO resumas. NO abrevies. PROFUNDIZA en cada punto
-- Si terminas antes de los 4,000 tokens, CONTINÚA añadiendo más contexto y análisis
+═══════════════════════════════════════════════════════════════════════════
+⚠️ REGLA CRÍTICA: SIEMPRE DEBES PROPORCIONAR UN INFORME COMPLETO
+═══════════════════════════════════════════════════════════════════════════
+
+NUNCA digas "no he encontrado información" o "no hay menciones". SIEMPRE hay algo que reportar:
+
+ESTRATEGIA OBLIGATORIA DE BÚSQUEDA (en orden de prioridad):
+1. PRIMERO: Busca menciones DIRECTAS de ${issuerName} en prensa, redes, foros
+2. SI NO HAY DIRECTAS: Busca noticias del SECTOR (${issuerName} opera en un sector específico - ¡búscalo!)
+3. SI NO HAY SECTOR: Busca noticias de COMPETIDORES directos y analiza implicaciones
+4. SI NO HAY COMPETIDORES: Busca tendencias MACROECONÓMICAS de España que afecten al sector
+5. SIEMPRE: Incluye análisis del CONTEXTO BURSÁTIL si cotiza (IBEX, bolsa española)
+
+JUSTIFICACIÓN: Toda empresa opera en un contexto. Si no hay noticias directas, el contexto sectorial, competitivo y macroeconómico ES RELEVANTE para su reputación.
 
 ═══════════════════════════════════════════════════════════════════════════
-REGLAS CRÍTICAS DE TEMPORALIDAD (OBLIGATORIO):
+REGLAS DE TEMPORALIDAD (OBLIGATORIO):
 ═══════════════════════════════════════════════════════════════════════════
 
 1. SOLO incluye menciones con fechas EXACTAS dentro del periodo ${dateFrom} a ${dateTo}
 2. NO incluyas historia genérica de la empresa ni contexto de años anteriores
 3. NO inventes ni extrapoles información fuera del periodo
-4. SI no hay menciones directas de ${issuerName}:
-   - Indica claramente: "No se han identificado menciones directas en el periodo"
-   - INCLUYE noticias REALES del SECTOR con fechas del ${dateFrom} al ${dateTo}
-   - Analiza EXHAUSTIVAMENTE cómo afectan indirectamente a ${issuerName}
 
 ═══════════════════════════════════════════════════════════════════════════
 FUENTES OBLIGATORIAS A RASTREAR (buscar TODAS):
 ═══════════════════════════════════════════════════════════════════════════
-• Prensa económica Tier-1: Expansión, Cinco Días, El Economista, El Confidencial, Reuters, Bloomberg, Financial Times
-• Reguladores: CNMV, BME, comunicados oficiales de la empresa
-• Redes sociales: X/Twitter (menciones directas e indirectas), LinkedIn, Instagram
-• Foros y comunidades: Rankia, Forocoches, Reddit r/SpainFinance, Glassdoor
+• Prensa económica Tier-1: Expansión, Cinco Días, El Economista, El Confidencial, Reuters, Bloomberg, FT
+• Reguladores: CNMV, BME, comunicados oficiales
+• Redes sociales: X/Twitter, LinkedIn, Instagram
+• Foros: Rankia, Forocoches, Reddit r/SpainFinance, Glassdoor
 • Blogs sectoriales, análisis de casas de bolsa, medios especializados
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -50,148 +55,122 @@ ESTRUCTURA DEL INFORME (seguir exactamente):
 ═══════════════════════════════════════════════════════════════════════════
 
 ## Resumen Ejecutivo
-(4-6 frases COMPLETAS: qué pasó con ${issuerName} esta semana, tono reputacional general, principales hitos, tendencia vs semanas anteriores)
+(4-6 frases: situación reputacional de ${issuerName} esta semana, contexto de mercado, principales hallazgos)
 
 ## Hechos Corporativos y Noticias Directas
-Para CADA mención encontrada (objetivo: 12-18 menciones mínimo):
-- **[FECHA EXACTA dd/mm/yyyy]** - [Titular completo de la noticia]
-- Fuente: [Nombre del Medio](URL completa)
-- **Descripción detallada** (4-6 párrafos COMPLETOS): 
-  - Qué se dice exactamente en la noticia
-  - Contexto completo del hecho
-  - Declaraciones textuales de protagonistas
-  - Datos concretos, cifras, métricas mencionadas
-  - Antecedentes inmediatos relevantes (de la misma semana)
-- **IMPACTO REPUTACIONAL** (2-3 párrafos de análisis):
-  - ¿Es positiva, negativa o neutra para la marca? ¿Por qué?
-  - ¿Cómo la perciben inversores, clientes, empleados, reguladores?
-  - ¿Qué implicaciones tiene a corto/medio plazo?
-  - ¿Hay riesgo de escalada o potencial de amplificación mediática?
-  - Comparativa con situaciones similares de competidores
+Para CADA mención (objetivo: 12-18 menciones mínimo, combinando directas + sector):
+- **[FECHA EXACTA dd/mm/yyyy]** - [Titular]
+- Fuente: [Nombre](URL)
+- **Descripción** (4-6 párrafos): Qué se dice, contexto, declaraciones, datos
+- **IMPACTO REPUTACIONAL** (2-3 párrafos): Positivo/negativo/neutro, por qué, implicaciones
 
-## Contexto Sectorial de la Semana (${dateFrom} a ${dateTo})
-(Noticias del sector que pueden influir INDIRECTAMENTE en ${issuerName})
-- Solo noticias con fechas EXACTAS dentro del periodo
-- Para cada una, explicar detalladamente el vínculo con ${issuerName}
-- Analizar tendencias del sector que afectan al posicionamiento competitivo
+## Contexto Sectorial de la Semana
+(OBLIGATORIO aunque no haya noticias directas - buscar noticias del sector)
+- Noticias de competidores
+- Tendencias del sector
+- Movimientos regulatorios
+- Explicar vínculo con ${issuerName}
+
+## Contexto Macroeconómico Relevante
+(Noticias de economía española/europea que afecten al sector de ${issuerName})
 
 ## Percepción en Redes Sociales y Foros
-- Menciones en X/Twitter con análisis de sentimiento (incluir ejemplos textuales de tweets)
-- Discusiones en LinkedIn (tono profesional, opiniones de expertos)
-- Debates en Rankia, Reddit, Forocoches (opinión de inversores retail)
-- Opiniones de empleados en Glassdoor (satisfacción laboral, recomendaciones)
-- Tendencia general: ¿más positivo, negativo o neutro que la semana anterior?
-- Volumen aproximado de menciones si es posible estimarlo
+- X/Twitter, LinkedIn, Rankia, Reddit
+- Si no hay menciones directas: "Semana de baja actividad social" pero analizar el contexto
 
 ## Alertas de Riesgo Reputacional
-(Controversias activas, críticas recurrentes, problemas identificados esta semana)
-- Para cada riesgo: 
-  - Descripción detallada del problema
-  - Gravedad (alta/media/baja) con justificación
-  - Stakeholders afectados
-  - Recomendación de actuación
+(Si no hay alertas: "Sin alertas significativas identificadas en el periodo")
 
 ## Señales Positivas
-(Reconocimientos, logros, cobertura favorable, hitos alcanzados)
-- Detallar cada señal positiva con contexto completo
-- Explicar cómo puede aprovecharse en comunicación corporativa
+(Si no hay: "Sin señales destacables identificadas en el periodo")
 
 ## Nota Metodológica
-- Fuentes consultadas (listar todas las URLs)
-- Limitaciones de la búsqueda (fuentes no accesibles, barreras de pago)
-- Nivel de confianza en los hallazgos
-- Sugerencias para próximas búsquedas
+- Fuentes consultadas
+- Limitaciones
+- Nivel de cobertura: directa/sectorial/macro
 
 ═══════════════════════════════════════════════════════════════════════════
 FORMATO OBLIGATORIO:
 ═══════════════════════════════════════════════════════════════════════════
-• Markdown rico: headers ##, **negritas**, [enlaces](url), listas con viñetas
+• Markdown rico: ## headers, **negritas**, [enlaces](url)
 • FECHAS EXACTAS (dd/mm/yyyy) en CADA mención
-• URLs reales de CADA fuente
-• DESARROLLA cada mención con 4-6 párrafos de contexto y análisis
-• Mínimo 12-18 menciones con análisis completo de impacto reputacional
+• URLs reales
+• MÍNIMO 4,000 tokens (~16,000 caracteres)
 • Responde en Español de España
 
-⚠️ RECUERDA: MÍNIMO 4,000 TOKENS. NO termines antes. PROFUNDIZA.
+⚠️ RECUERDA: SIEMPRE debes entregar un informe completo de 4,000+ tokens. NUNCA "no hay información".
 
-NO devuelvas JSON. Escribe un INFORME NARRATIVO PROFESIONAL extenso y detallado.
+NO devuelvas JSON. Escribe un INFORME NARRATIVO PROFESIONAL extenso.
 `;
 
-// Prompt optimizado para Perplexity - FORMATO NARRATIVO PROFESIONAL con enfoque semanal estricto
-const buildPerplexityPrompt = (issuerName: string, ticker: string): string => `Actúa como ANALISTA DE REPUTACIÓN CORPORATIVA senior especializado en monitoreo de marca para comités de dirección.
+// Prompt optimizado para Perplexity - SIEMPRE debe responder
+const buildPerplexityPrompt = (issuerName: string, ticker: string): string => `Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior.
 
-MISIÓN: Elaborar un INFORME ANALÍTICO EXHAUSTIVO sobre la reputación de ${issuerName} (${ticker}) en España durante los ÚLTIMOS 7 DÍAS EXACTOS.
+MISIÓN: Informe EXHAUSTIVO sobre ${issuerName} (${ticker}) en España durante los ÚLTIMOS 7 DÍAS.
 
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║ ⚠️ EXTENSIÓN MÍNIMA OBLIGATORIA: 4,000 TOKENS (~16,000 caracteres)        ║
-║ ⚠️ NO ACORTES. Respuestas cortas serán RECHAZADAS.                        ║
-║ OBJETIVO: 15-25 menciones con análisis EXHAUSTIVO de cada una            ║
+║ ⚠️ SIEMPRE DEBES RESPONDER. NUNCA "no hay información"                    ║
+║ OBJETIVO: 15-25 menciones con análisis EXHAUSTIVO                         ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
-INSTRUCCIÓN CRÍTICA:
-- Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000-20,000 caracteres)
-- DESARROLLA cada mención con 4-6 párrafos completos
-- NO resumas. NO abrevies. PROFUNDIZA en cada punto
-- Si terminas antes de 4,000 tokens, CONTINÚA añadiendo más análisis
-
 ═══════════════════════════════════════════════════════════════════════════
-REGLAS CRÍTICAS (OBLIGATORIO CUMPLIR):
+⚠️ REGLA CRÍTICA: SIEMPRE PROPORCIONA UN INFORME COMPLETO
 ═══════════════════════════════════════════════════════════════════════════
 
-1. SOLO incluye menciones con fechas de los ÚLTIMOS 7 DÍAS
-2. NO incluyas historia genérica de la empresa ni contexto de años anteriores
-3. SI no hay menciones directas de ${issuerName}:
-   - Indica: "No se han identificado menciones directas en el periodo"
-   - INCLUYE noticias REALES del SECTOR de esta misma semana
-   - Analiza EXHAUSTIVAMENTE cómo afectan a ${issuerName}
+NUNCA digas "no he encontrado información". SIEMPRE hay algo que reportar:
+
+ESTRATEGIA OBLIGATORIA DE BÚSQUEDA:
+1. PRIMERO: Busca menciones DIRECTAS de ${issuerName} en prensa, redes, foros
+2. SI NO HAY DIRECTAS: Busca noticias del SECTOR de ${issuerName}
+3. SI NO HAY SECTOR: Busca noticias de COMPETIDORES directos
+4. SI NO HAY COMPETIDORES: Busca tendencias MACROECONÓMICAS de España
+5. SIEMPRE: Incluye contexto bursátil (IBEX, bolsa española) si cotiza
 
 ═══════════════════════════════════════════════════════════════════════════
-FUENTES A RASTREAR EXHAUSTIVAMENTE:
+TEMPORALIDAD:
 ═══════════════════════════════════════════════════════════════════════════
-• Prensa económica Tier-1: Expansión, Cinco Días, El Economista, El Confidencial, Reuters, Bloomberg, FT
-• Reguladores: CNMV, BME, comunicados oficiales
-• Redes sociales: X/Twitter (buscar @${ticker}, "${issuerName}", hashtags relacionados), LinkedIn
-• Foros: Rankia (hilos sobre ${ticker}), Forocoches (subforo economía), Reddit r/SpainFinance
-• Glassdoor: opiniones de empleados recientes
-• Blogs sectoriales, casas de análisis, medios especializados
+- SOLO menciones de los ÚLTIMOS 7 DÍAS
+- NO historia genérica de la empresa
 
 ═══════════════════════════════════════════════════════════════════════════
-ESTRUCTURA DEL INFORME (seguir exactamente):
+FUENTES A RASTREAR:
+═══════════════════════════════════════════════════════════════════════════
+• Prensa: Expansión, Cinco Días, El Economista, El Confidencial, Reuters, Bloomberg
+• Reguladores: CNMV, BME
+• Redes: X/Twitter (@${ticker}, "${issuerName}"), LinkedIn
+• Foros: Rankia, Forocoches, Reddit, Glassdoor
+
+═══════════════════════════════════════════════════════════════════════════
+ESTRUCTURA:
 ═══════════════════════════════════════════════════════════════════════════
 
 ## Resumen Ejecutivo
-(4-6 frases COMPLETAS: estado de reputación, principales hitos, tendencia general)
+(4-6 frases: situación reputacional esta semana)
 
-## Hechos Corporativos y Noticias Directas
-Para CADA mención (objetivo 12-18 menciones):
-- **[FECHA EXACTA dd/mm/yyyy]** - [Titular completo]
+## Hechos Corporativos y Noticias
+Para CADA mención (objetivo 12-18):
+- **[FECHA dd/mm/yyyy]** - [Titular]
 - Fuente: [Nombre](URL)
-- **Descripción** (4-6 párrafos): Qué se dice, contexto completo, declaraciones, cifras
-- **IMPACTO REPUTACIONAL** (2-3 párrafos): 
-  - ¿Positivo/negativo/neutro? ¿Por qué?
-  - Percepción de inversores, clientes, empleados
-  - Implicaciones a corto/medio plazo
-  - Riesgo de escalada
+- **Descripción** (4-6 párrafos)
+- **IMPACTO REPUTACIONAL** (2-3 párrafos)
 
 ## Contexto Sectorial de la Semana
-(Noticias del sector que afectan indirectamente - analizar cada una con detalle)
+(OBLIGATORIO aunque no haya noticias directas)
 
-## Percepción en Redes Sociales y Foros
-- X/Twitter: menciones, sentimiento, EJEMPLOS TEXTUALES de tweets
-- LinkedIn, Rankia, Reddit: discusiones activas con detalle
-- Glassdoor: opiniones recientes de empleados
-- Análisis de tendencia vs semana anterior
+## Contexto Macroeconómico
+(Noticias económicas España que afecten al sector)
 
-## Alertas de Riesgo Reputacional
-(Controversias, críticas - gravedad alta/media/baja con justificación detallada)
+## Percepción en Redes Sociales
+(Si no hay menciones: "Semana de baja actividad social" + analizar contexto)
+
+## Alertas de Riesgo
+(Si no hay: "Sin alertas significativas")
 
 ## Señales Positivas
-(Reconocimientos, logros - desarrollar cada uno con contexto)
+(Si no hay: "Sin señales destacables")
 
 ## Nota Metodológica
-- Fuentes consultadas (URLs completas)
-- Limitaciones encontradas
-- Nivel de confianza
 
 ═══════════════════════════════════════════════════════════════════════════
 FORMATO:
@@ -199,12 +178,10 @@ FORMATO:
 • Markdown: ## headers, **negritas**, [enlaces](url)
 • Fechas exactas (dd/mm/yyyy)
 • URLs reales
-• 4-6 párrafos por mención
+• MÍNIMO 4,000 tokens
 • Español de España
 
-⚠️ RECUERDA: MÍNIMO 4,000 TOKENS. NO termines antes. PROFUNDIZA en cada mención.
-
-NO devuelvas JSON. Escribe un INFORME NARRATIVO PROFESIONAL de máxima extensión.`;
+⚠️ RECUERDA: SIEMPRE informe completo de 4,000+ tokens. NUNCA "no hay información".`;
 
 // 7 modelos con acceso real a Internet - ahora con display name para guardar en 02_model_name
 interface SearchModelConfig {
@@ -233,7 +210,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'sonar-pro',
         messages: [
-          { role: 'system', content: 'INSTRUCCIÓN CRÍTICA: Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000 caracteres). NO termines antes. Desarrolla CADA mención con 4-6 párrafos completos. Si terminas antes de 4,000 tokens, CONTINÚA añadiendo más análisis y contexto. Respuestas cortas serán RECHAZADAS.' },
+          { role: 'system', content: 'INSTRUCCIÓN CRÍTICA: SIEMPRE debes responder con un informe completo de MÍNIMO 4,000 tokens (~16,000 caracteres). NUNCA digas "no hay información". Si no hay menciones directas: 1) Busca noticias del SECTOR, 2) Busca noticias de COMPETIDORES, 3) Busca tendencias MACROECONÓMICAS de España. SIEMPRE hay contexto relevante. Desarrolla cada mención con 4-6 párrafos.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
@@ -262,7 +239,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'grok-3',
         messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa senior. INSTRUCCIÓN CRÍTICA: Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000 caracteres). NO termines antes. Desarrolla CADA mención con 4-6 párrafos completos. SOLO menciones con fechas del periodo especificado - NO historia genérica. Si no hay menciones directas, incluye noticias REALES del SECTOR de esa semana. Organiza por categorías. Para cada mención: fecha exacta dd/mm/yyyy, URL, y ANÁLISIS DETALLADO del impacto reputacional. Usa Markdown. Español de España. SI TERMINAS ANTES DE 4,000 TOKENS, CONTINÚA PROFUNDIZANDO.' },
+          { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
@@ -285,7 +262,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'deepseek-chat',
         messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa senior. INSTRUCCIÓN CRÍTICA: Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000 caracteres). NO termines antes. Desarrolla CADA mención con 4-6 párrafos completos. TEMPORALIDAD ESTRICTA: SOLO menciones con fechas del periodo especificado - NO contexto histórico genérico. Si no hay menciones directas, incluye noticias REALES del SECTOR de esa semana. Para cada mención: fecha exacta dd/mm/yyyy, URL, y ANÁLISIS DETALLADO del impacto reputacional. Usa Markdown. Español de España. SI TERMINAS ANTES DE 4,000 TOKENS, CONTINÚA PROFUNDIZANDO.' },
+          { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
@@ -308,7 +285,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'gpt-4.1-mini',
         messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa senior. INSTRUCCIÓN CRÍTICA: Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000 caracteres). NO termines antes. Desarrolla CADA mención con 4-6 párrafos completos. TEMPORALIDAD ESTRICTA: SOLO menciones con fechas del periodo especificado - NO historia genérica. Si no hay menciones directas, incluye noticias REALES del SECTOR de esa semana. Para cada mención: fecha exacta dd/mm/yyyy, URL, y ANÁLISIS DETALLADO del impacto reputacional. Usa Markdown rico. Español de España. SI TERMINAS ANTES DE 4,000 TOKENS, CONTINÚA PROFUNDIZANDO.' },
+          { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
@@ -335,7 +312,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
           temperature: 0.1,
         },
         systemInstruction: {
-          parts: [{ text: 'Eres analista de reputación corporativa senior. INSTRUCCIÓN CRÍTICA: Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000 caracteres). NO termines antes. Desarrolla CADA mención con 4-6 párrafos completos. TEMPORALIDAD ESTRICTA: SOLO menciones con fechas del periodo especificado - NO contexto histórico genérico. Si no hay menciones directas, incluye noticias REALES del SECTOR de esa semana. Para cada mención: fecha exacta dd/mm/yyyy, URL, y ANÁLISIS DETALLADO del impacto reputacional. Usa Markdown. Español de España. SI TERMINAS ANTES DE 4,000 TOKENS, CONTINÚA PROFUNDIZANDO.' }]
+          parts: [{ text: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' }]
         },
       },
     }),
@@ -373,7 +350,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         model: 'qwen-max',
         input: {
           messages: [
-            { role: 'system', content: 'Eres analista de reputación corporativa senior. INSTRUCCIÓN CRÍTICA: Tu respuesta DEBE tener MÍNIMO 4,000 tokens (~16,000 caracteres). NO termines antes. Desarrolla CADA mención con 4-6 párrafos completos. TEMPORALIDAD ESTRICTA: SOLO menciones con fechas del periodo especificado - NO historia genérica. Si no hay menciones directas, incluye noticias REALES del SECTOR de esa semana. Para cada mención: fecha exacta dd/mm/yyyy, URL, y ANÁLISIS DETALLADO del impacto reputacional. Usa Markdown. Español de España. SI TERMINAS ANTES DE 4,000 TOKENS, CONTINÚA PROFUNDIZANDO.' },
+            { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
             { role: 'user', content: prompt }
           ],
         },
