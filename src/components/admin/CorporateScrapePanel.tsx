@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -24,10 +25,17 @@ import {
   Zap,
   Newspaper,
   Clock,
-  Plus
+  Plus,
+  AlertTriangle,
+  Play,
+  Ghost
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+// localStorage keys for cascade persistence
+const STORAGE_KEY_CASCADE = 'corporate_cascade_state';
+const STORAGE_KEY_SWEEP_ID = 'corporate_cascade_sweep_id';
 
 // Helper to format elapsed time
 const formatElapsedTime = (seconds: number): string => {
@@ -40,6 +48,11 @@ type ScrapeMode = 'full' | 'news_only';
 
 const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
+
+// Increased error tolerance
+const MAX_CONSECUTIVE_ERRORS = 10;
+const BASE_RETRY_DELAY = 2000; // 2 seconds
+const MAX_RETRY_DELAY = 30000; // 30 seconds
 
 interface ScrapeProgress {
   id: string;
@@ -63,6 +76,11 @@ interface SweepStatus {
   skipped: number;
 }
 
+interface ZombieInfo {
+  count: number;
+  tickers: string[];
+}
+
 interface CascadeState {
   isRunning: boolean;
   isPaused: boolean;
@@ -70,22 +88,34 @@ interface CascadeState {
   remaining: number;
   currentTicker: string | null;
   startTime: number | null;
+  consecutiveErrors: number;
+}
+
+interface SavedCascadeState {
+  sweepId: string;
+  lastProcessed: number;
+  processedCount: number;
+  wasInterrupted: boolean;
 }
 
 export function CorporateScrapePanel() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [resettingFailed, setResettingFailed] = useState(false);
+  const [resettingZombies, setResettingZombies] = useState(false);
   const [syncingNew, setSyncingNew] = useState(false);
   const [sweepId, setSweepId] = useState<string>('');
   const [customSweepId, setCustomSweepId] = useState('');
   const [status, setStatus] = useState<SweepStatus | null>(null);
+  const [zombies, setZombies] = useState<ZombieInfo>({ count: 0, tickers: [] });
   const [progress, setProgress] = useState<ScrapeProgress[]>([]);
   const [websiteCount, setWebsiteCount] = useState(0);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [newsCount, setNewsCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [scrapeMode, setScrapeMode] = useState<ScrapeMode>('full');
+  const [savedCascade, setSavedCascade] = useState<SavedCascadeState | null>(null);
+  const [isTabVisible, setIsTabVisible] = useState(true);
   
   // Cascade state
   const [cascade, setCascade] = useState<CascadeState>({
@@ -95,11 +125,53 @@ export function CorporateScrapePanel() {
     remaining: 0,
     currentTicker: null,
     startTime: null,
+    consecutiveErrors: 0,
   });
   const cascadeAbortRef = useRef(false);
   
   // Elapsed time counter for live feedback
   const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Detect tab visibility changes
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const visible = document.visibilityState === 'visible';
+      setIsTabVisible(visible);
+      
+      if (!visible && cascade.isRunning) {
+        // Tab became hidden while cascade is running - show warning on return
+        console.log('[CorporateScrape] Tab hidden during cascade - will show warning');
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [cascade.isRunning]);
+
+  // Check for interrupted cascade on mount
+  useEffect(() => {
+    const savedState = localStorage.getItem(STORAGE_KEY_CASCADE);
+    const savedSweepId = localStorage.getItem(STORAGE_KEY_SWEEP_ID);
+    
+    if (savedState && savedSweepId) {
+      try {
+        const state: SavedCascadeState = JSON.parse(savedState);
+        // Check if it was less than 1 hour ago
+        const hourAgo = Date.now() - (60 * 60 * 1000);
+        if (state.lastProcessed > hourAgo) {
+          state.wasInterrupted = true;
+          setSavedCascade(state);
+        } else {
+          // Clear old state
+          localStorage.removeItem(STORAGE_KEY_CASCADE);
+          localStorage.removeItem(STORAGE_KEY_SWEEP_ID);
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY_CASCADE);
+        localStorage.removeItem(STORAGE_KEY_SWEEP_ID);
+      }
+    }
+  }, []);
   
   // Update elapsed time every second when cascade is running
   useEffect(() => {
@@ -143,10 +215,11 @@ export function CorporateScrapePanel() {
       const targetSweepId = customSweepId || getCurrentSweepId();
       setSweepId(targetSweepId);
 
-      // Fetch sweep status from edge function
+      // Fetch sweep status from edge function (now includes zombie info)
       const data = await invokeOrchestrator({ mode: 'get_status', sweep_id: targetSweepId });
       if (data.success) {
         setStatus(data.status);
+        setZombies(data.zombies || { count: 0, tickers: [] });
       }
 
       // Fetch progress entries
@@ -210,11 +283,29 @@ export function CorporateScrapePanel() {
     return () => clearInterval(interval);
   }, [cascade.isRunning, fetchData]);
 
+  // Save cascade state periodically
+  const saveCascadeState = useCallback((processedCount: number) => {
+    const state: SavedCascadeState = {
+      sweepId,
+      lastProcessed: Date.now(),
+      processedCount,
+      wasInterrupted: false,
+    };
+    localStorage.setItem(STORAGE_KEY_CASCADE, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY_SWEEP_ID, sweepId);
+  }, [sweepId]);
+
+  const clearSavedCascade = () => {
+    localStorage.removeItem(STORAGE_KEY_CASCADE);
+    localStorage.removeItem(STORAGE_KEY_SWEEP_ID);
+    setSavedCascade(null);
+  };
+
   // ============================================================================
-  // CASCADE LOGIC - Client-side loop for foolproof processing
+  // CASCADE LOGIC - Client-side loop with improved resilience
   // ============================================================================
   
-  const handleLaunchCascade = async () => {
+  const handleLaunchCascade = async (resumeFrom?: number) => {
     cascadeAbortRef.current = false;
     const startTime = Date.now();
     
@@ -239,26 +330,30 @@ export function CorporateScrapePanel() {
       }
     }
     
+    // Clear any saved interrupted state
+    clearSavedCascade();
+    
     setCascade({
       isRunning: true,
       isPaused: false,
-      processed: 0,
+      processed: resumeFrom || 0,
       remaining: status?.pending || websiteCount,
       currentTicker: null,
       startTime,
+      consecutiveErrors: 0,
     });
 
     const modeLabel = scrapeMode === 'full' ? 'Completa' : 'Solo Noticias';
     toast({
-      title: `Cascada ${modeLabel} iniciada`,
+      title: resumeFrom ? `Reanudando cascada ${modeLabel}` : `Cascada ${modeLabel} iniciada`,
       description: scrapeMode === 'news_only' 
         ? 'Extrayendo solo noticias (más rápido)...' 
         : 'Procesando empresas una a una...',
     });
 
-    let processedCount = 0;
+    let processedCount = resumeFrom || 0;
     let consecutiveErrors = 0;
-    const MAX_CONSECUTIVE_ERRORS = 5;
+    let currentRetryDelay = BASE_RETRY_DELAY;
     
     // Choose mode based on toggle
     const orchestratorMode = scrapeMode === 'news_only' ? 'scrape_news_only' : 'process_single';
@@ -267,6 +362,15 @@ export function CorporateScrapePanel() {
       try {
         const result = await invokeOrchestrator({ mode: orchestratorMode, sweep_id: sweepId });
         
+        // Log zombie auto-reset if any occurred
+        if (result.zombies_reset > 0) {
+          console.log(`[Cascade] Auto-reset ${result.zombies_reset} zombie records`);
+          toast({
+            title: 'Zombies recuperados',
+            description: `${result.zombies_reset} registros atascados fueron auto-recuperados`,
+          });
+        }
+        
         if (!result.processed) {
           // No more pending companies
           break;
@@ -274,13 +378,18 @@ export function CorporateScrapePanel() {
 
         processedCount++;
         consecutiveErrors = 0; // Reset on success
+        currentRetryDelay = BASE_RETRY_DELAY; // Reset delay
 
         setCascade(prev => ({
           ...prev,
           processed: processedCount,
           remaining: result.remaining,
           currentTicker: result.ticker,
+          consecutiveErrors: 0,
         }));
+
+        // Save state for recovery
+        saveCascadeState(processedCount);
 
         // Small pause between companies (1 second)
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -289,17 +398,30 @@ export function CorporateScrapePanel() {
         console.error('Cascade error:', error);
         consecutiveErrors++;
         
+        setCascade(prev => ({
+          ...prev,
+          consecutiveErrors,
+        }));
+        
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           toast({
             title: 'Cascada detenida',
-            description: `Demasiados errores consecutivos (${consecutiveErrors})`,
+            description: `Demasiados errores consecutivos (${consecutiveErrors}). Revisa la conexión y vuelve a iniciar.`,
             variant: 'destructive',
           });
           break;
         }
         
-        // Wait longer on error
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Exponential backoff with max limit
+        currentRetryDelay = Math.min(currentRetryDelay * 2, MAX_RETRY_DELAY);
+        
+        toast({
+          title: `Error ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}`,
+          description: `Reintentando en ${Math.round(currentRetryDelay / 1000)}s...`,
+          variant: 'destructive',
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, currentRetryDelay));
       }
     }
 
@@ -313,6 +435,9 @@ export function CorporateScrapePanel() {
       currentTicker: null,
     }));
 
+    // Clear saved state on normal completion
+    clearSavedCascade();
+
     toast({
       title: cascadeAbortRef.current ? 'Cascada pausada' : 'Cascada completada',
       description: `Procesadas ${processedCount} empresas en ${minutes}m ${seconds}s`,
@@ -322,9 +447,47 @@ export function CorporateScrapePanel() {
     fetchData();
   };
 
+  const handleResumeCascade = () => {
+    if (savedCascade) {
+      handleLaunchCascade(savedCascade.processedCount);
+    }
+  };
+
   const handlePauseCascade = () => {
     cascadeAbortRef.current = true;
     setCascade(prev => ({ ...prev, isPaused: true }));
+    
+    // Save current state for potential resume
+    saveCascadeState(cascade.processed);
+  };
+
+  const resetZombies = async () => {
+    setResettingZombies(true);
+    try {
+      const result = await invokeOrchestrator({ mode: 'reset_zombies', sweep_id: sweepId, timeout_minutes: 5 });
+
+      if (result.reset_count > 0) {
+        toast({
+          title: 'Zombies limpiados',
+          description: `${result.reset_count} registros atascados fueron reseteados: ${result.reset_tickers?.join(', ')}`,
+        });
+      } else {
+        toast({
+          title: 'Sin zombies',
+          description: 'No había registros atascados para limpiar',
+        });
+      }
+
+      setTimeout(fetchData, 1000);
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'No se pudieron limpiar los zombies',
+        variant: 'destructive'
+      });
+    } finally {
+      setResettingZombies(false);
+    }
   };
 
   const resetFailed = async () => {
@@ -425,6 +588,72 @@ export function CorporateScrapePanel() {
 
   return (
     <div className="space-y-6">
+      {/* Tab visibility warning */}
+      {!isTabVisible && cascade.isRunning && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>¡Atención!</AlertTitle>
+          <AlertDescription>
+            La pestaña no está visible. El procesamiento puede detenerse si el navegador suspende JavaScript.
+            Mantén esta pestaña activa para asegurar el procesamiento continuo.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Interrupted cascade recovery alert */}
+      {savedCascade?.wasInterrupted && !cascade.isRunning && (
+        <Alert className="border-orange-300 bg-orange-50">
+          <Play className="h-4 w-4 text-orange-600" />
+          <AlertTitle className="text-orange-800">Cascada interrumpida detectada</AlertTitle>
+          <AlertDescription className="text-orange-700">
+            <div className="flex items-center justify-between">
+              <span>
+                Se procesaron {savedCascade.processedCount} empresas antes de la interrupción.
+                ¿Quieres reanudar desde donde se quedó?
+              </span>
+              <div className="flex gap-2 ml-4">
+                <Button size="sm" onClick={handleResumeCascade} className="bg-orange-600 hover:bg-orange-700">
+                  <Play className="h-4 w-4 mr-1" />
+                  Reanudar
+                </Button>
+                <Button size="sm" variant="outline" onClick={clearSavedCascade}>
+                  Descartar
+                </Button>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Zombie warning alert */}
+      {zombies.count > 0 && !cascade.isRunning && (
+        <Alert variant="destructive" className="border-red-300 bg-red-50">
+          <Ghost className="h-4 w-4" />
+          <AlertTitle>¡Zombies detectados!</AlertTitle>
+          <AlertDescription>
+            <div className="flex items-center justify-between">
+              <span>
+                Hay {zombies.count} registro(s) atascados en "processing": {zombies.tickers.join(', ')}
+              </span>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={resetZombies} 
+                disabled={resettingZombies}
+                className="ml-4 border-red-300 text-red-700 hover:bg-red-100"
+              >
+                {resettingZombies ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4 mr-1" />
+                )}
+                Limpiar Zombies
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Header with actions */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -447,7 +676,7 @@ export function CorporateScrapePanel() {
             )}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Extracción automática de datos corporativos (1 empresa por invocación)
+            Extracción automática de datos corporativos (1 empresa por invocación, auto-recuperación de zombies)
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -505,7 +734,7 @@ export function CorporateScrapePanel() {
           ) : (
             <Button 
               size="sm" 
-              onClick={handleLaunchCascade}
+              onClick={() => handleLaunchCascade()}
               disabled={cascade.isRunning || websiteCount === 0}
               className={scrapeMode === 'news_only' 
                 ? "bg-gradient-to-r from-blue-500 to-blue-600" 
@@ -542,6 +771,13 @@ export function CorporateScrapePanel() {
                   </span>
                   LIVE
                 </Badge>
+                {/* Error counter if any */}
+                {cascade.consecutiveErrors > 0 && (
+                  <Badge variant="destructive" className="animate-pulse">
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    {cascade.consecutiveErrors} errores
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 {/* Elapsed time */}
@@ -625,13 +861,22 @@ export function CorporateScrapePanel() {
             <p className="text-xs text-muted-foreground">Pendientes</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className={zombies.count > 0 ? 'border-red-300 bg-red-50/50' : ''}>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
-              <XCircle className="h-4 w-4 text-red-500" />
+              {zombies.count > 0 ? (
+                <Ghost className="h-4 w-4 text-red-500 animate-bounce" />
+              ) : (
+                <XCircle className="h-4 w-4 text-red-500" />
+              )}
               <span className="text-2xl font-bold">{status?.failed || 0}</span>
+              {zombies.count > 0 && (
+                <Badge variant="destructive" className="ml-1 text-xs">
+                  +{zombies.count} 👻
+                </Badge>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">Fallidos</p>
+            <p className="text-xs text-muted-foreground">Fallidos{zombies.count > 0 ? ' / Zombies' : ''}</p>
           </CardContent>
         </Card>
       </div>
@@ -745,7 +990,7 @@ export function CorporateScrapePanel() {
                     key={item.id} 
                     className={`flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 ${
                       cascade.currentTicker === item.ticker ? 'border-primary bg-primary/5' : ''
-                    }`}
+                    } ${zombies.tickers.includes(item.ticker) ? 'border-red-300 bg-red-50' : ''}`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="flex-1 min-w-0">
@@ -758,6 +1003,9 @@ export function CorporateScrapePanel() {
                           </Badge>
                           {cascade.currentTicker === item.ticker && (
                             <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                          )}
+                          {zombies.tickers.includes(item.ticker) && (
+                            <Ghost className="h-3 w-3 text-red-500 animate-bounce" />
                           )}
                         </div>
                         {item.website && (

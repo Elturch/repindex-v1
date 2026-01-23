@@ -87,38 +87,74 @@ async function ensureSweepInitialized(
 }
 
 // ============================================================================
-// ZOMBIE DETECTION AND RESET
+// ZOMBIE DETECTION AND RESET (AUTO-RECOVERY)
 // ============================================================================
 
 async function resetStuckProcessing(
   supabase: ReturnType<typeof createClient>,
   sweepId: string,
   timeoutMinutes: number = 5
-): Promise<number> {
+): Promise<{ count: number; tickers: string[] }> {
   const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000).toISOString();
   
-  const { data, error } = await supabase
+  // First get the stuck records to log them
+  const { data: stuckRecords } = await supabase
+    .from('corporate_scrape_progress')
+    .select('id, ticker, started_at')
+    .eq('sweep_id', sweepId)
+    .eq('status', 'processing')
+    .lt('started_at', cutoffTime);
+  
+  if (!stuckRecords || stuckRecords.length === 0) {
+    return { count: 0, tickers: [] };
+  }
+  
+  const stuckIds = stuckRecords.map(r => r.id);
+  const stuckTickers = stuckRecords.map(r => r.ticker);
+  
+  console.log(`[Orchestrator] Found ${stuckRecords.length} ZOMBIE records stuck in processing: ${stuckTickers.join(', ')}`);
+
+  const { error } = await supabase
     .from('corporate_scrape_progress')
     .update({ 
       status: 'pending', 
-      error_message: `Auto-reset: stuck in processing for >${timeoutMinutes}min`,
-      retry_count: 1 
+      error_message: `Auto-reset: stuck in processing for >${timeoutMinutes}min at ${new Date().toISOString()}`,
+      started_at: null
     })
-    .eq('sweep_id', sweepId)
-    .eq('status', 'processing')
-    .lt('started_at', cutoffTime)
-    .select('ticker');
+    .in('id', stuckIds);
 
   if (error) {
     console.error('[Orchestrator] Error resetting stuck:', error);
-    return 0;
+    return { count: 0, tickers: [] };
   }
 
-  if (data && data.length > 0) {
-    console.log(`[Orchestrator] Reset ${data.length} stuck companies: ${data.map(d => d.ticker).join(', ')}`);
-  }
+  console.log(`[Orchestrator] AUTO-RECOVERED ${stuckRecords.length} zombie records: ${stuckTickers.join(', ')}`);
 
-  return data?.length || 0;
+  return { count: stuckRecords.length, tickers: stuckTickers };
+}
+
+// ============================================================================
+// GET ZOMBIE COUNT (for monitoring)
+// ============================================================================
+
+async function getZombieCount(
+  supabase: ReturnType<typeof createClient>,
+  sweepId: string,
+  timeoutMinutes: number = 10
+): Promise<{ count: number; tickers: string[] }> {
+  const cutoffTime = new Date(Date.now() - timeoutMinutes * 60 * 1000).toISOString();
+  
+  const { data } = await supabase
+    .from('corporate_scrape_progress')
+    .select('ticker, started_at')
+    .eq('sweep_id', sweepId)
+    .eq('status', 'processing')
+    .lt('started_at', cutoffTime);
+  
+  return {
+    count: data?.length || 0,
+    tickers: data?.map(r => r.ticker) || []
+  };
 }
 
 // ============================================================================
@@ -387,12 +423,42 @@ Deno.serve(async (req) => {
     console.log(`[Orchestrator] Mode: ${mode}, Sweep ID: ${sweepId}`);
 
     // ========================================================================
-    // MODE: get_status - Return current sweep status
+    // MODE: get_status - Return current sweep status WITH zombie info
     // ========================================================================
     if (mode === 'get_status') {
       const status = await getSweepStatus(supabase, sweepId);
+      const zombies = await getZombieCount(supabase, sweepId, 10);
+      
       return new Response(
-        JSON.stringify({ success: true, sweep_id: sweepId, status }),
+        JSON.stringify({ 
+          success: true, 
+          sweep_id: sweepId, 
+          status,
+          zombies: {
+            count: zombies.count,
+            tickers: zombies.tickers
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================================================
+    // MODE: reset_zombies - Manually reset stuck processing records
+    // ========================================================================
+    if (mode === 'reset_zombies') {
+      const timeoutMinutes = body.timeout_minutes || 5;
+      const result = await resetStuckProcessing(supabase, sweepId, timeoutMinutes);
+      const status = await getSweepStatus(supabase, sweepId);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          sweep_id: sweepId,
+          reset_count: result.count,
+          reset_tickers: result.tickers,
+          status
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -405,7 +471,7 @@ Deno.serve(async (req) => {
       await ensureSweepInitialized(supabase, sweepId);
       
       // 2. Auto-reset zombies (stuck in processing > 5 min)
-      const resetCount = await resetStuckProcessing(supabase, sweepId, 5);
+      const zombieReset = await resetStuckProcessing(supabase, sweepId, 5);
       
       // 3. Get next pending company
       const company = await getNextPending(supabase, sweepId);
@@ -419,7 +485,8 @@ Deno.serve(async (req) => {
             processed: false, 
             complete: status.pending === 0 && status.processing === 0,
             message: 'No pending companies',
-            zombies_reset: resetCount,
+            zombies_reset: zombieReset.count,
+            zombies_reset_tickers: zombieReset.tickers,
             status 
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -441,7 +508,7 @@ Deno.serve(async (req) => {
           issuer_name: company.issuer_name,
           result: result.success ? 'completed' : 'failed',
           error: result.error,
-          zombies_reset: resetCount,
+          zombies_reset: zombieReset.count,
           remaining: status.pending,
           status
         }),
@@ -457,7 +524,7 @@ Deno.serve(async (req) => {
       await ensureSweepInitialized(supabase, sweepId);
       
       // 2. Auto-reset zombies
-      const resetCount = await resetStuckProcessing(supabase, sweepId, 5);
+      const zombieReset = await resetStuckProcessing(supabase, sweepId, 5);
       
       // 3. Get next pending company
       const company = await getNextPending(supabase, sweepId);
@@ -472,7 +539,7 @@ Deno.serve(async (req) => {
             complete: status.pending === 0 && status.processing === 0,
             message: 'No pending companies for news scraping',
             mode: 'news_only',
-            zombies_reset: resetCount,
+            zombies_reset: zombieReset.count,
             status 
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -495,8 +562,62 @@ Deno.serve(async (req) => {
           issuer_name: company.issuer_name,
           result: result.success ? 'completed' : 'failed',
           error: result.error,
-          zombies_reset: resetCount,
+          zombies_reset: zombieReset.count,
           remaining: status.pending,
+          status
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================================================
+    // MODE: continue_cascade - Process multiple companies (for CRON)
+    // ========================================================================
+    if (mode === 'continue_cascade') {
+      const batchSize = body.batch_size || 10;
+      const newsOnly = body.news_only || false;
+      
+      console.log(`[Orchestrator] Continue cascade: batch_size=${batchSize}, news_only=${newsOnly}`);
+      
+      // 1. Ensure sweep is initialized
+      await ensureSweepInitialized(supabase, sweepId);
+      
+      // 2. Auto-reset zombies
+      const zombieReset = await resetStuckProcessing(supabase, sweepId, 5);
+      
+      const processed: { ticker: string; success: boolean; error?: string }[] = [];
+      
+      // 3. Process batch
+      for (let i = 0; i < batchSize; i++) {
+        const company = await getNextPending(supabase, sweepId);
+        
+        if (!company) {
+          console.log(`[Orchestrator] No more pending companies after ${processed.length} processed`);
+          break;
+        }
+        
+        const result = await processCompany(supabase, company, supabaseUrl, supabaseServiceKey, newsOnly);
+        processed.push({ ticker: company.ticker, success: result.success, error: result.error });
+        
+        // Small delay between companies
+        if (i < batchSize - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+      // 4. Get updated status
+      const status = await getSweepStatus(supabase, sweepId);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sweep_id: sweepId,
+          mode: 'continue_cascade',
+          batch_size: batchSize,
+          processed_count: processed.length,
+          processed,
+          zombies_reset: zombieReset.count,
+          complete: status.pending === 0 && status.processing === 0,
           status
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -664,7 +785,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: 'Invalid mode. Use: get_status, process_single, scrape_news_only, reset_failed, discover_websites, init_only, sync_new' 
+        error: 'Invalid mode. Use: get_status, process_single, scrape_news_only, continue_cascade, reset_zombies, reset_failed, discover_websites, init_only, sync_new' 
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
