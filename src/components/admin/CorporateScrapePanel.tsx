@@ -22,10 +22,18 @@ import {
   Search,
   RotateCcw,
   Zap,
-  Newspaper
+  Newspaper,
+  Clock
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+// Helper to format elapsed time
+const formatElapsedTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
 
 type ScrapeMode = 'full' | 'news_only';
 
@@ -87,6 +95,23 @@ export function CorporateScrapePanel() {
     startTime: null,
   });
   const cascadeAbortRef = useRef(false);
+  
+  // Elapsed time counter for live feedback
+  const [elapsedTime, setElapsedTime] = useState(0);
+  
+  // Update elapsed time every second when cascade is running
+  useEffect(() => {
+    if (!cascade.isRunning || !cascade.startTime) {
+      setElapsedTime(0);
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - cascade.startTime!) / 1000));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [cascade.isRunning, cascade.startTime]);
 
   const getCurrentSweepId = () => {
     const now = new Date();
@@ -374,6 +399,20 @@ export function CorporateScrapePanel() {
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
             Corporate Web Scraping
+            {cascade.isRunning && (
+              <span className="flex items-center gap-2 ml-3">
+                {/* Live pulsing dot */}
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+                {/* Timer */}
+                <span className="flex items-center gap-1 text-sm font-mono text-green-600">
+                  <Clock className="h-4 w-4" />
+                  {formatElapsedTime(elapsedTime)}
+                </span>
+              </span>
+            )}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Extracción automática de datos corporativos (1 empresa por invocación)
@@ -437,16 +476,36 @@ export function CorporateScrapePanel() {
 
       {/* Cascade Progress Card */}
       {cascade.isRunning && (
-        <Card className="border-primary/50 bg-primary/5">
-          <CardContent className="pt-4">
+        <Card className="border-2 border-green-500/50 bg-green-50/30 dark:bg-green-950/20 animate-pulse-slow relative overflow-hidden">
+          {/* Animated border glow effect */}
+          <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 via-transparent to-green-500/10 animate-shimmer pointer-events-none" />
+          
+          <CardContent className="pt-4 relative z-10">
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                <span className="font-medium">Cascada en progreso</span>
+              <div className="flex items-center gap-3">
+                {/* Spinning loader */}
+                <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+                <span className="font-semibold text-green-700 dark:text-green-400">Cascada en progreso</span>
+                {/* Live indicator */}
+                <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 animate-pulse">
+                  <span className="relative flex h-2 w-2 mr-1">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-600"></span>
+                  </span>
+                  LIVE
+                </Badge>
               </div>
-              <span className="text-sm text-muted-foreground">
-                {getEstimatedTime()}
-              </span>
+              <div className="flex items-center gap-3">
+                {/* Elapsed time */}
+                <div className="flex items-center gap-1 text-sm font-mono bg-muted/50 px-2 py-1 rounded">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span>{formatElapsedTime(elapsedTime)}</span>
+                </div>
+                {/* ETA */}
+                <span className="text-sm text-muted-foreground">
+                  {getEstimatedTime()}
+                </span>
+              </div>
             </div>
             
             <div className="flex items-center gap-4 mb-3">
@@ -456,7 +515,7 @@ export function CorporateScrapePanel() {
                   className="h-3" 
                 />
               </div>
-              <span className="text-sm font-medium">
+              <span className="text-sm font-bold">
                 {cascade.processed}/{cascade.processed + cascade.remaining}
               </span>
             </div>
@@ -464,7 +523,7 @@ export function CorporateScrapePanel() {
             {cascade.currentTicker && (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">Procesando:</span>
-                <Badge variant="outline" className="font-mono">{cascade.currentTicker}</Badge>
+                <Badge variant="secondary" className="font-mono animate-pulse">{cascade.currentTicker}</Badge>
               </div>
             )}
           </CardContent>
