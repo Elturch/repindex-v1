@@ -97,19 +97,29 @@ async function initializeSweepIfNeeded(
   }));
 
   const batchSize = 50;
+  let totalInserted = 0;
+  
   for (let i = 0; i < progressRecords.length; i += batchSize) {
     const batch = progressRecords.slice(i, i + batchSize);
-    const { error: insertError } = await supabase
+    console.log(`[init] Inserting batch ${Math.floor(i / batchSize) + 1}: ${batch.length} records (items ${i + 1} to ${i + batch.length})`);
+    
+    const { data, error: insertError } = await supabase
       .from('sweep_progress')
-      .insert(batch);
+      .insert(batch)
+      .select('id');
     
     if (insertError) {
-      console.error(`[init] Error inserting batch ${i / batchSize + 1}:`, insertError);
+      console.error(`[init] ERROR in batch ${Math.floor(i / batchSize) + 1}:`, insertError);
+      throw new Error(`Batch insert failed at items ${i + 1}-${i + batch.length}: ${insertError.message}`);
     }
+    
+    const insertedCount = data?.length || 0;
+    totalInserted += insertedCount;
+    console.log(`[init] Batch ${Math.floor(i / batchSize) + 1} success: ${insertedCount} records inserted (total: ${totalInserted})`);
   }
 
-  console.log(`[init] Sweep ${sweepId} initialized successfully`);
-  return { isNew: true, totalCompanies: issuers.length };
+  console.log(`[init] Sweep ${sweepId} initialized: ${totalInserted}/${issuers.length} companies inserted`);
+  return { isNew: true, totalCompanies: totalInserted };
 }
 
 // Obtiene las empresas pendientes de UNA fase específica
