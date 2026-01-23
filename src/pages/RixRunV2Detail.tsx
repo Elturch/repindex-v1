@@ -21,11 +21,12 @@ import {
   TrendingUp,
   DollarSign,
   BookOpen,
-  Brain
+  Brain,
+  Layers
 } from "lucide-react";
 import { useRixRunV2 } from "@/hooks/useRixRunsV2";
 import { useMarketAveragesV2 } from "@/hooks/useMarketAveragesV2";
-import { useSiblingRixRunsV2, SiblingRixRunV2 } from "@/hooks/useSiblingRixRunsV2";
+import { useSiblingRixRunsV2 } from "@/hooks/useSiblingRixRunsV2";
 import { cn } from "@/lib/utils";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
@@ -36,7 +37,7 @@ import { GrokIcon } from "@/components/ui/grok-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 import { RadarChartComparison } from "@/components/ui/radar-chart";
 import { GlossaryDialog } from "@/components/ui/glossary-dialog";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 
 // Model icons map
 const MODEL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -74,23 +75,6 @@ export default function RixRunV2Detail() {
     run?.period_to,
     run?.model_name
   );
-  
-  // Currently selected model for viewing
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
-  
-  // When run loads, set the initial selected model
-  useEffect(() => {
-    if (run && !selectedModelId) {
-      setSelectedModelId(run.id);
-    }
-  }, [run, selectedModelId]);
-  
-  // Find the currently selected run (either the original or a sibling)
-  const selectedRun = useMemo(() => {
-    if (!selectedModelId || !siblingRuns) return run;
-    if (selectedModelId === run?.id) return run;
-    return siblingRuns.find(s => s.id === selectedModelId);
-  }, [selectedModelId, siblingRuns, run]);
 
   if (isLoading) {
     return (
@@ -214,41 +198,18 @@ export default function RixRunV2Detail() {
   // Parse explicacion (can be array)
   const parseExplicacion = () => ensureStringArray(run.explicacion);
 
-  // Prepare data for radar chart - use selected model's data if different
-  const getRadarData = () => {
-    if (selectedRun && selectedRun.id !== run.id) {
-      // Using sibling data
-      const sibling = selectedRun as SiblingRixRunV2;
-      return {
-        rix: sibling.rix_score ?? 0,
-        nvm: sibling.nvm_score || 0,
-        drm: sibling.drm_score || 0,
-        sim: sibling.sim_score || 0,
-        rmm: sibling.rmm_score || 0,
-        cem: sibling.cem_score || 0,
-        gam: sibling.gam_score || 0,
-        dcm: sibling.dcm_score || 0,
-        cxm: sibling.cxm_score || 0,
-      };
-    }
-    // Using original run data
-    return {
-      rix: run.displayRixScore ?? run.rix_score ?? 0,
-      nvm: run.nvm_score || 0,
-      drm: run.drm_score || 0,
-      sim: run.sim_score || 0,
-      rmm: run.rmm_score || 0,
-      cem: run.cem_score || 0,
-      gam: run.gam_score || 0,
-      dcm: run.dcm_score || 0,
-      cxm: run.cxm_score || 0,
-    };
+  // Prepare data for radar chart - always use current run data
+  const radarData = {
+    rix: run.displayRixScore ?? run.rix_score ?? 0,
+    nvm: run.nvm_score || 0,
+    drm: run.drm_score || 0,
+    sim: run.sim_score || 0,
+    rmm: run.rmm_score || 0,
+    cem: run.cem_score || 0,
+    gam: run.gam_score || 0,
+    dcm: run.dcm_score || 0,
+    cxm: run.cxm_score || 0,
   };
-
-  const radarData = getRadarData();
-  
-  // Get the model name for the radar chart
-  const displayModelName = selectedRun?.model_name || run.model_name || "";
 
   const normalizeFlag = (flag: string) => {
     const flagMap: { [key: string]: string } = {
@@ -446,23 +407,23 @@ export default function RixRunV2Detail() {
           {/* Left Column - Radar Chart + Metrics + Content */}
           <div className="lg:col-span-2 space-y-4">
             
-            {/* Model Selector Card - NEW! */}
+            {/* Model Selector Card - Navigate to see full analysis */}
             {modelOptions.length > 1 && (
               <Card className="border-primary/30 bg-primary/5">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Brain className="h-4 w-4 text-primary" />
+                    <Layers className="h-4 w-4 text-primary" />
                     Comparar Modelos de IA ({modelOptions.length} disponibles)
                   </CardTitle>
                   <CardDescription>
-                    Selecciona un modelo para ver cómo varía el análisis y el radar
+                    Selecciona un modelo para ver su análisis completo
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
                     {modelOptions.map((option) => {
                       const Icon = getModelIcon(option.model_name);
-                      const isSelected = selectedModelId === option.id;
+                      const isSelected = option.id === id;
                       const scoreColor = getScoreColor(option.rix_score);
                       
                       return (
@@ -470,7 +431,11 @@ export default function RixRunV2Detail() {
                           key={option.id}
                           variant={isSelected ? "default" : "outline"}
                           size="sm"
-                          onClick={() => setSelectedModelId(option.id)}
+                          onClick={() => {
+                            if (option.id !== id) {
+                              navigate(`/rix-run-v2/${option.id}`, { replace: true });
+                            }
+                          }}
                           className={cn(
                             "flex items-center gap-2 transition-all",
                             isSelected && "ring-2 ring-primary ring-offset-2"
@@ -488,12 +453,6 @@ export default function RixRunV2Detail() {
                       );
                     })}
                   </div>
-                  {selectedModelId !== run.id && (
-                    <p className="text-xs text-muted-foreground mt-3">
-                      ⚠️ Mostrando datos del modelo <strong>{displayModelName}</strong>. 
-                      El radar refleja sus métricas.
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             )}
@@ -503,7 +462,7 @@ export default function RixRunV2Detail() {
               companyData={radarData}
               marketAverages={marketAverages || {}}
               companyName={run.target_name || "Empresa"}
-              modelName={displayModelName}
+              modelName={run.model_name || ""}
             />
             
             {/* Collapsible Metrics Table */}
