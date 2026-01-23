@@ -67,9 +67,13 @@ async function ensureSweepInitialized(
     status: company.website ? 'pending' : 'skipped', // Skip if no website yet
   }));
 
+  // Use upsert to handle re-initialization gracefully (ignores existing entries)
   const { error: insertError } = await supabase
     .from('corporate_scrape_progress')
-    .insert(progressEntries);
+    .upsert(progressEntries, { 
+      onConflict: 'sweep_id,ticker',
+      ignoreDuplicates: true 
+    });
 
   if (insertError) {
     throw new Error(`Failed to create progress entries: ${insertError.message}`);
