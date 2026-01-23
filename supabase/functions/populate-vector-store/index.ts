@@ -11,9 +11,24 @@ const corsHeaders = {
 const MAX_RAW_RESPONSE_LENGTH = 8000;
 const BATCH_SIZE = 100; // Documents per execution
 const MAX_EXECUTION_TIME = 45000; // 45 seconds (safe margin before timeout)
+const NEWS_BATCH_SIZE = 50; // News articles per execution
 
 // New models added in the 6 IA system (January 2026)
 const NEW_MODELS = ['Grok', 'Qwen'];
+
+// Helper: Check if a date is recent (within N days)
+function isRecentDate(dateStr: string | null, daysThreshold: number = 90): boolean {
+  if (!dateStr) return false;
+  try {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= daysThreshold;
+  } catch {
+    return false;
+  }
+}
 
 // Background processing function - INCREMENTAL ONLY (never deletes)
 async function processVectorStore(includeRawResponses: boolean) {
@@ -447,22 +462,180 @@ async function processVectorStore(includeRawResponses: boolean) {
       }
     }
 
+    // ==========================================================================
+    // STEP 2: INDEX CORPORATE NEWS WITH TEMPORAL CONTEXT
+    // ==========================================================================
+    console.log('Starting corporate_news indexation...');
+    
+    // Get existing news documents (by article_url in metadata)
+    const existingNewsUrls = new Set<string>();
+    let newsDocOffset = 0;
+    
+    while (true) {
+      const { data: existingNewsDocs } = await supabaseClient
+        .from('documents')
+        .select('metadata')
+        .eq('metadata->>type', 'corporate_news')
+        .range(newsDocOffset, newsDocOffset + 1000 - 1);
+      
+      if (!existingNewsDocs || existingNewsDocs.length === 0) break;
+      
+      existingNewsDocs.forEach(d => {
+        if (d.metadata?.article_url) {
+          existingNewsUrls.add(d.metadata.article_url);
+        }
+      });
+      
+      if (existingNewsDocs.length < 1000) break;
+      newsDocOffset += 1000;
+    }
+    
+    console.log(`Found ${existingNewsUrls.size} existing corporate news documents`);
+    
+    // Fetch corporate news not yet indexed
+    const { data: corporateNews } = await supabaseClient
+      .from('corporate_news')
+      .select('*')
+      .order('published_date', { ascending: false })
+      .limit(500);
+    
+    const pendingNews = (corporateNews || []).filter(n => !existingNewsUrls.has(n.article_url));
+    console.log(`Corporate news: ${corporateNews?.length || 0} total, ${pendingNews.length} pending`);
+    
+    let newsDocsCreated = 0;
+    let newsDocsErrored = 0;
+    
+    // Process news batch
+    const newsBatchToProcess = pendingNews.slice(0, NEWS_BATCH_SIZE);
+    
+    for (const news of newsBatchToProcess) {
+      // Check time limit
+      if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+        console.log(`Time limit reached during news indexation`);
+        break;
+      }
+      
+      try {
+        const issuerData = issuersMap.get(news.ticker);
+        const isRecent = isRecentDate(news.published_date, 90);
+        const publishedDateStr = news.published_date || 'Fecha desconocida';
+        
+        // Build content with EXPLICIT temporal context
+        let newsContent = `[NOTICIA CORPORATIVA - ${news.ticker}]\n`;
+        newsContent += `Fecha de publicación: ${publishedDateStr}\n`;
+        newsContent += `Fecha de captura: ${news.snapshot_date}\n`;
+        
+        const sourceTypeLabel = news.source_type === 'press_release' ? 'Nota de prensa oficial' 
+          : news.source_type === 'investor_news' ? 'Comunicado a inversores'
+          : 'Blog corporativo';
+        newsContent += `Tipo de fuente: ${sourceTypeLabel}\n`;
+        
+        if (issuerData) {
+          newsContent += `Empresa: ${issuerData.issuer_name}\n`;
+          newsContent += `Sector: ${issuerData.sector_category || 'N/A'}\n`;
+        }
+        newsContent += `\n`;
+        
+        newsContent += `TITULAR: ${news.headline}\n\n`;
+        
+        if (news.lead_paragraph) {
+          newsContent += `ENTRADILLA: ${news.lead_paragraph}\n\n`;
+        }
+        
+        if (news.body_excerpt) {
+          newsContent += `CONTENIDO: ${news.body_excerpt}\n\n`;
+        }
+        
+        if (news.author) {
+          newsContent += `Autor: ${news.author}\n`;
+        }
+        
+        if (news.category) {
+          newsContent += `Categoría: ${news.category}\n`;
+        }
+        
+        // Generate embedding
+        const contentForEmbedding = newsContent.slice(0, 8000);
+        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openAIApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'text-embedding-3-small',
+            input: contentForEmbedding,
+          }),
+        });
+        
+        if (!embeddingResponse.ok) {
+          newsDocsErrored++;
+          continue;
+        }
+        
+        const embeddingData = await embeddingResponse.json();
+        const embedding = embeddingData.data[0].embedding;
+        
+        // Metadata with temporal flags
+        const newsMetadata = {
+          type: 'corporate_news',
+          ticker: news.ticker,
+          company_name: issuerData?.issuer_name || news.ticker,
+          headline: news.headline,
+          article_url: news.article_url,
+          published_date: news.published_date,
+          snapshot_date: news.snapshot_date,
+          source_type: news.source_type,
+          author: news.author,
+          category: news.category,
+          sector_category: issuerData?.sector_category,
+          is_recent: isRecent,
+          days_old: news.published_date ? Math.floor((Date.now() - new Date(news.published_date).getTime()) / (1000 * 60 * 60 * 24)) : null,
+          content_length: newsContent.length,
+        };
+        
+        // Insert document
+        const { error: insertError } = await supabaseClient
+          .from('documents')
+          .insert({ content: newsContent, metadata: newsMetadata, embedding });
+        
+        if (insertError) {
+          newsDocsErrored++;
+        } else {
+          newsDocsCreated++;
+        }
+        
+        // Small delay
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+      } catch (newsError) {
+        console.error(`Error processing news ${news.article_url}:`, newsError);
+        newsDocsErrored++;
+      }
+    }
+    
+    console.log(`Corporate news indexation: ${newsDocsCreated} created, ${newsDocsErrored} errors`);
+
     const remaining = pendingRuns.length - documentsCreated;
+    const newsRemaining = pendingNews.length - newsDocsCreated;
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     
-    console.log(`BATCH COMPLETED: ${documentsCreated} created (${v2DocsCreated} from V2/7IAs), ${documentsErrored} errors, ${remaining} remaining, ${elapsed}s`);
+    console.log(`BATCH COMPLETED: ${documentsCreated} rix docs (${v2DocsCreated} V2), ${newsDocsCreated} news docs, ${documentsErrored + newsDocsErrored} errors, ${elapsed}s`);
     
     return {
       success: true,
-      complete: remaining <= 0,
+      complete: remaining <= 0 && newsRemaining <= 0,
       processed: documentsCreated,
       processed_v2: v2DocsCreated,
-      errored: documentsErrored,
+      processed_news: newsDocsCreated,
+      errored: documentsErrored + newsDocsErrored,
       remaining: Math.max(0, remaining),
+      remaining_news: Math.max(0, newsRemaining),
       total: totalRuns,
       existing: existingRunIds.size + documentsCreated,
       from_rix_runs: rixRunsOriginal.length,
       from_rix_runs_v2: rixRunsV2.length,
+      corporate_news_total: corporateNews?.length || 0,
       elapsed_seconds: elapsed,
     };
     
