@@ -499,6 +499,54 @@ export type Database = {
           },
         ]
       }
+      corporate_news: {
+        Row: {
+          article_url: string
+          author: string | null
+          body_excerpt: string | null
+          category: string | null
+          created_at: string
+          headline: string
+          id: string
+          lead_paragraph: string | null
+          published_date: string | null
+          raw_markdown: string | null
+          snapshot_date: string
+          source_type: string | null
+          ticker: string
+        }
+        Insert: {
+          article_url: string
+          author?: string | null
+          body_excerpt?: string | null
+          category?: string | null
+          created_at?: string
+          headline: string
+          id?: string
+          lead_paragraph?: string | null
+          published_date?: string | null
+          raw_markdown?: string | null
+          snapshot_date?: string
+          source_type?: string | null
+          ticker: string
+        }
+        Update: {
+          article_url?: string
+          author?: string | null
+          body_excerpt?: string | null
+          category?: string | null
+          created_at?: string
+          headline?: string
+          id?: string
+          lead_paragraph?: string | null
+          published_date?: string | null
+          raw_markdown?: string | null
+          snapshot_date?: string
+          source_type?: string | null
+          ticker?: string
+        }
+        Relationships: []
+      }
       corporate_scrape_progress: {
         Row: {
           completed_at: string | null
@@ -546,6 +594,7 @@ export type Database = {
       }
       corporate_snapshots: {
         Row: {
+          blog_url: string | null
           ceo_name: string | null
           chairman_name: string | null
           company_description: string | null
@@ -558,11 +607,14 @@ export type Database = {
           headquarters_city: string | null
           headquarters_country: string | null
           id: string
+          investor_relations_url: string | null
           last_reported_revenue: string | null
           mission_statement: string | null
+          news_articles_count: number | null
           other_executives: Json | null
           pages_scraped: number | null
           president_name: string | null
+          press_room_url: string | null
           raw_markdown: string | null
           scrape_status: string | null
           snapshot_date: string
@@ -572,6 +624,7 @@ export type Database = {
           vision_statement: string | null
         }
         Insert: {
+          blog_url?: string | null
           ceo_name?: string | null
           chairman_name?: string | null
           company_description?: string | null
@@ -584,11 +637,14 @@ export type Database = {
           headquarters_city?: string | null
           headquarters_country?: string | null
           id?: string
+          investor_relations_url?: string | null
           last_reported_revenue?: string | null
           mission_statement?: string | null
+          news_articles_count?: number | null
           other_executives?: Json | null
           pages_scraped?: number | null
           president_name?: string | null
+          press_room_url?: string | null
           raw_markdown?: string | null
           scrape_status?: string | null
           snapshot_date?: string
@@ -598,6 +654,7 @@ export type Database = {
           vision_statement?: string | null
         }
         Update: {
+          blog_url?: string | null
           ceo_name?: string | null
           chairman_name?: string | null
           company_description?: string | null
@@ -610,11 +667,14 @@ export type Database = {
           headquarters_city?: string | null
           headquarters_country?: string | null
           id?: string
+          investor_relations_url?: string | null
           last_reported_revenue?: string | null
           mission_statement?: string | null
+          news_articles_count?: number | null
           other_executives?: Json | null
           pages_scraped?: number | null
           president_name?: string | null
+          press_room_url?: string | null
           raw_markdown?: string | null
           scrape_status?: string | null
           snapshot_date?: string
