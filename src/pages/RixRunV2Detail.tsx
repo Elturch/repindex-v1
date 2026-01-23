@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
 import { 
   ArrowLeft, 
   Beaker, 
@@ -19,10 +20,12 @@ import {
   CheckCircle,
   TrendingUp,
   DollarSign,
-  BookOpen
+  BookOpen,
+  Brain
 } from "lucide-react";
 import { useRixRunV2 } from "@/hooks/useRixRunsV2";
 import { useMarketAveragesV2 } from "@/hooks/useMarketAveragesV2";
+import { useSiblingRixRunsV2, SiblingRixRunV2 } from "@/hooks/useSiblingRixRunsV2";
 import { cn } from "@/lib/utils";
 import AIResponseDialog from "@/components/ui/ai-response-dialog";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
@@ -33,7 +36,29 @@ import { GrokIcon } from "@/components/ui/grok-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 import { RadarChartComparison } from "@/components/ui/radar-chart";
 import { GlossaryDialog } from "@/components/ui/glossary-dialog";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
+
+// Model icons map
+const MODEL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  "ChatGPT": ChatGPTIcon,
+  "Gemini": GeminiIcon,
+  "Perplexity": PerplexityIcon,
+  "DeepSeek": DeepseekIcon,
+  "Deepseek": DeepseekIcon,
+  "Claude": () => <Brain className="h-4 w-4" />,
+  "Grok": GrokIcon,
+  "Qwen": QwenIcon,
+};
+
+// Get icon for a model
+const getModelIcon = (modelName: string): React.ComponentType<{ className?: string }> => {
+  for (const [key, Icon] of Object.entries(MODEL_ICONS)) {
+    if (modelName.toLowerCase().includes(key.toLowerCase())) {
+      return Icon;
+    }
+  }
+  return () => <Brain className="h-4 w-4" />;
+};
 
 export default function RixRunV2Detail() {
   const { id } = useParams<{ id: string }>();
@@ -41,6 +66,31 @@ export default function RixRunV2Detail() {
   const { data: run, isLoading, error } = useRixRunV2(id);
   const { data: marketAverages } = useMarketAveragesV2(run?.period_from, run?.period_to);
   const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(true);
+  
+  // Fetch all sibling runs for the same company/period
+  const { data: siblingRuns } = useSiblingRixRunsV2(
+    run?.ticker,
+    run?.period_from,
+    run?.period_to,
+    run?.model_name
+  );
+  
+  // Currently selected model for viewing
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  
+  // When run loads, set the initial selected model
+  useEffect(() => {
+    if (run && !selectedModelId) {
+      setSelectedModelId(run.id);
+    }
+  }, [run, selectedModelId]);
+  
+  // Find the currently selected run (either the original or a sibling)
+  const selectedRun = useMemo(() => {
+    if (!selectedModelId || !siblingRuns) return run;
+    if (selectedModelId === run?.id) return run;
+    return siblingRuns.find(s => s.id === selectedModelId);
+  }, [selectedModelId, siblingRuns, run]);
 
   if (isLoading) {
     return (
@@ -130,7 +180,7 @@ export default function RixRunV2Detail() {
     { key: 'cxm', label: 'Ejecución Corporativa (CXM)', fullName: 'Corporate Execution Metric', score: run.cxm_score, peso: run.cxm_peso, categoria: run.cxm_categoria, excluded: run.cxm_excluded },
   ];
 
-  // AI Responses configuration - 6 models
+  // AI Responses configuration - 7 models
   const getAIResponses = () => {
     const responses: { model: string; content: string | null; icon: React.ComponentType<{ className?: string }> }[] = [
       { model: "Perplexity", content: run.res_perplex_bruto, icon: PerplexityIcon },
@@ -164,18 +214,41 @@ export default function RixRunV2Detail() {
   // Parse explicacion (can be array)
   const parseExplicacion = () => ensureStringArray(run.explicacion);
 
-  // Prepare data for radar chart
-  const radarData = {
-    rix: run.displayRixScore ?? run.rix_score ?? 0,
-    nvm: run.nvm_score || 0,
-    drm: run.drm_score || 0,
-    sim: run.sim_score || 0,
-    rmm: run.rmm_score || 0,
-    cem: run.cem_score || 0,
-    gam: run.gam_score || 0,
-    dcm: run.dcm_score || 0,
-    cxm: run.cxm_score || 0,
+  // Prepare data for radar chart - use selected model's data if different
+  const getRadarData = () => {
+    if (selectedRun && selectedRun.id !== run.id) {
+      // Using sibling data
+      const sibling = selectedRun as SiblingRixRunV2;
+      return {
+        rix: sibling.rix_score ?? 0,
+        nvm: sibling.nvm_score || 0,
+        drm: sibling.drm_score || 0,
+        sim: sibling.sim_score || 0,
+        rmm: sibling.rmm_score || 0,
+        cem: sibling.cem_score || 0,
+        gam: sibling.gam_score || 0,
+        dcm: sibling.dcm_score || 0,
+        cxm: sibling.cxm_score || 0,
+      };
+    }
+    // Using original run data
+    return {
+      rix: run.displayRixScore ?? run.rix_score ?? 0,
+      nvm: run.nvm_score || 0,
+      drm: run.drm_score || 0,
+      sim: run.sim_score || 0,
+      rmm: run.rmm_score || 0,
+      cem: run.cem_score || 0,
+      gam: run.gam_score || 0,
+      dcm: run.dcm_score || 0,
+      cxm: run.cxm_score || 0,
+    };
   };
+
+  const radarData = getRadarData();
+  
+  // Get the model name for the radar chart
+  const displayModelName = selectedRun?.model_name || run.model_name || "";
 
   const normalizeFlag = (flag: string) => {
     const flagMap: { [key: string]: string } = {
@@ -195,6 +268,33 @@ export default function RixRunV2Detail() {
   };
 
   const isListed = run.repindex_root_issuers?.cotiza_en_bolsa || run.precio_accion;
+
+  // Prepare sibling options for the selector (including current run)
+  const modelOptions = useMemo(() => {
+    const options: { id: string; model_name: string; rix_score: number | null }[] = [];
+    
+    // Add current run first
+    options.push({
+      id: run.id,
+      model_name: run.model_name || "Unknown",
+      rix_score: run.displayRixScore ?? run.rix_score,
+    });
+    
+    // Add siblings (excluding current)
+    if (siblingRuns) {
+      siblingRuns.forEach(sibling => {
+        if (sibling.id !== run.id) {
+          options.push({
+            id: sibling.id,
+            model_name: sibling.model_name,
+            rix_score: sibling.rix_score,
+          });
+        }
+      });
+    }
+    
+    return options;
+  }, [run, siblingRuns]);
 
   return (
     <Layout title="RepIndex V2 - Detalle">
@@ -346,12 +446,64 @@ export default function RixRunV2Detail() {
           {/* Left Column - Radar Chart + Metrics + Content */}
           <div className="lg:col-span-2 space-y-4">
             
+            {/* Model Selector Card - NEW! */}
+            {modelOptions.length > 1 && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-primary" />
+                    Comparar Modelos de IA ({modelOptions.length} disponibles)
+                  </CardTitle>
+                  <CardDescription>
+                    Selecciona un modelo para ver cómo varía el análisis y el radar
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {modelOptions.map((option) => {
+                      const Icon = getModelIcon(option.model_name);
+                      const isSelected = selectedModelId === option.id;
+                      const scoreColor = getScoreColor(option.rix_score);
+                      
+                      return (
+                        <Button
+                          key={option.id}
+                          variant={isSelected ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedModelId(option.id)}
+                          className={cn(
+                            "flex items-center gap-2 transition-all",
+                            isSelected && "ring-2 ring-primary ring-offset-2"
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span>{option.model_name}</span>
+                          <Badge 
+                            variant="secondary" 
+                            className={cn("ml-1 text-xs", isSelected ? "bg-background/20" : scoreColor)}
+                          >
+                            {option.rix_score ?? "—"}
+                          </Badge>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  {selectedModelId !== run.id && (
+                    <p className="text-xs text-muted-foreground mt-3">
+                      ⚠️ Mostrando datos del modelo <strong>{displayModelName}</strong>. 
+                      El radar refleja sus métricas.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            
             {/* Radar Chart */}
             <RadarChartComparison
               companyData={radarData}
               marketAverages={marketAverages || {}}
               companyName={run.target_name || "Empresa"}
-              modelName={run.model_name || ""}
+              modelName={displayModelName}
             />
             
             {/* Collapsible Metrics Table */}
