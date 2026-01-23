@@ -558,6 +558,83 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================================
+    // MODE: sync_new - Add new companies that aren't in the current sweep
+    // ========================================================================
+    if (mode === 'sync_new') {
+      console.log(`[Orchestrator] Sync new companies for sweep ${sweepId}`);
+      
+      // Get all tickers currently in the sweep
+      const { data: existingProgress } = await supabase
+        .from('corporate_scrape_progress')
+        .select('ticker')
+        .eq('sweep_id', sweepId);
+      
+      const existingTickers = new Set((existingProgress || []).map(p => p.ticker));
+      console.log(`[Orchestrator] Existing tickers in sweep: ${existingTickers.size}`);
+      
+      // Get all active companies
+      const { data: allCompanies, error: companyError } = await supabase
+        .from('repindex_root_issuers')
+        .select('ticker, issuer_name, website')
+        .eq('status', 'active');
+      
+      if (companyError) {
+        throw new Error(`Failed to fetch companies: ${companyError.message}`);
+      }
+      
+      // Filter to only new companies not in the sweep
+      const newCompanies = (allCompanies || []).filter(c => !existingTickers.has(c.ticker));
+      console.log(`[Orchestrator] Found ${newCompanies.length} new companies to add`);
+      
+      if (newCompanies.length === 0) {
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            sweep_id: sweepId,
+            synced_count: 0,
+            message: 'No new companies to sync',
+            status: await getSweepStatus(supabase, sweepId)
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Create progress entries for new companies
+      const newEntries = newCompanies.map(company => ({
+        sweep_id: sweepId,
+        ticker: company.ticker,
+        issuer_name: company.issuer_name,
+        website: company.website || null,
+        status: company.website ? 'pending' : 'skipped',
+      }));
+      
+      const { error: insertError } = await supabase
+        .from('corporate_scrape_progress')
+        .insert(newEntries);
+      
+      if (insertError) {
+        throw new Error(`Failed to insert new companies: ${insertError.message}`);
+      }
+      
+      const pendingCount = newEntries.filter(e => e.status === 'pending').length;
+      const skippedCount = newEntries.filter(e => e.status === 'skipped').length;
+      
+      console.log(`[Orchestrator] Synced ${newCompanies.length} new companies: ${pendingCount} pending, ${skippedCount} skipped`);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          sweep_id: sweepId,
+          synced_count: newCompanies.length,
+          pending_added: pendingCount,
+          skipped_added: skippedCount,
+          status: await getSweepStatus(supabase, sweepId)
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================================================
     // DEPRECATED: start_full_sweep - Kept for backwards compatibility
     // Redirects to process_single with a warning
     // ========================================================================
@@ -587,7 +664,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: 'Invalid mode. Use: get_status, process_single, scrape_news_only, reset_failed, discover_websites, init_only' 
+        error: 'Invalid mode. Use: get_status, process_single, scrape_news_only, reset_failed, discover_websites, init_only, sync_new' 
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
