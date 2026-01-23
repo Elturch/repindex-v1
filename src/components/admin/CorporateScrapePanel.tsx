@@ -191,11 +191,32 @@ export function CorporateScrapePanel() {
     cascadeAbortRef.current = false;
     const startTime = Date.now();
     
+    // Auto-initialize sweep if not yet initialized (total === 0)
+    if (!status || status.total === 0) {
+      toast({
+        title: 'Inicializando sweep...',
+        description: 'Creando registros de progreso para las empresas',
+      });
+      
+      try {
+        await invokeOrchestrator({ mode: 'init_only', sweep_id: sweepId });
+        await fetchData(); // Refresh to get actual pending count
+      } catch (error) {
+        console.error('Failed to initialize sweep:', error);
+        toast({
+          title: 'Error al inicializar',
+          description: 'No se pudo crear el sweep. Intenta de nuevo.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+    
     setCascade({
       isRunning: true,
       isPaused: false,
       processed: 0,
-      remaining: status?.pending || 0,
+      remaining: status?.pending || websiteCount,
       currentTicker: null,
       startTime,
     });
@@ -398,7 +419,7 @@ export function CorporateScrapePanel() {
             <Button 
               size="sm" 
               onClick={handleLaunchCascade}
-              disabled={!status || status.pending === 0}
+              disabled={cascade.isRunning || websiteCount === 0}
               className={scrapeMode === 'news_only' 
                 ? "bg-gradient-to-r from-blue-500 to-blue-600" 
                 : "bg-gradient-to-r from-primary to-primary/80"}
@@ -408,7 +429,7 @@ export function CorporateScrapePanel() {
               ) : (
                 <Zap className="h-4 w-4 mr-2" />
               )}
-              {scrapeMode === 'news_only' ? 'Actualizar Noticias' : 'Cascada Completa'} ({status?.pending || 0})
+              {scrapeMode === 'news_only' ? 'Actualizar Noticias' : 'Cascada Completa'} ({status?.pending || websiteCount})
             </Button>
           )}
         </div>
