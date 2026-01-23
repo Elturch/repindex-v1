@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -20,10 +21,13 @@ import {
   Link as LinkIcon,
   Search,
   RotateCcw,
-  Zap
+  Zap,
+  Newspaper
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+type ScrapeMode = 'full' | 'news_only';
 
 const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
 const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
@@ -69,7 +73,9 @@ export function CorporateScrapePanel() {
   const [progress, setProgress] = useState<ScrapeProgress[]>([]);
   const [websiteCount, setWebsiteCount] = useState(0);
   const [snapshotCount, setSnapshotCount] = useState(0);
+  const [newsCount, setNewsCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [scrapeMode, setScrapeMode] = useState<ScrapeMode>('full');
   
   // Cascade state
   const [cascade, setCascade] = useState<CascadeState>({
@@ -146,6 +152,17 @@ export function CorporateScrapePanel() {
 
       setSnapshotCount(snapshotCountResult || 0);
 
+      // Fetch news count for current week
+      const startOfWeek = new Date();
+      startOfWeek.setDate(startOfWeek.getDate() - 7);
+      
+      const { count: newsCountResult } = await supabase
+        .from('corporate_news')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', startOfWeek.toISOString());
+
+      setNewsCount(newsCountResult || 0);
+
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -177,18 +194,24 @@ export function CorporateScrapePanel() {
       startTime,
     });
 
+    const modeLabel = scrapeMode === 'full' ? 'Completa' : 'Solo Noticias';
     toast({
-      title: 'Cascada iniciada',
-      description: 'Procesando empresas una a una...',
+      title: `Cascada ${modeLabel} iniciada`,
+      description: scrapeMode === 'news_only' 
+        ? 'Extrayendo solo noticias (más rápido)...' 
+        : 'Procesando empresas una a una...',
     });
 
     let processedCount = 0;
     let consecutiveErrors = 0;
     const MAX_CONSECUTIVE_ERRORS = 5;
+    
+    // Choose mode based on toggle
+    const orchestratorMode = scrapeMode === 'news_only' ? 'scrape_news_only' : 'process_single';
 
     while (!cascadeAbortRef.current) {
       try {
-        const result = await invokeOrchestrator({ mode: 'process_single', sweep_id: sweepId });
+        const result = await invokeOrchestrator({ mode: orchestratorMode, sweep_id: sweepId });
         
         if (!result.processed) {
           // No more pending companies
@@ -335,6 +358,27 @@ export function CorporateScrapePanel() {
             Actualizar
           </Button>
           
+          {/* Scrape Mode Selector */}
+          <Select value={scrapeMode} onValueChange={(v) => setScrapeMode(v as ScrapeMode)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Modo de scraping" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="full">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  <span>Completo (mensual)</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="news_only">
+                <div className="flex items-center gap-2">
+                  <Newspaper className="h-4 w-4" />
+                  <span>Solo Noticias (semanal)</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          
           {cascade.isRunning ? (
             <Button 
               size="sm" 
@@ -349,10 +393,16 @@ export function CorporateScrapePanel() {
               size="sm" 
               onClick={handleLaunchCascade}
               disabled={!status || status.pending === 0}
-              className="bg-gradient-to-r from-primary to-primary/80"
+              className={scrapeMode === 'news_only' 
+                ? "bg-gradient-to-r from-blue-500 to-blue-600" 
+                : "bg-gradient-to-r from-primary to-primary/80"}
             >
-              <Zap className="h-4 w-4 mr-2" />
-              Iniciar Cascada ({status?.pending || 0})
+              {scrapeMode === 'news_only' ? (
+                <Newspaper className="h-4 w-4 mr-2" />
+              ) : (
+                <Zap className="h-4 w-4 mr-2" />
+              )}
+              {scrapeMode === 'news_only' ? 'Actualizar Noticias' : 'Cascada Completa'} ({status?.pending || 0})
             </Button>
           )}
         </div>
@@ -395,7 +445,7 @@ export function CorporateScrapePanel() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
@@ -412,6 +462,15 @@ export function CorporateScrapePanel() {
               <span className="text-2xl font-bold">{snapshotCount}</span>
             </div>
             <p className="text-xs text-muted-foreground">Snapshots este mes</p>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2">
+              <Newspaper className="h-4 w-4 text-blue-600" />
+              <span className="text-2xl font-bold">{newsCount}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Noticias esta semana</p>
           </CardContent>
         </Card>
         <Card>

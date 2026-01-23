@@ -149,9 +149,11 @@ async function processCompany(
   supabase: ReturnType<typeof createClient>,
   company: { id: string; ticker: string; issuer_name: string; website: string },
   supabaseUrl: string,
-  serviceKey: string
+  serviceKey: string,
+  newsOnly: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
-  console.log(`[Orchestrator] Processing ${company.ticker} (${company.issuer_name})`);
+  const modeLabel = newsOnly ? 'NEWS ONLY' : 'FULL';
+  console.log(`[Orchestrator] Processing ${company.ticker} (${company.issuer_name}) - ${modeLabel}`);
 
   // Mark as processing
   await supabase
@@ -171,6 +173,7 @@ async function processCompany(
         ticker: company.ticker,
         website: company.website,
         issuer_name: company.issuer_name,
+        news_only: newsOnly, // NEW: Pass news_only flag
       }),
     });
 
@@ -186,7 +189,7 @@ async function processCompany(
       })
       .eq('id', company.id);
 
-    console.log(`[Orchestrator] ${company.ticker}: ${result.success ? 'completed' : 'failed'}`);
+    console.log(`[Orchestrator] ${company.ticker}: ${result.success ? 'completed' : 'failed'} (${modeLabel})`);
     return { success: result.success, error: result.error };
 
   } catch (err) {
@@ -420,7 +423,7 @@ Deno.serve(async (req) => {
       }
 
       // 4. Process synchronously (no waitUntil!)
-      const result = await processCompany(supabase, company, supabaseUrl, supabaseServiceKey);
+      const result = await processCompany(supabase, company, supabaseUrl, supabaseServiceKey, false);
       
       // 5. Get updated status
       const status = await getSweepStatus(supabase, sweepId);
@@ -430,6 +433,60 @@ Deno.serve(async (req) => {
           success: true,
           sweep_id: sweepId,
           processed: true,
+          ticker: company.ticker,
+          issuer_name: company.issuer_name,
+          result: result.success ? 'completed' : 'failed',
+          error: result.error,
+          zombies_reset: resetCount,
+          remaining: status.pending,
+          status
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================================================
+    // MODE: scrape_news_only - Process ONE company for NEWS ONLY (weekly)
+    // ========================================================================
+    if (mode === 'scrape_news_only') {
+      // 1. Ensure sweep is initialized
+      await ensureSweepInitialized(supabase, sweepId);
+      
+      // 2. Auto-reset zombies
+      const resetCount = await resetStuckProcessing(supabase, sweepId, 5);
+      
+      // 3. Get next pending company
+      const company = await getNextPending(supabase, sweepId);
+      
+      if (!company) {
+        const status = await getSweepStatus(supabase, sweepId);
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            sweep_id: sweepId,
+            processed: false, 
+            complete: status.pending === 0 && status.processing === 0,
+            message: 'No pending companies for news scraping',
+            mode: 'news_only',
+            zombies_reset: resetCount,
+            status 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 4. Process with news_only=true (faster, skips corporate data extraction)
+      const result = await processCompany(supabase, company, supabaseUrl, supabaseServiceKey, true);
+      
+      // 5. Get updated status
+      const status = await getSweepStatus(supabase, sweepId);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          sweep_id: sweepId,
+          processed: true,
+          mode: 'news_only',
           ticker: company.ticker,
           issuer_name: company.issuer_name,
           result: result.success ? 'completed' : 'failed',
@@ -526,7 +583,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: false, 
-        error: 'Invalid mode. Use: get_status, process_single, reset_failed, discover_websites, init_only' 
+        error: 'Invalid mode. Use: get_status, process_single, scrape_news_only, reset_failed, discover_websites, init_only' 
       }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

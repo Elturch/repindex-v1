@@ -432,7 +432,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { ticker, website, issuer_name } = await req.json();
+    const { ticker, website, issuer_name, news_only = false } = await req.json();
 
     if (!ticker || !website) {
       return new Response(
@@ -463,7 +463,8 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log(`[Corporate Scrape] Starting for ${ticker} (${issuer_name}) at ${website}`);
+    const modeLabel = news_only ? 'NEWS ONLY' : 'FULL SCRAPE';
+    console.log(`[Corporate Scrape] Starting ${modeLabel} for ${ticker} (${issuer_name}) at ${website}`);
 
     // Format URL
     let formattedUrl = website.trim();
@@ -477,46 +478,75 @@ Deno.serve(async (req) => {
     
     console.log(`[Corporate Scrape] Found ${corporateUrls.length} corporate pages, ${newsUrls.length} news articles for ${ticker}`);
 
-    // Step 2: Scrape corporate pages
-    const allMarkdown: string[] = [];
-    const scrapedUrls: string[] = [];
+    // Variables for corporate data (only populated if not news_only)
+    let allMarkdown: string[] = [];
+    let scrapedUrls: string[] = [];
+    let extractedData: CorporateData = {
+      ceo_name: null,
+      president_name: null,
+      chairman_name: null,
+      other_executives: [],
+      headquarters_city: null,
+      headquarters_country: null,
+      employees_approx: null,
+      founded_year: null,
+      mission_statement: null,
+      vision_statement: null,
+      company_description: null,
+      last_reported_revenue: null,
+      fiscal_year: null,
+    };
+    let confidence: ExtractionConfidence = {
+      ceo_name: null,
+      president_name: null,
+      headquarters: null,
+      employees: null,
+      mission: null,
+    };
 
-    for (const url of corporateUrls) {
-      const result = await scrapeWithFirecrawl(url, firecrawlApiKey);
-      if (result.success && result.markdown) {
-        allMarkdown.push(`\n\n--- SOURCE: ${url} ---\n\n${result.markdown}`);
-        scrapedUrls.push(url);
+    // Step 2: Scrape corporate pages (SKIP if news_only mode)
+    if (!news_only) {
+      for (const url of corporateUrls) {
+        const result = await scrapeWithFirecrawl(url, firecrawlApiKey);
+        if (result.success && result.markdown) {
+          allMarkdown.push(`\n\n--- SOURCE: ${url} ---\n\n${result.markdown}`);
+          scrapedUrls.push(url);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
 
-    if (allMarkdown.length === 0) {
-      console.error(`[Corporate Scrape] No content scraped for ${ticker}`);
-      
-      await supabase.from('corporate_snapshots').insert({
-        ticker,
-        snapshot_date_only: new Date().toISOString().split('T')[0],
-        scrape_status: 'failed',
-        error_message: 'No content could be scraped from website',
-        source_urls: [formattedUrl],
-        pages_scraped: 0,
-      });
+      if (allMarkdown.length === 0) {
+        console.error(`[Corporate Scrape] No content scraped for ${ticker}`);
+        
+        await supabase.from('corporate_snapshots').insert({
+          ticker,
+          snapshot_date_only: new Date().toISOString().split('T')[0],
+          scrape_status: 'failed',
+          error_message: 'No content could be scraped from website',
+          source_urls: [formattedUrl],
+          pages_scraped: 0,
+        });
 
-      return new Response(
-        JSON.stringify({ success: false, error: 'No content scraped from website' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        return new Response(
+          JSON.stringify({ success: false, error: 'No content scraped from website' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const combinedMarkdown = allMarkdown.join('\n');
+      console.log(`[Corporate Scrape] Combined ${allMarkdown.length} pages, total ${combinedMarkdown.length} chars`);
+
+      // Step 3: Extract structured corporate data using AI
+      const extraction = await extractCorporateData(
+        combinedMarkdown,
+        issuer_name || ticker,
+        openaiApiKey
       );
+      extractedData = extraction.data;
+      confidence = extraction.confidence;
+    } else {
+      console.log(`[Corporate Scrape] NEWS ONLY mode - skipping corporate data extraction for ${ticker}`);
     }
-
-    const combinedMarkdown = allMarkdown.join('\n');
-    console.log(`[Corporate Scrape] Combined ${allMarkdown.length} pages, total ${combinedMarkdown.length} chars`);
-
-    // Step 3: Extract structured corporate data using AI
-    const { data: extractedData, confidence } = await extractCorporateData(
-      combinedMarkdown,
-      issuer_name || ticker,
-      openaiApiKey
-    );
 
     // Step 4: Scrape and extract news articles (limit to 5 to save costs)
     const newsArticles: NewsArticle[] = [];
@@ -540,44 +570,54 @@ Deno.serve(async (req) => {
 
     console.log(`[Corporate Scrape] Extracted ${newsArticles.length} news articles for ${ticker}`);
 
-    // Step 5: Save corporate snapshot
-    const snapshotData = {
-      ticker,
-      snapshot_date_only: new Date().toISOString().split('T')[0],
-      ceo_name: extractedData.ceo_name,
-      president_name: extractedData.president_name,
-      chairman_name: extractedData.chairman_name,
-      other_executives: extractedData.other_executives,
-      headquarters_city: extractedData.headquarters_city,
-      headquarters_country: extractedData.headquarters_country,
-      employees_approx: extractedData.employees_approx,
-      founded_year: extractedData.founded_year,
-      mission_statement: extractedData.mission_statement,
-      vision_statement: extractedData.vision_statement,
-      company_description: extractedData.company_description,
-      last_reported_revenue: extractedData.last_reported_revenue,
-      fiscal_year: extractedData.fiscal_year,
-      raw_markdown: combinedMarkdown.substring(0, 50000),
-      source_urls: scrapedUrls,
-      pages_scraped: scrapedUrls.length,
-      scrape_status: 'success',
-      extraction_confidence: confidence,
-      blog_url: newsRoot,
-      news_articles_count: newsArticles.length,
-    };
+    // Step 5: Save corporate snapshot (FULL mode only) or just update news count (news_only mode)
+    let insertedSnapshot: any = null;
+    
+    if (!news_only) {
+      // FULL SCRAPE: Save complete corporate snapshot
+      const combinedMarkdown = allMarkdown.join('\n');
+      const snapshotData = {
+        ticker,
+        snapshot_date_only: new Date().toISOString().split('T')[0],
+        ceo_name: extractedData.ceo_name,
+        president_name: extractedData.president_name,
+        chairman_name: extractedData.chairman_name,
+        other_executives: extractedData.other_executives,
+        headquarters_city: extractedData.headquarters_city,
+        headquarters_country: extractedData.headquarters_country,
+        employees_approx: extractedData.employees_approx,
+        founded_year: extractedData.founded_year,
+        mission_statement: extractedData.mission_statement,
+        vision_statement: extractedData.vision_statement,
+        company_description: extractedData.company_description,
+        last_reported_revenue: extractedData.last_reported_revenue,
+        fiscal_year: extractedData.fiscal_year,
+        raw_markdown: combinedMarkdown.substring(0, 50000),
+        source_urls: scrapedUrls,
+        pages_scraped: scrapedUrls.length,
+        scrape_status: 'success',
+        extraction_confidence: confidence,
+        blog_url: newsRoot,
+        news_articles_count: newsArticles.length,
+      };
 
-    const { data: insertedSnapshot, error: insertError } = await supabase
-      .from('corporate_snapshots')
-      .upsert(snapshotData, { onConflict: 'ticker,snapshot_date_only' })
-      .select()
-      .single();
+      const { data: snapshot, error: insertError } = await supabase
+        .from('corporate_snapshots')
+        .upsert(snapshotData, { onConflict: 'ticker,snapshot_date_only' })
+        .select()
+        .single();
 
-    if (insertError) {
-      console.error(`[Corporate Scrape] Error saving snapshot for ${ticker}:`, insertError);
-      return new Response(
-        JSON.stringify({ success: false, error: insertError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (insertError) {
+        console.error(`[Corporate Scrape] Error saving snapshot for ${ticker}:`, insertError);
+        return new Response(
+          JSON.stringify({ success: false, error: insertError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      insertedSnapshot = snapshot;
+    } else {
+      // NEWS ONLY mode: Just update the news count on existing snapshot if any
+      console.log(`[Corporate Scrape] NEWS ONLY mode - skipping corporate snapshot save for ${ticker}`);
     }
 
     // Step 6: Save news articles
@@ -607,21 +647,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[Corporate Scrape] Successfully saved snapshot for ${ticker}`);
+    console.log(`[Corporate Scrape] Successfully completed ${news_only ? 'NEWS ONLY' : 'FULL'} scrape for ${ticker}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         ticker,
+        mode: news_only ? 'news_only' : 'full',
         pages_scraped: scrapedUrls.length,
         news_articles: newsArticles.length,
-        data_extracted: {
+        data_extracted: news_only ? null : {
           ceo_name: extractedData.ceo_name,
           president_name: extractedData.president_name,
           headquarters: `${extractedData.headquarters_city || ''}, ${extractedData.headquarters_country || ''}`.trim(),
           employees: extractedData.employees_approx,
         },
-        confidence,
+        confidence: news_only ? null : confidence,
         snapshot_id: insertedSnapshot?.id,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
