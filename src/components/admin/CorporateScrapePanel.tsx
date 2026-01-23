@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Globe, 
-  Play, 
+  Pause,
   RefreshCw, 
   CheckCircle, 
   AlertCircle, 
@@ -19,10 +19,14 @@ import {
   Calendar,
   Link as LinkIcon,
   Search,
-  RotateCcw
+  RotateCcw,
+  Zap
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { es } from 'date-fns/locale';
+
+const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
 
 interface ScrapeProgress {
   id: string;
@@ -46,10 +50,18 @@ interface SweepStatus {
   skipped: number;
 }
 
+interface CascadeState {
+  isRunning: boolean;
+  isPaused: boolean;
+  processed: number;
+  remaining: number;
+  currentTicker: string | null;
+  startTime: number | null;
+}
+
 export function CorporateScrapePanel() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [executing, setExecuting] = useState(false);
   const [resettingFailed, setResettingFailed] = useState(false);
   const [sweepId, setSweepId] = useState<string>('');
   const [customSweepId, setCustomSweepId] = useState('');
@@ -58,12 +70,38 @@ export function CorporateScrapePanel() {
   const [websiteCount, setWebsiteCount] = useState(0);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  
+  // Cascade state
+  const [cascade, setCascade] = useState<CascadeState>({
+    isRunning: false,
+    isPaused: false,
+    processed: 0,
+    remaining: 0,
+    currentTicker: null,
+    startTime: null,
+  });
+  const cascadeAbortRef = useRef(false);
 
   const getCurrentSweepId = () => {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     return `corp-${year}-${month}`;
+  };
+
+  const invokeOrchestrator = async (payload: Record<string, unknown>) => {
+    const response = await fetch(
+      `${SUPABASE_URL}/functions/v1/corporate-scrape-orchestrator`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+    return response.json();
   };
 
   const fetchData = useCallback(async () => {
@@ -73,20 +111,8 @@ export function CorporateScrapePanel() {
       setSweepId(targetSweepId);
 
       // Fetch sweep status from edge function
-      const response = await fetch(
-        `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/corporate-scrape-orchestrator`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU`
-          },
-          body: JSON.stringify({ mode: 'get_status', sweep_id: targetSweepId })
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
+      const data = await invokeOrchestrator({ mode: 'get_status', sweep_id: targetSweepId });
+      if (data.success) {
         setStatus(data.status);
       }
 
@@ -134,57 +160,100 @@ export function CorporateScrapePanel() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const startFullSweep = async () => {
-    setExecuting(true);
-    try {
-      const response = await fetch(
-        `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/corporate-scrape-orchestrator`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU`
-          },
-          body: JSON.stringify({ mode: 'start_full_sweep' })
+  // ============================================================================
+  // CASCADE LOGIC - Client-side loop for foolproof processing
+  // ============================================================================
+  
+  const handleLaunchCascade = async () => {
+    cascadeAbortRef.current = false;
+    const startTime = Date.now();
+    
+    setCascade({
+      isRunning: true,
+      isPaused: false,
+      processed: 0,
+      remaining: status?.pending || 0,
+      currentTicker: null,
+      startTime,
+    });
+
+    toast({
+      title: 'Cascada iniciada',
+      description: 'Procesando empresas una a una...',
+    });
+
+    let processedCount = 0;
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+
+    while (!cascadeAbortRef.current) {
+      try {
+        const result = await invokeOrchestrator({ mode: 'process_single', sweep_id: sweepId });
+        
+        if (!result.processed) {
+          // No more pending companies
+          break;
         }
-      );
 
-      const result = await response.json();
+        processedCount++;
+        consecutiveErrors = 0; // Reset on success
 
-      toast({
-        title: result.success ? 'Sweep iniciado' : 'Error',
-        description: result.message || 'El proceso se ejecutará en segundo plano',
-        variant: result.success ? 'default' : 'destructive'
-      });
+        setCascade(prev => ({
+          ...prev,
+          processed: processedCount,
+          remaining: result.remaining,
+          currentTicker: result.ticker,
+        }));
 
-      setTimeout(fetchData, 2000);
-    } catch {
-      toast({
-        title: 'Error',
-        description: 'No se pudo iniciar el sweep',
-        variant: 'destructive'
-      });
-    } finally {
-      setExecuting(false);
+        // Small pause between companies (1 second)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error('Cascade error:', error);
+        consecutiveErrors++;
+        
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          toast({
+            title: 'Cascada detenida',
+            description: `Demasiados errores consecutivos (${consecutiveErrors})`,
+            variant: 'destructive',
+          });
+          break;
+        }
+        
+        // Wait longer on error
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
     }
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+
+    setCascade(prev => ({
+      ...prev,
+      isRunning: false,
+      currentTicker: null,
+    }));
+
+    toast({
+      title: cascadeAbortRef.current ? 'Cascada pausada' : 'Cascada completada',
+      description: `Procesadas ${processedCount} empresas en ${minutes}m ${seconds}s`,
+    });
+
+    // Refresh data
+    fetchData();
+  };
+
+  const handlePauseCascade = () => {
+    cascadeAbortRef.current = true;
+    setCascade(prev => ({ ...prev, isPaused: true }));
   };
 
   const resetFailed = async () => {
     setResettingFailed(true);
     try {
-      const response = await fetch(
-        `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/corporate-scrape-orchestrator`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU`
-          },
-          body: JSON.stringify({ mode: 'reset_failed', sweep_id: sweepId })
-        }
-      );
-
-      const result = await response.json();
+      const result = await invokeOrchestrator({ mode: 'reset_failed', sweep_id: sweepId });
 
       toast({
         title: 'Reset completado',
@@ -228,6 +297,17 @@ export function CorporateScrapePanel() {
     ? Math.round(((status.completed + status.failed + status.skipped) / status.total) * 100)
     : 0;
 
+  // Calculate ETA for cascade
+  const getEstimatedTime = () => {
+    if (!cascade.isRunning || !cascade.startTime || cascade.processed === 0) return null;
+    const elapsed = (Date.now() - cascade.startTime) / 1000;
+    const avgTimePerCompany = elapsed / cascade.processed;
+    const remainingSeconds = Math.round(avgTimePerCompany * cascade.remaining);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+    return `~${minutes}m ${seconds}s restantes`;
+  };
+
   if (loading && progress.length === 0) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -246,7 +326,7 @@ export function CorporateScrapePanel() {
             Corporate Web Scraping
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Extracción automática de datos corporativos desde webs oficiales
+            Extracción automática de datos corporativos (1 empresa por invocación)
           </p>
         </div>
         <div className="flex gap-2">
@@ -254,21 +334,65 @@ export function CorporateScrapePanel() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Actualizar
           </Button>
-          <Button 
-            size="sm" 
-            onClick={startFullSweep} 
-            disabled={executing}
-            className="bg-gradient-to-r from-primary to-primary/80"
-          >
-            {executing ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4 mr-2" />
-            )}
-            Iniciar Scraping Completo
-          </Button>
+          
+          {cascade.isRunning ? (
+            <Button 
+              size="sm" 
+              onClick={handlePauseCascade}
+              variant="destructive"
+            >
+              <Pause className="h-4 w-4 mr-2" />
+              Pausar Cascada
+            </Button>
+          ) : (
+            <Button 
+              size="sm" 
+              onClick={handleLaunchCascade}
+              disabled={!status || status.pending === 0}
+              className="bg-gradient-to-r from-primary to-primary/80"
+            >
+              <Zap className="h-4 w-4 mr-2" />
+              Iniciar Cascada ({status?.pending || 0})
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Cascade Progress Card */}
+      {cascade.isRunning && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span className="font-medium">Cascada en progreso</span>
+              </div>
+              <span className="text-sm text-muted-foreground">
+                {getEstimatedTime()}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-4 mb-3">
+              <div className="flex-1">
+                <Progress 
+                  value={cascade.processed / (cascade.processed + cascade.remaining) * 100} 
+                  className="h-3" 
+                />
+              </div>
+              <span className="text-sm font-medium">
+                {cascade.processed}/{cascade.processed + cascade.remaining}
+              </span>
+            </div>
+            
+            {cascade.currentTicker && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Procesando:</span>
+                <Badge variant="outline" className="font-mono">{cascade.currentTicker}</Badge>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -418,7 +542,7 @@ export function CorporateScrapePanel() {
             <div className="text-center py-8 text-muted-foreground">
               <Building2 className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>No hay registros para este sweep</p>
-              <p className="text-sm mt-2">Pulsa "Iniciar Scraping Completo" para comenzar</p>
+              <p className="text-sm mt-2">Pulsa "Iniciar Cascada" para comenzar</p>
             </div>
           ) : (
             <ScrollArea className="h-96">
@@ -426,7 +550,9 @@ export function CorporateScrapePanel() {
                 {filteredProgress.map((item) => (
                   <div 
                     key={item.id} 
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"
+                    className={`flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 ${
+                      cascade.currentTicker === item.ticker ? 'border-primary bg-primary/5' : ''
+                    }`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="flex-1 min-w-0">
@@ -437,6 +563,9 @@ export function CorporateScrapePanel() {
                           <Badge variant="outline" className="text-xs">
                             {item.ticker}
                           </Badge>
+                          {cascade.currentTicker === item.ticker && (
+                            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                          )}
                         </div>
                         {item.website && (
                           <a 
@@ -479,7 +608,16 @@ export function CorporateScrapePanel() {
 }
 
 function RecentSnapshotsPreview() {
-  const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [snapshots, setSnapshots] = useState<{
+    ticker: string;
+    company_description: string | null;
+    ceo_name: string | null;
+    president_name: string | null;
+    headquarters_city: string | null;
+    employees_approx: number | null;
+    snapshot_date_only: string | null;
+    scrape_status: string | null;
+  }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -508,7 +646,7 @@ function RecentSnapshotsPreview() {
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-center py-4">
-            Aún no hay snapshots. Inicia el scraping para generar datos.
+            Aún no hay snapshots. Inicia la cascada para generar datos.
           </p>
         </CardContent>
       </Card>
