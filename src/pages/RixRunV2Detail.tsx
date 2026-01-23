@@ -76,6 +76,36 @@ export default function RixRunV2Detail() {
     run?.model_name
   );
 
+  // Prepare sibling options for the selector (including current run)
+  // MUST be called before any conditional returns to avoid hooks order issues
+  const modelOptions = useMemo(() => {
+    if (!run) return [];
+    
+    const options: { id: string; model_name: string; rix_score: number | null }[] = [];
+    
+    // Add current run first
+    options.push({
+      id: run.id,
+      model_name: run.model_name || "Unknown",
+      rix_score: run.displayRixScore ?? run.rix_score,
+    });
+    
+    // Add siblings (excluding current)
+    if (siblingRuns) {
+      siblingRuns.forEach(sibling => {
+        if (sibling.id !== run.id) {
+          options.push({
+            id: sibling.id,
+            model_name: sibling.model_name,
+            rix_score: sibling.rix_score,
+          });
+        }
+      });
+    }
+    
+    return options;
+  }, [run, siblingRuns]);
+
   if (isLoading) {
     return (
       <Layout title="RepIndex V2 - Detalle">
@@ -229,33 +259,6 @@ export default function RixRunV2Detail() {
   };
 
   const isListed = run.repindex_root_issuers?.cotiza_en_bolsa || run.precio_accion;
-
-  // Prepare sibling options for the selector (including current run)
-  const modelOptions = useMemo(() => {
-    const options: { id: string; model_name: string; rix_score: number | null }[] = [];
-    
-    // Add current run first
-    options.push({
-      id: run.id,
-      model_name: run.model_name || "Unknown",
-      rix_score: run.displayRixScore ?? run.rix_score,
-    });
-    
-    // Add siblings (excluding current)
-    if (siblingRuns) {
-      siblingRuns.forEach(sibling => {
-        if (sibling.id !== run.id) {
-          options.push({
-            id: sibling.id,
-            model_name: sibling.model_name,
-            rix_score: sibling.rix_score,
-          });
-        }
-      });
-    }
-    
-    return options;
-  }, [run, siblingRuns]);
 
   return (
     <Layout title="RepIndex V2 - Detalle">
