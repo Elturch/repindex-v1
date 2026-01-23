@@ -1,0 +1,1 @@
+DELETE FROM rix_runs_v2 WHERE source_pipeline = 'lovable_v2';
