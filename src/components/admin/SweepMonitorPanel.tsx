@@ -62,7 +62,7 @@ interface RecentActivity {
   completed_at: string | null;
 }
 
-const TOTAL_PHASES = 34;
+// TOTAL_PHASES is now dynamic based on issuer count
 const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
 
@@ -181,18 +181,18 @@ export function SweepMonitorPanel() {
     }
   }, [toast, fetchRecentActivity]);
 
+  // Initial fetch only on mount
   useEffect(() => {
     fetchStatus();
+  }, []);
+  
+  // Only poll during active cascade - NO AUTOMATIC POLLING otherwise
+  useEffect(() => {
+    if (!cascade.isRunning) return;
     
-    // Auto-refresh cada 10 segundos si hay procesamiento activo O si está en cascada
-    const interval = setInterval(() => {
-      if ((status?.byStatus?.processing && status.byStatus.processing > 0) || cascade.isRunning) {
-        fetchStatus();
-      }
-    }, 10000);
-
+    const interval = setInterval(fetchStatus, 15000); // 15s during cascade
     return () => clearInterval(interval);
-  }, [status?.byStatus?.processing, cascade.isRunning, fetchStatus]);
+  }, [cascade.isRunning, fetchStatus]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -829,7 +829,7 @@ export function SweepMonitorPanel() {
             <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm text-muted-foreground">
               <p>
                 <strong>Nota:</strong> El barrido para esta semana ({status?.sweepId}) aún no ha sido inicializado.
-                Haz clic en "Iniciar Barrido" para comenzar a procesar las {TOTAL_PHASES} fases de empresas.
+                Haz clic en "Iniciar Barrido" para comenzar a procesar las fases de empresas.
               </p>
             </div>
           )}
