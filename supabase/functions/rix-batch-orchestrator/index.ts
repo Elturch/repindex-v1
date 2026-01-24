@@ -594,6 +594,7 @@ Deno.serve(async (req) => {
       single_company?: boolean;
       reset_stuck?: boolean;      // NUEVO: reset inmediato de zombis
       reset_stuck_timeout?: number; // NUEVO: timeout personalizable
+      mode?: string;  // 'resume' para watchdog
     } = {};
     
     try {
@@ -612,10 +613,95 @@ Deno.serve(async (req) => {
       single_company = false,
       reset_stuck = false,
       reset_stuck_timeout = 0,
+      mode,
     } = requestBody;
 
     const sweepId = getCurrentSweepId();
-    console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}`);
+    console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}`);
+
+    // ========== MODO WATCHDOG: Auto-reanudación inteligente ==========
+    // El watchdog solo procesa si hay trabajo pendiente y no hay otras instancias activas
+    if (trigger === 'watchdog') {
+      // 1. Verificar si hay un sweep activo para esta semana
+      const { count: sweepCount } = await supabase
+        .from('sweep_progress')
+        .select('*', { count: 'exact', head: true })
+        .eq('sweep_id', sweepId);
+
+      // Si no hay sweep, no hacer nada (se iniciará el domingo)
+      if (!sweepCount || sweepCount === 0) {
+        console.log(`[watchdog] No sweep found for ${sweepId}. Skipping.`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            trigger: 'watchdog',
+            sweepId,
+            action: 'skip',
+            reason: 'No sweep initialized for this week',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 2. Contar empresas por estado
+      const { data: statusCounts } = await supabase
+        .from('sweep_progress')
+        .select('status')
+        .eq('sweep_id', sweepId);
+
+      const pending = statusCounts?.filter(s => s.status === 'pending').length || 0;
+      const processing = statusCounts?.filter(s => s.status === 'processing').length || 0;
+      const completed = statusCounts?.filter(s => s.status === 'completed').length || 0;
+      const failed = statusCounts?.filter(s => s.status === 'failed').length || 0;
+      const total = statusCounts?.length || 0;
+
+      console.log(`[watchdog] Sweep ${sweepId}: pending=${pending}, processing=${processing}, completed=${completed}, failed=${failed}`);
+
+      // 3. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
+      if (pending === 0 && processing === 0) {
+        console.log(`[watchdog] Sweep ${sweepId} is complete (${completed}/${total}). Nothing to resume.`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            trigger: 'watchdog',
+            sweepId,
+            action: 'complete',
+            reason: 'Sweep already completed',
+            stats: { pending, processing, completed, failed, total },
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 4. Si hay empresas pendientes, continuar procesando
+      // Primero limpiar zombis (empresas en processing >5 minutos)
+      const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
+      if (stuckReset.count > 0) {
+        console.log(`[watchdog] Auto-reset ${stuckReset.count} zombie companies: ${stuckReset.tickers.join(', ')}`);
+      }
+
+      // 5. Procesar la siguiente empresa (modo single_company para evitar timeouts)
+      console.log(`[watchdog] Resuming sweep ${sweepId} - processing next company...`);
+      const result = await runSingleCompany(supabase, supabaseUrl, supabaseServiceKey);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          trigger: 'watchdog',
+          sweepId,
+          action: 'resume',
+          processed: result,
+          zombiesReset: stuckReset.count > 0 ? stuckReset : undefined,
+          stats: { 
+            pendingBefore: pending + stuckReset.count, 
+            processing, 
+            completed, 
+            failed 
+          },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // ========== Modo: Obtener estado actual ==========
     if (get_status) {
