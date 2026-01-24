@@ -20,12 +20,18 @@ import {
   Newspaper
 } from 'lucide-react';
 
+type SourceFilter = 'all' | 'rix_v1' | 'rix_v2' | 'news';
+
 interface SourceCardProps {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
   status: SourceStatus;
   accentColor: string;
+  sourceFilter: SourceFilter;
+  onSync: (source: SourceFilter) => void;
+  isRunning: boolean;
+  activeSource: SourceFilter | null;
 }
 
 const SourceCard: React.FC<SourceCardProps> = ({ 
@@ -33,20 +39,44 @@ const SourceCard: React.FC<SourceCardProps> = ({
   subtitle, 
   icon, 
   status, 
-  accentColor 
+  accentColor,
+  sourceFilter,
+  onSync,
+  isRunning,
+  activeSource,
 }) => {
   const isComplete = status.pending === 0;
+  const isThisSourceRunning = isRunning && activeSource === sourceFilter;
+  const isDisabled = isRunning;
   
   return (
     <div className={`p-4 rounded-lg border ${isComplete ? 'bg-muted/30' : 'bg-muted/50 border-dashed'}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <div className={`p-1.5 rounded ${accentColor}`}>
-          {icon}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className={`p-1.5 rounded ${accentColor}`}>
+            {icon}
+          </div>
+          <div>
+            <h4 className="font-medium text-sm">{title}</h4>
+            <p className="text-xs text-muted-foreground">{subtitle}</p>
+          </div>
         </div>
-        <div>
-          <h4 className="font-medium text-sm">{title}</h4>
-          <p className="text-xs text-muted-foreground">{subtitle}</p>
-        </div>
+        
+        {/* Individual sync button */}
+        <Button
+          size="sm"
+          variant={isComplete ? "ghost" : "outline"}
+          onClick={() => onSync(sourceFilter)}
+          disabled={isDisabled || isComplete}
+          className="h-7 text-xs gap-1"
+        >
+          {isThisSourceRunning ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3 w-3" />
+          )}
+          {isComplete ? 'OK' : 'Sync'}
+        </Button>
       </div>
       
       <Progress 
@@ -75,6 +105,7 @@ export const VectorStorePanel: React.FC = () => {
   
   // Processing state
   const [isRunning, setIsRunning] = useState(false);
+  const [activeSource, setActiveSource] = useState<SourceFilter | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [result, setResult] = useState<{
     success: boolean;
@@ -88,24 +119,38 @@ export const VectorStorePanel: React.FC = () => {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   };
 
-  const handleRunVectorStore = async () => {
+  const getSourceLabel = (source: SourceFilter): string => {
+    switch (source) {
+      case 'rix_v1': return 'RIX V1';
+      case 'rix_v2': return 'RIX V2';
+      case 'news': return 'Noticias Corp.';
+      default: return 'Todas las fuentes';
+    }
+  };
+
+  const handleSyncSource = async (source: SourceFilter) => {
     setIsRunning(true);
+    setActiveSource(source);
     autoRunningRef.current = true;
     setResult(null);
     setLogs([]);
     
-    addLog('🚀 Iniciando sincronización incremental (V1 + V2 + Noticias)...');
+    const label = getSourceLabel(source);
+    addLog(`🚀 Iniciando sincronización: ${label}...`);
     
     let continueProcessing = true;
     let batchNumber = 0;
     
     while (continueProcessing && autoRunningRef.current) {
       batchNumber++;
-      addLog(`📦 Batch ${batchNumber}: procesando...`);
+      addLog(`📦 Batch ${batchNumber}: procesando ${label}...`);
       
       try {
         const { data, error } = await supabase.functions.invoke('populate-vector-store', {
-          body: { includeRawResponses: true },
+          body: { 
+            includeRawResponses: true,
+            sourceFilter: source,
+          },
         });
         
         if (error) throw error;
@@ -114,20 +159,27 @@ export const VectorStorePanel: React.FC = () => {
           // Refresh status after each batch
           await refresh();
           
-          addLog(`✓ Batch ${batchNumber}: ${data.processed || 0} creados, ${data.errored || 0} errores, ${data.remaining || 0} pendientes (${data.elapsed_seconds}s)`);
+          const processed = source === 'news' 
+            ? data.processed_news || 0
+            : source === 'rix_v2'
+              ? data.processed_v2 || 0
+              : data.processed || 0;
           
-          // Log per-source progress if available
-          if (data.v2_processed !== undefined) {
-            addLog(`   ↳ V2: ${data.v2_processed || 0} | News: ${data.news_processed || 0}`);
-          }
+          const remaining = source === 'news'
+            ? data.remaining_news || 0
+            : source === 'rix_v2'
+              ? data.remaining_v2 || data.remaining || 0
+              : data.remaining || 0;
           
-          if (data.complete || data.remaining === 0) {
+          addLog(`✓ Batch ${batchNumber}: ${processed} creados, ${data.errored || 0} errores, ${remaining} pendientes (${data.elapsed_seconds}s)`);
+          
+          if (data.complete || remaining === 0) {
             continueProcessing = false;
-            addLog(`✅ ¡Proceso completado!`);
-            setResult({ success: true, complete: true, message: `Sincronización completa` });
+            addLog(`✅ ¡${label} completado!`);
+            setResult({ success: true, complete: true, message: `${label} sincronizado` });
             toast({
-              title: 'Vector Store completado',
-              description: 'Todas las fuentes sincronizadas correctamente',
+              title: `${label} completado`,
+              description: 'Sincronización finalizada correctamente',
             });
           } else {
             // Brief pause before next batch
@@ -155,6 +207,7 @@ export const VectorStorePanel: React.FC = () => {
     }
     
     setIsRunning(false);
+    setActiveSource(null);
     autoRunningRef.current = false;
   };
 
@@ -172,11 +225,11 @@ export const VectorStorePanel: React.FC = () => {
           Vector Store - Base de Conocimiento
         </CardTitle>
         <CardDescription>
-          Sincroniza incrementalmente las tres fuentes de datos del Agente Rix.
+          Sincroniza cada fuente de datos del Agente Rix de forma independiente. Sin límites de registros.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Three source cards in grid */}
+        {/* Three source cards in grid - each with sync button */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <SourceCard
             title="RIX V1"
@@ -184,6 +237,10 @@ export const VectorStorePanel: React.FC = () => {
             icon={<FileText className="h-4 w-4 text-blue-600" />}
             status={status.rixV1}
             accentColor="bg-blue-100 dark:bg-blue-900/30"
+            sourceFilter="rix_v1"
+            onSync={handleSyncSource}
+            isRunning={isRunning}
+            activeSource={activeSource}
           />
           <SourceCard
             title="RIX V2"
@@ -191,6 +248,10 @@ export const VectorStorePanel: React.FC = () => {
             icon={<Sparkles className="h-4 w-4 text-purple-600" />}
             status={status.rixV2}
             accentColor="bg-purple-100 dark:bg-purple-900/30"
+            sourceFilter="rix_v2"
+            onSync={handleSyncSource}
+            isRunning={isRunning}
+            activeSource={activeSource}
           />
           <SourceCard
             title="Noticias Corp."
@@ -198,6 +259,10 @@ export const VectorStorePanel: React.FC = () => {
             icon={<Newspaper className="h-4 w-4 text-emerald-600" />}
             status={status.corporateNews}
             accentColor="bg-emerald-100 dark:bg-emerald-900/30"
+            sourceFilter="news"
+            onSync={handleSyncSource}
+            isRunning={isRunning}
+            activeSource={activeSource}
           />
         </div>
 
@@ -227,24 +292,24 @@ export const VectorStorePanel: React.FC = () => {
         {/* Action buttons */}
         <div className="flex items-center gap-4">
           <Button
-            onClick={handleRunVectorStore}
+            onClick={() => handleSyncSource('all')}
             disabled={isRunning || status.isLoading}
             className="gap-2"
           >
-            {isRunning ? (
+            {isRunning && activeSource === 'all' ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Sincronizando...
+                Sincronizando todo...
               </>
             ) : status.totalPending > 0 ? (
               <>
-                <RefreshCw className="h-4 w-4" />
-                Sincronizar ({status.totalPending.toLocaleString()} pendientes)
+                <Play className="h-4 w-4" />
+                Sincronizar Todo ({status.totalPending.toLocaleString()})
               </>
             ) : (
               <>
-                <Play className="h-4 w-4" />
-                Verificar sincronización
+                <CheckCircle className="h-4 w-4" />
+                Todo sincronizado
               </>
             )}
           </Button>
@@ -267,7 +332,7 @@ export const VectorStorePanel: React.FC = () => {
               <div className="flex items-center gap-2">
                 <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
                 <span className="font-medium text-blue-700 dark:text-blue-300">
-                  Auto-sincronización en curso
+                  Sincronizando: {getSourceLabel(activeSource || 'all')}
                 </span>
               </div>
               <span className="text-2xl font-bold text-blue-600">{status.overallProgress}%</span>
@@ -328,12 +393,12 @@ export const VectorStorePanel: React.FC = () => {
 
         {/* Info */}
         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-          <p className="font-medium mb-1">ℹ️ Fuentes de datos</p>
+          <p className="font-medium mb-1">ℹ️ Fuentes de datos (sin límites)</p>
           <ul className="list-disc list-inside space-y-1">
             <li><strong>RIX V1:</strong> Análisis históricos (Make.com) - 2 modelos</li>
             <li><strong>RIX V2:</strong> Análisis nuevos (Lovable) - 7 IAs</li>
             <li><strong>Noticias Corp:</strong> Artículos de blogs corporativos</li>
-            <li>Solo añade nuevos documentos (nunca borra existentes)</li>
+            <li>Cada fuente tiene su botón de sincronización individual</li>
           </ul>
         </div>
       </CardContent>
