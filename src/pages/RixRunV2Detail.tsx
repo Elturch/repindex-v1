@@ -258,7 +258,8 @@ export default function RixRunV2Detail() {
     return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  const isListed = run.repindex_root_issuers?.cotiza_en_bolsa || run.precio_accion;
+  // Check if company is listed - explicitly check cotiza_en_bolsa, don't trust precio_accion since "NC" is truthy
+  const isListed = run.repindex_root_issuers?.cotiza_en_bolsa === true;
 
   return (
     <Layout title="RepIndex V2 - Detalle">
