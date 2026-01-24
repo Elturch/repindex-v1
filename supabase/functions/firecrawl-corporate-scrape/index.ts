@@ -207,14 +207,42 @@ IMPORTANTE:
 - Solo extrae información que esté EXPLÍCITAMENTE mencionada en el texto
 - NO inventes ni asumas información
 - Si no encuentras un dato, devuelve null
-- Para cargos ejecutivos, busca títulos como: CEO, Presidente, Chairman, Consejero Delegado, Director General, etc.
 - Los nombres deben incluir nombre y apellidos cuando estén disponibles
+
+## REGLAS CRÍTICAS PARA CARGOS DIRECTIVOS EN ESPAÑA:
+
+En España, muchas grandes empresas tienen un "Presidente Ejecutivo" que es el máximo responsable (combina presidencia del consejo + funciones ejecutivas). Esto es DIFERENTE del modelo anglosajón CEO + Chairman.
+
+### MAPEO DE CARGOS:
+1. **president_name** (Presidente Ejecutivo):
+   - "Presidente Ejecutivo" / "Executive Chairman" / "Presidente y CEO" / "Chairman & CEO"
+   - Cuando UNA persona preside el consejo Y dirige la empresa operativamente
+   - Ejemplos: Ignacio Galán (Iberdrola), Ana Botín (Santander), José María Álvarez-Pallete (Telefónica)
+
+2. **ceo_name** (CEO / Consejero Delegado):
+   - "CEO" / "Chief Executive Officer" / "Consejero Delegado" / "Director General"
+   - Máximo responsable OPERATIVO cuando hay un presidente NO ejecutivo separado
+   - Solo usar si es un cargo DISTINTO del presidente
+
+3. **chairman_name** (Presidente del Consejo NO ejecutivo):
+   - "Presidente del Consejo" / "Chairman" (sin funciones ejecutivas)
+   - Preside el consejo pero NO dirige operaciones
+   - Solo usar cuando hay un CEO separado que dirige operaciones
+
+### EJEMPLOS DE CLASIFICACIÓN:
+- "Ignacio Galán, Presidente Ejecutivo de Iberdrola" → president_name: "Ignacio Galán", ceo_name: null
+- "Ana Botín, Presidenta Ejecutiva de Santander" → president_name: "Ana Botín", ceo_name: null  
+- "Carlos Torres Vila, Presidente de BBVA" → president_name: "Carlos Torres Vila", ceo_name: null
+- Una empresa con Chairman + CEO separados → chairman_name: [Chairman], ceo_name: [CEO]
+
+### REGLA DE ORO:
+Si el título incluye "Ejecutivo/a" o la persona claramente dirige la empresa operativamente → president_name (NO ceo_name)
 
 Responde SOLO con un JSON válido con esta estructura exacta:
 {
-  "ceo_name": "string o null",
-  "president_name": "string o null", 
-  "chairman_name": "string o null",
+  "ceo_name": "string o null - SOLO si hay CEO separado del presidente",
+  "president_name": "string o null - Presidente Ejecutivo o persona que dirige la empresa", 
+  "chairman_name": "string o null - SOLO si hay Chairman NO ejecutivo separado",
   "other_executives": [{"name": "string", "position": "string"}],
   "headquarters_city": "string o null",
   "headquarters_country": "string o null",

@@ -1704,14 +1704,16 @@ async function handleStandardChat(
       }
       context += `\n`;
       
-      if (memento.ceo_name) {
-        context += `👔 **CEO**: ${memento.ceo_name}\n`;
-      }
+      // Mostrar cargos con etiquetas correctas según el contexto español
+      // Prioridad: president_name (Presidente Ejecutivo) > ceo_name (CEO si es distinto) > chairman_name (Chairman no ejecutivo)
       if (memento.president_name) {
-        context += `🎖️ **Presidente**: ${memento.president_name}\n`;
+        context += `👔 **Presidente Ejecutivo**: ${memento.president_name}\n`;
       }
-      if (memento.chairman_name) {
-        context += `📋 **Presidente del Consejo**: ${memento.chairman_name}\n`;
+      if (memento.ceo_name && memento.ceo_name !== memento.president_name) {
+        context += `🎯 **CEO / Consejero Delegado**: ${memento.ceo_name}\n`;
+      }
+      if (memento.chairman_name && memento.chairman_name !== memento.president_name) {
+        context += `🏛️ **Presidente del Consejo**: ${memento.chairman_name}\n`;
       }
       if (memento.headquarters_city) {
         context += `📍 **Sede**: ${memento.headquarters_city}\n`;
