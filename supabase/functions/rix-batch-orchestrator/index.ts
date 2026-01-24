@@ -42,27 +42,44 @@ function getCurrentSweepId(): string {
   return `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 }
 
-// Verifica si una empresa ya tiene datos de esta semana en rix_runs_v2
+// Verifica si una empresa ya tiene datos para el período de análisis actual
 async function hasCompanyDataThisWeek(
   supabase: ReturnType<typeof createClient>,
   ticker: string
 ): Promise<boolean> {
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  weekStart.setHours(0, 0, 0, 0);
+  // Calculate the current analysis period (Monday to Sunday of PREVIOUS week)
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  
+  // Period is always the PREVIOUS week
+  const periodFrom = new Date(now);
+  periodFrom.setDate(now.getDate() + mondayOffset - 7); // Monday of previous week
+  const periodTo = new Date(periodFrom);
+  periodTo.setDate(periodFrom.getDate() + 6); // Sunday of previous week
 
+  const periodFromStr = periodFrom.toISOString().split('T')[0];
+  const periodToStr = periodTo.toISOString().split('T')[0];
+
+  // Check if there's AT LEAST 1 record for this period (not 6, to catch early)
   const { count, error } = await supabase
     .from('rix_runs_v2')
     .select('*', { count: 'exact', head: true })
     .eq('05_ticker', ticker)
-    .gte('created_at', weekStart.toISOString());
+    .eq('06_period_from', periodFromStr)
+    .eq('07_period_to', periodToStr);
 
   if (error) {
     console.error(`[phase] Error checking data for ${ticker}:`, error);
     return false;
   }
 
-  return (count || 0) >= 6;
+  // If we have at least 1 record, the company is already being processed or done
+  const hasData = (count || 0) >= 1;
+  if (hasData) {
+    console.log(`[phase] ${ticker} already has ${count} records for period ${periodFromStr} to ${periodToStr}`);
+  }
+  return hasData;
 }
 
 // Inicializa el barrido COMPLETO si no existe para esta semana
@@ -161,6 +178,34 @@ async function processCompany(
   serviceKey: string
 ): Promise<{ success: boolean; error?: string; modelsCompleted?: number }> {
   const started = Date.now();
+  
+  // DOBLE VERIFICACIÓN: Verificar que no esté ya en processing (evita concurrencia)
+  const { data: currentStatus } = await supabase
+    .from('sweep_progress')
+    .select('status')
+    .eq('id', progressId)
+    .single();
+
+  if (currentStatus?.status === 'processing') {
+    console.log(`[phase] ${ticker} is already being processed by another instance, skipping`);
+    return { success: true, modelsCompleted: 0 };
+  }
+
+  // DOBLE VERIFICACIÓN: Verificar si ya tiene datos en rix_runs_v2
+  const hasData = await hasCompanyDataThisWeek(supabase, ticker);
+  if (hasData) {
+    console.log(`[phase] ${ticker} already has data this week (pre-check), marking as completed`);
+    await supabase
+      .from('sweep_progress')
+      .update({ 
+        status: 'completed', 
+        completed_at: new Date().toISOString(),
+        models_completed: 6 
+      })
+      .eq('id', progressId);
+    return { success: true, modelsCompleted: 6 };
+  }
+  
   // Marcar como 'processing'
   const { error: markProcessingError } = await supabase
     .from('sweep_progress')
@@ -172,21 +217,6 @@ async function processCompany(
   }
 
   try {
-    // Verificar si ya tiene datos de esta semana
-    const hasData = await hasCompanyDataThisWeek(supabase, ticker);
-    if (hasData) {
-      console.log(`[phase] ${ticker} already has data this week, marking as completed`);
-      await supabase
-        .from('sweep_progress')
-        .update({ 
-          status: 'completed', 
-          completed_at: new Date().toISOString(),
-          models_completed: 6 
-        })
-        .eq('id', progressId);
-      return { success: true, modelsCompleted: 6 };
-    }
-
     // Llamar a rix-search-v2
     console.log(`[phase] Processing ${ticker} (${issuerName})`);
     const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
