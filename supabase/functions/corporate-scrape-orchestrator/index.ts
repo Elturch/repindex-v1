@@ -465,26 +465,48 @@ Deno.serve(async (req) => {
 
     // ========================================================================
     // MODE: process_single - Process exactly ONE company (FOOLPROOF)
+    // Supports watchdog trigger for autonomous 24/7 operation
     // ========================================================================
     if (mode === 'process_single') {
+      const trigger = body.trigger || 'manual';
+      const isWatchdog = trigger === 'watchdog';
+      
+      if (isWatchdog) {
+        console.log(`[WATCHDOG] ========================================`);
+        console.log(`[WATCHDOG] Corporate scrape auto-triggered at ${new Date().toISOString()}`);
+        console.log(`[WATCHDOG] Sweep ID: ${sweepId}`);
+      }
+      
       // 1. Ensure sweep is initialized (fast, no website search)
       await ensureSweepInitialized(supabase, sweepId);
       
       // 2. Auto-reset zombies (stuck in processing > 5 min)
       const zombieReset = await resetStuckProcessing(supabase, sweepId, 5);
       
+      if (isWatchdog && zombieReset.count > 0) {
+        console.log(`[WATCHDOG] Auto-cleaned ${zombieReset.count} zombie(s): ${zombieReset.tickers.join(', ')}`);
+      }
+      
       // 3. Get next pending company
       const company = await getNextPending(supabase, sweepId);
       
       if (!company) {
         const status = await getSweepStatus(supabase, sweepId);
+        const isComplete = status.pending === 0 && status.processing === 0;
+        
+        if (isWatchdog) {
+          console.log(`[WATCHDOG] No pending companies. Complete: ${isComplete}`);
+          console.log(`[WATCHDOG] ========================================`);
+        }
+        
         return new Response(
           JSON.stringify({ 
             success: true, 
             sweep_id: sweepId,
             processed: false, 
-            complete: status.pending === 0 && status.processing === 0,
+            complete: isComplete,
             message: 'No pending companies',
+            trigger,
             zombies_reset: zombieReset.count,
             zombies_reset_tickers: zombieReset.tickers,
             status 
@@ -494,10 +516,20 @@ Deno.serve(async (req) => {
       }
 
       // 4. Process synchronously (no waitUntil!)
+      if (isWatchdog) {
+        console.log(`[WATCHDOG] Processing: ${company.ticker} (${company.issuer_name})`);
+      }
+      
       const result = await processCompany(supabase, company, supabaseUrl, supabaseServiceKey, false);
       
       // 5. Get updated status
       const status = await getSweepStatus(supabase, sweepId);
+      
+      if (isWatchdog) {
+        console.log(`[WATCHDOG] Result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+        console.log(`[WATCHDOG] Remaining: ${status.pending} pending, ${status.failed} failed`);
+        console.log(`[WATCHDOG] ========================================`);
+      }
       
       return new Response(
         JSON.stringify({
@@ -508,6 +540,7 @@ Deno.serve(async (req) => {
           issuer_name: company.issuer_name,
           result: result.success ? 'completed' : 'failed',
           error: result.error,
+          trigger,
           zombies_reset: zombieReset.count,
           remaining: status.pending,
           status
