@@ -39,12 +39,12 @@ async function ensureSweepInitialized(
     return { initialized: false, totalCompanies: count || 0 };
   }
 
-  // Get all active companies with their existing websites
-  console.log(`[Orchestrator] Initializing sweep ${sweepId} - querying active companies`);
+  // Get all companies with status=active (includes all ibex_status types)
+  console.log(`[Orchestrator] Initializing sweep ${sweepId} - querying all active companies`);
   const { data: companies, error } = await supabase
     .from('repindex_root_issuers')
     .select('ticker, issuer_name, website')
-    .in('ibex_status', ['active', 'active_now']);
+    .eq('status', 'active');
 
   if (error) {
     console.error(`[Orchestrator] Query error:`, JSON.stringify(error));
