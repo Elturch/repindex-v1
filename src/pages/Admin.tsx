@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from '@/components/layout/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -23,7 +23,6 @@ import {
   Pencil,
   Gift,
   Database,
-  Play,
   AlertCircle,
   BarChart3,
   Sparkles,
@@ -51,6 +50,7 @@ import { SweepMonitorPanel } from '@/components/admin/SweepMonitorPanel';
 import { IssuerIngestPanel } from '@/components/admin/IssuerIngestPanel';
 import { CronMonitorPanel } from '@/components/admin/CronMonitorPanel';
 import { CorporateScrapePanel } from '@/components/admin/CorporateScrapePanel';
+import { VectorStorePanel } from '@/components/admin/VectorStorePanel';
 import { DollarSign, Radar, DatabaseBackup, Timer } from 'lucide-react';
 
 interface Company {
@@ -182,22 +182,6 @@ const Admin: React.FC = () => {
     is_active: true,
     send_magic_link: true,
   });
-
-  // Vector Store state
-  const [vectorStoreRunning, setVectorStoreRunning] = useState(false);
-  const [vectorStoreLogs, setVectorStoreLogs] = useState<string[]>([]);
-  const [vectorStoreProgress, setVectorStoreProgress] = useState(0);
-  const [vectorStoreTotalRuns, setVectorStoreTotalRuns] = useState(0);
-  const [vectorStoreDocsCreated, setVectorStoreDocsCreated] = useState(0);
-  const [vectorStoreRemaining, setVectorStoreRemaining] = useState(0);
-  const [vectorStoreAutoRunning, setVectorStoreAutoRunning] = useState(false);
-  const autoRunningRef = useRef(false);
-  const [vectorStoreResult, setVectorStoreResult] = useState<{
-    success: boolean;
-    complete?: boolean;
-    message?: string;
-    error?: string;
-  } | null>(null);
 
   // Role Analytics state
   const [roleAnalytics, setRoleAnalytics] = useState<RoleEnrichmentAnalytic[]>([]);
@@ -331,27 +315,6 @@ const Admin: React.FC = () => {
   const allUsersWithTest = useMemo(() => {
     return [testUser, ...users];
   }, [users]);
-
-  // Fetch initial vector store status on mount
-  useEffect(() => {
-    const fetchInitialStatus = async () => {
-      try {
-        const [docsResult, runsResult] = await Promise.all([
-          supabase.from('documents').select('id', { count: 'exact', head: true }),
-          supabase.from('rix_runs').select('id', { count: 'exact', head: true }).not('10_resumen', 'is', null),
-        ]);
-        const docs = docsResult.count || 0;
-        const runs = runsResult.count || 0;
-        setVectorStoreDocsCreated(docs);
-        setVectorStoreTotalRuns(runs);
-        setVectorStoreRemaining(Math.max(0, runs - docs));
-        setVectorStoreProgress(runs > 0 ? Math.round((docs / runs) * 100) : 100);
-      } catch (e) {
-        console.error('Error fetching vector store status:', e);
-      }
-    };
-    fetchInitialStatus();
-  }, []);
 
   // Compute chat activity data for chart
   const chatActivityData = useMemo(() => {
@@ -510,90 +473,6 @@ const Admin: React.FC = () => {
       setLoadingUsers(false);
     }
   };
-
-  const handleRunVectorStore = async () => {
-    setVectorStoreRunning(true);
-    setVectorStoreAutoRunning(true);
-    autoRunningRef.current = true;
-    setVectorStoreResult(null);
-    
-    const addLog = (msg: string) => {
-      setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
-    };
-    
-    addLog('🚀 Iniciando repoblación incremental...');
-    
-    let continueProcessing = true;
-    let batchNumber = 0;
-    
-    while (continueProcessing && autoRunningRef.current) {
-      batchNumber++;
-      addLog(`📦 Batch ${batchNumber}: procesando...`);
-      
-      try {
-        const { data, error } = await supabase.functions.invoke('populate-vector-store', {
-          body: { includeRawResponses: true },
-        });
-        
-        if (error) throw error;
-        
-        if (data) {
-          setVectorStoreDocsCreated(data.existing || 0);
-          setVectorStoreTotalRuns(data.total || 0);
-          setVectorStoreRemaining(data.remaining || 0);
-          
-          if (data.total > 0) {
-            const progress = Math.round(((data.existing || 0) / data.total) * 100);
-            setVectorStoreProgress(progress);
-          }
-          
-          addLog(`✓ Batch ${batchNumber}: ${data.processed || 0} creados, ${data.errored || 0} errores, ${data.remaining || 0} pendientes (${data.elapsed_seconds}s)`);
-          
-          if (data.complete || data.remaining === 0) {
-            continueProcessing = false;
-            addLog(`✅ ¡Proceso completado! ${data.existing} documentos totales`);
-            setVectorStoreResult({ success: true, complete: true, message: `${data.existing} documentos` });
-            toast({
-              title: 'Vector Store completado',
-              description: `${data.existing} documentos sincronizados correctamente`,
-            });
-          } else {
-            // Brief pause before next batch
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-      } catch (error: any) {
-        console.error('Error in batch:', error);
-        addLog(`❌ Error en batch ${batchNumber}: ${error.message}`);
-        
-        // Retry after longer pause
-        if (batchNumber < 20) {
-          addLog('⏳ Reintentando en 5 segundos...');
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        } else {
-          continueProcessing = false;
-          setVectorStoreResult({ success: false, error: error.message });
-          toast({
-            title: 'Error',
-            description: 'Proceso detenido tras múltiples errores',
-            variant: 'destructive',
-          });
-        }
-      }
-    }
-    
-    setVectorStoreRunning(false);
-    setVectorStoreAutoRunning(false);
-    autoRunningRef.current = false;
-  };
-
-  const handleStopVectorStore = () => {
-    autoRunningRef.current = false;
-    setVectorStoreAutoRunning(false);
-    setVectorStoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⏸️ Proceso pausado por usuario`]);
-    toast({ title: 'Pausado', description: 'El proceso se detendrá tras el batch actual' });
-  };
-
   const resetCompanyForm = () => {
     setCompanyForm({
       company_name: '', ticker: '', contact_email: '', contact_phone: '',
@@ -2153,150 +2032,8 @@ const Admin: React.FC = () => {
           {/* ==================== SISTEMA ==================== */}
           <TabsContent value="system">
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Database className="h-5 w-5" />
-                    Vector Store - Base de Conocimiento
-                  </CardTitle>
-                  <CardDescription>
-                    Sincroniza incrementalmente la base de conocimiento del Agente Rix.
-                    Solo añade nuevos documentos (nunca borra). Auto-continuación incluida.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Current status */}
-                  <div className="p-4 rounded-lg border bg-muted/30">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Estado actual</span>
-                      <Badge variant={vectorStoreRemaining > 0 ? 'secondary' : 'default'}>
-                        {vectorStoreRemaining > 0 ? `${vectorStoreRemaining} pendientes` : 'Sincronizado'}
-                      </Badge>
-                    </div>
-                    <Progress value={vectorStoreProgress} className="h-2 mb-2" />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{vectorStoreDocsCreated.toLocaleString()} documentos</span>
-                      <span>{vectorStoreTotalRuns.toLocaleString()} rix_runs</span>
-                      <span>{Math.round(vectorStoreProgress)}%</span>
-                    </div>
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-4">
-                    <Button
-                      onClick={handleRunVectorStore}
-                      disabled={vectorStoreRunning}
-                      className="gap-2"
-                    >
-                      {vectorStoreRunning ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Sincronizando...
-                        </>
-                      ) : vectorStoreRemaining > 0 ? (
-                        <>
-                          <RefreshCw className="h-4 w-4" />
-                          Sincronizar ({vectorStoreRemaining} pendientes)
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4" />
-                          Verificar sincronización
-                        </>
-                      )}
-                    </Button>
-                    
-                    {vectorStoreRunning && (
-                      <Button variant="outline" onClick={handleStopVectorStore} size="sm">
-                        Pausar
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Processing indicator */}
-                  {vectorStoreRunning && (
-                    <div className="space-y-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
-                          <span className="font-medium text-blue-700 dark:text-blue-300">
-                            Auto-sincronización en curso
-                          </span>
-                        </div>
-                        <span className="text-2xl font-bold text-blue-600">{Math.round(vectorStoreProgress)}%</span>
-                      </div>
-                      <Progress value={vectorStoreProgress} className="h-3" />
-                      <div className="flex justify-between text-sm text-blue-600 dark:text-blue-400">
-                        <span>{vectorStoreDocsCreated.toLocaleString()} sincronizados</span>
-                        <span>{vectorStoreRemaining.toLocaleString()} pendientes</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Result */}
-                  {vectorStoreResult && !vectorStoreRunning && (
-                    <div className={`p-4 rounded-lg border ${vectorStoreResult.success ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
-                      <div className="flex items-center gap-2 mb-2">
-                        {vectorStoreResult.success ? (
-                          <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-                        ) : (
-                          <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
-                        )}
-                        <span className="font-medium">
-                          {vectorStoreResult.success 
-                            ? (vectorStoreResult.complete ? '✅ Sincronización completada' : 'Progreso guardado')
-                            : 'Error en el proceso'}
-                        </span>
-                      </div>
-                      {vectorStoreResult.success && (
-                        <p className="text-sm text-green-600 dark:text-green-400">
-                          {vectorStoreResult.message}
-                        </p>
-                      )}
-                      {vectorStoreResult.error && (
-                        <p className="text-sm text-red-600 dark:text-red-400">{vectorStoreResult.error}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Logs */}
-                  {vectorStoreLogs.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <Label>Logs de procesamiento</Label>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => setVectorStoreLogs([])}
-                          className="h-6 text-xs"
-                        >
-                          Limpiar
-                        </Button>
-                      </div>
-                      <ScrollArea className="h-48 rounded-md border bg-muted/30 p-3">
-                        <div className="space-y-1 font-mono text-xs">
-                          {vectorStoreLogs.map((log, i) => (
-                            <div key={i} className={log.includes('❌') ? 'text-red-500' : log.includes('✅') ? 'text-green-500' : log.includes('⏳') ? 'text-amber-500' : ''}>
-                              {log}
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </div>
-                  )}
-
-                  <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-                    <p className="font-medium mb-1">ℹ️ ¿Cómo funciona?</p>
-                    <ul className="list-disc list-inside space-y-1">
-                      <li>Solo añade documentos nuevos (nunca borra existentes)</li>
-                      <li>Procesa en batches de 100 docs con auto-continuación</li>
-                      <li>Incluye respuestas completas de ChatGPT, Perplexity, Gemini y DeepSeek</li>
-                      <li>Mejora las respuestas del Agente Rix con más contexto</li>
-                      <li><strong>Nuevo:</strong> Incluye respuestas valoradas positivamente por usuarios</li>
-                    </ul>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* New Vector Store Panel with 3 sources */}
+              <VectorStorePanel />
 
               {/* Feedback de Respuestas */}
               <FeedbackPanel />
