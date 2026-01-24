@@ -16,6 +16,9 @@ const NEWS_BATCH_SIZE = 50; // News articles per execution
 // New models added in the 6 IA system (January 2026)
 const NEW_MODELS = ['Grok', 'Qwen'];
 
+// Source filter type
+type SourceFilter = 'all' | 'rix_v1' | 'rix_v2' | 'news';
+
 // Helper: Check if a date is recent (within N days)
 function isRecentDate(dateStr: string | null, daysThreshold: number = 90): boolean {
   if (!dateStr) return false;
@@ -31,9 +34,9 @@ function isRecentDate(dateStr: string | null, daysThreshold: number = 90): boole
 }
 
 // Background processing function - INCREMENTAL ONLY (never deletes)
-async function processVectorStore(includeRawResponses: boolean) {
+async function processVectorStore(includeRawResponses: boolean, sourceFilter: SourceFilter = 'all') {
   const startTime = Date.now();
-  console.log('Starting incremental vector store population (multi-table: rix_runs + rix_runs_v2)...');
+  console.log(`Starting incremental vector store population (sourceFilter: ${sourceFilter})...`);
   
   const supabaseClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -48,7 +51,7 @@ async function processVectorStore(includeRawResponses: boolean) {
 
   try {
     // Get existing document IDs (by rix_run_id in metadata)
-    // Use pagination to get ALL documents (Supabase default limit is 1000)
+    // Use pagination to get ALL documents (no limit)
     console.log('Fetching existing documents...');
     const existingRunIds = new Set<string>();
     let docOffset = 0;
@@ -80,13 +83,14 @@ async function processVectorStore(includeRawResponses: boolean) {
     console.log(`Found ${existingRunIds.size} existing documents`);
 
     // ==========================================================================
-    // FETCH FROM BOTH TABLES: rix_runs (original) + rix_runs_v2 (7 IAs)
+    // FETCH FROM TABLES BASED ON sourceFilter
     // ==========================================================================
-    console.log('Fetching all rix_runs from BOTH tables...');
+    let rixRunsOriginal: any[] = [];
+    let rixRunsV2: any[] = [];
     
-    // Fetch from rix_runs (original Make.com data)
-    const fetchRixRunsOriginal = async () => {
-      const allRixRuns: any[] = [];
+    // Fetch from rix_runs (original Make.com data) - only if needed
+    if (sourceFilter === 'all' || sourceFilter === 'rix_v1') {
+      console.log('Fetching rix_runs (V1)...');
       let rixOffset = 0;
       const rixBatchSize = 1000;
       
@@ -105,23 +109,22 @@ async function processVectorStore(includeRawResponses: boolean) {
         if (!rixRuns || rixRuns.length === 0) break;
         
         // Mark source table
-        allRixRuns.push(...rixRuns.map(r => ({ ...r, _source_table: 'rix_runs' })));
+        rixRunsOriginal.push(...rixRuns.map(r => ({ ...r, _source_table: 'rix_runs' })));
         
         if (rixRuns.length < rixBatchSize) break;
         rixOffset += rixBatchSize;
       }
-      
-      return allRixRuns;
-    };
+      console.log(`Fetched from rix_runs (V1): ${rixRunsOriginal.length} records`);
+    }
 
-    // Fetch from rix_runs_v2 (new 7 IA system)
-    const fetchRixRunsV2 = async () => {
-      const allRixRunsV2: any[] = [];
+    // Fetch from rix_runs_v2 (new 7 IA system) - only if needed
+    if (sourceFilter === 'all' || sourceFilter === 'rix_v2') {
+      console.log('Fetching rix_runs_v2 (V2)...');
       let v2Offset = 0;
       const v2BatchSize = 1000;
       
       while (true) {
-        const { data: rixRunsV2, error: v2Error } = await supabaseClient
+        const { data: rixV2Data, error: v2Error } = await supabaseClient
           .from('rix_runs_v2')
           .select('*')
           .not('10_resumen', 'is', null)
@@ -132,47 +135,23 @@ async function processVectorStore(includeRawResponses: boolean) {
           throw v2Error;
         }
         
-        if (!rixRunsV2 || rixRunsV2.length === 0) break;
+        if (!rixV2Data || rixV2Data.length === 0) break;
         
         // Mark source table
-        allRixRunsV2.push(...rixRunsV2.map(r => ({ ...r, _source_table: 'rix_runs_v2' })));
+        rixRunsV2.push(...rixV2Data.map(r => ({ ...r, _source_table: 'rix_runs_v2' })));
         
-        if (rixRunsV2.length < v2BatchSize) break;
+        if (rixV2Data.length < v2BatchSize) break;
         v2Offset += v2BatchSize;
       }
-      
-      return allRixRunsV2;
-    };
+      console.log(`Fetched from rix_runs_v2 (V2): ${rixRunsV2.length} records`);
+    }
 
-    // Fetch both tables in parallel
-    const [rixRunsOriginal, rixRunsV2] = await Promise.all([
-      fetchRixRunsOriginal(),
-      fetchRixRunsV2()
-    ]);
-
-    console.log(`Fetched from rix_runs (original): ${rixRunsOriginal.length} records`);
-    console.log(`Fetched from rix_runs_v2 (7 IAs): ${rixRunsV2.length} records`);
-
-    // Combine all runs
+    // Combine runs based on filter
     const allRixRuns = [...rixRunsOriginal, ...rixRunsV2];
     const totalRuns = allRixRuns.length;
     const pendingRuns = allRixRuns.filter(r => !existingRunIds.has(r.id));
     
-    console.log(`Total rix_runs (combined): ${totalRuns}, Existing docs: ${existingRunIds.size}, Pending: ${pendingRuns.length}`);
-
-    if (pendingRuns.length === 0) {
-      console.log('No pending documents to process!');
-      return { 
-        success: true, 
-        complete: true, 
-        processed: 0, 
-        remaining: 0,
-        total: totalRuns,
-        existing: existingRunIds.size,
-        from_rix_runs: rixRunsOriginal.length,
-        from_rix_runs_v2: rixRunsV2.length
-      };
-    }
+    console.log(`Total rix_runs: ${totalRuns}, Existing docs: ${existingRunIds.size}, Pending: ${pendingRuns.length}`);
 
     // Get issuers data with websites
     const { data: issuers } = await supabaseClient
@@ -203,439 +182,478 @@ async function processVectorStore(includeRawResponses: boolean) {
 
     let documentsCreated = 0;
     let documentsErrored = 0;
+    let v1DocsCreated = 0;
     let v2DocsCreated = 0;
 
-    // Process batch with time limit
-    const batchToProcess = pendingRuns.slice(0, BATCH_SIZE);
-    
-    for (const run of batchToProcess) {
-      // Check time limit
-      if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-        console.log(`Time limit reached after ${documentsCreated} documents`);
-        break;
-      }
-
-      try {
-        const issuerData = issuersMap.get(run["05_ticker"]);
-        const isV2 = run._source_table === 'rix_runs_v2';
-        const modelName = run["02_model_name"] || "N/A";
-        const isNewModel = NEW_MODELS.includes(modelName);
-
-        // Build RICH content with 7 IA system header for V2 records
-        let content = '';
-        
-        // Add system header for V2 records (the "snapshot")
-        if (isV2) {
-          content += `[SISTEMA REPINDEX 2.0 - 6 MODELOS DE IA]\n`;
-          content += `Este análisis utiliza el nuevo sistema avanzado RepIndex 2.0 con 6 modelos de IA:\n`;
-          content += `ChatGPT, Perplexity, Gemini, Deepseek, Grok y Qwen.\n`;
-          content += `Lanzamiento: Enero 2026\n\n`;
-        }
-        
-        content += `Empresa: ${run["03_target_name"] || "N/A"}\n`;
-        content += `Ticker: ${run["05_ticker"] || "N/A"}\n`;
-        content += `Modelo IA: ${modelName}\n`;
-        content += `Período: ${run["06_period_from"]} - ${run["07_period_to"]}\n`;
-        content += `RIX Score: ${run["09_rix_score"] || "N/A"}\n`;
-        
-        if (issuerData) {
-          content += `Sector: ${issuerData.sector_category || "N/A"}\n`;
-          content += `Familia IBEX: ${issuerData.ibex_family_code || "N/A"}\n`;
-          if (issuerData.website) {
-            content += `Web corporativa: ${issuerData.website}\n`;
-          }
+    // Process RIX batch with time limit (skip if filtering to news only)
+    if (sourceFilter !== 'news' && pendingRuns.length > 0) {
+      const batchToProcess = pendingRuns.slice(0, BATCH_SIZE);
+      
+      for (const run of batchToProcess) {
+        // Check time limit
+        if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+          console.log(`Time limit reached after ${documentsCreated} documents`);
+          break;
         }
 
-        // Add corporate snapshot data if available
-        const ticker = run["05_ticker"];
-        const corpSnapshot = ticker ? snapshotsMap.get(ticker) : null;
-        if (corpSnapshot) {
-          content += `\n[DATOS CORPORATIVOS VERIFICADOS - Actualizado: ${corpSnapshot.snapshot_date_only}]\n`;
-          if (corpSnapshot.president_name) {
-            content += `Presidente: ${corpSnapshot.president_name}\n`;
+        try {
+          const issuerData = issuersMap.get(run["05_ticker"]);
+          const isV2 = run._source_table === 'rix_runs_v2';
+          const modelName = run["02_model_name"] || "N/A";
+          const isNewModel = NEW_MODELS.includes(modelName);
+
+          // Build RICH content with 7 IA system header for V2 records
+          let content = '';
+          
+          // Add system header for V2 records (the "snapshot")
+          if (isV2) {
+            content += `[SISTEMA REPINDEX 2.0 - 6 MODELOS DE IA]\n`;
+            content += `Este análisis utiliza el nuevo sistema avanzado RepIndex 2.0 con 6 modelos de IA:\n`;
+            content += `ChatGPT, Perplexity, Gemini, Deepseek, Grok y Qwen.\n`;
+            content += `Lanzamiento: Enero 2026\n\n`;
           }
-          if (corpSnapshot.ceo_name) {
-            content += `CEO: ${corpSnapshot.ceo_name}\n`;
+          
+          content += `Empresa: ${run["03_target_name"] || "N/A"}\n`;
+          content += `Ticker: ${run["05_ticker"] || "N/A"}\n`;
+          content += `Modelo IA: ${modelName}\n`;
+          content += `Período: ${run["06_period_from"]} - ${run["07_period_to"]}\n`;
+          content += `RIX Score: ${run["09_rix_score"] || "N/A"}\n`;
+          
+          if (issuerData) {
+            content += `Sector: ${issuerData.sector_category || "N/A"}\n`;
+            content += `Familia IBEX: ${issuerData.ibex_family_code || "N/A"}\n`;
+            if (issuerData.website) {
+              content += `Web corporativa: ${issuerData.website}\n`;
+            }
           }
-          if (corpSnapshot.chairman_name) {
-            content += `Presidente del Consejo: ${corpSnapshot.chairman_name}\n`;
-          }
-          if (corpSnapshot.headquarters_city || corpSnapshot.headquarters_country) {
-            content += `Sede: ${corpSnapshot.headquarters_city || ''}, ${corpSnapshot.headquarters_country || ''}\n`;
-          }
-          if (corpSnapshot.employees_approx) {
-            content += `Empleados (aprox.): ${corpSnapshot.employees_approx.toLocaleString()}\n`;
-          }
-          if (corpSnapshot.founded_year) {
-            content += `Fundación: ${corpSnapshot.founded_year}\n`;
-          }
-          if (corpSnapshot.mission_statement) {
-            content += `Misión: ${corpSnapshot.mission_statement}\n`;
-          }
-          if (corpSnapshot.company_description) {
-            content += `Descripción: ${corpSnapshot.company_description}\n`;
+
+          // Add corporate snapshot data if available
+          const ticker = run["05_ticker"];
+          const corpSnapshot = ticker ? snapshotsMap.get(ticker) : null;
+          if (corpSnapshot) {
+            content += `\n[DATOS CORPORATIVOS VERIFICADOS - Actualizado: ${corpSnapshot.snapshot_date_only}]\n`;
+            if (corpSnapshot.president_name) {
+              content += `Presidente: ${corpSnapshot.president_name}\n`;
+            }
+            if (corpSnapshot.ceo_name) {
+              content += `CEO: ${corpSnapshot.ceo_name}\n`;
+            }
+            if (corpSnapshot.chairman_name) {
+              content += `Presidente del Consejo: ${corpSnapshot.chairman_name}\n`;
+            }
+            if (corpSnapshot.headquarters_city || corpSnapshot.headquarters_country) {
+              content += `Sede: ${corpSnapshot.headquarters_city || ''}, ${corpSnapshot.headquarters_country || ''}\n`;
+            }
+            if (corpSnapshot.employees_approx) {
+              content += `Empleados (aprox.): ${corpSnapshot.employees_approx.toLocaleString()}\n`;
+            }
+            if (corpSnapshot.founded_year) {
+              content += `Fundación: ${corpSnapshot.founded_year}\n`;
+            }
+            if (corpSnapshot.mission_statement) {
+              content += `Misión: ${corpSnapshot.mission_statement}\n`;
+            }
+            if (corpSnapshot.company_description) {
+              content += `Descripción: ${corpSnapshot.company_description}\n`;
+            }
+            content += `\n`;
           }
           content += `\n`;
-        }
-        content += `\n`;
-        
-        if (run["10_resumen"]) {
-          content += `RESUMEN EJECUTIVO:\n${run["10_resumen"]}\n\n`;
-        }
-        
-        // Key points
-        if (run["11_puntos_clave"]) {
-          try {
-            let puntosClave: string[] = [];
-            if (typeof run["11_puntos_clave"] === 'string') {
-              try {
-                puntosClave = JSON.parse(run["11_puntos_clave"]);
-              } catch {
-                const text = run["11_puntos_clave"];
-                puntosClave = text.includes(',') 
-                  ? text.split(',').map((s: string) => s.trim()).filter(Boolean)
-                  : text.includes('\n')
-                    ? text.split('\n').map((s: string) => s.trim()).filter(Boolean)
-                    : [text];
-              }
-            } else if (Array.isArray(run["11_puntos_clave"])) {
-              puntosClave = run["11_puntos_clave"];
-            }
-            
-            if (puntosClave.length > 0) {
-              content += `PUNTOS CLAVE:\n`;
-              puntosClave.forEach((punto: string, idx: number) => {
-                content += `${idx + 1}. ${punto}\n`;
-              });
-              content += `\n`;
-            }
-          } catch (e) {
-            console.error('Error processing puntos_clave:', e);
-          }
-        }
-
-        if (run["22_explicacion"]) {
-          content += `EXPLICACIÓN DEL ANÁLISIS:\n${run["22_explicacion"]}\n\n`;
-        }
-
-        // Raw AI responses (all 7 models)
-        if (includeRawResponses) {
-          // Original 4 models
-          if (run["20_res_gpt_bruto"]) {
-            content += `RESPUESTA COMPLETA CHATGPT:\n${run["20_res_gpt_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
-          }
-          if (run["21_res_perplex_bruto"]) {
-            content += `RESPUESTA COMPLETA PERPLEXITY:\n${run["21_res_perplex_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
-          }
-          if (run["22_res_gemini_bruto"]) {
-            content += `RESPUESTA COMPLETA GEMINI:\n${run["22_res_gemini_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
-          }
-          if (run["23_res_deepseek_bruto"]) {
-            content += `RESPUESTA COMPLETA DEEPSEEK:\n${run["23_res_deepseek_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+          
+          if (run["10_resumen"]) {
+            content += `RESUMEN EJECUTIVO:\n${run["10_resumen"]}\n\n`;
           }
           
-          // New 2 models (V2 system - 6 IAs)
-          if (run["respuesta_bruto_grok"]) {
-            content += `RESPUESTA COMPLETA GROK:\n${run["respuesta_bruto_grok"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
-          }
-          if (run["respuesta_bruto_qwen"]) {
-            content += `RESPUESTA COMPLETA QWEN:\n${run["respuesta_bruto_qwen"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
-          }
-        }
-
-        // Detailed explanations
-        if (run["25_explicaciones_detalladas"]) {
-          try {
-            const explicaciones = typeof run["25_explicaciones_detalladas"] === 'string'
-              ? JSON.parse(run["25_explicaciones_detalladas"])
-              : run["25_explicaciones_detalladas"];
-            
-            if (explicaciones && typeof explicaciones === 'object') {
-              content += `EXPLICACIONES POR MÉTRICA:\n`;
-              for (const [metric, explanation] of Object.entries(explicaciones)) {
-                if (explanation) {
-                  content += `- ${metric}: ${explanation}\n`;
+          // Key points
+          if (run["11_puntos_clave"]) {
+            try {
+              let puntosClave: string[] = [];
+              if (typeof run["11_puntos_clave"] === 'string') {
+                try {
+                  puntosClave = JSON.parse(run["11_puntos_clave"]);
+                } catch {
+                  const text = run["11_puntos_clave"];
+                  puntosClave = text.includes(',') 
+                    ? text.split(',').map((s: string) => s.trim()).filter(Boolean)
+                    : text.includes('\n')
+                      ? text.split('\n').map((s: string) => s.trim()).filter(Boolean)
+                      : [text];
                 }
+              } else if (Array.isArray(run["11_puntos_clave"])) {
+                puntosClave = run["11_puntos_clave"];
               }
-              content += `\n`;
+              
+              if (puntosClave.length > 0) {
+                content += `PUNTOS CLAVE:\n`;
+                puntosClave.forEach((punto: string, idx: number) => {
+                  content += `${idx + 1}. ${punto}\n`;
+                });
+                content += `\n`;
+              }
+            } catch (e) {
+              console.error('Error processing puntos_clave:', e);
             }
-          } catch (e) {
-            console.error('Error processing explicaciones_detalladas:', e);
           }
-        }
 
-        // Generate embedding
-        const contentForEmbedding = content.slice(0, 32000);
-        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openAIApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'text-embedding-3-small',
-            input: contentForEmbedding,
-          }),
-        });
+          if (run["22_explicacion"]) {
+            content += `EXPLICACIÓN DEL ANÁLISIS:\n${run["22_explicacion"]}\n\n`;
+          }
 
-        if (!embeddingResponse.ok) {
-          const errorText = await embeddingResponse.text();
-          console.error(`Failed embedding for run ${run.id}:`, errorText);
-          documentsErrored++;
-          continue;
-        }
+          // Raw AI responses (all 7 models)
+          if (includeRawResponses) {
+            // Original 4 models
+            if (run["20_res_gpt_bruto"]) {
+              content += `RESPUESTA COMPLETA CHATGPT:\n${run["20_res_gpt_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+            }
+            if (run["21_res_perplex_bruto"]) {
+              content += `RESPUESTA COMPLETA PERPLEXITY:\n${run["21_res_perplex_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+            }
+            if (run["22_res_gemini_bruto"]) {
+              content += `RESPUESTA COMPLETA GEMINI:\n${run["22_res_gemini_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+            }
+            if (run["23_res_deepseek_bruto"]) {
+              content += `RESPUESTA COMPLETA DEEPSEEK:\n${run["23_res_deepseek_bruto"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+            }
+            
+            // New 2 models (V2 system - 6 IAs)
+            if (run["respuesta_bruto_grok"]) {
+              content += `RESPUESTA COMPLETA GROK:\n${run["respuesta_bruto_grok"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+            }
+            if (run["respuesta_bruto_qwen"]) {
+              content += `RESPUESTA COMPLETA QWEN:\n${run["respuesta_bruto_qwen"].slice(0, MAX_RAW_RESPONSE_LENGTH)}\n\n`;
+            }
+          }
 
-        const embeddingData = await embeddingResponse.json();
-        const embedding = embeddingData.data[0].embedding;
+          // Detailed explanations
+          if (run["25_explicaciones_detalladas"]) {
+            try {
+              const explicaciones = typeof run["25_explicaciones_detalladas"] === 'string'
+                ? JSON.parse(run["25_explicaciones_detalladas"])
+                : run["25_explicaciones_detalladas"];
+              
+              if (explicaciones && typeof explicaciones === 'object') {
+                content += `EXPLICACIONES POR MÉTRICA:\n`;
+                for (const [metric, explanation] of Object.entries(explicaciones)) {
+                  if (explanation) {
+                    content += `- ${metric}: ${explanation}\n`;
+                  }
+                }
+                content += `\n`;
+              }
+            } catch (e) {
+              console.error('Error processing explicaciones_detalladas:', e);
+            }
+          }
 
-        // Enhanced Metadata with 7 IA system info
-        const metadata = {
-          rix_run_id: run.id,
-          company_name: run["03_target_name"],
-          ticker: run["05_ticker"],
-          ai_model: modelName,
-          week_start: run["06_period_from"],
-          week_end: run["07_period_to"],
-          rix_score: run["09_rix_score"],
-          sector_category: issuerData?.sector_category,
-          ibex_family_code: issuerData?.ibex_family_code,
-          has_raw_responses: includeRawResponses,
-          content_length: content.length,
+          // Generate embedding
+          const contentForEmbedding = content.slice(0, 32000);
+          const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openAIApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'text-embedding-3-small',
+              input: contentForEmbedding,
+            }),
+          });
+
+          if (!embeddingResponse.ok) {
+            const errorText = await embeddingResponse.text();
+            console.error(`Failed embedding for run ${run.id}:`, errorText);
+            documentsErrored++;
+            continue;
+          }
+
+          const embeddingData = await embeddingResponse.json();
+          const embedding = embeddingData.data[0].embedding;
+
+          // Enhanced Metadata with 7 IA system info
+          const metadata = {
+            rix_run_id: run.id,
+            company_name: run["03_target_name"],
+            ticker: run["05_ticker"],
+            ai_model: modelName,
+            week_start: run["06_period_from"],
+            week_end: run["07_period_to"],
+            rix_score: run["09_rix_score"],
+            sector_category: issuerData?.sector_category,
+            ibex_family_code: issuerData?.ibex_family_code,
+            has_raw_responses: includeRawResponses,
+            content_length: content.length,
+            
+            // Source metadata
+            source_table: run._source_table,
+            source_pipeline: run.source_pipeline || (isV2 ? 'lovable_v2' : 'make_original'),
+            is_7ia_system: isV2,
+            is_new_model: isNewModel,
+            system_version: isV2 ? '2.0-7ias' : '1.0-4ias',
+            
+            scores: {
+              nvm: run["23_nvm_score"],
+              drm: run["26_drm_score"],
+              sim: run["29_sim_score"],
+              rmm: run["32_rmm_score"],
+              cem: run["35_cem_score"],
+              gam: run["38_gam_score"],
+              dcm: run["41_dcm_score"],
+              cxm: run["44_cxm_score"],
+            },
+            categories: {
+              nvm: run["25_nvm_categoria"],
+              drm: run["28_drm_categoria"],
+              sim: run["31_sim_categoria"],
+              rmm: run["34_rmm_categoria"],
+              cem: run["37_cem_categoria"],
+              gam: run["40_gam_categoria"],
+              dcm: run["43_dcm_categoria"],
+              cxm: run["46_cxm_categoria"],
+            },
+            flags: run["17_flags"] || [],
+            citation_density: run["16_citation_density"],
+            temporal_alignment: run["15_temporal_alignment"],
+          };
+
+          // Insert document
+          const { error: insertError } = await supabaseClient
+            .from('documents')
+            .insert({ content, metadata, embedding });
+
+          if (insertError) {
+            console.error(`Error inserting doc ${run.id}:`, insertError);
+            documentsErrored++;
+          } else {
+            documentsCreated++;
+            if (isV2) {
+              v2DocsCreated++;
+            } else {
+              v1DocsCreated++;
+            }
+          }
+
+          // Progress log
+          if (documentsCreated % 20 === 0) {
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            console.log(`Progress: ${documentsCreated} created (V1: ${v1DocsCreated}, V2: ${v2DocsCreated}), ${documentsErrored} errors, ${elapsed}s elapsed`);
+          }
+
+          // Small delay to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 100));
           
-          // NEW: 7 IA System metadata
-          source_table: run._source_table,
-          source_pipeline: run.source_pipeline || (isV2 ? 'lovable_v2' : 'make_original'),
-          is_7ia_system: isV2,
-          is_new_model: isNewModel,
-          system_version: isV2 ? '2.0-7ias' : '1.0-4ias',
-          
-          scores: {
-            nvm: run["23_nvm_score"],
-            drm: run["26_drm_score"],
-            sim: run["29_sim_score"],
-            rmm: run["32_rmm_score"],
-            cem: run["35_cem_score"],
-            gam: run["38_gam_score"],
-            dcm: run["41_dcm_score"],
-            cxm: run["44_cxm_score"],
-          },
-          categories: {
-            nvm: run["25_nvm_categoria"],
-            drm: run["28_drm_categoria"],
-            sim: run["31_sim_categoria"],
-            rmm: run["34_rmm_categoria"],
-            cem: run["37_cem_categoria"],
-            gam: run["40_gam_categoria"],
-            dcm: run["43_dcm_categoria"],
-            cxm: run["46_cxm_categoria"],
-          },
-          flags: run["17_flags"] || [],
-          citation_density: run["16_citation_density"],
-          temporal_alignment: run["15_temporal_alignment"],
-        };
-
-        // Insert document
-        const { error: insertError } = await supabaseClient
-          .from('documents')
-          .insert({ content, metadata, embedding });
-
-        if (insertError) {
-          console.error(`Error inserting doc ${run.id}:`, insertError);
+        } catch (docError) {
+          console.error(`Error processing run ${run.id}:`, docError);
           documentsErrored++;
-        } else {
-          documentsCreated++;
-          if (isV2) v2DocsCreated++;
         }
-
-        // Progress log
-        if (documentsCreated % 20 === 0) {
-          const elapsed = Math.round((Date.now() - startTime) / 1000);
-          console.log(`Progress: ${documentsCreated} created (${v2DocsCreated} V2), ${documentsErrored} errors, ${elapsed}s elapsed`);
-        }
-
-        // Small delay to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-      } catch (docError) {
-        console.error(`Error processing run ${run.id}:`, docError);
-        documentsErrored++;
       }
     }
 
     // ==========================================================================
-    // STEP 2: INDEX CORPORATE NEWS WITH TEMPORAL CONTEXT
+    // STEP 2: INDEX CORPORATE NEWS (skip if filtering to rix only)
     // ==========================================================================
-    console.log('Starting corporate_news indexation...');
-    
-    // Get existing news documents (by article_url in metadata)
-    const existingNewsUrls = new Set<string>();
-    let newsDocOffset = 0;
-    
-    while (true) {
-      const { data: existingNewsDocs } = await supabaseClient
-        .from('documents')
-        .select('metadata')
-        .eq('metadata->>type', 'corporate_news')
-        .range(newsDocOffset, newsDocOffset + 1000 - 1);
-      
-      if (!existingNewsDocs || existingNewsDocs.length === 0) break;
-      
-      existingNewsDocs.forEach(d => {
-        if (d.metadata?.article_url) {
-          existingNewsUrls.add(d.metadata.article_url);
-        }
-      });
-      
-      if (existingNewsDocs.length < 1000) break;
-      newsDocOffset += 1000;
-    }
-    
-    console.log(`Found ${existingNewsUrls.size} existing corporate news documents`);
-    
-    // Fetch corporate news not yet indexed
-    const { data: corporateNews } = await supabaseClient
-      .from('corporate_news')
-      .select('*')
-      .order('published_date', { ascending: false })
-      .limit(500);
-    
-    const pendingNews = (corporateNews || []).filter(n => !existingNewsUrls.has(n.article_url));
-    console.log(`Corporate news: ${corporateNews?.length || 0} total, ${pendingNews.length} pending`);
-    
     let newsDocsCreated = 0;
     let newsDocsErrored = 0;
+    let newsRemaining = 0;
+    let newsTotalCount = 0;
     
-    // Process news batch
-    const newsBatchToProcess = pendingNews.slice(0, NEWS_BATCH_SIZE);
-    
-    for (const news of newsBatchToProcess) {
-      // Check time limit
-      if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-        console.log(`Time limit reached during news indexation`);
-        break;
-      }
+    if (sourceFilter === 'all' || sourceFilter === 'news') {
+      console.log('Starting corporate_news indexation...');
       
-      try {
-        const issuerData = issuersMap.get(news.ticker);
-        const isRecent = isRecentDate(news.published_date, 90);
-        const publishedDateStr = news.published_date || 'Fecha desconocida';
+      // Get existing news documents (by article_url in metadata)
+      const existingNewsUrls = new Set<string>();
+      let newsDocOffset = 0;
+      
+      while (true) {
+        const { data: existingNewsDocs } = await supabaseClient
+          .from('documents')
+          .select('metadata')
+          .eq('metadata->>type', 'corporate_news')
+          .range(newsDocOffset, newsDocOffset + 1000 - 1);
         
-        // Build content with EXPLICIT temporal context
-        let newsContent = `[NOTICIA CORPORATIVA - ${news.ticker}]\n`;
-        newsContent += `Fecha de publicación: ${publishedDateStr}\n`;
-        newsContent += `Fecha de captura: ${news.snapshot_date}\n`;
+        if (!existingNewsDocs || existingNewsDocs.length === 0) break;
         
-        const sourceTypeLabel = news.source_type === 'press_release' ? 'Nota de prensa oficial' 
-          : news.source_type === 'investor_news' ? 'Comunicado a inversores'
-          : 'Blog corporativo';
-        newsContent += `Tipo de fuente: ${sourceTypeLabel}\n`;
-        
-        if (issuerData) {
-          newsContent += `Empresa: ${issuerData.issuer_name}\n`;
-          newsContent += `Sector: ${issuerData.sector_category || 'N/A'}\n`;
-        }
-        newsContent += `\n`;
-        
-        newsContent += `TITULAR: ${news.headline}\n\n`;
-        
-        if (news.lead_paragraph) {
-          newsContent += `ENTRADILLA: ${news.lead_paragraph}\n\n`;
-        }
-        
-        if (news.body_excerpt) {
-          newsContent += `CONTENIDO: ${news.body_excerpt}\n\n`;
-        }
-        
-        if (news.author) {
-          newsContent += `Autor: ${news.author}\n`;
-        }
-        
-        if (news.category) {
-          newsContent += `Categoría: ${news.category}\n`;
-        }
-        
-        // Generate embedding
-        const contentForEmbedding = newsContent.slice(0, 8000);
-        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openAIApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'text-embedding-3-small',
-            input: contentForEmbedding,
-          }),
+        existingNewsDocs.forEach(d => {
+          if (d.metadata?.article_url) {
+            existingNewsUrls.add(d.metadata.article_url);
+          }
         });
         
-        if (!embeddingResponse.ok) {
-          newsDocsErrored++;
-          continue;
-        }
-        
-        const embeddingData = await embeddingResponse.json();
-        const embedding = embeddingData.data[0].embedding;
-        
-        // Metadata with temporal flags
-        const newsMetadata = {
-          type: 'corporate_news',
-          ticker: news.ticker,
-          company_name: issuerData?.issuer_name || news.ticker,
-          headline: news.headline,
-          article_url: news.article_url,
-          published_date: news.published_date,
-          snapshot_date: news.snapshot_date,
-          source_type: news.source_type,
-          author: news.author,
-          category: news.category,
-          sector_category: issuerData?.sector_category,
-          is_recent: isRecent,
-          days_old: news.published_date ? Math.floor((Date.now() - new Date(news.published_date).getTime()) / (1000 * 60 * 60 * 24)) : null,
-          content_length: newsContent.length,
-        };
-        
-        // Insert document
-        const { error: insertError } = await supabaseClient
-          .from('documents')
-          .insert({ content: newsContent, metadata: newsMetadata, embedding });
-        
-        if (insertError) {
-          newsDocsErrored++;
-        } else {
-          newsDocsCreated++;
-        }
-        
-        // Small delay
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-      } catch (newsError) {
-        console.error(`Error processing news ${news.article_url}:`, newsError);
-        newsDocsErrored++;
+        if (existingNewsDocs.length < 1000) break;
+        newsDocOffset += 1000;
       }
+      
+      console.log(`Found ${existingNewsUrls.size} existing corporate news documents`);
+      
+      // Fetch ALL corporate news (no limit)
+      let allCorporateNews: any[] = [];
+      let newsOffset = 0;
+      const newsBatchSize = 1000;
+      
+      while (true) {
+        const { data: newsData } = await supabaseClient
+          .from('corporate_news')
+          .select('*')
+          .order('published_date', { ascending: false })
+          .range(newsOffset, newsOffset + newsBatchSize - 1);
+        
+        if (!newsData || newsData.length === 0) break;
+        allCorporateNews.push(...newsData);
+        if (newsData.length < newsBatchSize) break;
+        newsOffset += newsBatchSize;
+      }
+      
+      newsTotalCount = allCorporateNews.length;
+      const pendingNews = allCorporateNews.filter(n => !existingNewsUrls.has(n.article_url));
+      console.log(`Corporate news: ${newsTotalCount} total, ${pendingNews.length} pending`);
+      
+      // Process news batch
+      const newsBatchToProcess = pendingNews.slice(0, NEWS_BATCH_SIZE);
+      
+      for (const news of newsBatchToProcess) {
+        // Check time limit
+        if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+          console.log(`Time limit reached during news indexation`);
+          break;
+        }
+        
+        try {
+          const issuerData = issuersMap.get(news.ticker);
+          const isRecent = isRecentDate(news.published_date, 90);
+          const publishedDateStr = news.published_date || 'Fecha desconocida';
+          
+          // Build content with EXPLICIT temporal context
+          let newsContent = `[NOTICIA CORPORATIVA - ${news.ticker}]\n`;
+          newsContent += `Fecha de publicación: ${publishedDateStr}\n`;
+          newsContent += `Fecha de captura: ${news.snapshot_date}\n`;
+          
+          const sourceTypeLabel = news.source_type === 'press_release' ? 'Nota de prensa oficial' 
+            : news.source_type === 'investor_news' ? 'Comunicado a inversores'
+            : 'Blog corporativo';
+          newsContent += `Tipo de fuente: ${sourceTypeLabel}\n`;
+          
+          if (issuerData) {
+            newsContent += `Empresa: ${issuerData.issuer_name}\n`;
+            newsContent += `Sector: ${issuerData.sector_category || 'N/A'}\n`;
+          }
+          newsContent += `\n`;
+          
+          newsContent += `TITULAR: ${news.headline}\n\n`;
+          
+          if (news.lead_paragraph) {
+            newsContent += `ENTRADILLA: ${news.lead_paragraph}\n\n`;
+          }
+          
+          if (news.body_excerpt) {
+            newsContent += `CONTENIDO: ${news.body_excerpt}\n\n`;
+          }
+          
+          if (news.author) {
+            newsContent += `Autor: ${news.author}\n`;
+          }
+          
+          if (news.category) {
+            newsContent += `Categoría: ${news.category}\n`;
+          }
+          
+          // Generate embedding
+          const contentForEmbedding = newsContent.slice(0, 8000);
+          const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openAIApiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'text-embedding-3-small',
+              input: contentForEmbedding,
+            }),
+          });
+          
+          if (!embeddingResponse.ok) {
+            newsDocsErrored++;
+            continue;
+          }
+          
+          const embeddingData = await embeddingResponse.json();
+          const embedding = embeddingData.data[0].embedding;
+          
+          // Metadata with temporal flags and is_news_article marker
+          const newsMetadata = {
+            type: 'corporate_news',
+            is_news_article: true, // Clear marker for counting
+            ticker: news.ticker,
+            company_name: issuerData?.issuer_name || news.ticker,
+            headline: news.headline,
+            article_url: news.article_url,
+            published_date: news.published_date,
+            snapshot_date: news.snapshot_date,
+            source_type: news.source_type,
+            author: news.author,
+            category: news.category,
+            sector_category: issuerData?.sector_category,
+            is_recent: isRecent,
+            days_old: news.published_date ? Math.floor((Date.now() - new Date(news.published_date).getTime()) / (1000 * 60 * 60 * 24)) : null,
+            content_length: newsContent.length,
+          };
+          
+          // Insert document
+          const { error: insertError } = await supabaseClient
+            .from('documents')
+            .insert({ content: newsContent, metadata: newsMetadata, embedding });
+          
+          if (insertError) {
+            newsDocsErrored++;
+          } else {
+            newsDocsCreated++;
+          }
+          
+          // Small delay
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (newsError) {
+          console.error(`Error processing news ${news.article_url}:`, newsError);
+          newsDocsErrored++;
+        }
+      }
+      
+      newsRemaining = pendingNews.length - newsDocsCreated;
+      console.log(`Corporate news indexation: ${newsDocsCreated} created, ${newsDocsErrored} errors`);
     }
-    
-    console.log(`Corporate news indexation: ${newsDocsCreated} created, ${newsDocsErrored} errors`);
 
     const remaining = pendingRuns.length - documentsCreated;
-    const newsRemaining = pendingNews.length - newsDocsCreated;
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     
-    console.log(`BATCH COMPLETED: ${documentsCreated} rix docs (${v2DocsCreated} V2), ${newsDocsCreated} news docs, ${documentsErrored + newsDocsErrored} errors, ${elapsed}s`);
+    console.log(`BATCH COMPLETED: ${documentsCreated} rix docs (V1: ${v1DocsCreated}, V2: ${v2DocsCreated}), ${newsDocsCreated} news docs, ${documentsErrored + newsDocsErrored} errors, ${elapsed}s`);
+    
+    // Determine if complete based on filter
+    let isComplete = false;
+    if (sourceFilter === 'rix_v1') {
+      isComplete = remaining <= 0;
+    } else if (sourceFilter === 'rix_v2') {
+      isComplete = remaining <= 0;
+    } else if (sourceFilter === 'news') {
+      isComplete = newsRemaining <= 0;
+    } else {
+      isComplete = remaining <= 0 && newsRemaining <= 0;
+    }
     
     return {
       success: true,
-      complete: remaining <= 0 && newsRemaining <= 0,
+      complete: isComplete,
       processed: documentsCreated,
+      processed_v1: v1DocsCreated,
       processed_v2: v2DocsCreated,
       processed_news: newsDocsCreated,
       errored: documentsErrored + newsDocsErrored,
       remaining: Math.max(0, remaining),
+      remaining_v2: sourceFilter === 'rix_v2' ? Math.max(0, remaining) : undefined,
       remaining_news: Math.max(0, newsRemaining),
       total: totalRuns,
       existing: existingRunIds.size + documentsCreated,
       from_rix_runs: rixRunsOriginal.length,
       from_rix_runs_v2: rixRunsV2.length,
-      corporate_news_total: corporateNews?.length || 0,
+      corporate_news_total: newsTotalCount,
+      source_filter: sourceFilter,
       elapsed_seconds: elapsed,
     };
     
@@ -653,11 +671,12 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const includeRawResponses = body.includeRawResponses !== false;
+    const sourceFilter: SourceFilter = body.sourceFilter || 'all';
 
-    console.log(`Starting incremental vector store population (includeRawResponses: ${includeRawResponses})`);
+    console.log(`Starting incremental vector store population (includeRawResponses: ${includeRawResponses}, sourceFilter: ${sourceFilter})`);
 
     // Process synchronously to return result (auto-continuation needs result)
-    const result = await processVectorStore(includeRawResponses);
+    const result = await processVectorStore(includeRawResponses, sourceFilter);
 
     return new Response(
       JSON.stringify(result),

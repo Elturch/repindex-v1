@@ -44,52 +44,56 @@ export function useVectorStoreStatusV2() {
 
   const checkStatus = useCallback(async () => {
     try {
-      // Fetch counts from all three source tables
+      // SERVER-SIDE COUNTS: No data download, just count queries
+      // This removes all limits and is much faster
+      
+      // Count totals from source tables (no limit needed - just counting)
       const [
-        rixV1Result,
-        rixV2Result,
-        newsResult,
-        docsResult,
+        rixV1TotalResult,
+        rixV2TotalResult,
+        newsTotalResult,
       ] = await Promise.all([
         supabase.from('rix_runs').select('id', { count: 'exact', head: true }),
         supabase.from('rix_runs_v2').select('id', { count: 'exact', head: true }),
         supabase.from('corporate_news').select('id', { count: 'exact', head: true }),
-        supabase.from('documents').select('metadata', { count: 'exact' }).limit(10000),
       ]);
 
-      const rixV1Total = rixV1Result.count || 0;
-      const rixV2Total = rixV2Result.count || 0;
-      const newsTotal = newsResult.count || 0;
+      const rixV1Total = rixV1TotalResult.count || 0;
+      const rixV2Total = rixV2TotalResult.count || 0;
+      const newsTotal = newsTotalResult.count || 0;
 
-      // Analyze document metadata to categorize indexed documents
-      // The populate-vector-store function tags documents with metadata
-      let rixV1Indexed = 0;
-      let rixV2Indexed = 0;
-      let newsIndexed = 0;
+      // Count indexed documents by source using metadata filters
+      // Using textSearch on metadata JSONB fields for server-side filtering
+      const [
+        rixV2DocsResult,
+        newsDocsResult,
+        totalDocsResult,
+      ] = await Promise.all([
+        // RIX V2 documents: metadata->source_table = 'rix_runs_v2'
+        supabase
+          .from('documents')
+          .select('id', { count: 'exact', head: true })
+          .eq('metadata->>source_table', 'rix_runs_v2'),
+        
+        // News documents: metadata->type = 'corporate_news' OR metadata->is_news_article = true
+        supabase
+          .from('documents')
+          .select('id', { count: 'exact', head: true })
+          .eq('metadata->>type', 'corporate_news'),
+        
+        // Total documents with rix_run_id (all RIX docs)
+        supabase
+          .from('documents')
+          .select('id', { count: 'exact', head: true })
+          .not('metadata->>rix_run_id', 'is', null),
+      ]);
 
-      if (docsResult.data) {
-        for (const doc of docsResult.data) {
-          const meta = doc.metadata as Record<string, any> | null;
-          if (!meta) continue;
-
-          // Corporate news check (has is_news_article flag)
-          if (meta.is_news_article === true) {
-            newsIndexed++;
-          }
-          // RIX V2 check (has source_table = 'rix_runs_v2')
-          else if (meta.source_table === 'rix_runs_v2') {
-            rixV2Indexed++;
-          }
-          // RIX V1 check (has rix_run_id but not marked as v2)
-          else if (meta.rix_run_id && meta.source_table !== 'rix_runs_v2') {
-            rixV1Indexed++;
-          }
-          // Legacy documents without clear tagging - count as V1
-          else if (meta.ticker || meta.company_name) {
-            rixV1Indexed++;
-          }
-        }
-      }
+      const rixV2Indexed = rixV2DocsResult.count || 0;
+      const newsIndexed = newsDocsResult.count || 0;
+      const totalRixDocs = totalDocsResult.count || 0;
+      
+      // RIX V1 indexed = total RIX docs - V2 docs
+      const rixV1Indexed = Math.max(0, totalRixDocs - rixV2Indexed);
 
       // Calculate per-source status
       const calcProgress = (indexed: number, total: number) => 

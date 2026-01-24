@@ -98,7 +98,7 @@ interface UseRixRunsV2Options {
   companyFilter?: string;
   sectorFilter?: string;
   ibexFamilyFilter?: string;
-  limit?: number;
+  limit?: number; // Default increased to 5000 - no artificial limits
 }
 
 function mapRowToRixRunV2(row: any): RixRunV2 {
@@ -205,7 +205,7 @@ export function useRixRunsV2(options: UseRixRunsV2Options = {}) {
     companyFilter = 'all',
     sectorFilter = 'all',
     ibexFamilyFilter = 'all',
-    limit = 500 
+    limit = 5000 // Increased from 500 to handle large datasets
   } = options;
 
   return useQuery({
