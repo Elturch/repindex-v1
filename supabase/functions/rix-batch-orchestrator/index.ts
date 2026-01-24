@@ -24,6 +24,11 @@ interface SweepResult {
   durationMs: number;
 }
 
+// Reintentos muy altos para asegurar que el barrido no “se rinda” antes de completar.
+// IMPORTANTE: para evitar bloqueo por una empresa problemática, la selección prioriza
+// pending y ordena failed por retry_count asc.
+const MAX_RETRIES = 1000;
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -127,7 +132,7 @@ async function getCompaniesForPhase(
   supabase: ReturnType<typeof createClient>,
   sweepId: string,
   fase: number,
-  maxRetries: number = 3
+  maxRetries: number = MAX_RETRIES
 ): Promise<Array<{ id: string; ticker: string; issuer_name: string; retry_count: number }>> {
   const { data, error } = await supabase
     .from('sweep_progress')
@@ -155,11 +160,16 @@ async function processCompany(
   supabaseUrl: string,
   serviceKey: string
 ): Promise<{ success: boolean; error?: string; modelsCompleted?: number }> {
+  const started = Date.now();
   // Marcar como 'processing'
-  await supabase
+  const { error: markProcessingError } = await supabase
     .from('sweep_progress')
     .update({ status: 'processing', started_at: new Date().toISOString() })
     .eq('id', progressId);
+
+  if (markProcessingError) {
+    console.error(`[phase] Failed to mark ${ticker} as processing: ${markProcessingError.message}`);
+  }
 
   try {
     // Verificar si ya tiene datos de esta semana
@@ -227,7 +237,11 @@ async function processCompany(
       })
       .eq('id', progressId);
 
+    console.log(`[phase] ${ticker} marked failed (retry_count -> ${(currentProgress?.retry_count || 0) + 1}) after ${Date.now() - started}ms`);
     return { success: false, error: errorMsg };
+  } finally {
+    const took = Date.now() - started;
+    console.log(`[phase] processCompany(${ticker}) finished in ${took}ms`);
   }
 }
 
@@ -337,18 +351,49 @@ async function runSingleCompany(
   // 1. Asegurar que el sweep está inicializado
   await initializeSweepIfNeeded(supabase, sweepId);
 
-  // 2. Obtener UNA empresa pendiente (cualquier fase)
-  const { data: companies, error: fetchError } = await supabase
+  // 2. Obtener UNA empresa
+  //    - Prioridad absoluta: pending
+  //    - Luego failed (ordenadas por retry_count asc) para evitar bloquear el sweep
+  let company:
+    | { id: string; ticker: string; issuer_name: string | null; fase: number | null; retry_count: number | null }
+    | null = null;
+
+  const { data: pendingCompanies, error: pendingError } = await supabase
     .from('sweep_progress')
     .select('id, ticker, issuer_name, fase, retry_count')
     .eq('sweep_id', sweepId)
-    .in('status', ['pending', 'failed'])
-    .lt('retry_count', 3)
+    .eq('status', 'pending')
     .order('fase', { ascending: true })
     .order('ticker', { ascending: true })
     .limit(1);
 
-  if (fetchError || !companies || companies.length === 0) {
+  if (pendingError) {
+    console.error('[single] Error fetching pending companies:', pendingError);
+  }
+
+  if (pendingCompanies && pendingCompanies.length > 0) {
+    company = pendingCompanies[0];
+  } else {
+    const { data: failedCompanies, error: failedError } = await supabase
+      .from('sweep_progress')
+      .select('id, ticker, issuer_name, fase, retry_count')
+      .eq('sweep_id', sweepId)
+      .eq('status', 'failed')
+      .order('retry_count', { ascending: true })
+      .order('fase', { ascending: true })
+      .order('ticker', { ascending: true })
+      .limit(1);
+
+    if (failedError) {
+      console.error('[single] Error fetching failed companies:', failedError);
+    }
+
+    if (failedCompanies && failedCompanies.length > 0) {
+      company = failedCompanies[0];
+    }
+  }
+
+  if (!company) {
     // Contar cuántas quedan pendientes
     const { count: remaining } = await supabase
       .from('sweep_progress')
@@ -368,8 +413,7 @@ async function runSingleCompany(
     };
   }
 
-  const company = companies[0];
-  console.log(`[single] Processing ${company.ticker} (fase ${company.fase})`);
+  console.log(`[single] Processing ${company.ticker} (fase ${company.fase}) [status: ${pendingCompanies && pendingCompanies.length > 0 ? 'pending' : 'failed'}]`);
 
   // 3. Procesar la empresa
   const result = await processCompany(
