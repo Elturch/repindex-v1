@@ -1348,6 +1348,127 @@ async function handleStandardChat(
   console.log(`${logPrefix} Detected companies in question: ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'none'}`);
 
   // =============================================================================
+  // PASO 0.5: CARGAR DATOS CORPORATIVOS VERIFICADOS (MEMENTO CORPORATIVO)
+  // Solo para empresas detectadas - carga directa de corporate_snapshots
+  // =============================================================================
+  interface CorporateMemento {
+    ticker: string;
+    ceo_name: string | null;
+    president_name: string | null;
+    chairman_name: string | null;
+    headquarters_city: string | null;
+    company_description: string | null;
+    snapshot_date_only: string;
+    days_old: number;
+    confidence_level: 'VERIFIED' | 'RECENT' | 'HISTORICAL' | 'STALE';
+  }
+
+  const corporateMementos: CorporateMemento[] = [];
+  
+  if (detectedCompanies.length > 0) {
+    const tickers = detectedCompanies.map(c => c.ticker);
+    console.log(`${logPrefix} Loading corporate snapshots for: ${tickers.join(', ')}`);
+    
+    const { data: corporateData, error: corporateError } = await supabaseClient
+      .from('corporate_snapshots')
+      .select('ticker, ceo_name, president_name, chairman_name, headquarters_city, company_description, snapshot_date_only')
+      .in('ticker', tickers)
+      .order('snapshot_date_only', { ascending: false });
+    
+    if (corporateError) {
+      console.warn(`${logPrefix} Error fetching corporate snapshots:`, corporateError.message);
+    } else if (corporateData && corporateData.length > 0) {
+      // Deduplicate by ticker (keep most recent)
+      const byTicker = new Map<string, any>();
+      corporateData.forEach((snapshot: any) => {
+        if (!byTicker.has(snapshot.ticker)) {
+          byTicker.set(snapshot.ticker, snapshot);
+        }
+      });
+      
+      byTicker.forEach((snapshot) => {
+        const snapshotDate = new Date(snapshot.snapshot_date_only);
+        const daysOld = Math.floor((Date.now() - snapshotDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Determine confidence level based on freshness
+        let confidenceLevel: CorporateMemento['confidence_level'];
+        if (daysOld <= 7) {
+          confidenceLevel = 'VERIFIED';
+        } else if (daysOld <= 30) {
+          confidenceLevel = 'RECENT';
+        } else if (daysOld <= 90) {
+          confidenceLevel = 'HISTORICAL';
+        } else {
+          confidenceLevel = 'STALE';
+        }
+        
+        corporateMementos.push({
+          ticker: snapshot.ticker,
+          ceo_name: snapshot.ceo_name,
+          president_name: snapshot.president_name,
+          chairman_name: snapshot.chairman_name,
+          headquarters_city: snapshot.headquarters_city,
+          company_description: snapshot.company_description,
+          snapshot_date_only: snapshot.snapshot_date_only,
+          days_old: daysOld,
+          confidence_level: confidenceLevel
+        });
+      });
+      
+      console.log(`${logPrefix} Loaded ${corporateMementos.length} corporate mementos with confidence levels: ${corporateMementos.map(m => `${m.ticker}:${m.confidence_level}`).join(', ')}`);
+    }
+  }
+
+  // =============================================================================
+  // PASO 0.6: CARGAR NOTICIAS CORPORATIVAS RECIENTES
+  // =============================================================================
+  interface CorporateNewsItem {
+    ticker: string;
+    headline: string;
+    published_date: string | null;
+    days_old: number | null;
+    is_recent: boolean;
+  }
+
+  const corporateNews: CorporateNewsItem[] = [];
+  
+  if (detectedCompanies.length > 0) {
+    const tickers = detectedCompanies.map(c => c.ticker);
+    
+    const { data: newsData, error: newsError } = await supabaseClient
+      .from('corporate_news')
+      .select('ticker, headline, published_date')
+      .in('ticker', tickers)
+      .order('published_date', { ascending: false })
+      .limit(30); // Max 30 news items per query
+    
+    if (newsError) {
+      console.warn(`${logPrefix} Error fetching corporate news:`, newsError.message);
+    } else if (newsData && newsData.length > 0) {
+      newsData.forEach((news: any) => {
+        let daysOld: number | null = null;
+        let isRecent = false;
+        
+        if (news.published_date) {
+          const pubDate = new Date(news.published_date);
+          daysOld = Math.floor((Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24));
+          isRecent = daysOld < 14;
+        }
+        
+        corporateNews.push({
+          ticker: news.ticker,
+          headline: news.headline,
+          published_date: news.published_date,
+          days_old: daysOld,
+          is_recent: isRecent
+        });
+      });
+      
+      console.log(`${logPrefix} Loaded ${corporateNews.length} corporate news items (${corporateNews.filter(n => n.is_recent).length} recent)`);
+    }
+  }
+
+  // =============================================================================
   // PASO 1: EXTRAER KEYWORDS RELEVANTES DE LA PREGUNTA
   // =============================================================================
   const stopWords = new Set(['de', 'la', 'el', 'en', 'que', 'es', 'y', 'a', 'los', 'las', 'un', 'una', 'por', 'con', 'para', 'del', 'al', 'se', 'su', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'sí', 'porque', 'esta', 'entre', 'cuando', 'muy', 'sin', 'sobre', 'también', 'me', 'hasta', 'hay', 'donde', 'quien', 'desde', 'todo', 'nos', 'durante', 'todos', 'uno', 'les', 'ni', 'contra', 'otros', 'ese', 'eso', 'ante', 'ellos', 'e', 'esto', 'mí', 'antes', 'algunos', 'qué', 'unos', 'yo', 'otro', 'otras', 'otra', 'él', 'tanto', 'esa', 'estos', 'mucho', 'quienes', 'nada', 'muchos', 'cual', 'poco', 'ella', 'estar', 'estas', 'algunas', 'algo', 'nosotros', 'mi', 'mis', 'tú', 'te', 'ti', 'tu', 'tus', 'ellas', 'nosotras', 'vosotros', 'vosotras', 'os', 'mío', 'mía', 'míos', 'mías', 'tuyo', 'tuya', 'tuyos', 'tuyas', 'suyo', 'suya', 'suyos', 'suyas', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'vuestro', 'vuestra', 'vuestros', 'vuestras', 'esos', 'esas', 'estoy', 'estás', 'está', 'estamos', 'estáis', 'están', 'esté', 'estés', 'estemos', 'estéis', 'estén', 'estaré', 'estarás', 'estará', 'estaremos', 'estaréis', 'estarán', 'estaría', 'estarías', 'estaríamos', 'estaríais', 'estarían', 'estaba', 'estabas', 'estábamos', 'estabais', 'estaban', 'estuve', 'estuviste', 'estuvo', 'estuvimos', 'estuvisteis', 'estuvieron', 'estuviera', 'estuvieras', 'estuviéramos', 'estuvierais', 'estuvieran', 'estuviese', 'estuvieses', 'estuviésemos', 'estuvieseis', 'estuviesen', 'estando', 'estado', 'estada', 'estados', 'estadas', 'estad', 'he', 'has', 'ha', 'hemos', 'habéis', 'han', 'haya', 'hayas', 'hayamos', 'hayáis', 'hayan', 'habré', 'habrás', 'habrá', 'habremos', 'habréis', 'habrán', 'habría', 'habrías', 'habríamos', 'habríais', 'habrían', 'había', 'habías', 'habíamos', 'habíais', 'habían', 'hube', 'hubiste', 'hubo', 'hubimos', 'hubisteis', 'hubieron', 'hubiera', 'hubieras', 'hubiéramos', 'hubierais', 'hubieran', 'hubiese', 'hubieses', 'hubiésemos', 'hubieseis', 'hubiesen', 'habiendo', 'habido', 'habida', 'habidos', 'habidas', 'soy', 'eres', 'somos', 'sois', 'son', 'sea', 'seas', 'seamos', 'seáis', 'sean', 'seré', 'serás', 'será', 'seremos', 'seréis', 'serán', 'sería', 'serías', 'seríamos', 'seríais', 'serían', 'era', 'eras', 'éramos', 'erais', 'eran', 'fui', 'fuiste', 'fue', 'fuimos', 'fuisteis', 'fueron', 'fuera', 'fueras', 'fuéramos', 'fuerais', 'fueran', 'fuese', 'fueses', 'fuésemos', 'fueseis', 'fuesen', 'siendo', 'sido', 'tengo', 'tienes', 'tiene', 'tenemos', 'tenéis', 'tienen', 'tenga', 'tengas', 'tengamos', 'tengáis', 'tengan', 'tendré', 'tendrás', 'tendrá', 'tendremos', 'tendréis', 'tendrán', 'tendría', 'tendrías', 'tendríamos', 'tendríais', 'tendrían', 'tenía', 'tenías', 'teníamos', 'teníais', 'tenían', 'tuve', 'tuviste', 'tuvo', 'tuvimos', 'tuvisteis', 'tuvieron', 'tuviera', 'tuvieras', 'tuviéramos', 'tuvierais', 'tuvieran', 'tuviese', 'tuvieses', 'tuviésemos', 'tuvieseis', 'tuviesen', 'teniendo', 'tenido', 'tenida', 'tenidos', 'tenidas', 'tened', 'dime', 'dame', 'cuál', 'cuáles', 'cuánto', 'cuánta', 'cuántos', 'cuántas', 'cómo', 'dónde', 'cuándo', 'quién', 'qué', 'todas', 'empresa', 'empresas', 'cualquier', 'alguna', 'alguno']);
@@ -1556,7 +1677,82 @@ async function handleStandardChat(
   // =============================================================================
   let context = '';
 
-  // 6.0 RESULTADOS DE BÚSQUEDA FULL-TEXT (PRIORIDAD MÁXIMA)
+  // 6.0-A MEMENTO CORPORATIVO - DATOS VERIFICADOS (PRIORIDAD MÁXIMA)
+  if (corporateMementos.length > 0) {
+    context += `🏛️ ======================================================================\n`;
+    context += `🏛️ MEMENTO CORPORATIVO - DATOS VERIFICADOS CON FECHA\n`;
+    context += `🏛️ IMPORTANTE: Usa estos datos para responder preguntas sobre liderazgo y datos corporativos\n`;
+    context += `🏛️ ======================================================================\n\n`;
+    
+    corporateMementos.forEach(memento => {
+      const company = detectedCompanies.find(c => c.ticker === memento.ticker);
+      const companyName = company?.issuer_name || memento.ticker;
+      
+      context += `## 🏢 ${companyName.toUpperCase()} (${memento.ticker})\n`;
+      context += `📅 **Fecha de actualización**: ${memento.snapshot_date_only} (hace ${memento.days_old} días)\n`;
+      context += `🔒 **Nivel de certeza**: ${memento.confidence_level}\n\n`;
+      
+      // Guidance for certainty levels
+      if (memento.confidence_level === 'VERIFIED') {
+        context += `✅ *Datos verificados (< 7 días) - Puedes hacer afirmaciones directas mencionando la fecha*\n`;
+      } else if (memento.confidence_level === 'RECENT') {
+        context += `⚠️ *Datos recientes (7-30 días) - Menciona la fecha y sugiere verificar si es crítico*\n`;
+      } else if (memento.confidence_level === 'HISTORICAL') {
+        context += `📜 *Datos históricos (30-90 días) - Usa caveats: "según información de [fecha]..."*\n`;
+      } else {
+        context += `❓ *Datos antiguos (> 90 días) - Solo mencionar como referencia histórica*\n`;
+      }
+      context += `\n`;
+      
+      if (memento.ceo_name) {
+        context += `👔 **CEO**: ${memento.ceo_name}\n`;
+      }
+      if (memento.president_name) {
+        context += `🎖️ **Presidente**: ${memento.president_name}\n`;
+      }
+      if (memento.chairman_name) {
+        context += `📋 **Presidente del Consejo**: ${memento.chairman_name}\n`;
+      }
+      if (memento.headquarters_city) {
+        context += `📍 **Sede**: ${memento.headquarters_city}\n`;
+      }
+      if (memento.company_description) {
+        context += `📝 **Descripción**: ${memento.company_description.substring(0, 300)}${memento.company_description.length > 300 ? '...' : ''}\n`;
+      }
+      context += `\n---\n\n`;
+    });
+  }
+
+  // 6.0-B NOTICIAS CORPORATIVAS RECIENTES
+  if (corporateNews.length > 0) {
+    const recentNews = corporateNews.filter(n => n.is_recent);
+    const olderNews = corporateNews.filter(n => !n.is_recent);
+    
+    context += `📰 ======================================================================\n`;
+    context += `📰 NOTICIAS CORPORATIVAS (de portales oficiales de las empresas)\n`;
+    context += `📰 ======================================================================\n\n`;
+    
+    if (recentNews.length > 0) {
+      context += `### 🆕 Noticias Recientes (últimos 14 días):\n`;
+      recentNews.slice(0, 10).forEach(news => {
+        const company = detectedCompanies.find(c => c.ticker === news.ticker);
+        context += `- **${company?.issuer_name || news.ticker}** (${news.published_date || 'sin fecha'}): ${news.headline}\n`;
+      });
+      context += `\n`;
+    }
+    
+    if (olderNews.length > 0) {
+      context += `### 📅 Noticias Anteriores:\n`;
+      olderNews.slice(0, 5).forEach(news => {
+        const company = detectedCompanies.find(c => c.ticker === news.ticker);
+        context += `- **${company?.issuer_name || news.ticker}** (${news.published_date || 'sin fecha'}): ${news.headline}\n`;
+      });
+      context += `\n`;
+    }
+    context += `\n`;
+  }
+
+  // 6.0-C RESULTADOS DE BÚSQUEDA FULL-TEXT (PRIORIDAD MÁXIMA)
   if (fullTextSearchResults.length > 0) {
     context += `🔍 ======================================================================\n`;
     context += `🔍 RESULTADOS DE BÚSQUEDA EN TEXTOS ORIGINALES DE IA\n`;
@@ -1898,30 +2094,30 @@ This is NON-NEGOTIABLE. Do NOT respond in Spanish unless ${language} === 'es'.
 
 ---
 
-Eres un CONSULTOR SENIOR DE REPUTACIÓN CORPORATIVA de nivel C-Suite, especializado en análisis de percepción de marca en inteligencias artificiales para CEOs, Directores Financieros, Directores de Comunicación y Directores de Marketing de las 153 empresas más importantes de España.
+Eres un ANALISTA EXPERTO EN REPUTACIÓN ALGORÍTMICA con amplia experiencia en análisis de percepción corporativa y verificación de datos. Tu tono es riguroso pero accesible: explicas con claridad sin perder precisión técnica.
 
-🎯 TU PERFIL PROFESIONAL:
-- Experiencia equivalente a 20+ años en análisis de reputación corporativa
-- Nivel de rigor analítico de McKinsey, Boston Consulting Group, o Deloitte
-- Comunicación ejecutiva: precisa, fundamentada, sin ambigüedades
-- Dominio absoluto del sistema RepIndex y sus 8 métricas dimensionales
+🎯 TU IDENTIDAD PROFESIONAL:
+
+- **Basado en evidencia temporal**: SIEMPRE indicas cuándo fue verificada la información
+- **Didáctico con métricas**: NUNCA uses solo siglas - explica qué mide cada métrica en primera mención
+- **Consciente del tiempo**: Distingues entre datos frescos, recientes e históricos
+- **Honesto sobre incertidumbre**: Si un dato no tiene fecha verificada, lo adviertes
+- **Narrativo desde los datos**: Construyes el relato cruzando las respuestas de las 6 IAs
 
 📊 SISTEMA REPINDEX - CONOCIMIENTO EXPERTO:
 
-🚀 IMPORTANTE - EVOLUCIÓN DEL SISTEMA:
+🚀 EVOLUCIÓN DEL SISTEMA:
 - **RepIndex 1.0 (hasta Enero 2026)**: 4 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek)
 - **RepIndex 2.0 (desde Enero 2026)**: 6 modelos de IA (+Grok, Qwen)
 
-El nuevo sistema de 6 IAs proporciona una visión más completa y triangulada de la reputación corporativa al agregar 2 modelos adicionales de alto rendimiento: Grok (xAI) y Qwen (Alibaba).
-
-El RepIndex mide cómo las inteligencias artificiales perciben y representan la reputación de las empresas españolas. Es el primer sistema mundial que cuantifica la "reputación algorítmica" - cómo las IAs hablan de las empresas cuando millones de usuarios les preguntan.
+El RepIndex mide cómo las inteligencias artificiales perciben y representan la reputación de las empresas españolas. Es el primer sistema mundial que cuantifica la "reputación algorítmica".
 
 **Las 8 Métricas Dimensionales (0-100):**
 - **NVM (Narrative Visibility Metric)**: Visibilidad narrativa - cuánto y cómo aparece la empresa en las respuestas de IA
 - **DRM (Digital Resonance Metric)**: Resonancia digital - amplificación y eco de la marca en el ecosistema digital
 - **SIM (Sentiment Integrity Metric)**: Integridad del sentimiento - coherencia y positividad del tono
 - **RMM (Reputation Momentum Metric)**: Momentum reputacional - tendencia y aceleración de la percepción
-- **CEM (Crisis Exposure Metric)**: Exposición a crisis - vulnerabilidad percibida ante eventos negativos
+- **CEM (Crisis Exposure Metric)**: Exposición a crisis - vulnerabilidad percibida ante eventos negativos (100 = sin riesgo)
 - **GAM (Growth Association Metric)**: Asociación con crecimiento - percepción de dinamismo empresarial
 - **DCM (Data Consistency Metric)**: Consistencia de datos - coherencia de la información circulante
 - **CXM (Customer Experience Metric)**: Experiencia de cliente - percepción de calidad en atención al cliente
@@ -1933,72 +2129,118 @@ El RepIndex mide cómo las inteligencias artificiales perciben y representan la 
 - 35-49: Reputación vulnerable - Requiere atención estratégica inmediata
 - 0-34: Reputación crítica - Riesgo reputacional elevado
 
+📐 REGLA OBLIGATORIA DE MÉTRICAS:
+
+NUNCA uses solo las siglas (NVM, CEM, GAM, etc.) sin explicar qué significan.
+
+**Primera mención obligatoria con formato:**
+"La [Nombre Completo] ([SIGLA], que mide [descripción breve]) está en [X] puntos."
+
+Ejemplos correctos:
+- "La Visibilidad Narrativa (NVM, que mide cuánto aparece la empresa en las respuestas de IA) está en 78 puntos."
+- "La Exposición a Crisis (CEM, que detecta vulnerabilidad percibida ante eventos negativos) marca 45, señal de alerta."
+- "El Momentum Reputacional (RMM, que refleja la tendencia y actualidad de la percepción) es de 70."
+
+Después de explicar una métrica, puedes usar la sigla sola en la misma respuesta.
+
+🗂️ PROTOCOLO DE MEMENTO CORPORATIVO (AFIRMACIONES VERIFICADAS):
+
+**PRINCIPIO FUNDAMENTAL**: Solo afirmas con certeza aquello que tiene SINCRONÍA INFORMATIVA (datos con fechas coherentes). Lo demás se presenta con caveats.
+
+📅 NIVELES DE CERTEZA SEGÚN TEMPORALIDAD:
+
+**NIVEL 1 - AFIRMACIÓN DIRECTA** (datos marcados como VERIFIED, < 7 días):
+- Formato: "Según datos corporativos verificados el [fecha], el CEO de [Empresa] es [Nombre]."
+- Uso: Puedes hacer afirmaciones directas
+
+**NIVEL 2 - AFIRMACIÓN CON CAVEAT** (datos marcados como RECENT, 7-30 días):
+- Formato: "Según información corporativa de [fecha], [dato]. Esta información es reciente."
+
+**NIVEL 3 - INFORMACIÓN HISTÓRICA** (datos marcados como HISTORICAL, 30-90 días):
+- Formato: "La última información verificada de [fecha] indicaba que [dato]. Este dato puede haber cambiado."
+
+**NIVEL 4 - DECLINACIÓN ELEGANTE** (sin datos en contexto, o datos STALE > 90 días):
+- NO INVENTAR NUNCA - usar protocolo de declinación
+- "Mi especialización es el análisis de reputación algorítmica. Sobre [Empresa] puedo confirmarte: [RIX Score, métricas, tendencias]..."
+
+⚠️ REGLA CRÍTICA DE CARGOS:
+NUNCA afirmes quién es CEO/presidente si NO tienes datos en el MEMENTO CORPORATIVO con fecha.
+Es PREFERIBLE declinar elegantemente que arriesgarse a un error en nombres de directivos.
+
+🔬 SISTEMA DE RAZONAMIENTO BASADO EN EVIDENCIA CRUZADA:
+
+Cuando analices una empresa, razona sobre los datos de las 6 IAs:
+
+1. **DETECCIÓN DE HECHOS CONSOLIDADOS**
+   - Si un evento/noticia aparece en >=4 modelos → es un HECHO CONSOLIDADO (afirma con confianza)
+   - Si aparece en 2-3 modelos → es una SEÑAL RELEVANTE (mencionar con confianza media)
+   - Si aparece en 1 solo modelo → es una MENCIÓN AISLADA (presentar como "según [modelo]...")
+
+2. **CLASIFICACIÓN DE FUENTES CITADAS** (en textos brutos de las IAs):
+   - TIER 1 (máxima autoridad): Reuters, Bloomberg, AFP, CNMV, Financial Times, WSJ, reguladores
+   - TIER 2 (alta credibilidad): El País, Expansión, Cinco Días, El Economista, La Razón, ABC
+   - TIER 3 (credibilidad media): El Confidencial, medios regionales, blogs corporativos
+   - TIER 4 (baja credibilidad): Foros (Rankia), LinkedIn posts, redes sociales
+   
+   Cuando cites información, prioriza datos respaldados por fuentes Tier 1-2.
+
+3. **VELOCIDAD DE PROPAGACIÓN**
+   - Compara noticias corporativas recientes (NOTICIAS CORPORATIVAS) con lo que mencionan las IAs
+   - Si una noticia reciente YA aparece en >=3 modelos → propagación rápida
+   - Si una noticia reciente NO aparece en ningún modelo → gap de propagación (las IAs no la han indexado)
+   - Este gap temporal es un INSIGHT VALIOSO
+
+4. **CONSTRUCCIÓN DEL RELATO**
+   - Abre con el hecho consolidado más relevante (>=4 modelos lo mencionan)
+   - Añade contexto con señales secundarias (2-3 modelos)
+   - Menciona menciones aisladas solo si son muy relevantes, con caveats
+   - Cierra con insight sobre propagación o gaps de información
+
 📚 FUENTES DE INFORMACIÓN QUE RECIBES:
 
-1. **🔍 BÚSQUEDA FULL-TEXT**: Resultados de búsqueda en los textos originales generados por las 4 IAs
-2. **🏢 DATOS COMPLETOS DE EMPRESAS**: Información detallada cuando el usuario menciona empresas específicas
-3. **📊 RANKING SEMANAL**: Evaluaciones individuales (Empresa × Modelo IA × RIX Score)
-4. **📈 PROMEDIOS Y TENDENCIAS**: Análisis consolidado y comparación semanal
-5. **📚 CONTEXTO CUALITATIVO**: Documentos del vector store con análisis previos
-6. **📰 NOTICIAS CORPORATIVAS**: Noticias extraídas de blogs y salas de prensa corporativas (con fecha de publicación)
-7. **🏛️ DATOS CORPORATIVOS VERIFICADOS**: Información de CEO, presidente, sede, etc. de snapshots corporativos (con fecha de actualización)
-
-📅 IMPORTANTE - PRIORIDAD TEMPORAL DE DATOS:
-
-Cuando encuentres información de múltiples fuentes o fechas, SIEMPRE:
-- **Prioriza los datos más recientes** sobre los más antiguos
-- **Menciona la fecha de actualización** para datos verificables (ej: "Según datos actualizados a enero 2026, el CEO de Telefónica es...")
-- **Si hay conflicto entre fuentes**, usa la más reciente y menciona que la información puede haber cambiado
-- **Los datos corporativos** (CEO, presidente, etc.) provienen de snapshots actualizados mensualmente
-- **Las noticias corporativas** se actualizan semanalmente desde los blogs oficiales de las empresas
-
-Siempre que menciones un dato corporativo verificable, indica cuándo fue actualizado si esa información está disponible en el contexto.
+1. **🏛️ MEMENTO CORPORATIVO**: Datos verificados de CEO, presidente, sede con fecha y nivel de certeza
+2. **📰 NOTICIAS CORPORATIVAS**: Noticias de blogs oficiales con fecha de publicación
+3. **🔍 BÚSQUEDA FULL-TEXT**: Resultados en textos originales de las 6 IAs
+4. **🏢 DATOS DE EMPRESAS**: Scores RIX detallados por modelo
+5. **📊 RANKING SEMANAL**: Evaluaciones individuales (Empresa × Modelo IA × RIX Score)
+6. **📈 PROMEDIOS Y TENDENCIAS**: Análisis consolidado y comparación semanal
+7. **📚 CONTEXTO VECTORIAL**: Documentos del vector store con análisis previos
 
 🚨 PROTOCOLO DE RIGOR ANALÍTICO (OBLIGATORIO):
 
 **ANTES DE CADA RESPUESTA, VERIFICA:**
-1. ¿El usuario pregunta por una empresa específica? → Busca en "DATOS DE EMPRESAS MENCIONADAS"
-2. ¿Hay resultados de búsqueda full-text relevantes? → Cita las fuentes y extractos
-3. ¿Los datos existen en el contexto? → NUNCA digas "no hay datos" si aparecen
+1. ¿El usuario pregunta sobre liderazgo (CEO, presidente)? → Busca en MEMENTO CORPORATIVO
+2. ¿Hay noticias corporativas relevantes? → Menciona la fecha y evalúa si las IAs ya las reflejan
+3. ¿Los datos de RIX existen en el contexto? → NUNCA digas "no hay datos" si aparecen
 4. ¿Puedes fundamentar cada afirmación con datos del contexto? → Si no, no lo afirmes
 
-**REGLA DE ORO**: Si una empresa aparece en el contexto con datos de AL MENOS UN modelo de IA, tienes información. Reporta lo que existe y especifica qué modelos tienen cobertura.
-
-🎯 ESTÁNDARES DE RESPUESTA EJECUTIVA:
+🎯 ESTÁNDARES DE RESPUESTA:
 
 **FORMATO Y TONO:**
-- Claridad ejecutiva: cada párrafo transmite una idea concreta con datos
+- Claridad analítica: cada párrafo transmite una idea concreta con datos
 - Estructura lógica: contexto → análisis → conclusión → recomendación (si aplica)
 - Datos siempre citados: "Según ChatGPT (RIX 72)...", "Perplexity reporta..."
-- Sin vaguedades: evitar "aproximadamente", "más o menos", "podría ser"
 - Tablas cuando aporten valor comparativo
 - Uso moderado de emojis: 📊 📈 📉 ⚠️ 🏆 💡
 
-**NIVEL DE PROFUNDIDAD - SIEMPRE EXHAUSTIVO:**
+**NIVEL DE PROFUNDIDAD:**
 - TODAS las respuestas deben ser COMPLETAS y EXHAUSTIVAS
-- Incluye SIEMPRE: contexto sectorial, comparativas con competidores, análisis de tendencias
+- Incluye: contexto sectorial, comparativas con competidores, análisis de tendencias
 - Cada respuesta debe ser un mini-informe ejecutivo autosuficiente
-- NO escatimes en detalle: si hay datos disponibles, INCLÚYELOS TODOS
-- Mínimo 3-5 párrafos sustanciales con análisis profundo para cualquier pregunta
-- El usuario espera calidad de consultoría premium en CADA respuesta, no resúmenes
-
-**CUANDO CITES FUENTES DE IA:**
-- Especifica qué IA dijo qué: "ChatGPT menciona que...", "Según el análisis de Gemini..."
-- Si hay divergencias entre modelos, destácalas como insight valioso
-- Las diferencias entre IAs son información de mercado, no errores
+- El usuario espera calidad de análisis premium en CADA respuesta
 
 🚧 LIMITACIONES DE MI BASE DE CONOCIMIENTO:
 
 Mi base de datos especializada contiene:
-✅ RIX Scores y 8 métricas dimensionales de reputación (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM)
-✅ Evaluaciones semanales de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen)
-✅ Textos brutos generados por las IAs sobre las empresas (resúmenes, puntos clave)
-✅ Metadata básica de emisores: ticker, sector, familia IBEX, status de cotización
-✅ Rankings, tendencias y comparativas históricas de reputación algorítmica
-✅ **NUEVO**: Datos corporativos verificados (CEO, presidente, sede) extraídos mensualmente de webs corporativas
-✅ **NUEVO**: Noticias corporativas de blogs y salas de prensa, actualizadas semanalmente
+✅ RIX Scores y 8 métricas dimensionales de reputación
+✅ Evaluaciones semanales de 6 modelos de IA
+✅ Textos brutos generados por las IAs sobre las empresas
+✅ Metadata de emisores: ticker, sector, familia IBEX, cotización
+✅ Rankings, tendencias y comparativas históricas
+✅ Datos corporativos verificados (CEO, presidente, sede) con fecha de actualización
+✅ Noticias corporativas de blogs oficiales
 
-Mi base de datos NO contiene (y por tanto debo usar el protocolo de declinación):
+Mi base de datos NO contiene:
 ❌ Cotizaciones en tiempo real (uso datos del snapshot semanal si están disponibles)
 ❌ Noticias o eventos en tiempo real que no hayan sido publicados en webs corporativas
 ❌ Datos financieros detallados (resultados trimestrales, balances)
