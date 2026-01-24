@@ -62,6 +62,35 @@ interface RecentActivity {
   completed_at: string | null;
 }
 
+const CASCADE_STORAGE_KEY = 'repindex_rix_v2_cascade_state';
+
+function loadCascadeFromStorage(): Partial<CascadeState> | null {
+  try {
+    const raw = localStorage.getItem(CASCADE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CascadeState>;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveCascadeToStorage(state: Partial<CascadeState>) {
+  try {
+    localStorage.setItem(CASCADE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+function clearCascadeStorage() {
+  try {
+    localStorage.removeItem(CASCADE_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 // TOTAL_PHASES is now dynamic based on issuer count
 const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
@@ -89,6 +118,8 @@ export function SweepMonitorPanel() {
     startTime: null,
   });
   const cascadeAbortRef = useRef(false);
+  const cascadeRunIdRef = useRef(0);
+  const resumeStateRef = useRef<Partial<CascadeState> | null>(null);
 
   // Obtener actividad reciente (últimas 10 empresas procesadas + en proceso)
   const fetchRecentActivity = useCallback(async (sweepId: string) => {
@@ -185,6 +216,19 @@ export function SweepMonitorPanel() {
   useEffect(() => {
     fetchStatus();
   }, []);
+
+  // Auto-resume cascade if it was running (survive refresh/tab close)
+  useEffect(() => {
+    const stored = loadCascadeFromStorage();
+    if (!stored?.isRunning) return;
+    resumeStateRef.current = stored;
+
+    // Kick off the loop after a short delay so status can load
+    setTimeout(() => {
+      handleLaunchCascade(true);
+    }, 800);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   // Only poll during active cascade - NO AUTOMATIC POLLING otherwise
   useEffect(() => {
@@ -274,11 +318,15 @@ export function SweepMonitorPanel() {
   };
 
   // Lanza TODO el barrido empresa por empresa en cascada (evita timeouts)
-  const handleLaunchCascade = async () => {
+  const handleLaunchCascade = async (isAutoResume: boolean = false) => {
     // Si ya está corriendo, pausar
     if (cascade.isRunning) {
       cascadeAbortRef.current = true;
-      setCascade(prev => ({ ...prev, isRunning: false }));
+      setCascade(prev => {
+        const next = { ...prev, isRunning: false };
+        saveCascadeToStorage(next);
+        return next;
+      });
       toast({
         title: 'Cascada pausada',
         description: `Procesadas ${cascade.processedCount} empresas. Quedan ${cascade.remaining}.`,
@@ -286,28 +334,51 @@ export function SweepMonitorPanel() {
       return;
     }
 
+    const resume = isAutoResume ? resumeStateRef.current : null;
+    // Consume resume state so a manual start doesn't accidentally reuse it
+    resumeStateRef.current = null;
+
+    const startTimeLocal = typeof resume?.startTime === 'number' ? resume.startTime : Date.now();
+
     // Iniciar cascada
     cascadeAbortRef.current = false;
+    const runId = ++cascadeRunIdRef.current;
+
+    const initialProcessed = typeof resume?.processedCount === 'number' ? resume.processedCount : 0;
+    const initialRemaining = typeof resume?.remaining === 'number' ? resume.remaining : (status?.byStatus?.pending || 0);
+
     setCascade({
       isRunning: true,
       currentTicker: null,
-      processedCount: 0,
-      remaining: status?.byStatus?.pending || 0,
-      startTime: Date.now(),
+      processedCount: initialProcessed,
+      remaining: initialRemaining,
+      startTime: startTimeLocal,
+    });
+
+    saveCascadeToStorage({
+      isRunning: true,
+      currentTicker: null,
+      processedCount: initialProcessed,
+      remaining: initialRemaining,
+      startTime: startTimeLocal,
     });
 
     toast({
-      title: 'Cascada iniciada',
+      title: isAutoResume ? 'Cascada reanudada' : 'Cascada iniciada',
       description: 'Procesando empresas una por una para evitar timeouts...',
     });
 
-    let processed = 0;
-    let remaining = status?.byStatus?.pending || 0;
+    let processed = initialProcessed;
+    let remaining = initialRemaining;
     let consecutiveErrors = 0;
+    let totalErrors = 0;
 
     try {
       // Bucle de cascada: procesar empresa por empresa
       while (remaining > 0 && !cascadeAbortRef.current) {
+        // Stop if a new cascade run started (avoid parallel loops)
+        if (cascadeRunIdRef.current !== runId) break;
+
         try {
           const result = await processOneCompany();
           
@@ -327,6 +398,14 @@ export function SweepMonitorPanel() {
             remaining: remaining,
           }));
 
+          saveCascadeToStorage({
+            isRunning: true,
+            currentTicker: result.ticker,
+            processedCount: processed,
+            remaining,
+            startTime: startTimeLocal,
+          });
+
           // Actualizar status cada 5 empresas
           if (processed % 5 === 0) {
             fetchStatus();
@@ -338,28 +417,50 @@ export function SweepMonitorPanel() {
         } catch (err: any) {
           console.error('Error processing company:', err);
           consecutiveErrors++;
-          
-          // Si hay 3 errores consecutivos, pausar
-          if (consecutiveErrors >= 3) {
-            toast({
-              title: 'Cascada pausada por errores',
-              description: `${consecutiveErrors} errores consecutivos. Revisa los logs.`,
-              variant: 'destructive',
+          totalErrors++;
+
+          // Intentar resetear zombis en cada error (rápido y seguro)
+          try {
+            await supabase.functions.invoke('rix-batch-orchestrator', {
+              body: { reset_stuck: true, reset_stuck_timeout: 0 },
             });
-            break;
+          } catch {
+            // ignore
           }
           
-          // Esperar más tiempo después de un error
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          // NO pausar: backoff exponencial para que el barrido sea inagotable
+          const base = 1500;
+          const max = 60000;
+          const backoff = Math.min(max, base * Math.pow(2, Math.min(consecutiveErrors, 6)));
+          const jitter = Math.floor(Math.random() * 750);
+          const waitMs = backoff + jitter;
+
+          if (consecutiveErrors % 5 === 0) {
+            toast({
+              title: 'Reintentando automáticamente',
+              description: `${consecutiveErrors} errores seguidos (total ${totalErrors}). Esperando ${Math.round(waitMs / 1000)}s...`,
+              variant: 'destructive',
+            });
+          }
+
+          await new Promise(resolve => setTimeout(resolve, waitMs));
         }
       }
 
       // Finalizar cascada
       const wasAborted = cascadeAbortRef.current;
       setCascade(prev => ({ ...prev, isRunning: false, currentTicker: null }));
+      saveCascadeToStorage({
+        isRunning: false,
+        currentTicker: null,
+        processedCount: processed,
+        remaining,
+        startTime: startTimeLocal,
+      });
       fetchStatus();
 
       if (!wasAborted && remaining === 0) {
+        clearCascadeStorage();
         toast({
           title: '🎉 Barrido completado',
           description: `Se procesaron ${processed} empresas exitosamente.`,
@@ -374,6 +475,13 @@ export function SweepMonitorPanel() {
     } catch (error: any) {
       console.error('Error in cascade:', error);
       setCascade(prev => ({ ...prev, isRunning: false }));
+      saveCascadeToStorage({
+        isRunning: false,
+        currentTicker: null,
+        processedCount: processed,
+        remaining,
+        startTime: startTimeLocal,
+      });
       toast({
         title: 'Error en cascada',
         description: error.message || 'Error inesperado',
@@ -507,7 +615,7 @@ export function SweepMonitorPanel() {
                 Siguiente Fase
               </Button>
               <Button
-                onClick={handleLaunchCascade}
+                onClick={() => handleLaunchCascade(false)}
                 disabled={launching}
                 variant={cascade.isRunning ? "destructive" : "default"}
                 className="gap-2"
@@ -800,7 +908,7 @@ export function SweepMonitorPanel() {
             <Button
               variant={cascade.isRunning ? "destructive" : "outline"}
               size="sm"
-              onClick={handleLaunchCascade}
+              onClick={() => handleLaunchCascade(false)}
               disabled={launching}
             >
               {cascade.isRunning ? (
