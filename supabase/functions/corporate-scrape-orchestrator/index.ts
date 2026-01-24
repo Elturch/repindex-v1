@@ -44,7 +44,7 @@ async function ensureSweepInitialized(
   const { data: companies, error } = await supabase
     .from('repindex_root_issuers')
     .select('ticker, issuer_name, website')
-    .eq('status', 'active');
+    .in('ibex_status', ['active', 'active_now']);
 
   if (error) {
     console.error(`[Orchestrator] Query error:`, JSON.stringify(error));
