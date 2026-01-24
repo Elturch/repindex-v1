@@ -630,26 +630,50 @@ function wrapInParagraphs(html: string): string {
   const result: string[] = [];
   let paragraphBuffer = '';
   
-  const blockTags = ['<h', '<table', '<ul', '<ol', '<pre', '<blockquote', '<hr', '</table', '</ul', '</ol', '</pre', '</blockquote', '<div'];
+  // Extended list of block-level tags and their closings
+  const blockTags = [
+    '<h1', '<h2', '<h3', '<h4', '<h5', '<h6',
+    '</h1', '</h2', '</h3', '</h4', '</h5', '</h6',
+    '<table', '</table',
+    '<thead', '</thead',
+    '<tbody', '</tbody',
+    '<tr', '</tr',
+    '<th', '</th',
+    '<td', '</td',
+    '<ul', '</ul',
+    '<ol', '</ol',
+    '<li', '</li',
+    '<pre', '</pre',
+    '<blockquote', '</blockquote',
+    '<hr',
+    '<div', '</div',
+    '<br'
+  ];
   
   for (const line of lines) {
     const trimmed = line.trim();
-    const isBlock = blockTags.some(tag => trimmed.startsWith(tag)) || trimmed === '';
+    
+    // Check if line is a block element or empty
+    const isBlock = blockTags.some(tag => trimmed.toLowerCase().startsWith(tag)) || trimmed === '';
     
     if (isBlock) {
+      // Flush paragraph buffer before adding block element
       if (paragraphBuffer) {
         result.push(`<p>${paragraphBuffer}</p>`);
         paragraphBuffer = '';
       }
       if (trimmed) result.push(line);
     } else {
+      // Accumulate text for paragraph
       paragraphBuffer += (paragraphBuffer ? ' ' : '') + trimmed;
     }
   }
   
+  // Flush any remaining paragraph content
   if (paragraphBuffer) {
     result.push(`<p>${paragraphBuffer}</p>`);
   }
   
+  // Clean up empty paragraphs
   return result.join('\n').replace(/<p>\s*<\/p>/g, '');
 }
