@@ -499,12 +499,69 @@ async function logApiUsage(
   }
 }
 
-// Tavily Search API integration for DeepSeek RAG
-async function searchWithTavily(
+// ============================================================================
+// TAVILY CACHE: Optimización para evitar latencia repetida
+// Cache en memoria con TTL de 7 días y timeout de 5 segundos
+// ============================================================================
+interface TavilyCacheEntry {
+  context: string;
+  timestamp: number;
+}
+
+const TAVILY_CACHE = new Map<string, TavilyCacheEntry>();
+const TAVILY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+const TAVILY_TIMEOUT_MS = 5000; // 5 segundos - evitar bloqueo
+
+// Wrapper con cache y timeout
+async function searchWithTavilyCached(
+  issuerName: string,
+  ticker: string,
+  dateFrom: string,
+  dateTo: string
+): Promise<string> {
+  const cacheKey = `${ticker}_${dateFrom}_${dateTo}`;
+  const cached = TAVILY_CACHE.get(cacheKey);
+  
+  // Si hay cache válido, usar directamente
+  if (cached && (Date.now() - cached.timestamp < TAVILY_CACHE_TTL_MS)) {
+    console.log(`[TAVILY-CACHE-HIT] ${ticker} - using cached context (${cached.context.length} chars)`);
+    return cached.context;
+  }
+
+  // Si no hay cache, buscar con timeout de 5s
+  console.log(`[TAVILY-SEARCH] ${ticker} - fetching fresh context with 5s timeout...`);
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TAVILY_TIMEOUT_MS);
+    
+    const context = await searchWithTavilyInternal(issuerName, ticker, dateFrom, dateTo, controller.signal);
+    clearTimeout(timeoutId);
+    
+    // Guardar en cache
+    if (context) {
+      TAVILY_CACHE.set(cacheKey, { context, timestamp: Date.now() });
+      console.log(`[TAVILY-CACHED] ${ticker} - stored ${context.length} chars in cache`);
+    }
+    
+    return context;
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      console.warn(`[TAVILY-TIMEOUT] ${ticker} - 5s timeout exceeded, proceeding without web context`);
+    } else {
+      console.warn(`[TAVILY-ERROR] ${ticker} - ${err.message}, proceeding without web context`);
+    }
+    return '';
+  }
+}
+
+// Función interna real de búsqueda Tavily (con soporte para AbortSignal)
+async function searchWithTavilyInternal(
   issuerName: string, 
   ticker: string, 
   dateFrom: string, 
-  dateTo: string
+  dateTo: string,
+  signal?: AbortSignal
 ): Promise<string> {
   const TAVILY_API_KEY = Deno.env.get('TAVILY_API_KEY');
   if (!TAVILY_API_KEY) {
@@ -518,6 +575,7 @@ async function searchWithTavily(
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal,
       body: JSON.stringify({
         api_key: TAVILY_API_KEY,
         query: `${issuerName} ${ticker} noticias corporativas España ${dateFrom} ${dateTo}`,
@@ -570,7 +628,11 @@ async function searchWithTavily(
     console.log(`[rix-search-v2] Tavily returned ${data.results.length} results for ${ticker}`);
     return context;
     
-  } catch (error) {
+  } catch (error: any) {
+    // Si es timeout/abort, propagar para que el wrapper lo maneje
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     console.error('[rix-search-v2] Tavily exception:', error);
     return '';
   }
@@ -732,9 +794,9 @@ serve(async (req) => {
     // Get all 7 search-capable models
     const modelConfigs = getSearchModelConfigs();
 
-    // Pre-fetch Tavily context for DeepSeek RAG
-    console.log(`[rix-search-v2] Pre-fetching Tavily context for DeepSeek RAG...`);
-    const tavilyContext = await searchWithTavily(issuer_name, ticker, dateFrom, dateTo);
+    // Pre-fetch Tavily context for DeepSeek RAG (with cache + 5s timeout)
+    console.log(`[rix-search-v2] Pre-fetching Tavily context for DeepSeek RAG (cached + 5s timeout)...`);
+    const tavilyContext = await searchWithTavilyCached(issuer_name, ticker, dateFrom, dateTo);
     if (tavilyContext) {
       console.log(`[rix-search-v2] Tavily context ready: ${tavilyContext.length} chars`);
     }
@@ -844,13 +906,25 @@ serve(async (req) => {
           .single();
 
         if (insertError) {
-          console.error(`[rix-search-v2] Insert error for ${config.displayName}:`, insertError);
-          insertedRecords.push({
-            id: '',
-            model_name: config.displayName,
-            success: false,
-            error: insertError.message,
-          });
+          // OPTIMIZACIÓN: Ignorar errores de duplicate key (23505) silenciosamente
+          // Esto evita reintentos innecesarios en empresas ya procesadas
+          if (insertError.code === '23505') {
+            console.warn(`[DUPLICATE-SKIP] ${ticker} - ${config.displayName} already exists for this period, skipping`);
+            insertedRecords.push({
+              id: '',
+              model_name: config.displayName,
+              success: true, // Marcamos como success para no reintentar
+              error: 'duplicate_skipped',
+            });
+          } else {
+            console.error(`[rix-search-v2] Insert error for ${config.displayName}:`, insertError);
+            insertedRecords.push({
+              id: '',
+              model_name: config.displayName,
+              success: false,
+              error: insertError.message,
+            });
+          }
         } else {
           console.log(`[rix-search-v2] Created row for ${config.displayName}: ${insertedRecord.id}`);
           insertedRecords.push({
