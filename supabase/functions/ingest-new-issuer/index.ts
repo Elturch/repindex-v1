@@ -90,6 +90,26 @@ async function checkDuplicateByName(
   return { isDuplicate: false };
 }
 
+// Check for duplicate ticker to prevent conflicts
+async function checkDuplicateTicker(
+  supabase: any,
+  ticker: string
+): Promise<{ isDuplicate: boolean; existingIssuer?: string }> {
+  const { data: existing } = await supabase
+    .from('repindex_root_issuers')
+    .select('issuer_name, ticker')
+    .eq('ticker', ticker.toUpperCase())
+    .maybeSingle();
+
+  if (existing) {
+    return { 
+      isDuplicate: true, 
+      existingIssuer: existing.issuer_name 
+    };
+  }
+  return { isDuplicate: false };
+}
+
 // Get existing issuers for context to AI
 async function getExistingIssuersContext(supabase: any): Promise<string> {
   const { data: issuers } = await supabase
@@ -254,7 +274,7 @@ Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin explicaciones
   }
 }
 
-// Validate AI response for coherence
+// Validate AI response for coherence (synchronous version - ticker duplicate check is async)
 function validateAIResponse(
   data: any, 
   input: CompanyInput
@@ -287,6 +307,27 @@ function validateAIResponse(
   }
   
   return { valid: issues.length === 0, issues };
+}
+
+// Validate ticker is not already used (async check)
+async function validateTickerAvailability(
+  supabase: any,
+  ticker: string
+): Promise<{ valid: boolean; issue?: string }> {
+  if (ticker === 'NO-COTIZA') {
+    return { valid: true };
+  }
+  
+  const { isDuplicate, existingIssuer } = await checkDuplicateTicker(supabase, ticker);
+  
+  if (isDuplicate) {
+    return { 
+      valid: false, 
+      issue: `⚠️ TICKER DUPLICADO: "${ticker}" ya está asignado a "${existingIssuer}". Asignar un ticker único.`
+    };
+  }
+  
+  return { valid: true };
 }
 
 // Find available phase slot or create new phase
@@ -521,7 +562,7 @@ Deno.serve(async (req) => {
         const metadata = await generateIssuerMetadata(company, geminiApiKey, existingIssuersContext);
         console.log(`Generated metadata for ${company.name}:`, JSON.stringify(metadata));
 
-        // Validate AI response
+        // Validate AI response (synchronous checks)
         const validation = validateAIResponse(metadata, company);
         if (!validation.valid) {
           console.warn(`Validation issues for ${company.name}:`, validation.issues);
@@ -530,6 +571,14 @@ Deno.serve(async (req) => {
           if (metadata.confidence === 'high') {
             metadata.confidence = 'medium';
           }
+        }
+
+        // Check for duplicate ticker (async check - prevents SAN conflict like Santander/Sanitas)
+        const tickerValidation = await validateTickerAvailability(supabase, metadata.ticker);
+        if (!tickerValidation.valid) {
+          console.warn(`Ticker conflict for ${company.name}:`, tickerValidation.issue);
+          metadata.verification_notes += ` [${tickerValidation.issue}]`;
+          metadata.confidence = 'low'; // Force low confidence to require manual review
         }
 
         // Find available phase
