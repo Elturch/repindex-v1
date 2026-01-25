@@ -10,10 +10,18 @@ El RIX Score es una puntuación de 0 a 100 que representa cómo las IAs perciben
 
 ## ¿Qué modelos de IA analiza RepIndex?
 
-1. **ChatGPT** (OpenAI) - GPT-4o
-2. **Perplexity** - Modelo de búsqueda con fuentes
-3. **Gemini** (Google) - Gemini Pro
-4. **DeepSeek** - DeepSeek-R1
+RepIndex utiliza 6 modelos de IA, TODOS con acceso a búsqueda web en tiempo real:
+
+| Modelo | Proveedor | Método de Búsqueda Web |
+|--------|-----------|------------------------|
+| ChatGPT (GPT-4.1 mini) | OpenAI | Web Search Preview |
+| Perplexity (Sonar Pro) | Perplexity AI | Búsqueda nativa con citaciones |
+| Gemini (2.5 Pro) | Google | Google Search Grounding |
+| DeepSeek Chat | DeepSeek + Tavily | RAG con Tavily Search API |
+| Grok-3 | xAI | Live Search + X/Twitter |
+| Qwen Max | Alibaba | DashScope Search |
+
+**100% Búsqueda Web Real**: Todas las menciones en los informes RIX se basan en fuentes web verificables de la semana analizada.
 
 ## Las 8 Métricas del RIX Score
 

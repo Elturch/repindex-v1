@@ -14,7 +14,9 @@ import {
   Heart,
   Calendar,
   Building2,
-  TrendingUp
+  TrendingUp,
+  Globe,
+  CheckCircle2
 } from "lucide-react";
 import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 
@@ -81,26 +83,50 @@ const aiModels = [
   {
     name: "ChatGPT",
     provider: "OpenAI",
-    model: "GPT-4o",
-    description: "El modelo de IA más utilizado del mundo. Su percepción de las empresas influye directamente en millones de consultas diarias."
+    model: "GPT-4.1 mini",
+    hasWebSearch: true,
+    searchMethod: "Web Search Preview",
+    description: "El modelo de IA más utilizado del mundo con búsqueda web nativa. Accede a noticias y fuentes en tiempo real."
   },
   {
     name: "Perplexity",
     provider: "Perplexity AI",
     model: "Sonar Pro",
-    description: "Motor de búsqueda con IA que cita fuentes. Proporciona respuestas fundamentadas y actualizadas sobre empresas."
+    hasWebSearch: true,
+    searchMethod: "Búsqueda Nativa",
+    description: "Motor de búsqueda especializado con citación de fuentes. Diseñado específicamente para búsqueda web."
   },
   {
     name: "Gemini",
     provider: "Google",
-    model: "Gemini Pro",
-    description: "El modelo de Google integrado en su ecosistema. Sus respuestas impactan búsquedas y servicios de Google."
+    model: "Gemini 2.5 Pro",
+    hasWebSearch: true,
+    searchMethod: "Google Search Grounding",
+    description: "El modelo de Google con integración directa con Google Search para resultados actualizados."
   },
   {
     name: "DeepSeek",
-    provider: "DeepSeek",
-    model: "DeepSeek-R1",
-    description: "Modelo de razonamiento avanzado. Ofrece análisis profundo con capacidad de reflexión sobre la información."
+    provider: "DeepSeek + Tavily",
+    model: "DeepSeek Chat",
+    hasWebSearch: true,
+    searchMethod: "RAG con Tavily",
+    description: "Búsqueda web mediante Tavily Search API integrada. Combina razonamiento profundo con fuentes reales."
+  },
+  {
+    name: "Grok",
+    provider: "xAI",
+    model: "Grok-3",
+    hasWebSearch: true,
+    searchMethod: "Live Search + X",
+    description: "Búsqueda en tiempo real incluyendo publicaciones de X/Twitter."
+  },
+  {
+    name: "Qwen",
+    provider: "Alibaba",
+    model: "Qwen Max",
+    hasWebSearch: true,
+    searchMethod: "DashScope Search",
+    description: "Búsqueda web integrada mediante Alibaba DashScope."
   }
 ];
 
@@ -247,7 +273,7 @@ export default function Methodology() {
           </div>
         </section>
 
-        {/* Los 4 Modelos de IA */}
+        {/* Acceso a Internet de los Modelos - NUEVA SECCIÓN */}
         <section className="py-12 px-4">
           <div className="container mx-auto max-w-4xl">
             <motion.div
@@ -257,28 +283,58 @@ export default function Methodology() {
               transition={{ duration: 0.5 }}
             >
               <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-                <Cpu className="h-6 w-6 text-primary" />
-                Los 4 Modelos de IA Analizados
+                <Globe className="h-6 w-6 text-primary" />
+                Acceso a Internet de los Modelos
               </h2>
-              <div className="grid md:grid-cols-2 gap-4">
+              
+              {/* Banner 100% Web Real */}
+              <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-6 mb-8">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900">
+                    <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-green-800 dark:text-green-200 text-lg">
+                      100% Búsqueda Web Real
+                    </h3>
+                    <p className="text-green-700 dark:text-green-300 text-sm">
+                      Todos nuestros modelos acceden a Internet en tiempo real
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Cada modelo de IA consulta fuentes web actualizadas durante el análisis semanal.
+                  Las menciones y URLs citadas en los informes son verificables y 
+                  corresponden a noticias reales de la semana analizada.
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {aiModels.map((model, index) => (
                   <motion.div
                     key={model.name}
                     initial={{ opacity: 0, y: 20 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                    transition={{ duration: 0.5, delay: index * 0.05 }}
                   >
-                    <Card>
+                    <Card className="h-full">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-lg flex items-center justify-between">
-                          {model.name}
-                          <Badge variant="secondary">{model.model}</Badge>
+                        <CardTitle className="text-base flex items-center justify-between">
+                          <span className="flex items-center gap-2">
+                            <span className="text-green-500">🌐</span>
+                            {model.name}
+                          </span>
                         </CardTitle>
-                        <p className="text-sm text-muted-foreground">{model.provider}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">{model.provider}</p>
+                          <Badge variant="secondary" className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs">
+                            {model.searchMethod}
+                          </Badge>
+                        </div>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-muted-foreground">{model.description}</p>
+                        <p className="text-xs text-muted-foreground">{model.description}</p>
                       </CardContent>
                     </Card>
                   </motion.div>
