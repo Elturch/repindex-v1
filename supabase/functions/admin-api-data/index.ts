@@ -50,7 +50,24 @@ Deno.serve(async (req) => {
     const path = url.pathname.replace('/admin-api-data', '')
     
     // Calculate date filter based on period
-    const getDateFilter = (period: string): Date => {
+    const getDateFilter = (period: string): { start: Date; end?: Date } => {
+      
+      
+      // Handle specific month periods like 'jan-2026'
+      if (period.match(/^[a-z]{3}-\d{4}$/)) {
+        const [monthStr, yearStr] = period.split('-')
+        const monthMap: Record<string, number> = {
+          'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
+          'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
+        }
+        const month = monthMap[monthStr]
+        const year = parseInt(yearStr)
+        const start = new Date(year, month, 1)
+        const end = new Date(year, month + 1, 0, 23, 59, 59, 999) // Last day of month
+        return { start, end }
+      }
+      
+      // Handle relative periods
       const dateFilter = new Date()
       switch (period) {
         case '24h':
@@ -65,25 +82,35 @@ Deno.serve(async (req) => {
         case '90d':
           dateFilter.setDate(dateFilter.getDate() - 90)
           break
+        case 'all':
+          dateFilter.setFullYear(2024, 0, 1) // All historical data
+          break
         default:
           dateFilter.setDate(dateFilter.getDate() - 30)
       }
-      return dateFilter
+      return { start: dateFilter }
     }
 
     // Route: GET /usage-logs
     if (req.method === 'GET' && path === '/usage-logs') {
       const period = url.searchParams.get('period') || '7d'
-      const dateFilter = getDateFilter(period)
+      const { start, end } = getDateFilter(period)
 
-      const { data, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from('api_usage_logs')
         .select('*')
-        .gte('created_at', dateFilter.toISOString())
+        .gte('created_at', start.toISOString())
+      
+      if (end) {
+        query = query.lte('created_at', end.toISOString())
+      }
+      
+      const { data, error } = await query
         .order('created_at', { ascending: false })
-        .limit(10000)
 
       if (error) throw error
+      
+      console.log(`[admin-api-data] /usage-logs period=${period} returned ${data?.length || 0} rows`)
       
       return new Response(
         JSON.stringify({ data }),
@@ -94,14 +121,19 @@ Deno.serve(async (req) => {
     // Route: GET /user-stats - User cost analysis
     if (req.method === 'GET' && path === '/user-stats') {
       const period = url.searchParams.get('period') || '7d'
-      const dateFilter = getDateFilter(period)
+      const { start, end } = getDateFilter(period)
 
       // Get usage logs with user info
-      const { data: usageLogs, error: logsError } = await supabaseAdmin
+      let userQuery = supabaseAdmin
         .from('api_usage_logs')
         .select('user_id, session_id, estimated_cost_usd, input_tokens, output_tokens, action_type, created_at')
-        .gte('created_at', dateFilter.toISOString())
-        .limit(10000)
+        .gte('created_at', start.toISOString())
+      
+      if (end) {
+        userQuery = userQuery.lte('created_at', end.toISOString())
+      }
+
+      const { data: usageLogs, error: logsError } = await userQuery
 
       if (logsError) throw logsError
 
@@ -202,13 +234,18 @@ Deno.serve(async (req) => {
     // Route: GET /action-metrics - Detailed action type metrics
     if (req.method === 'GET' && path === '/action-metrics') {
       const period = url.searchParams.get('period') || '7d'
-      const dateFilter = getDateFilter(period)
+      const { start, end } = getDateFilter(period)
 
-      const { data: usageLogs, error: logsError } = await supabaseAdmin
+      let actionQuery = supabaseAdmin
         .from('api_usage_logs')
         .select('action_type, estimated_cost_usd, input_tokens, output_tokens, created_at')
-        .gte('created_at', dateFilter.toISOString())
-        .limit(10000)
+        .gte('created_at', start.toISOString())
+      
+      if (end) {
+        actionQuery = actionQuery.lte('created_at', end.toISOString())
+      }
+
+      const { data: usageLogs, error: logsError } = await actionQuery
 
       if (logsError) throw logsError
 
@@ -298,7 +335,7 @@ Deno.serve(async (req) => {
     // Route: GET /cost-config
     if (req.method === 'GET' && path === '/cost-config') {
       const period = url.searchParams.get('period') || '30d'
-      const dateFilter = getDateFilter(period)
+      const { start, end } = getDateFilter(period)
 
       // Get config data
       const { data: configData, error: configError } = await supabaseAdmin
@@ -309,11 +346,16 @@ Deno.serve(async (req) => {
       if (configError) throw configError
 
       // Get token usage per model from usage logs
-      const { data: usageLogs, error: usageError } = await supabaseAdmin
+      let configQuery = supabaseAdmin
         .from('api_usage_logs')
         .select('provider, model, input_tokens, output_tokens, estimated_cost_usd')
-        .gte('created_at', dateFilter.toISOString())
-        .limit(50000)
+        .gte('created_at', start.toISOString())
+      
+      if (end) {
+        configQuery = configQuery.lte('created_at', end.toISOString())
+      }
+
+      const { data: usageLogs, error: usageError } = await configQuery
 
       if (usageError) throw usageError
 

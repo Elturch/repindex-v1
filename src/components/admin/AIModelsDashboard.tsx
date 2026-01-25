@@ -312,14 +312,16 @@ export const AIModelsDashboard: React.FC = () => {
       <div className="flex flex-wrap items-center gap-4 justify-between">
         <div className="flex items-center gap-4">
           <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="24h">Últimas 24h</SelectItem>
               <SelectItem value="7d">Últimos 7 días</SelectItem>
               <SelectItem value="30d">Últimos 30 días</SelectItem>
+              <SelectItem value="jan-2026">Enero 2026</SelectItem>
               <SelectItem value="90d">Últimos 90 días</SelectItem>
+              <SelectItem value="all">Todo el histórico</SelectItem>
             </SelectContent>
           </Select>
 
