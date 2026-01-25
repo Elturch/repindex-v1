@@ -122,6 +122,26 @@ const PROCESS_MAP: ProcessConfig[] = [
       { provider: 'gemini', model: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', role: 'primary' },
     ]
   },
+  {
+    id: 'feedback-vectors',
+    name: 'Vectores Feedback',
+    icon: '💬',
+    edgeFunction: 'populate-feedback-vectors',
+    actionTypes: ['feedback_embedding'],
+    models: [
+      { provider: 'openai', model: 'text-embedding-3-small', displayName: 'Embedding 3 Small', role: 'primary' },
+    ]
+  },
+  {
+    id: 'marketing',
+    name: 'Notificaciones Marketing',
+    icon: '📣',
+    edgeFunction: 'generate-marketing-notifications',
+    actionTypes: ['marketing_notification'],
+    models: [
+      { provider: 'openai', model: 'gpt-4o-mini', displayName: 'GPT-4o-mini', role: 'primary' },
+    ]
+  },
 ];
 
 interface UsageLog {
@@ -163,6 +183,8 @@ const PROCESS_COLORS: Record<string, string> = {
   consolidation: 'bg-yellow-500',
   vectorstore: 'bg-indigo-500',
   ingest: 'bg-red-500',
+  'feedback-vectors': 'bg-teal-500',
+  'marketing': 'bg-amber-500',
 };
 
 export const AIModelsDashboard: React.FC = () => {
