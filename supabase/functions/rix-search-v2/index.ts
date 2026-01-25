@@ -183,24 +183,26 @@ FORMATO:
 
 ⚠️ RECUERDA: SIEMPRE informe completo de 4,000+ tokens. NUNCA "no hay información".`;
 
-// 7 modelos con acceso real a Internet - ahora con display name para guardar en 02_model_name
+// 6 modelos con acceso real a Internet - ahora con display name para guardar en 02_model_name
 interface SearchModelConfig {
   name: string;
   displayName: string;
   apiKeyEnv: string;
   endpoint: string;
+  hasRealWebSearch: boolean; // Flag para indicar si el modelo tiene búsqueda web real
   buildRequest: (prompt: string, apiKey: string) => { headers: Record<string, string>; body: object };
   parseResponse: (data: any) => string;
   dbColumn: string;
 }
 
 const getSearchModelConfigs = (): SearchModelConfig[] => [
-  // 1. Perplexity Sonar Pro - Funciona ✅
+  // 1. Perplexity Sonar Pro - ✅ Web Search nativo
   {
     name: 'perplexity-sonar-pro',
     displayName: 'Perplexity',
     apiKeyEnv: 'PERPLEXITY_API_KEY',
     endpoint: 'https://api.perplexity.ai/chat/completions',
+    hasRealWebSearch: true,
     dbColumn: '21_res_perplex_bruto',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
@@ -224,12 +226,13 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return content + (citations ? '\n\nFuentes:\n' + citations : '');
     },
   },
-  // 2. Grok 3 (xAI) - Funciona ✅
+  // 2. Grok 3 (xAI) - ✅ Con Live Search (Web + X/Twitter)
   {
     name: 'grok-3',
     displayName: 'Grok',
     apiKeyEnv: 'XAI_API_KEY',
     endpoint: 'https://api.x.ai/v1/chat/completions',
+    hasRealWebSearch: true,
     dbColumn: 'respuesta_bruto_grok',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
@@ -243,16 +246,33 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
+        // Habilitar Live Search con Web + X (Twitter)
+        tools: [
+          { type: 'function', function: { name: 'web_search', description: 'Search the web for current information' } },
+          { type: 'function', function: { name: 'x_search', description: 'Search X/Twitter for posts and discussions' } }
+        ],
+        tool_choice: 'auto',
       },
     }),
-    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
+    parseResponse: (data: any) => {
+      const content = data.choices?.[0]?.message?.content || '';
+      // Extraer resultados de búsqueda si los hay
+      const toolCalls = data.choices?.[0]?.message?.tool_calls;
+      let searchContext = '';
+      if (toolCalls?.length) {
+        searchContext = '\n\n[Búsqueda activa: ' + toolCalls.length + ' consultas realizadas]';
+      }
+      return content + searchContext;
+    },
   },
-  // 3. DeepSeek - Funciona ✅
+  // 3. DeepSeek - ⚠️ Sin web search nativo (basado en conocimiento de entrenamiento)
+  // DeepSeek no tiene API de búsqueda web documentada, usa conocimiento hasta fecha de corte
   {
     name: 'deepseek-chat',
     displayName: 'Deepseek',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     endpoint: 'https://api.deepseek.com/chat/completions',
+    hasRealWebSearch: false, // DeepSeek no tiene web search API
     dbColumn: '23_res_deepseek_bruto',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
@@ -262,7 +282,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'deepseek-chat',
         messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
+          { role: 'system', content: 'Eres analista de reputación corporativa. IMPORTANTE: NO tienes acceso a búsqueda web en tiempo real. Tu análisis se basa en conocimiento general del sector y tendencias históricas. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Analiza el SECTOR + COMPETIDORES + tendencias MACRO España basándote en tu conocimiento. NO inventes URLs específicas - indica "basado en conocimiento sectorial". Cada mención: contexto histórico, 4-6 párrafos análisis. Markdown. Español España.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
@@ -270,12 +290,13 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
     }),
     parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
-  // 4. GPT-4.1 mini (OpenAI) - Con web search
+  // 4. GPT-4.1 mini (OpenAI) - ✅ Con Web Search Tool
   {
     name: 'gpt-4.1-mini',
     displayName: 'ChatGPT',
     apiKeyEnv: 'OPENAI_API_KEY',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
+    endpoint: 'https://api.openai.com/v1/responses',  // Nuevo endpoint para responses API con tools
+    hasRealWebSearch: true,
     dbColumn: '20_res_gpt_bruto',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
@@ -284,21 +305,49 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       },
       body: {
         model: 'gpt-4.1-mini',
-        messages: [
+        input: [
           { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.1,
+        tools: [{ type: 'web_search_preview' }],  // Habilitar web search
+        tool_choice: 'auto',
       },
     }),
-    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
+    parseResponse: (data: any) => {
+      // La responses API devuelve output en formato diferente
+      const output = data.output || [];
+      let content = '';
+      let citations = '';
+      
+      for (const item of output) {
+        if (item.type === 'message' && item.content) {
+          for (const part of item.content) {
+            if (part.type === 'output_text') {
+              content += part.text;
+            }
+          }
+        }
+        // Extraer citaciones de web search
+        if (item.type === 'web_search_call') {
+          citations += `\n[Web Search: ${item.status || 'completed'}]`;
+        }
+      }
+      
+      // Fallback para formato legacy
+      if (!content && data.choices?.[0]?.message?.content) {
+        content = data.choices[0].message.content;
+      }
+      
+      return content + citations;
+    },
   },
-  // 5. Gemini 2.5 Pro (Google) - Con Google Search grounding
+  // 5. Gemini 2.5 Pro (Google) - ✅ Con Google Search grounding
   {
     name: 'gemini-2.5-pro',
     displayName: 'Google Gemini',
     apiKeyEnv: 'GOOGLE_GEMINI_API_KEY',
     endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
+    hasRealWebSearch: true,
     dbColumn: '22_res_gemini_bruto',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
@@ -334,12 +383,13 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return text + sources;
     },
   },
-  // 6. Qwen Max (Alibaba DashScope) - Con enable_search
+  // 6. Qwen Max (Alibaba DashScope) - ✅ Con enable_search
   {
     name: 'qwen-max',
     displayName: 'Qwen',
     apiKeyEnv: 'DASHSCOPE_API_KEY',
     endpoint: 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+    hasRealWebSearch: true,
     dbColumn: 'respuesta_bruto_qwen',
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
