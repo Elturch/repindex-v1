@@ -226,7 +226,9 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return content + (citations ? '\n\nFuentes:\n' + citations : '');
     },
   },
-  // 2. Grok 3 (xAI) - ✅ Con Live Search (Web + X/Twitter)
+  // 2. Grok 3 (xAI) - ⚠️ TEMPORALMENTE DESHABILITADO - Error 422 en API
+  // TODO: Rehabilitar cuando xAI arregle el endpoint con tools
+  /*
   {
     name: 'grok-3',
     displayName: 'Grok',
@@ -242,29 +244,15 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'grok-3',
         messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Si no hay menciones directas: busca SECTOR + COMPETIDORES + MACRO España. SIEMPRE hay contexto. Solo fechas del periodo (NO historia). Cada mención: fecha dd/mm/yyyy, URL, 4-6 párrafos análisis impacto reputacional. Markdown. Español España.' },
+          { role: 'system', content: 'Eres analista de reputación corporativa...' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.1,
-        // Habilitar Live Search con Web + X (Twitter)
-        tools: [
-          { type: 'function', function: { name: 'web_search', description: 'Search the web for current information' } },
-          { type: 'function', function: { name: 'x_search', description: 'Search X/Twitter for posts and discussions' } }
-        ],
-        tool_choice: 'auto',
       },
     }),
-    parseResponse: (data: any) => {
-      const content = data.choices?.[0]?.message?.content || '';
-      // Extraer resultados de búsqueda si los hay
-      const toolCalls = data.choices?.[0]?.message?.tool_calls;
-      let searchContext = '';
-      if (toolCalls?.length) {
-        searchContext = '\n\n[Búsqueda activa: ' + toolCalls.length + ' consultas realizadas]';
-      }
-      return content + searchContext;
-    },
+    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
   },
+  */
   // 3. DeepSeek - ✅ Ahora con RAG via Tavily Search API
   // DeepSeek + Tavily = Búsqueda web real + análisis profundo
   {
@@ -778,7 +766,6 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker}) with 7 models - 1 row per model architecture`);
     const startTime = Date.now();
 
     // Calculate date range (last 7 days)
@@ -787,26 +774,70 @@ serve(async (req) => {
     const dateFrom = weekAgo.toISOString().split('T')[0];
     const dateTo = now.toISOString().split('T')[0];
 
+    // Calculate batch date (Sunday of current week) - MOVED UP for early duplicate check
+    const dayOfWeek = now.getDay();
+    const sunday = new Date(now);
+    sunday.setDate(now.getDate() - dayOfWeek);
+    sunday.setHours(0, 0, 0, 0);
+
+    // Initialize Supabase client early for duplicate check
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CRITICAL OPTIMIZATION: Check for existing records BEFORE calling models
+    // This saves ~2 minutes per duplicate company
+    // ═══════════════════════════════════════════════════════════════════
+    const { data: existingRecords, error: checkError } = await supabase
+      .from('rix_runs_v2')
+      .select('id, "02_model_name"')
+      .eq('05_ticker', ticker)
+      .eq('batch_execution_date', sunday.toISOString());
+
+    if (!checkError && existingRecords && existingRecords.length >= 5) {
+      // Already have records for all/most models this week - skip entirely
+      console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} - ${existingRecords.length} models already exist for this period, skipping API calls`);
+      const totalTime = Date.now() - startTime;
+      return new Response(
+        JSON.stringify({
+          success: true,
+          skipped: true,
+          reason: 'duplicate_early_check',
+          existing_records: existingRecords.length,
+          ticker,
+          issuer_name,
+          total_time_ms: totalTime,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get model configs (now 5 models, Grok disabled)
+    const modelConfigs = getSearchModelConfigs();
+    console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker}) with ${modelConfigs.length} models`);
+
     // Build prompts - Perplexity uses optimized prompt, others use generic
     const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
     const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
 
-    // Get all 7 search-capable models
-    const modelConfigs = getSearchModelConfigs();
+    // OPTIMIZATION: Tavily runs IN PARALLEL with other models, not before
+    // This removes 5-15s from the critical path
+    console.log(`[rix-search-v2] Starting parallel model calls (Tavily runs with DeepSeek)...`);
 
-    // Pre-fetch Tavily context for DeepSeek RAG (with cache + 5s timeout)
-    console.log(`[rix-search-v2] Pre-fetching Tavily context for DeepSeek RAG (cached + 5s timeout)...`);
-    const tavilyContext = await searchWithTavilyCached(issuer_name, ticker, dateFrom, dateTo);
-    if (tavilyContext) {
-      console.log(`[rix-search-v2] Tavily context ready: ${tavilyContext.length} chars`);
-    }
-
-    // Call all search models in parallel - use appropriate prompt per model
+    // Call all search models in parallel - Tavily context fetched inside DeepSeek call
     const results = await Promise.allSettled(
-      modelConfigs.map(config => {
+      modelConfigs.map(async config => {
         const prompt = config.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
-        // Para DeepSeek, pasar el contexto de Tavily
-        const context = (config as any).usesTavilyRAG ? tavilyContext : undefined;
+        // Para DeepSeek, buscar Tavily en paralelo (dentro de esta Promise)
+        let context: string | undefined;
+        if ((config as any).usesTavilyRAG) {
+          console.log(`[rix-search-v2] Fetching Tavily for ${config.displayName} in parallel...`);
+          context = await searchWithTavilyCached(issuer_name, ticker, dateFrom, dateTo);
+          if (context) {
+            console.log(`[rix-search-v2] Tavily context for ${config.displayName}: ${context.length} chars`);
+          }
+        }
         return callSearchModel(config as any, prompt, context);
       })
     );
@@ -827,17 +858,6 @@ serve(async (req) => {
         };
       }
     });
-
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Calculate batch date (Sunday of current week)
-    const dayOfWeek = now.getDay();
-    const sunday = new Date(now);
-    sunday.setDate(now.getDate() - dayOfWeek);
-    sunday.setHours(0, 0, 0, 0);
 
     // Check if company is listed and fetch stock prices
     let stockPrice: StockPriceResult | null = null;
