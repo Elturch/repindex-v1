@@ -169,6 +169,7 @@ export const AIModelsDashboard: React.FC = () => {
   const [period, setPeriod] = useState('24h');
   const [loading, setLoading] = useState(true);
   const [usageLogs, setUsageLogs] = useState<UsageLog[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set(['search', 'analysis', 'chat']));
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
@@ -190,7 +191,9 @@ export const AIModelsDashboard: React.FC = () => {
       if (response.ok) {
         const result = await response.json();
         setUsageLogs(result.data || []);
+        setTotalCount(result.totalCount || result.data?.length || 0);
         setLastUpdate(new Date());
+        console.log(`[AIModelsDashboard] Loaded ${result.totalCount || result.data?.length || 0} records for period ${period}`);
       }
     } catch (error) {
       console.error('Error fetching usage logs:', error);
@@ -342,9 +345,14 @@ export const AIModelsDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="text-sm text-muted-foreground flex items-center gap-1">
-          <Clock className="h-4 w-4" />
-          Última actualización: {lastUpdate.toLocaleTimeString('es-ES')}
+        <div className="text-sm text-muted-foreground flex items-center gap-2">
+          <Badge variant="outline" className="font-mono">
+            {totalCount.toLocaleString()} registros
+          </Badge>
+          <span className="flex items-center gap-1">
+            <Clock className="h-4 w-4" />
+            {lastUpdate.toLocaleTimeString('es-ES')}
+          </span>
         </div>
       </div>
 

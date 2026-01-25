@@ -49,11 +49,50 @@ Deno.serve(async (req) => {
     const url = new URL(req.url)
     const path = url.pathname.replace('/admin-api-data', '')
     
-    // Calculate date filter based on period
+    // Helper function to fetch ALL usage logs with pagination (bypasses 1000 row limit)
+    async function fetchAllUsageLogs(
+      supabaseAdmin: any, 
+      start: Date, 
+      end?: Date,
+      selectColumns = '*'
+    ): Promise<any[]> {
+      const pageSize = 1000
+      let allData: any[] = []
+      let page = 0
+      let hasMore = true
+
+      while (hasMore) {
+        let query = supabaseAdmin
+          .from('api_usage_logs')
+          .select(selectColumns)
+          .gte('created_at', start.toISOString())
+          .order('created_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+        
+        if (end) {
+          query = query.lte('created_at', end.toISOString())
+        }
+        
+        const { data, error } = await query
+        
+        if (error) throw error
+        
+        if (data && data.length > 0) {
+          allData = [...allData, ...data]
+          hasMore = data.length === pageSize
+          page++
+        } else {
+          hasMore = false
+        }
+      }
+      
+      console.log(`[admin-api-data] Fetched ${allData.length} total rows across ${page} pages`)
+      return allData
+    }
+    
+    // Calculate date filter based on period (Spain CET timezone for month filters)
     const getDateFilter = (period: string): { start: Date; end?: Date } => {
-      
-      
-      // Handle specific month periods like 'jan-2026'
+      // Handle specific month periods like 'jan-2026' with Spain timezone (CET = UTC+1)
       if (period.match(/^[a-z]{3}-\d{4}$/)) {
         const [monthStr, yearStr] = period.split('-')
         const monthMap: Record<string, number> = {
@@ -62,12 +101,24 @@ Deno.serve(async (req) => {
         }
         const month = monthMap[monthStr]
         const year = parseInt(yearStr)
-        const start = new Date(year, month, 1)
-        const end = new Date(year, month + 1, 0, 23, 59, 59, 999) // Last day of month
-        return { start, end }
+        
+        // Spain CET = UTC+1 (winter) / CEST = UTC+2 (summer)
+        // January is winter, so CET (UTC+1)
+        // Start: 00:00:00 CET on 1st = 23:00:00 UTC on previous day
+        // End: 23:59:59 CET on last day = 22:59:59 UTC on last day
+        const cetOffset = 1 // hours (CET in winter)
+        
+        // First day of month at 00:00 CET
+        const startUTC = new Date(Date.UTC(year, month, 1, 0 - cetOffset, 0, 0, 0))
+        // Last day of month at 23:59:59 CET
+        const lastDay = new Date(year, month + 1, 0).getDate()
+        const endUTC = new Date(Date.UTC(year, month, lastDay, 23 - cetOffset, 59, 59, 999))
+        
+        console.log(`[admin-api-data] Month filter ${period}: ${startUTC.toISOString()} to ${endUTC.toISOString()}`)
+        return { start: startUTC, end: endUTC }
       }
       
-      // Handle relative periods
+      // Handle relative periods (use current time)
       const dateFilter = new Date()
       switch (period) {
         case '24h':
@@ -91,54 +142,36 @@ Deno.serve(async (req) => {
       return { start: dateFilter }
     }
 
-    // Route: GET /usage-logs
+    // Route: GET /usage-logs (with full pagination to bypass 1000 row limit)
     if (req.method === 'GET' && path === '/usage-logs') {
       const period = url.searchParams.get('period') || '7d'
       const { start, end } = getDateFilter(period)
 
-      let query = supabaseAdmin
-        .from('api_usage_logs')
-        .select('*')
-        .gte('created_at', start.toISOString())
+      const data = await fetchAllUsageLogs(supabaseAdmin, start, end)
       
-      if (end) {
-        query = query.lte('created_at', end.toISOString())
-      }
-      
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      
-      console.log(`[admin-api-data] /usage-logs period=${period} returned ${data?.length || 0} rows`)
+      console.log(`[admin-api-data] /usage-logs period=${period} returned ${data.length} rows (paginated)`)
       
       return new Response(
-        JSON.stringify({ data }),
+        JSON.stringify({ data, totalCount: data.length }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Route: GET /user-stats - User cost analysis
+    // Route: GET /user-stats - User cost analysis (with full pagination)
     if (req.method === 'GET' && path === '/user-stats') {
       const period = url.searchParams.get('period') || '7d'
       const { start, end } = getDateFilter(period)
 
-      // Get usage logs with user info
-      let userQuery = supabaseAdmin
-        .from('api_usage_logs')
-        .select('user_id, session_id, estimated_cost_usd, input_tokens, output_tokens, action_type, created_at')
-        .gte('created_at', start.toISOString())
-      
-      if (end) {
-        userQuery = userQuery.lte('created_at', end.toISOString())
-      }
-
-      const { data: usageLogs, error: logsError } = await userQuery
-
-      if (logsError) throw logsError
+      // Get ALL usage logs with pagination
+      const usageLogs = await fetchAllUsageLogs(
+        supabaseAdmin, 
+        start, 
+        end,
+        'user_id, session_id, estimated_cost_usd, input_tokens, output_tokens, action_type, created_at'
+      )
 
       // Get user profiles for mapping
-      const userIds = [...new Set((usageLogs || []).filter(l => l.user_id).map(l => l.user_id))]
+      const userIds = [...new Set(usageLogs.filter(l => l.user_id).map(l => l.user_id))]
       
       let userProfiles: Record<string, { email: string; full_name: string | null }> = {}
       if (userIds.length > 0) {
@@ -231,23 +264,18 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Route: GET /action-metrics - Detailed action type metrics
+    // Route: GET /action-metrics - Detailed action type metrics (with full pagination)
     if (req.method === 'GET' && path === '/action-metrics') {
       const period = url.searchParams.get('period') || '7d'
       const { start, end } = getDateFilter(period)
 
-      let actionQuery = supabaseAdmin
-        .from('api_usage_logs')
-        .select('action_type, estimated_cost_usd, input_tokens, output_tokens, created_at')
-        .gte('created_at', start.toISOString())
-      
-      if (end) {
-        actionQuery = actionQuery.lte('created_at', end.toISOString())
-      }
-
-      const { data: usageLogs, error: logsError } = await actionQuery
-
-      if (logsError) throw logsError
+      // Get ALL usage logs with pagination
+      const usageLogs = await fetchAllUsageLogs(
+        supabaseAdmin,
+        start,
+        end,
+        'action_type, estimated_cost_usd, input_tokens, output_tokens, created_at'
+      )
 
       // Aggregate by action type
       const actionMap = new Map<string, {
@@ -345,22 +373,16 @@ Deno.serve(async (req) => {
 
       if (configError) throw configError
 
-      // Get token usage per model from usage logs
-      let configQuery = supabaseAdmin
-        .from('api_usage_logs')
-        .select('provider, model, input_tokens, output_tokens, estimated_cost_usd')
-        .gte('created_at', start.toISOString())
-      
-      if (end) {
-        configQuery = configQuery.lte('created_at', end.toISOString())
-      }
-
-      const { data: usageLogs, error: usageError } = await configQuery
-
-      if (usageError) throw usageError
+      // Get ALL token usage per model from usage logs (with pagination)
+      const usageLogs = await fetchAllUsageLogs(
+        supabaseAdmin,
+        start,
+        end,
+        'provider, model, input_tokens, output_tokens, estimated_cost_usd'
+      )
 
       // Aggregate tokens by provider/model combination
-      const tokensByModel = new Map<string, { 
+      const tokensByModel = new Map<string, {
         provider: string
         model: string
         input_tokens: number
