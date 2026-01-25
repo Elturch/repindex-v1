@@ -83,30 +83,68 @@ async function hasCompanyDataThisWeek(
 }
 
 // Inicializa el barrido COMPLETO si no existe para esta semana
+// MEJORADO: También sincroniza empresas nuevas que no estén en el sweep actual
 async function initializeSweepIfNeeded(
   supabase: ReturnType<typeof createClient>,
   sweepId: string
-): Promise<{ isNew: boolean; totalCompanies: number }> {
-  const { count: existingCount } = await supabase
-    .from('sweep_progress')
-    .select('*', { count: 'exact', head: true })
-    .eq('sweep_id', sweepId);
-
-  if (existingCount && existingCount > 0) {
-    console.log(`[init] Sweep ${sweepId} already initialized with ${existingCount} records`);
-    return { isNew: false, totalCompanies: existingCount };
-  }
-
+): Promise<{ isNew: boolean; totalCompanies: number; syncedMissing?: number }> {
+  // Obtener TODOS los issuers ACTIVOS (importante: filtrar por status)
   const { data: issuers, error: issuersError } = await supabase
     .from('repindex_root_issuers')
     .select('ticker, issuer_name, fase')
+    .eq('status', 'active')  // CRÍTICO: Solo empresas activas
     .order('fase', { ascending: true, nullsLast: true });
 
   if (issuersError || !issuers) {
     throw new Error(`Failed to fetch issuers: ${issuersError?.message}`);
   }
 
-  console.log(`[init] Initializing new sweep ${sweepId} with ${issuers.length} companies`);
+  // Verificar cuántos registros existen para este sweep
+  const { data: existingRecords } = await supabase
+    .from('sweep_progress')
+    .select('ticker')
+    .eq('sweep_id', sweepId);
+
+  const existingTickers = new Set(existingRecords?.map(e => e.ticker) || []);
+  const existingCount = existingTickers.size;
+
+  // Si ya hay registros, verificar si faltan empresas (sync incremental)
+  if (existingCount > 0) {
+    const missingIssuers = issuers.filter(i => !existingTickers.has(i.ticker));
+    
+    if (missingIssuers.length > 0) {
+      console.log(`[init] Sweep ${sweepId} exists with ${existingCount} records, but missing ${missingIssuers.length} companies. Syncing...`);
+      
+      const missingRecords = missingIssuers.map((issuer, index) => ({
+        sweep_id: sweepId,
+        fase: issuer.fase || 35,  // Fase alta para nuevas empresas
+        ticker: issuer.ticker,
+        issuer_name: issuer.issuer_name,
+        status: 'pending',
+        models_completed: 0,
+        retry_count: 0,
+      }));
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('sweep_progress')
+        .insert(missingRecords)
+        .select('id');
+
+      if (insertError) {
+        console.error(`[init] Error syncing missing companies:`, insertError);
+      } else {
+        const syncedCount = inserted?.length || 0;
+        console.log(`[init] Synced ${syncedCount} missing companies: ${missingIssuers.map(i => i.ticker).join(', ')}`);
+        return { isNew: false, totalCompanies: existingCount + syncedCount, syncedMissing: syncedCount };
+      }
+    }
+
+    console.log(`[init] Sweep ${sweepId} already initialized with ${existingCount}/${issuers.length} records`);
+    return { isNew: false, totalCompanies: existingCount };
+  }
+
+  // Crear nuevo sweep desde cero
+  console.log(`[init] Initializing new sweep ${sweepId} with ${issuers.length} active companies`);
 
   const progressRecords = issuers.map((issuer, index) => ({
     sweep_id: sweepId,
@@ -619,9 +657,12 @@ Deno.serve(async (req) => {
     const sweepId = getCurrentSweepId();
     console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}`);
 
-    // ========== MODO WATCHDOG: Auto-reanudación inteligente ==========
-    // El watchdog solo procesa si hay trabajo pendiente y no hay otras instancias activas
+    // ========== MODO WATCHDOG OPTIMIZADO: Procesa en lotes de 5 ==========
+    // Rendimiento: 20 empresas/hora vs 4 empresas/hora anterior
     if (trigger === 'watchdog') {
+      const BATCH_SIZE = 5;  // Procesar 5 empresas por invocación
+      const DELAY_BETWEEN_COMPANIES_MS = 3000;  // 3 segundos entre empresas
+      
       // 1. Verificar si hay un sweep activo para esta semana
       const { count: sweepCount } = await supabase
         .from('sweep_progress')
@@ -658,7 +699,7 @@ Deno.serve(async (req) => {
       console.log(`[watchdog] Sweep ${sweepId}: pending=${pending}, processing=${processing}, completed=${completed}, failed=${failed}`);
 
       // 3. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
-      if (pending === 0 && processing === 0) {
+      if (pending === 0 && processing === 0 && failed === 0) {
         console.log(`[watchdog] Sweep ${sweepId} is complete (${completed}/${total}). Nothing to resume.`);
         return new Response(
           JSON.stringify({
@@ -673,24 +714,52 @@ Deno.serve(async (req) => {
         );
       }
 
-      // 4. Si hay empresas pendientes, continuar procesando
-      // Primero limpiar zombis (empresas en processing >5 minutos)
+      // 4. Limpiar zombis (empresas en processing >5 minutos)
       const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
       if (stuckReset.count > 0) {
         console.log(`[watchdog] Auto-reset ${stuckReset.count} zombie companies: ${stuckReset.tickers.join(', ')}`);
       }
 
-      // 5. Procesar la siguiente empresa (modo single_company para evitar timeouts)
-      console.log(`[watchdog] Resuming sweep ${sweepId} - processing next company...`);
-      const result = await runSingleCompany(supabase, supabaseUrl, supabaseServiceKey);
+      // 5. NUEVO: Procesar LOTE de hasta 5 empresas (mucho más eficiente)
+      console.log(`[watchdog] Resuming sweep ${sweepId} - processing up to ${BATCH_SIZE} companies...`);
+      
+      const batchResults = [];
+      let successCount = 0;
+      let failCount = 0;
+      
+      for (let i = 0; i < BATCH_SIZE; i++) {
+        const result = await runSingleCompany(supabase, supabaseUrl, supabaseServiceKey);
+        batchResults.push(result);
+        
+        if (result.success) successCount++;
+        else failCount++;
+        
+        // Si no hay más empresas pendientes, salir del loop
+        if (!result.next_pending) {
+          console.log(`[watchdog] No more pending companies after ${i + 1} processed`);
+          break;
+        }
+        
+        // Delay entre empresas (excepto la última)
+        if (i < BATCH_SIZE - 1 && result.next_pending) {
+          console.log(`[watchdog] Waiting ${DELAY_BETWEEN_COMPANIES_MS}ms before next company...`);
+          await sleep(DELAY_BETWEEN_COMPANIES_MS);
+        }
+      }
+
+      const lastResult = batchResults[batchResults.length - 1];
 
       return new Response(
         JSON.stringify({
           success: true,
           trigger: 'watchdog',
           sweepId,
-          action: 'resume',
-          processed: result,
+          action: 'resume_batch',
+          batchSize: batchResults.length,
+          batchSuccess: successCount,
+          batchFailed: failCount,
+          tickers: batchResults.filter(r => r.ticker).map(r => r.ticker),
+          remaining: lastResult?.remaining || 0,
           zombiesReset: stuckReset.count > 0 ? stuckReset : undefined,
           stats: { 
             pendingBefore: pending + stuckReset.count, 
