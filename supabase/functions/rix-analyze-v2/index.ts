@@ -6,7 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Full ORG_RIXSchema_V2 Tool Definition for GPT-4o
+// Model used for RIX analysis (single source of truth)
+const RIX_ANALYSIS_MODEL = 'gpt-5';
+
+// Full ORG_RIXSchema_V2 Tool Definition for GPT-5
 const RIX_ANALYSIS_TOOL = {
   type: "function",
   function: {
@@ -519,7 +522,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[rix-analyze-v2] Calling GPT-5 to analyze ${modelName} response...`);
+    console.log(`[rix-analyze-v2] Calling ${RIX_ANALYSIS_MODEL} to analyze ${modelName} response...`);
 
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -528,7 +531,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5',
+        model: RIX_ANALYSIS_MODEL,
         messages: [{ role: 'user', content: analysisPrompt }],
         tools: [RIX_ANALYSIS_TOOL],
         tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
@@ -702,16 +705,16 @@ serve(async (req) => {
       );
     }
 
-    // Log API usage for cost tracking (GPT-4o analysis)
+    // Log API usage for cost tracking (using RIX_ANALYSIS_MODEL)
     const analysisInputTokens = Math.ceil(analysisPrompt.length / 4);
     const analysisOutputTokens = Math.ceil(JSON.stringify(analysis).length / 3.5);
     
-    // Get cost config for GPT-4o
+    // Get cost config for analysis model
     const { data: costConfig } = await supabase
       .from('api_cost_config')
       .select('input_cost_per_million, output_cost_per_million')
       .eq('provider', 'openai')
-      .eq('model', 'gpt-4o')
+      .eq('model', RIX_ANALYSIS_MODEL)
       .single();
 
     const inputCost = costConfig ? (analysisInputTokens / 1_000_000) * costConfig.input_cost_per_million : 0;
@@ -721,7 +724,7 @@ serve(async (req) => {
     await supabase.from('api_usage_logs').insert({
       edge_function: 'rix-analyze-v2',
       provider: 'openai',
-      model: 'gpt-4o',
+      model: RIX_ANALYSIS_MODEL,
       action_type: 'rix_analysis',
       input_tokens: analysisInputTokens,
       output_tokens: analysisOutputTokens,
