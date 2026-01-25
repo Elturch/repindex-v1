@@ -248,23 +248,49 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       },
     }),
     parseResponse: (data: any) => {
-      // El nuevo endpoint devuelve 'output' como string directo o array
-      const output = data.output;
+      // Debug: Log estructura de respuesta Grok
+      console.log('[Grok-Parse] Response keys:', Object.keys(data || {}));
+      console.log('[Grok-Parse] output type:', typeof data.output, 'value:', JSON.stringify(data.output)?.substring(0, 200));
+      
       let content = '';
       
-      if (typeof output === 'string') {
-        content = output;
-      } else if (Array.isArray(output)) {
-        content = output.map((item: any) => 
-          typeof item === 'string' ? item : item.content || item.text || ''
-        ).join('\n');
+      // Formato 1: output_text directo (nuevo endpoint responses)
+      if (data.output_text && typeof data.output_text === 'string') {
+        content = data.output_text;
+      }
+      // Formato 2: output como string directo
+      else if (typeof data.output === 'string') {
+        content = data.output;
+      }
+      // Formato 3: output como array de items
+      else if (Array.isArray(data.output)) {
+        content = data.output.map((item: any) => {
+          if (typeof item === 'string') return item;
+          // xAI puede devolver {type: 'text', text: '...'} o {content: '...'}
+          return item.text || item.content || item.message?.content || '';
+        }).filter(Boolean).join('\n');
+      }
+      // Formato 4: output como objeto con text/content
+      else if (data.output && typeof data.output === 'object') {
+        content = data.output.text || data.output.content || data.output.message?.content || '';
+      }
+      // Formato 5: choices (compatibilidad con chat/completions)
+      else if (data.choices?.[0]?.message?.content) {
+        content = data.choices[0].message.content;
+      }
+      
+      // Si aún no hay contenido, intentar extraer de cualquier campo
+      if (!content && data.output) {
+        content = JSON.stringify(data.output);
+        console.log('[Grok-Parse] Fallback to stringify:', content.substring(0, 100));
       }
       
       // Añadir citaciones si existen
       const citations = data.citations?.map((c: any) => 
-        typeof c === 'string' ? c : c.url || c.source || ''
+        typeof c === 'string' ? c : c.url || c.source || c.title || ''
       ).filter(Boolean).join('\n') || '';
       
+      console.log('[Grok-Parse] Final content length:', content.length, 'citations:', citations.length);
       return content + (citations ? '\n\nFuentes Grok:\n' + citations : '');
     },
   },
