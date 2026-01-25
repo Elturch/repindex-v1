@@ -413,28 +413,400 @@ function calculateFinalRixScore(analysis: any, weights: Record<string, number>):
   return rixScore;
 }
 
+// Core analysis function - processes a single record
+async function analyzeRecord(supabase: any, record: any): Promise<any> {
+  const startTime = Date.now();
+  const record_id = record.id;
+  
+  // Determine which model this row belongs to and get its response
+  const modelName = record['02_model_name'] as string;
+  const responseColumn = MODEL_RESPONSE_MAP[modelName];
+  
+  if (!responseColumn) {
+    throw new Error(`Unknown model name: ${modelName}. Valid models: ${Object.keys(MODEL_RESPONSE_MAP).join(', ')}`);
+  }
+
+  const rawResponse = record[responseColumn] as string | null;
+
+  if (!rawResponse || rawResponse.length < 100) {
+    throw new Error(`No valid raw response found for model ${modelName} in column ${responseColumn}`);
+  }
+
+  console.log(`[rix-analyze-v2] Analyzing ${modelName} response (${rawResponse.length} chars)`);
+
+  // Check if company is traded
+  const { data: issuerData } = await supabase
+    .from('repindex_root_issuers')
+    .select('cotiza_en_bolsa')
+    .eq('ticker', record['05_ticker'])
+    .single();
+
+  const cotiza = issuerData?.cotiza_en_bolsa ?? false;
+
+  // Get stock price data from the record (populated by rix-search-v2)
+  const precioCierre = record['48_precio_accion'] as string | null;
+  const minimo52s = record['59_precio_minimo_52_semanas'] as string | null;
+  
+  let stockPriceData = 'No cotiza o precio no disponible';
+  if (cotiza && precioCierre && precioCierre !== 'NC') {
+    stockPriceData = `Precio cierre: ${precioCierre}€`;
+    if (minimo52s) {
+      stockPriceData += ` | Mínimo 52 semanas: ${minimo52s}€`;
+    }
+  }
+
+  // Build analysis prompt for SINGLE MODEL response
+  const analysisPrompt = buildAnalysisPrompt(
+    record['03_target_name'] || 'Unknown',
+    record['05_ticker'] || 'N/A',
+    record['06_period_from'] || '',
+    record['07_period_to'] || '',
+    record['08_tz'] || 'Europe/Madrid',
+    cotiza,
+    DEFAULT_WEIGHTS,
+    modelName,
+    rawResponse,
+    stockPriceData
+  );
+
+  // Call GPT-5 with tool calling
+  const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!openaiApiKey) {
+    throw new Error('Missing OPENAI_API_KEY');
+  }
+
+  console.log(`[rix-analyze-v2] Calling ${RIX_ANALYSIS_MODEL} to analyze ${modelName} response...`);
+
+  const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openaiApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: RIX_ANALYSIS_MODEL,
+      messages: [{ role: 'user', content: analysisPrompt }],
+      tools: [RIX_ANALYSIS_TOOL],
+      tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
+    }),
+  });
+
+  if (!openaiResponse.ok) {
+    const errorText = await openaiResponse.text();
+    throw new Error(`OpenAI API error: ${errorText}`);
+  }
+
+  const openaiData = await openaiResponse.json();
+  
+  // Extract tool call arguments
+  const toolCall = openaiData.choices?.[0]?.message?.tool_calls?.[0];
+  if (!toolCall || toolCall.function.name !== 'submit_rix_analysis') {
+    throw new Error('No valid analysis returned from GPT-5');
+  }
+
+  const analysis = JSON.parse(toolCall.function.arguments);
+  console.log(`[rix-analyze-v2] Analysis received for ${modelName}, processing...`);
+
+  // Calculate effective weights and final RIX score
+  const cxmExcluded = analysis.cxm_categoria === 'no_aplica' || analysis.cxm_score === -1;
+  const effectiveWeights = calculateEffectiveWeights(analysis, DEFAULT_WEIGHTS);
+  const finalRixScore = calculateFinalRixScore(analysis, effectiveWeights);
+
+  // Add business rule flags
+  const flags = [...(analysis.flags || [])];
+  if (analysis.drm_score < 40 && !flags.includes('drm_bajo')) {
+    flags.push('drm_bajo');
+  }
+  if (analysis.sim_score < 40 && !flags.includes('sim_bajo')) {
+    flags.push('sim_bajo');
+  }
+
+  // Fetch momentum tips for listed companies with valid prices
+  let momentumAnalysis: string | null = null;
+  if (cotiza && precioCierre && precioCierre !== 'NC') {
+    try {
+      console.log(`[rix-analyze-v2] Fetching momentum tips for ${record['05_ticker']}...`);
+      
+      const momentumSupabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const momentumServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      
+      const momentumResponse = await fetch(`${momentumSupabaseUrl}/functions/v1/fetch-momentum-tips`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${momentumServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ticker: record['05_ticker'],
+          company_name: record['03_target_name'],
+          precio_cierre: precioCierre,
+          minimo_52_semanas: minimo52s,
+          rix_score: finalRixScore,
+        }),
+      });
+
+      if (momentumResponse.ok) {
+        const momentumData = await momentumResponse.json();
+        if (momentumData.success && momentumData.momentum_analysis) {
+          let formattedAnalysis = momentumData.momentum_analysis;
+          if (momentumData.tips && momentumData.tips.length > 0) {
+            formattedAnalysis += '\n\n📊 **Tips verificados:**\n';
+            momentumData.tips.forEach((tip: string, idx: number) => {
+              formattedAnalysis += `${idx + 1}. ${tip}\n`;
+            });
+          }
+          if (momentumData.sources && momentumData.sources.length > 0) {
+            formattedAnalysis += `\n📰 Fuentes: ${momentumData.sources.join(', ')}`;
+          }
+          momentumAnalysis = formattedAnalysis;
+          console.log(`[rix-analyze-v2] Momentum tips received for ${record['05_ticker']}`);
+        }
+      }
+    } catch (momentumError: any) {
+      console.warn(`[rix-analyze-v2] Error fetching momentum tips:`, momentumError.message);
+    }
+  }
+
+  // Map to database columns
+  const updateData: Record<string, any> = {
+    '09_rix_score': finalRixScore,
+    '10_resumen': analysis.resumen,
+    '11_puntos_clave': analysis.puntos_clave,
+    '22_explicacion': analysis.explicacion || [],
+    
+    // Counters
+    '12_palabras': analysis.palabras,
+    '13_num_fechas': analysis.num_fechas,
+    '14_num_citas': analysis.num_citas,
+    '15_temporal_alignment': analysis.temporal_alignment,
+    '16_citation_density': analysis.citation_density,
+    
+    // NVM
+    '23_nvm_score': analysis.nvm_score,
+    '24_nvm_peso': effectiveWeights.NVM || DEFAULT_WEIGHTS.NVM,
+    '25_nvm_categoria': analysis.nvm_categoria,
+    
+    // DRM
+    '26_drm_score': analysis.drm_score,
+    '27_drm_peso': effectiveWeights.DRM || DEFAULT_WEIGHTS.DRM,
+    '28_drm_categoria': analysis.drm_categoria,
+    
+    // SIM
+    '29_sim_score': analysis.sim_score,
+    '30_sim_peso': effectiveWeights.SIM || DEFAULT_WEIGHTS.SIM,
+    '31_sim_categoria': analysis.sim_categoria,
+    
+    // RMM
+    '32_rmm_score': analysis.rmm_score,
+    '33_rmm_peso': effectiveWeights.RMM || DEFAULT_WEIGHTS.RMM,
+    '34_rmm_categoria': analysis.rmm_categoria,
+    
+    // CEM
+    '35_cem_score': analysis.cem_score,
+    '36_cem_peso': effectiveWeights.CEM || DEFAULT_WEIGHTS.CEM,
+    '37_cem_categoria': analysis.cem_categoria,
+    
+    // GAM
+    '38_gam_score': analysis.gam_score,
+    '39_gam_peso': effectiveWeights.GAM || DEFAULT_WEIGHTS.GAM,
+    '40_gam_categoria': analysis.gam_categoria,
+    
+    // DCM
+    '41_dcm_score': analysis.dcm_score,
+    '42_dcm_peso': effectiveWeights.DCM || DEFAULT_WEIGHTS.DCM,
+    '43_dcm_categoria': analysis.dcm_categoria,
+    
+    // CXM
+    '44_cxm_score': cxmExcluded ? null : analysis.cxm_score,
+    '45_cxm_peso': cxmExcluded ? 0 : (effectiveWeights.CXM || DEFAULT_WEIGHTS.CXM),
+    '46_cxm_categoria': analysis.cxm_categoria,
+    '52_cxm_excluded': cxmExcluded,
+    
+    // Stock data
+    '49_reputacion_vs_precio': momentumAnalysis || analysis.accion_vs_reputacion || null,
+    '50_precio_accion_interanual': analysis.precio_accion_interanual || null,
+    
+    // Flags and weights
+    '17_flags': flags,
+    '19_weights': effectiveWeights,
+    
+    // Timestamps
+    'analysis_completed_at': new Date().toISOString(),
+    'updated_at': new Date().toISOString(),
+  };
+
+  // Update record
+  const { error: updateError } = await supabase
+    .from('rix_runs_v2')
+    .update(updateData)
+    .eq('id', record_id);
+
+  if (updateError) {
+    throw new Error(`Failed to update record: ${updateError.message}`);
+  }
+
+  // Log API usage for cost tracking
+  const analysisInputTokens = Math.ceil(analysisPrompt.length / 4);
+  const analysisOutputTokens = Math.ceil(JSON.stringify(analysis).length / 3.5);
+  
+  const { data: costConfig } = await supabase
+    .from('api_cost_config')
+    .select('input_cost_per_million, output_cost_per_million')
+    .eq('provider', 'openai')
+    .eq('model', RIX_ANALYSIS_MODEL)
+    .single();
+
+  const inputCost = costConfig ? (analysisInputTokens / 1_000_000) * costConfig.input_cost_per_million : 0;
+  const outputCost = costConfig ? (analysisOutputTokens / 1_000_000) * costConfig.output_cost_per_million : 0;
+  const totalCost = inputCost + outputCost;
+
+  await supabase.from('api_usage_logs').insert({
+    edge_function: 'rix-analyze-v2',
+    provider: 'openai',
+    model: RIX_ANALYSIS_MODEL,
+    action_type: 'rix_reanalysis',
+    input_tokens: analysisInputTokens,
+    output_tokens: analysisOutputTokens,
+    estimated_cost_usd: totalCost,
+    pipeline_stage: 'analysis',
+    ticker: record['05_ticker'],
+    metadata: {
+      model_name: modelName,
+      rix_score: finalRixScore,
+      record_id,
+      is_reprocess: true,
+    },
+  });
+
+  const totalTime = Date.now() - startTime;
+  console.log(`[rix-analyze-v2] Analysis completed for ${modelName} in ${totalTime}ms. RIX: ${finalRixScore}`);
+
+  return {
+    success: true,
+    record_id,
+    model_name: modelName,
+    rix_score: finalRixScore,
+    cxm_excluded: cxmExcluded,
+    analysis_time_ms: totalTime,
+    subscores: {
+      nvm: analysis.nvm_score,
+      drm: analysis.drm_score,
+      sim: analysis.sim_score,
+      rmm: analysis.rmm_score,
+      cem: analysis.cem_score,
+      gam: analysis.gam_score,
+      dcm: analysis.dcm_score,
+      cxm: cxmExcluded ? 'N/A' : analysis.cxm_score,
+    },
+    flags,
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { record_id } = await req.json();
+    const body = await req.json();
+    const { action, record_id, batch_size = 10 } = body;
+    
+    // Initialize Supabase
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // === MODE 1: Reprocess pending records (surgical repair) ===
+    if (action === 'reprocess_pending') {
+      console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${batch_size} pending records...`);
+      
+      // Find records with search completed but analysis pending
+      const { data: pendingRecords, error: fetchError } = await supabase
+        .from('rix_runs_v2')
+        .select('*')
+        .is('analysis_completed_at', null)
+        .not('search_completed_at', 'is', null)
+        .order('created_at', { ascending: true })
+        .limit(batch_size);
+
+      if (fetchError) {
+        console.error('[rix-analyze-v2] Error fetching pending records:', fetchError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch pending records', details: fetchError }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!pendingRecords || pendingRecords.length === 0) {
+        console.log('[rix-analyze-v2] No pending records found - all complete!');
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: 'No pending records found - all analyses are complete!',
+            processed: 0,
+            remaining: 0,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log(`[rix-analyze-v2] Found ${pendingRecords.length} pending records to process`);
+      
+      const results: any[] = [];
+      const errors: any[] = [];
+      
+      // Process each record sequentially (to avoid rate limits)
+      for (const record of pendingRecords) {
+        try {
+          console.log(`[rix-analyze-v2] Processing: ${record['05_ticker']} - ${record['02_model_name']}`);
+          const result = await analyzeRecord(supabase, record);
+          results.push(result);
+          
+          // Small delay between records to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error: any) {
+          console.error(`[rix-analyze-v2] Error processing ${record.id}:`, error.message);
+          errors.push({
+            record_id: record.id,
+            ticker: record['05_ticker'],
+            model: record['02_model_name'],
+            error: error.message,
+          });
+        }
+      }
+      
+      // Count remaining
+      const { count: remaining } = await supabase
+        .from('rix_runs_v2')
+        .select('*', { count: 'exact', head: true })
+        .is('analysis_completed_at', null)
+        .not('search_completed_at', 'is', null);
+
+      console.log(`[rix-analyze-v2] Batch complete. Processed: ${results.length}, Errors: ${errors.length}, Remaining: ${remaining}`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          mode: 'reprocess_pending',
+          processed: results.length,
+          errors: errors.length,
+          remaining: remaining || 0,
+          results,
+          error_details: errors.length > 0 ? errors : undefined,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // === MODE 2: Single record analysis (original behavior) ===
     if (!record_id) {
       return new Response(
-        JSON.stringify({ error: 'Missing required field: record_id' }),
+        JSON.stringify({ error: 'Missing required field: record_id or action' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log(`[rix-analyze-v2] Starting analysis for record: ${record_id}`);
-    const startTime = Date.now();
-
-    // Initialize Supabase
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Fetch the record
     const { data: record, error: fetchError } = await supabase
@@ -451,324 +823,11 @@ serve(async (req) => {
       );
     }
 
-    // Determine which model this row belongs to and get its response
-    const modelName = record['02_model_name'] as string;
-    const responseColumn = MODEL_RESPONSE_MAP[modelName];
-    
-    if (!responseColumn) {
-      console.error(`[rix-analyze-v2] Unknown model name: ${modelName}`);
-      return new Response(
-        JSON.stringify({ error: `Unknown model name: ${modelName}. Valid models: ${Object.keys(MODEL_RESPONSE_MAP).join(', ')}` }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const rawResponse = record[responseColumn] as string | null;
-
-    if (!rawResponse) {
-      console.error(`[rix-analyze-v2] No raw response found for model ${modelName} in column ${responseColumn}`);
-      return new Response(
-        JSON.stringify({ 
-          error: `No raw response found for model ${modelName}`,
-          details: `Column ${responseColumn} is empty`,
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log(`[rix-analyze-v2] Analyzing ${modelName} response (${rawResponse.length} chars)`);
-
-    // Check if company is traded
-    const { data: issuerData } = await supabase
-      .from('repindex_root_issuers')
-      .select('cotiza_en_bolsa')
-      .eq('ticker', record['05_ticker'])
-      .single();
-
-    const cotiza = issuerData?.cotiza_en_bolsa ?? false;
-
-    // Get stock price data from the record (populated by rix-search-v2)
-    const precioCierre = record['48_precio_accion'] as string | null;
-    const minimo52s = record['59_precio_minimo_52_semanas'] as string | null;
-    
-    let stockPriceData = 'No cotiza o precio no disponible';
-    if (cotiza && precioCierre && precioCierre !== 'NC') {
-      stockPriceData = `Precio cierre: ${precioCierre}€`;
-      if (minimo52s) {
-        stockPriceData += ` | Mínimo 52 semanas: ${minimo52s}€`;
-      }
-    }
-
-    // Build analysis prompt for SINGLE MODEL response
-    const analysisPrompt = buildAnalysisPrompt(
-      record['03_target_name'] || 'Unknown',
-      record['05_ticker'] || 'N/A',
-      record['06_period_from'] || '',
-      record['07_period_to'] || '',
-      record['08_tz'] || 'Europe/Madrid',
-      cotiza,
-      DEFAULT_WEIGHTS,
-      modelName,
-      rawResponse,
-      stockPriceData
-    );
-
-    // Call GPT-4o with tool calling
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'Missing OPENAI_API_KEY' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log(`[rix-analyze-v2] Calling ${RIX_ANALYSIS_MODEL} to analyze ${modelName} response...`);
-
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: RIX_ANALYSIS_MODEL,
-        messages: [{ role: 'user', content: analysisPrompt }],
-        tools: [RIX_ANALYSIS_TOOL],
-        tool_choice: { type: 'function', function: { name: 'submit_rix_analysis' } },
-      }),
-    });
-
-    if (!openaiResponse.ok) {
-      const errorText = await openaiResponse.text();
-      console.error('[rix-analyze-v2] OpenAI error:', errorText);
-      return new Response(
-        JSON.stringify({ error: 'OpenAI API error', details: errorText }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const openaiData = await openaiResponse.json();
-    
-    // Extract tool call arguments
-    const toolCall = openaiData.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall || toolCall.function.name !== 'submit_rix_analysis') {
-      console.error('[rix-analyze-v2] No valid tool call in response');
-      return new Response(
-        JSON.stringify({ error: 'No valid analysis returned from GPT-5' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const analysis = JSON.parse(toolCall.function.arguments);
-    console.log(`[rix-analyze-v2] Analysis received for ${modelName}, processing...`);
-
-    // Calculate effective weights and final RIX score
-    const cxmExcluded = analysis.cxm_categoria === 'no_aplica' || analysis.cxm_score === -1;
-    const effectiveWeights = calculateEffectiveWeights(analysis, DEFAULT_WEIGHTS);
-    const finalRixScore = calculateFinalRixScore(analysis, effectiveWeights);
-
-    // Add business rule flags
-    const flags = [...(analysis.flags || [])];
-    if (analysis.drm_score < 40 && !flags.includes('drm_bajo')) {
-      flags.push('drm_bajo');
-    }
-    if (analysis.sim_score < 40 && !flags.includes('sim_bajo')) {
-      flags.push('sim_bajo');
-    }
-
-    // Fetch momentum tips for listed companies with valid prices
-    let momentumAnalysis: string | null = null;
-    if (cotiza && precioCierre && precioCierre !== 'NC') {
-      try {
-        console.log(`[rix-analyze-v2] Fetching momentum tips for ${record['05_ticker']}...`);
-        
-        const momentumResponse = await fetch(`${supabaseUrl}/functions/v1/fetch-momentum-tips`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ticker: record['05_ticker'],
-            company_name: record['03_target_name'],
-            precio_cierre: precioCierre,
-            minimo_52_semanas: minimo52s,
-            rix_score: finalRixScore,
-          }),
-        });
-
-        if (momentumResponse.ok) {
-          const momentumData = await momentumResponse.json();
-          if (momentumData.success && momentumData.momentum_analysis) {
-            // Format the momentum analysis with tips
-            let formattedAnalysis = momentumData.momentum_analysis;
-            if (momentumData.tips && momentumData.tips.length > 0) {
-              formattedAnalysis += '\n\n📊 **Tips verificados:**\n';
-              momentumData.tips.forEach((tip: string, idx: number) => {
-                formattedAnalysis += `${idx + 1}. ${tip}\n`;
-              });
-            }
-            if (momentumData.sources && momentumData.sources.length > 0) {
-              formattedAnalysis += `\n📰 Fuentes: ${momentumData.sources.join(', ')}`;
-            }
-            momentumAnalysis = formattedAnalysis;
-            console.log(`[rix-analyze-v2] Momentum tips received for ${record['05_ticker']}`);
-          }
-        } else {
-          console.warn(`[rix-analyze-v2] Momentum tips failed: ${momentumResponse.status}`);
-        }
-      } catch (momentumError: any) {
-        console.warn(`[rix-analyze-v2] Error fetching momentum tips:`, momentumError.message);
-      }
-    }
-
-    // Map to database columns - CORRECTED column names
-    const updateData: Record<string, any> = {
-      '09_rix_score': finalRixScore,
-      '10_resumen': analysis.resumen,
-      '11_puntos_clave': analysis.puntos_clave,
-      '22_explicacion': analysis.explicacion || [],
-      
-      // Counters
-      '12_palabras': analysis.palabras,
-      '13_num_fechas': analysis.num_fechas,
-      '14_num_citas': analysis.num_citas,
-      '15_temporal_alignment': analysis.temporal_alignment,
-      '16_citation_density': analysis.citation_density,
-      
-      // NVM
-      '23_nvm_score': analysis.nvm_score,
-      '24_nvm_peso': effectiveWeights.NVM || DEFAULT_WEIGHTS.NVM,
-      '25_nvm_categoria': analysis.nvm_categoria,
-      
-      // DRM
-      '26_drm_score': analysis.drm_score,
-      '27_drm_peso': effectiveWeights.DRM || DEFAULT_WEIGHTS.DRM,
-      '28_drm_categoria': analysis.drm_categoria,
-      
-      // SIM
-      '29_sim_score': analysis.sim_score,
-      '30_sim_peso': effectiveWeights.SIM || DEFAULT_WEIGHTS.SIM,
-      '31_sim_categoria': analysis.sim_categoria,
-      
-      // RMM
-      '32_rmm_score': analysis.rmm_score,
-      '33_rmm_peso': effectiveWeights.RMM || DEFAULT_WEIGHTS.RMM,
-      '34_rmm_categoria': analysis.rmm_categoria,
-      
-      // CEM
-      '35_cem_score': analysis.cem_score,
-      '36_cem_peso': effectiveWeights.CEM || DEFAULT_WEIGHTS.CEM,
-      '37_cem_categoria': analysis.cem_categoria,
-      
-      // GAM
-      '38_gam_score': analysis.gam_score,
-      '39_gam_peso': effectiveWeights.GAM || DEFAULT_WEIGHTS.GAM,
-      '40_gam_categoria': analysis.gam_categoria,
-      
-      // DCM
-      '41_dcm_score': analysis.dcm_score,
-      '42_dcm_peso': effectiveWeights.DCM || DEFAULT_WEIGHTS.DCM,
-      '43_dcm_categoria': analysis.dcm_categoria,
-      
-      // CXM
-      '44_cxm_score': cxmExcluded ? null : analysis.cxm_score,
-      '45_cxm_peso': cxmExcluded ? 0 : (effectiveWeights.CXM || DEFAULT_WEIGHTS.CXM),
-      '46_cxm_categoria': analysis.cxm_categoria,
-      '52_cxm_excluded': cxmExcluded,
-      
-      // Stock data - Use momentum analysis if available, otherwise fallback to GPT-4o analysis
-      // Note: 48_precio_accion and 59_precio_minimo_52_semanas are already populated by rix-search-v2
-      '49_reputacion_vs_precio': momentumAnalysis || analysis.accion_vs_reputacion || null,
-      '50_precio_accion_interanual': analysis.precio_accion_interanual || null,
-      
-      // Flags and weights
-      '17_flags': flags,
-      '19_weights': effectiveWeights,
-      
-      // Timestamps
-      'analysis_completed_at': new Date().toISOString(),
-      'updated_at': new Date().toISOString(),
-    };
-
-    // Update record
-    const { error: updateError } = await supabase
-      .from('rix_runs_v2')
-      .update(updateData)
-      .eq('id', record_id);
-
-    if (updateError) {
-      console.error('[rix-analyze-v2] Update error:', updateError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to update record', details: updateError }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Log API usage for cost tracking (using RIX_ANALYSIS_MODEL)
-    const analysisInputTokens = Math.ceil(analysisPrompt.length / 4);
-    const analysisOutputTokens = Math.ceil(JSON.stringify(analysis).length / 3.5);
-    
-    // Get cost config for analysis model
-    const { data: costConfig } = await supabase
-      .from('api_cost_config')
-      .select('input_cost_per_million, output_cost_per_million')
-      .eq('provider', 'openai')
-      .eq('model', RIX_ANALYSIS_MODEL)
-      .single();
-
-    const inputCost = costConfig ? (analysisInputTokens / 1_000_000) * costConfig.input_cost_per_million : 0;
-    const outputCost = costConfig ? (analysisOutputTokens / 1_000_000) * costConfig.output_cost_per_million : 0;
-    const totalCost = inputCost + outputCost;
-
-    await supabase.from('api_usage_logs').insert({
-      edge_function: 'rix-analyze-v2',
-      provider: 'openai',
-      model: RIX_ANALYSIS_MODEL,
-      action_type: 'rix_analysis',
-      input_tokens: analysisInputTokens,
-      output_tokens: analysisOutputTokens,
-      estimated_cost_usd: totalCost,
-      pipeline_stage: 'analysis',
-      ticker: record['05_ticker'],
-      metadata: {
-        model_name: modelName,
-        rix_score: finalRixScore,
-        record_id,
-      },
-    });
-
-    const totalTime = Date.now() - startTime;
-    console.log(`[rix-analyze-v2] Analysis completed for ${modelName} in ${totalTime}ms. RIX: ${finalRixScore}`);
+    // Use shared analysis function
+    const result = await analyzeRecord(supabase, record);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        record_id,
-        model_name: modelName,
-        rix_score: finalRixScore,
-        cxm_excluded: cxmExcluded,
-        analysis_time_ms: totalTime,
-        subscores: {
-          nvm: analysis.nvm_score,
-          drm: analysis.drm_score,
-          sim: analysis.sim_score,
-          rmm: analysis.rmm_score,
-          cem: analysis.cem_score,
-          gam: analysis.gam_score,
-          dcm: analysis.dcm_score,
-          cxm: cxmExcluded ? 'N/A' : analysis.cxm_score,
-        },
-        counters: {
-          palabras: analysis.palabras,
-          num_fechas: analysis.num_fechas,
-          num_citas: analysis.num_citas,
-          temporal_alignment: analysis.temporal_alignment,
-          citation_density: analysis.citation_density,
-        },
-        flags,
-        effective_weights: effectiveWeights,
-      }),
+      JSON.stringify(result),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
