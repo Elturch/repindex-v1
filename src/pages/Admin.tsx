@@ -51,6 +51,7 @@ import { IssuerIngestPanel } from '@/components/admin/IssuerIngestPanel';
 import { CronMonitorPanel } from '@/components/admin/CronMonitorPanel';
 import { CorporateScrapePanel } from '@/components/admin/CorporateScrapePanel';
 import { VectorStorePanel } from '@/components/admin/VectorStorePanel';
+import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { DollarSign, Radar, DatabaseBackup, Timer } from 'lucide-react';
 
 interface Company {
@@ -832,6 +833,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="corporate-scrape" className="flex items-center gap-1.5 px-3 text-xs">
               <Building2 className="h-3.5 w-3.5" />
               Web Scrape
+            </TabsTrigger>
+            <TabsTrigger value="ai-models" className="flex items-center gap-1.5 px-3 text-xs">
+              <Sparkles className="h-3.5 w-3.5" />
+              Modelos IA
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -2703,6 +2708,11 @@ const Admin: React.FC = () => {
           {/* ==================== CORPORATE SCRAPE ==================== */}
           <TabsContent value="corporate-scrape">
             <CorporateScrapePanel />
+          </TabsContent>
+
+          {/* ==================== AI MODELS DASHBOARD ==================== */}
+          <TabsContent value="ai-models">
+            <AIModelsDashboard />
           </TabsContent>
         </Tabs>
       </div>
