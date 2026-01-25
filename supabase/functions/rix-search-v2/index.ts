@@ -226,14 +226,13 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return content + (citations ? '\n\nFuentes:\n' + citations : '');
     },
   },
-  // 2. Grok 3 (xAI) - ⚠️ TEMPORALMENTE DESHABILITADO - Error 422 en API
-  // TODO: Rehabilitar cuando xAI arregle el endpoint con tools
-  /*
+  // 2. Grok 3 (xAI) - ✅ Web Search + X Search nativos
+  // Usando el nuevo endpoint /v1/responses con tools de xAI
   {
     name: 'grok-3',
     displayName: 'Grok',
     apiKeyEnv: 'XAI_API_KEY',
-    endpoint: 'https://api.x.ai/v1/chat/completions',
+    endpoint: 'https://api.x.ai/v1/responses',  // Nuevo endpoint correcto
     hasRealWebSearch: true,
     dbColumn: 'respuesta_bruto_grok',
     buildRequest: (prompt: string, apiKey: string) => ({
@@ -243,16 +242,32 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       },
       body: {
         model: 'grok-3',
-        messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa...' },
-          { role: 'user', content: prompt }
-        ],
+        input: prompt,  // El nuevo endpoint usa 'input' directamente como string
+        search: true,   // Habilitar búsqueda web nativa de Grok
         temperature: 0.1,
       },
     }),
-    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
+    parseResponse: (data: any) => {
+      // El nuevo endpoint devuelve 'output' como string directo o array
+      const output = data.output;
+      let content = '';
+      
+      if (typeof output === 'string') {
+        content = output;
+      } else if (Array.isArray(output)) {
+        content = output.map((item: any) => 
+          typeof item === 'string' ? item : item.content || item.text || ''
+        ).join('\n');
+      }
+      
+      // Añadir citaciones si existen
+      const citations = data.citations?.map((c: any) => 
+        typeof c === 'string' ? c : c.url || c.source || ''
+      ).filter(Boolean).join('\n') || '';
+      
+      return content + (citations ? '\n\nFuentes Grok:\n' + citations : '');
+    },
   },
-  */
   // 3. DeepSeek - ✅ Ahora con RAG via Tavily Search API
   // DeepSeek + Tavily = Búsqueda web real + análisis profundo
   {
