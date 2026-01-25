@@ -265,16 +265,18 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return content + searchContext;
     },
   },
-  // 3. DeepSeek - ⚠️ Sin web search nativo (basado en conocimiento de entrenamiento)
-  // DeepSeek no tiene API de búsqueda web documentada, usa conocimiento hasta fecha de corte
+  // 3. DeepSeek - ✅ Ahora con RAG via Tavily Search API
+  // DeepSeek + Tavily = Búsqueda web real + análisis profundo
   {
     name: 'deepseek-chat',
     displayName: 'Deepseek',
     apiKeyEnv: 'DEEPSEEK_API_KEY',
     endpoint: 'https://api.deepseek.com/chat/completions',
-    hasRealWebSearch: false, // DeepSeek no tiene web search API
+    hasRealWebSearch: true, // ✅ Ahora tiene web search via Tavily RAG
     dbColumn: '23_res_deepseek_bruto',
-    buildRequest: (prompt: string, apiKey: string) => ({
+    // Custom flag para activar pre-búsqueda Tavily
+    usesTavilyRAG: true,
+    buildRequest: (prompt: string, apiKey: string, tavilyContext?: string) => ({
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -282,13 +284,24 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       body: {
         model: 'deepseek-chat',
         messages: [
-          { role: 'system', content: 'Eres analista de reputación corporativa. IMPORTANTE: NO tienes acceso a búsqueda web en tiempo real. Tu análisis se basa en conocimiento general del sector y tendencias históricas. REGLA CRÍTICA: SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens. NUNCA "no hay información". Analiza el SECTOR + COMPETIDORES + tendencias MACRO España basándote en tu conocimiento. NO inventes URLs específicas - indica "basado en conocimiento sectorial". Cada mención: contexto histórico, 4-6 párrafos análisis. Markdown. Español España.' },
-          { role: 'user', content: prompt }
+          { role: 'system', content: `Eres analista de reputación corporativa con ACCESO A BÚSQUEDA WEB REAL.
+TIENES ACCESO A FUENTES WEB REALES proporcionadas por Tavily Search API.
+Las fuentes web reales se incluyen al final del mensaje del usuario.
+REGLA CRÍTICA: BASA TU ANÁLISIS EN ESAS FUENTES REALES.
+CITA las URLs proporcionadas por Tavily.
+SIEMPRE debes responder con informe completo de MÍNIMO 4,000 tokens.
+NUNCA "no hay información" - analiza las fuentes Tavily proporcionadas.
+Cada mención: fecha dd/mm/yyyy, URL real de Tavily, 4-6 párrafos análisis impacto reputacional.
+Markdown. Español España.` },
+          { role: 'user', content: prompt + (tavilyContext || '') }
         ],
         temperature: 0.1,
       },
     }),
-    parseResponse: (data: any) => data.choices?.[0]?.message?.content || '',
+    parseResponse: (data: any) => {
+      const content = data.choices?.[0]?.message?.content || '';
+      return content + '\n\n[Búsqueda: Tavily Search API]';
+    },
   },
   // 4. GPT-4.1 mini (OpenAI) - ✅ Con Web Search Tool
   {
@@ -486,9 +499,87 @@ async function logApiUsage(
   }
 }
 
+// Tavily Search API integration for DeepSeek RAG
+async function searchWithTavily(
+  issuerName: string, 
+  ticker: string, 
+  dateFrom: string, 
+  dateTo: string
+): Promise<string> {
+  const TAVILY_API_KEY = Deno.env.get('TAVILY_API_KEY');
+  if (!TAVILY_API_KEY) {
+    console.warn('[rix-search-v2] TAVILY_API_KEY not configured, DeepSeek will use fallback');
+    return '';
+  }
+
+  try {
+    console.log(`[rix-search-v2] Tavily search for ${issuerName} (${ticker})`);
+    
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: TAVILY_API_KEY,
+        query: `${issuerName} ${ticker} noticias corporativas España ${dateFrom} ${dateTo}`,
+        search_depth: 'advanced',
+        include_domains: [
+          'expansion.com', 'cincodias.elpais.com', 'eleconomista.es',
+          'elconfidencial.com', 'reuters.com', 'bloomberg.com',
+          'cnmv.es', 'bolsasymercados.es', 'invertia.com',
+          'lainformacion.com', 'elperiodico.com', 'abc.es'
+        ],
+        max_results: 10,
+        include_answer: false,
+        include_raw_content: false
+      })
+    });
+
+    if (!response.ok) {
+      console.error(`[rix-search-v2] Tavily error: ${response.status}`);
+      return '';
+    }
+
+    const data = await response.json();
+    
+    if (!data.results?.length) {
+      console.log('[rix-search-v2] Tavily returned no results');
+      return '\n\n══════ FUENTES WEB TAVILY ══════\n[Sin resultados específicos para el periodo]';
+    }
+
+    // Formatear resultados para inyectar en el prompt de DeepSeek
+    let context = '\n\n══════════════════════════════════════════════════════════════════════\n';
+    context += '📡 FUENTES WEB REALES (Tavily Search API - Búsqueda Avanzada)\n';
+    context += '══════════════════════════════════════════════════════════════════════\n\n';
+    context += `Búsqueda: "${issuerName}" | Periodo: ${dateFrom} - ${dateTo}\n`;
+    context += `Resultados encontrados: ${data.results.length}\n\n`;
+    
+    for (const result of data.results) {
+      context += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      context += `📰 ${result.title}\n`;
+      context += `🔗 URL: ${result.url}\n`;
+      if (result.published_date) {
+        context += `📅 Fecha: ${result.published_date}\n`;
+      }
+      context += `\n${result.content?.substring(0, 800) || 'Sin contenido disponible'}...\n\n`;
+    }
+    
+    context += '══════════════════════════════════════════════════════════════════════\n';
+    context += '⚠️ INSTRUCCIÓN: BASA TU ANÁLISIS EN ESTAS FUENTES REALES. CITA LAS URLs.\n';
+    context += '══════════════════════════════════════════════════════════════════════\n';
+
+    console.log(`[rix-search-v2] Tavily returned ${data.results.length} results for ${ticker}`);
+    return context;
+    
+  } catch (error) {
+    console.error('[rix-search-v2] Tavily exception:', error);
+    return '';
+  }
+}
+
 async function callSearchModel(
-  config: SearchModelConfig, 
-  prompt: string
+  config: SearchModelConfig & { usesTavilyRAG?: boolean }, 
+  prompt: string,
+  tavilyContext?: string
 ): Promise<{ success: boolean; response?: string; error?: string; timeMs: number }> {
   const startTime = Date.now();
   
@@ -501,7 +592,10 @@ async function callSearchModel(
 
     console.log(`[rix-search-v2] Calling ${config.displayName}...`);
 
-    const { headers, body } = config.buildRequest(prompt, apiKey);
+    // Para DeepSeek con Tavily RAG, pasamos el contexto de búsqueda
+    const { headers, body } = config.usesTavilyRAG && tavilyContext
+      ? (config.buildRequest as any)(prompt, apiKey, tavilyContext)
+      : config.buildRequest(prompt, apiKey);
 
     const response = await fetch(config.endpoint, {
       method: 'POST',
@@ -638,11 +732,20 @@ serve(async (req) => {
     // Get all 7 search-capable models
     const modelConfigs = getSearchModelConfigs();
 
+    // Pre-fetch Tavily context for DeepSeek RAG
+    console.log(`[rix-search-v2] Pre-fetching Tavily context for DeepSeek RAG...`);
+    const tavilyContext = await searchWithTavily(issuer_name, ticker, dateFrom, dateTo);
+    if (tavilyContext) {
+      console.log(`[rix-search-v2] Tavily context ready: ${tavilyContext.length} chars`);
+    }
+
     // Call all search models in parallel - use appropriate prompt per model
     const results = await Promise.allSettled(
       modelConfigs.map(config => {
         const prompt = config.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
-        return callSearchModel(config, prompt);
+        // Para DeepSeek, pasar el contexto de Tavily
+        const context = (config as any).usesTavilyRAG ? tavilyContext : undefined;
+        return callSearchModel(config as any, prompt, context);
       })
     );
 
