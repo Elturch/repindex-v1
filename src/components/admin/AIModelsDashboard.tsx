@@ -22,6 +22,7 @@ interface ProcessConfig {
     model: string;
     displayName: string;
     role: 'primary' | 'fallback' | 'parallel';
+    hasWebSearch?: boolean; // Indica si el modelo tiene búsqueda web real
   }[];
 }
 
@@ -33,12 +34,12 @@ const PROCESS_MAP: ProcessConfig[] = [
     edgeFunction: 'rix-search-v2',
     actionTypes: ['rix_search'],
     models: [
-      { provider: 'perplexity', model: 'sonar-pro', displayName: 'Perplexity Sonar Pro', role: 'parallel' },
-      { provider: 'xai', model: 'grok-3', displayName: 'Grok 3', role: 'parallel' },
-      { provider: 'deepseek', model: 'deepseek-chat', displayName: 'DeepSeek Chat', role: 'parallel' },
-      { provider: 'openai', model: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini', role: 'parallel' },
-      { provider: 'gemini', model: 'gemini-2.5-pro-preview-05-06', displayName: 'Gemini 2.5 Pro', role: 'parallel' },
-      { provider: 'alibaba', model: 'qwen-max', displayName: 'Qwen Max', role: 'parallel' },
+      { provider: 'perplexity', model: 'sonar-pro', displayName: 'Perplexity Sonar Pro', role: 'parallel', hasWebSearch: true },
+      { provider: 'xai', model: 'grok-3', displayName: 'Grok 3', role: 'parallel', hasWebSearch: true },
+      { provider: 'deepseek', model: 'deepseek-chat', displayName: 'DeepSeek Chat', role: 'parallel', hasWebSearch: false },
+      { provider: 'openai', model: 'gpt-4.1-mini', displayName: 'GPT-4.1 Mini', role: 'parallel', hasWebSearch: true },
+      { provider: 'gemini', model: 'gemini-2.5-pro-preview-05-06', displayName: 'Gemini 2.5 Pro', role: 'parallel', hasWebSearch: true },
+      { provider: 'alibaba', model: 'qwen-max', displayName: 'Qwen Max', role: 'parallel', hasWebSearch: true },
     ]
   },
   {
@@ -167,6 +168,7 @@ interface ProcessStats {
     model: string;
     displayName: string;
     role: 'primary' | 'fallback' | 'parallel';
+    hasWebSearch?: boolean;
     calls: number;
     cost: number;
     tokens: number;
@@ -486,6 +488,15 @@ export const AIModelsDashboard: React.FC = () => {
                           <Badge variant={getRoleBadgeVariant(model.role)} className="w-20 justify-center text-xs">
                             {model.role}
                           </Badge>
+                          {/* Indicador de Web Search */}
+                          {process.id === 'search' && (
+                            <span 
+                              className="text-base" 
+                              title={model.hasWebSearch ? 'Búsqueda Web Real' : 'Sin búsqueda web (conocimiento entrenamiento)'}
+                            >
+                              {model.hasWebSearch ? '🌐' : '📚'}
+                            </span>
+                          )}
                           <span className="w-48 truncate text-sm">{model.displayName}</span>
                           <span className="w-20 text-right text-sm text-muted-foreground">
                             {model.calls} calls
