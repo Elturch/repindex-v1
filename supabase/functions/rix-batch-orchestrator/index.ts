@@ -657,11 +657,12 @@ Deno.serve(async (req) => {
     const sweepId = getCurrentSweepId();
     console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}`);
 
-    // ========== MODO WATCHDOG OPTIMIZADO: Procesa en lotes de 5 ==========
-    // Rendimiento: 20 empresas/hora vs 4 empresas/hora anterior
+    // ========== MODO WATCHDOG ULTRA-OPTIMIZADO: Procesa en lotes de 10 ==========
+    // Rendimiento: 40 empresas/hora vs 20 anterior (optimización del 25/01/2026)
+    // CAMBIO: Aumentado de 5 a 10 empresas por invocación para acelerar barrido
     if (trigger === 'watchdog') {
-      const BATCH_SIZE = 5;  // Procesar 5 empresas por invocación
-      const DELAY_BETWEEN_COMPANIES_MS = 3000;  // 3 segundos entre empresas
+      const BATCH_SIZE = 10;  // AUMENTADO: Procesar 10 empresas por invocación
+      const DELAY_BETWEEN_COMPANIES_MS = 2000;  // REDUCIDO: 2 segundos entre empresas
       
       // 1. Verificar si hay un sweep activo para esta semana
       const { count: sweepCount } = await supabase
