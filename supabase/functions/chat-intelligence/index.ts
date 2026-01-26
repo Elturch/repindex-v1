@@ -2355,6 +2355,8 @@ async function handleStandardChat(
           { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
           { name: 'Gemini', value: r["22_res_gemini_bruto"] },
           { name: 'DeepSeek', value: r["23_res_deepseek_bruto"] },
+          { name: 'Grok', value: r["respuesta_bruto_grok"] },
+          { name: 'Qwen', value: r["respuesta_bruto_qwen"] },
           { name: 'Explicación', value: r["22_explicacion"] },
           { name: 'Resumen', value: r["10_resumen"] },
         ];
@@ -2404,14 +2406,14 @@ async function handleStandardChat(
       context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
       context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
       
-      records.slice(0, 4).forEach(r => {
+      records.slice(0, 6).forEach(r => {
         const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
         context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
       });
       
       // Include raw text excerpts (most recent per model)
       context += `\n### Análisis de cada modelo IA:\n`;
-      records.slice(0, 4).forEach(r => {
+      records.slice(0, 6).forEach(r => {
         context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
         
         // Resumen
@@ -2795,11 +2797,14 @@ consigue amplificación orgánica."
 
 Usa TABLAS MARKDOWN para presentar datos comparativos. Formato:
 
-| Modelo IA | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
-|-----------|-----|-----|-----|-----|-----|-----|-----|-----|-----|
-| ChatGPT   | 64  | 71  | 63  | 35  | 35  | 100 | 50  | 88  | 62  |
-| Gemini    | 50  | 55  | 30  | 10  | 42  | 90  | 50  | 70  | 60  |
-| ...       | ... | ... | ... | ... | ... | ... | ... | ... | ... |
+| Modelo IA  | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
+|------------|-----|-----|-----|-----|-----|-----|-----|-----|-----|
+| ChatGPT    | 64  | 71  | 63  | 35  | 35  | 100 | 50  | 88  | 62  |
+| Perplexity | 68  | 75  | 58  | 42  | 38  | 95  | 55  | 85  | 58  |
+| Gemini     | 50  | 55  | 30  | 10  | 42  | 90  | 50  | 70  | 60  |
+| DeepSeek   | 55  | 60  | 45  | 25  | 35  | 88  | 48  | 72  | 55  |
+| Grok       | 62  | 68  | 52  | 38  | 40  | 92  | 52  | 78  | 60  |
+| Qwen       | 58  | 65  | 48  | 30  | 36  | 90  | 50  | 75  | 57  |
 
 Para benchmarking competitivo:
 
