@@ -1,49 +1,67 @@
 
+# Plan: Corregir Botón Agente Rix en Dashboard
 
-# Plan: Corregir Información de Modelos en VectorStorePanel
+## Diagnóstico
 
-## Problema Identificado
+El botón del FloatingChat no responde a clics en `/dashboard` debido a un **conflicto de z-index**:
 
-El panel de información del Vector Store muestra datos incorrectos:
+| Componente | z-index | Ubicación |
+|------------|---------|-----------|
+| FloatingChat button | `z-50` | `src/components/chat/FloatingChat.tsx:151` |
+| Dashboard Select/Popover | `z-50` | `src/pages/Dashboard.tsx:596` |
+| ChatOnboardingTooltip | `z-50` | `src/components/chat/ChatOnboardingTooltip.tsx:46` |
 
-| Fuente | Dice actualmente | Realidad (según DB) |
-|--------|-----------------|---------------------|
-| RIX V1 | 2 modelos | **4 modelos** (ChatGPT, Perplexity, DeepSeek, Gemini) |
-| RIX V2 | 7 IAs | **6 modelos** (Qwen, DeepSeek, Perplexity, ChatGPT, Gemini, Grok) |
+Los portales de Radix (Select, Popover) pueden crear overlays invisibles que interceptan clics cuando tienen el mismo z-index.
 
-## Cambio Requerido
+## Solución
 
-**Archivo:** `src/components/admin/VectorStorePanel.tsx`
+Aumentar el z-index del FloatingChat a `z-[60]` para garantizar que siempre esté por encima de otros componentes UI.
 
-**Líneas 398-399:**
+## Cambios Requeridos
+
+### 1. FloatingChat Button Container (línea 151)
 
 ```typescript
-// ANTES (incorrecto):
-<li><strong>RIX V1:</strong> Análisis históricos (Make.com) - 2 modelos</li>
-<li><strong>RIX V2:</strong> Análisis nuevos (Lovable) - 7 IAs</li>
+// ANTES:
+className="fixed bottom-6 right-6 z-50"
 
-// DESPUÉS (correcto):
-<li><strong>RIX V1:</strong> Análisis históricos (Make.com) - 4 modelos</li>
-<li><strong>RIX V2:</strong> Análisis nuevos (Lovable) - 6 IAs</li>
+// DESPUÉS:
+className="fixed bottom-6 right-6 z-[60]"
 ```
 
-## Datos de la Base de Datos (confirmados)
+### 2. FloatingChat Panel Container (línea ~207)
 
-**RIX V1 (`rix_runs`):** 9,548 registros totales
-- ChatGPT: 2,390
-- Perplexity: 2,388
-- DeepSeek: 2,387
-- Google Gemini: 2,383
+```typescript
+// ANTES:
+className="fixed bottom-6 right-6 z-50 flex flex-col ..."
 
-**RIX V2 (`rix_runs_v2`):** 1,953 registros completados
-- Qwen: 335
-- DeepSeek: 334
-- Perplexity: 332
-- ChatGPT: 331
-- Google Gemini: 330
-- Grok: 291
+// DESPUÉS:
+className="fixed bottom-6 right-6 z-[60] flex flex-col ..."
+```
 
-## Impacto
+### 3. ChatOnboardingTooltip (línea 46)
 
-Corrección cosmética en el panel de administración. No afecta la lógica de sincronización.
+```typescript
+// ANTES:
+className="absolute bottom-full right-0 mb-3 w-72 z-50"
 
+// DESPUÉS:
+className="absolute bottom-full right-0 mb-3 w-72 z-[60]"
+```
+
+## Archivo a Modificar
+
+| Archivo | Cambios |
+|---------|---------|
+| `src/components/chat/FloatingChat.tsx` | Líneas 151 y ~207: `z-50` → `z-[60]` |
+| `src/components/chat/ChatOnboardingTooltip.tsx` | Línea 46: `z-50` → `z-[60]` |
+
+## Resultado Esperado
+
+- El botón Agente Rix responderá a clics en todas las páginas
+- Funcionará tanto en preview como en producción
+- No afectará otros componentes UI (Select, Popover seguirán funcionando normalmente)
+
+## Tiempo Estimado
+
+2-3 minutos para implementar.
