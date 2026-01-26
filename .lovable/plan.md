@@ -1,112 +1,160 @@
 
 
-# Plan: Selector Unificado de Profundidad + Rol al Inicio del Chat
+# Plan: Selección Obligatoria de Rol y Tipo de Informe
 
-## Resumen del Problema
+## Resumen
 
-Actualmente:
-- **Profundidad** (Quick/Complete/Exhaustive): Se selecciona **antes** de enviar ✅
-- **Rol profesional** (CEO, Periodista, Inversor...): Se selecciona **después** de la respuesta ❌
-
-El usuario quiere que ambas configuraciones se elijan **antes** de enviar la pregunta, para que el sistema genere directamente la respuesta adaptada al rol elegido.
+Hacer que el usuario **deba interactuar explícitamente** con los selectores de profundidad y rol antes de poder enviar una pregunta. Aunque los valores por defecto estén visibles, el botón de enviar estará deshabilitado hasta que el usuario confirme sus elecciones.
 
 ---
 
 ## Diseño de la Solución
 
-### Nueva Experiencia de Usuario
+### Estados de Confirmación
 
-```text
-┌────────────────────────────────────────────────────────────────┐
-│  📊 Configura tu análisis                                      │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│  PROFUNDIDAD                              PERSPECTIVA          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐  ┌─────────────────┐  │
-│  │ ⚡ Rápido │ │ 📋 Completo│ │ 📚 Exhaustivo│  │ 🎯 General  ▼  │  │
-│  └──────────┘ └──────────┘ └──────────┘  └─────────────────┘  │
-│                                                                │
-│  📝 Seleccionado: Completo + General                           │
-└────────────────────────────────────────────────────────────────┘
-```
+Se añadirán dos estados booleanos:
+- `depthConfirmed`: Se pone a `true` cuando el usuario hace clic en cualquier opción de profundidad
+- `roleConfirmed`: Se pone a `true` cuando el usuario interactúa con el selector de rol
 
-**Comportamiento:**
-1. Por defecto: "Completo" + "General" (sin adaptación de rol)
-2. Al hacer clic en el selector de perspectiva, se abre un dropdown con los roles
-3. Al enviar, se pasa tanto `depthLevel` como `roleId` al backend
-4. El backend genera la respuesta ya adaptada al rol (sin necesidad de paso post-respuesta)
+### Comportamiento Visual
+
+| Estado | Visual | Botón Enviar |
+|--------|--------|--------------|
+| Sin confirmar | Selectores con borde punteado/animación sutil | Deshabilitado |
+| Confirmado | Selectores con estilo normal (como ahora) | Habilitado |
+
+### Indicador Visual de "Pendiente"
+
+Los selectores no confirmados tendrán:
+- Borde punteado o animación de pulso suave
+- Texto indicativo: "Selecciona tipo de informe" / "Selecciona perspectiva"
+- Badge o icono de advertencia pequeño
 
 ---
 
-## Cambios Técnicos Requeridos
+## Cambios Técnicos
 
-### 1. Modificar `ChatInput.tsx`
+### Archivo: `src/components/chat/ChatInput.tsx`
 
-**Añadir:**
-- Estado `selectedRole` (default: `'general'`)
-- Selector de rol como dropdown junto al selector de profundidad
-- Pasar `roleId` en las opciones de `onSend`
-
-**Actualizar props interface:**
+**1. Añadir estados de confirmación:**
 ```typescript
-interface ChatInputProps {
-  onSend: (message: string, options?: { 
-    bulletinMode?: boolean; 
-    depthLevel?: DepthLevel;
-    roleId?: string;  // NUEVO
-  }) => void;
-  // ... resto igual
-}
+const [depthConfirmed, setDepthConfirmed] = useState(false);
+const [roleConfirmed, setRoleConfirmed] = useState(false);
 ```
 
-### 2. Modificar `ChatContext.tsx`
-
-**En `sendMessage`:**
-- Recibir `roleId` en las opciones
-- Si `roleId !== 'general'`, incluir el prompt del rol en la llamada al edge function
-- El edge function generará la respuesta directamente adaptada
-
-**Nuevo flujo:**
+**2. Modificar handlers de selección:**
 ```typescript
-const sendMessage = async (question, options) => {
-  const roleId = options?.roleId || 'general';
-  const role = getRoleById(roleId);
-  
-  await supabase.functions.invoke('chat-intelligence', {
-    body: {
-      question,
-      depthLevel: options?.depthLevel,
-      // NUEVO: rol pre-seleccionado
-      roleId: roleId !== 'general' ? roleId : undefined,
-      roleName: role?.name,
-      rolePrompt: role?.prompt,
-    }
-  });
+// Depth selector
+onValueChange={(v) => {
+  if (v) {
+    setDepthLevel(v as DepthLevel);
+    setDepthConfirmed(true);  // Confirmar al hacer clic
+  }
+}}
+
+// Role selector
+onValueChange={(v) => {
+  setSelectedRoleId(v);
+  setRoleConfirmed(true);  // Confirmar al hacer clic
+}}
+```
+
+**3. Deshabilitar botón de envío si no hay confirmación:**
+```typescript
+<Button
+  onClick={handleSend}
+  disabled={!value.trim() || isLoading || !depthConfirmed || !roleConfirmed}
+  // ...
+>
+```
+
+**4. Añadir estilos visuales para estados pendientes:**
+```typescript
+// Para el contenedor de profundidad
+className={cn(
+  "flex-1",
+  !depthConfirmed && "ring-2 ring-amber-400/50 ring-offset-1 animate-pulse"
+)}
+
+// Para el selector de rol
+className={cn(
+  "w-full h-auto py-2 transition-all",
+  !roleConfirmed && "ring-2 ring-amber-400/50 ring-offset-1",
+  // ... resto de estilos
+)}
+```
+
+**5. Añadir mensaje indicativo:**
+```typescript
+{(!depthConfirmed || !roleConfirmed) && (
+  <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 mt-2">
+    <AlertCircle className="h-3.5 w-3.5" />
+    <span>{tr.selectConfigBeforeSending}</span>
+  </div>
+)}
+```
+
+**6. Reset de confirmaciones al enviar (para próximo mensaje):**
+```typescript
+const handleSend = () => {
+  if (value.trim() && !isLoading && depthConfirmed && roleConfirmed) {
+    // ... lógica existente
+    setValue("");
+    setBulletinModeActive(false);
+    // Reset confirmaciones para el siguiente mensaje
+    setDepthConfirmed(false);
+    setRoleConfirmed(false);
+  }
 };
 ```
 
-### 3. Modificar Edge Function `chat-intelligence`
+### Archivo: `src/lib/chatTranslations.ts`
 
-**En `handleStandardChat`:**
-- Si viene `roleId` y `rolePrompt`, aplicar la transformación de rol directamente
-- Combinar las instrucciones de profundidad con las de rol
-
-### 4. Actualizar traducciones
-
-**Añadir claves:**
+**Añadir nueva clave de traducción:**
 ```typescript
-// Role selector
-roleLabel: string;           // "Perspectiva"
-roleGeneral: string;         // "General"
-selectRole: string;          // "Selecciona tu perspectiva profesional"
-configureAnalysis: string;   // "Configura tu análisis"
-selectedConfig: string;      // "Seleccionado: {depth} + {role}"
+selectConfigBeforeSending: string;  // "Selecciona el tipo de informe y perspectiva antes de enviar"
 ```
 
-### 5. Mantener `RoleEnrichmentBar` como opción secundaria
+---
 
-- El componente seguirá existiendo para re-adaptar respuestas ya generadas
-- Pero ya no será la forma principal de seleccionar rol
+## Resultado Visual
+
+### Antes de confirmar:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📊 Configura tu análisis                                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  TIPO DE INFORME ← pulso suave        PERSPECTIVA ← pulso suave│
+│  ┌╌╌╌╌╌╌╌╌╌╌┐ ┌╌╌╌╌╌╌╌╌╌╌┐ ┌╌╌╌╌╌╌╌╌╌╌┐  ┌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐   │
+│  │ ⚡ Rápido │ │📋 Completo│ │📚 Exhaustivo│  │ 🎯 General  ▼  │   │
+│  └╌╌╌╌╌╌╌╌╌╌┘ └╌╌╌╌╌╌╌╌╌╌┘ └╌╌╌╌╌╌╌╌╌╌┘  └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘   │
+│                                                                 │
+│  ⚠️ Selecciona el tipo de informe y perspectiva antes de enviar │
+└─────────────────────────────────────────────────────────────────┘
+
+[🌐][📄][🎤] [Escribe tu pregunta...                    ] [➤ gris]
+                                                          ↑ deshabilitado
+```
+
+### Después de confirmar:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📊 Configura tu análisis                     📋 ~1min • 👔 CEO │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  TIPO DE INFORME ✓                    PERSPECTIVA ✓             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐  ┌─────────────────┐   │
+│  │ ⚡ Rápido │ │📋 Completo│ │📚 Exhaustivo│  │ 👔 CEO       ▼  │   │
+│  └──────────┘ └──────────┘ └──────────┘  └─────────────────┘   │
+│                       ↑ seleccionado        ↑ seleccionado      │
+└─────────────────────────────────────────────────────────────────┘
+
+[🌐][📄][🎤] [Analiza la reputación de Telefónica      ] [➤ azul]
+                                                          ↑ habilitado
+```
 
 ---
 
@@ -114,91 +162,13 @@ selectedConfig: string;      // "Seleccionado: {depth} + {role}"
 
 | Archivo | Cambios |
 |---------|---------|
-| `src/components/chat/ChatInput.tsx` | Añadir estado y selector de rol, actualizar props |
-| `src/contexts/ChatContext.tsx` | Procesar `roleId` en `sendMessage`, pasar al edge function |
-| `supabase/functions/chat-intelligence/index.ts` | Aplicar rol pre-seleccionado en generación inicial |
-| `src/lib/chatTranslations.ts` | Nuevas claves de traducción para selector de rol |
+| `src/components/chat/ChatInput.tsx` | Estados de confirmación, validación, estilos visuales |
+| `src/lib/chatTranslations.ts` | Nueva clave `selectConfigBeforeSending` |
 
 ---
 
-## Detalle Visual del Nuevo Selector
+## Tiempo Estimado
 
-### Selector de Rol (Dropdown)
-
-```text
-┌─────────────────────────────┐
-│ 🎯 General               ▼  │  ← Botón que abre dropdown
-└─────────────────────────────┘
-        ↓ (al hacer clic)
-┌─────────────────────────────┐
-│ 🎯 General          ← activo │
-├─────────────────────────────┤
-│ ★ DESTACADOS                │
-├─────────────────────────────┤
-│ 👔 CEO / Alta Dirección     │
-│ 📰 Periodista Económico     │
-│ 📊 Analista de Mercados     │
-│ 💰 Inversor                 │
-│ 📢 Director Comunicación    │
-├─────────────────────────────┤
-│ + Ver todos los roles...    │
-└─────────────────────────────┘
-```
-
-### Estados visuales
-
-- **General seleccionado**: Botón neutro (outline)
-- **Rol específico seleccionado**: Botón destacado con emoji y nombre del rol
-- **Indicador de configuración**: Texto pequeño debajo mostrando "Completo + CEO"
-
----
-
-## Comportamiento del Backend
-
-### Cuando `roleId = 'general'`
-- Sin cambios: respuesta estándar con formato de profundidad
-
-### Cuando `roleId = 'ceo'` (u otro rol)
-- El system prompt incluirá AMBAS instrucciones:
-  1. Formato de profundidad (pirámide)
-  2. Adaptación de rol (perspectiva CEO)
-
-```typescript
-const systemPrompt = `
-${buildDepthPrompt(depthLevel, languageName)}
-
-═══════════════════════════════════════════════════════════════════════════════
-                    PERSPECTIVA PROFESIONAL: ${roleName}
-═══════════════════════════════════════════════════════════════════════════════
-
-${rolePrompt}
-`;
-```
-
----
-
-## Resultado Esperado
-
-### Antes:
-```text
-1. Usuario escribe pregunta
-2. Selecciona profundidad (Quick/Complete/Exhaustive)
-3. Envía
-4. Recibe respuesta genérica
-5. Hace clic en "CEO" en RoleEnrichmentBar
-6. Espera segunda respuesta adaptada
-```
-
-### Después:
-```text
-1. Usuario selecciona profundidad + rol (Complete + CEO)
-2. Escribe pregunta
-3. Envía
-4. Recibe respuesta YA ADAPTADA al CEO directamente
-```
-
-**Beneficios:**
-- Una sola llamada al API en lugar de dos
-- Experiencia más clara para el usuario
-- El rol se integra mejor en el análisis inicial (no es un "parche" posterior)
+- Implementación: ~10 minutos
+- Total: ~10 minutos
 
