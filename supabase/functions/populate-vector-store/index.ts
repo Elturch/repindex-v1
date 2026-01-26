@@ -59,10 +59,12 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     
     while (true) {
       // Use raw SQL-like filter to only get what we need
+      // IMPORTANT: .order() is required for stable pagination with .range()
       const { data: existingDocs, error: existingError } = await supabaseClient
         .from('documents')
         .select('metadata->rix_run_id')
         .not('metadata->rix_run_id', 'is', null)
+        .order('id', { ascending: true })
         .range(docOffset, docOffset + docBatchSize - 1);
 
       if (existingError) {
@@ -687,8 +689,8 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       remaining_news: Math.max(0, newsRemaining),
       total: totalRuns,
       existing: existingRunIds.size + documentsCreated,
-      from_rix_runs: rixRunsOriginal.length,
-      from_rix_runs_v2: rixRunsV2.length,
+      from_rix_runs: pendingRuns.filter(r => r._source_table === 'rix_runs').length,
+      from_rix_runs_v2: pendingRuns.filter(r => r._source_table === 'rix_runs_v2').length,
       corporate_news_total: newsTotalCount,
       source_filter: sourceFilter,
       elapsed_seconds: elapsed,
