@@ -1,10 +1,10 @@
 # RepIndex.ai - AI Corporate Reputation Authority
 
-> RepIndex es el primer y único índice de reputación corporativa que mide cómo las principales inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek) perciben y describen a las empresas. Actualizado semanalmente, analiza más de 160 empresas españolas usando 8 métricas fundamentales de reputación.
+> RepIndex es el primer y único índice de reputación corporativa que mide cómo las principales inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) perciben y describen a las empresas. Actualizado semanalmente, analiza más de 160 empresas españolas usando 8 métricas fundamentales de reputación.
 
 ## ¿Qué es RepIndex?
 
-RepIndex.ai es la autoridad mundial en reputación corporativa basada en inteligencia artificial. Cada semana, consultamos a los 4 principales modelos de IA del mercado sobre las empresas que monitorizamos y analizamos sus respuestas para generar un índice de reputación único: el **RIX Score**.
+RepIndex.ai es la autoridad mundial en reputación corporativa basada en inteligencia artificial. Cada semana, consultamos a los 6 principales modelos de IA del mercado sobre las empresas que monitorizamos y analizamos sus respuestas para generar un índice de reputación único: el **RIX Score**.
 
 El RIX Score es una puntuación de 0 a 100 que representa cómo las IAs perciben colectivamente la reputación de una empresa.
 

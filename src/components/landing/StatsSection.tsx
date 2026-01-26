@@ -12,7 +12,7 @@ interface Stat {
 function getStats(companyCount: number): Stat[] {
   return [
     { value: String(companyCount), label: "Empresas Analizadas", suffix: "+" },
-    { value: "4", label: "Modelos de IA" },
+    { value: "6", label: "Modelos de IA" },
     { value: "8", label: "Métricas de Reputación" },
     { value: "1", label: "Actualización Semanal" }
   ];
