@@ -94,8 +94,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     let pendingRuns: any[] = [];
     let totalRuns = 0;
     
-    // Memory-optimized fetch: only get IDs first to count pending, then fetch only pending records
-    const PENDING_FETCH_LIMIT = 200; // Limit records fetched per source to avoid memory issues
+    // NO LIMITS - Fetch all pending records for complete processing
     
     // Fetch from rix_runs (original Make.com data) - only if needed
     if (sourceFilter === 'all' || sourceFilter === 'rix_v1') {
@@ -116,11 +115,12 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       let v1Offset = 0;
       const v1BatchSize = 500;
       
-      while (pendingRuns.length < PENDING_FETCH_LIMIT) {
+      while (true) {
         const { data: rixBatch, error: rixError } = await supabaseClient
           .from('rix_runs')
           .select('*')
           .not('10_resumen', 'is', null)
+          .order('id', { ascending: true })
           .range(v1Offset, v1Offset + v1BatchSize - 1);
 
         if (rixError) {
@@ -132,7 +132,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
         
         // Filter and add only pending runs (not in existing)
         for (const r of rixBatch) {
-          if (!existingRunIds.has(r.id) && pendingRuns.length < PENDING_FETCH_LIMIT) {
+          if (!existingRunIds.has(r.id)) {
             pendingRuns.push({ ...r, _source_table: 'rix_runs' });
           }
         }
@@ -140,9 +140,6 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
         v1Fetched += rixBatch.length;
         if (rixBatch.length < v1BatchSize) break;
         v1Offset += v1BatchSize;
-        
-        // Memory check: if we have enough pending, stop fetching
-        if (pendingRuns.length >= PENDING_FETCH_LIMIT) break;
       }
       console.log(`V1: scanned ${v1Fetched}, found ${pendingRuns.filter(r => r._source_table === 'rix_runs').length} pending`);
     }
@@ -162,11 +159,12 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       let v2Offset = 0;
       const v2BatchSize = 500;
       
-      while (pendingRuns.length < PENDING_FETCH_LIMIT) {
+      while (true) {
         const { data: v2Batch, error: v2Error } = await supabaseClient
           .from('rix_runs_v2')
           .select('*')
           .not('10_resumen', 'is', null)
+          .order('id', { ascending: true })
           .range(v2Offset, v2Offset + v2BatchSize - 1);
 
         if (v2Error) {
@@ -177,15 +175,13 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
         if (!v2Batch || v2Batch.length === 0) break;
         
         for (const r of v2Batch) {
-          if (!existingRunIds.has(r.id) && pendingRuns.length < PENDING_FETCH_LIMIT) {
+          if (!existingRunIds.has(r.id)) {
             pendingRuns.push({ ...r, _source_table: 'rix_runs_v2' });
           }
         }
         
         if (v2Batch.length < v2BatchSize) break;
         v2Offset += v2BatchSize;
-        
-        if (pendingRuns.length >= PENDING_FETCH_LIMIT) break;
       }
       console.log(`V2: found ${pendingRuns.filter(r => r._source_table === 'rix_runs_v2').length} pending`);
     }
