@@ -50,143 +50,207 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
   }
 
   try {
-    // Get existing document IDs (by rix_run_id in metadata)
-    // MEMORY OPTIMIZED: Only fetch rix_run_id from metadata, not full metadata object
-    console.log('Fetching existing document IDs (optimized)...');
-    const existingRunIds = new Set<string>();
-    let docOffset = 0;
-    const docBatchSize = 2000; // Larger batch since we're only fetching one field
-    
-    while (true) {
-      // Use raw SQL-like filter to only get what we need
-      // IMPORTANT: .order() is required for stable pagination with .range()
-      const { data: existingDocs, error: existingError } = await supabaseClient
+    // Server-side counts (fast) + per-item existence checks (avoids loading 10k+ rows)
+    console.log('Counting existing documents (server-side)...');
+
+    const rixIndexedCache = new Map<string, boolean>();
+    const newsIndexedCache = new Map<string, boolean>();
+
+    const isRixDocIndexed = async (runId: string): Promise<boolean> => {
+      if (!runId) return false;
+      const cached = rixIndexedCache.get(runId);
+      if (cached !== undefined) return cached;
+
+      const { data, error } = await supabaseClient
         .from('documents')
-        .select('metadata->rix_run_id')
-        .not('metadata->rix_run_id', 'is', null)
-        .order('id', { ascending: true })
-        .range(docOffset, docOffset + docBatchSize - 1);
+        .select('id')
+        .eq('metadata->>rix_run_id', runId)
+        .limit(1);
 
-      if (existingError) {
-        console.error('Error fetching existing docs:', existingError);
-        return { success: false, error: existingError.message };
+      if (error) {
+        console.error('Error checking existing RIX doc:', error);
+        // Fail open: treat as not indexed to avoid blocking sync
+        rixIndexedCache.set(runId, false);
+        return false;
       }
-      
-      if (!existingDocs || existingDocs.length === 0) break;
-      
-      existingDocs.forEach(d => {
-        const rixRunId = d.rix_run_id;
-        if (rixRunId) {
-          existingRunIds.add(rixRunId);
-        }
-      });
-      
-      if (existingDocs.length < docBatchSize) break;
-      docOffset += docBatchSize;
-    }
-    
-    console.log(`Found ${existingRunIds.size} existing document IDs`);
+
+      const exists = !!(data && data.length > 0);
+      rixIndexedCache.set(runId, exists);
+      return exists;
+    };
+
+    const isNewsDocIndexed = async (articleUrl: string): Promise<boolean> => {
+      if (!articleUrl) return false;
+      const cached = newsIndexedCache.get(articleUrl);
+      if (cached !== undefined) return cached;
+
+      const { data, error } = await supabaseClient
+        .from('documents')
+        .select('id')
+        .eq('metadata->>type', 'corporate_news')
+        .eq('metadata->>article_url', articleUrl)
+        .limit(1);
+
+      if (error) {
+        console.error('Error checking existing news doc:', error);
+        newsIndexedCache.set(articleUrl, false);
+        return false;
+      }
+
+      const exists = !!(data && data.length > 0);
+      newsIndexedCache.set(articleUrl, exists);
+      return exists;
+    };
+
+    const [totalRixDocsResult, rixV2DocsResult] = await Promise.all([
+      supabaseClient
+        .from('documents')
+        .select('id', { count: 'exact', head: true })
+        .not('metadata->>rix_run_id', 'is', null),
+      supabaseClient
+        .from('documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('metadata->>source_table', 'rix_runs_v2'),
+    ]);
+
+    const totalRixDocs = totalRixDocsResult.count || 0;
+    const rixV2IndexedInitial = rixV2DocsResult.count || 0;
+    const rixV1IndexedInitial = Math.max(0, totalRixDocs - rixV2IndexedInitial);
 
     // ==========================================================================
-    // FETCH FROM TABLES BASED ON sourceFilter - MEMORY OPTIMIZED
-    // For 'all' mode, we process sources sequentially to avoid memory overflow
+    // FETCH FROM TABLES BASED ON sourceFilter
+    // IMPORTANT: Never load all pending records into memory. Build only the batch
+    // to process (BATCH_SIZE) to avoid WORKER_LIMIT.
     // ==========================================================================
-    let pendingRuns: any[] = [];
+    const rixBatchToProcess: any[] = [];
     let totalRuns = 0;
-    
-    // NO LIMITS - Fetch all pending records for complete processing
-    
-    // Fetch from rix_runs (original Make.com data) - only if needed
+    let v1Total = 0;
+    let v2Total = 0;
+    let pendingFoundV1 = 0;
+    let pendingFoundV2 = 0;
+
+    let v1PendingEstimate = 0;
+    let v2PendingEstimate = 0;
+
+    // Fetch from rix_runs (V1)
     if (sourceFilter === 'all' || sourceFilter === 'rix_v1') {
-      console.log('Fetching rix_runs (V1) - memory optimized...');
-      
-      // First, get count of total records
+      console.log('Scanning rix_runs (V1) for pending docs...');
+
       const { count: v1Count } = await supabaseClient
         .from('rix_runs')
         .select('id', { count: 'exact', head: true })
         .not('10_resumen', 'is', null);
-      
-      totalRuns += v1Count || 0;
-      console.log(`V1 total records: ${v1Count}`);
-      
-      // Fetch only records NOT in existingRunIds, limited to PENDING_FETCH_LIMIT
-      // We fetch in smaller batches and filter as we go
-      let v1Fetched = 0;
+
+      v1Total = v1Count || 0;
+      totalRuns += v1Total;
+      console.log(`V1 total records: ${v1Total}`);
+
+      v1PendingEstimate = Math.max(0, v1Total - rixV1IndexedInitial);
+      if (v1PendingEstimate === 0) {
+        console.log('V1 pending estimate is 0 — skipping V1 scan.');
+      }
+
       let v1Offset = 0;
       const v1BatchSize = 500;
-      
-      while (true) {
+      let v1Scanned = 0;
+
+      while (v1PendingEstimate > 0 && rixBatchToProcess.length < BATCH_SIZE) {
         const { data: rixBatch, error: rixError } = await supabaseClient
           .from('rix_runs')
           .select('*')
           .not('10_resumen', 'is', null)
-          .order('id', { ascending: true })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
           .range(v1Offset, v1Offset + v1BatchSize - 1);
 
         if (rixError) {
           console.error('Error fetching rix_runs:', rixError);
           throw rixError;
         }
-        
+
         if (!rixBatch || rixBatch.length === 0) break;
-        
-        // Filter and add only pending runs (not in existing)
+
+        v1Scanned += rixBatch.length;
+
         for (const r of rixBatch) {
-          if (!existingRunIds.has(r.id)) {
-            pendingRuns.push({ ...r, _source_table: 'rix_runs' });
+          const alreadyIndexed = await isRixDocIndexed(r.id);
+          if (!alreadyIndexed) {
+            pendingFoundV1++;
+            if (rixBatchToProcess.length < BATCH_SIZE) {
+              rixBatchToProcess.push({ ...r, _source_table: 'rix_runs' });
+            }
           }
+          if (rixBatchToProcess.length >= BATCH_SIZE) break;
         }
-        
-        v1Fetched += rixBatch.length;
+
         if (rixBatch.length < v1BatchSize) break;
         v1Offset += v1BatchSize;
       }
-      console.log(`V1: scanned ${v1Fetched}, found ${pendingRuns.filter(r => r._source_table === 'rix_runs').length} pending`);
+      console.log(`V1: scanned ${v1Scanned}, pending found ${pendingFoundV1}, batch size now ${rixBatchToProcess.length}`);
     }
 
-    // Fetch from rix_runs_v2 (new 6 IA system) - only if needed
+    // Fetch from rix_runs_v2 (V2)
     if (sourceFilter === 'all' || sourceFilter === 'rix_v2') {
-      console.log('Fetching rix_runs_v2 (V2) - memory optimized...');
-      
+      console.log('Scanning rix_runs_v2 (V2) for pending docs...');
+
       const { count: v2Count } = await supabaseClient
         .from('rix_runs_v2')
         .select('id', { count: 'exact', head: true })
         .not('10_resumen', 'is', null);
-      
-      totalRuns += v2Count || 0;
-      console.log(`V2 total records: ${v2Count}`);
-      
+
+      v2Total = v2Count || 0;
+      totalRuns += v2Total;
+      console.log(`V2 total records: ${v2Total}`);
+
+      v2PendingEstimate = Math.max(0, v2Total - rixV2IndexedInitial);
+      if (v2PendingEstimate === 0) {
+        console.log('V2 pending estimate is 0 — skipping V2 scan.');
+      }
+
       let v2Offset = 0;
       const v2BatchSize = 500;
-      
-      while (true) {
+      let v2Scanned = 0;
+
+      while (v2PendingEstimate > 0 && rixBatchToProcess.length < BATCH_SIZE) {
         const { data: v2Batch, error: v2Error } = await supabaseClient
           .from('rix_runs_v2')
           .select('*')
           .not('10_resumen', 'is', null)
-          .order('id', { ascending: true })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
           .range(v2Offset, v2Offset + v2BatchSize - 1);
 
         if (v2Error) {
           console.error('Error fetching rix_runs_v2:', v2Error);
           throw v2Error;
         }
-        
+
         if (!v2Batch || v2Batch.length === 0) break;
-        
+
+        v2Scanned += v2Batch.length;
+
         for (const r of v2Batch) {
-          if (!existingRunIds.has(r.id)) {
-            pendingRuns.push({ ...r, _source_table: 'rix_runs_v2' });
+          const alreadyIndexed = await isRixDocIndexed(r.id);
+          if (!alreadyIndexed) {
+            pendingFoundV2++;
+            if (rixBatchToProcess.length < BATCH_SIZE) {
+              rixBatchToProcess.push({ ...r, _source_table: 'rix_runs_v2' });
+            }
           }
+          if (rixBatchToProcess.length >= BATCH_SIZE) break;
         }
-        
+
         if (v2Batch.length < v2BatchSize) break;
         v2Offset += v2BatchSize;
       }
-      console.log(`V2: found ${pendingRuns.filter(r => r._source_table === 'rix_runs_v2').length} pending`);
+      console.log(`V2: scanned ${v2Scanned}, pending found ${pendingFoundV2}, batch size now ${rixBatchToProcess.length}`);
     }
 
-    console.log(`Total DB records: ~${totalRuns}, Existing docs: ${existingRunIds.size}, Pending to process: ${pendingRuns.length}`);
+    const rixPendingTotalEstimate = v1PendingEstimate + v2PendingEstimate;
+
+    console.log(
+      `Total DB records: ~${totalRuns}, RIX docs indexed: ${totalRixDocs} (V1: ${rixV1IndexedInitial}, V2: ${rixV2IndexedInitial}), Pending estimate: ${rixPendingTotalEstimate}, Batch to process: ${rixBatchToProcess.length}`
+    );
 
     // Get issuers data with websites
     const { data: issuers } = await supabaseClient
@@ -200,7 +264,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     // Get latest corporate snapshots for each ticker
     const { data: corporateSnapshots } = await supabaseClient
       .from('corporate_snapshots')
-      .select('*')
+      .select('ticker, snapshot_date, snapshot_date_only, president_name, ceo_name, chairman_name, headquarters_city, headquarters_country, employees_approx, founded_year, mission_statement, company_description')
       .eq('scrape_status', 'success')
       .order('snapshot_date', { ascending: false });
 
@@ -221,10 +285,8 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     let v2DocsCreated = 0;
 
     // Process RIX batch with time limit (skip if filtering to news only)
-    if (sourceFilter !== 'news' && pendingRuns.length > 0) {
-      const batchToProcess = pendingRuns.slice(0, BATCH_SIZE);
-      
-      for (const run of batchToProcess) {
+    if (sourceFilter !== 'news' && rixBatchToProcess.length > 0) {
+      for (const run of rixBatchToProcess) {
         // Check time limit
         if (Date.now() - startTime > MAX_EXECUTION_TIME) {
           console.log(`Time limit reached after ${documentsCreated} documents`);
@@ -494,56 +556,69 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     if (sourceFilter === 'all' || sourceFilter === 'news') {
       console.log('Starting corporate_news indexation...');
       
-      // Get existing news documents (by article_url in metadata)
+      // Get existing news URLs (optimized select) for fast in-memory checks
       const existingNewsUrls = new Set<string>();
       let newsDocOffset = 0;
-      
+      const existingNewsBatchSize = 2000;
+
       while (true) {
         const { data: existingNewsDocs } = await supabaseClient
           .from('documents')
-          .select('metadata')
+          .select('metadata->>article_url')
           .eq('metadata->>type', 'corporate_news')
-          .range(newsDocOffset, newsDocOffset + 1000 - 1);
-        
+          .order('id', { ascending: true })
+          .range(newsDocOffset, newsDocOffset + existingNewsBatchSize - 1);
+
         if (!existingNewsDocs || existingNewsDocs.length === 0) break;
-        
-        existingNewsDocs.forEach(d => {
-          if (d.metadata?.article_url) {
-            existingNewsUrls.add(d.metadata.article_url);
-          }
+
+        existingNewsDocs.forEach((d: any) => {
+          const url = d.article_url;
+          if (url) existingNewsUrls.add(url);
         });
-        
-        if (existingNewsDocs.length < 1000) break;
-        newsDocOffset += 1000;
+
+        if (existingNewsDocs.length < existingNewsBatchSize) break;
+        newsDocOffset += existingNewsBatchSize;
       }
-      
+
       console.log(`Found ${existingNewsUrls.size} existing corporate news documents`);
-      
-      // Fetch ALL corporate news (no limit)
-      let allCorporateNews: any[] = [];
+
+      // Fetch corporate news paginated but only build pending batch to process
+      const newsBatchToProcess: any[] = [];
+      let pendingNewsFound = 0;
       let newsOffset = 0;
-      const newsBatchSize = 1000;
-      
-      while (true) {
-        const { data: newsData } = await supabaseClient
+      const newsScanBatchSize = 500;
+
+      while (newsBatchToProcess.length < NEWS_BATCH_SIZE) {
+        const { data: newsData, error: newsError } = await supabaseClient
           .from('corporate_news')
           .select('*')
           .order('published_date', { ascending: false })
-          .range(newsOffset, newsOffset + newsBatchSize - 1);
-        
+          .range(newsOffset, newsOffset + newsScanBatchSize - 1);
+
+        if (newsError) {
+          console.error('Error fetching corporate_news:', newsError);
+          throw newsError;
+        }
+
         if (!newsData || newsData.length === 0) break;
-        allCorporateNews.push(...newsData);
-        if (newsData.length < newsBatchSize) break;
-        newsOffset += newsBatchSize;
+        newsTotalCount += newsData.length;
+
+        for (const n of newsData) {
+          if (!existingNewsUrls.has(n.article_url)) {
+            pendingNewsFound++;
+            if (newsBatchToProcess.length < NEWS_BATCH_SIZE) {
+              newsBatchToProcess.push(n);
+            }
+          }
+          if (newsBatchToProcess.length >= NEWS_BATCH_SIZE) break;
+        }
+
+        if (newsData.length < newsScanBatchSize) break;
+        newsOffset += newsScanBatchSize;
       }
-      
-      newsTotalCount = allCorporateNews.length;
-      const pendingNews = allCorporateNews.filter(n => !existingNewsUrls.has(n.article_url));
-      console.log(`Corporate news: ${newsTotalCount} total, ${pendingNews.length} pending`);
-      
-      // Process news batch
-      const newsBatchToProcess = pendingNews.slice(0, NEWS_BATCH_SIZE);
-      
+
+      console.log(`Corporate news scanned: ${newsTotalCount}, pending found: ${pendingNewsFound}, batch: ${newsBatchToProcess.length}`);
+
       for (const news of newsBatchToProcess) {
         // Check time limit
         if (Date.now() - startTime > MAX_EXECUTION_TIME) {
@@ -651,11 +726,21 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
         }
       }
       
-      newsRemaining = pendingNews.length - newsDocsCreated;
+      newsRemaining = Math.max(0, pendingNewsFound - newsDocsCreated);
       console.log(`Corporate news indexation: ${newsDocsCreated} created, ${newsDocsErrored} errors`);
     }
 
-    const remaining = pendingRuns.length - documentsCreated;
+    const remainingRixV1 = Math.max(0, v1PendingEstimate - v1DocsCreated);
+    const remainingRixV2 = Math.max(0, v2PendingEstimate - v2DocsCreated);
+    const remainingRixAll = remainingRixV1 + remainingRixV2;
+
+    const remaining = sourceFilter === 'rix_v1'
+      ? remainingRixV1
+      : sourceFilter === 'rix_v2'
+        ? remainingRixV2
+        : sourceFilter === 'news'
+          ? 0
+          : remainingRixAll;
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     
     console.log(`BATCH COMPLETED: ${documentsCreated} rix docs (V1: ${v1DocsCreated}, V2: ${v2DocsCreated}), ${newsDocsCreated} news docs, ${documentsErrored + newsDocsErrored} errors, ${elapsed}s`);
@@ -663,13 +748,13 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     // Determine if complete based on filter
     let isComplete = false;
     if (sourceFilter === 'rix_v1') {
-      isComplete = remaining <= 0;
+      isComplete = remainingRixV1 <= 0;
     } else if (sourceFilter === 'rix_v2') {
-      isComplete = remaining <= 0;
+      isComplete = remainingRixV2 <= 0;
     } else if (sourceFilter === 'news') {
       isComplete = newsRemaining <= 0;
     } else {
-      isComplete = remaining <= 0 && newsRemaining <= 0;
+      isComplete = remainingRixAll <= 0 && newsRemaining <= 0;
     }
     
     return {
@@ -681,12 +766,13 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       processed_news: newsDocsCreated,
       errored: documentsErrored + newsDocsErrored,
       remaining: Math.max(0, remaining),
-      remaining_v2: sourceFilter === 'rix_v2' ? Math.max(0, remaining) : undefined,
+      remaining_v2: sourceFilter === 'rix_v2' ? Math.max(0, remainingRixV2) : undefined,
+      remaining_v1: sourceFilter === 'rix_v1' ? Math.max(0, remainingRixV1) : undefined,
       remaining_news: Math.max(0, newsRemaining),
       total: totalRuns,
-      existing: existingRunIds.size + documentsCreated,
-      from_rix_runs: pendingRuns.filter(r => r._source_table === 'rix_runs').length,
-      from_rix_runs_v2: pendingRuns.filter(r => r._source_table === 'rix_runs_v2').length,
+      existing: totalRixDocs + documentsCreated,
+      from_rix_runs: pendingFoundV1,
+      from_rix_runs_v2: pendingFoundV2,
       corporate_news_total: newsTotalCount,
       source_filter: sourceFilter,
       elapsed_seconds: elapsed,
