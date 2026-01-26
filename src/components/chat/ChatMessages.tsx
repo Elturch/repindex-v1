@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
-import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
+
 import { ResponseFeedback } from "./ResponseFeedback";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,7 @@ interface ChatMessagesProps {
   isLoading: boolean;
   isLoadingHistory: boolean;
   onSuggestedQuestion: (question: string) => void;
-  onEnrichResponse?: (roleId: string, messageIndex: number) => void;
+  
   starterPrompts: string[];
   onStarterPrompt: (prompt: string) => void;
   compact?: boolean;
@@ -34,7 +34,7 @@ export function ChatMessages({
   isLoading,
   isLoadingHistory,
   onSuggestedQuestion,
-  onEnrichResponse,
+  
   starterPrompts,
   onStarterPrompt,
   compact = false,
@@ -204,18 +204,6 @@ export function ChatMessages({
                 </div>
               )}
 
-              {/* Role Enrichment Bar - only for assistant messages that are not bulletins and not already enriched */}
-              {message.role === 'assistant' && 
-               message.metadata?.type !== 'bulletin' && 
-               message.metadata?.type !== 'enriched' &&
-               onEnrichResponse && (
-                <RoleEnrichmentBar
-                  onEnrich={(roleId) => onEnrichResponse(roleId, idx)}
-                  disabled={isLoading}
-                  compact={compact}
-                  languageCode={languageCode}
-                />
-              )}
 
               {/* Response Feedback - thumbs up/down for assistant messages */}
               {message.role === 'assistant' && sessionId && (
