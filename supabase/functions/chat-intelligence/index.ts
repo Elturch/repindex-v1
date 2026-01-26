@@ -355,7 +355,7 @@ RECUERDA: Este es un informe de consultoría estratégica. Máximo rigor y profu
 }
 
 // =============================================================================
-// DRUMROLL QUESTION GENERATOR (Complementary Report Suggestion)
+// DRUMROLL QUESTION GENERATOR (Complementary Report Suggestion Based on REAL Data)
 // =============================================================================
 interface DrumrollQuestion {
   title: string;
@@ -364,9 +364,126 @@ interface DrumrollQuestion {
   reportType: 'competitive' | 'vulnerabilities' | 'projection' | 'sector';
 }
 
+interface AnalysisInsights {
+  company: string;
+  ticker: string;
+  overallScore: number;
+  weakestMetrics: { name: string; score: number; interpretation: string }[];
+  strongestMetrics: { name: string; score: number; interpretation: string }[];
+  trend: 'up' | 'down' | 'stable';
+  trendDelta: number;
+  divergenceLevel: 'low' | 'medium' | 'high';
+  divergenceDetail?: string;
+  keyFinding: string;
+}
+
+// Extract structured insights from rix_runs data for the analyzed company
+function extractAnalysisInsights(
+  rixData: any[],
+  primaryCompany: { ticker: string; issuer_name: string },
+  answer: string
+): AnalysisInsights | null {
+  
+  // Filter data for this company
+  const companyData = rixData
+    .filter(r => r['05_ticker'] === primaryCompany.ticker)
+    .sort((a, b) => new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime());
+  
+  if (companyData.length === 0) {
+    return null;
+  }
+  
+  // Get latest week data (multiple models)
+  const latestDate = companyData[0]?.batch_execution_date;
+  const latestWeekData = companyData.filter(r => r.batch_execution_date === latestDate);
+  
+  // Calculate average RIX across models
+  const rixScores = latestWeekData.map(r => r['09_rix_score']).filter(s => s != null && s > 0);
+  const avgRix = rixScores.length > 0 ? Math.round(rixScores.reduce((a, b) => a + b, 0) / rixScores.length) : 0;
+  
+  // Calculate divergence between models
+  const maxRix = Math.max(...rixScores);
+  const minRix = Math.min(...rixScores);
+  const divergence = maxRix - minRix;
+  let divergenceLevel: 'low' | 'medium' | 'high' = 'low';
+  let divergenceDetail = '';
+  
+  if (divergence >= 20) {
+    divergenceLevel = 'high';
+    const maxModel = latestWeekData.find(r => r['09_rix_score'] === maxRix)?.['02_model_name'];
+    const minModel = latestWeekData.find(r => r['09_rix_score'] === minRix)?.['02_model_name'];
+    divergenceDetail = `${maxModel} (${maxRix}) vs ${minModel} (${minRix})`;
+  } else if (divergence >= 10) {
+    divergenceLevel = 'medium';
+  }
+  
+  // Extract metric scores from latest run (use first model with complete data)
+  const latestRun = latestWeekData.find(r => r['23_nvm_score'] != null) || latestWeekData[0];
+  
+  const metrics = [
+    { name: 'NVM (Narrativa)', fullName: 'Calidad Narrativa', score: latestRun?.['23_nvm_score'], category: latestRun?.['25_nvm_categoria'] },
+    { name: 'DRM (Evidencia)', fullName: 'Evidencia Documental', score: latestRun?.['26_drm_score'], category: latestRun?.['28_drm_categoria'] },
+    { name: 'SIM (Autoridad)', fullName: 'Autoridad de Fuentes', score: latestRun?.['29_sim_score'], category: latestRun?.['31_sim_categoria'] },
+    { name: 'RMM (Momentum)', fullName: 'Momentum Mediático', score: latestRun?.['32_rmm_score'], category: latestRun?.['34_rmm_categoria'] },
+    { name: 'CEM (Riesgo)', fullName: 'Gestión de Controversias', score: latestRun?.['35_cem_score'], category: latestRun?.['37_cem_categoria'] },
+    { name: 'GAM (Gobernanza)', fullName: 'Percepción de Gobierno', score: latestRun?.['38_gam_score'], category: latestRun?.['40_gam_categoria'] },
+    { name: 'DCM (Coherencia)', fullName: 'Coherencia Informativa', score: latestRun?.['41_dcm_score'], category: latestRun?.['43_dcm_categoria'] },
+    { name: 'CXM (Ejecución)', fullName: 'Ejecución Corporativa', score: latestRun?.['44_cxm_score'], category: latestRun?.['46_cxm_categoria'] },
+  ].filter(m => m.score != null && m.score > 0);
+  
+  // Sort by score to find weakest and strongest
+  const sortedByScore = [...metrics].sort((a, b) => a.score - b.score);
+  const weakest = sortedByScore.slice(0, 2);
+  const strongest = sortedByScore.slice(-2).reverse();
+  
+  // Calculate trend from historical data (compare last 2 weeks if available)
+  let trend: 'up' | 'down' | 'stable' = 'stable';
+  let trendDelta = 0;
+  
+  const uniqueDates = [...new Set(companyData.map(r => r.batch_execution_date))].sort().reverse();
+  if (uniqueDates.length >= 2) {
+    const thisWeekData = companyData.filter(r => r.batch_execution_date === uniqueDates[0]);
+    const lastWeekData = companyData.filter(r => r.batch_execution_date === uniqueDates[1]);
+    
+    const thisWeekAvg = thisWeekData.map(r => r['09_rix_score']).filter(Boolean).reduce((a, b) => a + b, 0) / thisWeekData.length;
+    const lastWeekAvg = lastWeekData.map(r => r['09_rix_score']).filter(Boolean).reduce((a, b) => a + b, 0) / lastWeekData.length;
+    
+    trendDelta = Math.round(thisWeekAvg - lastWeekAvg);
+    if (trendDelta >= 3) trend = 'up';
+    else if (trendDelta <= -3) trend = 'down';
+  }
+  
+  // Extract key finding from answer (first 300 chars or first paragraph)
+  const firstParagraph = answer.split('\n\n')[0] || answer.substring(0, 300);
+  const keyFinding = firstParagraph.length > 200 
+    ? firstParagraph.substring(0, 200) + '...'
+    : firstParagraph;
+  
+  return {
+    company: primaryCompany.issuer_name,
+    ticker: primaryCompany.ticker,
+    overallScore: avgRix,
+    weakestMetrics: weakest.map(m => ({ 
+      name: m.name, 
+      score: m.score,
+      interpretation: m.category || 'Sin categoría'
+    })),
+    strongestMetrics: strongest.map(m => ({
+      name: m.name,
+      score: m.score, 
+      interpretation: m.category || 'Sin categoría'
+    })),
+    trend,
+    trendDelta,
+    divergenceLevel,
+    divergenceDetail,
+    keyFinding
+  };
+}
+
 async function generateDrumrollQuestion(
   originalQuestion: string,
-  generatedAnswer: string,
+  insights: AnalysisInsights | null,
   detectedCompanies: { ticker: string; issuer_name: string; sector_category?: string }[],
   allCompaniesCache: any[] | null,
   language: string,
@@ -374,9 +491,9 @@ async function generateDrumrollQuestion(
   logPrefix: string
 ): Promise<DrumrollQuestion | null> {
   
-  // Solo generar para preguntas corporativas con suficiente contexto
-  if (detectedCompanies.length === 0) {
-    console.log(`${logPrefix} No drumroll: no companies detected`);
+  // Solo generar para preguntas corporativas con datos estructurados
+  if (detectedCompanies.length === 0 || !insights) {
+    console.log(`${logPrefix} No drumroll: no companies or no insights available`);
     return null;
   }
 
@@ -392,46 +509,64 @@ async function generateDrumrollQuestion(
       .map(c => c.issuer_name);
   }
   
+  // Build prompt with REAL structured data
   const drumrollPrompt = `Acabas de generar un análisis sobre: "${originalQuestion}"
 
-CONTEXTO:
-- Empresa principal analizada: ${primaryCompany.issuer_name} (${primaryCompany.ticker})
-- Sector: ${sectorInfo || 'No específico'}
-- Competidores en el sector: ${competitors.join(', ') || 'No identificados'}
-- Otras empresas mencionadas: ${detectedCompanies.slice(1).map(c => c.issuer_name).join(', ') || 'Ninguna'}
+═══════════════════════════════════════════════════════════════════════════════
+                      HALLAZGOS CLAVE DEL ANÁLISIS (DATOS REALES)
+═══════════════════════════════════════════════════════════════════════════════
 
-EXTRACTO DE LA RESPUESTA GENERADA (primeros 500 chars):
-${generatedAnswer.substring(0, 500)}...
+EMPRESA ANALIZADA: ${insights.company} (${insights.ticker})
+SCORE RIX ACTUAL: ${insights.overallScore}/100
+TENDENCIA: ${insights.trend === 'up' ? '📈 Subiendo' : insights.trend === 'down' ? '📉 Bajando' : '➡️ Estable'} (${insights.trendDelta > 0 ? '+' : ''}${insights.trendDelta} pts vs semana anterior)
 
-TU MISIÓN: Proponer UN informe complementario de ALTO VALOR que el usuario NO pidió pero NECESITA para completar su visión estratégica.
+MÉTRICAS MÁS DÉBILES (oportunidad de mejora):
+${insights.weakestMetrics.map(m => `• ${m.name}: ${m.score}/100 (${m.interpretation})`).join('\n')}
 
-TIPOS DE INFORMES (elige el más valioso dado el contexto):
-1. **competitive**: Mapa competitivo con rivales directos - IDEAL si analizó una empresa sola
-2. **vulnerabilities**: Análisis profundo de puntos débiles detectados - IDEAL si hay métricas bajas
-3. **projection**: Escenarios futuros basados en tendencias - IDEAL si hay evolución temporal
-4. **sector**: Panorama completo del sector con todos los players - IDEAL si preguntó por una empresa específica
+MÉTRICAS MÁS FUERTES:
+${insights.strongestMetrics.map(m => `• ${m.name}: ${m.score}/100 (${m.interpretation})`).join('\n')}
+
+NIVEL DE DIVERGENCIA ENTRE IAs: ${insights.divergenceLevel.toUpperCase()}${insights.divergenceDetail ? ` - ${insights.divergenceDetail}` : ''}
+
+SECTOR: ${sectorInfo || 'No específico'}
+COMPETIDORES DISPONIBLES: ${competitors.join(', ') || 'No identificados'}
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TU MISIÓN: Basándote en los HALLAZGOS REALES de arriba, propón UN informe complementario que PROFUNDICE en:
+
+1. Si hay MÉTRICAS DÉBILES (<50 pts) → Propón analizar causas específicas y plan de mejora
+   Ejemplo: "¿Por qué ${insights.company} tiene baja ${insights.weakestMetrics[0]?.name}? Diagnóstico y soluciones"
+   
+2. Si hay TENDENCIA NEGATIVA → Propón proyección de escenarios y causas
+   Ejemplo: "Análisis de la caída de ${insights.trendDelta} pts: qué está pasando con ${insights.company}"
+   
+3. Si hay ALTA DIVERGENCIA → Propón entender por qué las IAs difieren
+   Ejemplo: "El enigma de ${insights.company}: por qué ChatGPT y DeepSeek discrepan ${insights.divergenceDetail}"
+   
+4. Si hay FORTALEZA CLARA (>75 pts) → Propón comparar con competidores en esa métrica
+   Ejemplo: "¿Puede ${insights.company} mantener su liderazgo en ${insights.strongestMetrics[0]?.name}?"
 
 REGLAS CRÍTICAS:
-- El informe debe COMPLEMENTAR, no repetir lo ya dicho
-- Debe revelar algo NO OBVIO que emerja de cruzar datos
-- El título debe ser MAGNÉTICO y específico (max 12 palabras)
-- El teaser debe generar CURIOSIDAD inmediata sin revelarlo todo
-- La fullQuestion debe ser ejecutable directamente en el chat
+- El informe debe ser ESPECÍFICO a los datos de arriba - MENCIONA scores, métricas o tendencias concretas
+- NO propongas cosas genéricas como "mapa competitivo" o "análisis del sector" sin especificar QUÉ analizar
+- El título DEBE mencionar algo específico: una métrica, un score, una tendencia, una cifra
+- El teaser debe explicar POR QUÉ este análisis es valioso dado lo que ya sabemos
 
 IDIOMA: Genera TODO en ${languageName}
 
 Responde SOLO en JSON válido (sin markdown):
 {
-  "title": "Título magnético del informe sugerido",
-  "fullQuestion": "La pregunta exacta que el usuario debería hacer para obtener este informe (en ${languageName})",
-  "teaser": "1-2 frases que adelanten el valor sin revelarlo todo",
+  "title": "Título que referencia un hallazgo ESPECÍFICO del análisis",
+  "fullQuestion": "Pregunta ejecutable que profundiza en ese hallazgo específico",
+  "teaser": "Por qué este análisis es valioso dado lo que hemos descubierto",
   "reportType": "competitive|vulnerabilities|projection|sector"
 }`;
 
   try {
     const result = await callAISimple(
       [
-        { role: 'system', content: `Eres un estratega de inteligencia competitiva de élite. Propones análisis de alto valor que complementan lo ya analizado. Responde SOLO en JSON válido sin bloques de código.` },
+        { role: 'system', content: `Eres un estratega de inteligencia competitiva que propone análisis ESPECÍFICOS basados en datos reales. NUNCA propones informes genéricos. Siempre refieres métricas, scores o tendencias concretas en tus propuestas. Responde SOLO en JSON válido sin bloques de código.` },
         { role: 'user', content: drumrollPrompt }
       ],
       'gpt-4o-mini',
@@ -449,7 +584,7 @@ Responde SOLO en JSON válido (sin markdown):
     
     // Validar estructura completa
     if (parsed.title && parsed.fullQuestion && parsed.teaser && parsed.reportType) {
-      console.log(`${logPrefix} Drumroll question generated: "${parsed.title}" (${parsed.reportType})`);
+      console.log(`${logPrefix} Drumroll generated: "${parsed.title}" (type: ${parsed.reportType}, based on ${insights.weakestMetrics[0]?.name || 'general'} insights)`);
       return parsed as DrumrollQuestion;
     }
     
@@ -3247,18 +3382,32 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     // GENERATE DRUMROLL QUESTION (Complementary Report Suggestion)
     // Only for complete/exhaustive depth levels, not for quick
     // =============================================================================
+    // Extract structured insights from the rix data for drumroll generation
     let drumrollQuestion: DrumrollQuestion | null = null;
-    if (depthLevel !== 'quick' && detectedCompanies.length > 0) {
-      console.log(`${logPrefix} Generating drumroll question for ${detectedCompanies[0]?.issuer_name}...`);
-      drumrollQuestion = await generateDrumrollQuestion(
-        question,
-        answer,
-        detectedCompanies,
-        companiesCache,
-        language,
-        languageName,
-        logPrefix
+    if (depthLevel !== 'quick' && detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
+      console.log(`${logPrefix} Extracting analysis insights for ${detectedCompanies[0]?.issuer_name}...`);
+      
+      const insights = extractAnalysisInsights(
+        allRixData,
+        detectedCompanies[0],
+        answer
       );
+      
+      if (insights) {
+        console.log(`${logPrefix} Insights extracted: RIX=${insights.overallScore}, weakest=${insights.weakestMetrics[0]?.name}, trend=${insights.trend}(${insights.trendDelta}pts), divergence=${insights.divergenceLevel}`);
+        
+        drumrollQuestion = await generateDrumrollQuestion(
+          question,
+          insights,
+          detectedCompanies,
+          companiesCache,
+          language,
+          languageName,
+          logPrefix
+        );
+      } else {
+        console.log(`${logPrefix} No insights extracted - skipping drumroll`);
+      }
     }
 
     // Determine question category (simplified classification)
