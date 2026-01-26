@@ -51,16 +51,18 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
 
   try {
     // Get existing document IDs (by rix_run_id in metadata)
-    // Use pagination to get ALL documents (no limit)
-    console.log('Fetching existing documents...');
+    // MEMORY OPTIMIZED: Only fetch rix_run_id from metadata, not full metadata object
+    console.log('Fetching existing document IDs (optimized)...');
     const existingRunIds = new Set<string>();
     let docOffset = 0;
-    const docBatchSize = 1000;
+    const docBatchSize = 2000; // Larger batch since we're only fetching one field
     
     while (true) {
+      // Use raw SQL-like filter to only get what we need
       const { data: existingDocs, error: existingError } = await supabaseClient
         .from('documents')
-        .select('metadata')
+        .select('metadata->rix_run_id')
+        .not('metadata->rix_run_id', 'is', null)
         .range(docOffset, docOffset + docBatchSize - 1);
 
       if (existingError) {
@@ -71,8 +73,9 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       if (!existingDocs || existingDocs.length === 0) break;
       
       existingDocs.forEach(d => {
-        if (d.metadata?.rix_run_id) {
-          existingRunIds.add(d.metadata.rix_run_id);
+        const rixRunId = d.rix_run_id;
+        if (rixRunId) {
+          existingRunIds.add(rixRunId);
         }
       });
       
@@ -80,7 +83,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       docOffset += docBatchSize;
     }
     
-    console.log(`Found ${existingRunIds.size} existing documents`);
+    console.log(`Found ${existingRunIds.size} existing document IDs`);
 
     // ==========================================================================
     // FETCH FROM TABLES BASED ON sourceFilter - MEMORY OPTIMIZED
