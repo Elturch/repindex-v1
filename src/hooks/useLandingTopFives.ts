@@ -154,6 +154,7 @@ export function useLandingTopFives() {
       }
 
       return {
+        latestWeek,
         topByAI,
         topTraded: topTraded?.map(d => ({
           empresa: d.company_name,

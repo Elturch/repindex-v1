@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Trophy, Award, Building2, Briefcase } from "lucide-react";
+import { TrendingUp, TrendingDown, Trophy, Building2, Briefcase, Calendar } from "lucide-react";
 import { useLandingTopFives } from "@/hooks/useLandingTopFives";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { format, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface MiniTableProps {
   title: string;
@@ -160,6 +162,14 @@ export function MiniTablesGrid() {
           <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-2" style={{ fontSize: 'clamp(1.125rem, 4vw, 2.25rem)' }}>
             RepIndex Corporativo
           </h2>
+          {data.latestWeek && (
+            <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs sm:text-sm mb-2">
+              <Calendar className="w-4 h-4" />
+              <span>
+                Última actualización: {format(parseISO(data.latestWeek), "d 'de' MMMM yyyy", { locale: es })}
+              </span>
+            </div>
+          )}
           <p className="text-muted-foreground text-xs sm:text-sm md:text-base lg:text-lg max-w-2xl mx-auto px-1" style={{ fontSize: 'clamp(0.7rem, 2vw, 1.125rem)' }}>
             Explora las métricas de reputación corporativa analizadas por inteligencias artificiales
           </p>
