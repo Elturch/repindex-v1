@@ -15,7 +15,7 @@ import { ChatInput } from "./ChatInput";
 import { ChatOnboardingTooltip, useChatOnboardingSeen } from "./ChatOnboardingTooltip";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { isDevOrPreview } from "@/lib/env";
-import { getChatTranslations } from "@/lib/chatTranslations";
+
 import { trackChatToggle, trackChatMessage, trackChatSuggestionClick } from "@/lib/gtmEvents";
 
 export function FloatingChat() {
@@ -27,7 +27,6 @@ export function FloatingChat() {
     isLoading,
     isLoadingHistory,
     sendMessage,
-    enrichResponse,
     clearConversation,
     isFloatingOpen,
     setIsFloatingOpen,
@@ -42,7 +41,6 @@ export function FloatingChat() {
   const { isAuthenticated } = useAuth();
   const pageContext = usePageContext(undefined, language);
   const hasSeenOnboarding = useChatOnboardingSeen();
-  const tr = getChatTranslations(language.code);
   const { 
     notifications, 
     unreadCount, 
@@ -371,7 +369,6 @@ export function FloatingChat() {
                       isLoading={isLoading}
                       isLoadingHistory={isLoadingHistory}
                       onSuggestedQuestion={handleSuggestionClick}
-                      onEnrichResponse={enrichResponse}
                       starterPrompts={pageContext.suggestions}
                       onStarterPrompt={handleSuggestionClick}
                       compact={true}
