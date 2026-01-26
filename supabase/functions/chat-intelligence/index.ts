@@ -1692,29 +1692,44 @@ async function handleStandardChat(
       context += `📅 **Fecha de actualización**: ${memento.snapshot_date_only} (hace ${memento.days_old} días)\n`;
       context += `🔒 **Nivel de certeza**: ${memento.confidence_level}\n\n`;
       
-      // Guidance for certainty levels
-      if (memento.confidence_level === 'VERIFIED') {
-        context += `✅ *Datos verificados (< 7 días) - Puedes hacer afirmaciones directas mencionando la fecha*\n`;
-      } else if (memento.confidence_level === 'RECENT') {
-        context += `⚠️ *Datos recientes (7-30 días) - Menciona la fecha y sugiere verificar si es crítico*\n`;
-      } else if (memento.confidence_level === 'HISTORICAL') {
-        context += `📜 *Datos históricos (30-90 días) - Usa caveats: "según información de [fecha]..."*\n`;
-      } else {
-        context += `❓ *Datos antiguos (> 90 días) - Solo mencionar como referencia histórica*\n`;
-      }
-      context += `\n`;
+      // ========================================================================
+      // REGLA ANTI-ALUCINACIÓN: Bloquear mención de ejecutivos si NO hay datos
+      // ========================================================================
+      const hasLeadershipData = memento.president_name || memento.ceo_name || memento.chairman_name;
       
-      // Mostrar cargos con etiquetas correctas según el contexto español
-      // Prioridad: president_name (Presidente Ejecutivo) > ceo_name (CEO si es distinto) > chairman_name (Chairman no ejecutivo)
-      if (memento.president_name) {
-        context += `👔 **Presidente Ejecutivo**: ${memento.president_name}\n`;
+      if (!hasLeadershipData) {
+        context += `🚫 **ADVERTENCIA CRÍTICA - DATOS DE LIDERAZGO NO DISPONIBLES**\n`;
+        context += `⚠️ NO hay datos verificados de directivos (CEO, Presidente, Chairman) para ${companyName}.\n`;
+        context += `❌ PROHIBIDO: NO menciones nombres de ejecutivos, presidentes o CEOs para esta empresa.\n`;
+        context += `✅ Si el usuario pregunta sobre liderazgo de ${companyName}, responde:\n`;
+        context += `   "No dispongo de datos verificados sobre el equipo directivo actual de ${companyName}.\n`;
+        context += `    Te recomiendo consultar su web corporativa oficial para información actualizada."\n`;
+        context += `⚠️ NO uses tu conocimiento de entrenamiento para nombrar ejecutivos - puede estar desactualizado.\n\n`;
+      } else {
+        // Guidance for certainty levels (solo si HAY datos)
+        if (memento.confidence_level === 'VERIFIED') {
+          context += `✅ *Datos verificados (< 7 días) - Puedes hacer afirmaciones directas mencionando la fecha*\n`;
+        } else if (memento.confidence_level === 'RECENT') {
+          context += `⚠️ *Datos recientes (7-30 días) - Menciona la fecha y sugiere verificar si es crítico*\n`;
+        } else if (memento.confidence_level === 'HISTORICAL') {
+          context += `📜 *Datos históricos (30-90 días) - Usa caveats: "según información de [fecha]..."*\n`;
+        } else {
+          context += `❓ *Datos antiguos (> 90 días) - Solo mencionar como referencia histórica*\n`;
+        }
+        context += `\n`;
+        
+        // Mostrar cargos con etiquetas correctas según el contexto español
+        if (memento.president_name) {
+          context += `👔 **Presidente Ejecutivo**: ${memento.president_name}\n`;
+        }
+        if (memento.ceo_name && memento.ceo_name !== memento.president_name) {
+          context += `🎯 **CEO / Consejero Delegado**: ${memento.ceo_name}\n`;
+        }
+        if (memento.chairman_name && memento.chairman_name !== memento.president_name) {
+          context += `🏛️ **Presidente del Consejo**: ${memento.chairman_name}\n`;
+        }
       }
-      if (memento.ceo_name && memento.ceo_name !== memento.president_name) {
-        context += `🎯 **CEO / Consejero Delegado**: ${memento.ceo_name}\n`;
-      }
-      if (memento.chairman_name && memento.chairman_name !== memento.president_name) {
-        context += `🏛️ **Presidente del Consejo**: ${memento.chairman_name}\n`;
-      }
+      
       if (memento.headquarters_city) {
         context += `📍 **Sede**: ${memento.headquarters_city}\n`;
       }
@@ -2258,7 +2273,7 @@ de [Empresa] no está uniformemente establecida, posiblemente debido a la
 inconsistencia en la comunicación financiera."
 
 ═══════════════════════════════════════════════════════════════════════════════
-                    PROTOCOLO DE DATOS CORPORATIVOS
+                     PROTOCOLO DE DATOS CORPORATIVOS
 ═══════════════════════════════════════════════════════════════════════════════
 
 Cuando tengas datos del MEMENTO CORPORATIVO:
@@ -2276,6 +2291,30 @@ NIVEL 3 - HISTORICAL (30-90 días): Con caveat
 TERMINOLOGÍA ESPAÑOLA: Usa "Presidente Ejecutivo" cuando así aparezca en 
 los datos. Muchas grandes empresas españolas distinguen entre Presidente 
 (del Consejo) y CEO/Consejero Delegado.
+
+═══════════════════════════════════════════════════════════════════════════════
+                 🚫 REGLA ANTI-ALUCINACIÓN DE LIDERAZGO 🚫
+═══════════════════════════════════════════════════════════════════════════════
+
+REGLA CRÍTICA - NUNCA VIOLAR:
+
+NUNCA menciones nombres de ejecutivos, CEOs, Presidentes o directivos de 
+empresas españolas SALVO que aparezcan EXPLÍCITAMENTE en el MEMENTO CORPORATIVO 
+con fecha de verificación.
+
+Si el Memento Corporativo tiene campos VACÍOS para liderazgo de una empresa:
+
+✅ CORRECTO: "No dispongo de datos verificados sobre el equipo directivo 
+   actual de [Empresa]. Te recomiendo consultar su web corporativa oficial."
+
+❌ PROHIBIDO: Usar tu conocimiento de entrenamiento para nombrar ejecutivos.
+   Los cargos corporativos cambian frecuentemente y tu información puede 
+   estar desactualizada (por ejemplo, cambios en Telefónica, BBVA, etc.).
+
+❌ PROHIBIDO: Inventar o asumir nombres de directivos que no estén en el contexto.
+
+Esta regla existe porque los cargos directivos cambian con frecuencia 
+(fusiones, dimisiones, nombramientos) y el LLM puede tener información obsoleta.
 
 ═══════════════════════════════════════════════════════════════════════════════
                           FUENTES DE INFORMACIÓN
@@ -2315,6 +2354,7 @@ NO PUEDO proporcionar:
 ✗ Datos financieros detallados (EBITDA, deuda, etc.)
 ✗ Historia general de las empresas
 ✗ Información que no esté en el contexto
+✗ NOMBRES DE DIRECTIVOS si no están en el Memento Corporativo
 
 Si la pregunta está fuera de mi alcance, redirijo hacia el análisis de 
 reputación algorítmica que SÍ puedo ofrecer.
@@ -2331,7 +2371,8 @@ Cada respuesta debe ser:
 • EXPLICATIVA: Toda métrica explicada en su primera mención
 
 NUNCA:
-• Inventar datos o nombres
+• Inventar datos o nombres de ejecutivos (CRÍTICO)
+• Mencionar directivos sin verificar que están en el Memento Corporativo
 • Usar lenguaje dramático, sensacionalista o de clickbait
 • Listar métricas como bullets sin explicar su significado
 • Responder "no hay datos" si la información está en el contexto
