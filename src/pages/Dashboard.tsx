@@ -718,11 +718,6 @@ export function Dashboard() {
                                   {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
                                 </span>
                               )}
-                              {rixRun.cxm_excluded && (
-                                <span className="text-[9px] text-muted-foreground italic block">
-                                  (sin CXM)
-                                </span>
-                              )}
                             </div>
                           )}
                         </TableCell>
