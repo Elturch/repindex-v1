@@ -395,8 +395,8 @@ export const VectorStorePanel: React.FC = () => {
         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
           <p className="font-medium mb-1">ℹ️ Fuentes de datos (sin límites)</p>
           <ul className="list-disc list-inside space-y-1">
-            <li><strong>RIX V1:</strong> Análisis históricos (Make.com) - 2 modelos</li>
-            <li><strong>RIX V2:</strong> Análisis nuevos (Lovable) - 7 IAs</li>
+            <li><strong>RIX V1:</strong> Análisis históricos (Make.com) - 4 modelos</li>
+            <li><strong>RIX V2:</strong> Análisis nuevos (Lovable) - 6 IAs</li>
             <li><strong>Noticias Corp:</strong> Artículos de blogs corporativos</li>
             <li>Cada fuente tiene su botón de sincronización individual</li>
           </ul>
