@@ -5,6 +5,8 @@ import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
+import { GrokIcon } from "@/components/ui/grok-icon";
+import { QwenIcon } from "@/components/ui/qwen-icon";
 import { ArrowRight } from "lucide-react";
 
 interface SiblingRixRun {
@@ -34,6 +36,12 @@ const getModelIcon = (modelName: string) => {
   }
   if (name.includes("deepseek")) {
     return DeepseekIcon;
+  }
+  if (name.includes("grok")) {
+    return GrokIcon;
+  }
+  if (name.includes("qwen")) {
+    return QwenIcon;
   }
   return ChatGPTIcon;
 };
