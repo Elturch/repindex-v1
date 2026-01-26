@@ -188,7 +188,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Send email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "RepIndex <noreply@repindex.ai>",
+      from: "RepIndex <no-reply@repindex.ai>",
       to: ["informes@hablamosde.com"],
       replyTo: [email],
       subject: `[Contacto Web] ${name}${company ? ` - ${company}` : ''}`,
