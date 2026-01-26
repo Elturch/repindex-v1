@@ -2,14 +2,17 @@ import { useState, KeyboardEvent, useEffect, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Send, FileText, Mic, MicOff } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Send, FileText, Mic, MicOff, Zap, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "./LanguageSelector";
 import { ChatLanguage } from "@/lib/chatLanguages";
 import { getChatTranslations } from "@/lib/chatTranslations";
 
+export type DepthLevel = 'quick' | 'complete' | 'exhaustive';
+
 interface ChatInputProps {
-  onSend: (message: string, options?: { bulletinMode?: boolean }) => void;
+  onSend: (message: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel }) => void;
   isLoading: boolean;
   placeholder?: string;
   compact?: boolean;
@@ -73,6 +76,7 @@ export function ChatInput({
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [bulletinModeActive, setBulletinModeActive] = useState(false);
+  const [depthLevel, setDepthLevel] = useState<DepthLevel>('complete');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tr = getChatTranslations(language.code);
@@ -156,8 +160,8 @@ export function ChatInput({
         recognitionRef.current.stop();
         setIsListening(false);
       }
-      // Send with bulletinMode flag if active
-      onSend(value.trim(), { bulletinMode: bulletinModeActive });
+      // Send with bulletinMode flag and depthLevel
+      onSend(value.trim(), { bulletinMode: bulletinModeActive, depthLevel });
       setValue("");
       setBulletinModeActive(false); // Reset after sending
     }
@@ -187,9 +191,62 @@ export function ChatInput({
   }, [value, bulletinModeActive]);
 
   return (
-    <div className="flex gap-2">
-      {/* Language Selector */}
-      <LanguageSelector
+    <div className="space-y-2">
+      {/* Depth Selector */}
+      {!compact && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{tr.depthLabel}:</span>
+          <TooltipProvider>
+            <ToggleGroup 
+              type="single" 
+              value={depthLevel} 
+              onValueChange={(v) => v && setDepthLevel(v as DepthLevel)}
+              size="sm"
+              className="gap-1"
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="quick" className="text-xs gap-1 h-7 px-2">
+                    <Zap className="h-3 w-3" />
+                    {tr.depthQuick}
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">{tr.depthQuickTooltip}</p>
+                </TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="complete" className="text-xs gap-1 h-7 px-2">
+                    <FileText className="h-3 w-3" />
+                    {tr.depthComplete}
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">{tr.depthCompleteTooltip}</p>
+                </TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <ToggleGroupItem value="exhaustive" className="text-xs gap-1 h-7 px-2">
+                    <BookOpen className="h-3 w-3" />
+                    {tr.depthExhaustive}
+                  </ToggleGroupItem>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p className="text-xs">{tr.depthExhaustiveTooltip}</p>
+                </TooltipContent>
+              </Tooltip>
+            </ToggleGroup>
+          </TooltipProvider>
+        </div>
+      )}
+      
+      <div className="flex gap-2">
+        {/* Language Selector */}
+        <LanguageSelector
         selectedLanguage={language}
         onLanguageChange={onLanguageChange}
         compact={compact}
@@ -268,6 +325,7 @@ export function ChatInput({
       >
         <Send className={compact ? "h-4 w-4" : "h-5 w-5"} />
       </Button>
+      </div>
     </div>
   );
 }
