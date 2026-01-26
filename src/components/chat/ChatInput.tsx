@@ -191,52 +191,93 @@ export function ChatInput({
   }, [value, bulletinModeActive]);
 
   return (
-    <div className="space-y-2">
-      {/* Depth Selector */}
+    <div className="space-y-3">
+      {/* Depth Selector - Prominent and clear */}
       {!compact && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{tr.depthLabel}:</span>
+        <div className="bg-muted/50 rounded-lg p-3 border border-border/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-foreground flex items-center gap-2">
+              📊 {tr.depthLabel}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {depthLevel === 'quick' && '⚡ ~30s'}
+              {depthLevel === 'complete' && '📋 ~1min'}
+              {depthLevel === 'exhaustive' && '📚 ~2min'}
+            </span>
+          </div>
           <TooltipProvider>
             <ToggleGroup 
               type="single" 
               value={depthLevel} 
               onValueChange={(v) => v && setDepthLevel(v as DepthLevel)}
-              size="sm"
-              className="gap-1"
+              className="w-full grid grid-cols-3 gap-2"
             >
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <ToggleGroupItem value="quick" className="text-xs gap-1 h-7 px-2">
-                    <Zap className="h-3 w-3" />
-                    {tr.depthQuick}
+                  <ToggleGroupItem 
+                    value="quick" 
+                    className={cn(
+                      "flex flex-col items-center gap-1 h-auto py-2.5 px-3 rounded-md border transition-all",
+                      depthLevel === 'quick' 
+                        ? "bg-amber-500/20 border-amber-500 text-amber-700 dark:text-amber-400 shadow-sm" 
+                        : "bg-background border-border hover:bg-muted hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <Zap className={cn(
+                      "h-5 w-5",
+                      depthLevel === 'quick' ? "text-amber-500" : "text-muted-foreground"
+                    )} />
+                    <span className="text-xs font-medium">{tr.depthQuick}</span>
                   </ToggleGroupItem>
                 </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p className="text-xs">{tr.depthQuickTooltip}</p>
+                <TooltipContent side="top" className="max-w-[200px]">
+                  <p className="text-xs font-medium">{tr.depthQuickTooltip}</p>
                 </TooltipContent>
               </Tooltip>
               
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <ToggleGroupItem value="complete" className="text-xs gap-1 h-7 px-2">
-                    <FileText className="h-3 w-3" />
-                    {tr.depthComplete}
+                  <ToggleGroupItem 
+                    value="complete" 
+                    className={cn(
+                      "flex flex-col items-center gap-1 h-auto py-2.5 px-3 rounded-md border transition-all",
+                      depthLevel === 'complete' 
+                        ? "bg-primary/20 border-primary text-primary shadow-sm" 
+                        : "bg-background border-border hover:bg-muted hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <FileText className={cn(
+                      "h-5 w-5",
+                      depthLevel === 'complete' ? "text-primary" : "text-muted-foreground"
+                    )} />
+                    <span className="text-xs font-medium">{tr.depthComplete}</span>
                   </ToggleGroupItem>
                 </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p className="text-xs">{tr.depthCompleteTooltip}</p>
+                <TooltipContent side="top" className="max-w-[200px]">
+                  <p className="text-xs font-medium">{tr.depthCompleteTooltip}</p>
                 </TooltipContent>
               </Tooltip>
               
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <ToggleGroupItem value="exhaustive" className="text-xs gap-1 h-7 px-2">
-                    <BookOpen className="h-3 w-3" />
-                    {tr.depthExhaustive}
+                  <ToggleGroupItem 
+                    value="exhaustive" 
+                    className={cn(
+                      "flex flex-col items-center gap-1 h-auto py-2.5 px-3 rounded-md border transition-all",
+                      depthLevel === 'exhaustive' 
+                        ? "bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-400 shadow-sm" 
+                        : "bg-background border-border hover:bg-muted hover:border-muted-foreground/30"
+                    )}
+                  >
+                    <BookOpen className={cn(
+                      "h-5 w-5",
+                      depthLevel === 'exhaustive' ? "text-purple-500" : "text-muted-foreground"
+                    )} />
+                    <span className="text-xs font-medium">{tr.depthExhaustive}</span>
                   </ToggleGroupItem>
                 </TooltipTrigger>
-                <TooltipContent side="top">
-                  <p className="text-xs">{tr.depthExhaustiveTooltip}</p>
+                <TooltipContent side="top" className="max-w-[200px]">
+                  <p className="text-xs font-medium">{tr.depthExhaustiveTooltip}</p>
                 </TooltipContent>
               </Tooltip>
             </ToggleGroup>
