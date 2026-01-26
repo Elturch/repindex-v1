@@ -43,7 +43,7 @@ export function ChatOnboardingTooltip({ onDismiss }: ChatOnboardingTooltipProps)
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.95 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="absolute bottom-full right-0 mb-3 w-72 z-50"
+          className="absolute bottom-full right-0 mb-3 w-72 z-[60]"
         >
           <div className="bg-card border-2 border-primary/20 rounded-xl shadow-xl p-4 relative">
             {/* Arrow pointing down */}
