@@ -44,7 +44,7 @@ interface ChatContextType {
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive' }) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -198,7 +198,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive' }) => {
+  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -248,7 +248,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     try {
-      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName, 'depth:', options?.depthLevel);
+      // Get role details if a role is selected
+      const role = options?.roleId ? getRoleById(options.roleId) : undefined;
+      
+      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName, 'depth:', options?.depthLevel, 'role:', options?.roleId);
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
           question,
@@ -263,6 +266,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
           languageName: language.nativeName,
           // Depth level
           depthLevel: options?.depthLevel || 'complete',
+          // Pre-selected role (NEW)
+          roleId: role?.id,
+          roleName: role ? `${role.emoji} ${role.name}` : undefined,
+          rolePrompt: role?.prompt,
         },
       });
 

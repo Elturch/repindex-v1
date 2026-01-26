@@ -101,6 +101,12 @@ export interface ChatUITranslations {
   depthCompleteTooltip: string;
   depthExhaustiveTooltip: string;
   
+  // Role selector
+  roleLabel: string;
+  roleGeneral: string;
+  selectRole: string;
+  configureAnalysis: string;
+  
   // Drumroll question
   drumrollTitle: string;
   drumrollAction: string;
@@ -186,6 +192,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'Síntesis ejecutiva en 30 segundos',
     depthCompleteTooltip: 'Informe completo con análisis detallado',
     depthExhaustiveTooltip: 'Análisis exhaustivo con todas las métricas',
+    // Role selector
+    roleLabel: 'Perspectiva',
+    roleGeneral: 'General',
+    selectRole: 'Selecciona perspectiva',
+    configureAnalysis: 'Configura tu análisis',
     // Drumroll question
     drumrollTitle: 'Informe Complementario Sugerido',
     drumrollAction: 'Generar este informe',
@@ -268,6 +279,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'Executive synthesis in 30 seconds',
     depthCompleteTooltip: 'Complete report with detailed analysis',
     depthExhaustiveTooltip: 'Exhaustive analysis with all metrics',
+    // Role selector
+    roleLabel: 'Perspective',
+    roleGeneral: 'General',
+    selectRole: 'Select perspective',
+    configureAnalysis: 'Configure your analysis',
     // Drumroll question
     drumrollTitle: 'Suggested Complementary Report',
     drumrollAction: 'Generate this report',
@@ -350,6 +366,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'Synthèse exécutive en 30 secondes',
     depthCompleteTooltip: 'Rapport complet avec analyse détaillée',
     depthExhaustiveTooltip: 'Analyse exhaustive avec toutes les métriques',
+    // Role selector
+    roleLabel: 'Perspective',
+    roleGeneral: 'Général',
+    selectRole: 'Sélectionner perspective',
+    configureAnalysis: 'Configurez votre analyse',
     // Drumroll question
     drumrollTitle: 'Rapport Complémentaire Suggéré',
     drumrollAction: 'Générer ce rapport',
@@ -432,6 +453,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'Exekutive Synthese in 30 Sekunden',
     depthCompleteTooltip: 'Vollständiger Bericht mit detaillierter Analyse',
     depthExhaustiveTooltip: 'Erschöpfende Analyse mit allen Metriken',
+    // Role selector
+    roleLabel: 'Perspektive',
+    roleGeneral: 'Allgemein',
+    selectRole: 'Perspektive wählen',
+    configureAnalysis: 'Konfigurieren Sie Ihre Analyse',
     // Drumroll question
     drumrollTitle: 'Vorgeschlagener Ergänzungsbericht',
     drumrollAction: 'Diesen Bericht erstellen',
@@ -514,6 +540,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'Síntese executiva em 30 segundos',
     depthCompleteTooltip: 'Relatório completo com análise detalhada',
     depthExhaustiveTooltip: 'Análise exaustiva com todas as métricas',
+    // Role selector
+    roleLabel: 'Perspectiva',
+    roleGeneral: 'Geral',
+    selectRole: 'Selecionar perspectiva',
+    configureAnalysis: 'Configure sua análise',
     // Drumroll question
     drumrollTitle: 'Relatório Complementar Sugerido',
     drumrollAction: 'Gerar este relatório',
@@ -596,6 +627,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'Sintesi esecutiva in 30 secondi',
     depthCompleteTooltip: 'Rapporto completo con analisi dettagliata',
     depthExhaustiveTooltip: 'Analisi esaustiva con tutte le metriche',
+    // Role selector
+    roleLabel: 'Prospettiva',
+    roleGeneral: 'Generale',
+    selectRole: 'Seleziona prospettiva',
+    configureAnalysis: 'Configura la tua analisi',
     // Drumroll question
     drumrollTitle: 'Rapporto Complementare Suggerito',
     drumrollAction: 'Genera questo rapporto',
@@ -678,6 +714,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: 'ملخص تنفيذي في 30 ثانية',
     depthCompleteTooltip: 'تقرير كامل مع تحليل مفصل',
     depthExhaustiveTooltip: 'تحليل شامل مع جميع المقاييس',
+    // Role selector
+    roleLabel: 'المنظور',
+    roleGeneral: 'عام',
+    selectRole: 'اختر المنظور',
+    configureAnalysis: 'قم بتكوين تحليلك',
     // Drumroll question
     drumrollTitle: 'تقرير تكميلي مقترح',
     drumrollAction: 'إنشاء هذا التقرير',
@@ -760,6 +801,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: '30秒执行摘要',
     depthCompleteTooltip: '包含详细分析的完整报告',
     depthExhaustiveTooltip: '包含所有指标的详尽分析',
+    // Role selector
+    roleLabel: '视角',
+    roleGeneral: '通用',
+    selectRole: '选择视角',
+    configureAnalysis: '配置您的分析',
     // Drumroll question
     drumrollTitle: '建议的补充报告',
     drumrollAction: '生成此报告',
@@ -842,6 +888,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: '30秒でエグゼクティブサマリー',
     depthCompleteTooltip: '詳細な分析を含む完全なレポート',
     depthExhaustiveTooltip: 'すべてのメトリクスを含む網羅的な分析',
+    // Role selector
+    roleLabel: '視点',
+    roleGeneral: '一般',
+    selectRole: '視点を選択',
+    configureAnalysis: '分析を設定',
     // Drumroll question
     drumrollTitle: '推奨補完レポート',
     drumrollAction: 'このレポートを生成',
@@ -924,6 +975,11 @@ const translations: Record<string, ChatUITranslations> = {
     depthQuickTooltip: '30초 이내 경영진 요약',
     depthCompleteTooltip: '상세 분석이 포함된 전체 보고서',
     depthExhaustiveTooltip: '모든 지표가 포함된 상세 분석',
+    // Role selector
+    roleLabel: '관점',
+    roleGeneral: '일반',
+    selectRole: '관점 선택',
+    configureAnalysis: '분석 설정',
     // Drumroll question
     drumrollTitle: '권장 보완 보고서',
     drumrollAction: '이 보고서 생성',
