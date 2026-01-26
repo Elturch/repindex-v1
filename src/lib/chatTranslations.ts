@@ -106,6 +106,7 @@ export interface ChatUITranslations {
   roleGeneral: string;
   selectRole: string;
   configureAnalysis: string;
+  selectConfigBeforeSending: string;
   
   // Drumroll question
   drumrollTitle: string;
@@ -197,6 +198,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'General',
     selectRole: 'Selecciona perspectiva',
     configureAnalysis: 'Configura tu análisis',
+    selectConfigBeforeSending: 'Selecciona el tipo de informe y perspectiva antes de enviar',
     // Drumroll question
     drumrollTitle: 'Informe Complementario Sugerido',
     drumrollAction: 'Generar este informe',
@@ -284,6 +286,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'General',
     selectRole: 'Select perspective',
     configureAnalysis: 'Configure your analysis',
+    selectConfigBeforeSending: 'Select report type and perspective before sending',
     // Drumroll question
     drumrollTitle: 'Suggested Complementary Report',
     drumrollAction: 'Generate this report',
@@ -371,6 +374,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'Général',
     selectRole: 'Sélectionner perspective',
     configureAnalysis: 'Configurez votre analyse',
+    selectConfigBeforeSending: 'Sélectionnez le type de rapport et la perspective avant d\'envoyer',
     // Drumroll question
     drumrollTitle: 'Rapport Complémentaire Suggéré',
     drumrollAction: 'Générer ce rapport',
@@ -458,6 +462,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'Allgemein',
     selectRole: 'Perspektive wählen',
     configureAnalysis: 'Konfigurieren Sie Ihre Analyse',
+    selectConfigBeforeSending: 'Wählen Sie Berichtstyp und Perspektive vor dem Senden',
     // Drumroll question
     drumrollTitle: 'Vorgeschlagener Ergänzungsbericht',
     drumrollAction: 'Diesen Bericht erstellen',
@@ -545,6 +550,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'Geral',
     selectRole: 'Selecionar perspectiva',
     configureAnalysis: 'Configure sua análise',
+    selectConfigBeforeSending: 'Selecione o tipo de relatório e perspectiva antes de enviar',
     // Drumroll question
     drumrollTitle: 'Relatório Complementar Sugerido',
     drumrollAction: 'Gerar este relatório',
@@ -632,6 +638,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'Generale',
     selectRole: 'Seleziona prospettiva',
     configureAnalysis: 'Configura la tua analisi',
+    selectConfigBeforeSending: 'Seleziona il tipo di rapporto e la prospettiva prima di inviare',
     // Drumroll question
     drumrollTitle: 'Rapporto Complementare Suggerito',
     drumrollAction: 'Genera questo rapporto',
@@ -719,6 +726,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: 'عام',
     selectRole: 'اختر المنظور',
     configureAnalysis: 'قم بتكوين تحليلك',
+    selectConfigBeforeSending: 'حدد نوع التقرير والمنظور قبل الإرسال',
     // Drumroll question
     drumrollTitle: 'تقرير تكميلي مقترح',
     drumrollAction: 'إنشاء هذا التقرير',
@@ -806,6 +814,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: '通用',
     selectRole: '选择视角',
     configureAnalysis: '配置您的分析',
+    selectConfigBeforeSending: '发送前请选择报告类型和视角',
     // Drumroll question
     drumrollTitle: '建议的补充报告',
     drumrollAction: '生成此报告',
@@ -893,6 +902,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: '一般',
     selectRole: '視点を選択',
     configureAnalysis: '分析を設定',
+    selectConfigBeforeSending: '送信前にレポートタイプと視点を選択してください',
     // Drumroll question
     drumrollTitle: '推奨補完レポート',
     drumrollAction: 'このレポートを生成',
@@ -980,6 +990,7 @@ const translations: Record<string, ChatUITranslations> = {
     roleGeneral: '일반',
     selectRole: '관점 선택',
     configureAnalysis: '분석 설정',
+    selectConfigBeforeSending: '보내기 전에 보고서 유형과 관점을 선택하세요',
     // Drumroll question
     drumrollTitle: '권장 보완 보고서',
     drumrollAction: '이 보고서 생성',

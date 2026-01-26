@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Send, FileText, Mic, MicOff, Zap, BookOpen, User } from "lucide-react";
+import { Send, FileText, Mic, MicOff, Zap, BookOpen, User, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "./LanguageSelector";
 import { ChatLanguage } from "@/lib/chatLanguages";
@@ -83,6 +83,8 @@ export function ChatInput({
   const [bulletinModeActive, setBulletinModeActive] = useState(false);
   const [depthLevel, setDepthLevel] = useState<DepthLevel>('complete');
   const [selectedRoleId, setSelectedRoleId] = useState<string>('general');
+  const [depthConfirmed, setDepthConfirmed] = useState(false);
+  const [roleConfirmed, setRoleConfirmed] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tr = getChatTranslations(language.code);
@@ -162,8 +164,10 @@ export function ChatInput({
     }
   };
 
+  const canSend = value.trim() && !isLoading && depthConfirmed && roleConfirmed;
+
   const handleSend = () => {
-    if (value.trim() && !isLoading) {
+    if (canSend) {
       if (isListening && recognitionRef.current) {
         recognitionRef.current.stop();
         setIsListening(false);
@@ -176,6 +180,9 @@ export function ChatInput({
       });
       setValue("");
       setBulletinModeActive(false);
+      // Reset confirmations for next message
+      setDepthConfirmed(false);
+      setRoleConfirmed(false);
     }
   };
 
@@ -222,13 +229,21 @@ export function ChatInput({
           
           <div className="flex flex-col sm:flex-row gap-3">
             {/* Depth Selector */}
-            <div className="flex-1">
+            <div className={cn(
+              "flex-1 rounded-lg transition-all",
+              !depthConfirmed && "ring-2 ring-amber-400/50 ring-offset-1 animate-pulse"
+            )}>
               <div className="text-xs text-muted-foreground mb-1.5 font-medium">{tr.depthLabel}</div>
               <TooltipProvider>
                 <ToggleGroup 
                   type="single" 
                   value={depthLevel} 
-                  onValueChange={(v) => v && setDepthLevel(v as DepthLevel)}
+                  onValueChange={(v) => {
+                    if (v) {
+                      setDepthLevel(v as DepthLevel);
+                      setDepthConfirmed(true);
+                    }
+                  }}
                   className="w-full grid grid-cols-3 gap-1.5"
                 >
                   <Tooltip>
@@ -304,9 +319,15 @@ export function ChatInput({
             </div>
 
             {/* Role Selector */}
-            <div className="sm:w-48">
+            <div className={cn(
+              "sm:w-48 rounded-lg transition-all",
+              !roleConfirmed && "ring-2 ring-amber-400/50 ring-offset-1 animate-pulse"
+            )}>
               <div className="text-xs text-muted-foreground mb-1.5 font-medium">{tr.roleLabel}</div>
-              <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
+              <Select value={selectedRoleId} onValueChange={(v) => {
+                setSelectedRoleId(v);
+                setRoleConfirmed(true);
+              }}>
                 <SelectTrigger 
                   className={cn(
                     "w-full h-auto py-2 transition-all",
@@ -368,6 +389,14 @@ export function ChatInput({
               </Select>
             </div>
           </div>
+          
+          {/* Warning message when not confirmed */}
+          {(!depthConfirmed || !roleConfirmed) && (
+            <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 mt-2">
+              <AlertCircle className="h-3.5 w-3.5" />
+              <span>{tr.selectConfigBeforeSending}</span>
+            </div>
+          )}
         </div>
       )}
       
@@ -447,7 +476,7 @@ export function ChatInput({
         />
         <Button
           onClick={handleSend}
-          disabled={!value.trim() || isLoading}
+          disabled={!canSend}
           size={compact ? "sm" : "default"}
         >
           <Send className={compact ? "h-4 w-4" : "h-5 w-5"} />
