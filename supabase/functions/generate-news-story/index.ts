@@ -787,7 +787,7 @@ ${weekData.ibexBottom?.map((c: any, i: number) =>
 
 ### CONTEXTO REPINDEX:
 - RepIndex analiza semanalmente la reputación de más de 160 empresas españolas
-- 4 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
+- 6 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen
 - Escala RIX: 0-100 puntos (mayor = mejor reputación percibida por las IAs)
 - Panel incluye IBEX-35, cotizadas menores y grandes empresas privadas
 - 8 métricas: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM

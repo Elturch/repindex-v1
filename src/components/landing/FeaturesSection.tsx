@@ -7,7 +7,7 @@ const features = [
   {
     icon: FaRobot,
     title: "Análisis Multi-IA",
-    description: "Evaluaciones desde 4 modelos de IA: ChatGPT, Google Gemini, Perplexity y Deepseek",
+    description: "Evaluaciones desde 6 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek, Grok y Qwen",
     color: "text-chatgpt"
   },
   {

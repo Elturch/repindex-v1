@@ -52,7 +52,7 @@ export function SEOHead() {
     "@id": "https://repindex.ai/#dataset",
     "name": "RepIndex Corporate Reputation Index",
     "alternateName": "RIX Score Dataset",
-    "description": `Índice semanal de reputación corporativa basado en análisis de 4 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek) sobre más de ${issuerCountFormatted} empresas españolas, incluyendo IBEX-35, IBEX Medium Cap e IBEX Small Cap.`,
+    "description": `Índice semanal de reputación corporativa basado en análisis de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) sobre más de ${issuerCountFormatted} empresas españolas, incluyendo IBEX-35, IBEX Medium Cap e IBEX Small Cap.`,
     "url": "https://repindex.ai",
     "keywords": [
       "reputación corporativa",
@@ -124,7 +124,7 @@ export function SEOHead() {
         "description": "Experiencia del Cliente"
       }
     ],
-    "measurementTechnique": "Análisis semanal de respuestas de 4 modelos de IA líderes sobre reputación corporativa",
+    "measurementTechnique": "Análisis semanal de respuestas de 6 modelos de IA líderes sobre reputación corporativa",
     "distribution": {
       "@type": "DataDownload",
       "encodingFormat": "application/json",

@@ -10,15 +10,15 @@ import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 const getfaqs = (issuerCount: string) => [
   {
     question: "¿Qué es el índice RIX?",
-    answer: "El RIX (Reputation Index) es una puntuación de 0 a 100 que mide cómo las principales inteligencias artificiales (ChatGPT, Perplexity, Gemini y DeepSeek) perciben y describen la reputación de una empresa. Se calcula semanalmente analizando las respuestas de estos 4 modelos de IA sobre cada compañía."
+    answer: "El RIX (Reputation Index) es una puntuación de 0 a 100 que mide cómo las principales inteligencias artificiales (ChatGPT, Perplexity, Gemini, DeepSeek, Grok y Qwen) perciben y describen la reputación de una empresa. Se calcula semanalmente analizando las respuestas de estos 6 modelos de IA sobre cada compañía."
   },
   {
     question: "¿Con qué frecuencia se actualizan los datos?",
-    answer: "Los datos del RepIndex se actualizan semanalmente. Cada domingo realizamos nuevas consultas a los 4 modelos de IA y procesamos los resultados. El análisis editorial del Newsroom se publica cada lunes con las noticias más relevantes de la semana."
+    answer: "Los datos del RepIndex se actualizan semanalmente. Cada domingo realizamos nuevas consultas a los 6 modelos de IA y procesamos los resultados. El análisis editorial del Newsroom se publica cada lunes con las noticias más relevantes de la semana."
   },
   {
     question: "¿Qué modelos de IA se analizan?",
-    answer: "Analizamos los 4 principales modelos de IA del mercado: ChatGPT (OpenAI GPT-4o), Perplexity (búsqueda con fuentes), Gemini (Google) y DeepSeek-R1. Estos modelos representan la visión más influyente de cómo la IA percibe a las empresas."
+    answer: "Analizamos los 6 principales modelos de IA del mercado: ChatGPT (OpenAI), Perplexity (búsqueda con fuentes), Gemini (Google), DeepSeek-R1, Grok (xAI) y Qwen (Alibaba). Estos modelos representan la visión más influyente de cómo la IA percibe a las empresas."
   },
   {
     question: "¿Qué empresas cubre RepIndex?",
