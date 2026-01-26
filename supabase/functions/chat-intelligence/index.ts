@@ -219,6 +219,249 @@ async function callAISimple(
 }
 
 // =============================================================================
+// DEPTH-BASED PROMPT INSTRUCTIONS (PYRAMID STRUCTURE)
+// =============================================================================
+function buildDepthPrompt(depthLevel: 'quick' | 'complete' | 'exhaustive', languageName: string): string {
+  const depthInstructions: Record<string, string> = {
+    quick: `
+═══════════════════════════════════════════════════════════════════════════════
+            FORMATO REQUERIDO: SÍNTESIS EJECUTIVA (máximo 500 palabras)
+═══════════════════════════════════════════════════════════════════════════════
+
+Estructura OBLIGATORIA (respeta este orden exacto):
+
+## Síntesis Estratégica
+Un párrafo denso (4-5 líneas) con la conclusión principal. El directivo debe 
+captar la esencia en 30 segundos. Incluye el veredicto claro y la recomendación.
+
+## Puntos Clave
+• [Punto 1]: Una línea con dato concreto y su implicación
+• [Punto 2]: Una línea con dato concreto y su implicación  
+• [Punto 3]: Una línea con dato concreto y su implicación
+
+## Recomendación
+Una frase directa de acción si procede.
+
+PROHIBIDO en este nivel:
+- Tablas detalladas de métricas
+- Citas individuales de modelos de IA
+- Explicaciones extensas de métricas
+- Más de 500 palabras
+- Listas largas de bullets
+
+RECUERDA: Este es un resumen ejecutivo para quien tiene 30 segundos.
+`,
+
+    complete: `
+═══════════════════════════════════════════════════════════════════════════════
+         FORMATO REQUERIDO: INFORME EJECUTIVO COMPLETO (máximo 1800 palabras)
+═══════════════════════════════════════════════════════════════════════════════
+
+Estructura OBLIGATORIA (respeta este orden exacto):
+
+## Síntesis Estratégica
+Párrafo denso (5-6 líneas) con conclusión principal y recomendación estratégica.
+Debe ser presentable a comité de dirección sin más contexto.
+Este párrafo debe poder leerse de forma independiente.
+
+## Análisis Interpretativo
+Narrativa de 3-4 párrafos donde las IAs son BASE DE PENSAMIENTO, no protagonistas.
+IMPORTANTE:
+- Usa expresiones como: "la percepción algorítmica indica...", "el consenso de 
+  modelos refleja...", "el análisis multi-IA sugiere..."
+- NO nombres individuales de IAs excepto para divergencias significativas (>12 pts)
+- Contextualiza con comparativas sectoriales cuando sea relevante
+- Cada afirmación debe estar respaldada por datos del contexto
+
+## Tabla Resumen
+Incluye UNA tabla comparativa si hay datos de múltiples empresas o modelos.
+
+| Empresa/Modelo | RIX Promedio | Tendencia | Fortaleza Principal | Debilidad Principal |
+|----------------|--------------|-----------|---------------------|---------------------|
+
+## Conclusiones
+2-3 puntos accionables basados en el análisis:
+1. **Prioridad inmediata**: Acción concreta para esta semana
+2. **Prioridad táctica**: Acción para el próximo mes
+3. **Visión estratégica**: Dirección a largo plazo (opcional)
+
+RECUERDA: Este informe se presenta a alta dirección. Profesionalismo absoluto.
+`,
+
+    exhaustive: `
+═══════════════════════════════════════════════════════════════════════════════
+         FORMATO REQUERIDO: INFORME EXHAUSTIVO (máximo 4500 palabras)
+═══════════════════════════════════════════════════════════════════════════════
+
+Estructura OBLIGATORIA (respeta este orden exacto):
+
+## 1. Síntesis Estratégica
+Conclusión contundente de 6-8 líneas para comité de dirección.
+Incluye: hallazgo principal, implicación estratégica, recomendación clara.
+Este párrafo debe poder presentarse de forma independiente en un comité ejecutivo.
+
+## 2. Análisis Interpretativo
+Narrativa profesional de 4-5 párrafos integrando patrones y señales.
+IMPORTANTE:
+- Contextualiza cada afirmación con datos específicos del contexto
+- Explica las métricas en su primera mención (nombre completo + sigla)
+- Identifica causas probables de los patrones observados
+- Conecta los hallazgos con implicaciones de negocio
+- Menciona modelos de IA solo cuando hay divergencias significativas (>12 pts)
+
+## 3. Base Empírica
+
+### 3.1 Tabla de Scores por Modelo
+| Empresa | ChatGPT | Perplexity | Gemini | DeepSeek | Promedio | Divergencia |
+|---------|---------|------------|--------|----------|----------|-------------|
+[Incluir TODOS los datos disponibles]
+
+### 3.2 Desglose de Métricas
+Para cada métrica relevante (solo si hay datos):
+- **NVM (Narrativa y Visibilidad Mediática)**: [Score] - [Interpretación ejecutiva]
+- **DRM (Reputación Digital)**: [Score] - [Interpretación ejecutiva]
+- **SIM (Imagen Social)**: [Score] - [Interpretación ejecutiva]
+- **RMM (Riesgo y Gestión de Crisis)**: [Score] - [Interpretación ejecutiva]
+- **CEM (Comunicación y Engagement)**: [Score] - [Interpretación ejecutiva]
+- **GAM (Gobierno y Transparencia)**: [Score] - [Interpretación ejecutiva]
+- **DCM (Diferenciación Competitiva)**: [Score] - [Interpretación ejecutiva]
+- **CXM (Experiencia de Cliente)**: [Score] - [Interpretación ejecutiva]
+
+### 3.3 Evolución Temporal
+Tendencia de las últimas 4 semanas si hay datos disponibles.
+| Semana | RIX Promedio | Variación | Evento Clave |
+|--------|--------------|-----------|--------------|
+
+### 3.4 Comparativa Competitiva
+Posicionamiento frente a competidores directos del sector.
+| Posición | Empresa | RIX | Distancia al líder |
+|----------|---------|-----|---------------------|
+
+## 4. Citas Relevantes
+Extractos textuales de los modelos de IA que respaldan el análisis.
+> "Cita textual del modelo X sobre aspecto Y" — [Modelo]
+
+## 5. Recomendaciones
+Plan de acción en 3 horizontes temporales:
+1. **Inmediato** (esta semana): [Acción concreta con responsable sugerido]
+2. **Corto plazo** (próximo mes): [Acción táctica con KPIs]
+3. **Estratégico** (próximo trimestre): [Visión y objetivos]
+
+RECUERDA: Este es un informe de consultoría estratégica. Máximo rigor y profundidad.
+`
+  };
+
+  return depthInstructions[depthLevel] || depthInstructions.complete;
+}
+
+// =============================================================================
+// DRUMROLL QUESTION GENERATOR (Complementary Report Suggestion)
+// =============================================================================
+interface DrumrollQuestion {
+  title: string;
+  fullQuestion: string;
+  teaser: string;
+  reportType: 'competitive' | 'vulnerabilities' | 'projection' | 'sector';
+}
+
+async function generateDrumrollQuestion(
+  originalQuestion: string,
+  generatedAnswer: string,
+  detectedCompanies: { ticker: string; issuer_name: string; sector_category?: string }[],
+  allCompaniesCache: any[] | null,
+  language: string,
+  languageName: string,
+  logPrefix: string
+): Promise<DrumrollQuestion | null> {
+  
+  // Solo generar para preguntas corporativas con suficiente contexto
+  if (detectedCompanies.length === 0) {
+    console.log(`${logPrefix} No drumroll: no companies detected`);
+    return null;
+  }
+
+  const primaryCompany = detectedCompanies[0];
+  const sectorInfo = primaryCompany.sector_category || null;
+  
+  // Encontrar competidores del mismo sector
+  let competitors: string[] = [];
+  if (sectorInfo && allCompaniesCache) {
+    competitors = allCompaniesCache
+      .filter(c => c.sector_category === sectorInfo && c.ticker !== primaryCompany.ticker)
+      .slice(0, 5)
+      .map(c => c.issuer_name);
+  }
+  
+  const drumrollPrompt = `Acabas de generar un análisis sobre: "${originalQuestion}"
+
+CONTEXTO:
+- Empresa principal analizada: ${primaryCompany.issuer_name} (${primaryCompany.ticker})
+- Sector: ${sectorInfo || 'No específico'}
+- Competidores en el sector: ${competitors.join(', ') || 'No identificados'}
+- Otras empresas mencionadas: ${detectedCompanies.slice(1).map(c => c.issuer_name).join(', ') || 'Ninguna'}
+
+EXTRACTO DE LA RESPUESTA GENERADA (primeros 500 chars):
+${generatedAnswer.substring(0, 500)}...
+
+TU MISIÓN: Proponer UN informe complementario de ALTO VALOR que el usuario NO pidió pero NECESITA para completar su visión estratégica.
+
+TIPOS DE INFORMES (elige el más valioso dado el contexto):
+1. **competitive**: Mapa competitivo con rivales directos - IDEAL si analizó una empresa sola
+2. **vulnerabilities**: Análisis profundo de puntos débiles detectados - IDEAL si hay métricas bajas
+3. **projection**: Escenarios futuros basados en tendencias - IDEAL si hay evolución temporal
+4. **sector**: Panorama completo del sector con todos los players - IDEAL si preguntó por una empresa específica
+
+REGLAS CRÍTICAS:
+- El informe debe COMPLEMENTAR, no repetir lo ya dicho
+- Debe revelar algo NO OBVIO que emerja de cruzar datos
+- El título debe ser MAGNÉTICO y específico (max 12 palabras)
+- El teaser debe generar CURIOSIDAD inmediata sin revelarlo todo
+- La fullQuestion debe ser ejecutable directamente en el chat
+
+IDIOMA: Genera TODO en ${languageName}
+
+Responde SOLO en JSON válido (sin markdown):
+{
+  "title": "Título magnético del informe sugerido",
+  "fullQuestion": "La pregunta exacta que el usuario debería hacer para obtener este informe (en ${languageName})",
+  "teaser": "1-2 frases que adelanten el valor sin revelarlo todo",
+  "reportType": "competitive|vulnerabilities|projection|sector"
+}`;
+
+  try {
+    const result = await callAISimple(
+      [
+        { role: 'system', content: `Eres un estratega de inteligencia competitiva de élite. Propones análisis de alto valor que complementan lo ya analizado. Responde SOLO en JSON válido sin bloques de código.` },
+        { role: 'user', content: drumrollPrompt }
+      ],
+      'gpt-4o-mini',
+      500,
+      logPrefix
+    );
+    
+    if (!result) {
+      console.log(`${logPrefix} No drumroll: AI returned null`);
+      return null;
+    }
+    
+    const cleanResult = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(cleanResult);
+    
+    // Validar estructura completa
+    if (parsed.title && parsed.fullQuestion && parsed.teaser && parsed.reportType) {
+      console.log(`${logPrefix} Drumroll question generated: "${parsed.title}" (${parsed.reportType})`);
+      return parsed as DrumrollQuestion;
+    }
+    
+    console.log(`${logPrefix} No drumroll: invalid structure`, parsed);
+    return null;
+  } catch (error) {
+    console.warn(`${logPrefix} Error generating drumroll question:`, error);
+    return null;
+  }
+}
+
+// =============================================================================
 // BULLETIN DETECTION PATTERNS
 // =============================================================================
 const BULLETIN_PATTERNS = [
@@ -2553,6 +2796,8 @@ NUNCA:
 • Responder "no hay datos" si la información está en el contexto
 • Terminar con llamadas a la acción comerciales
 
+${buildDepthPrompt(depthLevel, languageName)}
+
 [IDIOMA: Responde en ${languageName}]`;
 
   const userPrompt = `[IDIOMA: ${languageName.toUpperCase()}]
@@ -2998,14 +3243,36 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       }
     }
 
-    // Save to database
+    // =============================================================================
+    // GENERATE DRUMROLL QUESTION (Complementary Report Suggestion)
+    // Only for complete/exhaustive depth levels, not for quick
+    // =============================================================================
+    let drumrollQuestion: DrumrollQuestion | null = null;
+    if (depthLevel !== 'quick' && detectedCompanies.length > 0) {
+      console.log(`${logPrefix} Generating drumroll question for ${detectedCompanies[0]?.issuer_name}...`);
+      drumrollQuestion = await generateDrumrollQuestion(
+        question,
+        answer,
+        detectedCompanies,
+        companiesCache,
+        language,
+        languageName,
+        logPrefix
+      );
+    }
+
+    // Determine question category (simplified classification)
+    const questionCategory = detectedCompanies.length > 0 ? 'corporate_analysis' : 'general_query';
+
+    // Save to database with new fields
     if (sessionId) {
       await supabaseClient.from('chat_intelligence_sessions').insert([
         {
           session_id: sessionId,
           role: 'user',
           content: question,
-          user_id: userId
+          user_id: userId,
+          depth_level: depthLevel
         },
         {
           session_id: sessionId,
@@ -3014,6 +3281,9 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
           documents_found: vectorDocs?.length || 0,
           structured_data_found: allRixData?.length || 0,
           suggested_questions: suggestedQuestions,
+          drumroll_question: drumrollQuestion,
+          depth_level: depthLevel,
+          question_category: questionCategory,
           user_id: userId
         }
       ]);
@@ -3023,11 +3293,14 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       JSON.stringify({
         answer,
         suggestedQuestions,
+        drumrollQuestion,
         metadata: {
           documentsFound: vectorDocs?.length || 0,
           structuredDataFound: allRixData?.length || 0,
           dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0,
           aiProvider: chatResult.provider,
+          depthLevel,
+          questionCategory,
         }
       }),
       {
@@ -3041,11 +3314,14 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       JSON.stringify({
         answer,
         suggestedQuestions: [],
+        drumrollQuestion: null,
         metadata: {
           documentsFound: vectorDocs?.length || 0,
           structuredDataFound: allRixData?.length || 0,
           dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0,
           aiProvider: chatResult.provider,
+          depthLevel,
+          questionCategory: 'error',
         }
       }),
       {
