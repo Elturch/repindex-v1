@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.corporate-scrape-orchestrator]
 verify_jwt = false
+
+[functions.send-contact-form]
+verify_jwt = false
