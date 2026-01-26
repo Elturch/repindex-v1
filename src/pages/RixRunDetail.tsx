@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
-import { useRixRun } from "@/hooks/useRixRuns";
-import { useMarketAverages } from "@/hooks/useMarketAverages";
-import { useSiblingRixRuns } from "@/hooks/useSiblingRixRuns";
+import { useUnifiedRixRun } from "@/hooks/useUnifiedRixRuns";
+import { useUnifiedMarketAverages } from "@/hooks/useUnifiedMarketAverages";
+import { useUnifiedSiblingRuns } from "@/hooks/useUnifiedSiblingRuns";
 import { useChatContext } from "@/contexts/ChatContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,27 +19,29 @@ import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
+import { GrokIcon } from "@/components/ui/grok-icon";
+import { QwenIcon } from "@/components/ui/qwen-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 import { AlertCircle, CheckCircle, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 export function RixRunDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: rixRun, isLoading, error } = useRixRun(id!);
+  const { data: rixRun, isLoading, error } = useUnifiedRixRun(id);
   const [isMetricsCollapsed, setIsMetricsCollapsed] = useState(true);
   
   // Fetch market averages for the same period
-  const { data: marketAverages } = useMarketAverages(
-    rixRun?.["06_period_from"], 
-    rixRun?.["07_period_to"]
+  const { data: marketAverages } = useUnifiedMarketAverages(
+    rixRun?.period_from, 
+    rixRun?.period_to
   );
   
   // Fetch sibling AI evaluations (other models for same company/week)
-  const { data: siblingRuns, isLoading: siblingsLoading } = useSiblingRixRuns(
-    rixRun?.["05_ticker"],
-    rixRun?.["06_period_from"],
-    rixRun?.["07_period_to"],
-    rixRun?.["02_model_name"]
+  const { data: siblingRuns, isLoading: siblingsLoading } = useUnifiedSiblingRuns(
+    rixRun?.ticker,
+    rixRun?.period_from,
+    rixRun?.period_to,
+    rixRun?.model_name
   );
   
   const { setPageContext } = useChatContext();
@@ -48,13 +50,13 @@ export function RixRunDetail() {
   useEffect(() => {
     if (rixRun) {
       setPageContext({
-        name: `Detalle: ${rixRun["03_target_name"]}`,
+        name: `Detalle: ${rixRun.target_name}`,
         path: `/rix-run/${id}`,
         dynamicData: {
-          companyName: rixRun["03_target_name"],
-          ticker: rixRun["05_ticker"],
-          modelName: rixRun["02_model_name"],
-          rixScore: rixRun.displayRixScore ?? rixRun["09_rix_score"],
+          companyName: rixRun.target_name,
+          ticker: rixRun.ticker,
+          modelName: rixRun.model_name,
+          rixScore: rixRun.displayRixScore ?? rixRun.rix_score,
           sector: rixRun.repindex_root_issuers?.sector_category,
           ibexFamily: rixRun.repindex_root_issuers?.ibex_family_code,
         }
@@ -62,7 +64,7 @@ export function RixRunDetail() {
     }
   }, [rixRun, id, setPageContext]);
 
-  const formatDateRange = (from?: string, to?: string) => {
+  const formatDateRange = (from?: string | null, to?: string | null) => {
     if (!from && !to) return "N/A";
     if (!to) return from ? new Date(from).toLocaleDateString() : "N/A";
     if (!from) return to ? new Date(to).toLocaleDateString() : "N/A";
@@ -101,34 +103,22 @@ export function RixRunDetail() {
   }
 
   const metrics = [
-    { key: 'rix', label: 'Índice RIX', fullName: 'Reputation Index', score: rixRun.displayRixScore ?? rixRun["09_rix_score"], peso: 100, categoria: (rixRun.displayRixScore ?? rixRun["09_rix_score"]) >= 70 ? 'Bueno' : (rixRun.displayRixScore ?? rixRun["09_rix_score"]) >= 40 ? 'Mejorable' : 'Insuficiente' },
-    { key: 'nvm', label: 'Calidad de la Narrativa', fullName: 'Narrative Value Metric', score: rixRun["23_nvm_score"], peso: rixRun["24_nvm_peso"], categoria: rixRun["25_nvm_categoria"] },
-    { key: 'drm', label: 'Fortaleza de Evidencia', fullName: 'Data Reliability Metric', score: rixRun["26_drm_score"], peso: rixRun["27_drm_peso"], categoria: rixRun["28_drm_categoria"] },
-    { key: 'sim', label: 'Autoridad de Fuentes', fullName: 'Source Integrity Metric', score: rixRun["29_sim_score"], peso: rixRun["30_sim_peso"], categoria: rixRun["31_sim_categoria"] },
-    { key: 'rmm', label: 'Actualidad y Empuje', fullName: 'Reputational Momentum Metric', score: rixRun["32_rmm_score"], peso: rixRun["33_rmm_peso"], categoria: rixRun["34_rmm_categoria"] },
-    { key: 'cem', label: 'Controversia y Riesgo', fullName: 'Controversy Exposure Metric', score: rixRun["35_cem_score"], peso: rixRun["36_cem_peso"], categoria: rixRun["37_cem_categoria"] },
-    { key: 'gam', label: 'Independencia de Gobierno', fullName: 'Governance Autonomy Metric', score: rixRun["38_gam_score"], peso: rixRun["39_gam_peso"], categoria: rixRun["40_gam_categoria"] },
-    { key: 'dcm', label: 'Integridad del Grafo', fullName: 'Data Consistency Metric', score: rixRun["41_dcm_score"], peso: rixRun["42_dcm_peso"], categoria: rixRun["43_dcm_categoria"] },
-    { key: 'cxm', label: 'Ejecución Corporativa', fullName: 'Corporate Execution Metric', score: rixRun["44_cxm_score"], peso: rixRun["45_cxm_peso"], categoria: rixRun["46_cxm_categoria"] },
+    { key: 'rix', label: 'Índice RIX', fullName: 'Reputation Index', score: rixRun.displayRixScore ?? rixRun.rix_score, peso: 100, categoria: (rixRun.displayRixScore ?? rixRun.rix_score ?? 0) >= 70 ? 'Bueno' : (rixRun.displayRixScore ?? rixRun.rix_score ?? 0) >= 40 ? 'Mejorable' : 'Insuficiente' },
+    { key: 'nvm', label: 'Calidad de la Narrativa', fullName: 'Narrative Value Metric', score: rixRun.nvm_score, peso: rixRun.nvm_peso, categoria: rixRun.nvm_categoria },
+    { key: 'drm', label: 'Fortaleza de Evidencia', fullName: 'Data Reliability Metric', score: rixRun.drm_score, peso: rixRun.drm_peso, categoria: rixRun.drm_categoria },
+    { key: 'sim', label: 'Autoridad de Fuentes', fullName: 'Source Integrity Metric', score: rixRun.sim_score, peso: rixRun.sim_peso, categoria: rixRun.sim_categoria },
+    { key: 'rmm', label: 'Actualidad y Empuje', fullName: 'Reputational Momentum Metric', score: rixRun.rmm_score, peso: rixRun.rmm_peso, categoria: rixRun.rmm_categoria },
+    { key: 'cem', label: 'Controversia y Riesgo', fullName: 'Controversy Exposure Metric', score: rixRun.cem_score, peso: rixRun.cem_peso, categoria: rixRun.cem_categoria },
+    { key: 'gam', label: 'Independencia de Gobierno', fullName: 'Governance Autonomy Metric', score: rixRun.gam_score, peso: rixRun.gam_peso, categoria: rixRun.gam_categoria },
+    { key: 'dcm', label: 'Integridad del Grafo', fullName: 'Data Consistency Metric', score: rixRun.dcm_score, peso: rixRun.dcm_peso, categoria: rixRun.dcm_categoria },
+    { key: 'cxm', label: 'Ejecución Corporativa', fullName: 'Corporate Execution Metric', score: rixRun.cxm_score, peso: rixRun.cxm_peso, categoria: rixRun.cxm_categoria },
   ];
 
-  // Extract flags from JSONB - handle both strings and arrays
-  const parseFlags = (flagsData: any): string[] => {
-    if (!flagsData) return [];
-    if (Array.isArray(flagsData)) return flagsData;
-    if (typeof flagsData === 'string') return [flagsData];
-    return [];
-  };
-  const flags = parseFlags(rixRun["17_flags"]);
+  // Parse flags
+  const flags = rixRun.flags || [];
 
-  // Parse puntos_clave - handle both strings and arrays
-  const parsePuntosClave = (puntosData: any): string[] => {
-    if (!puntosData) return [];
-    if (Array.isArray(puntosData)) return puntosData;
-    if (typeof puntosData === 'string') return [puntosData];
-    return [];
-  };
-  const puntosClave = parsePuntosClave(rixRun["11_puntos_clave"]);
+  // Parse puntos_clave
+  const puntosClave = rixRun.puntos_clave || [];
 
   // Function to normalize flag names
   const normalizeFlag = (flag: string) => {
@@ -148,21 +138,18 @@ export function RixRunDetail() {
     return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Function to check if content is duplicate (similar or identical)
+  // Check for duplicate content
   const isDuplicateContent = (...contents: (string | undefined | null)[]): boolean => {
     const validContents = contents.filter(Boolean).map(c => c!.trim().toLowerCase());
     if (validContents.length < 2) return false;
     
-    // Check if any two contents are very similar (same content with minor differences)
     for (let i = 0; i < validContents.length; i++) {
       for (let j = i + 1; j < validContents.length; j++) {
         const content1 = validContents[i];
         const content2 = validContents[j];
         
-        // Direct match
         if (content1 === content2) return true;
         
-        // Similar content (one is contained in the other with high similarity)
         const shorter = content1.length < content2.length ? content1 : content2;
         const longer = content1.length >= content2.length ? content1 : content2;
         
@@ -175,39 +162,55 @@ export function RixRunDetail() {
     return false;
   };
 
-  // Get all AI responses in the specified order: ChatGPT, Google Gemini, Perplexity, Deepseek
+  // Get all AI responses - now with 6 models
   const getAIResponses = () => {
     const responses = [];
     
-    if (rixRun["20_res_gpt_bruto"]) {
+    if (rixRun.res_gpt_bruto) {
       responses.push({
         model: "ChatGPT",
-        content: rixRun["20_res_gpt_bruto"],
+        content: rixRun.res_gpt_bruto,
         icon: ChatGPTIcon
       });
     }
     
-    if (rixRun["22_res_gemini_bruto"]) {
+    if (rixRun.res_gemini_bruto) {
       responses.push({
         model: "Google Gemini",
-        content: rixRun["22_res_gemini_bruto"],
+        content: rixRun.res_gemini_bruto,
         icon: GeminiIcon
       });
     }
     
-    if (rixRun["21_res_perplex_bruto"]) {
+    if (rixRun.res_perplex_bruto) {
       responses.push({
         model: "Perplexity",
-        content: rixRun["21_res_perplex_bruto"],
+        content: rixRun.res_perplex_bruto,
         icon: PerplexityIcon
       });
     }
     
-    if (rixRun["23_res_deepseek_bruto"]) {
+    if (rixRun.res_deepseek_bruto) {
       responses.push({
         model: "Deepseek",
-        content: rixRun["23_res_deepseek_bruto"],
+        content: rixRun.res_deepseek_bruto,
         icon: DeepseekIcon
+      });
+    }
+    
+    if (rixRun.respuesta_bruto_grok) {
+      responses.push({
+        model: "Grok",
+        content: rixRun.respuesta_bruto_grok,
+        icon: GrokIcon
+      });
+    }
+    
+    if (rixRun.respuesta_bruto_qwen) {
+      responses.push({
+        model: "Qwen",
+        content: rixRun.respuesta_bruto_qwen,
+        icon: QwenIcon
       });
     }
     
@@ -217,36 +220,36 @@ export function RixRunDetail() {
   return (
     <Layout title="RepIndex.ai">
       <div className="space-y-4">
-        {/* Header - Compact */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
             className="flex items-center gap-2"
           >
             <ArrowLeft className="h-4 w-4" />
             Volver
           </Button>
           <Badge variant="secondary" className="text-sm">
-            {rixRun["02_model_name"] || "N/A"}
+            {rixRun.model_name || "N/A"}
           </Badge>
         </div>
 
-        {/* Company Info - Compact */}
+        {/* Company Info */}
         <div className="flex items-center justify-between bg-muted/50 p-4 rounded-lg">
           <div>
             <h1 className="text-2xl font-bold">
-              {rixRun["03_target_name"]}
-              {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
+              {rixRun.target_name}
+              {(rixRun.repindex_root_issuers?.ticker || rixRun.ticker) && (
                 <span className="text-lg text-muted-foreground ml-2">
-                  ({rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]})
+                  ({rixRun.repindex_root_issuers?.ticker || rixRun.ticker})
                 </span>
               )}
             </h1>
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">
-                {formatDateRange(rixRun["06_period_from"], rixRun["07_period_to"])}
+                {formatDateRange(rixRun.period_from, rixRun.period_to)}
               </p>
               <div className="flex gap-4 text-xs text-muted-foreground">
                 <span>IBEX Family: {rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
@@ -262,19 +265,17 @@ export function RixRunDetail() {
                 className="flex-col items-end"
               />
             ) : (
-              <>
-                <div className="flex flex-col items-end">
-                  <div className="text-4xl font-bold text-primary">
-                    {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
-                  </div>
-                  <div className="text-sm text-muted-foreground">RIX Score</div>
-                  {rixRun["52_cxm_excluded"] && (
-                    <div className="text-xs text-muted-foreground italic mt-1">
-                      (CXM no aplicable)
-                    </div>
-                  )}
+              <div className="flex flex-col items-end">
+                <div className="text-4xl font-bold text-primary">
+                  {rixRun.displayRixScore ?? rixRun.rix_score ?? 0}
                 </div>
-              </>
+                <div className="text-sm text-muted-foreground">RIX Score</div>
+                {rixRun.cxm_excluded && (
+                  <div className="text-xs text-muted-foreground italic mt-1">
+                    (CXM no aplicable)
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -283,7 +284,7 @@ export function RixRunDetail() {
         {rixRun.isDataInvalid && (
           <WeeklyReadingError
             reason={rixRun.dataInvalidReason}
-            companyName={rixRun["03_target_name"]}
+            companyName={rixRun.target_name || undefined}
             variant="card"
           />
         )}
@@ -294,23 +295,23 @@ export function RixRunDetail() {
           {/* Left Column - Radar Chart + Metrics */}
           <div className="lg:col-span-2 space-y-4">
             
-            {/* Radar Chart - Main Visual Element */}
+            {/* Radar Chart */}
             {rixRun && marketAverages && (
               <RadarChartComparison
                 companyData={{
-                  rix: rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0,
-                  nvm: rixRun["23_nvm_score"] || 0,
-                  drm: rixRun["26_drm_score"] || 0,
-                  sim: rixRun["29_sim_score"] || 0,
-                  rmm: rixRun["32_rmm_score"] || 0,
-                  cem: rixRun["35_cem_score"] || 0,
-                  gam: rixRun["38_gam_score"] || 0,
-                  dcm: rixRun["41_dcm_score"] || 0,
-                  cxm: rixRun["44_cxm_score"] || 0,
+                  rix: rixRun.displayRixScore ?? rixRun.rix_score ?? 0,
+                  nvm: rixRun.nvm_score || 0,
+                  drm: rixRun.drm_score || 0,
+                  sim: rixRun.sim_score || 0,
+                  rmm: rixRun.rmm_score || 0,
+                  cem: rixRun.cem_score || 0,
+                  gam: rixRun.gam_score || 0,
+                  dcm: rixRun.dcm_score || 0,
+                  cxm: rixRun.cxm_score || 0,
                 }}
                 marketAverages={marketAverages}
-                companyName={rixRun["03_target_name"] || "Empresa"}
-                modelName={rixRun["02_model_name"] || ""}
+                companyName={rixRun.target_name || "Empresa"}
+                modelName={rixRun.model_name || ""}
               />
             )}
             
@@ -394,8 +395,8 @@ export function RixRunDetail() {
               </Card>
             </Collapsible>
 
-            {/* Summary and Key Points - Compact */}
-            {rixRun["10_resumen"] && (
+            {/* Summary and Key Points */}
+            {rixRun.resumen && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -404,7 +405,7 @@ export function RixRunDetail() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm leading-relaxed">{rixRun["10_resumen"]}</p>
+                  <p className="text-sm leading-relaxed">{rixRun.resumen}</p>
                 </CardContent>
               </Card>
             )}
@@ -436,13 +437,11 @@ export function RixRunDetail() {
                 <CardTitle className="text-lg">Análisis IA</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Show AI responses dynamically based on what's available */}
                 {(() => {
                   const responses = getAIResponses();
-                  const currentModel = rixRun["02_model_name"];
+                  const currentModel = rixRun.model_name;
                   
                   return responses.map((response, index) => {
-                    // Check if this is a duplicate of a previous response
                     const isDuplicate = responses
                       .slice(0, index)
                       .some(prevResp => isDuplicateContent(prevResp.content, response.content));
@@ -461,48 +460,48 @@ export function RixRunDetail() {
                         content={response.content}
                         icon={response.icon}
                         createdAt={rixRun.created_at}
-                        periodFrom={rixRun["06_period_from"]}
-                        periodTo={rixRun["07_period_to"]}
+                        periodFrom={rixRun.period_from || undefined}
+                        periodTo={rixRun.period_to || undefined}
                       />
                     );
                   });
                 })()}
                 
-                {/* Methodological explanation - only show if different from model responses */}
-                {rixRun["22_explicacion"] && !isDuplicateContent(
-                  rixRun["22_explicacion"], 
-                  rixRun["20_res_gpt_bruto"], 
-                  rixRun["22_res_gemini_bruto"],
-                  rixRun["21_res_perplex_bruto"],
-                  rixRun["23_res_deepseek_bruto"]
+                {/* Methodological explanation */}
+                {rixRun.explicacion && !isDuplicateContent(
+                  rixRun.explicacion, 
+                  rixRun.res_gpt_bruto, 
+                  rixRun.res_gemini_bruto,
+                  rixRun.res_perplex_bruto,
+                  rixRun.res_deepseek_bruto
                 ) && (
                   <AIResponseDialog
                     title="Ver Explicación Metodológica"
-                    content={rixRun["22_explicacion"]}
+                    content={rixRun.explicacion}
                     createdAt={rixRun.created_at}
-                    periodFrom={rixRun["06_period_from"]}
-                    periodTo={rixRun["07_period_to"]}
+                    periodFrom={rixRun.period_from || undefined}
+                    periodTo={rixRun.period_to || undefined}
                   />
                 )}
 
-                {/* Detailed explanations - BUG FIX: Changed from 23_ to 25_ */}
-                {rixRun["25_explicaciones_detalladas"] && 
-                 Array.isArray(rixRun["25_explicaciones_detalladas"]) && 
-                 rixRun["25_explicaciones_detalladas"].length > 0 &&
+                {/* Detailed explanations */}
+                {rixRun.explicaciones_detalladas && 
+                 Array.isArray(rixRun.explicaciones_detalladas) && 
+                 rixRun.explicaciones_detalladas.length > 0 &&
                  !isDuplicateContent(
-                   rixRun["25_explicaciones_detalladas"].join('\n'), 
-                   rixRun["22_explicacion"], 
-                   rixRun["20_res_gpt_bruto"], 
-                   rixRun["22_res_gemini_bruto"],
-                   rixRun["21_res_perplex_bruto"],
-                   rixRun["23_res_deepseek_bruto"]
+                   rixRun.explicaciones_detalladas.join('\n'), 
+                   rixRun.explicacion, 
+                   rixRun.res_gpt_bruto, 
+                   rixRun.res_gemini_bruto,
+                   rixRun.res_perplex_bruto,
+                   rixRun.res_deepseek_bruto
                  ) && (
                   <AIResponseDialog
                     title="Ver Análisis Detallado por Métrica"
-                    content={rixRun["25_explicaciones_detalladas"].join('\n\n')}
+                    content={rixRun.explicaciones_detalladas.join('\n\n')}
                     createdAt={rixRun.created_at}
-                    periodFrom={rixRun["06_period_from"]}
-                    periodTo={rixRun["07_period_to"]}
+                    periodFrom={rixRun.period_from || undefined}
+                    periodTo={rixRun.period_to || undefined}
                   />
                 )}
               </CardContent>
@@ -512,16 +511,16 @@ export function RixRunDetail() {
           {/* Right Column - Sibling AIs, Stats and Flags */}
           <div className="space-y-4">
             
-            {/* Sibling AI Evaluations - Same company, different models */}
+            {/* Sibling AI Evaluations */}
             <div className="hidden lg:block">
               <SiblingAICards
                 siblings={siblingRuns || []}
-                companyName={rixRun["03_target_name"] || "Empresa"}
+                companyName={rixRun.target_name || "Empresa"}
                 isLoading={siblingsLoading}
               />
             </div>
             
-            {/* Statistics Panel - Compact */}
+            {/* Statistics Panel */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg">Estadísticas de Análisis</CardTitle>
@@ -530,29 +529,29 @@ export function RixRunDetail() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-muted-foreground">Palabras</div>
-                    <div className="font-semibold">{rixRun["12_palabras"] || 0}</div>
+                    <div className="font-semibold">{rixRun.palabras || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Fechas</div>
-                    <div className="font-semibold">{rixRun["13_num_fechas"] || 0}</div>
+                    <div className="font-semibold">{rixRun.num_fechas || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Citas</div>
-                    <div className="font-semibold">{rixRun["14_num_citas"] || 0}</div>
+                    <div className="font-semibold">{rixRun.num_citas || 0}</div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Alineación</div>
-                    <div className="font-semibold">{((rixRun["15_temporal_alignment"] || 0) * 100).toFixed(1)}%</div>
+                    <div className="font-semibold">{((rixRun.temporal_alignment || 0) * 100).toFixed(1)}%</div>
                   </div>
                 </div>
                 <div>
                   <div className="text-muted-foreground text-sm">Densidad de Citas</div>
-                  <div className="font-semibold">{((rixRun["16_citation_density"] || 0) * 100).toFixed(2)}%</div>
+                  <div className="font-semibold">{((rixRun.citation_density || 0) * 100).toFixed(2)}%</div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Quality Flags - Compact */}
+            {/* Quality Flags */}
             {flags.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
