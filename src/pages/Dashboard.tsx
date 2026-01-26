@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
-import { useRixRuns } from "@/hooks/useRixRuns";
+import { useUnifiedRixRuns, UnifiedRixRun } from "@/hooks/useUnifiedRixRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
@@ -19,7 +19,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AIFilter } from "@/components/layout/Header";
 import { format, addDays } from "date-fns";
 import { toZonedTime } from 'date-fns-tz';
 import { cn } from "@/lib/utils";
@@ -27,8 +26,13 @@ import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
+import { GrokIcon } from "@/components/ui/grok-icon";
+import { QwenIcon } from "@/components/ui/qwen-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 import { trackDashboardFilter, trackCompanyDetailView } from "@/lib/gtmEvents";
+
+// AI Filter type for the 6 models
+type AIFilter = "all" | "ChatGPT" | "Google Gemini" | "Perplexity" | "Deepseek" | "Grok" | "Qwen" | "comparison";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -37,10 +41,16 @@ export function Dashboard() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
-  const [batchFilter, setBatchFilter] = useState<string>("all"); // Changed to "all" to show trends
+  const [batchFilter, setBatchFilter] = useState<string>("all");
   const navigate = useNavigate();
   
-  const { data: rixRuns, isLoading, error } = useRixRuns(searchQuery, aiFilter === "comparison" ? "all" : aiFilter, companyFilter, sectorFilter, ibexFamilyFilter);
+  const { data: rixRuns, isLoading, error } = useUnifiedRixRuns({
+    modelFilter: aiFilter === "comparison" ? "all" : aiFilter,
+    companyFilter,
+    sectorFilter,
+    ibexFamilyFilter,
+    weeksToLoad: 6
+  });
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
@@ -77,7 +87,7 @@ export function Dashboard() {
     trackDashboardFilter('batch_date', value);
   }, []);
 
-  const formatDateRange = (from?: string, to?: string) => {
+  const formatDateRange = (from?: string | null, to?: string | null) => {
     if (!from && !to) return "N/A";
     if (!to) return from ? new Date(from).toLocaleDateString() : "N/A";
     if (!from) return to ? new Date(to).toLocaleDateString() : "N/A";
@@ -87,7 +97,7 @@ export function Dashboard() {
     return `${fromDate} - ${toDate}`;
   };
 
-  const getCategoryColor = (categoria?: string) => {
+  const getCategoryColor = (categoria?: string | null) => {
     switch (categoria?.toLowerCase()) {
       case "bueno":
         return "bg-good/10 text-good";
@@ -101,18 +111,17 @@ export function Dashboard() {
   };
 
   const metrics = [
-    { key: "nvm", label: "NVM", scoreKey: "23_nvm_score", categoryKey: "25_nvm_categoria" },
-    { key: "drm", label: "DRM", scoreKey: "26_drm_score", categoryKey: "28_drm_categoria" },
-    { key: "sim", label: "SIM", scoreKey: "29_sim_score", categoryKey: "31_sim_categoria" },
-    { key: "rmm", label: "RMM", scoreKey: "32_rmm_score", categoryKey: "34_rmm_categoria" },
-    { key: "cem", label: "CEM", scoreKey: "35_cem_score", categoryKey: "37_cem_categoria" },
-    { key: "gam", label: "GAM", scoreKey: "38_gam_score", categoryKey: "40_gam_categoria" },
-    { key: "dcm", label: "DCM", scoreKey: "41_dcm_score", categoryKey: "43_dcm_categoria" },
-    { key: "cxm", label: "CXM", scoreKey: "44_cxm_score", categoryKey: "46_cxm_categoria" },
+    { key: "nvm", label: "NVM", scoreKey: "nvm_score", categoryKey: "nvm_categoria" },
+    { key: "drm", label: "DRM", scoreKey: "drm_score", categoryKey: "drm_categoria" },
+    { key: "sim", label: "SIM", scoreKey: "sim_score", categoryKey: "sim_categoria" },
+    { key: "rmm", label: "RMM", scoreKey: "rmm_score", categoryKey: "rmm_categoria" },
+    { key: "cem", label: "CEM", scoreKey: "cem_score", categoryKey: "cem_categoria" },
+    { key: "gam", label: "GAM", scoreKey: "gam_score", categoryKey: "gam_categoria" },
+    { key: "dcm", label: "DCM", scoreKey: "dcm_score", categoryKey: "dcm_categoria" },
+    { key: "cxm", label: "CXM", scoreKey: "cxm_score", categoryKey: "cxm_categoria" },
   ];
 
-  // Generate batch options based on available data (most recent first)
-  // Include status indicator (✓ complete / ⏳ in progress)
+  // Generate batch options based on available data
   const batchOptions = useMemo(() => {
     if (!rixRuns) return [];
     
@@ -135,21 +144,20 @@ export function Dashboard() {
         }
         const group = batchGroups.get(run.batchNumber)!;
         group.count++;
-        if (run["05_ticker"]) {
-          group.companies.add(run["05_ticker"]);
+        if (run.ticker) {
+          group.companies.add(run.ticker);
         }
       }
     });
     
     return Array.from(batchGroups.entries())
-      .sort((a, b) => b[0] - a[0]) // Sort by batch number descending (most recent first)
+      .sort((a, b) => b[0] - a[0])
       .map(([num, info]) => {
-        // A batch is complete if it has >= 150 unique companies
         const isComplete = info.companies.size >= 150;
         const statusIcon = isComplete ? '✓' : '⏳';
         const subLabel = isComplete 
           ? `${info.companies.size} empresas`
-          : `${info.companies.size}/153 empresas (en progreso)`;
+          : `${info.companies.size}/174 empresas (en progreso)`;
         
         return {
           value: num.toString(),
@@ -160,18 +168,14 @@ export function Dashboard() {
       });
   }, [rixRuns]);
 
-  // Auto-select the most recent COMPLETE batch when data is available
+  // Auto-select the most recent COMPLETE batch
   React.useEffect(() => {
     if (batchOptions.length > 0 && batchFilter === "all") {
-      // Find the most recent complete batch (isComplete = true)
       const latestCompleteBatch = batchOptions.find(opt => opt.isComplete);
       
       if (latestCompleteBatch) {
-        console.log('🎯 Auto-selecting most recent complete batch:', latestCompleteBatch.value);
         setBatchFilter(latestCompleteBatch.value);
-      } else {
-        // If no complete batches, select the most recent one anyway
-        console.log('⚠️  No complete batches found, selecting most recent:', batchOptions[0].value);
+      } else if (batchOptions[0]) {
         setBatchFilter(batchOptions[0].value);
       }
     }
@@ -184,51 +188,44 @@ export function Dashboard() {
     setBatchFilter("all");
   };
 
-  // Sort RIX runs to move invalid data to the end and apply batch filter
+  // Sort and filter RIX runs
   const sortedRixRuns = useMemo(() => {
     if (!rixRuns) return [];
-    
-    console.log('🔍 BATCH FILTER:', {
-      batchFilter,
-      totalRixRuns: rixRuns.length,
-      batchNumbers: [...new Set(rixRuns.map(r => r.batchNumber))].sort((a, b) => (b || 0) - (a || 0))
-    });
     
     let filteredByBatch = rixRuns;
     if (batchFilter && batchFilter !== "all") {
       filteredByBatch = rixRuns.filter(run => 
         run.batchNumber?.toString() === batchFilter
       );
-      console.log('🔍 AFTER FILTER:', {
-        batchFilter,
-        filteredCount: filteredByBatch.length,
-        sampleTickers: filteredByBatch.slice(0, 5).map(r => `${r["05_ticker"]}-${r.batchNumber}`)
-      });
+    }
+    
+    // Apply search filter
+    if (searchQuery) {
+      filteredByBatch = filteredByBatch.filter(run =>
+        run.target_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
     }
     
     return [...filteredByBatch].sort((a, b) => {
-      // If one has invalid data and the other doesn't, move invalid to end
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
       
-      // For same validity status, order by RIX score descending (highest first)
-      const scoreA = a.displayRixScore ?? a["09_rix_score"] ?? 0;
-      const scoreB = b.displayRixScore ?? b["09_rix_score"] ?? 0;
+      const scoreA = a.displayRixScore ?? a.rix_score ?? 0;
+      const scoreB = b.displayRixScore ?? b.rix_score ?? 0;
       
       if (scoreB !== scoreA) {
-        return scoreB - scoreA; // Descending order (highest score first)
+        return scoreB - scoreA;
       }
       
-      // If scores are equal, prioritize more recent batch_execution_date
       if (a.batch_execution_date && b.batch_execution_date) {
         return new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime();
       }
       
       return 0;
     });
-  }, [rixRuns, batchFilter]);
+  }, [rixRuns, batchFilter, searchQuery]);
 
-  // Progressive loading for better perceived performance
+  // Progressive loading
   const {
     visibleItems: visibleRixRuns,
     hasMore,
@@ -261,7 +258,7 @@ export function Dashboard() {
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, loadMore]);
 
-  // Update chat context with current filters
+  // Update chat context
   useEffect(() => {
     setPageContext({
       name: 'Dashboard',
@@ -276,7 +273,7 @@ export function Dashboard() {
     });
   }, [companyFilter, sectorFilter, ibexFamilyFilter, aiFilter, sortedRixRuns?.length, setPageContext]);
 
-  // Function to normalize flag names to user-friendly format
+  // Normalize flag names
   const normalizeFlag = (flag: string) => {
     const flagMap: { [key: string]: string } = {
       "datos_antiguos": "Datos Antiguos",
@@ -294,7 +291,7 @@ export function Dashboard() {
     return flagMap[flag] || flag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Helper function to get AI model information
+  // Get AI model information - now with 6 models
   const getModelInfo = (modelName: string) => {
     const normalizedModel = modelName?.toLowerCase() || '';
     
@@ -326,6 +323,20 @@ export function Dashboard() {
         icon: DeepseekIcon,
         colorClass: 'text-[hsl(var(--deepseek))]'
       };
+    } else if (normalizedModel.includes('grok')) {
+      return {
+        name: 'Grok',
+        abbreviation: 'GRK',
+        icon: GrokIcon,
+        colorClass: 'text-orange-600 dark:text-orange-400'
+      };
+    } else if (normalizedModel.includes('qwen')) {
+      return {
+        name: 'Qwen',
+        abbreviation: 'QWN',
+        icon: QwenIcon,
+        colorClass: 'text-indigo-600 dark:text-indigo-400'
+      };
     }
     
     return {
@@ -337,9 +348,9 @@ export function Dashboard() {
   };
 
   if (isLoading) {
-  return (
-    <Layout title="RepIndex.ai">
-      <div className="space-y-6">
+    return (
+      <Layout title="RepIndex.ai">
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <Skeleton className="h-10 w-64" />
             <div className="flex gap-2">
@@ -357,9 +368,9 @@ export function Dashboard() {
     );
   }
 
-    return (
-      <Layout title="RepIndex.ai">
-        <div className="space-y-6">
+  return (
+    <Layout title="RepIndex.ai">
+      <div className="space-y-6">
         {/* Title */}
         <div className="text-center px-2">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
@@ -373,9 +384,8 @@ export function Dashboard() {
           </p>
         </div>
 
-        {/* Controls - AI Selector and View Mode */}
+        {/* Controls - AI Selector with 6 models */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          {/* AI Model Selector - Scrollable on mobile/tablet */}
           <div className="w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
             <div className="flex items-center bg-muted/50 p-1 rounded-lg min-w-max">
               <Button
@@ -403,7 +413,7 @@ export function Dashboard() {
                 className="flex items-center gap-1.5 whitespace-nowrap"
               >
                 <GeminiIcon className="h-4 w-4" />
-                <span className="hidden xs:inline">Google</span>
+                <span className="hidden xs:inline">Gemini</span>
               </Button>
               <Button
                 variant={aiFilter === "Perplexity" ? "default" : "ghost"}
@@ -422,6 +432,24 @@ export function Dashboard() {
               >
                 <DeepseekIcon className="h-4 w-4" />
                 <span className="hidden xs:inline">Deepseek</span>
+              </Button>
+              <Button
+                variant={aiFilter === "Grok" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => handleAIFilterChange("Grok")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <GrokIcon className="h-4 w-4" />
+                <span className="hidden xs:inline">Grok</span>
+              </Button>
+              <Button
+                variant={aiFilter === "Qwen" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => handleAIFilterChange("Qwen")}
+                className="flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <QwenIcon className="h-4 w-4" />
+                <span className="hidden xs:inline">Qwen</span>
               </Button>
             </div>
           </div>
@@ -465,132 +493,132 @@ export function Dashboard() {
                       <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Buscar empresa..." />
-                    <CommandList>
-                      <CommandEmpty>No se encontró empresa.</CommandEmpty>
-                      <CommandGroup>
-                        <CommandItem value="all" onSelect={() => handleCompanyFilterChange("all")}>
-                          <Check className={cn("mr-2 h-4 w-4", companyFilter === "all" ? "opacity-100" : "opacity-0")} />
-                          Todas las empresas
-                        </CommandItem>
-                        {companies?.map((company) => (
-                          <CommandItem key={company.issuer_id} value={company.issuer_name} onSelect={(value) => handleCompanyFilterChange(value)}>
-                            <Check className={cn("mr-2 h-4 w-4", companyFilter === company.issuer_name ? "opacity-100" : "opacity-0")} />
-                            {company.issuer_name} ({company.ticker})
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar empresa..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontró empresa.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="all" onSelect={() => handleCompanyFilterChange("all")}>
+                            <Check className={cn("mr-2 h-4 w-4", companyFilter === "all" ? "opacity-100" : "opacity-0")} />
+                            Todas las empresas
                           </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
+                          {companies?.map((company) => (
+                            <CommandItem key={company.issuer_id} value={company.issuer_name} onSelect={(value) => handleCompanyFilterChange(value)}>
+                              <Check className={cn("mr-2 h-4 w-4", companyFilter === company.issuer_name ? "opacity-100" : "opacity-0")} />
+                              {company.issuer_name} ({company.ticker})
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            {/* Sector Filter */}
-            <div className="flex items-center gap-1.5">
-              <Factory className="h-4 w-4 text-muted-foreground hidden sm:block" />
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-36 sm:w-48 justify-between text-xs sm:text-sm">
-                    {sectorFilter === "all" ? "Todos los sectores" : sectorFilter}
-                    <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Buscar sector..." />
-                    <CommandList>
-                      <CommandEmpty>No se encontró sector.</CommandEmpty>
-                      <CommandGroup>
-                        <CommandItem value="all" onSelect={() => handleSectorFilterChange("all")}>
-                          <Check className={cn("mr-2 h-4 w-4", sectorFilter === "all" ? "opacity-100" : "opacity-0")} />
-                          Todos los sectores
-                        </CommandItem>
-                        {sectorCategories?.map((sector) => (
-                          <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => handleSectorFilterChange(value)}>
-                            <Check className={cn("mr-2 h-4 w-4", sectorFilter === sector.sector_category ? "opacity-100" : "opacity-0")} />
-                            {sector.sector_category}
+              {/* Sector Filter */}
+              <div className="flex items-center gap-1.5">
+                <Factory className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-36 sm:w-48 justify-between text-xs sm:text-sm">
+                      {sectorFilter === "all" ? "Todos los sectores" : sectorFilter}
+                      <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar sector..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontró sector.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="all" onSelect={() => handleSectorFilterChange("all")}>
+                            <Check className={cn("mr-2 h-4 w-4", sectorFilter === "all" ? "opacity-100" : "opacity-0")} />
+                            Todos los sectores
                           </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
+                          {sectorCategories?.map((sector) => (
+                            <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => handleSectorFilterChange(value)}>
+                              <Check className={cn("mr-2 h-4 w-4", sectorFilter === sector.sector_category ? "opacity-100" : "opacity-0")} />
+                              {sector.sector_category}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            {/* Ibex Family Filter */}
-            <div className="flex items-center gap-1.5">
-              <BarChart3 className="h-4 w-4 text-muted-foreground hidden sm:block" />
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-40 sm:w-48 justify-between text-xs sm:text-sm">
-                    {ibexFamilyFilter === "all" ? "Todos los índices" : ibexFamilyFilter === "no_cotizadas" ? "No cotizadas" : ibexFamilyFilter}
-                    <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Buscar IBEX Family..." />
-                    <CommandList>
-                      <CommandEmpty>No se encontró familia IBEX.</CommandEmpty>
-                      <CommandGroup>
-                        <CommandItem value="all" onSelect={() => handleIbexFamilyFilterChange("all")}>
-                          <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "all" ? "opacity-100" : "opacity-0")} />
-                          Todos los índices
-                        </CommandItem>
-                        <CommandItem value="no_cotizadas" onSelect={() => handleIbexFamilyFilterChange("no_cotizadas")}>
-                          <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "no_cotizadas" ? "opacity-100" : "opacity-0")} />
-                          No cotizadas
-                        </CommandItem>
-                        {ibexFamilyCategories?.map((ibex) => (
-                          <CommandItem key={ibex.ibex_family_code} value={ibex.ibex_family_code} onSelect={(value) => handleIbexFamilyFilterChange(value)}>
-                            <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === ibex.ibex_family_code ? "opacity-100" : "opacity-0")} />
-                            {ibex.ibex_family_code}
+              {/* Ibex Family Filter */}
+              <div className="flex items-center gap-1.5">
+                <BarChart3 className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-40 sm:w-48 justify-between text-xs sm:text-sm">
+                      {ibexFamilyFilter === "all" ? "Todos los índices" : ibexFamilyFilter === "no_cotizadas" ? "No cotizadas" : ibexFamilyFilter}
+                      <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar IBEX Family..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontró familia IBEX.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="all" onSelect={() => handleIbexFamilyFilterChange("all")}>
+                            <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "all" ? "opacity-100" : "opacity-0")} />
+                            Todos los índices
                           </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-            </div>
+                          <CommandItem value="no_cotizadas" onSelect={() => handleIbexFamilyFilterChange("no_cotizadas")}>
+                            <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === "no_cotizadas" ? "opacity-100" : "opacity-0")} />
+                            No cotizadas
+                          </CommandItem>
+                          {ibexFamilyCategories?.map((ibex) => (
+                            <CommandItem key={ibex.ibex_family_code} value={ibex.ibex_family_code} onSelect={(value) => handleIbexFamilyFilterChange(value)}>
+                              <Check className={cn("mr-2 h-4 w-4", ibexFamilyFilter === ibex.ibex_family_code ? "opacity-100" : "opacity-0")} />
+                              {ibex.ibex_family_code}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            {/* Batch Filter */}
-            <div className="flex items-center gap-1.5">
-              <CalendarDays className="h-4 w-4 text-muted-foreground hidden sm:block" />
-              <Select value={batchFilter} onValueChange={handleBatchFilterChange}>
-                <SelectTrigger className="w-48 sm:w-64 text-xs sm:text-sm">
-                  <SelectValue placeholder="Fecha de análisis" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border z-50">
-                  <SelectItem value="all">Todas las fechas</SelectItem>
-                  {batchOptions.map((batch) => (
-                    <SelectItem key={batch.value} value={batch.value}>
-                      <div className="flex flex-col">
-                        <span>{batch.label}</span>
-                        <span className="text-xs text-muted-foreground">{batch.subLabel}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              {/* Batch Filter */}
+              <div className="flex items-center gap-1.5">
+                <CalendarDays className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                <Select value={batchFilter} onValueChange={handleBatchFilterChange}>
+                  <SelectTrigger className="w-48 sm:w-64 text-xs sm:text-sm">
+                    <SelectValue placeholder="Fecha de análisis" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-50">
+                    <SelectItem value="all">Todas las fechas</SelectItem>
+                    {batchOptions.map((batch) => (
+                      <SelectItem key={batch.value} value={batch.value}>
+                        <div className="flex flex-col">
+                          <span>{batch.label}</span>
+                          <span className="text-xs text-muted-foreground">{batch.subLabel}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className="h-8 w-8 p-0"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+              {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearFilters}
+                  className="h-8 w-8 p-0"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
-        </div>
         </div>
 
         {error && (
@@ -638,28 +666,25 @@ export function Dashboard() {
                         className="cursor-pointer hover:bg-muted/50 hover:shadow-subtle transition-all"
                         onClick={() => handleRowClick(
                           rixRun.id, 
-                          rixRun["03_target_name"] || '', 
-                          rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"] || '',
-                          rixRun["02_model_name"] || ''
+                          rixRun.target_name || '', 
+                          rixRun.repindex_root_issuers?.ticker || rixRun.ticker || '',
+                          rixRun.model_name || ''
                         )}
                       >
                         <TableCell>
                           <div>
-                            <div className="font-medium text-sm">{rixRun["03_target_name"] || "Sin nombre"}</div>
-                            {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
+                            <div className="font-medium text-sm">{rixRun.target_name || "Sin nombre"}</div>
+                            {(rixRun.repindex_root_issuers?.ticker || rixRun.ticker) && (
                               <div className="text-xs text-muted-foreground">
-                                {rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]}
+                                {rixRun.repindex_root_issuers?.ticker || rixRun.ticker}
                               </div>
-                            )}
-                            {!rixRun["03_target_name"] && rixRun["01_run_id"] && (
-                              <div className="text-[10px] text-muted-foreground">ID: {rixRun["01_run_id"]}</div>
                             )}
                           </div>
                         </TableCell>
                         {aiFilter === "all" && (
                           <TableCell className="text-center">
                             {(() => {
-                              const modelInfo = getModelInfo(rixRun["02_model_name"] || '');
+                              const modelInfo = getModelInfo(rixRun.model_name || '');
                               const ModelIcon = modelInfo.icon;
                               return (
                                 <div className="flex items-center justify-center gap-1">
@@ -683,7 +708,7 @@ export function Dashboard() {
                           ) : (
                             <div className="flex items-center justify-center gap-1">
                               <span className="text-lg font-bold text-primary">
-                                {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
+                                {rixRun.displayRixScore ?? rixRun.rix_score ?? 0}
                               </span>
                               {rixRun.trend && (
                                 <span className={cn(
@@ -693,7 +718,7 @@ export function Dashboard() {
                                   {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
                                 </span>
                               )}
-                              {rixRun["52_cxm_excluded"] && (
+                              {rixRun.cxm_excluded && (
                                 <span className="text-[9px] text-muted-foreground italic block">
                                   (sin CXM)
                                 </span>
@@ -738,7 +763,7 @@ export function Dashboard() {
                   </TableBody>
                 </Table>
                 
-                {/* Load more indicator for table view */}
+                {/* Load more indicator */}
                 <div ref={viewMode === "list" ? loadMoreRef : undefined} className="py-4">
                   {hasMore && (
                     <div className="flex items-center justify-center gap-3">
@@ -774,151 +799,140 @@ export function Dashboard() {
                     className="cursor-pointer shadow-soft hover:shadow-medium border-border/50 transition-all duration-200 hover:-translate-y-0.5"
                     onClick={() => handleRowClick(
                       rixRun.id,
-                      rixRun["03_target_name"] || '',
-                      rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"] || '',
-                      rixRun["02_model_name"] || ''
+                      rixRun.target_name || '',
+                      rixRun.repindex_root_issuers?.ticker || rixRun.ticker || '',
+                      rixRun.model_name || ''
                     )}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{rixRun["03_target_name"] || "Sin nombre"}</CardTitle>
-                          {(rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]) && (
+                          <CardTitle className="text-lg">{rixRun.target_name || "Sin nombre"}</CardTitle>
+                          {(rixRun.repindex_root_issuers?.ticker || rixRun.ticker) && (
                             <CardDescription>
-                              {rixRun.repindex_root_issuers?.ticker || rixRun["05_ticker"]}
+                              {rixRun.repindex_root_issuers?.ticker || rixRun.ticker}
                             </CardDescription>
-                          )}
-                          {!rixRun["03_target_name"] && rixRun["01_run_id"] && (
-                            <CardDescription className="text-xs">ID: {rixRun["01_run_id"]}</CardDescription>
                           )}
                         </div>
                         <div className="text-right relative">
-                           {/* AI Model Badge for "all" view */}
-                           {aiFilter === "all" && (
-                             <div className="mb-2">
-                               {(() => {
-                                 const modelInfo = getModelInfo(rixRun["02_model_name"] || '');
-                                 const ModelIcon = modelInfo.icon;
-                                 return (
-                                   <Badge variant="outline" className={cn("text-xs px-2 py-1", modelInfo.colorClass)}>
-                                     <ModelIcon className="h-3 w-3 mr-1" />
-                                     {modelInfo.abbreviation}
-                                   </Badge>
-                                 );
-                               })()}
-                             </div>
-                           )}
-                           
-                             {rixRun.isDataInvalid ? (
-                               <div className="flex flex-col items-end gap-1">
-                                 <div className="flex items-center gap-1 text-destructive">
-                                   <AlertTriangle className="h-4 w-4" />
-                                   <span className="text-sm font-medium">Obsoleto</span>
-                                 </div>
-                                 <div className="text-xs text-muted-foreground">Sin datos recientes</div>
-                               </div>
-                              ) : (
-                                <>
-                                  <div className="flex flex-col items-center">
-                                    <div className="flex items-center gap-1">
-                                       <div className="text-3xl font-bold text-primary">
-                                         {rixRun.displayRixScore ?? rixRun["09_rix_score"] ?? 0}
-                                       </div>
-                                       {rixRun.trend && (
-                                         <span className={cn(
-                                           "text-2xl",
-                                           rixRun.trend === "up" ? "text-good" : rixRun.trend === "down" ? "text-insufficient" : "text-muted-foreground"
-                                         )}>
-                                           {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
-                                         </span>
-                                       )}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">RIX Score</div>
-                                    {rixRun["52_cxm_excluded"] && (
-                                      <div className="text-xs text-muted-foreground italic mt-1">
-                                        (CXM no aplicable)
-                                      </div>
-                                    )}
-                                  </div>
-                                </>
+                          {aiFilter === "all" && (
+                            <div className="mb-2">
+                              {(() => {
+                                const modelInfo = getModelInfo(rixRun.model_name || '');
+                                const ModelIcon = modelInfo.icon;
+                                return (
+                                  <Badge variant="outline" className={cn("text-xs px-2 py-1", modelInfo.colorClass)}>
+                                    <ModelIcon className="h-3 w-3 mr-1" />
+                                    {modelInfo.abbreviation}
+                                  </Badge>
+                                );
+                              })()}
+                            </div>
+                          )}
+                          
+                          {rixRun.isDataInvalid ? (
+                            <div className="flex flex-col items-end gap-1">
+                              <div className="flex items-center gap-1 text-destructive">
+                                <AlertTriangle className="h-4 w-4" />
+                                <span className="text-sm font-medium">Obsoleto</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground">Sin datos recientes</div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center">
+                              <div className="flex items-center gap-1">
+                                <div className="text-3xl font-bold text-primary">
+                                  {rixRun.displayRixScore ?? rixRun.rix_score ?? 0}
+                                </div>
+                                {rixRun.trend && (
+                                  <span className={cn(
+                                    "text-2xl",
+                                    rixRun.trend === "up" ? "text-good" : rixRun.trend === "down" ? "text-insufficient" : "text-muted-foreground"
+                                  )}>
+                                    {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-muted-foreground">RIX Score</div>
+                              {rixRun.cxm_excluded && (
+                                <div className="text-xs text-muted-foreground italic mt-1">
+                                  (CXM no aplicable)
+                                </div>
                               )}
-                         </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
-                     <CardContent className="pt-0">
-                       {rixRun.isDataInvalid ? (
-                         <WeeklyReadingError 
-                           reason={rixRun.dataInvalidReason}
-                           variant="banner"
-                           className="text-center"
-                         />
-                       ) : (
-                         <div className="space-y-3">
-                            {/* Metrics Grid */}
-                            <div className="grid grid-cols-4 gap-2">
-                              {metrics.map((metric) => {
-                                const score = (rixRun as any)[metric.scoreKey];
-                                const categoria = (rixRun as any)[metric.categoryKey];
-                                const metricTrend = rixRun.metricTrends?.[metric.key as keyof typeof rixRun.metricTrends];
-                                return (
-                                  <div key={metric.key} className="text-center">
-                                    <div className="text-xs text-muted-foreground mb-1">{metric.label}</div>
-                                    <div className="flex items-center justify-center gap-0.5">
-                                      <div className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(categoria)}`}>
-                                        {score || 0}
-                                      </div>
-                                       {metricTrend && (
-                                         <span className={cn(
-                                           "text-xs",
-                                           metricTrend === "up" ? "text-good" : metricTrend === "down" ? "text-insufficient" : "text-muted-foreground"
-                                         )}>
-                                           {metricTrend === "up" ? "↑" : metricTrend === "down" ? "↓" : "→"}
-                                         </span>
-                                       )}
+                    <CardContent className="pt-0">
+                      {rixRun.isDataInvalid ? (
+                        <WeeklyReadingError 
+                          reason={rixRun.dataInvalidReason}
+                          variant="banner"
+                          className="text-center"
+                        />
+                      ) : (
+                        <div className="space-y-3">
+                          {/* Metrics Grid */}
+                          <div className="grid grid-cols-4 gap-2">
+                            {metrics.map((metric) => {
+                              const score = (rixRun as any)[metric.scoreKey];
+                              const categoria = (rixRun as any)[metric.categoryKey];
+                              const metricTrend = rixRun.metricTrends?.[metric.key as keyof typeof rixRun.metricTrends];
+                              return (
+                                <div key={metric.key} className="text-center">
+                                  <div className="text-xs text-muted-foreground mb-1">{metric.label}</div>
+                                  <div className="flex items-center justify-center gap-0.5">
+                                    <div className={`px-2 py-1 rounded text-xs font-medium ${getCategoryColor(categoria)}`}>
+                                      {score || 0}
                                     </div>
+                                    {metricTrend && (
+                                      <span className={cn(
+                                        "text-xs",
+                                        metricTrend === "up" ? "text-good" : metricTrend === "down" ? "text-insufficient" : "text-muted-foreground"
+                                      )}>
+                                        {metricTrend === "up" ? "↑" : metricTrend === "down" ? "↓" : "→"}
+                                      </span>
+                                    )}
                                   </div>
-                                );
-                              })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Company Info */}
+                          <div className="border-t pt-2">
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="text-muted-foreground">IBEX Family:</span>
+                              <span>{rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
                             </div>
-                           
-                           {/* Company Info */}
-                           <div className="border-t pt-2">
-                             <div className="flex justify-between text-xs mb-1">
-                               <span className="text-muted-foreground">IBEX Family:</span>
-                               <span>{rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}</span>
-                             </div>
-                             <div className="flex justify-between text-xs mb-2">
-                               <span className="text-muted-foreground">Sector:</span>
-                               <span>{rixRun.repindex_root_issuers?.sector_category || "N/A"}</span>
-                             </div>
-                           </div>
-                           
-                           {/* Quality Flags */}
-                           <div className="border-t pt-2">
-                             <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
-                             <div className="flex flex-wrap gap-1">
-                               {(() => {
-                                 // Parse flags - handle both strings and arrays
-                                 const flagsData = rixRun["17_flags"];
-                                 const flags = !flagsData ? [] : 
-                                              Array.isArray(flagsData) ? flagsData : 
-                                              typeof flagsData === 'string' ? [flagsData] : [];
-                                 
-                                 return flags.length > 0 ? (
-                                   flags.map((flag, index) => (
-                                     <Badge key={index} variant="outline" className="text-xs">
-                                       {normalizeFlag(flag)}
-                                     </Badge>
-                                   ))
-                                 ) : (
-                                   <span className="text-xs text-muted-foreground">Sin flags</span>
-                                 );
-                               })()}
-                             </div>
-                           </div>
-                         </div>
-                       )}
-                     </CardContent>
+                            <div className="flex justify-between text-xs mb-2">
+                              <span className="text-muted-foreground">Sector:</span>
+                              <span>{rixRun.repindex_root_issuers?.sector_category || "N/A"}</span>
+                            </div>
+                          </div>
+                          
+                          {/* Quality Flags */}
+                          <div className="border-t pt-2">
+                            <div className="text-xs text-muted-foreground mb-1">Flags de Calidad:</div>
+                            <div className="flex flex-wrap gap-1">
+                              {(() => {
+                                const flags = rixRun.flags || [];
+                                return flags.length > 0 ? (
+                                  flags.map((flag, index) => (
+                                    <Badge key={index} variant="outline" className="text-xs">
+                                      {normalizeFlag(flag)}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">Sin flags</span>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
                   </Card>
                 ))}
                 
