@@ -83,48 +83,82 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     console.log(`Found ${existingRunIds.size} existing documents`);
 
     // ==========================================================================
-    // FETCH FROM TABLES BASED ON sourceFilter
+    // FETCH FROM TABLES BASED ON sourceFilter - MEMORY OPTIMIZED
+    // For 'all' mode, we process sources sequentially to avoid memory overflow
     // ==========================================================================
-    let rixRunsOriginal: any[] = [];
-    let rixRunsV2: any[] = [];
+    let pendingRuns: any[] = [];
+    let totalRuns = 0;
+    
+    // Memory-optimized fetch: only get IDs first to count pending, then fetch only pending records
+    const PENDING_FETCH_LIMIT = 200; // Limit records fetched per source to avoid memory issues
     
     // Fetch from rix_runs (original Make.com data) - only if needed
     if (sourceFilter === 'all' || sourceFilter === 'rix_v1') {
-      console.log('Fetching rix_runs (V1)...');
-      let rixOffset = 0;
-      const rixBatchSize = 1000;
+      console.log('Fetching rix_runs (V1) - memory optimized...');
       
-      while (true) {
-        const { data: rixRuns, error: rixError } = await supabaseClient
+      // First, get count of total records
+      const { count: v1Count } = await supabaseClient
+        .from('rix_runs')
+        .select('id', { count: 'exact', head: true })
+        .not('10_resumen', 'is', null);
+      
+      totalRuns += v1Count || 0;
+      console.log(`V1 total records: ${v1Count}`);
+      
+      // Fetch only records NOT in existingRunIds, limited to PENDING_FETCH_LIMIT
+      // We fetch in smaller batches and filter as we go
+      let v1Fetched = 0;
+      let v1Offset = 0;
+      const v1BatchSize = 500;
+      
+      while (pendingRuns.length < PENDING_FETCH_LIMIT) {
+        const { data: rixBatch, error: rixError } = await supabaseClient
           .from('rix_runs')
           .select('*')
           .not('10_resumen', 'is', null)
-          .range(rixOffset, rixOffset + rixBatchSize - 1);
+          .range(v1Offset, v1Offset + v1BatchSize - 1);
 
         if (rixError) {
           console.error('Error fetching rix_runs:', rixError);
           throw rixError;
         }
         
-        if (!rixRuns || rixRuns.length === 0) break;
+        if (!rixBatch || rixBatch.length === 0) break;
         
-        // Mark source table
-        rixRunsOriginal.push(...rixRuns.map(r => ({ ...r, _source_table: 'rix_runs' })));
+        // Filter and add only pending runs (not in existing)
+        for (const r of rixBatch) {
+          if (!existingRunIds.has(r.id) && pendingRuns.length < PENDING_FETCH_LIMIT) {
+            pendingRuns.push({ ...r, _source_table: 'rix_runs' });
+          }
+        }
         
-        if (rixRuns.length < rixBatchSize) break;
-        rixOffset += rixBatchSize;
+        v1Fetched += rixBatch.length;
+        if (rixBatch.length < v1BatchSize) break;
+        v1Offset += v1BatchSize;
+        
+        // Memory check: if we have enough pending, stop fetching
+        if (pendingRuns.length >= PENDING_FETCH_LIMIT) break;
       }
-      console.log(`Fetched from rix_runs (V1): ${rixRunsOriginal.length} records`);
+      console.log(`V1: scanned ${v1Fetched}, found ${pendingRuns.filter(r => r._source_table === 'rix_runs').length} pending`);
     }
 
-    // Fetch from rix_runs_v2 (new 7 IA system) - only if needed
+    // Fetch from rix_runs_v2 (new 6 IA system) - only if needed
     if (sourceFilter === 'all' || sourceFilter === 'rix_v2') {
-      console.log('Fetching rix_runs_v2 (V2)...');
-      let v2Offset = 0;
-      const v2BatchSize = 1000;
+      console.log('Fetching rix_runs_v2 (V2) - memory optimized...');
       
-      while (true) {
-        const { data: rixV2Data, error: v2Error } = await supabaseClient
+      const { count: v2Count } = await supabaseClient
+        .from('rix_runs_v2')
+        .select('id', { count: 'exact', head: true })
+        .not('10_resumen', 'is', null);
+      
+      totalRuns += v2Count || 0;
+      console.log(`V2 total records: ${v2Count}`);
+      
+      let v2Offset = 0;
+      const v2BatchSize = 500;
+      
+      while (pendingRuns.length < PENDING_FETCH_LIMIT) {
+        const { data: v2Batch, error: v2Error } = await supabaseClient
           .from('rix_runs_v2')
           .select('*')
           .not('10_resumen', 'is', null)
@@ -135,23 +169,23 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
           throw v2Error;
         }
         
-        if (!rixV2Data || rixV2Data.length === 0) break;
+        if (!v2Batch || v2Batch.length === 0) break;
         
-        // Mark source table
-        rixRunsV2.push(...rixV2Data.map(r => ({ ...r, _source_table: 'rix_runs_v2' })));
+        for (const r of v2Batch) {
+          if (!existingRunIds.has(r.id) && pendingRuns.length < PENDING_FETCH_LIMIT) {
+            pendingRuns.push({ ...r, _source_table: 'rix_runs_v2' });
+          }
+        }
         
-        if (rixV2Data.length < v2BatchSize) break;
+        if (v2Batch.length < v2BatchSize) break;
         v2Offset += v2BatchSize;
+        
+        if (pendingRuns.length >= PENDING_FETCH_LIMIT) break;
       }
-      console.log(`Fetched from rix_runs_v2 (V2): ${rixRunsV2.length} records`);
+      console.log(`V2: found ${pendingRuns.filter(r => r._source_table === 'rix_runs_v2').length} pending`);
     }
 
-    // Combine runs based on filter
-    const allRixRuns = [...rixRunsOriginal, ...rixRunsV2];
-    const totalRuns = allRixRuns.length;
-    const pendingRuns = allRixRuns.filter(r => !existingRunIds.has(r.id));
-    
-    console.log(`Total rix_runs: ${totalRuns}, Existing docs: ${existingRunIds.size}, Pending: ${pendingRuns.length}`);
+    console.log(`Total DB records: ~${totalRuns}, Existing docs: ${existingRunIds.size}, Pending to process: ${pendingRuns.length}`);
 
     // Get issuers data with websites
     const { data: issuers } = await supabaseClient
