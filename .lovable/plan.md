@@ -1,151 +1,204 @@
 
-# Plan: Corregir Visibilidad de Grok y Qwen en Chat Intelligence
 
-## 📋 Resumen del Problema
+# Plan: Selector Unificado de Profundidad + Rol al Inicio del Chat
 
-El Vector Store **sí** contiene los datos de las 6 IAs correctamente indexados. Sin embargo, la función `chat-intelligence` tiene **3 puntos ciegos** que impiden que Grok y Qwen aparezcan en las respuestas:
+## Resumen del Problema
 
-| Ubicación | Problema | Impacto |
-|-----------|----------|---------|
-| Líneas 2353-2360 | Lista de campos para búsqueda de keywords solo incluye 4 modelos | Los textos de Grok/Qwen nunca se incluyen en extractos de palabras clave |
-| Líneas 2407, 2414 | `records.slice(0, 4)` corta los registros a 4 | Aunque el mapa de campos incluye Grok/Qwen, nunca se procesan |
-| Líneas 2798-2802 | Ejemplo de tabla en system prompt solo muestra 4 modelos | La IA genera tablas incompletas por imitación del ejemplo |
+Actualmente:
+- **Profundidad** (Quick/Complete/Exhaustive): Se selecciona **antes** de enviar ✅
+- **Rol profesional** (CEO, Periodista, Inversor...): Se selecciona **después** de la respuesta ❌
 
----
-
-## 🔧 Cambios Requeridos
-
-### Cambio 1: Añadir Grok y Qwen a la lista de campos para búsqueda
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-**Líneas:** 2353-2360
-
-```typescript
-// ANTES (solo 4 modelos):
-const fields = [
-  { name: 'ChatGPT', value: r["20_res_gpt_bruto"] },
-  { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
-  { name: 'Gemini', value: r["22_res_gemini_bruto"] },
-  { name: 'DeepSeek', value: r["23_res_deepseek_bruto"] },
-  { name: 'Explicación', value: r["22_explicacion"] },
-  { name: 'Resumen', value: r["10_resumen"] },
-];
-
-// DESPUÉS (6 modelos + explicación + resumen):
-const fields = [
-  { name: 'ChatGPT', value: r["20_res_gpt_bruto"] },
-  { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
-  { name: 'Gemini', value: r["22_res_gemini_bruto"] },
-  { name: 'DeepSeek', value: r["23_res_deepseek_bruto"] },
-  { name: 'Grok', value: r["respuesta_bruto_grok"] },
-  { name: 'Qwen', value: r["respuesta_bruto_qwen"] },
-  { name: 'Explicación', value: r["22_explicacion"] },
-  { name: 'Resumen', value: r["10_resumen"] },
-];
-```
-
-### Cambio 2: Aumentar límite de registros de 4 a 6+
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-**Líneas:** 2407 y 2414
-
-```typescript
-// ANTES (línea 2407):
-records.slice(0, 4).forEach(r => {
-
-// DESPUÉS:
-records.slice(0, 6).forEach(r => {
-
-// ANTES (línea 2414):
-records.slice(0, 4).forEach(r => {
-
-// DESPUÉS:
-records.slice(0, 6).forEach(r => {
-```
-
-### Cambio 3: Actualizar ejemplo de tabla en system prompt
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-**Líneas:** 2798-2802
-
-```typescript
-// ANTES:
-| Modelo IA | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
-|-----------|-----|-----|-----|-----|-----|-----|-----|-----|-----|
-| ChatGPT   | 64  | 71  | 63  | 35  | 35  | 100 | 50  | 88  | 62  |
-| Gemini    | 50  | 55  | 30  | 10  | 42  | 90  | 50  | 70  | 60  |
-| ...       | ... | ... | ... | ... | ... | ... | ... | ... | ... |
-
-// DESPUÉS:
-| Modelo IA  | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
-|------------|-----|-----|-----|-----|-----|-----|-----|-----|-----|
-| ChatGPT    | 64  | 71  | 63  | 35  | 35  | 100 | 50  | 88  | 62  |
-| Perplexity | 68  | 75  | 58  | 42  | 38  | 95  | 55  | 85  | 58  |
-| Gemini     | 50  | 55  | 30  | 10  | 42  | 90  | 50  | 70  | 60  |
-| DeepSeek   | 55  | 60  | 45  | 25  | 35  | 88  | 48  | 72  | 55  |
-| Grok       | 62  | 68  | 52  | 38  | 40  | 92  | 52  | 78  | 60  |
-| Qwen       | 58  | 65  | 48  | 30  | 36  | 90  | 50  | 75  | 57  |
-```
+El usuario quiere que ambas configuraciones se elijan **antes** de enviar la pregunta, para que el sistema genere directamente la respuesta adaptada al rol elegido.
 
 ---
 
-## 📁 Archivo a Modificar
+## Diseño de la Solución
+
+### Nueva Experiencia de Usuario
+
+```text
+┌────────────────────────────────────────────────────────────────┐
+│  📊 Configura tu análisis                                      │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  PROFUNDIDAD                              PERSPECTIVA          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐  ┌─────────────────┐  │
+│  │ ⚡ Rápido │ │ 📋 Completo│ │ 📚 Exhaustivo│  │ 🎯 General  ▼  │  │
+│  └──────────┘ └──────────┘ └──────────┘  └─────────────────┘  │
+│                                                                │
+│  📝 Seleccionado: Completo + General                           │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**Comportamiento:**
+1. Por defecto: "Completo" + "General" (sin adaptación de rol)
+2. Al hacer clic en el selector de perspectiva, se abre un dropdown con los roles
+3. Al enviar, se pasa tanto `depthLevel` como `roleId` al backend
+4. El backend genera la respuesta ya adaptada al rol (sin necesidad de paso post-respuesta)
+
+---
+
+## Cambios Técnicos Requeridos
+
+### 1. Modificar `ChatInput.tsx`
+
+**Añadir:**
+- Estado `selectedRole` (default: `'general'`)
+- Selector de rol como dropdown junto al selector de profundidad
+- Pasar `roleId` en las opciones de `onSend`
+
+**Actualizar props interface:**
+```typescript
+interface ChatInputProps {
+  onSend: (message: string, options?: { 
+    bulletinMode?: boolean; 
+    depthLevel?: DepthLevel;
+    roleId?: string;  // NUEVO
+  }) => void;
+  // ... resto igual
+}
+```
+
+### 2. Modificar `ChatContext.tsx`
+
+**En `sendMessage`:**
+- Recibir `roleId` en las opciones
+- Si `roleId !== 'general'`, incluir el prompt del rol en la llamada al edge function
+- El edge function generará la respuesta directamente adaptada
+
+**Nuevo flujo:**
+```typescript
+const sendMessage = async (question, options) => {
+  const roleId = options?.roleId || 'general';
+  const role = getRoleById(roleId);
+  
+  await supabase.functions.invoke('chat-intelligence', {
+    body: {
+      question,
+      depthLevel: options?.depthLevel,
+      // NUEVO: rol pre-seleccionado
+      roleId: roleId !== 'general' ? roleId : undefined,
+      roleName: role?.name,
+      rolePrompt: role?.prompt,
+    }
+  });
+};
+```
+
+### 3. Modificar Edge Function `chat-intelligence`
+
+**En `handleStandardChat`:**
+- Si viene `roleId` y `rolePrompt`, aplicar la transformación de rol directamente
+- Combinar las instrucciones de profundidad con las de rol
+
+### 4. Actualizar traducciones
+
+**Añadir claves:**
+```typescript
+// Role selector
+roleLabel: string;           // "Perspectiva"
+roleGeneral: string;         // "General"
+selectRole: string;          // "Selecciona tu perspectiva profesional"
+configureAnalysis: string;   // "Configura tu análisis"
+selectedConfig: string;      // "Seleccionado: {depth} + {role}"
+```
+
+### 5. Mantener `RoleEnrichmentBar` como opción secundaria
+
+- El componente seguirá existiendo para re-adaptar respuestas ya generadas
+- Pero ya no será la forma principal de seleccionar rol
+
+---
+
+## Archivos a Modificar
 
 | Archivo | Cambios |
 |---------|---------|
-| `supabase/functions/chat-intelligence/index.ts` | 3 correcciones en líneas 2353-2360, 2407, 2414, y 2798-2802 |
+| `src/components/chat/ChatInput.tsx` | Añadir estado y selector de rol, actualizar props |
+| `src/contexts/ChatContext.tsx` | Procesar `roleId` en `sendMessage`, pasar al edge function |
+| `supabase/functions/chat-intelligence/index.ts` | Aplicar rol pre-seleccionado en generación inicial |
+| `src/lib/chatTranslations.ts` | Nuevas claves de traducción para selector de rol |
 
 ---
 
-## 🧪 Resultado Esperado
+## Detalle Visual del Nuevo Selector
 
-### Antes (estado actual):
+### Selector de Rol (Dropdown)
+
 ```text
-Usuario: "Analiza Telefónica"
-→ Tabla con 4 modelos (ChatGPT, Perplexity, Gemini, DeepSeek)
-→ Extractos solo de 4 modelos
-→ Grok y Qwen nunca aparecen citados
+┌─────────────────────────────┐
+│ 🎯 General               ▼  │  ← Botón que abre dropdown
+└─────────────────────────────┘
+        ↓ (al hacer clic)
+┌─────────────────────────────┐
+│ 🎯 General          ← activo │
+├─────────────────────────────┤
+│ ★ DESTACADOS                │
+├─────────────────────────────┤
+│ 👔 CEO / Alta Dirección     │
+│ 📰 Periodista Económico     │
+│ 📊 Analista de Mercados     │
+│ 💰 Inversor                 │
+│ 📢 Director Comunicación    │
+├─────────────────────────────┤
+│ + Ver todos los roles...    │
+└─────────────────────────────┘
 ```
 
-### Después (con correcciones):
-```text
-Usuario: "Analiza Telefónica"
-→ Tabla con 6 modelos (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen)
-→ Extractos de todos los modelos disponibles
-→ "Grok destaca con un RIX de 72 mientras que Qwen..."
-```
+### Estados visuales
+
+- **General seleccionado**: Botón neutro (outline)
+- **Rol específico seleccionado**: Botón destacado con emoji y nombre del rol
+- **Indicador de configuración**: Texto pequeño debajo mostrando "Completo + CEO"
 
 ---
 
-## ⏱ Tiempo Estimado
+## Comportamiento del Backend
 
-- **Implementación**: ~5 minutos (cambios localizados)
-- **Deploy y test**: ~3 minutos
-- **Total**: ~8 minutos
+### Cuando `roleId = 'general'`
+- Sin cambios: respuesta estándar con formato de profundidad
 
----
+### Cuando `roleId = 'ceo'` (u otro rol)
+- El system prompt incluirá AMBAS instrucciones:
+  1. Formato de profundidad (pirámide)
+  2. Adaptación de rol (perspectiva CEO)
 
-## Sección Técnica
-
-### Por qué el Vector Store no era el problema
-
-El archivo `populate-vector-store/index.ts` (líneas 416-421) **sí** indexa correctamente:
 ```typescript
-if (run["respuesta_bruto_grok"]) {
-  content += `RESPUESTA COMPLETA GROK:\n${run["respuesta_bruto_grok"]}...`;
-}
-if (run["respuesta_bruto_qwen"]) {
-  content += `RESPUESTA COMPLETA QWEN:\n${run["respuesta_bruto_qwen"]}...`;
-}
+const systemPrompt = `
+${buildDepthPrompt(depthLevel, languageName)}
+
+═══════════════════════════════════════════════════════════════════════════════
+                    PERSPECTIVA PROFESIONAL: ${roleName}
+═══════════════════════════════════════════════════════════════════════════════
+
+${rolePrompt}
+`;
 ```
 
-El problema estaba en cómo `chat-intelligence` **consulta y procesa** esos datos:
-1. La búsqueda vectorial devuelve documentos que **contienen** textos de Grok/Qwen
-2. Pero al construir el contexto estructurado desde `rix_runs_v2`, el código filtraba solo 4 registros
-3. Y al buscar keywords en textos brutos, solo buscaba en 4 campos
+---
 
-### Compatibilidad con datos legacy
+## Resultado Esperado
 
-Los cambios son **retrocompatibles**:
-- Si un registro no tiene `respuesta_bruto_grok`, el campo será `null` y se ignorará
-- El `slice(0, 6)` funcionará con 4 modelos (solo mostrará 4) o con 6 (mostrará todos)
+### Antes:
+```text
+1. Usuario escribe pregunta
+2. Selecciona profundidad (Quick/Complete/Exhaustive)
+3. Envía
+4. Recibe respuesta genérica
+5. Hace clic en "CEO" en RoleEnrichmentBar
+6. Espera segunda respuesta adaptada
+```
+
+### Después:
+```text
+1. Usuario selecciona profundidad + rol (Complete + CEO)
+2. Escribe pregunta
+3. Envía
+4. Recibe respuesta YA ADAPTADA al CEO directamente
+```
+
+**Beneficios:**
+- Una sola llamada al API en lugar de dos
+- Experiencia más clara para el usuario
+- El rol se integra mejor en el análisis inicial (no es un "parche" posterior)
+
