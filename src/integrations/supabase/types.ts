@@ -252,8 +252,13 @@ export type Database = {
           content: string
           conversation_id: string | null
           created_at: string | null
+          depth_level: string | null
           documents_found: number | null
+          drumroll_question: Json | null
           id: string
+          question_category: string | null
+          refined_question: string | null
+          refinement_confidence: number | null
           role: string
           session_id: string
           structured_data_found: number | null
@@ -267,8 +272,13 @@ export type Database = {
           content: string
           conversation_id?: string | null
           created_at?: string | null
+          depth_level?: string | null
           documents_found?: number | null
+          drumroll_question?: Json | null
           id?: string
+          question_category?: string | null
+          refined_question?: string | null
+          refinement_confidence?: number | null
           role: string
           session_id: string
           structured_data_found?: number | null
@@ -282,8 +292,13 @@ export type Database = {
           content?: string
           conversation_id?: string | null
           created_at?: string | null
+          depth_level?: string | null
           documents_found?: number | null
+          drumroll_question?: Json | null
           id?: string
+          question_category?: string | null
+          refined_question?: string | null
+          refinement_confidence?: number | null
           role?: string
           session_id?: string
           structured_data_found?: number | null

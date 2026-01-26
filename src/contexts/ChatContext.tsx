@@ -7,6 +7,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import { convertMarkdownToHtml, baseExportStyles, premiumTableStyles } from "@/lib/markdownToHtml";
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference, DEFAULT_LANGUAGE } from "@/lib/chatLanguages";
 
+export interface DrumrollQuestion {
+  title: string;
+  fullQuestion: string;
+  teaser: string;
+  reportType: 'competitive' | 'vulnerabilities' | 'projection' | 'sector';
+}
+
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
   companyName?: string;
@@ -14,12 +21,15 @@ export interface MessageMetadata {
   structuredDataFound?: number;
   enrichedFromRole?: string;
   originalContent?: string;
+  depthLevel?: 'quick' | 'complete' | 'exhaustive';
+  questionCategory?: string;
 }
 
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
   suggestedQuestions?: string[];
+  drumrollQuestion?: DrumrollQuestion;
   metadata?: MessageMetadata;
 }
 
@@ -34,7 +44,7 @@ interface ChatContextType {
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive' }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -188,7 +198,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean }) => {
+  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive' }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -217,6 +227,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       content: question,
       user_id: currentUserId,
       conversation_id: convId,
+      depth_level: options?.depthLevel || 'complete',
     });
 
     // Extract company name from bulletin request if bulletinMode is active
@@ -237,7 +248,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     try {
-      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName);
+      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName, 'depth:', options?.depthLevel);
       const { data, error } = await supabase.functions.invoke('chat-intelligence', {
         body: {
           question,
@@ -250,6 +261,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // Language preference
           language: language.code,
           languageName: language.nativeName,
+          // Depth level
+          depthLevel: options?.depthLevel || 'complete',
         },
       });
 
@@ -259,11 +272,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
         role: 'assistant',
         content: data.answer,
         suggestedQuestions: data.suggestedQuestions,
+        drumrollQuestion: data.drumrollQuestion,
         metadata: {
           type: data.metadata?.type || 'standard',
           companyName: data.metadata?.companyName,
           documentsFound: data.metadata?.documentsFound,
           structuredDataFound: data.metadata?.structuredDataFound,
+          depthLevel: options?.depthLevel || 'complete',
+          questionCategory: data.metadata?.questionCategory,
         },
       };
 

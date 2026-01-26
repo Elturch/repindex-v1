@@ -508,7 +508,23 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { question, conversationHistory = [], sessionId, action, roleId, roleName, rolePrompt, originalQuestion, originalResponse, conversationId, bulletinMode, bulletinCompanyName, language = 'es', languageName = 'Español' } = body;
+    const { 
+      question, 
+      conversationHistory = [], 
+      sessionId, 
+      action, 
+      roleId, 
+      roleName, 
+      rolePrompt, 
+      originalQuestion, 
+      originalResponse, 
+      conversationId, 
+      bulletinMode, 
+      bulletinCompanyName, 
+      language = 'es', 
+      languageName = 'Español',
+      depthLevel = 'complete' // NEW: depth level parameter
+    } = body;
     
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
@@ -552,6 +568,7 @@ serve(async (req) => {
     }
 
     console.log(`${logPrefix} User question:`, question);
+    console.log(`${logPrefix} Depth level:`, depthLevel);
 
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openAIApiKey) {
@@ -571,6 +588,50 @@ serve(async (req) => {
         cacheTimestamp = now;
         console.log(`${logPrefix} Loaded ${companies.length} companies from database and cached`);
       }
+    }
+
+    // =============================================================================
+    // GUARDRAILS: CATEGORIZE QUESTION AND REDIRECT IF NEEDED
+    // =============================================================================
+    const questionCategory = categorizeQuestion(question, companiesCache || []);
+    console.log(`${logPrefix} Question category: ${questionCategory}`);
+    
+    if (questionCategory !== 'corporate_analysis') {
+      const redirectResponse = getRedirectResponse(questionCategory, question, languageName, companiesCache || []);
+      
+      // Save to database
+      if (sessionId) {
+        await supabaseClient.from('chat_intelligence_sessions').insert([
+          {
+            session_id: sessionId,
+            role: 'user',
+            content: question,
+            user_id: userId,
+            question_category: questionCategory,
+            depth_level: depthLevel,
+          },
+          {
+            session_id: sessionId,
+            role: 'assistant',
+            content: redirectResponse.answer,
+            suggested_questions: redirectResponse.suggestedQuestions,
+            user_id: userId,
+            question_category: questionCategory,
+          }
+        ]);
+      }
+      
+      return new Response(
+        JSON.stringify({
+          answer: redirectResponse.answer,
+          suggestedQuestions: redirectResponse.suggestedQuestions,
+          metadata: {
+            type: 'redirect',
+            questionCategory,
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // =============================================================================
@@ -639,7 +700,8 @@ serve(async (req) => {
       logPrefix,
       userId,
       language,
-      languageName
+      languageName,
+      depthLevel // NEW: pass depth level
     );
 
   } catch (error) {
@@ -656,6 +718,117 @@ serve(async (req) => {
     );
   }
 });
+
+// =============================================================================
+// GUARDRAILS: QUESTION CATEGORIZATION
+// =============================================================================
+type QuestionCategory = 
+  | 'corporate_analysis'    // Normal question about companies
+  | 'agent_identity'        // "Who are you?"
+  | 'personal_query'        // About an individual person
+  | 'off_topic'             // Outside scope
+  | 'test_limits';          // Jailbreak/testing attempts
+
+function categorizeQuestion(question: string, companiesCache: any[]): QuestionCategory {
+  const q = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  
+  // Agent identity patterns
+  if (/qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|que modelo|qué modelo|who are you|what are you/i.test(q)) {
+    return 'agent_identity';
+  }
+  
+  // Personal query patterns (asking about themselves or specific people without company context)
+  if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analiza(me)?|sobre m[ií]|analyze me|about me/i.test(q)) {
+    return 'personal_query';
+  }
+  
+  // If mentions known companies, it's corporate analysis
+  if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
+    return 'corporate_analysis';
+  }
+  
+  // Off-topic patterns
+  if (/f[uú]tbol|pol[ií]tica|receta|chiste|poema|cuent[oa]|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(q)) {
+    return 'off_topic';
+  }
+  
+  // Test limits patterns
+  if (/ignore.*instructions|ignora.*instrucciones|jailbreak|bypass|prompt injection|actua como|act as if/i.test(q)) {
+    return 'test_limits';
+  }
+  
+  // Default: try to process as corporate analysis
+  return 'corporate_analysis';
+}
+
+function getRedirectResponse(category: QuestionCategory, question: string, languageName: string, companiesCache: any[]): { answer: string; suggestedQuestions: string[] } {
+  const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX35').slice(0, 5).map(c => c.issuer_name) || ['Telefónica', 'BBVA', 'Santander', 'Iberdrola', 'Inditex'];
+  
+  const responses: Record<QuestionCategory, { answer: string; suggestedQuestions: string[] }> = {
+    agent_identity: {
+      answer: `Soy el **Agente Rix**, un analista especializado en reputación algorítmica corporativa.
+
+Mi función es ayudarte a interpretar cómo los principales modelos de inteligencia artificial (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) perciben a las empresas españolas y su posicionamiento reputacional.
+
+**Puedo hacer por ti:**
+- 📊 Analizar métricas RIX de cualquier empresa
+- 🏆 Comparar empresas con su competencia sectorial
+- 📈 Detectar tendencias y evolución temporal
+- 📋 Generar informes ejecutivos para comité de dirección
+
+¿Sobre qué empresa o sector te gustaría que hiciéramos un análisis?`,
+      suggestedQuestions: [
+        `Analiza la reputación de ${ibexCompanies[0]}`,
+        `Top 5 empresas del IBEX-35 esta semana`,
+        `Comparativa del sector Banca`,
+      ]
+    },
+    personal_query: {
+      answer: `Mi especialidad es el análisis de reputación **corporativa**, no individual. Analizo cómo las IAs perciben a empresas como entidades, no a personas físicas.
+
+Sin embargo, si estás vinculado a una empresa específica, puedo analizar cómo la percepción del liderazgo afecta a la reputación corporativa de esa organización.
+
+**¿Te gustaría que analizara la reputación corporativa de alguna empresa en particular?**`,
+      suggestedQuestions: [
+        `Analiza ${ibexCompanies[0]}`,
+        `¿Cómo se percibe el liderazgo de ${ibexCompanies[1]}?`,
+        `Reputación del sector Tecnología`,
+      ]
+    },
+    off_topic: {
+      answer: `Esa pregunta está fuera de mi especialización. Como Agente Rix, me centro exclusivamente en el **análisis de reputación algorítmica corporativa**.
+
+**Lo que sí puedo ofrecerte:**
+- 📊 Análisis de cualquier empresa del IBEX-35 o del ecosistema español
+- 🏆 Comparativas sectoriales y benchmarking competitivo
+- 📈 Detección de tendencias y alertas reputacionales
+- 📋 Informes ejecutivos sobre la percepción en IAs
+
+¿Hay alguna empresa o sector que te interese analizar?`,
+      suggestedQuestions: [
+        `Ranking del sector Energía`,
+        `Top 10 empresas esta semana`,
+        `Analiza ${ibexCompanies[2]}`,
+      ]
+    },
+    test_limits: {
+      answer: `Soy el Agente Rix, un analista de reputación corporativa. Mi función es ayudarte a entender cómo las IAs perciben a las empresas españolas.
+
+¿En qué empresa o sector te gustaría que nos centráramos?`,
+      suggestedQuestions: [
+        `Analiza ${ibexCompanies[0]}`,
+        `Top 5 del IBEX-35`,
+        `Comparativa sector Telecomunicaciones`,
+      ]
+    },
+    corporate_analysis: {
+      answer: '', // Not used for this category
+      suggestedQuestions: []
+    }
+  };
+  
+  return responses[category];
+}
 
 // =============================================================================
 // ENRICH REQUEST HANDLER - Role-based EXPANDED executive reports
@@ -1339,8 +1512,10 @@ async function handleStandardChat(
   logPrefix: string,
   userId: string | null,
   language: string = 'es',
-  languageName: string = 'Español'
+  languageName: string = 'Español',
+  depthLevel: 'quick' | 'complete' | 'exhaustive' = 'complete'
 ) {
+  console.log(`${logPrefix} Depth level: ${depthLevel}`);
   // =============================================================================
   // PASO 0: DETECTAR EMPRESAS MENCIONADAS EN LA PREGUNTA
   // =============================================================================
