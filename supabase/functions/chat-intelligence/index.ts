@@ -1079,7 +1079,10 @@ serve(async (req) => {
       userId,
       language,
       languageName,
-      depthLevel // NEW: pass depth level
+      depthLevel,
+      roleId,      // NEW: pass role info
+      roleName,
+      rolePrompt
     );
 
   } catch (error) {
@@ -1891,9 +1894,13 @@ async function handleStandardChat(
   userId: string | null,
   language: string = 'es',
   languageName: string = 'Español',
-  depthLevel: 'quick' | 'complete' | 'exhaustive' = 'complete'
+  depthLevel: 'quick' | 'complete' | 'exhaustive' = 'complete',
+  roleId?: string,
+  roleName?: string,
+  rolePrompt?: string
 ) {
-  console.log(`${logPrefix} Depth level: ${depthLevel}`);
+  console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || 'General'}`);
+  // =============================================================================
   // =============================================================================
   // PASO 0: DETECTAR EMPRESAS MENCIONADAS EN LA PREGUNTA
   // =============================================================================
@@ -2937,6 +2944,20 @@ NUNCA:
 • Terminar con llamadas a la acción comerciales
 
 ${buildDepthPrompt(depthLevel, languageName)}
+
+${roleId && rolePrompt ? `
+═══════════════════════════════════════════════════════════════════════════════
+              PERSPECTIVA PROFESIONAL PRE-SELECCIONADA: ${roleName}
+═══════════════════════════════════════════════════════════════════════════════
+
+El usuario ha solicitado que la respuesta esté adaptada a la perspectiva de ${roleName}.
+Aplica las siguientes instrucciones ADEMÁS del formato de profundidad indicado arriba:
+
+${rolePrompt}
+
+IMPORTANTE: La respuesta ya debe estar adaptada a esta perspectiva desde el inicio.
+No generes una respuesta genérica primero - genera directamente el análisis con esta perspectiva.
+` : ''}
 
 [IDIOMA: Responde en ${languageName}]`;
 
