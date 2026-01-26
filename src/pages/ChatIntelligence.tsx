@@ -97,14 +97,14 @@ export default function ChatIntelligence() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-background border z-50">
+                          <DropdownMenuItem onClick={downloadAsHtml} className="font-medium">
+                            {tr.downloadReport}
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={downloadAsTxt}>
                             {tr.downloadTxt}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={downloadAsJson}>
                             {tr.downloadJson}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={downloadAsHtml}>
-                            {tr.downloadHtml}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

@@ -13,6 +13,7 @@ export interface ChatUITranslations {
   downloadTxt: string;
   downloadJson: string;
   downloadHtml: string;
+  downloadReport: string;
   exportTooltip: string;
   
   // Empty state
@@ -127,6 +128,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'Descargar como TXT',
     downloadJson: 'Descargar como JSON',
     downloadHtml: 'Descargar como HTML',
+    downloadReport: 'Descargar como informe',
     exportTooltip: 'Guardar conversación para imprimir o compartir',
     startConversation: 'Comienza una conversación',
     askAboutCompanies: 'Pregunta sobre empresas del IBEX y su reputación según las IAs',
@@ -215,6 +217,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'Download as TXT',
     downloadJson: 'Download as JSON',
     downloadHtml: 'Download as HTML',
+    downloadReport: 'Download as report',
     exportTooltip: 'Save conversation to print or share',
     startConversation: 'Start a conversation',
     askAboutCompanies: 'Ask about IBEX companies and their AI-perceived reputation',
@@ -303,6 +306,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'Télécharger en TXT',
     downloadJson: 'Télécharger en JSON',
     downloadHtml: 'Télécharger en HTML',
+    downloadReport: 'Télécharger comme rapport',
     exportTooltip: 'Sauvegarder la conversation pour imprimer ou partager',
     startConversation: 'Commencer une conversation',
     askAboutCompanies: 'Posez des questions sur les entreprises IBEX et leur réputation selon les IAs',
@@ -391,6 +395,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'Als TXT herunterladen',
     downloadJson: 'Als JSON herunterladen',
     downloadHtml: 'Als HTML herunterladen',
+    downloadReport: 'Als Bericht herunterladen',
     exportTooltip: 'Konversation zum Drucken oder Teilen speichern',
     startConversation: 'Konversation beginnen',
     askAboutCompanies: 'Fragen Sie nach IBEX-Unternehmen und ihrer KI-wahrgenommenen Reputation',
@@ -479,6 +484,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'Baixar como TXT',
     downloadJson: 'Baixar como JSON',
     downloadHtml: 'Baixar como HTML',
+    downloadReport: 'Baixar como relatório',
     exportTooltip: 'Salvar conversa para imprimir ou compartilhar',
     startConversation: 'Iniciar uma conversa',
     askAboutCompanies: 'Pergunte sobre empresas do IBEX e sua reputação segundo as IAs',
@@ -567,6 +573,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'Scarica come TXT',
     downloadJson: 'Scarica come JSON',
     downloadHtml: 'Scarica come HTML',
+    downloadReport: 'Scarica come rapporto',
     exportTooltip: 'Salva la conversazione per stampare o condividere',
     startConversation: 'Inizia una conversazione',
     askAboutCompanies: 'Chiedi informazioni sulle aziende IBEX e la loro reputazione secondo le IA',
@@ -655,6 +662,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'تحميل كـ TXT',
     downloadJson: 'تحميل كـ JSON',
     downloadHtml: 'تحميل كـ HTML',
+    downloadReport: 'تحميل كتقرير',
     exportTooltip: 'حفظ المحادثة للطباعة أو المشاركة',
     startConversation: 'ابدأ محادثة',
     askAboutCompanies: 'اسأل عن شركات IBEX وسمعتها وفقًا للذكاء الاصطناعي',
@@ -743,6 +751,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: '下载为TXT',
     downloadJson: '下载为JSON',
     downloadHtml: '下载为HTML',
+    downloadReport: '下载为报告',
     exportTooltip: '保存对话以打印或分享',
     startConversation: '开始对话',
     askAboutCompanies: '询问IBEX公司及其AI感知的声誉',
@@ -831,6 +840,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'TXTとしてダウンロード',
     downloadJson: 'JSONとしてダウンロード',
     downloadHtml: 'HTMLとしてダウンロード',
+    downloadReport: 'レポートとしてダウンロード',
     exportTooltip: '印刷または共有するために会話を保存',
     startConversation: '会話を始める',
     askAboutCompanies: 'IBEX企業とAIが認識する評判について質問',
@@ -919,6 +929,7 @@ const translations: Record<string, ChatUITranslations> = {
     downloadTxt: 'TXT로 다운로드',
     downloadJson: 'JSON으로 다운로드',
     downloadHtml: 'HTML로 다운로드',
+    downloadReport: '보고서로 다운로드',
     exportTooltip: '인쇄 또는 공유를 위해 대화 저장',
     startConversation: '대화 시작하기',
     askAboutCompanies: 'IBEX 기업과 AI가 인식하는 평판에 대해 질문하세요',
