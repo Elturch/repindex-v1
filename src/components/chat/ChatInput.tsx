@@ -214,189 +214,235 @@ export function ChatInput({
     <div className="space-y-3">
       {/* Configuration Panel - Depth + Role */}
       {!compact && (
-        <div className="bg-muted/50 rounded-lg p-3 border border-border/50">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-foreground flex items-center gap-2">
-              📊 {tr.configureAnalysis}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {depthLevel === 'quick' && '⚡ ~30s'}
-              {depthLevel === 'complete' && '📋 ~1min'}
-              {depthLevel === 'exhaustive' && '📚 ~2min'}
-              {isRoleSelected && ` • ${selectedRole?.emoji} ${selectedRole?.name}`}
-            </span>
+        <div className={cn(
+          "rounded-xl border bg-gradient-to-br from-background to-muted/30 shadow-sm overflow-hidden transition-all duration-300",
+          (!depthConfirmed || !roleConfirmed) 
+            ? "border-amber-400/50 shadow-amber-500/10" 
+            : "border-border"
+        )}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-muted/40 border-b border-border/50">
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="text-sm font-semibold text-foreground">
+                {tr.configureAnalysis}
+              </span>
+            </div>
+            {(depthConfirmed && roleConfirmed) && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-background/60 px-2 py-1 rounded-full">
+                {depthLevel === 'quick' && <><Zap className="h-3 w-3 text-amber-500" /> ~30s</>}
+                {depthLevel === 'complete' && <><FileText className="h-3 w-3 text-primary" /> ~1min</>}
+                {depthLevel === 'exhaustive' && <><BookOpen className="h-3 w-3 text-purple-500" /> ~2min</>}
+                {isRoleSelected && <span className="text-muted-foreground/60 mx-1">•</span>}
+                {isRoleSelected && <span>{selectedRole?.emoji} {selectedRole?.name}</span>}
+              </div>
+            )}
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Depth Selector */}
-            <div className={cn(
-              "flex-1 rounded-lg transition-all",
-              !depthConfirmed && "ring-2 ring-amber-400/50 ring-offset-1 animate-pulse"
-            )}>
-              <div className="text-xs text-muted-foreground mb-1.5 font-medium">{tr.depthLabel}</div>
-              <TooltipProvider>
-                <ToggleGroup 
-                  type="single" 
-                  value={depthLevel} 
-                  onValueChange={(v) => {
-                    if (v) {
-                      setDepthLevel(v as DepthLevel);
-                      setDepthConfirmed(true);
-                    }
-                  }}
-                  className="w-full grid grid-cols-3 gap-1.5"
-                >
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ToggleGroupItem 
-                        value="quick" 
-                        className={cn(
-                          "flex flex-col items-center gap-0.5 h-auto py-2 px-2 rounded-md border transition-all text-xs",
-                          depthLevel === 'quick' 
-                            ? "bg-amber-500/20 border-amber-500 text-amber-700 dark:text-amber-400 shadow-sm" 
-                            : "bg-background border-border hover:bg-muted hover:border-muted-foreground/30"
-                        )}
-                      >
-                        <Zap className={cn(
-                          "h-4 w-4",
-                          depthLevel === 'quick' ? "text-amber-500" : "text-muted-foreground"
-                        )} />
-                        <span className="font-medium">{tr.depthQuick}</span>
-                      </ToggleGroupItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[200px]">
-                      <p className="text-xs font-medium">{tr.depthQuickTooltip}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ToggleGroupItem 
-                        value="complete" 
-                        className={cn(
-                          "flex flex-col items-center gap-0.5 h-auto py-2 px-2 rounded-md border transition-all text-xs",
-                          depthLevel === 'complete' 
-                            ? "bg-primary/20 border-primary text-primary shadow-sm" 
-                            : "bg-background border-border hover:bg-muted hover:border-muted-foreground/30"
-                        )}
-                      >
-                        <FileText className={cn(
-                          "h-4 w-4",
-                          depthLevel === 'complete' ? "text-primary" : "text-muted-foreground"
-                        )} />
-                        <span className="font-medium">{tr.depthComplete}</span>
-                      </ToggleGroupItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[200px]">
-                      <p className="text-xs font-medium">{tr.depthCompleteTooltip}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ToggleGroupItem 
-                        value="exhaustive" 
-                        className={cn(
-                          "flex flex-col items-center gap-0.5 h-auto py-2 px-2 rounded-md border transition-all text-xs",
-                          depthLevel === 'exhaustive' 
-                            ? "bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-400 shadow-sm" 
-                            : "bg-background border-border hover:bg-muted hover:border-muted-foreground/30"
-                        )}
-                      >
-                        <BookOpen className={cn(
-                          "h-4 w-4",
-                          depthLevel === 'exhaustive' ? "text-purple-500" : "text-muted-foreground"
-                        )} />
-                        <span className="font-medium">{tr.depthExhaustive}</span>
-                      </ToggleGroupItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[200px]">
-                      <p className="text-xs font-medium">{tr.depthExhaustiveTooltip}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </ToggleGroup>
-              </TooltipProvider>
-            </div>
-
-            {/* Role Selector */}
-            <div className={cn(
-              "sm:w-48 rounded-lg transition-all",
-              !roleConfirmed && "ring-2 ring-amber-400/50 ring-offset-1 animate-pulse"
-            )}>
-              <div className="text-xs text-muted-foreground mb-1.5 font-medium">{tr.roleLabel}</div>
-              <Select value={selectedRoleId} onValueChange={(v) => {
-                setSelectedRoleId(v);
-                setRoleConfirmed(true);
-              }}>
-                <SelectTrigger 
-                  className={cn(
-                    "w-full h-auto py-2 transition-all",
-                    isRoleSelected 
-                      ? "border-primary bg-primary/10 text-primary" 
-                      : "border-border"
+          {/* Content */}
+          <div className="p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-4">
+              {/* Depth Selector */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {tr.depthLabel}
+                  </span>
+                  {!depthConfirmed && (
+                    <span className="text-[10px] text-amber-500 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded">
+                      ← {language.code === 'es' ? 'Selecciona' : 'Select'}
+                    </span>
                   )}
-                >
-                  <SelectValue>
-                    <span className="flex items-center gap-2">
-                      {isRoleSelected ? (
-                        <>
-                          <span>{selectedRole?.emoji}</span>
-                          <span className="truncate">{selectedRole?.name}</span>
-                        </>
-                      ) : (
-                        <>
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <span>{tr.roleGeneral}</span>
-                        </>
-                      )}
+                </div>
+                <TooltipProvider>
+                  <ToggleGroup 
+                    type="single" 
+                    value={depthLevel} 
+                    onValueChange={(v) => {
+                      if (v) {
+                        setDepthLevel(v as DepthLevel);
+                        setDepthConfirmed(true);
+                      }
+                    }}
+                    className="grid grid-cols-3 gap-2 w-full"
+                  >
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <ToggleGroupItem 
+                          value="quick" 
+                          className={cn(
+                            "group relative flex flex-col items-center justify-center gap-1 h-16 rounded-lg border-2 transition-all duration-200",
+                            depthLevel === 'quick' 
+                              ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-md shadow-amber-500/20" 
+                              : "border-transparent bg-muted/50 hover:bg-muted hover:border-muted-foreground/20 text-muted-foreground"
+                          )}
+                        >
+                          <Zap className={cn(
+                            "h-5 w-5 transition-transform group-hover:scale-110",
+                            depthLevel === 'quick' ? "text-amber-500" : ""
+                          )} />
+                          <span className="text-xs font-semibold">{tr.depthQuick}</span>
+                          {depthLevel === 'quick' && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full flex items-center justify-center">
+                              <span className="text-[8px] text-white font-bold">✓</span>
+                            </div>
+                          )}
+                        </ToggleGroupItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[200px]">
+                        <p className="text-xs">{tr.depthQuickTooltip}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <ToggleGroupItem 
+                          value="complete" 
+                          className={cn(
+                            "group relative flex flex-col items-center justify-center gap-1 h-16 rounded-lg border-2 transition-all duration-200",
+                            depthLevel === 'complete' 
+                              ? "border-primary bg-primary/10 text-primary shadow-md shadow-primary/20" 
+                              : "border-transparent bg-muted/50 hover:bg-muted hover:border-muted-foreground/20 text-muted-foreground"
+                          )}
+                        >
+                          <FileText className={cn(
+                            "h-5 w-5 transition-transform group-hover:scale-110",
+                            depthLevel === 'complete' ? "text-primary" : ""
+                          )} />
+                          <span className="text-xs font-semibold">{tr.depthComplete}</span>
+                          {depthLevel === 'complete' && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full flex items-center justify-center">
+                              <span className="text-[8px] text-primary-foreground font-bold">✓</span>
+                            </div>
+                          )}
+                        </ToggleGroupItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[200px]">
+                        <p className="text-xs">{tr.depthCompleteTooltip}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <ToggleGroupItem 
+                          value="exhaustive" 
+                          className={cn(
+                            "group relative flex flex-col items-center justify-center gap-1 h-16 rounded-lg border-2 transition-all duration-200",
+                            depthLevel === 'exhaustive' 
+                              ? "border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-400 shadow-md shadow-purple-500/20" 
+                              : "border-transparent bg-muted/50 hover:bg-muted hover:border-muted-foreground/20 text-muted-foreground"
+                          )}
+                        >
+                          <BookOpen className={cn(
+                            "h-5 w-5 transition-transform group-hover:scale-110",
+                            depthLevel === 'exhaustive' ? "text-purple-500" : ""
+                          )} />
+                          <span className="text-xs font-semibold">{tr.depthExhaustive}</span>
+                          {depthLevel === 'exhaustive' && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full flex items-center justify-center">
+                              <span className="text-[8px] text-white font-bold">✓</span>
+                            </div>
+                          )}
+                        </ToggleGroupItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[200px]">
+                        <p className="text-xs">{tr.depthExhaustiveTooltip}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </ToggleGroup>
+                </TooltipProvider>
+              </div>
+
+              {/* Role Selector */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    {tr.roleLabel}
+                  </span>
+                  {!roleConfirmed && (
+                    <span className="text-[10px] text-amber-500 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded">
+                      ← {language.code === 'es' ? 'Selecciona' : 'Select'}
                     </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="bg-popover border border-border shadow-lg z-50">
-                  <SelectItem value="general" className="cursor-pointer">
-                    <span className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      <span>{tr.roleGeneral}</span>
-                    </span>
-                  </SelectItem>
-                  
-                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
-                    ★ {language.code === 'es' ? 'DESTACADOS' : 'FEATURED'}
-                  </div>
-                  
-                  {featuredRoles.map((role) => (
-                    <SelectItem key={role.id} value={role.id} className="cursor-pointer">
+                  )}
+                </div>
+                <Select value={selectedRoleId} onValueChange={(v) => {
+                  setSelectedRoleId(v);
+                  setRoleConfirmed(true);
+                }}>
+                  <SelectTrigger 
+                    className={cn(
+                      "h-16 rounded-lg border-2 transition-all duration-200",
+                      isRoleSelected 
+                        ? "border-primary bg-primary/10 text-primary shadow-md shadow-primary/20" 
+                        : roleConfirmed 
+                          ? "border-muted-foreground/20 bg-muted/50"
+                          : "border-transparent bg-muted/50 hover:bg-muted"
+                    )}
+                  >
+                    <SelectValue>
                       <span className="flex items-center gap-2">
-                        <span>{role.emoji}</span>
-                        <span>{role.name}</span>
+                        {isRoleSelected ? (
+                          <>
+                            <span className="text-lg">{selectedRole?.emoji}</span>
+                            <span className="font-semibold truncate">{selectedRole?.name}</span>
+                          </>
+                        ) : (
+                          <>
+                            <User className="h-5 w-5 text-muted-foreground" />
+                            <span className="font-medium">{tr.roleGeneral}</span>
+                          </>
+                        )}
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border border-border shadow-xl z-50 rounded-lg">
+                    <SelectItem value="general" className="cursor-pointer py-2">
+                      <span className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <span className="font-medium">{tr.roleGeneral}</span>
                       </span>
                     </SelectItem>
-                  ))}
-                  
-                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
-                    {language.code === 'es' ? 'TODOS LOS ROLES' : 'ALL ROLES'}
-                  </div>
-                  
-                  {allRoles.filter(r => r.id !== 'general' && !FEATURED_ROLE_IDS.includes(r.id)).map((role) => (
-                    <SelectItem key={role.id} value={role.id} className="cursor-pointer">
-                      <span className="flex items-center gap-2">
-                        <span>{role.emoji}</span>
-                        <span>{role.name}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    
+                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider border-t mt-1 bg-muted/30">
+                      ★ {language.code === 'es' ? 'DESTACADOS' : 'FEATURED'}
+                    </div>
+                    
+                    {featuredRoles.map((role) => (
+                      <SelectItem key={role.id} value={role.id} className="cursor-pointer py-2">
+                        <span className="flex items-center gap-2">
+                          <span className="text-base">{role.emoji}</span>
+                          <span className="font-medium">{role.name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    
+                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider border-t mt-1 bg-muted/30">
+                      {language.code === 'es' ? 'TODOS LOS ROLES' : 'ALL ROLES'}
+                    </div>
+                    
+                    {allRoles.filter(r => r.id !== 'general' && !FEATURED_ROLE_IDS.includes(r.id)).map((role) => (
+                      <SelectItem key={role.id} value={role.id} className="cursor-pointer py-2">
+                        <span className="flex items-center gap-2">
+                          <span className="text-base">{role.emoji}</span>
+                          <span>{role.name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            
+            {/* Warning message when not confirmed */}
+            {(!depthConfirmed || !roleConfirmed) && (
+              <div className="flex items-center gap-2 mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  {tr.selectConfigBeforeSending}
+                </span>
+              </div>
+            )}
           </div>
-          
-          {/* Warning message when not confirmed */}
-          {(!depthConfirmed || !roleConfirmed) && (
-            <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5 mt-2">
-              <AlertCircle className="h-3.5 w-3.5" />
-              <span>{tr.selectConfigBeforeSending}</span>
-            </div>
-          )}
         </div>
       )}
       
