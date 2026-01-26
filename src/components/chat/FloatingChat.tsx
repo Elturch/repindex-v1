@@ -148,7 +148,7 @@ export function FloatingChat() {
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
-            className="fixed bottom-6 right-6 z-50"
+            className="fixed bottom-6 right-6 z-[60]"
           >
             {/* Onboarding tooltip */}
             {showOnboarding && (
@@ -242,7 +242,7 @@ export function FloatingChat() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="fixed bottom-6 right-6 z-50 w-[480px] max-w-[calc(100vw-3rem)]"
+            className="fixed bottom-6 right-6 z-[60] w-[480px] max-w-[calc(100vw-3rem)]"
           >
             <Card className="shadow-2xl border-2">
               <CardHeader className="pb-2">
