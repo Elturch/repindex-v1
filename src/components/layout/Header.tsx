@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GlossaryDialog } from "@/components/ui/glossary-dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDevOrPreview } from "@/lib/env";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,15 +62,20 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   };
 
   const handleNavClick = (item: typeof navItems[0]) => {
-    // Determine target path before closing menu
-    const targetPath = (item.protected && !isAuthenticated) ? "/login" : item.path;
-    
+    const bypassAuth = isDevOrPreview();
+
     // Close mobile menu first
     setMobileMenuOpen(false);
     
     // Navigate after a brief delay to allow menu animation
     setTimeout(() => {
-      navigate(targetPath);
+      if (item.protected && !isAuthenticated && !bypassAuth) {
+        // Preserve intended destination for the Login page
+        navigate("/login", { state: { from: { pathname: item.path } } });
+        return;
+      }
+
+      navigate(item.path);
     }, 50);
   };
 
