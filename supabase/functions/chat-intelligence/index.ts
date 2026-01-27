@@ -3006,7 +3006,8 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
 
-  // Log API usage
+  // Log API usage with depth_level tracking
+  console.log(`${logPrefix} Logging API usage with depth_level: ${depthLevel}, role: ${roleId || 'none'}`);
   await logApiUsage({
     supabaseClient,
     edgeFunction: 'chat-intelligence',

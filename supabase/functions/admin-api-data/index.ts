@@ -562,10 +562,11 @@ Deno.serve(async (req) => {
         let depthLevel = log.metadata?.depth_level || 'unknown'
         
         // Fallback: Infer from tokens if no depth_level in metadata
+        // Thresholds adjusted based on real-world usage patterns (Jan 2026)
         if (depthLevel === 'unknown' && log.action_type === 'chat') {
           const totalTokens = (log.input_tokens || 0) + (log.output_tokens || 0)
-          if (totalTokens > 70000) depthLevel = 'exhaustive'
-          else if (totalTokens > 40000) depthLevel = 'complete'
+          if (totalTokens > 55000) depthLevel = 'exhaustive'
+          else if (totalTokens > 30000) depthLevel = 'complete'
           else depthLevel = 'quick'
         }
         
