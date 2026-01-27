@@ -104,24 +104,57 @@ export function MiniTablesGrid() {
 
   if (!data) return null;
 
-  const tables = [
+  // IBEX 35 Rankings
+  const ibexTables = [
     {
-      title: "Top 5 RIX",
-      subtitle: "Mejores índices de reputación",
+      title: "Top 5 IBEX 35",
+      subtitle: "Mejores índices del IBEX",
+      icon: <Trophy className="w-6 h-6" />,
+      data: data.topIbex || [],
+      variant: "success" as const
+    },
+    {
+      title: "Bottom 5 IBEX 35",
+      subtitle: "Índices más bajos del IBEX",
+      icon: <TrendingDown className="w-6 h-6" />,
+      data: data.bottomIbex || [],
+      variant: "danger" as const
+    },
+    {
+      title: "IBEX Movers UP",
+      subtitle: "Mayores subidas semanales",
+      icon: <TrendingUp className="w-6 h-6" />,
+      data: data.ibexMoversUp || [],
+      variant: "success" as const
+    },
+    {
+      title: "IBEX Movers DOWN",
+      subtitle: "Mayores bajadas semanales",
+      icon: <TrendingDown className="w-6 h-6" />,
+      data: data.ibexMoversDown || [],
+      variant: "danger" as const
+    }
+  ];
+
+  // Non-IBEX Rankings
+  const otherTables = [
+    {
+      title: "Top 5 Resto",
+      subtitle: "Mejores fuera del IBEX",
       icon: <Trophy className="w-6 h-6" />,
       data: data.topOverall || [],
       variant: "success" as const
     },
     {
-      title: "Bottom 5 RIX",
-      subtitle: "Índices más bajos",
+      title: "Bottom 5 Resto",
+      subtitle: "Índices más bajos (sin IBEX)",
       icon: <TrendingDown className="w-6 h-6" />,
       data: data.bottomOverall || [],
       variant: "danger" as const
     },
     {
       title: "Top 5 Cotizadas",
-      subtitle: "Empresas en bolsa",
+      subtitle: "Cotizadas fuera del IBEX",
       icon: <Building2 className="w-6 h-6" />,
       data: data.topTraded || [],
       variant: "info" as const
@@ -135,14 +168,14 @@ export function MiniTablesGrid() {
     },
     {
       title: "Top Movers UP",
-      subtitle: "Mayores subidas semanales",
+      subtitle: "Mayores subidas (sin IBEX)",
       icon: <TrendingUp className="w-6 h-6" />,
       data: data.topMoversUp || [],
       variant: "success" as const
     },
     {
       title: "Top Movers DOWN",
-      subtitle: "Mayores bajadas semanales",
+      subtitle: "Mayores bajadas (sin IBEX)",
       icon: <TrendingDown className="w-6 h-6" />,
       data: data.topMoversDown || [],
       variant: "danger" as const
@@ -152,6 +185,7 @@ export function MiniTablesGrid() {
   return (
     <section className="py-8 sm:py-12 px-2 sm:px-4 bg-muted/30">
       <div className="container mx-auto max-w-7xl">
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -175,31 +209,91 @@ export function MiniTablesGrid() {
           </p>
         </motion.div>
 
+        {/* IBEX 35 Section */}
         <motion.div
-          initial="hidden"
-          whileInView="visible"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          variants={{
-            hidden: {},
-            visible: {
-              transition: {
-                staggerChildren: 0.1
-              }
-            }
-          }}
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6"
+          transition={{ duration: 0.5 }}
+          className="mb-8 sm:mb-12"
         >
-          {tables.map((table, idx) => (
-            <motion.div
-              key={idx}
-              variants={{
-                hidden: { opacity: 0, y: 20 },
-                visible: { opacity: 1, y: 0 }
-              }}
-            >
-              <MiniTable {...table} />
-            </motion.div>
-          ))}
+          <div className="flex items-center gap-3 mb-4 sm:mb-6">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+            <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-primary whitespace-nowrap">
+              🏛️ IBEX 35
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+          </div>
+          
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={{
+              hidden: {},
+              visible: {
+                transition: {
+                  staggerChildren: 0.1
+                }
+              }
+            }}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6"
+          >
+            {ibexTables.map((table, idx) => (
+              <motion.div
+                key={idx}
+                variants={{
+                  hidden: { opacity: 0, y: 20 },
+                  visible: { opacity: 1, y: 0 }
+                }}
+              >
+                <MiniTable {...table} />
+              </motion.div>
+            ))}
+          </motion.div>
+        </motion.div>
+
+        {/* Other Rankings Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <div className="flex items-center gap-3 mb-4 sm:mb-6">
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-muted-foreground/30 to-transparent" />
+            <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-muted-foreground whitespace-nowrap">
+              📊 Resto del Mercado
+            </h3>
+            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-muted-foreground/30 to-transparent" />
+          </div>
+          
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            variants={{
+              hidden: {},
+              visible: {
+                transition: {
+                  staggerChildren: 0.1
+                }
+              }
+            }}
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6"
+          >
+            {otherTables.map((table, idx) => (
+              <motion.div
+                key={idx}
+                variants={{
+                  hidden: { opacity: 0, y: 20 },
+                  visible: { opacity: 1, y: 0 }
+                }}
+              >
+                <MiniTable {...table} />
+              </motion.div>
+            ))}
+          </motion.div>
         </motion.div>
       </div>
     </section>
