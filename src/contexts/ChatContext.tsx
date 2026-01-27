@@ -89,6 +89,18 @@ export interface DrumrollQuestion {
   reportType: 'competitive' | 'vulnerabilities' | 'projection' | 'sector';
 }
 
+export interface MethodologyMetadata {
+  hasRixData?: boolean;
+  modelsUsed?: string[];
+  periodFrom?: string;
+  periodTo?: string;
+  observationsCount?: number;
+  divergenceLevel?: 'low' | 'medium' | 'high' | 'unknown';
+  divergencePoints?: number;
+  uniqueCompanies?: number;
+  uniqueWeeks?: number;
+}
+
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
   companyName?: string;
@@ -98,6 +110,8 @@ export interface MessageMetadata {
   originalContent?: string;
   depthLevel?: 'quick' | 'complete' | 'exhaustive';
   questionCategory?: string;
+  // Methodology metadata for "Radar Reputacional" validation sheet
+  methodology?: MethodologyMetadata;
 }
 
 export interface Message {
@@ -106,7 +120,7 @@ export interface Message {
   suggestedQuestions?: string[];
   drumrollQuestion?: DrumrollQuestion;
   metadata?: MessageMetadata;
-  isStreaming?: boolean; // NEW: indicates if message is currently being streamed
+  isStreaming?: boolean; // indicates if message is currently being streamed
 }
 
 interface PageContext {
@@ -446,7 +460,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
         }
 
-        // Mark streaming as complete and add final metadata
+        // Mark streaming as complete and add final metadata including methodology
         setMessages(prev => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];
@@ -461,6 +475,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
               structuredDataFound: finalMetadata?.structuredDataFound,
               depthLevel: options?.depthLevel || 'complete',
               questionCategory: finalMetadata?.questionCategory,
+              // Methodology metadata for "Radar Reputacional" validation sheet
+              methodology: finalMetadata?.methodology || {
+                hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
+                modelsUsed: finalMetadata?.modelsUsed || [],
+                periodFrom: finalMetadata?.periodFrom,
+                periodTo: finalMetadata?.periodTo,
+                observationsCount: finalMetadata?.structuredDataFound || 0,
+                divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
+                divergencePoints: finalMetadata?.divergencePoints || 0,
+                uniqueCompanies: finalMetadata?.uniqueCompanies,
+                uniqueWeeks: finalMetadata?.uniqueWeeks,
+              },
             };
           }
           return updated;
