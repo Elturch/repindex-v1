@@ -1364,7 +1364,8 @@ serve(async (req) => {
         sessionId,
         logPrefix,
         userId,
-        conversationId
+        conversationId,
+        streamMode // Pass streaming mode to bulletin handler
       );
     }
 
@@ -1791,7 +1792,8 @@ async function handleBulletinRequest(
   sessionId: string | undefined,
   logPrefix: string,
   userId: string | null,
-  conversationId: string | undefined
+  conversationId: string | undefined,
+  streamMode: boolean = false // NEW: support streaming mode
 ) {
   console.log(`${logPrefix} Processing bulletin request for: ${companyQuery}`);
 
@@ -2028,7 +2030,7 @@ async function handleBulletinRequest(
   }
 
   // 7. Call AI with bulletin prompt
-  console.log(`${logPrefix} Calling AI for bulletin generation (depth: ${depthLevel})...`);
+  console.log(`${logPrefix} Calling AI for bulletin generation (depth: ${depthLevel}, streaming: ${streamMode})...`);
   
   const bulletinUserPrompt = `Genera un BOLETÍN EJECUTIVO completo para la empresa ${matchedCompany.issuer_name} (${matchedCompany.ticker}).
 
@@ -2043,11 +2045,208 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     { role: 'user', content: bulletinUserPrompt }
   ];
 
-  // In "quick" we skip OpenAI entirely (it often wastes ~60s before fallback) and use Gemini fast models.
+  // Configuration based on depth level
   const isQuickBulletin = depthLevel === 'quick';
-  const bulletinModel = isQuickBulletin ? 'gpt-4o-mini' : 'o3';
   const bulletinMaxTokens = isQuickBulletin ? 6000 : 40000;
-  const bulletinTimeoutMs = isQuickBulletin ? 45000 : 60000;
+  const bulletinTimeoutMs = isQuickBulletin ? 45000 : 120000; // Extended timeout for streaming
+  const geminiModel = isQuickBulletin ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash';
+
+  // =========================================================================
+  // STREAMING MODE: Return SSE stream for real-time text generation
+  // =========================================================================
+  if (streamMode) {
+    console.log(`${logPrefix} Starting STREAMING bulletin generation...`);
+    
+    const sseEncoder = createSSEEncoder();
+    
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Send initial metadata
+          controller.enqueue(sseEncoder({
+            type: 'start',
+            metadata: {
+              companyName: matchedCompany.issuer_name,
+              ticker: matchedCompany.ticker,
+              sector: matchedCompany.sector_category,
+              competitorsCount: competitors.length,
+              weeksAnalyzed: uniquePeriods.length,
+              dataPointsUsed: rixData?.length || 0,
+            }
+          }));
+
+          let accumulatedContent = '';
+          let provider: 'openai' | 'gemini' = 'openai';
+          let inputTokens = 0;
+          let outputTokens = 0;
+          let streamError = false;
+
+          // Try OpenAI first (unless quick mode prefers Gemini)
+          if (!isQuickBulletin) {
+            console.log(`${logPrefix} Trying OpenAI stream first...`);
+            for await (const chunk of streamOpenAIResponse(bulletinMessages, 'o3', bulletinMaxTokens, logPrefix, bulletinTimeoutMs)) {
+              if (chunk.type === 'chunk' && chunk.text) {
+                accumulatedContent += chunk.text;
+                controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
+              } else if (chunk.type === 'done') {
+                inputTokens = chunk.inputTokens || 0;
+                outputTokens = chunk.outputTokens || 0;
+                break;
+              } else if (chunk.type === 'error') {
+                console.warn(`${logPrefix} OpenAI stream error: ${chunk.error}, falling back to Gemini...`);
+                streamError = true;
+                controller.enqueue(sseEncoder({ type: 'fallback', metadata: { provider: 'gemini' } }));
+                break;
+              }
+            }
+          } else {
+            streamError = true; // Skip to Gemini for quick mode
+          }
+
+          // Fallback to Gemini if OpenAI failed
+          if (streamError || accumulatedContent.length === 0) {
+            provider = 'gemini';
+            accumulatedContent = ''; // Reset for Gemini response
+            
+            console.log(`${logPrefix} Using Gemini stream (${geminiModel})...`);
+            for await (const chunk of streamGeminiResponse(bulletinMessages, geminiModel, bulletinMaxTokens, logPrefix, bulletinTimeoutMs)) {
+              if (chunk.type === 'chunk' && chunk.text) {
+                accumulatedContent += chunk.text;
+                controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
+              } else if (chunk.type === 'done') {
+                inputTokens = chunk.inputTokens || 0;
+                outputTokens = chunk.outputTokens || 0;
+                break;
+              } else if (chunk.type === 'error') {
+                console.error(`${logPrefix} Gemini stream also failed: ${chunk.error}`);
+                controller.enqueue(sseEncoder({ 
+                  type: 'error', 
+                  error: `Error generando boletín: ${chunk.error}` 
+                }));
+                controller.close();
+                return;
+              }
+            }
+          }
+
+          console.log(`${logPrefix} Bulletin stream completed (via ${provider}), length: ${accumulatedContent.length}`);
+
+          // Log API usage in background
+          logApiUsage({
+            supabaseClient,
+            edgeFunction: 'chat-intelligence',
+            provider,
+            model: provider === 'openai' ? 'o3' : geminiModel,
+            actionType: 'bulletin_stream',
+            inputTokens,
+            outputTokens,
+            userId,
+            sessionId,
+            metadata: { 
+              companyName: matchedCompany.issuer_name, 
+              ticker: matchedCompany.ticker,
+              depth_level: depthLevel,
+              streaming: true,
+            },
+          }).catch(e => console.warn('Failed to log usage:', e));
+
+          // Save to database in background
+          if (sessionId) {
+            supabaseClient.from('chat_intelligence_sessions').insert([
+              {
+                session_id: sessionId,
+                role: 'user',
+                content: originalQuestion,
+                company: matchedCompany.ticker,
+                analysis_type: 'bulletin',
+                user_id: userId
+              },
+              {
+                session_id: sessionId,
+                role: 'assistant',
+                content: accumulatedContent,
+                company: matchedCompany.ticker,
+                analysis_type: 'bulletin',
+                structured_data_found: rixData?.length || 0,
+                user_id: userId
+              }
+            ]).then(() => console.log(`${logPrefix} Session saved`))
+              .catch((e: Error) => console.warn('Failed to save session:', e));
+          }
+
+          // Save to user_documents in background
+          if (userId) {
+            const documentTitle = `Boletín Ejecutivo: ${matchedCompany.issuer_name}`;
+            supabaseClient.from('user_documents').insert({
+              user_id: userId,
+              document_type: 'bulletin',
+              title: documentTitle,
+              company_name: matchedCompany.issuer_name,
+              ticker: matchedCompany.ticker,
+              content_markdown: accumulatedContent,
+              conversation_id: conversationId || null,
+              metadata: {
+                sector: matchedCompany.sector_category,
+                competitorsCount: competitors.length,
+                weeksAnalyzed: uniquePeriods.length,
+                dataPointsUsed: rixData?.length || 0,
+                aiProvider: provider,
+                generatedAt: new Date().toISOString()
+              }
+            }).then(() => console.log(`${logPrefix} Document saved`))
+              .catch((e: Error) => console.warn('Failed to save document:', e));
+          }
+
+          // Generate suggested questions
+          const suggestedQuestions = [
+            `Genera un boletín de ${competitors[0]?.issuer_name || 'otra empresa'}`,
+            `¿Cómo se compara ${matchedCompany.issuer_name} con el sector ${matchedCompany.sector_category}?`,
+            `Top 5 empresas del sector ${matchedCompany.sector_category}`
+          ];
+
+          // Send final done event with metadata
+          controller.enqueue(sseEncoder({
+            type: 'done',
+            suggestedQuestions,
+            metadata: {
+              type: 'bulletin',
+              companyName: matchedCompany.issuer_name,
+              ticker: matchedCompany.ticker,
+              sector: matchedCompany.sector_category,
+              competitorsCount: competitors.length,
+              weeksAnalyzed: uniquePeriods.length,
+              dataPointsUsed: rixData?.length || 0,
+              aiProvider: provider,
+            }
+          }));
+
+          controller.close();
+          
+        } catch (error) {
+          console.error(`${logPrefix} Streaming error:`, error);
+          controller.enqueue(sseEncoder({ 
+            type: 'error', 
+            error: error instanceof Error ? error.message : 'Error de streaming desconocido'
+          }));
+          controller.close();
+        }
+      }
+    });
+
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      }
+    });
+  }
+
+  // =========================================================================
+  // NON-STREAMING MODE: Original behavior (for backwards compatibility)
+  // =========================================================================
+  const bulletinModel = isQuickBulletin ? 'gpt-4o-mini' : 'o3';
 
   const result = await callAIWithFallback(
     bulletinMessages,
@@ -2077,7 +2276,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     metadata: { 
       companyName: matchedCompany.issuer_name, 
       ticker: matchedCompany.ticker,
-      depth_level: 'bulletin', // Bulletins are a specific report type
+      depth_level: 'bulletin',
     },
   });
 
