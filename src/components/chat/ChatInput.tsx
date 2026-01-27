@@ -220,19 +220,25 @@ export function ChatInput({
             ? "border-amber-400/50 shadow-amber-500/10" 
             : "border-border"
         )}>
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2.5 bg-muted/40 border-b border-border/50">
+          {/* Header with inline warning */}
+          <div className="flex items-center justify-between px-3 py-2 bg-muted/40 border-b border-border/50">
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="text-sm font-semibold text-foreground">
+              <span className="text-xs font-semibold text-foreground">
                 {tr.configureAnalysis}
               </span>
+              {(!depthConfirmed || !roleConfirmed) && (
+                <div className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                  <AlertCircle className="h-2.5 w-2.5" />
+                  <span className="hidden sm:inline">Selecciona ambos</span>
+                </div>
+              )}
             </div>
             {(depthConfirmed && roleConfirmed) && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-background/60 px-2 py-1 rounded-full">
-                {depthLevel === 'quick' && <><Zap className="h-3 w-3 text-amber-500" /> ~30s</>}
-                {depthLevel === 'complete' && <><FileText className="h-3 w-3 text-primary" /> ~1min</>}
-                {depthLevel === 'exhaustive' && <><BookOpen className="h-3 w-3 text-purple-500" /> ~2min</>}
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground bg-background/60 px-2 py-0.5 rounded-full">
+                {depthLevel === 'quick' && <><Zap className="h-2.5 w-2.5 text-amber-500" /> ~30s</>}
+                {depthLevel === 'complete' && <><FileText className="h-2.5 w-2.5 text-primary" /> ~1min</>}
+                {depthLevel === 'exhaustive' && <><BookOpen className="h-2.5 w-2.5 text-purple-500" /> ~2min</>}
                 {isRoleSelected && <span className="text-muted-foreground/60 mx-1">•</span>}
                 {isRoleSelected && <span>{selectedRole?.emoji} {selectedRole?.name}</span>}
               </div>
@@ -240,7 +246,7 @@ export function ChatInput({
           </div>
           
           {/* Content - Compact inline layout */}
-          <div className="px-3 py-2.5">
+          <div className="px-3 py-2">
             <div className="flex flex-wrap items-center gap-3">
               {/* Depth Selector - inline */}
               <div className="flex items-center gap-2">
@@ -424,15 +430,6 @@ export function ChatInput({
                   </SelectContent>
                 </Select>
               </div>
-              
-              {/* Validation warning - inline */}
-              {(!depthConfirmed || !roleConfirmed) && (
-                <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md ml-auto">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span className="hidden sm:inline">{tr.selectConfigBeforeSending}</span>
-                  <span className="sm:hidden">Selecciona</span>
-                </div>
-              )}
             </div>
           </div>
         </div>
