@@ -61,17 +61,16 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   };
 
   const handleNavClick = (item: typeof navItems[0]) => {
+    // Determine target path before closing menu
+    const targetPath = (item.protected && !isAuthenticated) ? "/login" : item.path;
+    
     // Close mobile menu first
     setMobileMenuOpen(false);
     
-    // Use setTimeout to ensure menu closes before navigation
+    // Navigate after a brief delay to allow menu animation
     setTimeout(() => {
-      if (item.protected && !isAuthenticated) {
-        navigate("/login");
-      } else {
-        navigate(item.path);
-      }
-    }, 100);
+      navigate(targetPath);
+    }, 50);
   };
 
   return (
