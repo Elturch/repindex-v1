@@ -119,7 +119,18 @@ export function MarketEvolution() {
 
   // Prepare chart data for each model (data is already combined in useTrendDataLight)
   const prepareChartData = React.useCallback((data: any[], companies: string[]) => {
-    if (!data || data.length === 0 || companies.length === 0) return [];
+    if (!data || data.length === 0) return [];
+    
+    // If no companies selected, just return market data normalized
+    if (companies.length === 0) {
+      const marketRixValues = data.map(p => p.market);
+      const marketRixIndex = normalizeToIndex(marketRixValues);
+      
+      return data.map((point: any, idx: number) => ({
+        date: point.batchLabel,
+        market_index: marketRixIndex[idx],
+      }));
+    }
     
     // First, extract complete series per company to normalize
     const companySeries: Record<string, {rix: number[], price: number[], isTraded: boolean}> = {};

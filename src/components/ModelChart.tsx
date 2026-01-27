@@ -29,7 +29,11 @@ const calculateIndexDomain = (chartData: any[], selectedCompanies: string[]): [n
   const allIndexValues: number[] = [];
   
   chartData.forEach(point => {
-    if (point.market_index) allIndexValues.push(point.market_index);
+    // Always include market index
+    if (point.market_index !== undefined && point.market_index !== null) {
+      allIndexValues.push(point.market_index);
+    }
+    // Include company indices if any
     selectedCompanies.forEach(ticker => {
       if (point[`${ticker}_rix_index`]) allIndexValues.push(point[`${ticker}_rix_index`]);
       if (point[`${ticker}_price_index`]) allIndexValues.push(point[`${ticker}_price_index`]);
