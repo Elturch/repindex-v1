@@ -1,155 +1,43 @@
 
-# Plan: Monitorización de Tipos de Informe del Agente Rix por Usuario
+# Plan: Ficha Técnica en Letra Pequeña (Estilo Contrato Legal)
 
-## Resumen Ejecutivo
+## Concepto
 
-El objetivo es añadir trazabilidad completa del **tipo de informe** (Rápido, Completo, Exhaustivo) en el sistema de monitorización de costes IA para visualizar con precisión cuánto consume cada usuario según la profundidad de análisis que solicita.
+La ficha técnica metodológica se añadirá **al final de todos los informes exportados**, después del footer corporativo, utilizando un estilo visual similar a las cláusulas legales de contratos:
 
----
-
-## Diagnóstico Actual
-
-### Estado Presente
-- Los logs de `chat-intelligence` se guardan en `api_usage_logs` con tres `action_type`: `chat`, `enrich`, `bulletin`
-- **NO se registra el `depth_level`** en los logs de costes (solo se guarda en `chat_intelligence_sessions`)
-- El dashboard de API Costs no diferencia entre informe rápido ($0.30 aprox) vs exhaustivo ($0.90 aprox)
-- Los usuarios aparecen agregados sin distinguir su patrón de uso
-
-### Impacto del Gap
-| Tipo de Informe | Tokens Input (promedio) | Tokens Output (promedio) | Coste Estimado |
-|-----------------|-------------------------|--------------------------|----------------|
-| Rápido (quick) | ~20,000 | ~600 | ~$0.25 |
-| Completo (complete) | ~50,000 | ~2,000 | ~$0.60 |
-| Exhaustivo (exhaustive) | ~80,000 | ~4,000 | ~$0.95 |
-
-La diferencia de coste es de **~4x** entre el informe más ligero y el más pesado.
+- **Letra más pequeña** (9-10px vs 14-15px del contenido principal)
+- **Color atenuado** (gris #6b7280 vs negro #1f2937)
+- **Línea divisoria clara** que separa contenido principal de anexos técnicos
+- **Encabezado "ANEXO TÉCNICO-METODOLÓGICO"** para distinguirlo visualmente
 
 ---
 
-## Solución Propuesta
+## Estructura Visual Propuesta
 
-### Fase 1: Backend - Enriquecer Logs con `depth_level`
+```text
+═══════════════════════════════════════════════════════════════════
+                    CONTENIDO PRINCIPAL DEL INFORME
+                    (Tamaño normal: 14-15px, color negro)
+═══════════════════════════════════════════════════════════════════
+                          
+                           [Footer RepIndex]
+                           🌐 repindex.ai
+                           © 2025 Disclaimer...
 
-**Archivo**: `supabase/functions/chat-intelligence/index.ts`
+═══════════════════════════════════════════════════════════════════
+                    ANEXO TÉCNICO-METODOLÓGICO
+                    (Tamaño reducido: 9px, color gris)
+═══════════════════════════════════════════════════════════════════
 
-**Cambios**:
-1. Modificar las llamadas a `logApiUsage()` para incluir `depth_level` en el metadata:
+DEFINICIÓN DEL ÍNDICE
+El RIX (Reputation Index) mide la percepción algorítmica de la 
+reputación corporativa...
 
-```typescript
-// En action_type: 'chat' (línea ~3001-3014)
-await logApiUsage({
-  supabaseClient,
-  edgeFunction: 'chat-intelligence',
-  provider: chatResult.provider,
-  model: chatResult.model,
-  actionType: 'chat',
-  inputTokens: chatResult.inputTokens,
-  outputTokens: chatResult.outputTokens,
-  userId,
-  sessionId,
-  metadata: { 
-    depth_level: depthLevel,  // NEW
-    role: selectedRole?.id    // NEW (optional)
-  },
-});
+UNIVERSO DE ANÁLISIS
+• 174 empresas (100% mercado cotizado español)...
+
+[... resto de la ficha técnica en formato compacto ...]
 ```
-
-2. Aplicar el mismo patrón a `enrich` y `bulletin` action types
-
-### Fase 2: Backend API - Agregar Endpoint de Análisis por Profundidad
-
-**Archivo**: `supabase/functions/admin-api-data/index.ts`
-
-**Nuevo endpoint**: `GET /depth-analytics`
-
-```typescript
-// Route: GET /depth-analytics - Usage by depth level
-if (req.method === 'GET' && path === '/depth-analytics') {
-  const period = url.searchParams.get('period') || '30d';
-  const { start, end } = getDateFilter(period);
-
-  const usageLogs = await fetchAllUsageLogs(
-    supabaseAdmin, start, end,
-    'user_id, session_id, estimated_cost_usd, input_tokens, output_tokens, metadata, created_at'
-  );
-
-  // Aggregate by depth_level
-  const depthMap = { quick: {...}, complete: {...}, exhaustive: {...} };
-  
-  // Aggregate by user + depth_level
-  const userDepthMap = new Map();
-  
-  // Return structured analytics
-  return { data: { by_depth, by_user_depth, trends } };
-}
-```
-
-### Fase 3: Frontend - Panel "Agente Rix por Profundidad"
-
-**Archivo nuevo**: `src/components/admin/ChatDepthAnalytics.tsx`
-
-**Componentes**:
-
-1. **Cards Resumen por Tipo**:
-   - 🚀 Rápido: X llamadas, $Y coste, Z usuarios
-   - ⚡ Completo: X llamadas, $Y coste, Z usuarios  
-   - 🔥 Exhaustivo: X llamadas, $Y coste, Z usuarios
-
-2. **Tabla "Consumo por Usuario"**:
-   | Usuario | Email | Rápidos | Completos | Exhaustivos | Coste Total | Patrón |
-   |---------|-------|---------|-----------|-------------|-------------|--------|
-   | user_1 | ana@... | 12 | 8 | 2 | $15.40 | 🎯 Balanceado |
-   | user_2 | carlos@... | 0 | 2 | 15 | $18.20 | 🔥 Heavy User |
-
-3. **Badge "Patrón de Uso"**:
-   - 🎯 Balanceado: Mix equitativo
-   - 🚀 Eficiente: Predominan rápidos
-   - 🔥 Heavy User: Predominan exhaustivos
-   - 📊 Analítico: Predominan completos
-
-4. **Gráfico de Tendencia**:
-   - Líneas por `depth_level` mostrando evolución temporal
-   - Permite identificar cambios de comportamiento
-
-### Fase 4: Integración en AIModelsDashboard
-
-**Archivo**: `src/components/admin/AIModelsDashboard.tsx`
-
-**Cambios**:
-- Añadir sección colapsable "Agente Rix - Detalle por Profundidad" dentro del proceso `chat`
-- Mostrar breakdown interno: Quick vs Complete vs Exhaustive
-- Indicador visual de distribución (barra de progreso tricolor)
-
----
-
-## Detalles Técnicos
-
-### Estructura del Metadata Enriquecido
-```json
-{
-  "depth_level": "exhaustive",
-  "role": "ceo",
-  "company_detected": "Telefónica",
-  "ticker": "TEF"
-}
-```
-
-### Cálculo del Patrón de Uso
-```typescript
-function getUserPattern(quick: number, complete: number, exhaustive: number): string {
-  const total = quick + complete + exhaustive;
-  const exhaustiveRatio = exhaustive / total;
-  const quickRatio = quick / total;
-  
-  if (exhaustiveRatio > 0.6) return '🔥 Heavy User';
-  if (quickRatio > 0.6) return '🚀 Eficiente';
-  if (complete > quick && complete > exhaustive) return '📊 Analítico';
-  return '🎯 Balanceado';
-}
-```
-
-### Retrocompatibilidad
-- Los logs existentes sin `depth_level` en metadata se clasificarán como `"unknown"` o se inferirán por tokens (>70K = exhaustive, >40K = complete, else = quick)
 
 ---
 
@@ -157,46 +45,258 @@ function getUserPattern(quick: number, complete: number, exhaustive: number): st
 
 | Archivo | Acción | Descripción |
 |---------|--------|-------------|
-| `supabase/functions/chat-intelligence/index.ts` | Modificar | Añadir `depth_level` a metadata en 3 puntos |
-| `supabase/functions/admin-api-data/index.ts` | Modificar | Nuevo endpoint `/depth-analytics` |
-| `src/components/admin/ChatDepthAnalytics.tsx` | Crear | Panel de análisis por profundidad |
-| `src/components/admin/AIModelsDashboard.tsx` | Modificar | Integrar breakdown en proceso "Agente Rix" |
-| `src/components/admin/ApiCostDashboard.tsx` | Modificar | Añadir filtro por `depth_level` en tabla de usuarios |
+| `src/lib/technicalSheetHtml.ts` | **Crear** | Contenido HTML de la ficha técnica en formato compacto |
+| `src/contexts/ChatContext.tsx` | **Modificar** | Insertar ficha técnica después del footer en `downloadAsHtml` |
+| `src/components/ui/markdown-message.tsx` | **Modificar** | Insertar ficha técnica en `generateExportHtml` |
+| `src/components/chat/CompanyBulletinViewer.tsx` | **Modificar** | Insertar ficha técnica en `generatePrintHtml` |
 
 ---
 
-## Resultado Esperado
+## Detalles Técnicos
 
-### Vista Dashboard "Modelos IA"
+### 1. Nuevo archivo: `src/lib/technicalSheetHtml.ts`
 
-```text
-💬 Agente Rix                          54 calls    $32.07    2.7M tokens
-   ├─ 🚀 Rápido (quick)               18 calls    $4.50     540K tokens
-   ├─ ⚡ Completo (complete)           28 calls    $16.80    1.4M tokens
-   └─ 🔥 Exhaustivo (exhaustive)       8 calls    $10.77    760K tokens
+Contendrá dos exportaciones:
+
+**A) CSS específico para la ficha técnica:**
+```css
+.technical-sheet {
+  margin-top: 60px;
+  padding-top: 24px;
+  border-top: 2px solid #e5e7eb;
+  font-size: 9px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.technical-sheet-header {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #d1d5db;
+}
+
+.technical-sheet h4 {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4b5563;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.technical-sheet table {
+  width: 100%;
+  font-size: 8px;
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+
+.technical-sheet th, 
+.technical-sheet td {
+  padding: 4px 8px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.technical-sheet .disclaimer-box {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 16px;
+}
+
+.technical-sheet .two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media print {
+  .technical-sheet {
+    page-break-before: always;
+    font-size: 7pt;
+  }
+}
 ```
 
-### Vista "Consumo por Usuario"
-
-```text
-Top Usuarios por Coste (Chat Intelligence)
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Usuario           │ 🚀 Quick │ ⚡ Complete │ 🔥 Exhaustive │ Total   │ Patrón     │
-├───────────────────┼──────────┼─────────────┼───────────────┼─────────┼────────────┤
-│ ana@empresa.com   │ 5 ($1.25)│ 10 ($6.00)  │ 3 ($2.85)     │ $10.10  │ 📊 Analítico│
-│ pedro@corp.es     │ 0        │ 2 ($1.20)   │ 8 ($7.60)     │ $8.80   │ 🔥 Heavy   │
-│ maria@startup.io  │ 12($3.00)│ 4 ($2.40)   │ 0             │ $5.40   │ 🚀 Eficiente│
-└─────────────────────────────────────────────────────────────────────────┘
+**B) Función que genera el HTML de la ficha:**
+```typescript
+export function generateTechnicalSheetHtml(options?: {
+  companyName?: string;
+  periodFrom?: string;
+  periodTo?: string;
+  rixScore?: number;
+  flags?: string[];
+  modelsUsed?: string[];
+}): string
 ```
+
+### 2. Contenido de la Ficha Técnica (Formato Compacto)
+
+La ficha contendrá las siguientes secciones en formato ultra-condensado:
+
+**Sección 1: Encabezado**
+```
+══════════════════════════════════════════════════════════════════
+                 ANEXO TÉCNICO-METODOLÓGICO
+              RepIndex® AI Corporate Reputation Authority
+══════════════════════════════════════════════════════════════════
+```
+
+**Sección 2: Definición (3 líneas)**
+```
+DEFINICIÓN: El RIX mide la PERCEPCIÓN ALGORÍTMICA de la reputación 
+corporativa: cómo los principales sistemas de IA describen y evalúan 
+a una empresa cuando son consultados por usuarios.
+```
+
+**Sección 3: Tabla de Modelos (formato ultra-compacto)**
+```
+┌────────────────┬──────────────┬───────────────────────────────┐
+│ Modelo         │ Proveedor    │ Método de Grounding           │
+├────────────────┼──────────────┼───────────────────────────────┤
+│ GPT-4.1        │ OpenAI       │ Web Search Preview            │
+│ Gemini 2.5     │ Google       │ Google Search Grounding       │
+│ Perplexity     │ Perplexity   │ Búsqueda nativa + citaciones  │
+│ DeepSeek       │ DeepSeek     │ Tavily RAG                    │
+│ Grok-3         │ xAI          │ Live Search + X               │
+│ Qwen Max       │ Alibaba      │ DashScope Web Search          │
+└────────────────┴──────────────┴───────────────────────────────┘
+100% de los modelos acceden a Internet en tiempo real.
+```
+
+**Sección 4: Métricas (tabla compacta)**
+```
+SISTEMA DE MÉTRICAS (8 dimensiones)
+┌─────┬──────┬───────────────────────────────────────────────────┐
+│ NVM │ 15%  │ Net Vision: sentimiento neto ponderado            │
+│ DRM │ 15%  │ Data Reliability: calidad de evidencia            │
+│ SIM │ 12%  │ Source Integrity: jerarquía de fuentes (T1-T4)    │
+│ RMM │ 12%  │ Recency: frescura de la información               │
+│ CEM │ 12%  │ Controversy Exposure: riesgos reputacionales      │
+│ GAM │ 12%  │ Governance Alignment: señales de gobernanza       │
+│ DCM │ 12%  │ Data Consistency: coherencia entre modelos        │
+│ CXM │ 10%  │ Context Integration: cotización/ratings ESG       │
+└─────┴──────┴───────────────────────────────────────────────────┘
+RIX = Σ(métrica × peso) / Σ(pesos)
+```
+
+**Sección 5: Control de Calidad (2 líneas)**
+```
+FLAGS AUTOMÁTICOS: pocas_fechas | sin_fuentes | datos_antiguos | 
+respuesta_corta | alto_riesgo | drm_bajo | sim_bajo
+Penalizaciones: DRM<40 o SIM<40 → RIX máx=64 | datos_antiguos → RMM máx=69
+```
+
+**Sección 6: Divergencia Inter-modelo (2 líneas)**
+```
+CONTROL DE SESGO: La divergencia (σ) entre 6 modelos independientes es 
+una medida de incertidumbre. σ<5=consenso robusto | σ>15=alta incertidumbre
+```
+
+**Sección 7: Limitaciones y Disclaimer (caja gris)**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ LIMITACIONES: (1) El RIX mide percepción algorítmica, no       │
+│ reputación real. (2) Las IAs pueden heredar sesgos. (3) No     │
+│ sustituye estudios de stakeholders. (4) No debe usarse como    │
+│ única fuente para M&A, inversión regulada o ESG certificado.   │
+│                                                                 │
+│ DISCLAIMER LEGAL: Este informe refleja la percepción de        │
+│ sistemas de IA y no constituye asesoramiento financiero,       │
+│ legal o de inversión.                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Sección 8: Usos Válidos/No Válidos (tabla 2 columnas)**
+```
+┌───────────────────────────────┬───────────────────────────────┐
+│ ✅ USOS VÁLIDOS               │ ❌ USOS NO RECOMENDADOS       │
+├───────────────────────────────┼───────────────────────────────┤
+│ Monitoreo narrativa IA        │ Decisiones de M&A             │
+│ War room reputacional         │ Inversión regulada            │
+│ Benchmark sectorial           │ Due diligence legal           │
+│ Detección temprana de crisis  │ ESG certificado               │
+│ Comunicación estratégica      │ Rating crediticio             │
+└───────────────────────────────┴───────────────────────────────┘
+```
+
+---
+
+## Integración en Exportaciones
+
+### A) En ChatContext.tsx (líneas ~884-895)
+
+Después del cierre del `</footer>`:
+
+```typescript
+import { technicalSheetStyles, generateTechnicalSheetHtml } from '@/lib/technicalSheetHtml';
+
+// En los estilos CSS, añadir:
+${technicalSheetStyles}
+
+// Después del </footer>:
+${generateTechnicalSheetHtml()}
+```
+
+### B) En markdown-message.tsx (líneas ~871-880)
+
+Mismo patrón: insertar la ficha técnica después del footer.
+
+### C) En CompanyBulletinViewer.tsx
+
+Añadir la ficha al final de los boletines de empresa.
+
+---
+
+## Parámetros Dinámicos Opcionales
+
+La función `generateTechnicalSheetHtml` aceptará parámetros opcionales para personalizar:
+
+```typescript
+generateTechnicalSheetHtml({
+  companyName: "Telefónica",      // Si es un informe de empresa específica
+  periodFrom: "2025-01-20",       // Período analizado
+  periodTo: "2025-01-27",
+  rixScore: 72.5,                 // Score obtenido
+  flags: ["pocas_fechas"],        // Flags detectados
+  modelsUsed: ["GPT-4.1", "Gemini", "Perplexity"]  // Modelos que respondieron
+})
+```
+
+Si no se pasan parámetros, la ficha es genérica (para conversaciones sin empresa específica).
+
+---
+
+## Resultado Visual Final
+
+El usuario verá:
+
+1. **Contenido principal** → Tamaño normal, color negro, formato ejecutivo
+2. **Footer RepIndex** → Logo, URL, disclaimer básico
+3. **Línea divisoria** → Separador visual claro
+4. **ANEXO TÉCNICO-METODOLÓGICO** → Letra pequeña (9px), gris, estilo contrato
+
+Esto permite que:
+- Los ejecutivos lean el contenido principal sin distracciones
+- Los auditores/IA críticas tengan acceso a toda la validación científica
+- El documento sea autocontenido y defendible ante cualquier revisión
 
 ---
 
 ## Orden de Implementación
 
-1. **Edge Function chat-intelligence** - Añadir metadata (5 min)
-2. **Edge Function admin-api-data** - Nuevo endpoint (15 min)
-3. **ChatDepthAnalytics.tsx** - Componente nuevo (20 min)
-4. **AIModelsDashboard.tsx** - Integrar breakdown (10 min)
-5. **Deploy y verificación** (5 min)
+1. **`src/lib/technicalSheetHtml.ts`** - Crear archivo con estilos y generador (15 min)
+2. **`src/contexts/ChatContext.tsx`** - Integrar en exportación de conversación completa (5 min)
+3. **`src/components/ui/markdown-message.tsx`** - Integrar en exportación de mensaje individual (5 min)
+4. **`src/components/chat/CompanyBulletinViewer.tsx`** - Integrar en boletines de empresa (5 min)
 
-Total estimado: ~55 minutos
+Total estimado: ~30 minutos
