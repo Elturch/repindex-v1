@@ -1738,7 +1738,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     { role: 'user', content: bulletinUserPrompt }
   ];
 
-  const result = await callAIWithFallback(bulletinMessages, 'o3', 40000, logPrefix, 180000);
+  // Timeout reduced to 60s to ensure Gemini fallback has enough time before server limit (~150s)
+  const result = await callAIWithFallback(bulletinMessages, 'o3', 40000, logPrefix, 60000);
   const bulletinContent = result.content;
 
   console.log(`${logPrefix} Bulletin generated (via ${result.provider}), length: ${bulletinContent.length}`);
