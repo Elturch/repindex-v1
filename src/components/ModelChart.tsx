@@ -23,8 +23,9 @@ const COMPANY_COLORS = [
 ];
 
 // Calculate dynamic domain for index values
+// When variation is minimal, expand the range to show the actual movement clearly
 const calculateIndexDomain = (chartData: any[], selectedCompanies: string[]): [number, number] => {
-  if (!chartData || chartData.length === 0) return [70, 130];
+  if (!chartData || chartData.length === 0) return [95, 105];
   
   const allIndexValues: number[] = [];
   
@@ -40,16 +41,24 @@ const calculateIndexDomain = (chartData: any[], selectedCompanies: string[]): [n
     });
   });
   
-  if (allIndexValues.length === 0) return [70, 130];
+  if (allIndexValues.length === 0) return [95, 105];
   
   const minValue = Math.min(...allIndexValues);
   const maxValue = Math.max(...allIndexValues);
   const range = maxValue - minValue;
-  const padding = Math.max(range * 0.15, 5);
+  
+  // If variation is very small (less than 10%), expand to show at least ±5 points
+  // This prevents "flat line" appearance when data is stable
+  const minRange = 10;
+  const effectiveRange = Math.max(range, minRange);
+  const padding = Math.max(effectiveRange * 0.2, 2);
+  
+  const center = (minValue + maxValue) / 2;
+  const halfSpan = (effectiveRange / 2) + padding;
   
   return [
-    Math.floor(minValue - padding),
-    Math.ceil(maxValue + padding)
+    Math.floor(center - halfSpan),
+    Math.ceil(center + halfSpan)
   ];
 };
 
