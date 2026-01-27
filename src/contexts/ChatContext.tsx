@@ -6,6 +6,7 @@ import { getRoleById } from "@/lib/chatRoles";
 import { useAuth } from "@/contexts/AuthContext";
 import { convertMarkdownToHtml, baseExportStyles, premiumTableStyles } from "@/lib/markdownToHtml";
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference, DEFAULT_LANGUAGE } from "@/lib/chatLanguages";
+import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 
 export interface DrumrollQuestion {
   title: string;
@@ -779,6 +780,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
             /* Tables - Premium Styling */
             ${premiumTableStyles}
             
+            /* Technical Sheet - Legal Fine Print */
+            ${technicalSheetStyles}
+            
             /* Footer corporativo */
             .report-footer {
               margin-top: 50px;
@@ -893,6 +897,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
               </p>
             </div>
           </footer>
+          
+          ${generateTechnicalSheetHtml()}
         </body>
       </html>
     `;

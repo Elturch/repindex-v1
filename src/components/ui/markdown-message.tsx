@@ -5,6 +5,7 @@ import { Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { getChatTranslations, t, type ChatUITranslations } from '@/lib/chatTranslations';
+import { technicalSheetStyles, generateTechnicalSheetHtml } from '@/lib/technicalSheetHtml';
 
 interface MarkdownMessageProps {
   content: string;
@@ -831,6 +832,9 @@ function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCo
         overflow: hidden !important;
       }
     }
+    
+    /* Technical Sheet - Legal Fine Print */
+    ${technicalSheetStyles}
   `;
 
   const bodyContent = convertMarkdownToHtml(markdown);
@@ -878,6 +882,8 @@ function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCo
       </p>
     </div>
   </footer>
+  
+  ${generateTechnicalSheetHtml()}
 </body>
 </html>`;
 }
