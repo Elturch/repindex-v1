@@ -62,7 +62,7 @@ export function HeroSection() {
             className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 py-4"
           >
             <span className="text-xs sm:text-sm text-muted-foreground font-medium w-full sm:w-auto mb-2 sm:mb-0">
-              Consultamos semanalmente a:
+              Consultamos semanalmente:
             </span>
             <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
               {AI_MODELS.map((model, index) => (
