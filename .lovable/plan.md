@@ -1,137 +1,54 @@
 
-# Plan: Ampliar Timeout 5x para Generación de Boletines
+# Plan: Corregir Tracking de Tipos de Informe
 
-## Diagnóstico
+## Problemas Identificados
 
-El SDK de Supabase (`supabase.functions.invoke`) **no soporta la opción `signal`** para AbortController. El timeout por defecto del navegador/fetch es ~60 segundos, pero los boletines de empresas grandes (como Telefónica con 412 registros) tardan ~2 minutos.
+### 1. Bug Crítico: `depth_level` no se guarda en logs de chat
+- El código fuente TIENE la lógica correcta (línea 3021 en `chat-intelligence/index.ts`)
+- Pero los registros en `api_usage_logs` con `action_type = 'chat'` tienen `metadata: {}` vacío
+- Esto indica que **el edge function desplegado es una versión anterior** sin esta funcionalidad
 
-## Solución Simple
+### 2. El fallback por tokens tiene umbrales incorrectos
+El dashboard (`admin-api-data/index.ts` líneas 565-570) infiere:
+```
+>70,000 tokens → exhaustive
+>40,000 tokens → complete  
+≤40,000 tokens → quick
+```
 
-Reemplazar `supabase.functions.invoke` por `fetch` directo **solo para la llamada de chat-intelligence**, con un timeout configurable de **5 minutos (300 segundos)**.
+Pero la realidad es:
+- Exhaustive: ~60-70k tokens (clasificado erróneamente como "complete")
+- Complete: ~50-65k tokens
+- Quick: ~20-25k tokens
 
 ---
 
-## Cambios Requeridos
+## Solución Propuesta
 
-### Archivo: `src/contexts/ChatContext.tsx`
+### Paso 1: Re-desplegar el edge function `chat-intelligence`
+El código fuente ya tiene la corrección. Solo necesita desplegarse para que los nuevos logs guarden `depth_level` correctamente.
 
-**Cambio principal**: Crear una función helper que use `fetch` con `AbortController` en lugar del SDK:
+### Paso 2: Ajustar umbrales del fallback (temporal)
+Mientras se acumulan datos con `depth_level` correcto, ajustar los umbrales en `admin-api-data`:
 
 ```typescript
-// Helper para llamar a edge functions con timeout extendido
-async function invokeWithTimeout(
-  functionName: string,
-  body: any,
-  timeoutMs: number = 300000 // 5 minutos por defecto
-): Promise<{ data: any; error: any }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
-  try {
-    const response = await fetch(
-      `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/${functionName}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`,
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { data: null, error: new Error(errorText) };
-    }
-    
-    const data = await response.json();
-    return { data, error: null };
-    
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    
-    if (err.name === 'AbortError') {
-      return { 
-        data: null, 
-        error: new Error('La generación del informe ha excedido el tiempo límite (5 minutos). Intenta con un informe más corto.')
-      };
-    }
-    
-    return { data: null, error: err };
-  }
-}
+// ANTES (líneas 565-570)
+if (totalTokens > 70000) depthLevel = 'exhaustive'
+else if (totalTokens > 40000) depthLevel = 'complete'
+else depthLevel = 'quick'
+
+// DESPUÉS (más realista)
+if (totalTokens > 55000) depthLevel = 'exhaustive'
+else if (totalTokens > 30000) depthLevel = 'complete'
+else depthLevel = 'quick'
 ```
 
-**Reemplazar las llamadas** en `sendMessage` y `enrichResponse`:
+### Paso 3: Agregar logging de depuración
+Añadir console.log en el edge function para verificar que `depthLevel` está definido antes de llamar a `logApiUsage`:
 
 ```typescript
-// ANTES (línea ~256)
-const { data, error } = await supabase.functions.invoke('chat-intelligence', {
-  body: { ... }
-});
-
-// DESPUÉS
-const { data, error } = await invokeWithTimeout('chat-intelligence', {
-  question,
-  conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
-  // ... resto de parámetros
-}, 300000); // 5 minutos
-```
-
----
-
-## Configuración de Timeouts por Tipo de Informe
-
-| Tipo de Informe | Timeout Actual | Nuevo Timeout |
-|-----------------|----------------|---------------|
-| Quick           | 60s (implícito)| 120s (2 min)  |
-| Complete        | 60s (implícito)| 180s (3 min)  |
-| Exhaustive      | 60s (implícito)| 300s (5 min)  |
-| Bulletin        | 60s (implícito)| 300s (5 min)  |
-| Enrich          | 60s (implícito)| 120s (2 min)  |
-
-Lógica:
-```typescript
-const getTimeoutForDepth = (depth: string, bulletinMode: boolean): number => {
-  if (bulletinMode) return 300000; // 5 min para boletines
-  switch (depth) {
-    case 'quick': return 120000;     // 2 min
-    case 'complete': return 180000;  // 3 min
-    case 'exhaustive': return 300000; // 5 min
-    default: return 180000;          // 3 min por defecto
-  }
-};
-```
-
----
-
-## Mejora UX: Feedback Durante la Espera
-
-Para que el usuario no piense que la aplicación se ha colgado durante 2-5 minutos:
-
-```typescript
-// En sendMessage, después de setIsLoading(true):
-const loadingMessages = [
-  "Consultando 6 modelos de IA...",
-  "Analizando datos de mercado...",
-  "Recopilando información sectorial...",
-  "Procesando histórico de la empresa...",
-  "Generando informe ejecutivo...",
-];
-
-let messageIndex = 0;
-const rotateInterval = setInterval(() => {
-  setLoadingMessage(loadingMessages[messageIndex % loadingMessages.length]);
-  messageIndex++;
-}, 15000); // Cada 15 segundos cambia el mensaje
-
-// Limpiar al terminar
-clearInterval(rotateInterval);
+// Antes de logApiUsage en línea 3009
+console.log(`${logPrefix} Logging API usage with depth_level: ${depthLevel}`);
 ```
 
 ---
@@ -140,27 +57,39 @@ clearInterval(rotateInterval);
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/contexts/ChatContext.tsx` | Añadir `invokeWithTimeout`, reemplazar llamadas, añadir lógica de timeout por tipo |
-| `src/components/chat/ChatMessages.tsx` | Mostrar mensaje de progreso durante carga larga |
+| `supabase/functions/chat-intelligence/index.ts` | Añadir log de depuración antes de `logApiUsage` |
+| `supabase/functions/admin-api-data/index.ts` | Ajustar umbrales de fallback por tokens |
+
+---
+
+## Verificación Post-Deploy
+
+Después de desplegar, hacer un informe "exhaustivo" y verificar:
+
+1. En logs del edge function: `Logging API usage with depth_level: exhaustive`
+2. En base de datos:
+```sql
+SELECT metadata->>'depth_level', created_at 
+FROM api_usage_logs 
+WHERE action_type = 'chat' 
+ORDER BY created_at DESC 
+LIMIT 1;
+```
+Debería mostrar `exhaustive`, no `null`.
 
 ---
 
 ## Resultado Esperado
 
-| Escenario | Antes | Después |
-|-----------|-------|---------|
-| Boletín Telefónica (~2 min) | TIMEOUT ERROR | Completa correctamente |
-| Informe exhaustivo (~90 seg) | Falla frecuente | Completa correctamente |
-| Usuario ve pantalla | Loader estático | Mensajes rotativos de progreso |
-| Error real (>5 min) | Silencioso | Mensaje claro "tiempo excedido" |
+| Antes | Después |
+|-------|---------|
+| Chat logs: `metadata: {}` | Chat logs: `metadata: {depth_level: "exhaustive", role: ...}` |
+| Dashboard infiere "complete" para ~64k tokens | Dashboard usa el valor real guardado |
+| Fallback necesario siempre | Fallback solo para logs históricos |
 
 ---
 
-## Implementación
-
-1. **`invokeWithTimeout` helper** - Función con fetch + AbortController (5 min)
-2. **Reemplazar llamadas** - `sendMessage` y `enrichResponse` (5 min)
-3. **Timeout dinámico** - Según `depthLevel` y `bulletinMode` (3 min)
-4. **Mensajes de progreso** - Rotar cada 15 segundos (7 min)
-
-**Total estimado: ~20 minutos**
+## Tiempo Estimado
+- Deploy del edge function: Automático al guardar
+- Ajuste de umbrales: ~5 minutos
+- Verificación: ~3 minutos
