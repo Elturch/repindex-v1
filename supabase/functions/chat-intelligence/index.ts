@@ -71,6 +71,254 @@ async function logApiUsage(params: ApiUsageParams): Promise<void> {
 }
 
 // =============================================================================
+// SSE STREAMING HELPERS
+// =============================================================================
+
+type SSEEventType = 'start' | 'chunk' | 'metadata' | 'done' | 'error' | 'fallback';
+
+interface SSEEvent {
+  type: SSEEventType;
+  text?: string;
+  metadata?: Record<string, unknown>;
+  suggestedQuestions?: string[];
+  drumrollQuestion?: DrumrollQuestion | null;
+  error?: string;
+}
+
+function createSSEEncoder() {
+  const encoder = new TextEncoder();
+  return (event: SSEEvent): Uint8Array => {
+    const data = JSON.stringify(event);
+    return encoder.encode(`data: ${data}\n\n`);
+  };
+}
+
+// Stream OpenAI response with SSE
+async function* streamOpenAIResponse(
+  messages: { role: string; content: string }[],
+  model: string,
+  maxTokens: number,
+  logPrefix: string,
+  timeout: number = 120000
+): AsyncGenerator<{ type: 'chunk' | 'done' | 'error'; text?: string; inputTokens?: number; outputTokens?: number; error?: string }> {
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  
+  if (!openAIApiKey) {
+    yield { type: 'error', error: 'OpenAI API key not configured' };
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    console.log(`${logPrefix} Starting OpenAI stream (${model})...`);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_completion_tokens: maxTokens,
+        stream: true,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`${logPrefix} OpenAI stream error:`, response.status, errorText);
+      yield { type: 'error', error: `OpenAI error: ${response.status}` };
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      yield { type: 'error', error: 'No response body' };
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') {
+            yield { type: 'done', inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              yield { type: 'chunk', text: content };
+            }
+            
+            // Capture usage from final chunk if available
+            if (parsed.usage) {
+              totalInputTokens = parsed.usage.prompt_tokens || 0;
+              totalOutputTokens = parsed.usage.completion_tokens || 0;
+            }
+          } catch {
+            // Ignore parse errors for incomplete chunks
+          }
+        }
+      }
+    }
+
+    yield { type: 'done', inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn(`${logPrefix} OpenAI stream timeout`);
+      yield { type: 'error', error: 'OpenAI timeout' };
+    } else {
+      console.error(`${logPrefix} OpenAI stream error:`, error);
+      yield { type: 'error', error: error.message || 'Unknown error' };
+    }
+  }
+}
+
+// Stream Gemini response with SSE
+async function* streamGeminiResponse(
+  messages: { role: string; content: string }[],
+  model: string,
+  maxTokens: number,
+  logPrefix: string,
+  timeout: number = 120000
+): AsyncGenerator<{ type: 'chunk' | 'done' | 'error'; text?: string; inputTokens?: number; outputTokens?: number; error?: string }> {
+  const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+  
+  if (!geminiApiKey) {
+    yield { type: 'error', error: 'Gemini API key not configured' };
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    console.log(`${logPrefix} Starting Gemini stream (${model})...`);
+
+    // Convert messages to Gemini format
+    const contents = messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
+
+    const systemInstruction = messages.find(m => m.role === 'system')?.content;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+          generationConfig: { maxOutputTokens: maxTokens }
+        }),
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`${logPrefix} Gemini stream error:`, response.status, errorText);
+      yield { type: 'error', error: `Gemini error: ${response.status}` };
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      yield { type: 'error', error: 'No response body' };
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Gemini streams as NDJSON-like format
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === '[' || trimmed === ']' || trimmed === ',') continue;
+        
+        // Clean up JSON array markers
+        let jsonStr = trimmed;
+        if (jsonStr.startsWith(',')) jsonStr = jsonStr.slice(1);
+        if (jsonStr.startsWith('[')) jsonStr = jsonStr.slice(1);
+        if (jsonStr.endsWith(',')) jsonStr = jsonStr.slice(0, -1);
+        if (jsonStr.endsWith(']')) jsonStr = jsonStr.slice(0, -1);
+        
+        if (!jsonStr.trim()) continue;
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            yield { type: 'chunk', text };
+          }
+          
+          // Capture usage metadata
+          if (parsed.usageMetadata) {
+            totalInputTokens = parsed.usageMetadata.promptTokenCount || 0;
+            totalOutputTokens = parsed.usageMetadata.candidatesTokenCount || 0;
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+
+    yield { type: 'done', inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.warn(`${logPrefix} Gemini stream timeout`);
+      yield { type: 'error', error: 'Gemini timeout' };
+    } else {
+      console.error(`${logPrefix} Gemini stream error:`, error);
+      yield { type: 'error', error: error.message || 'Unknown error' };
+    }
+  }
+}
+
+// =============================================================================
 // AI FALLBACK HELPER - OpenAI → Gemini
 // =============================================================================
 interface AICallResult {
@@ -944,7 +1192,8 @@ serve(async (req) => {
       bulletinCompanyName, 
       language = 'es', 
       languageName = 'Español',
-      depthLevel = 'complete' // NEW: depth level parameter
+      depthLevel = 'complete',
+      streamMode = false // NEW: enable SSE streaming
     } = body;
     
     // =============================================================================
@@ -968,6 +1217,15 @@ serve(async (req) => {
       } catch (authError) {
         console.warn(`${logPrefix} Could not extract user from token:`, authError);
       }
+    }
+    
+    // =============================================================================
+    // CHECK FOR STREAMING MODE (SSE response)
+    // =============================================================================
+    if (streamMode) {
+      console.log(`${logPrefix} STREAMING MODE enabled - SSE response`);
+      // For now, fall through to standard processing but return as SSE
+      // Full streaming will be implemented in a follow-up
     }
     
     // =============================================================================

@@ -226,16 +226,32 @@ export function ChatMessages({
                   />
                 )
               ) : (
-                <MarkdownMessage 
-                  content={message.content} 
-                  showDownload={true}
-                  languageCode={languageCode}
-                  roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
-                />
+                <div className="relative">
+                  <MarkdownMessage 
+                    content={message.content} 
+                    showDownload={!message.isStreaming}
+                    languageCode={languageCode}
+                    roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
+                  />
+                  {/* Blinking cursor during streaming */}
+                  {message.isStreaming && (
+                    <span className="inline-block w-2 h-5 bg-primary animate-pulse ml-0.5 align-text-bottom" />
+                  )}
+                </div>
               )}
               
-              {/* Suggested Questions - inside message bubble */}
-              {message.role === 'assistant' && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
+              {/* Streaming progress indicator */}
+              {message.role === 'assistant' && message.isStreaming && (
+                <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30`}>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <RefreshCw className="h-3 w-3 animate-spin text-primary" />
+                    <span>{tr.generatingReport || 'Generando informe...'}</span>
+                  </div>
+                </div>
+              )}
+              
+              {/* Suggested Questions - only show when NOT streaming */}
+              {message.role === 'assistant' && !message.isStreaming && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
                 <div className={`${compact ? 'mt-2 pt-2' : 'mt-4 pt-4'} border-t border-border/50`}>
                   <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold mb-2 opacity-80`}>Preguntas sugeridas:</p>
                   <div className="space-y-1">
@@ -256,8 +272,8 @@ export function ChatMessages({
               )}
 
 
-              {/* Response Feedback - thumbs up/down for assistant messages */}
-              {message.role === 'assistant' && sessionId && (
+              {/* Response Feedback - only show when NOT streaming */}
+              {message.role === 'assistant' && !message.isStreaming && sessionId && (
                 <ResponseFeedback
                   sessionId={sessionId}
                   messageIndex={idx}
@@ -267,8 +283,8 @@ export function ChatMessages({
                 />
               )}
 
-              {/* Drumroll Question - proactive complementary report suggestion */}
-              {message.role === 'assistant' && message.drumrollQuestion && !compact && (
+              {/* Drumroll Question - only show when NOT streaming */}
+              {message.role === 'assistant' && !message.isStreaming && message.drumrollQuestion && !compact && (
                 <div className="mt-4 pt-4 border-t border-primary/20">
                   <div className="flex items-center gap-2 mb-3">
                     <Sparkles className="h-4 w-4 text-primary" />
