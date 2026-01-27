@@ -99,9 +99,6 @@ export function ChatMessages({
           <div className="text-center space-y-2">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
             <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
-            <p className={`${compact ? 'text-xs' : 'text-sm'} text-muted-foreground max-w-md`}>
-              {tr.askAboutCompanies}
-            </p>
           </div>
           
           <div className="w-full space-y-2">
