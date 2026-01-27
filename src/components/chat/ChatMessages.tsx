@@ -95,13 +95,13 @@ export function ChatMessages({
     return (
       <ScrollArea className={`${scrollHeight} pr-4`}>
         <VectorStoreWarning />
-        <div className="flex flex-col items-center justify-center h-full space-y-4 py-8">
-          <div className="text-center space-y-2">
+        <div className="flex flex-col items-center justify-center h-full space-y-6 py-6">
+          <div className="text-center space-y-2 mb-4">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
             <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
           </div>
           
-          <div className="w-full space-y-2">
+          <div className="w-full space-y-2 pb-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                 {tr.suggestions}
