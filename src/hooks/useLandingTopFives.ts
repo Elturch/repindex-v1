@@ -77,7 +77,7 @@ export function useLandingTopFives() {
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
-        .eq("ibex_family_code", "IBEX35")
+        .eq("ibex_family_code", "IBEX-35")
         .order("rix_score", { ascending: false })
         .limit(5);
 
@@ -86,7 +86,7 @@ export function useLandingTopFives() {
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
-        .eq("ibex_family_code", "IBEX35")
+        .eq("ibex_family_code", "IBEX-35")
         .order("rix_score", { ascending: true })
         .limit(5);
 
@@ -97,7 +97,7 @@ export function useLandingTopFives() {
         .select("company_name, ticker, rix_score, model_name, is_traded, ibex_family_code")
         .eq("batch_week", latestWeek)
         .eq("is_traded", true)
-        .neq("ibex_family_code", "IBEX35")
+        .neq("ibex_family_code", "IBEX-35")
         .order("rix_score", { ascending: false })
         .limit(5);
 
@@ -115,7 +115,7 @@ export function useLandingTopFives() {
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
-        .neq("ibex_family_code", "IBEX35")
+        .neq("ibex_family_code", "IBEX-35")
         .order("rix_score", { ascending: false })
         .limit(5);
 
@@ -124,7 +124,7 @@ export function useLandingTopFives() {
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
-        .neq("ibex_family_code", "IBEX35")
+        .neq("ibex_family_code", "IBEX-35")
         .order("rix_score", { ascending: true })
         .limit(5);
 
@@ -168,12 +168,12 @@ export function useLandingTopFives() {
             .filter(Boolean) as (TopCompany & { change: number; ibex_family_code: string | null })[];
 
           // IBEX 35 movers
-          const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX35");
+          const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX-35");
           ibexMoversUp = ibexChanges.sort((a, b) => b.change - a.change).slice(0, 5);
           ibexMoversDown = ibexChanges.sort((a, b) => a.change - b.change).slice(0, 5);
 
           // Non-IBEX movers
-          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX35");
+          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35");
           topMoversUp = nonIbexChanges.sort((a, b) => b.change - a.change).slice(0, 5);
           topMoversDown = nonIbexChanges.sort((a, b) => a.change - b.change).slice(0, 5);
         }
