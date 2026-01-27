@@ -71,12 +71,33 @@ export function useLandingTopFives() {
         }
       }
 
-      // Top 5 traded companies
+      // === IBEX 35 RANKINGS ===
+      // Top 5 IBEX 35
+      const { data: topIbex } = await supabase
+        .from("rix_trends")
+        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
+        .eq("batch_week", latestWeek)
+        .eq("ibex_family_code", "IBEX35")
+        .order("rix_score", { ascending: false })
+        .limit(5);
+
+      // Bottom 5 IBEX 35
+      const { data: bottomIbex } = await supabase
+        .from("rix_trends")
+        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
+        .eq("batch_week", latestWeek)
+        .eq("ibex_family_code", "IBEX35")
+        .order("rix_score", { ascending: true })
+        .limit(5);
+
+      // === NON-IBEX RANKINGS ===
+      // Top 5 traded companies (excluding IBEX 35)
       const { data: topTraded } = await supabase
         .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, is_traded")
+        .select("company_name, ticker, rix_score, model_name, is_traded, ibex_family_code")
         .eq("batch_week", latestWeek)
         .eq("is_traded", true)
+        .neq("ibex_family_code", "IBEX35")
         .order("rix_score", { ascending: false })
         .limit(5);
 
@@ -89,37 +110,41 @@ export function useLandingTopFives() {
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Top 5 overall
+      // Top 5 overall (excluding IBEX 35)
       const { data: topOverall } = await supabase
         .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name")
+        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
+        .neq("ibex_family_code", "IBEX35")
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Bottom 5 overall
+      // Bottom 5 overall (excluding IBEX 35)
       const { data: bottomOverall } = await supabase
         .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name")
+        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
+        .neq("ibex_family_code", "IBEX35")
         .order("rix_score", { ascending: true })
         .limit(5);
 
       // Top Movers UP and DOWN (if previous week exists)
       let topMoversUp: TopCompany[] = [];
       let topMoversDown: TopCompany[] = [];
+      let ibexMoversUp: TopCompany[] = [];
+      let ibexMoversDown: TopCompany[] = [];
 
       if (previousWeek) {
         // Get current week data
         const { data: currentData } = await supabase
           .from("rix_trends")
-          .select("company_name, ticker, rix_score, model_name")
+          .select("company_name, ticker, rix_score, model_name, ibex_family_code")
           .eq("batch_week", latestWeek);
 
         // Get previous week data
         const { data: previousData } = await supabase
           .from("rix_trends")
-          .select("company_name, ticker, rix_score, model_name")
+          .select("company_name, ticker, rix_score, model_name, ibex_family_code")
           .eq("batch_week", previousWeek);
 
         if (currentData && previousData) {
@@ -136,26 +161,43 @@ export function useLandingTopFives() {
                 ticker: curr.ticker,
                 rix: curr.rix_score,
                 ai: curr.model_name,
+                ibex_family_code: curr.ibex_family_code,
                 change: curr.rix_score - prev.rix_score
               };
             })
-            .filter(Boolean) as (TopCompany & { change: number })[];
+            .filter(Boolean) as (TopCompany & { change: number; ibex_family_code: string | null })[];
 
-          // Top 5 movers up
-          topMoversUp = changes
-            .sort((a, b) => b.change - a.change)
-            .slice(0, 5);
+          // IBEX 35 movers
+          const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX35");
+          ibexMoversUp = ibexChanges.sort((a, b) => b.change - a.change).slice(0, 5);
+          ibexMoversDown = ibexChanges.sort((a, b) => a.change - b.change).slice(0, 5);
 
-          // Top 5 movers down
-          topMoversDown = changes
-            .sort((a, b) => a.change - b.change)
-            .slice(0, 5);
+          // Non-IBEX movers
+          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX35");
+          topMoversUp = nonIbexChanges.sort((a, b) => b.change - a.change).slice(0, 5);
+          topMoversDown = nonIbexChanges.sort((a, b) => a.change - b.change).slice(0, 5);
         }
       }
 
       return {
         latestWeek,
         topByAI,
+        // IBEX 35 section
+        topIbex: topIbex?.map(d => ({
+          empresa: d.company_name,
+          ticker: d.ticker,
+          rix: d.rix_score,
+          ai: d.model_name
+        })) || [],
+        bottomIbex: bottomIbex?.map(d => ({
+          empresa: d.company_name,
+          ticker: d.ticker,
+          rix: d.rix_score,
+          ai: d.model_name
+        })) || [],
+        ibexMoversUp,
+        ibexMoversDown,
+        // Non-IBEX section
         topTraded: topTraded?.map(d => ({
           empresa: d.company_name,
           ticker: d.ticker,
