@@ -61,12 +61,17 @@ export function Header({ title = "RepIndex.ai", className }: HeaderProps) {
   };
 
   const handleNavClick = (item: typeof navItems[0]) => {
-    if (item.protected && !isAuthenticated) {
-      navigate("/login");
-    } else {
-      navigate(item.path);
-    }
+    // Close mobile menu first
     setMobileMenuOpen(false);
+    
+    // Use setTimeout to ensure menu closes before navigation
+    setTimeout(() => {
+      if (item.protected && !isAuthenticated) {
+        navigate("/login");
+      } else {
+        navigate(item.path);
+      }
+    }, 100);
   };
 
   return (
