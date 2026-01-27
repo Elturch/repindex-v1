@@ -97,9 +97,11 @@ export function ChatInput({
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
-      textarea.style.height = 'auto';
-      const maxHeight = compact ? 120 : 150;
-      textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+      textarea.style.height = "auto";
+      const maxHeight = compact ? 120 : 220;
+      const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+      textarea.style.height = `${nextHeight}px`;
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
     }
   };
 
@@ -118,14 +120,14 @@ export function ChatInput({
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
-        let interimTranscript = '';
+        let _interimTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             finalTranscript += transcript;
           } else {
-            interimTranscript += transcript;
+            _interimTranscript += transcript;
           }
         }
 
@@ -498,16 +500,16 @@ export function ChatInput({
           ref={textareaRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onInput={adjustTextareaHeight}
           onKeyDown={handleKeyDown}
           placeholder={bulletinModeActive ? tr.inputPlaceholderBulletin : (isListening ? tr.inputListening : (placeholder || tr.inputPlaceholder))}
           disabled={isLoading}
           className={cn(
-            "flex-1 min-w-0 resize-none overflow-y-auto min-h-[44px] max-h-[150px]",
-            compact && "text-sm min-h-[36px] max-h-[120px]",
+            "flex-1 min-w-0 resize-none overflow-hidden !min-h-[44px] max-h-[220px]",
+            compact && "text-sm !min-h-[36px] max-h-[120px]",
             isListening && "border-red-500 ring-1 ring-red-500",
             bulletinModeActive && "border-primary ring-1 ring-primary"
           )}
-          style={{ height: 'auto' }}
         />
         <Button
           onClick={handleSend}
