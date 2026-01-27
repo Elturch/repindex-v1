@@ -19,12 +19,15 @@ export function useLandingTopFives() {
   return useQuery({
     queryKey: ["landing-top-fives"],
     queryFn: async () => {
-      // Get latest and previous batch weeks
-      const { data: latestBatches } = await supabase
+      // Get latest and previous batch weeks (DISTINCT to avoid duplicates)
+      const { data: allWeeks } = await supabase
         .from("rix_trends")
         .select("batch_week")
-        .order("batch_week", { ascending: false })
-        .limit(2);
+        .order("batch_week", { ascending: false });
+      
+      // Extract unique weeks
+      const uniqueWeeks = [...new Set(allWeeks?.map(w => w.batch_week) || [])];
+      const latestBatches = uniqueWeeks.slice(0, 2).map(w => ({ batch_week: w }));
 
       if (!latestBatches || latestBatches.length === 0) throw new Error("No data available");
 
