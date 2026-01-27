@@ -2204,7 +2204,23 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
             `Top 5 empresas del sector ${matchedCompany.sector_category}`
           ];
 
-          // Send final done event with metadata
+          // Calculate divergence for methodology metadata
+          const modelScores = rixData
+            ?.filter(r => r['09_rix_score'] != null && r['09_rix_score'] > 0)
+            ?.map(r => r['09_rix_score']) || [];
+          const maxScore = modelScores.length > 0 ? Math.max(...modelScores) : 0;
+          const minScore = modelScores.length > 0 ? Math.min(...modelScores) : 0;
+          const divergencePoints = maxScore - minScore;
+          const divergenceLevel = divergencePoints <= 8 ? 'low' : divergencePoints <= 15 ? 'medium' : 'high';
+          
+          // Extract unique models used
+          const modelsUsed = [...new Set(rixData?.map(r => r['02_model_name']).filter(Boolean) || [])];
+          
+          // Extract period info
+          const periodFrom = rixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
+          const periodTo = rixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
+
+          // Send final done event with enriched methodology metadata
           controller.enqueue(sseEncoder({
             type: 'done',
             suggestedQuestions,
@@ -2217,6 +2233,18 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
               aiProvider: provider,
+              // Methodology metadata for "Radar Reputacional" validation sheet
+              methodology: {
+                hasRixData: (rixData?.length || 0) > 0,
+                modelsUsed,
+                periodFrom,
+                periodTo,
+                observationsCount: rixData?.length || 0,
+                divergenceLevel,
+                divergencePoints,
+                uniqueCompanies: 1,
+                uniqueWeeks: uniquePeriods.length,
+              },
             }
           }));
 
@@ -3470,6 +3498,36 @@ NUNCA:
 • Responder "no hay datos" si la información está en el contexto
 • Terminar con llamadas a la acción comerciales
 
+═══════════════════════════════════════════════════════════════════════════════
+              JUSTIFICACIÓN METODOLÓGICA "RADAR REPUTACIONAL"
+═══════════════════════════════════════════════════════════════════════════════
+
+CONTEXTO FILOSÓFICO:
+RepIndex no mide la reputación tradicional. Mide la PROBABILIDAD de que una 
+narrativa gane tracción en el ecosistema informativo algorítmico. En 2026, 
+las IAs son el primer filtro cognitivo. El primer punto de contacto 
+reputacional. La reputación ya no se pierde en una portada: se pierde 
+cuando un modelo deja de confiar en tu narrativa.
+
+INSTRUCCIONES PARA INTEGRAR CONTEXTO METODOLÓGICO:
+Al final de cada sección principal de datos donde cites scores o métricas, 
+incluye un breve párrafo explicativo en blockquote (>) que justifique:
+
+1. QUÉ MIDE: Explica qué mide exactamente esa métrica/score
+2. CONSENSO: Indica el nivel de consenso entre los 6 modelos de IA
+3. SEÑAL ESTRATÉGICA: Qué significa esta señal para la anticipación reputacional
+
+Ejemplo de integración:
+> *Nota metodológica: Este RIX de 72 representa el consenso de 6 modelos 
+> de IA con búsqueda web real. La divergencia inter-modelo de ±8 puntos 
+> indica un nivel medio de incertidumbre epistémica, sugiriendo que la 
+> narrativa está consolidándose pero aún presenta variabilidad.*
+
+IMPORTANTE:
+• No añadas notas metodológicas a CADA párrafo - solo a secciones principales
+• Usa un tono técnico-legal pero accesible (como letra pequeña de un informe)
+• Las notas deben sentirse naturales, no intrusivas
+
 ${buildDepthPrompt(depthLevel, languageName)}
 
 ${roleId && rolePrompt ? `
@@ -3997,6 +4055,26 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       ]);
     }
 
+    // Calculate divergence for methodology metadata
+    const modelScores = allRixData
+      ?.filter(r => r['09_rix_score'] != null && r['09_rix_score'] > 0)
+      ?.map(r => r['09_rix_score']) || [];
+    const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
+    const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
+    const divergencePointsMethod = maxScoreMethod - minScoreMethod;
+    const divergenceLevelMethod = divergencePointsMethod <= 8 ? 'low' : divergencePointsMethod <= 15 ? 'medium' : 'high';
+    
+    // Extract unique models used
+    const modelsUsedMethod = [...new Set(allRixData?.map(r => r['02_model_name']).filter(Boolean) || [])];
+    
+    // Extract period info
+    const periodFromMethod = allRixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
+    const periodToMethod = allRixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
+    
+    // Extract unique companies and weeks
+    const uniqueCompaniesCount = new Set(allRixData?.map(r => r['05_ticker']).filter(Boolean) || []).size;
+    const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0;
+
     return new Response(
       JSON.stringify({
         answer,
@@ -4005,10 +4083,29 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
         metadata: {
           documentsFound: vectorDocs?.length || 0,
           structuredDataFound: allRixData?.length || 0,
-          dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0,
+          dataWeeks: uniqueWeeksCount,
           aiProvider: chatResult.provider,
           depthLevel,
           questionCategory,
+          // Methodology metadata for "Radar Reputacional" validation sheet
+          modelsUsed: modelsUsedMethod,
+          periodFrom: periodFromMethod,
+          periodTo: periodToMethod,
+          divergenceLevel: divergenceLevelMethod,
+          divergencePoints: divergencePointsMethod,
+          uniqueCompanies: uniqueCompaniesCount,
+          uniqueWeeks: uniqueWeeksCount,
+          methodology: {
+            hasRixData: (allRixData?.length || 0) > 0,
+            modelsUsed: modelsUsedMethod,
+            periodFrom: periodFromMethod,
+            periodTo: periodToMethod,
+            observationsCount: allRixData?.length || 0,
+            divergenceLevel: divergenceLevelMethod,
+            divergencePoints: divergencePointsMethod,
+            uniqueCompanies: uniqueCompaniesCount,
+            uniqueWeeks: uniqueWeeksCount,
+          },
         }
       }),
       {

@@ -365,6 +365,26 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
         <strong>Tier 4 (10%):</strong> Opinión, redes sociales, foros.
       </p>
 
+      <h4>Filosofía del Radar Reputacional</h4>
+      <p>
+        RepIndex no mide la reputación tradicional. Mide la <strong>probabilidad de que una narrativa 
+        gane tracción en el ecosistema informativo algorítmico</strong>.
+      </p>
+      <p>
+        En ${currentYear}, las IAs son el primer filtro cognitivo. El primer punto de contacto reputacional. 
+        El lugar donde se decide qué es relevante, creíble o dudoso. La reputación ya no se pierde en una 
+        portada: se pierde cuando un modelo deja de confiar en tu narrativa.
+      </p>
+      <p>
+        RepIndex detecta anomalías semánticas cuando aún no hay titulares, trending topics ni caídas 
+        bursátiles. Solo hay una grieta en el relato algorítmico. Esta es la <strong>ventaja estratégica</strong>: 
+        anticiparse a la reputación antes de que exista.
+      </p>
+      <p style="font-style: italic; color: #6b7280;">
+        "RepIndex no pregunta qué opinan las personas; pregunta qué dirían las IAs si alguien 
+        consultara ahora mismo sobre esta empresa."
+      </p>
+
       <div class="disclaimer-box">
         <h4 style="border: none; margin-top: 0;">Limitaciones Metodológicas</h4>
         <p>(1) El RIX mide percepción algorítmica, no reputación real. (2) Las IAs pueden heredar sesgos de sus datos de entrenamiento. (3) La cobertura depende de la visibilidad mediática. (4) No sustituye estudios de stakeholders (encuestas, NPS). (5) No debe usarse como única fuente para decisiones de M&A, inversión regulada o ESG certificado.</p>

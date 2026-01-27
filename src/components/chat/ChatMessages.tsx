@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
 import { ResponseFeedback } from "./ResponseFeedback";
+import { MethodologyFooter } from "./MethodologyFooter";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight } from "lucide-react";
@@ -280,6 +281,14 @@ export function ChatMessages({
                   messageContent={message.content}
                   userQuestion={messages[idx - 1]?.role === 'user' ? messages[idx - 1]?.content : undefined}
                   compact={compact}
+                />
+              )}
+
+              {/* Methodology Footer - only show when NOT streaming and has RIX data */}
+              {message.role === 'assistant' && !message.isStreaming && message.metadata?.methodology?.hasRixData && (
+                <MethodologyFooter 
+                  metadata={message.metadata.methodology}
+                  languageCode={languageCode}
                 />
               )}
 
