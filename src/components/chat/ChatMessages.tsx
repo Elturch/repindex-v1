@@ -96,7 +96,7 @@ export function ChatMessages({
       <ScrollArea className={`${scrollHeight} pr-4`}>
         <VectorStoreWarning />
         <div className="flex flex-col items-center justify-start h-full pt-4 pb-2">
-          <div className="text-center space-y-2 mb-10">
+          <div className="text-center space-y-2 mb-[100px]">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
             <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
           </div>
