@@ -22,6 +22,7 @@ export default function ChatIntelligence() {
     messages,
     isLoading,
     isLoadingHistory,
+    loadingMessage,
     sendMessage,
     clearConversation,
     setPageContext,
@@ -122,6 +123,7 @@ export default function ChatIntelligence() {
               messages={messages}
               isLoading={isLoading}
               isLoadingHistory={isLoadingHistory}
+              loadingMessage={loadingMessage}
               onSuggestedQuestion={sendMessage}
               onStarterPrompt={sendMessage}
               compact={false}

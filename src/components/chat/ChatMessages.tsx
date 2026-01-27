@@ -21,6 +21,7 @@ interface ChatMessagesProps {
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
+  loadingMessage?: string;
   onSuggestedQuestion: (question: string) => void;
   onStarterPrompt: (prompt: string) => void;
   compact?: boolean;
@@ -32,6 +33,7 @@ export function ChatMessages({
   messages,
   isLoading,
   isLoadingHistory,
+  loadingMessage = "Analizando...",
   onSuggestedQuestion,
   onStarterPrompt,
   compact = false,
@@ -307,7 +309,9 @@ export function ChatMessages({
               <div className="flex items-center gap-2">
                 <RefreshCw className={`${compact ? 'h-4 w-4' : 'h-5 w-5'} text-primary animate-spin`} />
                 <div>
-                  <span className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-foreground`}>{tr.analyzingData}</span>
+                  <span className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-foreground transition-all duration-300`}>
+                    {loadingMessage}
+                  </span>
                   {!compact && <p className="text-xs text-muted-foreground mt-1">{tr.consultingDatabase}</p>}
                 </div>
               </div>
