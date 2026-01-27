@@ -148,34 +148,57 @@ export function useLandingTopFives() {
           .eq("batch_week", previousWeek);
 
         if (currentData && previousData) {
-          // Calculate changes
-          const changes = currentData
+          // 1. Calculate raw changes per ticker+model
+          const rawChanges = currentData
             .map(curr => {
               const prev = previousData.find(
                 p => p.ticker === curr.ticker && p.model_name === curr.model_name
               );
               if (!prev) return null;
-              
               return {
-                empresa: curr.company_name,
                 ticker: curr.ticker,
-                rix: curr.rix_score,
-                ai: curr.model_name,
+                empresa: curr.company_name,
                 ibex_family_code: curr.ibex_family_code,
-                change: curr.rix_score - prev.rix_score
+                change: curr.rix_score - prev.rix_score,
+                currentScore: curr.rix_score
               };
             })
-            .filter(Boolean) as (TopCompany & { change: number; ibex_family_code: string | null })[];
+            .filter(Boolean) as { ticker: string; empresa: string; ibex_family_code: string | null; change: number; currentScore: number }[];
 
-          // IBEX 35 movers
-          const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX-35");
-          ibexMoversUp = ibexChanges.sort((a, b) => b.change - a.change).slice(0, 5);
-          ibexMoversDown = ibexChanges.sort((a, b) => a.change - b.change).slice(0, 5);
+          // 2. Aggregate by ticker (average changes across all models)
+          const tickerMap = new Map<string, { ticker: string; empresa: string; ibex_family_code: string | null; changes: number[]; scores: number[] }>();
+          rawChanges.forEach(item => {
+            if (!tickerMap.has(item.ticker)) {
+              tickerMap.set(item.ticker, {
+                ticker: item.ticker,
+                empresa: item.empresa,
+                ibex_family_code: item.ibex_family_code,
+                changes: [],
+                scores: []
+              });
+            }
+            tickerMap.get(item.ticker)!.changes.push(item.change);
+            tickerMap.get(item.ticker)!.scores.push(item.currentScore);
+          });
 
-          // Non-IBEX movers
-          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35");
-          topMoversUp = nonIbexChanges.sort((a, b) => b.change - a.change).slice(0, 5);
-          topMoversDown = nonIbexChanges.sort((a, b) => a.change - b.change).slice(0, 5);
+          // 3. Calculate averages and create final list
+          const aggregatedChanges = Array.from(tickerMap.values()).map(item => ({
+            empresa: item.empresa,
+            ticker: item.ticker,
+            rix: Math.round(item.scores.reduce((a, b) => a + b, 0) / item.scores.length),
+            ai: "Promedio",
+            ibex_family_code: item.ibex_family_code,
+            change: item.changes.reduce((a, b) => a + b, 0) / item.changes.length
+          }));
+
+          // 4. Separate IBEX and non-IBEX, sort by change
+          const ibexAggregated = aggregatedChanges.filter(c => c.ibex_family_code === "IBEX-35");
+          ibexMoversUp = [...ibexAggregated].sort((a, b) => b.change - a.change).slice(0, 5);
+          ibexMoversDown = [...ibexAggregated].sort((a, b) => a.change - b.change).slice(0, 5);
+
+          const nonIbexAggregated = aggregatedChanges.filter(c => c.ibex_family_code !== "IBEX-35");
+          topMoversUp = [...nonIbexAggregated].sort((a, b) => b.change - a.change).slice(0, 5);
+          topMoversDown = [...nonIbexAggregated].sort((a, b) => a.change - b.change).slice(0, 5);
         }
       }
 
