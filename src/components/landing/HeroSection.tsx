@@ -129,6 +129,22 @@ export function HeroSection() {
               Agente Rix
             </Button>
           </motion.div>
+
+          {/* Methodology Link */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.9, duration: 0.6 }}
+            className="pt-2"
+          >
+            <Button 
+              variant="link" 
+              onClick={() => navigate("/metodologia")} 
+              className="text-muted-foreground hover:text-primary text-sm"
+            >
+              📊 Conoce nuestra metodología →
+            </Button>
+          </motion.div>
         </motion.div>
       </div>
     </section>
