@@ -463,6 +463,42 @@ export type Database = {
         }
         Relationships: []
       }
+      competitor_relationships: {
+        Row: {
+          competitor_ticker: string
+          confidence_score: number | null
+          created_at: string | null
+          id: string
+          notes: string | null
+          relationship_type: string | null
+          source_ticker: string
+          updated_at: string | null
+          validated_by: string | null
+        }
+        Insert: {
+          competitor_ticker: string
+          confidence_score?: number | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          relationship_type?: string | null
+          source_ticker: string
+          updated_at?: string | null
+          validated_by?: string | null
+        }
+        Update: {
+          competitor_ticker?: string
+          confidence_score?: number | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          relationship_type?: string | null
+          source_ticker?: string
+          updated_at?: string | null
+          validated_by?: string | null
+        }
+        Relationships: []
+      }
       contadores: {
         Row: {
           citation_density: number
@@ -1212,6 +1248,7 @@ export type Database = {
           source_hint: string | null
           source_segment_detail: string | null
           status: string | null
+          subsector: string | null
           ticker: string
           website: string | null
         }
@@ -1236,6 +1273,7 @@ export type Database = {
           source_hint?: string | null
           source_segment_detail?: string | null
           status?: string | null
+          subsector?: string | null
           ticker: string
           website?: string | null
         }
@@ -1260,6 +1298,7 @@ export type Database = {
           source_hint?: string | null
           source_segment_detail?: string | null
           status?: string | null
+          subsector?: string | null
           ticker?: string
           website?: string | null
         }
