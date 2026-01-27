@@ -123,7 +123,6 @@ export default function ChatIntelligence() {
               isLoading={isLoading}
               isLoadingHistory={isLoadingHistory}
               onSuggestedQuestion={sendMessage}
-              starterPrompts={pageContext.suggestions}
               onStarterPrompt={sendMessage}
               compact={false}
               sessionId={sessionId}

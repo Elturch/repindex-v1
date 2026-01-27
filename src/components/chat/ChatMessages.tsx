@@ -6,13 +6,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
-
 import { ResponseFeedback } from "./ResponseFeedback";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
+import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
+import { useAuth } from "@/contexts/AuthContext";
 import { getRoleById } from "@/lib/chatRoles";
 import { getChatTranslations } from "@/lib/chatTranslations";
 
@@ -21,8 +22,6 @@ interface ChatMessagesProps {
   isLoading: boolean;
   isLoadingHistory: boolean;
   onSuggestedQuestion: (question: string) => void;
-  
-  starterPrompts: string[];
   onStarterPrompt: (prompt: string) => void;
   compact?: boolean;
   sessionId?: string;
@@ -34,8 +33,6 @@ export function ChatMessages({
   isLoading,
   isLoadingHistory,
   onSuggestedQuestion,
-  
-  starterPrompts,
   onStarterPrompt,
   compact = false,
   sessionId,
@@ -45,6 +42,15 @@ export function ChatMessages({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const vectorStoreStatus = useVectorStoreStatus();
   const tr = getChatTranslations(languageCode);
+  const { user } = useAuth();
+  
+  // Smart suggestions with live data and personalization
+  const { 
+    suggestions: smartSuggestions, 
+    isLoading: suggestionsLoading, 
+    refresh: refreshSuggestions,
+    hasPersonalized 
+  } = useSmartSuggestions(user?.id || null, languageCode, compact ? 3 : 4);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -98,18 +104,64 @@ export function ChatMessages({
             </p>
           </div>
           
-          <div className="grid grid-cols-1 gap-2 w-full">
-            <p className="text-xs font-medium text-muted-foreground mb-1">{tr.suggestions}</p>
-            {starterPrompts.slice(0, compact ? 3 : 5).map((prompt, idx) => (
-              <Button
-                key={idx}
-                variant="outline"
-                className={`justify-start text-left h-auto whitespace-normal ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent`}
-                onClick={() => onStarterPrompt(prompt)}
-              >
-                <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'}`}>{prompt}</span>
-              </Button>
-            ))}
+          <div className="w-full space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                {tr.suggestions}
+                {hasPersonalized && (
+                  <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                    ✨ {tr.personalizedLabel}
+                  </Badge>
+                )}
+              </p>
+              {!compact && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={refreshSuggestions}
+                  disabled={suggestionsLoading}
+                  className="text-xs text-muted-foreground h-6 px-2"
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${suggestionsLoading ? 'animate-spin' : ''}`} />
+                  {tr.refreshSuggestions}
+                </Button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 gap-2">
+              {suggestionsLoading ? (
+                <>
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </>
+              ) : (
+                smartSuggestions.map((suggestion, idx) => (
+                  <Button
+                    key={idx}
+                    variant="outline"
+                    className={`justify-start text-left h-auto whitespace-normal ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in`}
+                    style={{ animationDelay: `${idx * 0.05}s` }}
+                    onClick={() => onStarterPrompt(suggestion.text)}
+                  >
+                    <span className="mr-2 text-base">{suggestion.icon}</span>
+                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1`}>
+                      {suggestion.text}
+                    </span>
+                    {suggestion.type === 'personalized' && !compact && (
+                      <Badge variant="outline" className="ml-2 text-[9px] opacity-60 shrink-0">
+                        {tr.historyLabel}
+                      </Badge>
+                    )}
+                    {suggestion.type === 'discovery' && !compact && (
+                      <Badge variant="secondary" className="ml-2 text-[9px] shrink-0">
+                        {tr.discoveryLabel}
+                      </Badge>
+                    )}
+                  </Button>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </ScrollArea>

@@ -115,6 +115,12 @@ export interface ChatUITranslations {
   
   // Clarification
   clarificationNeeded: string;
+  
+  // Smart suggestions
+  personalizedLabel: string;
+  discoveryLabel: string;
+  historyLabel: string;
+  refreshSuggestions: string;
 }
 
 const translations: Record<string, ChatUITranslations> = {
@@ -206,6 +212,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'Generar este informe',
     // Clarification
     clarificationNeeded: 'Para ofrecerte un análisis preciso, necesito más información',
+    // Smart suggestions
+    personalizedLabel: 'Personalizado',
+    discoveryLabel: 'Descubrimiento',
+    historyLabel: 'De tu historial',
+    refreshSuggestions: 'Ver otras sugerencias',
   },
   en: {
     pageTitle: 'Rix Agent',
@@ -295,6 +306,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'Generate this report',
     // Clarification
     clarificationNeeded: 'To provide you with an accurate analysis, I need more information',
+    // Smart suggestions
+    personalizedLabel: 'Personalized',
+    discoveryLabel: 'Discovery',
+    historyLabel: 'From your history',
+    refreshSuggestions: 'See other suggestions',
   },
   fr: {
     pageTitle: 'Agent Rix',
@@ -384,6 +400,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'Générer ce rapport',
     // Clarification
     clarificationNeeded: 'Pour vous fournir une analyse précise, j\'ai besoin de plus d\'informations',
+    // Smart suggestions
+    personalizedLabel: 'Personnalisé',
+    discoveryLabel: 'Découverte',
+    historyLabel: 'De votre historique',
+    refreshSuggestions: 'Voir d\'autres suggestions',
   },
   de: {
     pageTitle: 'Rix Agent',
@@ -473,6 +494,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'Diesen Bericht erstellen',
     // Clarification
     clarificationNeeded: 'Um Ihnen eine genaue Analyse zu liefern, benötige ich mehr Informationen',
+    // Smart suggestions
+    personalizedLabel: 'Personalisiert',
+    discoveryLabel: 'Entdeckung',
+    historyLabel: 'Aus Ihrem Verlauf',
+    refreshSuggestions: 'Andere Vorschläge anzeigen',
   },
   pt: {
     pageTitle: 'Agente Rix',
@@ -562,6 +588,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'Gerar este relatório',
     // Clarification
     clarificationNeeded: 'Para fornecer uma análise precisa, preciso de mais informações',
+    // Smart suggestions
+    personalizedLabel: 'Personalizado',
+    discoveryLabel: 'Descoberta',
+    historyLabel: 'Do seu histórico',
+    refreshSuggestions: 'Ver outras sugestões',
   },
   it: {
     pageTitle: 'Agente Rix',
@@ -651,6 +682,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'Genera questo rapporto',
     // Clarification
     clarificationNeeded: 'Per fornirti un\'analisi accurata, ho bisogno di più informazioni',
+    // Smart suggestions
+    personalizedLabel: 'Personalizzato',
+    discoveryLabel: 'Scoperta',
+    historyLabel: 'Dalla tua cronologia',
+    refreshSuggestions: 'Vedi altri suggerimenti',
   },
   ar: {
     pageTitle: 'وكيل ريكس',
@@ -740,6 +776,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'إنشاء هذا التقرير',
     // Clarification
     clarificationNeeded: 'لتقديم تحليل دقيق، أحتاج إلى مزيد من المعلومات',
+    // Smart suggestions
+    personalizedLabel: 'مخصص',
+    discoveryLabel: 'اكتشاف',
+    historyLabel: 'من سجلك',
+    refreshSuggestions: 'عرض اقتراحات أخرى',
   },
   zh: {
     pageTitle: 'Rix代理',
@@ -829,6 +870,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: '生成此报告',
     // Clarification
     clarificationNeeded: '为了提供准确的分析，我需要更多信息',
+    // Smart suggestions
+    personalizedLabel: '个性化',
+    discoveryLabel: '发现',
+    historyLabel: '来自您的历史',
+    refreshSuggestions: '查看其他建议',
   },
   ja: {
     pageTitle: 'Rixエージェント',
@@ -918,6 +964,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: 'このレポートを生成',
     // Clarification
     clarificationNeeded: '正確な分析を提供するために、より多くの情報が必要です',
+    // Smart suggestions
+    personalizedLabel: 'パーソナライズ',
+    discoveryLabel: '発見',
+    historyLabel: 'あなたの履歴から',
+    refreshSuggestions: '他の提案を見る',
   },
   ko: {
     pageTitle: 'Rix 에이전트',
@@ -1007,6 +1058,11 @@ const translations: Record<string, ChatUITranslations> = {
     drumrollAction: '이 보고서 생성',
     // Clarification
     clarificationNeeded: '정확한 분석을 제공하려면 더 많은 정보가 필요합니다',
+    // Smart suggestions
+    personalizedLabel: '개인화',
+    discoveryLabel: '발견',
+    historyLabel: '귀하의 기록에서',
+    refreshSuggestions: '다른 제안 보기',
   },
 };
 

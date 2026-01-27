@@ -369,7 +369,6 @@ export function FloatingChat() {
                       isLoading={isLoading}
                       isLoadingHistory={isLoadingHistory}
                       onSuggestedQuestion={handleSuggestionClick}
-                      starterPrompts={pageContext.suggestions}
                       onStarterPrompt={handleSuggestionClick}
                       compact={true}
                       sessionId={sessionId}
