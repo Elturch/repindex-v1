@@ -106,6 +106,7 @@ export interface Message {
   suggestedQuestions?: string[];
   drumrollQuestion?: DrumrollQuestion;
   metadata?: MessageMetadata;
+  isStreaming?: boolean; // NEW: indicates if message is currently being streamed
 }
 
 interface PageContext {
@@ -120,7 +121,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string }) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -139,6 +140,8 @@ interface ChatContextType {
   downloadAsTxt: () => void;
   downloadAsJson: () => void;
   downloadAsHtml: () => void;
+  // Streaming state
+  isStreaming: boolean;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -159,6 +162,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
@@ -276,7 +280,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string }) => {
+  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -286,7 +290,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return;
     }
 
+    const useStreaming = options?.useStreaming ?? true; // Default to streaming mode
+
     setIsLoading(true);
+    if (useStreaming) {
+      setIsStreaming(true);
+    }
     
     // Start rotating loading messages
     let loadingIndex = 0;
@@ -319,7 +328,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Extract company name from bulletin request if bulletinMode is active
     let bulletinCompanyName: string | null = null;
     if (options?.bulletinMode) {
-      // Extract company name from patterns like "Genera un boletín ejecutivo de Telefónica"
       const bulletinPatterns = [
         /(?:bolet[íi]n|informe|reporte)\s+(?:ejecutivo\s+)?(?:de|para|sobre)\s+(.+?)$/i,
         /(?:de|para|sobre)\s+(.+?)$/i,
@@ -334,93 +342,237 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     try {
-      // Get role details if a role is selected
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
-      
-      // Calculate timeout based on depth level and bulletin mode
       const timeoutMs = getTimeoutForRequest(options?.depthLevel || 'complete', options?.bulletinMode || false);
       
-      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName, 'depth:', options?.depthLevel, 'role:', options?.roleId, 'timeout:', timeoutMs / 1000, 's');
-      
-      // Use invokeWithTimeout instead of supabase.functions.invoke for extended timeout support
-      const { data, error } = await invokeWithTimeout('chat-intelligence', {
-        question,
-        conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
-        sessionId,
-        conversationId: convId,
-        // Only send bulletin params if explicitly triggered by button
-        bulletinMode: options?.bulletinMode || false,
-        bulletinCompanyName,
-        // Language preference
-        language: language.code,
-        languageName: language.nativeName,
-        // Depth level
-        depthLevel: options?.depthLevel || 'complete',
-        // Pre-selected role (NEW)
-        roleId: role?.id,
-        roleName: role ? `${role.emoji} ${role.name}` : undefined,
-        rolePrompt: role?.prompt,
-      }, timeoutMs) as { data: any; error: Error | null };
+      console.log('[ChatContext] Sending message with language:', language.code, 'depth:', options?.depthLevel, 'streaming:', useStreaming);
 
-      if (error) throw error;
+      if (useStreaming) {
+        // =========================================================================
+        // STREAMING MODE: Use fetch with ReadableStream for SSE
+        // =========================================================================
+        
+        // Add empty assistant message that will be filled during streaming
+        const streamingMessage: Message = {
+          role: 'assistant',
+          content: '',
+          isStreaming: true,
+        };
+        setMessages(prev => [...prev, streamingMessage]);
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.answer,
-        suggestedQuestions: data.suggestedQuestions,
-        drumrollQuestion: data.drumrollQuestion,
-        metadata: {
-          type: data.metadata?.type || 'standard',
-          companyName: data.metadata?.companyName,
-          documentsFound: data.metadata?.documentsFound,
-          structuredDataFound: data.metadata?.structuredDataFound,
-          depthLevel: options?.depthLevel || 'complete',
-          questionCategory: data.metadata?.questionCategory,
-        },
-      };
+        const response = await fetch(
+          `${SUPABASE_URL}/functions/v1/chat-intelligence`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({
+              question,
+              conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+              sessionId,
+              conversationId: convId,
+              bulletinMode: options?.bulletinMode || false,
+              bulletinCompanyName,
+              language: language.code,
+              languageName: language.nativeName,
+              depthLevel: options?.depthLevel || 'complete',
+              roleId: role?.id,
+              roleName: role ? `${role.emoji} ${role.name}` : undefined,
+              rolePrompt: role?.prompt,
+              streamMode: true, // Enable streaming in edge function
+            }),
+          }
+        );
 
-      setMessages(prev => [...prev, assistantMessage]);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `HTTP ${response.status}`);
+        }
 
-      // Save assistant message to DB with user_id
-      await supabase.from('chat_intelligence_sessions').insert({
-        session_id: sessionId,
-        role: 'assistant',
-        content: data.answer,
-        suggested_questions: data.suggestedQuestions,
-        documents_found: data.metadata?.documentsFound,
-        structured_data_found: data.metadata?.structuredDataFound,
-        user_id: currentUserId,
-        conversation_id: convId,
-      });
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body for streaming');
+        }
 
-      // Show appropriate toast based on response type
-      if (data.metadata?.type === 'bulletin') {
-        toast({
-          title: "Boletín generado",
-          description: currentUserId 
-            ? `Boletín de ${data.metadata.companyName || 'empresa'} guardado en "Mis Documentos"` 
-            : `Boletín de ${data.metadata.companyName || 'empresa'} listo para descargar`,
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let accumulatedContent = '';
+        let finalMetadata: any = null;
+        let suggestedQuestions: string[] = [];
+        let drumrollQuestion: DrumrollQuestion | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                
+                if (parsed.type === 'chunk' && parsed.text) {
+                  accumulatedContent += parsed.text;
+                  // Update the last message with accumulated content
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    const lastMsg = updated[updated.length - 1];
+                    if (lastMsg?.role === 'assistant') {
+                      lastMsg.content = accumulatedContent;
+                    }
+                    return updated;
+                  });
+                } else if (parsed.type === 'done') {
+                  // Capture final metadata
+                  suggestedQuestions = parsed.suggestedQuestions || [];
+                  drumrollQuestion = parsed.drumrollQuestion || null;
+                  finalMetadata = parsed.metadata || {};
+                } else if (parsed.type === 'error') {
+                  throw new Error(parsed.error || 'Streaming error');
+                }
+              } catch {
+                // Ignore parse errors for incomplete chunks
+              }
+            }
+          }
+        }
+
+        // Mark streaming as complete and add final metadata
+        setMessages(prev => {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg?.role === 'assistant') {
+            lastMsg.isStreaming = false;
+            lastMsg.suggestedQuestions = suggestedQuestions;
+            lastMsg.drumrollQuestion = drumrollQuestion;
+            lastMsg.metadata = {
+              type: finalMetadata?.type || 'standard',
+              companyName: finalMetadata?.companyName,
+              documentsFound: finalMetadata?.documentsFound,
+              structuredDataFound: finalMetadata?.structuredDataFound,
+              depthLevel: options?.depthLevel || 'complete',
+              questionCategory: finalMetadata?.questionCategory,
+            };
+          }
+          return updated;
         });
-      } else {
+
+        // Save assistant message to DB
+        await supabase.from('chat_intelligence_sessions').insert({
+          session_id: sessionId,
+          role: 'assistant',
+          content: accumulatedContent,
+          suggested_questions: suggestedQuestions,
+          documents_found: finalMetadata?.documentsFound,
+          structured_data_found: finalMetadata?.structuredDataFound,
+          user_id: currentUserId,
+          conversation_id: convId,
+        });
+
         toast({
           title: "Respuesta recibida",
-          description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
+          description: `${finalMetadata?.documentsFound || 0} documentos analizados`,
         });
+
+      } else {
+        // =========================================================================
+        // NON-STREAMING MODE: Use invokeWithTimeout (original behavior)
+        // =========================================================================
+        const { data, error } = await invokeWithTimeout('chat-intelligence', {
+          question,
+          conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+          sessionId,
+          conversationId: convId,
+          bulletinMode: options?.bulletinMode || false,
+          bulletinCompanyName,
+          language: language.code,
+          languageName: language.nativeName,
+          depthLevel: options?.depthLevel || 'complete',
+          roleId: role?.id,
+          roleName: role ? `${role.emoji} ${role.name}` : undefined,
+          rolePrompt: role?.prompt,
+          streamMode: false,
+        }, timeoutMs) as { data: any; error: Error | null };
+
+        if (error) throw error;
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: data.answer,
+          suggestedQuestions: data.suggestedQuestions,
+          drumrollQuestion: data.drumrollQuestion,
+          metadata: {
+            type: data.metadata?.type || 'standard',
+            companyName: data.metadata?.companyName,
+            documentsFound: data.metadata?.documentsFound,
+            structuredDataFound: data.metadata?.structuredDataFound,
+            depthLevel: options?.depthLevel || 'complete',
+            questionCategory: data.metadata?.questionCategory,
+          },
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+
+        await supabase.from('chat_intelligence_sessions').insert({
+          session_id: sessionId,
+          role: 'assistant',
+          content: data.answer,
+          suggested_questions: data.suggestedQuestions,
+          documents_found: data.metadata?.documentsFound,
+          structured_data_found: data.metadata?.structuredDataFound,
+          user_id: currentUserId,
+          conversation_id: convId,
+        });
+
+        if (data.metadata?.type === 'bulletin') {
+          toast({
+            title: "Boletín generado",
+            description: currentUserId 
+              ? `Boletín de ${data.metadata.companyName || 'empresa'} guardado en "Mis Documentos"` 
+              : `Boletín de ${data.metadata.companyName || 'empresa'} listo para descargar`,
+          });
+        } else {
+          toast({
+            title: "Respuesta recibida",
+            description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
+          });
+        }
       }
     } catch (error) {
       console.error('Error in chat intelligence:', error);
+      
+      // If streaming failed, remove the incomplete assistant message
+      if (options?.useStreaming) {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role === 'assistant' && last.isStreaming) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+      }
+      
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Error en el análisis",
         variant: "destructive",
       });
     } finally {
-      // Clear loading message interval
       if (loadingIntervalRef.current) {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
       }
       setIsLoading(false);
+      setIsStreaming(false);
     }
   }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language]);
 
@@ -1044,6 +1196,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         downloadAsTxt,
         downloadAsJson,
         downloadAsHtml,
+        isStreaming,
       }}
     >
       {children}
