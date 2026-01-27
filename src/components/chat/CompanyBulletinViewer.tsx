@@ -4,6 +4,7 @@ import { Printer, Download, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { convertMarkdownToHtml } from "@/lib/markdownToHtml";
+import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 
 interface CompanyBulletinViewerProps {
   content: string;
@@ -581,6 +582,11 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
         counter-reset: page 2;
       }
     }
+    
+    /* ===========================================
+       TECHNICAL SHEET - LEGAL FINE PRINT
+       =========================================== */
+    ${technicalSheetStyles}
   </style>
 </head>
 <body>
@@ -649,6 +655,8 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       <p>Análisis basado en ChatGPT, Perplexity, Gemini y DeepSeek</p>
       <p>© ${new Date().getFullYear()} RepIndex — repindex.ai</p>
     </footer>
+    
+    ${generateTechnicalSheetHtml({ companyName })}
   </div>
 </body>
 </html>`;
