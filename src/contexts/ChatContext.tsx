@@ -1,12 +1,86 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { getRoleById } from "@/lib/chatRoles";
 import { useAuth } from "@/contexts/AuthContext";
-import { convertMarkdownToHtml, baseExportStyles, premiumTableStyles } from "@/lib/markdownToHtml";
-import { ChatLanguage, getSavedLanguage, saveLanguagePreference, DEFAULT_LANGUAGE } from "@/lib/chatLanguages";
+import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml";
+import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
+
+// Constants for edge function invocation with extended timeout
+const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU";
+
+// Helper to get timeout based on depth level and bulletin mode
+function getTimeoutForRequest(depthLevel: string = 'complete', bulletinMode: boolean = false): number {
+  if (bulletinMode) return 300000; // 5 min for bulletins
+  switch (depthLevel) {
+    case 'quick': return 120000;     // 2 min
+    case 'complete': return 180000;  // 3 min  
+    case 'exhaustive': return 300000; // 5 min
+    default: return 180000;          // 3 min default
+  }
+}
+
+// Helper to invoke edge functions with extended timeout using fetch + AbortController
+async function invokeWithTimeout(
+  functionName: string,
+  body: Record<string, unknown>,
+  timeoutMs: number = 300000
+): Promise<{ data: unknown; error: Error | null }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/functions/v1/${functionName}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'apikey': SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { data: null, error: new Error(errorText || `HTTP ${response.status}`) };
+    }
+
+    const data = await response.json();
+    return { data, error: null };
+
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        data: null,
+        error: new Error('La generación del informe ha excedido el tiempo límite. Intenta con un informe más corto o una profundidad menor.')
+      };
+    }
+
+    return { data: null, error: err instanceof Error ? err : new Error('Unknown error') };
+  }
+}
+
+// Loading messages for long operations (rotating every 15 seconds)
+const LOADING_MESSAGES = [
+  "Consultando 6 modelos de IA...",
+  "Analizando datos de mercado...",
+  "Recopilando información sectorial...",
+  "Procesando histórico de la empresa...",
+  "Generando informe ejecutivo...",
+  "Consolidando perspectivas de IA...",
+  "Finalizando análisis...",
+];
 
 export interface DrumrollQuestion {
   title: string;
@@ -45,6 +119,7 @@ interface ChatContextType {
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
+  loadingMessage: string;
   sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
@@ -85,11 +160,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isStarred, setIsStarred] = useState(false);
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
+  const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
   // Use auth context for user ID - this syncs properly with AuthProvider
@@ -210,6 +287,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     setIsLoading(true);
+    
+    // Start rotating loading messages
+    let loadingIndex = 0;
+    setLoadingMessage(LOADING_MESSAGES[0]);
+    loadingIntervalRef.current = setInterval(() => {
+      loadingIndex = (loadingIndex + 1) % LOADING_MESSAGES.length;
+      setLoadingMessage(LOADING_MESSAGES[loadingIndex]);
+    }, 15000); // Rotate every 15 seconds
 
     const userMessage: Message = {
       role: 'user',
@@ -252,27 +337,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // Get role details if a role is selected
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
       
-      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName, 'depth:', options?.depthLevel, 'role:', options?.roleId);
-      const { data, error } = await supabase.functions.invoke('chat-intelligence', {
-        body: {
-          question,
-          conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
-          sessionId,
-          conversationId: convId,
-          // Only send bulletin params if explicitly triggered by button
-          bulletinMode: options?.bulletinMode || false,
-          bulletinCompanyName,
-          // Language preference
-          language: language.code,
-          languageName: language.nativeName,
-          // Depth level
-          depthLevel: options?.depthLevel || 'complete',
-          // Pre-selected role (NEW)
-          roleId: role?.id,
-          roleName: role ? `${role.emoji} ${role.name}` : undefined,
-          rolePrompt: role?.prompt,
-        },
-      });
+      // Calculate timeout based on depth level and bulletin mode
+      const timeoutMs = getTimeoutForRequest(options?.depthLevel || 'complete', options?.bulletinMode || false);
+      
+      console.log('[ChatContext] Sending message with language:', language.code, language.nativeName, 'depth:', options?.depthLevel, 'role:', options?.roleId, 'timeout:', timeoutMs / 1000, 's');
+      
+      // Use invokeWithTimeout instead of supabase.functions.invoke for extended timeout support
+      const { data, error } = await invokeWithTimeout('chat-intelligence', {
+        question,
+        conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+        sessionId,
+        conversationId: convId,
+        // Only send bulletin params if explicitly triggered by button
+        bulletinMode: options?.bulletinMode || false,
+        bulletinCompanyName,
+        // Language preference
+        language: language.code,
+        languageName: language.nativeName,
+        // Depth level
+        depthLevel: options?.depthLevel || 'complete',
+        // Pre-selected role (NEW)
+        roleId: role?.id,
+        roleName: role ? `${role.emoji} ${role.name}` : undefined,
+        rolePrompt: role?.prompt,
+      }, timeoutMs) as { data: any; error: Error | null };
 
       if (error) throw error;
 
@@ -327,6 +415,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
         variant: "destructive",
       });
     } finally {
+      // Clear loading message interval
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
+      }
       setIsLoading(false);
     }
   }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language]);
@@ -359,20 +452,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setMessages(prev => [...prev, enrichmentRequest]);
 
     try {
-      const { data, error } = await supabase.functions.invoke('chat-intelligence', {
-        body: {
-          action: 'enrich',
-          roleId: role.id,
-          roleName: role.name,
-          rolePrompt: role.prompt,
-          originalQuestion: userQuestion,
-          originalResponse: targetMessage.content,
-          sessionId,
-          // Language preference
-          language: language.code,
-          languageName: language.nativeName,
-        },
-      });
+      // Use invokeWithTimeout for enrich action (2 min timeout)
+      const { data, error } = await invokeWithTimeout('chat-intelligence', {
+        action: 'enrich',
+        roleId: role.id,
+        roleName: role.name,
+        rolePrompt: role.prompt,
+        originalQuestion: userQuestion,
+        originalResponse: targetMessage.content,
+        sessionId,
+        // Language preference
+        language: language.code,
+        languageName: language.nativeName,
+      }, 120000) as { data: any; error: Error | null }; // 2 min timeout for enrich
 
       if (error) throw error;
 
@@ -935,6 +1027,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         messages,
         isLoading,
         isLoadingHistory,
+        loadingMessage,
         sendMessage,
         enrichResponse,
         clearConversation,

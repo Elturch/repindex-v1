@@ -26,6 +26,7 @@ export function FloatingChat() {
     messages,
     isLoading,
     isLoadingHistory,
+    loadingMessage,
     sendMessage,
     clearConversation,
     isFloatingOpen,
@@ -368,6 +369,7 @@ export function FloatingChat() {
                       messages={messages}
                       isLoading={isLoading}
                       isLoadingHistory={isLoadingHistory}
+                      loadingMessage={loadingMessage}
                       onSuggestedQuestion={handleSuggestionClick}
                       onStarterPrompt={handleSuggestionClick}
                       compact={true}
