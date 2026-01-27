@@ -494,6 +494,187 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Route: GET /depth-analytics - Agente Rix usage by depth level
+    if (req.method === 'GET' && path === '/depth-analytics') {
+      const period = url.searchParams.get('period') || '30d'
+      const { start, end } = getDateFilter(period)
+
+      // Get ALL chat-intelligence logs with pagination
+      const usageLogs = await fetchAllUsageLogs(
+        supabaseAdmin,
+        start,
+        end,
+        'user_id, session_id, estimated_cost_usd, input_tokens, output_tokens, action_type, metadata, created_at'
+      )
+
+      // Filter to only chat-intelligence related actions
+      const chatLogs = usageLogs.filter(log => 
+        ['chat', 'enrich', 'bulletin'].includes(log.action_type)
+      )
+
+      // Get user profiles for mapping
+      const userIds = [...new Set(chatLogs.filter(l => l.user_id).map(l => l.user_id))]
+      let userProfiles: Record<string, { email: string; full_name: string | null }> = {}
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, email, full_name')
+          .in('id', userIds)
+        if (profiles) {
+          profiles.forEach(p => {
+            userProfiles[p.id] = { email: p.email, full_name: p.full_name }
+          })
+        }
+      }
+
+      // Aggregate by depth_level
+      const depthStats: Record<string, { 
+        calls: number; 
+        cost: number; 
+        input_tokens: number; 
+        output_tokens: number;
+        users: Set<string>;
+      }> = {
+        quick: { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() },
+        complete: { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() },
+        exhaustive: { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() },
+        enrich: { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() },
+        bulletin: { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() },
+        unknown: { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() },
+      }
+
+      // User-level aggregation
+      const userDepthMap = new Map<string, {
+        user_id: string | null;
+        email: string;
+        full_name: string | null;
+        quick: { calls: number; cost: number };
+        complete: { calls: number; cost: number };
+        exhaustive: { calls: number; cost: number };
+        enrich: { calls: number; cost: number };
+        bulletin: { calls: number; cost: number };
+        total_cost: number;
+        total_calls: number;
+      }>()
+
+      chatLogs.forEach(log => {
+        // Extract depth_level from metadata (with fallback inference)
+        let depthLevel = log.metadata?.depth_level || 'unknown'
+        
+        // Fallback: Infer from tokens if no depth_level in metadata
+        if (depthLevel === 'unknown' && log.action_type === 'chat') {
+          const totalTokens = (log.input_tokens || 0) + (log.output_tokens || 0)
+          if (totalTokens > 70000) depthLevel = 'exhaustive'
+          else if (totalTokens > 40000) depthLevel = 'complete'
+          else depthLevel = 'quick'
+        }
+        
+        // Override for specific action types
+        if (log.action_type === 'enrich') depthLevel = 'enrich'
+        if (log.action_type === 'bulletin') depthLevel = 'bulletin'
+        
+        // Aggregate by depth
+        if (!depthStats[depthLevel]) {
+          depthStats[depthLevel] = { calls: 0, cost: 0, input_tokens: 0, output_tokens: 0, users: new Set() }
+        }
+        depthStats[depthLevel].calls++
+        depthStats[depthLevel].cost += Number(log.estimated_cost_usd || 0)
+        depthStats[depthLevel].input_tokens += log.input_tokens || 0
+        depthStats[depthLevel].output_tokens += log.output_tokens || 0
+        if (log.user_id) depthStats[depthLevel].users.add(log.user_id)
+
+        // Aggregate by user
+        const userKey = log.user_id || `session:${log.session_id}`
+        if (!userDepthMap.has(userKey)) {
+          const profile = log.user_id ? userProfiles[log.user_id] : null
+          userDepthMap.set(userKey, {
+            user_id: log.user_id,
+            email: profile?.email || (log.user_id ? 'Usuario no encontrado' : 'Anónimo'),
+            full_name: profile?.full_name || null,
+            quick: { calls: 0, cost: 0 },
+            complete: { calls: 0, cost: 0 },
+            exhaustive: { calls: 0, cost: 0 },
+            enrich: { calls: 0, cost: 0 },
+            bulletin: { calls: 0, cost: 0 },
+            total_cost: 0,
+            total_calls: 0,
+          })
+        }
+        
+        const userEntry = userDepthMap.get(userKey)!
+        const cost = Number(log.estimated_cost_usd || 0)
+        userEntry.total_cost += cost
+        userEntry.total_calls++
+        
+        if (depthLevel === 'quick') {
+          userEntry.quick.calls++
+          userEntry.quick.cost += cost
+        } else if (depthLevel === 'complete') {
+          userEntry.complete.calls++
+          userEntry.complete.cost += cost
+        } else if (depthLevel === 'exhaustive') {
+          userEntry.exhaustive.calls++
+          userEntry.exhaustive.cost += cost
+        } else if (depthLevel === 'enrich') {
+          userEntry.enrich.calls++
+          userEntry.enrich.cost += cost
+        } else if (depthLevel === 'bulletin') {
+          userEntry.bulletin.calls++
+          userEntry.bulletin.cost += cost
+        }
+      })
+
+      // Calculate user patterns
+      const getUserPattern = (u: typeof userDepthMap extends Map<any, infer V> ? V : never): string => {
+        const total = u.quick.calls + u.complete.calls + u.exhaustive.calls
+        if (total === 0) return '📄 Solo Boletines'
+        const exhaustiveRatio = u.exhaustive.calls / total
+        const quickRatio = u.quick.calls / total
+        const completeRatio = u.complete.calls / total
+        
+        if (exhaustiveRatio > 0.6) return '🔥 Heavy User'
+        if (quickRatio > 0.6) return '🚀 Eficiente'
+        if (completeRatio > 0.5) return '📊 Analítico'
+        return '🎯 Balanceado'
+      }
+
+      // Convert to arrays
+      const byDepth = Object.entries(depthStats).map(([level, stats]) => ({
+        depth_level: level,
+        calls: stats.calls,
+        cost: stats.cost,
+        input_tokens: stats.input_tokens,
+        output_tokens: stats.output_tokens,
+        unique_users: stats.users.size,
+        avg_cost_per_call: stats.calls > 0 ? stats.cost / stats.calls : 0,
+      })).filter(d => d.calls > 0)
+
+      const byUser = Array.from(userDepthMap.values())
+        .filter(u => u.user_id) // Only authenticated users
+        .map(u => ({
+          ...u,
+          pattern: getUserPattern(u),
+        }))
+        .sort((a, b) => b.total_cost - a.total_cost)
+        .slice(0, 50) // Top 50 users
+
+      // Summary
+      const summary = {
+        total_chat_calls: chatLogs.length,
+        total_cost: chatLogs.reduce((sum, l) => sum + Number(l.estimated_cost_usd || 0), 0),
+        authenticated_users: userIds.length,
+        by_depth_summary: byDepth.reduce((acc, d) => {
+          acc[d.depth_level] = { calls: d.calls, cost: d.cost }
+          return acc
+        }, {} as Record<string, { calls: number; cost: number }>),
+      }
+
+      return new Response(
+        JSON.stringify({ data: { by_depth: byDepth, by_user: byUser, summary } }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     return new Response(
       JSON.stringify({ error: 'Not found' }),
       { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

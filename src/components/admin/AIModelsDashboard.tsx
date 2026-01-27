@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { RefreshCw, ChevronDown, ChevronRight, Sparkles, Zap, DollarSign, Hash, Activity, Clock } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, Sparkles, Zap, DollarSign, Hash, Activity, Clock, BarChart3 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { ChatDepthAnalytics } from './ChatDepthAnalytics';
 
 interface ProcessConfig {
   id: string;
@@ -196,6 +197,7 @@ export const AIModelsDashboard: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [expandedProcesses, setExpandedProcesses] = useState<Set<string>>(new Set(['search', 'analysis', 'chat']));
+  const [showDepthAnalytics, setShowDepthAnalytics] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
   const fetchData = async () => {
@@ -515,6 +517,33 @@ export const AIModelsDashboard: React.FC = () => {
                           </span>
                         </div>
                       ))}
+                      
+                      {/* Depth Analytics for Agente Rix */}
+                      {process.id === 'chat' && (
+                        <div className="mt-3 pt-3 border-t">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowDepthAnalytics(!showDepthAnalytics);
+                            }}
+                            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                            <span>Detalle por Tipo de Informe</span>
+                            {showDepthAnalytics ? (
+                              <ChevronDown className="h-4 w-4 ml-auto" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 ml-auto" />
+                            )}
+                          </button>
+                          
+                          {showDepthAnalytics && (
+                            <div className="mt-4">
+                              <ChatDepthAnalytics period={period} />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </CollapsibleContent>
                 </div>

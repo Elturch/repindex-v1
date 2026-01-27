@@ -1353,7 +1353,11 @@ ${originalQuestion || "(No disponible)"}
       outputTokens: result.outputTokens,
       userId,
       sessionId,
-      metadata: { roleId, roleName },
+      metadata: { 
+        roleId, 
+        roleName,
+        depth_level: 'enrich', // Enrichment is always a separate call
+      },
     });
 
     // Generate role-specific follow-up questions
@@ -1750,7 +1754,11 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     outputTokens: result.outputTokens,
     userId,
     sessionId,
-    metadata: { companyName: matchedCompany.issuer_name, ticker: matchedCompany.ticker },
+    metadata: { 
+      companyName: matchedCompany.issuer_name, 
+      ticker: matchedCompany.ticker,
+      depth_level: 'bulletin', // Bulletins are a specific report type
+    },
   });
 
   // 8. Save to database (chat_intelligence_sessions)
@@ -3009,6 +3017,11 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
     outputTokens: chatResult.outputTokens,
     userId,
     sessionId,
+    metadata: { 
+      depth_level: depthLevel,
+      role: roleId || null,
+      role_name: roleName || null,
+    },
   });
 
   // =============================================================================
