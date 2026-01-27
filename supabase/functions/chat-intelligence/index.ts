@@ -86,10 +86,17 @@ async function callAIWithFallback(
   model: string,
   maxTokens: number,
   logPrefix: string,
-  timeout: number = 120000
+  timeout: number = 120000,
+  options?: {
+    preferGemini?: boolean;
+    geminiTimeout?: number;
+  }
 ): Promise<AICallResult> {
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
   const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+
+  const preferGemini = options?.preferGemini ?? false;
+  const geminiTimeout = options?.geminiTimeout ?? timeout;
   
   // Model mapping: OpenAI → Gemini equivalent
   const modelMapping: Record<string, string> = {
@@ -98,8 +105,8 @@ async function callAIWithFallback(
     'gpt-4o': 'gemini-2.5-flash',
   };
   
-  // 1. Try OpenAI first
-  if (openAIApiKey) {
+  // 1. Try OpenAI first (unless preferGemini)
+  if (!preferGemini && openAIApiKey) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -156,7 +163,9 @@ async function callAIWithFallback(
       }
     }
   } else {
-    console.warn(`${logPrefix} No OpenAI API key, using Gemini directly...`);
+    if (!preferGemini) {
+      console.warn(`${logPrefix} No OpenAI API key, using Gemini directly...`);
+    }
   }
   
   // 2. Fallback to Gemini
@@ -166,7 +175,11 @@ async function callAIWithFallback(
   
   const geminiModel = modelMapping[model] || 'gemini-2.5-flash';
   console.log(`${logPrefix} Using Gemini fallback (${geminiModel})...`);
-  
+
+  // Gemini request with timeout (prevents hanging requests that end as client-side "Failed to fetch")
+  const geminiController = new AbortController();
+  const geminiTimeoutId = setTimeout(() => geminiController.abort(), geminiTimeout);
+
   const geminiResponse = await fetch(
     'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     {
@@ -180,8 +193,11 @@ async function callAIWithFallback(
         messages,
         max_tokens: maxTokens,
       }),
+      signal: geminiController.signal,
     }
   );
+
+  clearTimeout(geminiTimeoutId);
   
   if (!geminiResponse.ok) {
     const errorText = await geminiResponse.text();
@@ -877,6 +893,33 @@ Los titulares deben ser:
 9. **MÍNIMO 6000 PALABRAS**: Es un producto premium de pago
 10. **CADA MÉTRICA ES UNA HISTORIA**: Explica el "por qué" detrás de cada score`;
 
+// Quick bulletin variant used when the user selects "informe rápido".
+// It avoids the ultra-long premium constraints to prevent edge timeouts.
+const BULLETIN_SYSTEM_PROMPT_QUICK = `Eres RepIndex Bulletin, un analista experto en reputación corporativa.
+
+OBJETIVO: Generar un **boletín ejecutivo RÁPIDO** (800–1200 palabras) basado SOLO en el contexto.
+
+FORMATO OBLIGATORIO:
+## Síntesis (30 segundos)
+Un párrafo (4-5 líneas) con veredicto + recomendación.
+
+## Highlights
+- 5 bullets máximos, cada uno con 1 dato numérico.
+
+## Semáforo de señales
+- ✅ Oportunidades (2)
+- ⚠️ Riesgos (2)
+
+## Qué vigilar la próxima semana
+- 3 bullets máximos.
+
+REGLAS:
+- NO inventes datos.
+- NO excedas 1200 palabras.
+- Máximo 6 mini-noticias (titular + 2 líneas) si el contexto lo permite.
+- Estilo ejecutivo, directo, presentable a dirección.
+`;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -1057,6 +1100,7 @@ serve(async (req) => {
       return await handleBulletinRequest(
         bulletinCompanyName,
         question,
+        depthLevel,
         supabaseClient,
         openAIApiKey,
         sessionId,
@@ -1483,6 +1527,7 @@ async function generateRoleSpecificQuestions(
 async function handleBulletinRequest(
   companyQuery: string,
   originalQuestion: string,
+  depthLevel: 'quick' | 'complete' | 'exhaustive',
   supabaseClient: any,
   openAIApiKey: string,
   sessionId: string | undefined,
@@ -1519,12 +1564,13 @@ async function handleBulletinRequest(
   console.log(`${logPrefix} Matched company: ${matchedCompany.issuer_name} (${matchedCompany.ticker})`);
 
   // 2. Get competitors (same sector + same ibex_family)
+  const competitorLimit = depthLevel === 'quick' ? 5 : 8;
   const competitors = companiesCache?.filter(c => 
     c.ticker !== matchedCompany.ticker && (
       (matchedCompany.sector_category && c.sector_category === matchedCompany.sector_category) ||
       (matchedCompany.ibex_family_code && c.ibex_family_code === matchedCompany.ibex_family_code)
     )
-  ).slice(0, 8) || [];
+  ).slice(0, competitorLimit) || [];
 
   console.log(`${logPrefix} Found ${competitors.length} competitors`);
 
@@ -1579,7 +1625,7 @@ async function handleBulletinRequest(
   const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
   const uniquePeriods = [...new Set(rixData?.map(getPeriodKey) || [])]
     .sort((a, b) => b.split('|')[1].localeCompare(a.split('|')[1]))
-    .slice(0, 4); // Last 4 weeks
+    .slice(0, depthLevel === 'quick' ? 2 : 4); // Quick: 2 periods, otherwise: 4
 
   console.log(`${logPrefix} Unique periods found: ${uniquePeriods.length}`);
 
@@ -1724,7 +1770,7 @@ async function handleBulletinRequest(
   }
 
   // 7. Call AI with bulletin prompt
-  console.log(`${logPrefix} Calling OpenAI for bulletin generation...`);
+  console.log(`${logPrefix} Calling AI for bulletin generation (depth: ${depthLevel})...`);
   
   const bulletinUserPrompt = `Genera un BOLETÍN EJECUTIVO completo para la empresa ${matchedCompany.issuer_name} (${matchedCompany.ticker}).
 
@@ -1733,13 +1779,28 @@ ${bulletinContext}
 
 Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especificado en tus instrucciones.`;
 
+  const bulletinSystemPrompt = depthLevel === 'quick' ? BULLETIN_SYSTEM_PROMPT_QUICK : BULLETIN_SYSTEM_PROMPT;
   const bulletinMessages = [
-    { role: 'system', content: BULLETIN_SYSTEM_PROMPT },
+    { role: 'system', content: bulletinSystemPrompt },
     { role: 'user', content: bulletinUserPrompt }
   ];
 
-  // Timeout reduced to 60s to ensure Gemini fallback has enough time before server limit (~150s)
-  const result = await callAIWithFallback(bulletinMessages, 'o3', 40000, logPrefix, 60000);
+  // In "quick" we skip OpenAI entirely (it often wastes ~60s before fallback) and use Gemini fast models.
+  const isQuickBulletin = depthLevel === 'quick';
+  const bulletinModel = isQuickBulletin ? 'gpt-4o-mini' : 'o3';
+  const bulletinMaxTokens = isQuickBulletin ? 6000 : 40000;
+  const bulletinTimeoutMs = isQuickBulletin ? 45000 : 60000;
+
+  const result = await callAIWithFallback(
+    bulletinMessages,
+    bulletinModel,
+    bulletinMaxTokens,
+    logPrefix,
+    bulletinTimeoutMs,
+    isQuickBulletin
+      ? { preferGemini: true, geminiTimeout: bulletinTimeoutMs }
+      : { geminiTimeout: bulletinTimeoutMs }
+  );
   const bulletinContent = result.content;
 
   console.log(`${logPrefix} Bulletin generated (via ${result.provider}), length: ${bulletinContent.length}`);
