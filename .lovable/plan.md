@@ -1,335 +1,205 @@
 
-# Plan: Implementar Live Streaming para Generacion de Informes
+# Plan: Integrar Justificación Metodológica "Radar Reputacional" en Informes
 
 ## Objetivo
 
-Transformar la generacion de informes del sistema actual (respuesta completa al final) a un sistema de streaming en tiempo real donde el texto aparece palabra por palabra, similar a ChatGPT. Esto:
+Transformar los informes del Agente Rix para que incluyan **justificación metodológica integrada** que defienda el valor de RepIndex como "radar reputacional de la era algorítmica". Cada informe debe poder resistir el escrutinio de críticos humanos e IAs destiladas.
 
-1. **Elimina timeouts** - El cliente recibe datos continuamente, manteniendo la conexion activa
-2. **Mejora la UX** - El usuario ve el progreso inmediato en lugar de esperar 1-3 minutos
-3. **Permite descarga al completar** - Boton de descarga/guardado aparece cuando termina el stream
+## Filosofía del Cambio
 
----
+El manifiesto "RepIndex: el radar reputacional en la era algorítmica" define una propuesta de valor única:
 
-## Arquitectura Propuesta
+- **No mide reputación tradicional** → Mide **probabilidad de que una narrativa gane tracción algorítmica**
+- **Detección temprana** → Identifica grietas narrativas **antes** de que sean titulares
+- **La IA como primer filtro cognitivo** → Quien no mide su relato en IAs, deja su reputación al azar
 
-```text
-┌─────────────────────┐     SSE Stream      ┌──────────────────────────┐
-│   ChatContext.tsx   │ ◄─────────────────► │  chat-intelligence       │
-│   (Frontend)        │    text/event-stream │  (Edge Function)         │
-│                     │                      │                          │
-│  - EventSource API  │   data: {"chunk":..} │  - OpenAI stream: true   │
-│  - Acumula chunks   │   data: {"done":true}│  - ReadableStream        │
-│  - Renderiza texto  │                      │  - TransformStream       │
-└─────────────────────┘                      └──────────────────────────┘
-```
+Esta filosofía debe **permear cada informe** de forma elegante, sin ser intrusiva.
 
 ---
 
-## Cambios Requeridos
+## Arquitectura de Implementación
 
-### 1. Edge Function: `supabase/functions/chat-intelligence/index.ts`
+### 1. Nuevo Sistema Prompt de Defensa Metodológica
 
-**Nuevo endpoint con streaming:**
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
 
-```typescript
-// Nueva funcion de streaming para OpenAI
-async function streamOpenAIResponse(
-  messages: Array<{role: string; content: string}>,
-  model: string,
-  maxTokens: number
-): Promise<ReadableStream> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_completion_tokens: maxTokens,
-      stream: true,  // CLAVE: Activar streaming
-    }),
-  });
+Añadir al system prompt una sección que instruya al modelo a incluir **mini-secciones metodológicas** dentro del informe:
 
-  return response.body!;
-}
-
-// Handler para requests con streaming
-if (streamMode) {
-  const headers = new Headers({
-    ...corsHeaders,
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      
-      // 1. Enviar metadatos iniciales
-      controller.enqueue(encoder.encode(
-        `data: ${JSON.stringify({ type: 'start', metadata: {...} })}\n\n`
-      ));
-      
-      // 2. Stream del contenido principal
-      for await (const chunk of openAIStream) {
-        const text = chunk.choices[0]?.delta?.content || '';
-        if (text) {
-          controller.enqueue(encoder.encode(
-            `data: ${JSON.stringify({ type: 'chunk', text })}\n\n`
-          ));
-        }
-      }
-      
-      // 3. Generar preguntas sugeridas (post-stream)
-      const suggestedQuestions = await generateSuggestedQuestions(...);
-      
-      // 4. Enviar finalizacion con metadata
-      controller.enqueue(encoder.encode(
-        `data: ${JSON.stringify({ 
-          type: 'done', 
-          suggestedQuestions,
-          drumrollQuestion,
-          metadata: {...}
-        })}\n\n`
-      ));
-      
-      controller.close();
-    }
-  });
-
-  return new Response(stream, { headers });
-}
+```
+Al final de cada sección principal de datos, incluye un breve párrafo en
+formato de "NOTA METODOLÓGICA" (en letra más pequeña o blockquote) que
+justifique:
+1. Qué mide exactamente esta métrica
+2. Por qué es relevante en la era algorítmica
+3. Qué nivel de consenso hay entre los 6 modelos (divergencia)
+4. Qué significa esta señal para la anticipación reputacional
 ```
 
-**Logica de fallback a Gemini con streaming:**
+### 2. Footer Metodológico Automático en Respuestas
 
-```typescript
-// Gemini tambien soporta streaming via su API
-async function streamGeminiResponse(...) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [...],
-        generationConfig: { maxOutputTokens }
-      }),
-    }
-  );
-  // Procesar NDJSON stream de Gemini
-}
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
+
+Al final de cada respuesta generada, añadir automáticamente un bloque estructurado:
+
+```markdown
+---
+
+> **📊 Ficha de Validación Metodológica**
+>
+> **Sistema:** RepIndex Radar Reputacional v2.0
+> **Modelos consultados:** ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen (100% con búsqueda web real)
+> **Ventana temporal:** [fecha_desde] - [fecha_hasta]
+> **Observaciones analizadas:** [X] registros de [Y] modelos
+> **Nivel de consenso:** [bajo/medio/alto] (divergencia: ±[N] puntos)
+> **Advertencia:** El RIX mide percepción algorítmica, no reputación tradicional.
+> Este informe detecta señales narrativas emergentes, no verdades absolutas.
+>
+> *RepIndex no pregunta qué opinan las personas; pregunta qué dirían las IAs
+> si alguien consultara ahora mismo sobre esta empresa.*
 ```
 
-### 2. Frontend: `src/contexts/ChatContext.tsx`
+### 3. Nuevo Componente UI: `MethodologyFooter`
 
-**Nuevo metodo `sendMessageStreaming`:**
+**Archivo:** `src/components/chat/MethodologyFooter.tsx`
 
-```typescript
-const sendMessageStreaming = useCallback(async (
-  question: string, 
-  options?: SendMessageOptions
-) => {
-  // 1. Preparar mensaje del usuario
-  const userMessage: Message = { role: 'user', content: question };
-  setMessages(prev => [...prev, userMessage]);
-  
-  // 2. Crear mensaje vacio para el asistente (se ira llenando)
-  const assistantMessage: Message = { 
-    role: 'assistant', 
-    content: '', 
-    isStreaming: true  // Nueva propiedad
-  };
-  setMessages(prev => [...prev, assistantMessage]);
-  
-  // 3. Abrir conexion EventSource
-  const eventSource = new EventSource(
-    `${SUPABASE_URL}/functions/v1/chat-intelligence-stream?` +
-    new URLSearchParams({
-      question,
-      sessionId,
-      depthLevel: options?.depthLevel || 'complete',
-      language: language.code,
-      // ... otros params
-    }),
-    { 
-      headers: { 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
-    }
-  );
-  
-  // 4. Manejar chunks entrantes
-  eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    
-    if (data.type === 'chunk') {
-      // Acumular texto en el ultimo mensaje
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        lastMsg.content += data.text;
-        return updated;
-      });
-    } 
-    else if (data.type === 'done') {
-      // Marcar como completado y agregar metadata
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastMsg = updated[updated.length - 1];
-        lastMsg.isStreaming = false;
-        lastMsg.suggestedQuestions = data.suggestedQuestions;
-        lastMsg.drumrollQuestion = data.drumrollQuestion;
-        lastMsg.metadata = data.metadata;
-        return updated;
-      });
-      
-      eventSource.close();
-      setIsLoading(false);
-    }
-  };
-  
-  eventSource.onerror = (error) => {
-    console.error('Stream error:', error);
-    eventSource.close();
-    setIsLoading(false);
-    // Fallback a metodo tradicional si falla
-  };
-  
-}, [sessionId, language, ...]);
-```
-
-### 3. Frontend: `src/components/chat/ChatMessages.tsx`
-
-**Indicador visual de streaming:**
+Componente que renderiza el footer metodológico con estilos de "letra pequeña legal":
 
 ```tsx
-{message.role === 'assistant' && (
-  <div className="relative">
-    <MarkdownMessage 
-      content={message.content} 
-      showDownload={!message.isStreaming}  // Solo mostrar cuando complete
-      languageCode={languageCode}
-    />
-    
-    {/* Cursor parpadeante durante streaming */}
-    {message.isStreaming && (
-      <span className="inline-block w-2 h-4 bg-primary animate-pulse ml-1" />
-    )}
-  </div>
-)}
+interface MethodologyFooterProps {
+  modelsUsed: string[];
+  periodFrom: string;
+  periodTo: string;
+  observationsCount: number;
+  divergenceLevel: 'low' | 'medium' | 'high';
+  divergencePoints: number;
+}
 
-{/* Barra de progreso durante streaming */}
-{message.isStreaming && (
-  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-    <Loader2 className="h-3 w-3 animate-spin" />
-    <span>Generando informe...</span>
-  </div>
-)}
-```
-
-### 4. Interfaz de Message actualizada
-
-**`src/contexts/ChatContext.tsx` - Tipos:**
-
-```typescript
-export interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  suggestedQuestions?: string[];
-  drumrollQuestion?: DrumrollQuestion;
-  metadata?: MessageMetadata;
-  isStreaming?: boolean;  // NUEVO: indica si el mensaje esta en streaming
+export function MethodologyFooter({...}: MethodologyFooterProps) {
+  return (
+    <div className="mt-6 pt-4 border-t border-border/30 text-[10px] text-muted-foreground/70 space-y-2">
+      <p className="font-semibold uppercase tracking-wider text-[9px]">
+        📊 Ficha de Validación Metodológica
+      </p>
+      {/* ... campos estructurados ... */}
+      <p className="italic text-[9px] leading-snug">
+        RepIndex mide la probabilidad de que una narrativa gane tracción en el ecosistema
+        informativo algorítmico. No sustituye estudios tradicionales; los complementa con
+        una capa que nadie más está midiendo.
+      </p>
+    </div>
+  );
 }
 ```
 
----
+### 4. Integración en ChatMessages
 
-## Flujo de Datos Detallado
+**Archivo:** `src/components/chat/ChatMessages.tsx`
 
-```text
-1. Usuario envia pregunta
-   │
-2. ChatContext:
-   ├── Agrega mensaje usuario
-   ├── Agrega mensaje asistente vacio (isStreaming: true)
-   └── Abre EventSource a /chat-intelligence-stream
-   │
-3. Edge Function:
-   ├── Recopila contexto (vector store, rix_runs, etc.)
-   ├── Envia SSE: { type: 'start', metadata: {...} }
-   ├── Llama OpenAI con stream: true
-   └── Por cada chunk:
-       └── Envia SSE: { type: 'chunk', text: '...' }
-   │
-4. Frontend (en paralelo):
-   ├── Recibe chunks
-   ├── Acumula en message.content
-   └── Re-renderiza (efecto "typing")
-   │
-5. Edge Function (al terminar):
-   ├── Genera suggestedQuestions
-   ├── Genera drumrollQuestion
-   ├── Guarda en DB
-   └── Envia SSE: { type: 'done', suggestedQuestions, ... }
-   │
-6. Frontend:
-   ├── Marca isStreaming: false
-   ├── Muestra boton de descarga
-   └── Cierra EventSource
+Añadir el `MethodologyFooter` después de cada mensaje del asistente que contenga datos RIX:
+
+```tsx
+{message.role === 'assistant' && message.metadata?.hasRixData && (
+  <MethodologyFooter
+    modelsUsed={message.metadata.modelsUsed}
+    periodFrom={message.metadata.periodFrom}
+    periodTo={message.metadata.periodTo}
+    observationsCount={message.metadata.observationsCount}
+    divergenceLevel={message.metadata.divergenceLevel}
+    divergencePoints={message.metadata.divergencePoints}
+  />
+)}
 ```
 
----
+### 5. Ampliar Metadata en el Stream SSE
 
-## Consideraciones Tecnicas
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
 
-### Manejo de Errores
-
-```typescript
-// Edge Function: Si OpenAI falla, fallback a Gemini con stream
-try {
-  for await (const chunk of openAIStream) { ... }
-} catch (openAIError) {
-  // Notificar al cliente del cambio
-  controller.enqueue(encoder.encode(
-    `data: ${JSON.stringify({ type: 'fallback', provider: 'gemini' })}\n\n`
-  ));
-  // Continuar con Gemini stream
-  for await (const chunk of geminiStream) { ... }
-}
-```
-
-### Reconexion automatica
+El evento `done` del streaming debe incluir metadata metodológica:
 
 ```typescript
-// Frontend: Reintentar si se pierde conexion
-eventSource.onerror = () => {
-  if (retryCount < 3) {
-    setTimeout(() => {
-      retryCount++;
-      // Reconectar desde donde se quedo (enviar offset)
-    }, 1000);
+controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+  type: 'done',
+  suggestedQuestions,
+  drumrollQuestion,
+  metadata: {
+    type: category,
+    hasRixData: allRixData?.length > 0,
+    modelsUsed: [...new Set(allRixData?.map(r => r['02_model_name']) || [])],
+    periodFrom: allRixData?.[allRixData.length - 1]?.['06_period_from'],
+    periodTo: allRixData?.[0]?.['07_period_to'],
+    observationsCount: allRixData?.length || 0,
+    divergenceLevel: insights?.divergenceLevel || 'unknown',
+    divergencePoints: insights?.trendDelta || 0,
   }
-};
+})}\n\n`));
 ```
 
-### Compatibilidad con fetch (alternativa a EventSource)
+### 6. Actualizar Exportación HTML
 
-```typescript
-// Si EventSource no funciona (CORS issues), usar fetch con ReadableStream
-const response = await fetch(url, { method: 'POST', body: ... });
-const reader = response.body!.getReader();
-const decoder = new TextDecoder();
+**Archivo:** `src/lib/technicalSheetHtml.ts`
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-  
-  const chunk = decoder.decode(value);
-  // Parsear SSE y procesar
-}
+Añadir nueva sección "Filosofía del Radar Reputacional" al anexo técnico:
+
+```html
+<h4>Filosofía del Radar Reputacional</h4>
+<p>
+  RepIndex no mide la reputación tradicional. Mide la <strong>probabilidad de que
+  una narrativa gane tracción en el ecosistema informativo algorítmico</strong>.
+</p>
+<p>
+  En 2026, las IAs son el primer filtro cognitivo. El primer punto de contacto
+  reputacional. El lugar donde se decide qué es relevante, creíble o dudoso.
+  La reputación ya no se pierde en una portada: se pierde cuando un modelo
+  deja de confiar en tu narrativa.
+</p>
+<p>
+  RepIndex detecta anomalías semánticas cuando aún no hay titulares, trending topics
+  ni caídas bursátiles. Solo una grieta en el relato algorítmico.
+</p>
+```
+
+---
+
+## Flujo de Datos Actualizado
+
+```
+                              ┌─────────────────────────────────────┐
+                              │   EDGE FUNCTION chat-intelligence  │
+                              └─────────────────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  1. GENERAR RESPUESTA CON INSTRUCCIONES METODOLÓGICAS                      │
+│     - System prompt incluye directivas de "notas metodológicas inline"     │
+│     - Cada sección de datos lleva su mini-justificación                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  2. AÑADIR FOOTER METODOLÓGICO AL CONTENIDO                                │
+│     - Bloque markdown estructurado con datos de validación                 │
+│     - Insertado automáticamente antes del "done" event                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  3. STREAMING CON METADATA ENRIQUECIDA                                     │
+│     - type: 'done' incluye modelsUsed, divergenceLevel, observationsCount  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  4. FRONTEND: ChatMessages.tsx                                             │
+│     - Renderiza MarkdownMessage con contenido                              │
+│     - Renderiza MethodologyFooter con metadata                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  5. EXPORTACIÓN HTML                                                       │
+│     - Incluye todo el contenido + Anexo Técnico Ampliado                   │
+│     - Sección "Filosofía del Radar Reputacional" añadida                   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -338,20 +208,43 @@ while (true) {
 
 | Archivo | Cambios |
 |---------|---------|
-| `supabase/functions/chat-intelligence/index.ts` | Agregar modo streaming con SSE, ReadableStream |
-| `src/contexts/ChatContext.tsx` | Nuevo metodo `sendMessageStreaming`, tipos actualizados |
-| `src/components/chat/ChatMessages.tsx` | Indicador de streaming, cursor parpadeante |
-| `src/components/ui/markdown-message.tsx` | Ocultar descarga durante streaming |
+| `supabase/functions/chat-intelligence/index.ts` | System prompt con directivas metodológicas, metadata enriquecida, footer automático |
+| `src/components/chat/MethodologyFooter.tsx` | **NUEVO**: Componente de footer metodológico |
+| `src/components/chat/ChatMessages.tsx` | Integrar MethodologyFooter para mensajes con datos RIX |
+| `src/contexts/ChatContext.tsx` | Extender interface Message con campos de metadata metodológica |
+| `src/lib/technicalSheetHtml.ts` | Añadir sección "Filosofía del Radar Reputacional" |
+
+---
+
+## Ejemplo de Resultado Final
+
+Cuando un usuario pida "Análisis de Telefónica", el informe incluirá:
+
+1. **Contenido del informe** con notas metodológicas inline:
+   > El RIX de Telefónica es 72/100.
+   >
+   > *Nota metodológica: Este score representa el consenso de 6 modelos de IA con búsqueda web real. La divergencia inter-modelo de ±8 puntos indica un nivel medio de incertidumbre epistémica, sugiriendo que la narrativa está consolidándose pero aún presenta variabilidad.*
+
+2. **Footer de validación** al final del mensaje:
+   > 📊 **Ficha de Validación Metodológica**
+   > - Modelos: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen
+   > - Período: 2026-W04
+   > - Observaciones: 24 registros
+   > - Consenso: Medio (±8 pts)
+   > - *RepIndex mide probabilidad de tracción narrativa algorítmica, no reputación tradicional.*
+
+3. **En exportación HTML**: Anexo técnico completo con la filosofía del "radar reputacional"
 
 ---
 
 ## Resultado Esperado
 
-| Antes | Despues |
+| Antes | Después |
 |-------|---------|
-| Espera 1-3 min sin feedback | Texto aparece palabra por palabra |
-| Timeout en informes largos | Conexion siempre activa |
-| Descarga disponible solo al final | Descarga aparece al completar stream |
-| Mensaje de "Generando..." generico | Progreso visible en tiempo real |
+| Informes sin contexto metodológico | Cada afirmación respaldada por método |
+| Críticos pueden cuestionar validez | Defensa metodológica integrada |
+| Otras IAs pueden dudar del sistema | Transparencia que genera confianza |
+| Datos sin explicar su significado | Cada métrica explicada en contexto |
+| Anexo técnico solo en exportación | Metodología visible en chat + exportación |
 
-El usuario vera el informe construirse en tiempo real, con un cursor parpadeante que indica que sigue generandose, y al finalizar aparecera el boton de descarga junto con las preguntas sugeridas.
+El resultado es un sistema que se **autolegitima** ante cualquier auditor, crítico o IA que analice los informes de RepIndex.
