@@ -239,21 +239,19 @@ export function ChatInput({
             )}
           </div>
           
-          {/* Content */}
-          <div className="p-4">
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_180px] gap-4">
-              {/* Depth Selector */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {tr.depthLabel}
+          {/* Content - Compact inline layout */}
+          <div className="px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Depth Selector - inline */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide shrink-0">
+                  {tr.depthLabel}:
+                </span>
+                {!depthConfirmed && (
+                  <span className="text-[9px] text-amber-500 font-medium bg-amber-500/10 px-1 py-0.5 rounded shrink-0">
+                    ←
                   </span>
-                  {!depthConfirmed && (
-                    <span className="text-[10px] text-amber-500 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded">
-                      ← {language.code === 'es' ? 'Selecciona' : 'Select'}
-                    </span>
-                  )}
-                </div>
+                )}
                 <TooltipProvider>
                   <ToggleGroup 
                     type="single" 
@@ -264,27 +262,24 @@ export function ChatInput({
                         setDepthConfirmed(true);
                       }
                     }}
-                    className="grid grid-cols-3 gap-2 w-full"
+                    className="flex gap-1"
                   >
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <ToggleGroupItem 
                           value="quick" 
                           className={cn(
-                            "group relative flex flex-col items-center justify-center gap-1 h-16 rounded-lg border-2 transition-all duration-200",
+                            "group relative flex items-center gap-1.5 h-8 px-2.5 rounded-md border transition-all duration-200",
                             depthLevel === 'quick' 
-                              ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-md shadow-amber-500/20" 
-                              : "border-transparent bg-muted/50 hover:bg-muted hover:border-muted-foreground/20 text-muted-foreground"
+                              ? "border-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-400 shadow-sm" 
+                              : "border-transparent bg-muted/50 hover:bg-muted text-muted-foreground"
                           )}
                         >
-                          <Zap className={cn(
-                            "h-5 w-5 transition-transform group-hover:scale-110",
-                            depthLevel === 'quick' ? "text-amber-500" : ""
-                          )} />
-                          <span className="text-xs font-semibold">{tr.depthQuick}</span>
+                          <Zap className="h-3.5 w-3.5" />
+                          <span className="text-xs font-medium hidden sm:inline">{tr.depthQuick}</span>
                           {depthLevel === 'quick' && (
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full flex items-center justify-center">
-                              <span className="text-[8px] text-white font-bold">✓</span>
+                            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full flex items-center justify-center">
+                              <span className="text-[7px] text-white font-bold">✓</span>
                             </div>
                           )}
                         </ToggleGroupItem>
@@ -299,20 +294,17 @@ export function ChatInput({
                         <ToggleGroupItem 
                           value="complete" 
                           className={cn(
-                            "group relative flex flex-col items-center justify-center gap-1 h-16 rounded-lg border-2 transition-all duration-200",
+                            "group relative flex items-center gap-1.5 h-8 px-2.5 rounded-md border transition-all duration-200",
                             depthLevel === 'complete' 
-                              ? "border-primary bg-primary/10 text-primary shadow-md shadow-primary/20" 
-                              : "border-transparent bg-muted/50 hover:bg-muted hover:border-muted-foreground/20 text-muted-foreground"
+                              ? "border-primary bg-primary/10 text-primary shadow-sm" 
+                              : "border-transparent bg-muted/50 hover:bg-muted text-muted-foreground"
                           )}
                         >
-                          <FileText className={cn(
-                            "h-5 w-5 transition-transform group-hover:scale-110",
-                            depthLevel === 'complete' ? "text-primary" : ""
-                          )} />
-                          <span className="text-xs font-semibold">{tr.depthComplete}</span>
+                          <FileText className="h-3.5 w-3.5" />
+                          <span className="text-xs font-medium hidden sm:inline">{tr.depthComplete}</span>
                           {depthLevel === 'complete' && (
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full flex items-center justify-center">
-                              <span className="text-[8px] text-primary-foreground font-bold">✓</span>
+                            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary rounded-full flex items-center justify-center">
+                              <span className="text-[7px] text-primary-foreground font-bold">✓</span>
                             </div>
                           )}
                         </ToggleGroupItem>
@@ -327,20 +319,17 @@ export function ChatInput({
                         <ToggleGroupItem 
                           value="exhaustive" 
                           className={cn(
-                            "group relative flex flex-col items-center justify-center gap-1 h-16 rounded-lg border-2 transition-all duration-200",
+                            "group relative flex items-center gap-1.5 h-8 px-2.5 rounded-md border transition-all duration-200",
                             depthLevel === 'exhaustive' 
-                              ? "border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-400 shadow-md shadow-purple-500/20" 
-                              : "border-transparent bg-muted/50 hover:bg-muted hover:border-muted-foreground/20 text-muted-foreground"
+                              ? "border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-400 shadow-sm" 
+                              : "border-transparent bg-muted/50 hover:bg-muted text-muted-foreground"
                           )}
                         >
-                          <BookOpen className={cn(
-                            "h-5 w-5 transition-transform group-hover:scale-110",
-                            depthLevel === 'exhaustive' ? "text-purple-500" : ""
-                          )} />
-                          <span className="text-xs font-semibold">{tr.depthExhaustive}</span>
+                          <BookOpen className="h-3.5 w-3.5" />
+                          <span className="text-xs font-medium hidden sm:inline">{tr.depthExhaustive}</span>
                           {depthLevel === 'exhaustive' && (
-                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full flex items-center justify-center">
-                              <span className="text-[8px] text-white font-bold">✓</span>
+                            <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-purple-500 rounded-full flex items-center justify-center">
+                              <span className="text-[7px] text-white font-bold">✓</span>
                             </div>
                           )}
                         </ToggleGroupItem>
@@ -352,43 +341,47 @@ export function ChatInput({
                   </ToggleGroup>
                 </TooltipProvider>
               </div>
+              
+              {/* Separator */}
+              <div className="w-px h-6 bg-border hidden sm:block" />
 
-              {/* Role Selector */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {tr.roleLabel}
+              {/* Separator */}
+              <div className="w-px h-6 bg-border hidden sm:block" />
+
+              {/* Role Selector - inline */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide shrink-0">
+                  {tr.roleLabel}:
+                </span>
+                {!roleConfirmed && (
+                  <span className="text-[9px] text-amber-500 font-medium bg-amber-500/10 px-1 py-0.5 rounded shrink-0">
+                    ←
                   </span>
-                  {!roleConfirmed && (
-                    <span className="text-[10px] text-amber-500 font-medium bg-amber-500/10 px-1.5 py-0.5 rounded">
-                      ← {language.code === 'es' ? 'Selecciona' : 'Select'}
-                    </span>
-                  )}
-                </div>
+                )}
                 <Select value={selectedRoleId} onValueChange={(v) => {
                   setSelectedRoleId(v);
                   setRoleConfirmed(true);
                 }}>
                   <SelectTrigger 
                     className={cn(
-                      "h-16 rounded-lg border-2 transition-all duration-200",
+                      "h-8 w-auto min-w-[120px] rounded-md border transition-all duration-200 text-xs",
                       isRoleSelected 
-                        ? "border-primary bg-primary/10 text-primary shadow-md shadow-primary/20" 
+                        ? "border-primary bg-primary/10 text-primary shadow-sm" 
                         : roleConfirmed 
                           ? "border-muted-foreground/20 bg-muted/50"
                           : "border-transparent bg-muted/50 hover:bg-muted"
                     )}
                   >
                     <SelectValue>
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-1.5">
                         {isRoleSelected ? (
                           <>
-                            <span className="text-lg">{selectedRole?.emoji}</span>
-                            <span className="font-semibold truncate">{selectedRole?.name}</span>
+                            <span className="text-sm">{selectedRole?.emoji}</span>
+                            <span className="font-medium truncate max-w-[100px]">{selectedRole?.name}</span>
                           </>
                         ) : (
                           <>
-                            <User className="h-5 w-5 text-muted-foreground" />
+                            <User className="h-3.5 w-3.5 text-muted-foreground" />
                             <span className="font-medium">{tr.roleGeneral}</span>
                           </>
                         )}
@@ -396,52 +389,51 @@ export function ChatInput({
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent className="bg-popover border border-border shadow-xl z-50 rounded-lg">
-                    <SelectItem value="general" className="cursor-pointer py-2">
+                    <SelectItem value="general" className="cursor-pointer py-1.5">
                       <span className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        <span className="font-medium">{tr.roleGeneral}</span>
+                        <User className="h-3.5 w-3.5" />
+                        <span className="font-medium text-sm">{tr.roleGeneral}</span>
                       </span>
                     </SelectItem>
                     
-                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider border-t mt-1 bg-muted/30">
+                    <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/70 uppercase tracking-wider border-t mt-1 bg-muted/30">
                       ★ {language.code === 'es' ? 'DESTACADOS' : 'FEATURED'}
                     </div>
                     
                     {featuredRoles.map((role) => (
-                      <SelectItem key={role.id} value={role.id} className="cursor-pointer py-2">
+                      <SelectItem key={role.id} value={role.id} className="cursor-pointer py-1.5">
                         <span className="flex items-center gap-2">
-                          <span className="text-base">{role.emoji}</span>
-                          <span className="font-medium">{role.name}</span>
+                          <span className="text-sm">{role.emoji}</span>
+                          <span className="font-medium text-sm">{role.name}</span>
                         </span>
                       </SelectItem>
                     ))}
                     
-                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground/70 uppercase tracking-wider border-t mt-1 bg-muted/30">
-                      {language.code === 'es' ? 'TODOS LOS ROLES' : 'ALL ROLES'}
+                    <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground/70 uppercase tracking-wider border-t mt-1 bg-muted/30">
+                      ⊕ {language.code === 'es' ? 'TODOS' : 'ALL'}
                     </div>
                     
                     {allRoles.filter(r => r.id !== 'general' && !FEATURED_ROLE_IDS.includes(r.id)).map((role) => (
-                      <SelectItem key={role.id} value={role.id} className="cursor-pointer py-2">
+                      <SelectItem key={role.id} value={role.id} className="cursor-pointer py-1.5">
                         <span className="flex items-center gap-2">
-                          <span className="text-base">{role.emoji}</span>
-                          <span>{role.name}</span>
+                          <span className="text-sm">{role.emoji}</span>
+                          <span className="font-medium text-sm">{role.name}</span>
                         </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* Validation warning - inline */}
+              {(!depthConfirmed || !roleConfirmed) && (
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-1 rounded-md ml-auto">
+                  <AlertCircle className="h-3 w-3 shrink-0" />
+                  <span className="hidden sm:inline">{tr.selectConfigBeforeSending}</span>
+                  <span className="sm:hidden">Selecciona</span>
+                </div>
+              )}
             </div>
-            
-            {/* Warning message when not confirmed */}
-            {(!depthConfirmed || !roleConfirmed) && (
-              <div className="flex items-center gap-2 mt-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                  {tr.selectConfigBeforeSending}
-                </span>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -512,13 +504,13 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           placeholder={bulletinModeActive ? tr.inputPlaceholderBulletin : (isListening ? tr.inputListening : (placeholder || tr.inputPlaceholder))}
           disabled={isLoading}
-          rows={1}
           className={cn(
-            "flex-1 min-w-0 resize-none overflow-y-auto min-h-[40px]",
-            compact && "text-sm min-h-[36px]",
+            "flex-1 min-w-0 resize-none overflow-y-auto min-h-[44px] max-h-[150px]",
+            compact && "text-sm min-h-[36px] max-h-[120px]",
             isListening && "border-red-500 ring-1 ring-red-500",
             bulletinModeActive && "border-primary ring-1 ring-primary"
           )}
+          style={{ height: 'auto' }}
         />
         <Button
           onClick={handleSend}
