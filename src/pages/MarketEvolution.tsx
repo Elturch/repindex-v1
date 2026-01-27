@@ -19,6 +19,8 @@ import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
 import { GeminiIcon } from "@/components/ui/gemini-icon";
 import { DeepseekIcon } from "@/components/ui/deepseek-icon";
+import { GrokIcon } from "@/components/ui/grok-icon";
+import { QwenIcon } from "@/components/ui/qwen-icon";
 
 const MAX_COMPANIES = 6;
 
@@ -90,6 +92,22 @@ export function MarketEvolution() {
     modelFilter: "Deepseek"
   });
 
+  const { data: grokData, isLoading: grokLoading } = useTrendDataLight({
+    tickers: selectedCompanies,
+    ibexFamily: ibexFilter,
+    sector: sectorFilter,
+    numWeeks,
+    modelFilter: "Grok"
+  });
+
+  const { data: qwenData, isLoading: qwenLoading } = useTrendDataLight({
+    tickers: selectedCompanies,
+    ibexFamily: ibexFilter,
+    sector: sectorFilter,
+    numWeeks,
+    modelFilter: "Qwen"
+  });
+
   // Filter companies by current filters (limit to 6)
   const filteredCompanies = useMemo(() => {
     if (!companies) return [];
@@ -110,11 +128,21 @@ export function MarketEvolution() {
   }, [companies, ibexFilter, sectorFilter]);
 
   // Normalize values to base 100 index
+  // Uses the first valid non-zero value as the base to avoid flat 100 lines
   const normalizeToIndex = (values: number[]): number[] => {
     if (values.length === 0) return [];
-    const baseValue = values[0];
-    if (baseValue === 0 || !baseValue) return values.map(() => 100);
-    return values.map(v => (v / baseValue) * 100);
+    
+    // Find the first valid, non-zero value as base
+    const baseValue = values.find(v => Number.isFinite(v) && v !== 0);
+    
+    if (!baseValue || !Number.isFinite(baseValue)) {
+      return values.map(() => 100);
+    }
+    
+    return values.map(v => {
+      if (!Number.isFinite(v)) return 100;
+      return (v / baseValue) * 100;
+    });
   };
 
   // Prepare chart data for each model (data is already combined in useTrendDataLight)
@@ -217,6 +245,16 @@ export function MarketEvolution() {
   const deepseekChartData = useMemo(() => 
     prepareChartData(deepseekData || [], selectedCompanies),
     [deepseekData, selectedCompanies, prepareChartData]
+  );
+
+  const grokChartData = useMemo(() => 
+    prepareChartData(grokData || [], selectedCompanies),
+    [grokData, selectedCompanies, prepareChartData]
+  );
+
+  const qwenChartData = useMemo(() => 
+    prepareChartData(qwenData || [], selectedCompanies),
+    [qwenData, selectedCompanies, prepareChartData]
   );
 
   // Add company handler with limit check
@@ -361,8 +399,8 @@ export function MarketEvolution() {
           </CardContent>
         </Card>
 
-        {/* Charts Grid - 2x2 layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Charts Grid - 2x3 layout for 6 models */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           <ModelChart
             modelName="ChatGPT"
             modelIcon={<ChatGPTIcon className="h-5 w-5" />}
@@ -397,6 +435,24 @@ export function MarketEvolution() {
             selectedCompanies={selectedCompanies}
             companyColors={[]}
             isLoading={deepseekLoading}
+          />
+
+          <ModelChart
+            modelName="Grok"
+            modelIcon={<GrokIcon className="h-5 w-5" />}
+            chartData={grokChartData}
+            selectedCompanies={selectedCompanies}
+            companyColors={[]}
+            isLoading={grokLoading}
+          />
+
+          <ModelChart
+            modelName="Qwen"
+            modelIcon={<QwenIcon className="h-5 w-5" />}
+            chartData={qwenChartData}
+            selectedCompanies={selectedCompanies}
+            companyColors={[]}
+            isLoading={qwenLoading}
           />
         </div>
       </div>
