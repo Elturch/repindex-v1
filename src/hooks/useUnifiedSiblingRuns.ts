@@ -52,7 +52,7 @@ export function useUnifiedSiblingRuns(
           .eq("06_period_from", periodFrom)
           .eq("07_period_to", periodTo)
           .neq("02_model_name", currentModelName)
-          .not("analysis_completed_at", "is", null)
+          .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
           .order("09_rix_score", { ascending: false })
       ]);
 
