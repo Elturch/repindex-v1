@@ -298,6 +298,13 @@ export function SweepMonitorPanel() {
       const weekRecords = data.filter(r => r['06_period_from'] === latestWeek);
 
       // Agrupar por modelo con métricas adicionales
+      // Normalizar alias: 'Gemini' y 'Google Gemini' se tratan como uno solo
+      const normalizeModel = (name: string): string => {
+        if (!name) return 'Unknown';
+        if (name === 'Gemini' || name === 'Google Gemini') return 'Gemini';
+        return name;
+      };
+      
       const modelMap = new Map<string, { 
         total: number; 
         withScore: number; 
@@ -306,7 +313,8 @@ export function SweepMonitorPanel() {
       }>();
       
       weekRecords.forEach(record => {
-        const model = record['02_model_name'] || 'Unknown';
+        const rawModel = record['02_model_name'] || 'Unknown';
+        const model = normalizeModel(rawModel);
         const current = modelMap.get(model) || { total: 0, withScore: 0, pendingAnalyzable: 0, pendingNoData: 0 };
         current.total++;
         
@@ -323,7 +331,7 @@ export function SweepMonitorPanel() {
         modelMap.set(model, current);
       });
 
-      // Convertir a array ordenado
+      // Convertir a array ordenado (UI usa 'Gemini' pero internamente ambos alias están unificados)
       const byModel: AnalysisModelStatus[] = [];
       const modelOrder = ['ChatGPT', 'Deepseek', 'Gemini', 'Grok', 'Perplexity', 'Qwen'];
       

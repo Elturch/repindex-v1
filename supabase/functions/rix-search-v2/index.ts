@@ -836,9 +836,16 @@ serve(async (req) => {
     if (single_model) {
       console.log(`[rix-search-v2] SINGLE MODEL MODE: ${single_model} for ${ticker}`);
       const allConfigs = getSearchModelConfigs();
+      
+      // Normalize alias: 'Gemini' -> 'Google Gemini' (matching displayName)
+      const modelAliases: Record<string, string> = {
+        'gemini': 'google gemini',
+      };
+      const normalizedSearch = modelAliases[single_model.toLowerCase()] || single_model.toLowerCase();
+      
       const targetConfig = allConfigs.find(c => 
-        c.displayName.toLowerCase() === single_model.toLowerCase() ||
-        c.name.toLowerCase().includes(single_model.toLowerCase())
+        c.displayName.toLowerCase() === normalizedSearch ||
+        c.name.toLowerCase().includes(normalizedSearch)
       );
 
       if (!targetConfig) {
