@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.send-contact-form]
 verify_jwt = false
+
+[functions.send-newsroom-email]
+verify_jwt = false
