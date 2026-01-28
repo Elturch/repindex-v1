@@ -415,15 +415,18 @@ export function SweepMonitorPanel() {
     setRepairingAnalysis(true);
 
     try {
-      // Insertar trigger para que el CRON lo procese server-to-server
-      const { error } = await supabase
-        .from('cron_triggers')
-        .insert({
+      // Programar trigger via Edge Function (usa service role + allowlist de Preview)
+      const { data, error } = await supabase.functions.invoke('admin-cron-triggers', {
+        body: {
           action: 'repair_analysis',
-          params: { batch_size: 3 }
-        });
+          params: { batch_size: 3 },
+        },
+      });
 
       if (error) throw error;
+      if (!data?.trigger?.id) {
+        throw new Error('No se pudo crear el trigger (respuesta inválida)');
+      }
 
       toast({
         title: '📅 Reparación programada',
