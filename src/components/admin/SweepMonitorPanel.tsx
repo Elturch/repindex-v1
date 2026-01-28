@@ -408,94 +408,37 @@ export function SweepMonitorPanel() {
     }
   }, []);
 
-  // ============ REPARAR ANÁLISIS PENDIENTES ============
-  // Nota: hay extensiones (p.ej. frame_ant) que interceptan window.fetch y rompen supabase-js.
-  // Para esta acción crítica usamos XHR (no fetch) para evitar esa interceptación.
-  const postJsonViaXhr = <T,>(
-    url: string,
-    body: unknown,
-    headers: Record<string, string>,
-    timeoutMs = 300000,
-  ): Promise<T> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', url, true);
-      xhr.timeout = timeoutMs;
-      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
-
-      xhr.onload = () => {
-        const text = xhr.responseText || '';
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve((text ? JSON.parse(text) : {}) as T);
-          } catch {
-            reject(new Error(`Respuesta inválida (no JSON). HTTP ${xhr.status}: ${text.slice(0, 500)}`));
-          }
-        } else {
-          reject(new Error(`HTTP ${xhr.status}: ${text}`));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error('NetworkError'));
-      xhr.ontimeout = () => {
-        const err = new Error('Timeout');
-        (err as any).name = 'TimeoutError';
-        reject(err);
-      };
-
-      xhr.send(JSON.stringify(body));
-    });
-  };
-
+  // ============ REPARAR ANÁLISIS PENDIENTES (via CRON trigger) ============
+  // En lugar de llamar directamente a la Edge Function (bloqueada por extensiones),
+  // insertamos un registro en cron_triggers que el orchestrator procesará server-to-server.
   const handleRepairAnalysis = async () => {
     setRepairingAnalysis(true);
 
-    toast({
-      title: '🔧 Análisis iniciado',
-      description: 'Procesando registros pendientes... Esto puede tardar varios minutos.',
-    });
-
     try {
-      const data = await postJsonViaXhr<any>(
-        `${SUPABASE_URL}/functions/v1/rix-analyze-v2`,
-        { action: 'reprocess_pending', batch_size: 3 },
-        {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        300000,
-      );
+      // Insertar trigger para que el CRON lo procese server-to-server
+      const { error } = await supabase
+        .from('cron_triggers')
+        .insert({
+          action: 'repair_analysis',
+          params: { batch_size: 3 }
+        });
+
+      if (error) throw error;
 
       toast({
-        title: '✅ Análisis completado',
-        description: data?.message || `Procesados ${data?.processed || 0} registros exitosamente`,
+        title: '📅 Reparación programada',
+        description: 'El análisis pendiente se ejecutará automáticamente en los próximos minutos (procesado server-to-server).',
       });
 
-      fetchAnalysisStatus();
+      // Refrescar estado tras unos segundos
+      setTimeout(() => fetchAnalysisStatus(), 5000);
     } catch (error: any) {
-      console.error('Error repairing analysis:', error);
-
-      const errorMsg = error?.message || String(error);
-      if (errorMsg.includes('NetworkError') || errorMsg.includes('Failed to fetch') || errorMsg.includes('Failed to send a request')) {
-        toast({
-          title: 'Error de conexión',
-          description: 'La petición fue bloqueada por el navegador (posible extensión). Prueba modo incógnito o desactiva extensiones tipo “frame_ant”.',
-          variant: 'destructive',
-        });
-      } else if (error?.name === 'TimeoutError') {
-        toast({
-          title: 'Timeout',
-          description: 'El proceso tardó demasiado. Revisa los logs para verificar el progreso.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Error',
-          description: errorMsg || 'No se pudo completar el análisis',
-          variant: 'destructive',
-        });
-      }
+      console.error('Error scheduling repair:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo programar la reparación',
+        variant: 'destructive',
+      });
     } finally {
       setRepairingAnalysis(false);
     }

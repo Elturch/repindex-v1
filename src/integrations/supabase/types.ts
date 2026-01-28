@@ -736,6 +736,36 @@ export type Database = {
         }
         Relationships: []
       }
+      cron_triggers: {
+        Row: {
+          action: string
+          created_at: string | null
+          id: string
+          params: Json | null
+          processed_at: string | null
+          result: Json | null
+          status: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          id?: string
+          params?: Json | null
+          processed_at?: string | null
+          result?: Json | null
+          status?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          id?: string
+          params?: Json | null
+          processed_at?: string | null
+          result?: Json | null
+          status?: string | null
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           content: string | null
