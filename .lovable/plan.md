@@ -1,115 +1,254 @@
 
 
-## Plan: Corregir el contador de "Completados" en el panel de Barrido V2
+## Plan: Agente Vigilante de Calidad de Datos RIX
 
-### Diagnóstico confirmado
+### Diagnóstico Confirmado
 
-El contador de "Completados" muestra un número incorrecto por dos razones:
+He verificado los datos reales del barrido del domingo 25 de enero (semana `2026-01-18`):
 
-1. **Fórmula incorrecta**: Se usa `Math.floor(analysisStatus.withScore / 6)` que divide el total de registros con score entre 6 modelos. Esto asume distribución perfecta, pero no refleja la realidad.
+| Métrica | Valor | Problema |
+|---------|-------|----------|
+| Total empresas | 156 | OK |
+| Empresas con 6/6 modelos | **102** | SOLO 65% de cobertura completa |
+| Empresas con 1-5 modelos | **53** | 34% cobertura parcial |
+| Empresas con 0 scores | **1** | ART completamente fallida |
 
-2. **Semana incorrecta**: El panel muestra la semana más reciente (`2026-01-26`) que solo tiene 18 empresas (barrido en curso), ignorando el barrido completo del domingo (`2026-01-25`) con 156 empresas.
+**Desglose por modelo:**
+| Modelo | Con Score | Sin Datos | Tasa Éxito |
+|--------|-----------|-----------|------------|
+| Perplexity | 151 | 5 | 97% |
+| Qwen | 150 | 6 | 96% |
+| Deepseek | 148 | 8 | 95% |
+| Gemini | 148 | 8 | 95% |
+| ChatGPT | 147 | 2+7 | 94% |
+| **Grok** | **120** | **36** | **77%** |
 
-**Datos reales del domingo 25 de enero:**
-- Total empresas: 156
-- Empresas con al menos 1 modelo con score: 155
-- Empresas con los 6 modelos completos: 102
+**Problema crítico:** Grok falla silenciosamente (sin registrar errores) en ~23% de los casos, probablemente por error HTTP 422 con el formato de `tools` en el endpoint `/v1/responses`.
 
 ---
 
-### Cambios propuestos
+### Objetivo del Agente Vigilante
+
+Crear un sistema automatizado que:
+1. **Detecte** datos incompletos o de baja calidad después de cada barrido
+2. **Diagnostique** qué modelos fallaron y por qué
+3. **Repare** automáticamente relanzando búsquedas para los modelos fallidos
+4. **Reporte** métricas precisas para visibilidad del admin
+
+---
+
+### Arquitectura Propuesta
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       AGENTE VIGILANTE DE CALIDAD                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐           │
+│  │  1. DETECTAR  │───▶│ 2. DIAGNOSTICAR│───▶│  3. REPARAR   │           │
+│  │   (Análisis)  │    │   (Clasificar) │    │  (Re-lanzar)  │           │
+│  └───────────────┘    └───────────────┘    └───────────────┘           │
+│         │                    │                    │                     │
+│         ▼                    ▼                    ▼                     │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    data_quality_reports (nueva tabla)           │   │
+│  │  - sweep_id, ticker, model, status, error_type, retry_count     │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  TRIGGERS:                                                              │
+│  - CRON: Lunes 08:00 CET (después del barrido del domingo)              │
+│  - CRON: Martes 08:00 CET (segunda pasada de reparación)                │
+│  - Manual: Botón en /admin                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Cambios Propuestos
+
+#### 1. Nueva Edge Function: `rix-quality-watchdog`
+
+**Archivo:** `supabase/functions/rix-quality-watchdog/index.ts`
+
+Esta función será el "agente vigilante" que:
+
+**Modo `analyze`:**
+- Consulta `rix_runs_v2` para la semana más reciente
+- Agrupa por empresa y modelo
+- Identifica registros con `20_res_gpt_bruto IS NULL` (sin datos de búsqueda)
+- Clasifica el tipo de fallo:
+  - `no_response`: API no devolvió contenido
+  - `timeout`: El request expiró
+  - `rate_limit`: Límite de API alcanzado
+  - `payload_error`: Error de formato (ej: Grok 422)
+  - `api_key_issue`: Problema de autenticación
+- Inserta resumen en nueva tabla `data_quality_reports`
+
+**Modo `repair`:**
+- Obtiene empresas con modelos incompletos
+- Para cada empresa-modelo faltante:
+  - Llama a `rix-search-v2` con parámetro `single_model` (nuevo)
+  - Solo relanza el modelo que falló, no los 6
+- Actualiza el registro en `rix_runs_v2` con los nuevos datos
+- Máximo 10 reparaciones por invocación (para evitar timeouts)
+
+**Modo `report`:**
+- Devuelve estadísticas consolidadas para el panel admin
+
+#### 2. Modificar `rix-search-v2` para soportar reparaciones individuales
+
+**Archivo:** `supabase/functions/rix-search-v2/index.ts`
+
+Añadir modo `single_model`:
+- Parámetro: `{ ticker, issuer_name, single_model: 'Grok' }`
+- En lugar de ejecutar los 6 modelos, solo ejecuta el modelo especificado
+- Actualiza solo esa columna en el registro existente (no crea duplicado)
+
+#### 3. Nueva tabla para seguimiento de calidad
+
+**SQL Migration:**
+```sql
+CREATE TABLE data_quality_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sweep_id TEXT NOT NULL,
+  week_start DATE NOT NULL,
+  ticker TEXT NOT NULL,
+  model_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'missing', -- missing, repaired, failed_repair
+  error_type TEXT, -- no_response, timeout, rate_limit, payload_error, api_key
+  original_error TEXT,
+  repair_attempts INTEGER DEFAULT 0,
+  repaired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  
+  UNIQUE(sweep_id, ticker, model_name)
+);
+
+CREATE INDEX idx_dqr_sweep ON data_quality_reports(sweep_id);
+CREATE INDEX idx_dqr_status ON data_quality_reports(status);
+```
+
+#### 4. CRON Jobs para ejecución automática
+
+**Programar vía `pg_cron`:**
+- **Lunes 08:00 CET:** `rix-quality-watchdog?action=analyze` - Detecta problemas
+- **Lunes 09:00 CET:** `rix-quality-watchdog?action=repair` - Primera reparación
+- **Martes 08:00 CET:** `rix-quality-watchdog?action=repair` - Segunda pasada
+
+#### 5. Panel de Calidad en /admin
 
 **Archivo:** `src/components/admin/SweepMonitorPanel.tsx`
 
-#### 1. Modificar `fetchAnalysisStatus()` para calcular correctamente
+Añadir nueva sección "Calidad de Datos" con:
 
-Cambiar la lógica para:
-- Agrupar por `ticker` (empresa) en lugar de solo por modelo
-- Contar empresas únicas con al menos 1 score
-- Contar empresas únicas con los 6 modelos completos
-- Añadir estas métricas al estado `analysisStatus`
+**Métricas corregidas:**
+- Total empresas en sweep
+- Empresas con 6/6 modelos completos (100% coverage)
+- Empresas con cobertura parcial (desglose)
+- Empresas sin datos
 
-```typescript
-// Nuevos campos en AnalysisStatus
-interface AnalysisStatus {
-  // ... campos existentes
-  uniqueCompaniesWithScore: number;      // Empresas con al menos 1 score
-  uniqueCompaniesComplete: number;       // Empresas con 6/6 modelos
-  totalUniqueCompanies: number;          // Total empresas únicas
-}
-```
+**Tabla de diagnóstico:**
+| Modelo | OK | Fallidos | Reparados | Pendientes | Tasa Éxito |
+|--------|-----|----------|-----------|------------|------------|
+| Perplexity | 151 | 5 | 4 | 1 | 99% |
+| Grok | 120 | 36 | 28 | 8 | 95% |
 
-#### 2. Actualizar la consulta SQL
+**Botones de acción:**
+- "Analizar Calidad" → Ejecuta `analyze`
+- "Reparar Fallidos" → Ejecuta `repair`
+- "Ver Detalles" → Modal con lista de empresas afectadas
 
-En lugar de la consulta actual, obtener los datos agrupados por ticker:
+#### 6. Corregir incoherencias del panel actual
 
-```typescript
-// Calcular empresas completadas correctamente
-const tickerMap = new Map<string, { modelsWithScore: number; totalModels: number }>();
+**Problema 1:** El panel muestra la semana `2026-01-19` cuando debería mostrar `2026-01-18`
+- **Solución:** Ordenar por número de registros, no solo por fecha más reciente
 
-weekRecords.forEach(record => {
-  const ticker = record['05_ticker'];
-  const current = tickerMap.get(ticker) || { modelsWithScore: 0, totalModels: 0 };
-  current.totalModels++;
-  if (record['09_rix_score'] !== null) {
-    current.modelsWithScore++;
-  }
-  tickerMap.set(ticker, current);
-});
+**Problema 2:** "Completados" usa formula incorrecta
+- **Solución:** Ya corregido con `uniqueCompaniesComplete`, pero verificar que consulta la semana correcta
 
-const uniqueCompaniesWithScore = [...tickerMap.values()].filter(c => c.modelsWithScore > 0).length;
-const uniqueCompaniesComplete = [...tickerMap.values()].filter(c => c.modelsWithScore === 6).length;
-const totalUniqueCompanies = tickerMap.size;
-```
+**Problema 3:** No distingue entre "sin datos" y "analizable"
+- **Solución:** Ya implementado, pero asegurar visibilidad clara
 
-#### 3. Actualizar la UI del contador
+---
 
-Cambiar línea 1154 de:
-```tsx
-{analysisStatus ? Math.floor(analysisStatus.withScore / 6) : 0}
-```
+### Archivos a crear/modificar
 
-A:
-```tsx
-{analysisStatus?.uniqueCompaniesComplete || 0}
-```
+| Archivo | Acción | Descripción |
+|---------|--------|-------------|
+| `supabase/functions/rix-quality-watchdog/index.ts` | **CREAR** | Agente vigilante principal |
+| `supabase/functions/rix-search-v2/index.ts` | MODIFICAR | Añadir modo `single_model` para reparaciones |
+| `supabase/config.toml` | MODIFICAR | Añadir config de nueva función |
+| SQL Migration | CREAR | Tabla `data_quality_reports` |
+| `src/components/admin/SweepMonitorPanel.tsx` | MODIFICAR | Panel de calidad + corrección de métricas |
 
-Y añadir indicador visual del porcentaje:
-```tsx
-<div className="text-2xl font-bold text-good">
-  {analysisStatus?.uniqueCompaniesComplete || 0}
-</div>
-<div className="text-xs text-muted-foreground">
-  Completados (6/6 modelos)
-</div>
-<div className="text-[10px] text-muted-foreground/70">
-  de {analysisStatus?.totalUniqueCompanies || 0} empresas
-</div>
+---
+
+### Flujo de Reparación Automática
+
+```text
+DOMINGO 03:00-23:00 CET
+│
+├─ rix-batch-orchestrator ejecuta barrido de 174 empresas
+│  └─ rix-search-v2 ejecuta 6 modelos por empresa
+│
+LUNES 08:00 CET
+│
+├─ rix-quality-watchdog (analyze)
+│  ├─ Detecta: 54 empresas con cobertura < 100%
+│  ├─ Clasifica: 36 fallos Grok, 8 Deepseek, 8 Gemini, etc.
+│  └─ Inserta en data_quality_reports
+│
+LUNES 09:00 CET
+│
+├─ rix-quality-watchdog (repair)
+│  ├─ Obtiene 10 empresas prioritarias (menos modelos OK)
+│  ├─ Relanza SOLO modelos fallidos (no los 6)
+│  └─ Actualiza registros en rix_runs_v2
+│
+MARTES 08:00 CET
+│
+├─ rix-quality-watchdog (repair) - Segunda pasada
+│  ├─ Procesa siguientes 10-20 empresas
+│  └─ Marca como "failed_repair" si 3+ intentos fallidos
+│
+RESULTADO: Cobertura 95%+ antes del viernes (generación de noticias)
 ```
 
 ---
 
-### Consideración adicional: Qué semana mostrar
+### Priorización de Reparaciones
 
-Actualmente el panel usa `06_period_from` ordenado descendente y toma el primero. Si el barrido nuevo apenas empezó, mostrará datos incompletos.
+El agente priorizará empresas y modelos así:
 
-Propuesta: Añadir un selector de semana o mostrar siempre el **último barrido con >50% completado**.
+1. **Prioridad CRÍTICA:** Empresas con 0-2 modelos OK (completamente incompletas)
+2. **Prioridad ALTA:** Empresas con 3-4 modelos OK (análisis parcial posible)
+3. **Prioridad MEDIA:** Empresas con 5 modelos OK (solo falta 1)
 
----
-
-### Archivos a modificar
-
-- `src/components/admin/SweepMonitorPanel.tsx`
-  - Actualizar interfaz `AnalysisStatus` con nuevos campos
-  - Modificar `fetchAnalysisStatus()` para calcular métricas por empresa
-  - Actualizar UI para mostrar el contador correcto
+Dentro de cada prioridad, ordenar por:
+- Empresas IBEX 35 primero
+- Luego por `retry_count` ascendente (evitar bucles en problemáticas)
 
 ---
 
-### Validación
+### Validación del Éxito
 
-Después de implementar, el panel debería mostrar:
-- **Completados**: 102 (empresas con 6/6 modelos del domingo)
-- **Con score parcial**: 53 (empresas con 1-5 modelos)
-- **Sin score**: 1 (empresas sin ningún score aún)
+Después de implementar, estas métricas deben mejorar:
+
+| Métrica | Antes | Objetivo |
+|---------|-------|----------|
+| Empresas 6/6 modelos | 65% (102/156) | >95% (148+/156) |
+| Modelos Grok OK | 77% (120/156) | >95% (148+/156) |
+| Fallos silenciosos | Muchos | 0 (todos registrados) |
+| Tiempo hasta cobertura completa | N/A | <48h post-barrido |
+
+---
+
+### Consideración Técnica: Por qué falla Grok
+
+El endpoint `/v1/responses` de xAI con `tools: [{type: 'web_search_preview'}]` devuelve **HTTP 422** en algunos casos. El código actual no captura correctamente este error.
+
+**Solución en reparación:** 
+- Añadir retry con backoff exponencial específico para Grok
+- Si falla 3 veces, marcar como `failed_repair` y usar solo 5 modelos para esa empresa
+- Registrar el error exacto para diagnóstico
 
