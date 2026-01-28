@@ -110,22 +110,34 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
   const rixData = rixResult.data || [];
   const v2Data = v2Result.data || [];
   
-  // Combine and deduplicate by ticker + model + period
+  // Combine with v2 data LAST so it takes precedence in deduplication
+  // v2 is the authoritative source for current data (has Grok & Qwen)
   const combined = [...rixData, ...v2Data];
-  const dedupeMap = new Map<string, any>();
+  const dedupeMap = new Map<string, { record: any; isV2: boolean }>();
   
-  combined.forEach(record => {
+  // First pass: add all rix_runs (legacy) data
+  rixData.forEach(record => {
+    const key = `${record['05_ticker']}_${record['02_model_name']}_${record['06_period_from']}_${record['07_period_to']}`;
+    dedupeMap.set(key, { record, isV2: false });
+  });
+  
+  // Second pass: v2 data ALWAYS overwrites legacy data for same key
+  // This ensures v2 is the source of truth for current/trending analysis
+  v2Data.forEach(record => {
     const key = `${record['05_ticker']}_${record['02_model_name']}_${record['06_period_from']}_${record['07_period_to']}`;
     const existing = dedupeMap.get(key);
-    // Keep the record with the most recent batch_execution_date
-    if (!existing || (record.batch_execution_date && existing.batch_execution_date && 
-        new Date(record.batch_execution_date) > new Date(existing.batch_execution_date))) {
-      dedupeMap.set(key, record);
+    
+    // V2 wins in all cases: newer batch date, or same key (v2 is authoritative)
+    if (!existing || existing.isV2 === false || 
+        (record.batch_execution_date && existing.record.batch_execution_date && 
+         new Date(record.batch_execution_date) >= new Date(existing.record.batch_execution_date))) {
+      dedupeMap.set(key, { record, isV2: true });
     }
   });
   
-  const result = Array.from(dedupeMap.values());
-  console.log(`${logPrefix} Combined RIX data: ${rixData.length} legacy + ${v2Data.length} v2 = ${result.length} unique records`);
+  const result = Array.from(dedupeMap.values()).map(item => item.record);
+  const v2Count = Array.from(dedupeMap.values()).filter(item => item.isV2).length;
+  console.log(`${logPrefix} Combined RIX data: ${rixData.length} legacy + ${v2Data.length} v2 = ${result.length} unique records (${v2Count} from v2 - authoritative)`);
   
   return result;
 }
