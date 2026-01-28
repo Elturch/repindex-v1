@@ -1,50 +1,49 @@
 
-# ✅ PLAN COMPLETADO - Análisis de Regresión Real
+# ✅ PLAN ACTUALIZADO - Agente Rix con Regresión Always-On
 
-## Problema Resuelto
-El Agente Rix "alucinaba" análisis estadísticos sofisticados (regresión, correlaciones, R², etc.) sin tener ningún código real de cálculo. Inventaba tablas de datos, coeficientes y conclusiones falsas.
+## Cambios del 28 ene 2026
 
-## Solución Implementada
+### 1. Regresión SIEMPRE ACTIVA (no solo por keywords)
+- **Antes**: La regresión solo se llamaba cuando la pregunta contenía keywords como "regresión", "correlación", "predictor"
+- **Ahora**: La regresión se carga SIEMPRE para niveles `complete` y `exhaustive` (se omite en `quick` para velocidad)
+- **Beneficio**: El agente siempre tiene contexto de tendencias, correlaciones precio-métricas, lo que enriquece TODAS las respuestas
 
-### 1. Nueva Edge Function: `rix-regression-analysis`
-- Ubicación: `supabase/functions/rix-regression-analysis/index.ts`
-- Calcula correlación de Pearson real entre métricas RIX (semana t) y variación de precio (semana t+1)
-- Usa paginación para acceder a TODOS los datos (7,980 registros)
-- Devuelve correlación por métrica con p-value, significancia y R²
+### 2. Timeout de Regresión
+- Añadido timeout de 15 segundos para no ralentizar demasiado las respuestas
+- Si falla, continúa sin datos de regresión
 
-### 2. Detección de Preguntas de Regresión
-- Keywords: regresión, correlación, predictor, ponderación, peso, etc.
-- Cuando se detecta, automáticamente llama al endpoint de regresión
-
-### 3. Paginación Inteligente en `chat-intelligence`
-- Límite adaptativo según `depthLevel`:
-  - quick: 2,000 registros
-  - complete: 5,000 registros
-  - exhaustive: 10,000 registros
-
-### 4. Contexto Enriquecido
-- Nuevo bloque `ANÁLISIS ESTADÍSTICO REAL` en el contexto del LLM
-- Instrucciones anti-alucinación para datos estadísticos
-
-## Resultados del Análisis REAL (28 ene 2026)
-- **7,980 registros** analizados
-- **133 empresas** con precios
-- **21 semanas** de datos
-- **NINGUNA métrica** tiene correlación significativa con precio (p > 0.05)
-- **R² ≈ 0.1%** - las métricas RIX no explican movimientos de precio
-
-## Implicación Importante
-Las métricas RIX miden **percepción algorítmica**, NO predicen precio bursátil. El valor está en la detección de narrativas y señales reputacionales, no en predicción financiera.
+### 3. SSE Streaming
+- El streaming SSE ya estaba implementado correctamente en el backend
+- El frontend detecta Content-Type y maneja tanto SSE como JSON
+- Si el streaming falla, hay fallback automático a Gemini
 
 ---
 
-## Cambios Anteriores (SSE Streaming)
+## Implementación Anterior (Regresión Real)
+
+### Edge Function: `rix-regression-analysis`
+- Calcula correlación de Pearson real entre métricas RIX (semana t) y variación de precio (semana t+1)
+- Usa paginación para acceder a TODOS los datos (~8,000 registros)
+- Devuelve correlación por métrica con p-value, significancia y R²
+
+### Resultados del Análisis REAL
+- **~8,000 registros** analizados
+- **133 empresas** con precios
+- **21+ semanas** de datos
+- **Hallazgo**: Las métricas RIX miden **percepción algorítmica**, NO predicen precio bursátil directamente
+- El valor está en la detección de narrativas y señales reputacionales
+
+---
+
+## Arquitectura Técnica
 
 ### Backend (chat-intelligence)
-- SSE streaming real para chat estándar con fallback OpenAI → Gemini
-- Eventos: start, chunk, fallback, done, error
-- Guardado en DB desde backend (evita duplicados)
+- SSE streaming real con fallback OpenAI → Gemini
+- Paginación inteligente según depthLevel (2,000 → 10,000 registros)
+- Contexto de regresión siempre disponible
 
 ### Frontend (ChatContext)
 - Detección de Content-Type (JSON vs SSE)
-- Manejo robusto de SSE con safety checks
+- Acumulación de chunks en tiempo real
+- Metadata de metodología para footer de validación
+
