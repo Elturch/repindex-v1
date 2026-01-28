@@ -3282,19 +3282,10 @@ async function handleStandardChat(
   console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
 
   // =============================================================================
-  // PASO 4.5: DETECTAR PREGUNTAS DE REGRESIÓN/ANÁLISIS PREDICTIVO
+  // PASO 4.5: SIEMPRE CARGAR ANÁLISIS DE REGRESIÓN (NO solo por keywords)
+  // La regresión da contexto de tendencias y correlación precio-métricas
+  // que enriquece TODAS las respuestas del agente
   // =============================================================================
-  const regressionKeywords = [
-    'regresión', 'regression', 'correlación', 'correlation', 'predic', 'ponderación',
-    'peso', 'weight', 'predictor', 'r2', 'r-squared', 'estadístic', 'statistic',
-    'métrica predice', 'qué métrica', 'influye en precio', 'afecta al precio',
-    'efecto en cotización', 'impacto precio', 'precio acción', 'stock price',
-    'movimiento precio', 'price movement', 'análisis cuantitativo', 'quantitative',
-    'coeficiente', 'coefficient', 'significativ', 'p-value', 'beta'
-  ];
-  
-  const normalizedQ = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const isRegressionQuery = regressionKeywords.some(kw => normalizedQ.includes(kw));
   
   interface RegressionAnalysisResult {
     success: boolean;
@@ -3324,12 +3315,19 @@ async function handleStandardChat(
   
   let regressionAnalysis: RegressionAnalysisResult | null = null;
   
-  if (isRegressionQuery) {
-    console.log(`${logPrefix} REGRESSION QUERY DETECTED - calling rix-regression-analysis...`);
+  // SIEMPRE llamar a regresión para complete/exhaustive (quick puede omitirla para velocidad)
+  const shouldLoadRegression = depthLevel !== 'quick';
+  
+  if (shouldLoadRegression) {
+    console.log(`${logPrefix} LOADING REGRESSION ANALYSIS (always-on for depth=${depthLevel})...`);
     
     try {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+      
+      // Usar timeout corto para no ralentizar mucho
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s max
       
       const regressionResponse = await fetch(`${supabaseUrl}/functions/v1/rix-regression-analysis`, {
         method: 'POST',
@@ -3337,18 +3335,27 @@ async function handleStandardChat(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${supabaseAnonKey}`,
         },
-        body: JSON.stringify({ minWeeks: 8 }),
+        body: JSON.stringify({ minWeeks: 6 }), // Menos restrictivo para más datos
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
       
       if (regressionResponse.ok) {
         regressionAnalysis = await regressionResponse.json();
-        console.log(`${logPrefix} Regression analysis received: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records analyzed`);
+        console.log(`${logPrefix} Regression analysis loaded: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records, ${regressionAnalysis?.dataProfile?.companiesWithPrices || 0} companies with prices`);
       } else {
         console.warn(`${logPrefix} Regression analysis failed: ${regressionResponse.status}`);
       }
     } catch (regError) {
-      console.error(`${logPrefix} Error calling regression analysis:`, regError);
+      if (regError.name === 'AbortError') {
+        console.warn(`${logPrefix} Regression analysis timeout (15s) - continuing without it`);
+      } else {
+        console.error(`${logPrefix} Error loading regression analysis:`, regError);
+      }
     }
+  } else {
+    console.log(`${logPrefix} Skipping regression for quick depth level`);
   }
 
   // =============================================================================
@@ -3401,11 +3408,12 @@ async function handleStandardChat(
   // =============================================================================
   let context = '';
 
-  // 6.0-REGRESSION: ANÁLISIS ESTADÍSTICO REAL (si hay pregunta de regresión)
+  // 6.0-REGRESSION: ANÁLISIS ESTADÍSTICO REAL (siempre disponible para complete/exhaustive)
+  // Este contexto permite al LLM usar datos de tendencias y correlaciones precio-métrica
   if (regressionAnalysis && regressionAnalysis.success) {
     context += `📊 ======================================================================\n`;
-    context += `📊 ANÁLISIS ESTADÍSTICO REAL - REGRESIÓN MÉTRICAS RIX VS PRECIO\n`;
-    context += `📊 DATOS VERIFICADOS CON CÁLCULO REAL DE CORRELACIÓN DE PEARSON\n`;
+    context += `📊 CONTEXTO ESTADÍSTICO: CORRELACIONES MÉTRICAS RIX ↔ PRECIO\n`;
+    context += `📊 (Usa estos datos para enriquecer análisis de tendencias y valoración)\n`;
     context += `📊 ======================================================================\n\n`;
     
     context += `### Perfil de Datos Analizados:\n`;
