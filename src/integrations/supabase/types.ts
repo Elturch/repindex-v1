@@ -1190,6 +1190,75 @@ export type Database = {
           },
         ]
       }
+      pipeline_health_checks: {
+        Row: {
+          check_type: string
+          checked_at: string | null
+          details: Json | null
+          id: string
+          resolved_at: string | null
+          status: string
+          sweep_id: string | null
+        }
+        Insert: {
+          check_type: string
+          checked_at?: string | null
+          details?: Json | null
+          id?: string
+          resolved_at?: string | null
+          status: string
+          sweep_id?: string | null
+        }
+        Update: {
+          check_type?: string
+          checked_at?: string | null
+          details?: Json | null
+          id?: string
+          resolved_at?: string | null
+          status?: string
+          sweep_id?: string | null
+        }
+        Relationships: []
+      }
+      pipeline_logs: {
+        Row: {
+          created_at: string | null
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          model_name: string | null
+          stage: string
+          status: string
+          sweep_id: string | null
+          ticker: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          model_name?: string | null
+          stage: string
+          status: string
+          sweep_id?: string | null
+          ticker?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          model_name?: string | null
+          stage?: string
+          status?: string
+          sweep_id?: string | null
+          ticker?: string | null
+        }
+        Relationships: []
+      }
       profile_analysis_batches: {
         Row: {
           ai_provider: string | null

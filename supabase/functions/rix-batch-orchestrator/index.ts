@@ -605,6 +605,119 @@ async function resetStuckProcessingCompanies(
 }
 
 // ============================================================================
+// SISTEMA DE HEALTH CHECKS - Detecta problemas automáticamente
+// ============================================================================
+interface HealthCheckResult {
+  type: string;
+  status: 'healthy' | 'warning' | 'critical';
+  details: Record<string, unknown>;
+}
+
+async function performHealthChecks(
+  supabase: ReturnType<typeof createClient>,
+  sweepId: string
+): Promise<HealthCheckResult[]> {
+  const checks: HealthCheckResult[] = [];
+  const now = new Date().toISOString();
+  
+  try {
+    // Check 1: Empresas atascadas en processing > 5 min
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { count: stuckCount } = await supabase
+      .from('sweep_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('sweep_id', sweepId)
+      .eq('status', 'processing')
+      .lt('started_at', fiveMinAgo);
+
+    if (stuckCount && stuckCount > 3) {
+      checks.push({ type: 'sweep_stuck', status: 'warning', details: { stuck: stuckCount } });
+    } else if (stuckCount && stuckCount > 10) {
+      checks.push({ type: 'sweep_stuck', status: 'critical', details: { stuck: stuckCount } });
+    }
+
+    // Check 2: Errores por modelo (últimas 24h)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: errorRecords } = await supabase
+      .from('rix_runs_v2')
+      .select('02_model_name, model_errors')
+      .not('model_errors', 'is', null)
+      .gte('created_at', oneDayAgo);
+
+    if (errorRecords && errorRecords.length > 0) {
+      const errorsByModel: Record<string, number> = {};
+      errorRecords.forEach(r => {
+        const errors = r.model_errors as Record<string, unknown> | null;
+        if (errors && Object.keys(errors).length > 0) {
+          const model = r['02_model_name'] || 'Unknown';
+          errorsByModel[model] = (errorsByModel[model] || 0) + 1;
+        }
+      });
+
+      Object.entries(errorsByModel).forEach(([model, count]) => {
+        if (count >= 10) {
+          checks.push({ 
+            type: 'model_errors', 
+            status: count >= 20 ? 'critical' : 'warning', 
+            details: { model, error_count: count } 
+          });
+        }
+      });
+    }
+
+    // Check 3: Análisis pendientes (registros con respuesta pero sin score)
+    const { count: pendingAnalysis } = await supabase
+      .from('rix_runs_v2')
+      .select('*', { count: 'exact', head: true })
+      .is('09_rix_score', null)
+      .not('20_res_gpt_bruto', 'is', null);
+
+    if (pendingAnalysis && pendingAnalysis > 30) {
+      checks.push({ 
+        type: 'analysis_backlog', 
+        status: pendingAnalysis > 50 ? 'critical' : 'warning', 
+        details: { pending: pendingAnalysis } 
+      });
+      
+      // Auto-trigger repair si hay muchos pendientes
+      if (pendingAnalysis > 20) {
+        const { data: existingTrigger } = await supabase
+          .from('cron_triggers')
+          .select('id')
+          .eq('action', 'repair_analysis')
+          .eq('status', 'pending')
+          .limit(1);
+
+        if (!existingTrigger || existingTrigger.length === 0) {
+          console.log(`[health_check] Auto-triggering analysis repair for ${pendingAnalysis} pending records`);
+          await supabase.from('cron_triggers').insert({
+            action: 'repair_analysis',
+            params: { batch_size: 5, auto_triggered: true }
+          });
+        }
+      }
+    }
+
+    // Guardar checks en la tabla de health_checks
+    for (const check of checks) {
+      await supabase.from('pipeline_health_checks').insert({
+        check_type: check.type,
+        sweep_id: sweepId,
+        status: check.status,
+        details: check.details,
+        checked_at: now
+      });
+    }
+
+    console.log(`[health_check] Performed ${checks.length} health checks for ${sweepId}`);
+  } catch (e) {
+    console.error('[health_check] Error performing health checks:', e);
+  }
+
+  return checks;
+}
+
+// ============================================================================
 // PROCESO DE CRON TRIGGERS (server-to-server, sin bloqueo de extensiones)
 // ============================================================================
 interface CronTrigger {
@@ -839,6 +952,12 @@ Deno.serve(async (req) => {
       const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
       if (stuckReset.count > 0) {
         console.log(`[watchdog] Auto-reset ${stuckReset.count} zombie companies: ${stuckReset.tickers.join(', ')}`);
+      }
+
+      // 4.5 NUEVO: Ejecutar health checks para detectar problemas automáticamente
+      const healthChecks = await performHealthChecks(supabase, sweepId);
+      if (healthChecks.length > 0) {
+        console.log(`[watchdog] Health checks: ${healthChecks.map(c => `${c.type}:${c.status}`).join(', ')}`);
       }
 
       // 5. NUEVO: Procesar LOTE de hasta 5 empresas (mucho más eficiente)
