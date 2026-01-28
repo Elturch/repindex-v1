@@ -53,6 +53,10 @@ interface AnalysisStatus {
   percentage: number;
   byModel: AnalysisModelStatus[];
   sweepWeek: string;
+  // Nuevas métricas por empresa (corrige el cálculo de "Completados")
+  uniqueCompaniesWithScore: number;   // Empresas con al menos 1 score
+  uniqueCompaniesComplete: number;    // Empresas con 6/6 modelos
+  totalUniqueCompanies: number;       // Total empresas únicas en la semana
 }
 
 // ============ TIPO PARA ESTADO DEL TRIGGER DE REPARACIÓN ============
@@ -336,11 +340,44 @@ export function SweepMonitorPanel() {
         }
       });
 
-      // Totales
+      // Totales por registro
       const totalRecords = weekRecords.length;
       const withScore = weekRecords.filter(r => r['09_rix_score'] !== null).length;
       const pendingAnalyzable = weekRecords.filter(r => r['09_rix_score'] === null && r['20_res_gpt_bruto'] !== null).length;
       const pendingNoData = weekRecords.filter(r => r['09_rix_score'] === null && r['20_res_gpt_bruto'] === null).length;
+
+      // NUEVO: Cálculo por empresa (ticker) para métricas correctas de "Completados"
+      // Necesitamos obtener también el ticker para agrupar
+      const { data: weekRecordsWithTicker, error: tickerError } = await supabase
+        .from('rix_runs_v2')
+        .select('05_ticker, 09_rix_score')
+        .eq('06_period_from', latestWeek);
+
+      let uniqueCompaniesWithScore = 0;
+      let uniqueCompaniesComplete = 0;
+      let totalUniqueCompanies = 0;
+
+      if (!tickerError && weekRecordsWithTicker) {
+        // Agrupar por ticker
+        const tickerMap = new Map<string, { modelsWithScore: number; totalModels: number }>();
+        
+        weekRecordsWithTicker.forEach(record => {
+          const ticker = record['05_ticker'];
+          if (!ticker) return;
+          
+          const current = tickerMap.get(ticker) || { modelsWithScore: 0, totalModels: 0 };
+          current.totalModels++;
+          if (record['09_rix_score'] !== null) {
+            current.modelsWithScore++;
+          }
+          tickerMap.set(ticker, current);
+        });
+
+        // Calcular métricas por empresa
+        totalUniqueCompanies = tickerMap.size;
+        uniqueCompaniesWithScore = [...tickerMap.values()].filter(c => c.modelsWithScore > 0).length;
+        uniqueCompaniesComplete = [...tickerMap.values()].filter(c => c.modelsWithScore === 6).length;
+      }
 
       setAnalysisStatus({
         totalRecords,
@@ -350,7 +387,10 @@ export function SweepMonitorPanel() {
         pendingNoData,
         percentage: totalRecords > 0 ? Math.round((withScore / totalRecords) * 100) : 0,
         byModel,
-        sweepWeek: latestWeek || 'N/A'
+        sweepWeek: latestWeek || 'N/A',
+        uniqueCompaniesWithScore,
+        uniqueCompaniesComplete,
+        totalUniqueCompanies,
       });
 
     } catch (error) {
@@ -1149,16 +1189,16 @@ export function SweepMonitorPanel() {
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-good/10">
-                {/* CORREGIDO: Solo contar como completado si tiene score de análisis */}
+                {/* CORREGIDO: Empresas con 6/6 modelos analizados */}
                 <div className="text-2xl font-bold text-good">
-                  {analysisStatus ? Math.floor(analysisStatus.withScore / 6) : 0}
+                  {analysisStatus?.uniqueCompaniesComplete || 0}
                 </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <CheckCircle2 className="h-3 w-3" />
-                  Completados
+                  Completados (6/6)
                 </div>
                 <div className="text-[10px] text-muted-foreground/70">
-                  (búsqueda + análisis)
+                  de {analysisStatus?.totalUniqueCompanies || 0} empresas
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-primary/10">
