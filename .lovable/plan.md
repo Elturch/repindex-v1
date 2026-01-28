@@ -1,162 +1,190 @@
-# ✅ COMPLETADO: Auditoría y Corrección del Sistema de Datos RIX
 
-**Estado: Implementado y verificado el 28 de enero de 2026**
+# Plan: Incorporar Insights de Validación Metodológica
 
-## Diagnóstico Confirmado
+## Resumen Ejecutivo
 
-### Estado Actual de los Datos
-
-**Base de datos `repindex_root_issuers`**: 174 empresas totales
-- 133 cotizadas en bolsa
-- 41 no cotizadas (empresas privadas, grupos hospitalarios, etc.)
-- Las 8 empresas de salud añadidas el 22 de enero ya tienen datos
-
-**Tabla `rix_runs` (legacy - Make.com)**:
-- 9,548 registros totales
-- 169 empresas únicas (5 faltantes son las más recientes)
-- 4 modelos de IA: ChatGPT, Perplexity, Gemini, DeepSeek
-- 22 semanas de historial (octubre 2025 → enero 2026)
-
-**Tabla `rix_runs_v2` (Lovable)**:
-- 2,082 registros totales
-- 174 empresas únicas (cobertura completa)
-- 6 modelos de IA: + Grok, Qwen
-- 4 semanas de historial (16-19 enero 2026)
-- 98 empresas con datos de precio de acción
-
-**Vector Store**: 11,862 documentos indexados (fusionado correctamente)
-
-### Problemas Críticos Identificados
-
-1. **El endpoint `rix-regression-analysis` SOLO consulta `rix_runs`**
-   - Ignora completamente los datos de V2
-   - Por eso el Agente Rix reporta "154 empresas" en vez de 174
-   - Falta el contexto de Grok y Qwen en las correlaciones
-
-2. **Falta paginación inteligente en la regresión**
-   - El chat-intelligence tiene paginación configurada (2,000-10,000 registros)
-   - Pero la regresión usa un límite fijo de 1,000 por tabla
-
-3. **18 empresas faltan en la semana 2026-01-18**:
-   - 8 empresas de salud (añadidas después del barrido)
-   - 10 empresas privadas internacionales
-   - Esto es normal: se añadieron post-barrido
+La evaluación externa (8.5/10) destaca fortalezas clave que debemos comunicar mejor y señala áreas que fortalecen la credibilidad del sistema. El plan incorpora estos insights de forma sutil en dos lugares: la página de Metodología pública y el "Anexo Técnico" de letra pequeña que aparece en cada informe del Agente Rix.
 
 ---
 
-## Plan de Corrección
+## Insights Clave a Incorporar
 
-### 1. Actualizar `rix-regression-analysis` para fusionar V2
+### Fortalezas Validadas (comunicar sin revelar detalles sensibles)
 
-Modificar el endpoint para usar la misma lógica de fusión que `chat-intelligence`:
+| Insight | Cómo Comunicar | Dónde |
+|---------|---------------|-------|
+| Consultas machine-to-machine vía API | "Ejecución sistemática vía API" | Metodología + Footer |
+| Prompt estandarizado idéntico | "Prompt estructurado e invariable" | Anexo técnico |
+| Ejecución semanal sincronizada (domingos) | "Frecuencia semanal homogénea" | Ya está - reforzar |
+| 6 modelos con grounding real | Ya comunicado bien | Mantener |
+| Precio de acción como ancla | "Variables de contraste con mercado" | Anexo técnico |
+| Volumen de menciones recogido | "Señales de cobertura mediática" | Metodología |
+| Divergencia como medida de incertidumbre | "σ inter-modelo como incertidumbre epistémica" | Ya está - mejorar redacción |
 
-**Cambios técnicos:**
-- Reemplazar la consulta simple a `rix_runs` por una fusión con `rix_runs_v2`
-- Priorizar V2 como fuente autoritativa para semanas recientes
-- Agregar los 6 modelos de IA al análisis estadístico
-- Incluir las 174 empresas en los cálculos
+### Preguntas Abiertas (reconocer honestamente)
 
-**Pseudocódigo:**
-```
-text
-// ANTES: Solo rix_runs
-const data = await supabase.from('rix_runs').select(...)
+| Pregunta | Respuesta Honesta |
+|----------|-------------------|
+| ¿Correlación con métricas reales? | "En construcción - recogiendo datos de contraste" |
+| ¿Ponderación empírica o experta? | "Criterio experto inicial, calibración futura basada en datos" |
+| ¿Prompts públicos? | "Estructura pública, contenido propietario" |
 
-// DESPUÉS: Fusión con V2
-const [rixData, v2Data] = await Promise.all([
-  fetchAllFromTable('rix_runs', ...),
-  fetchAllFromTable('rix_runs_v2', ...)
-])
-const unified = deduplicateWithV2Priority(rixData, v2Data)
-```
+---
 
-### 2. Mejorar paginación en la regresión
+## Cambios Propuestos
 
-Implementar el mismo patrón de paginación que ya existe en `fetchUnifiedRixData`:
+### 1. Página de Metodología (`/metodologia`)
 
-```
-text
-// Paginar ambas tablas para obtener TODOS los registros
-async function fetchAllPaginated(table, columns) {
-  const pageSize = 1000
-  let allData = []
-  let offset = 0
-  
-  while (true) {
-    const { data } = await supabase
-      .from(table)
-      .select(columns)
-      .range(offset, offset + pageSize - 1)
-    
-    if (!data || data.length === 0) break
-    allData.push(...data)
-    if (data.length < pageSize) break
-    offset += pageSize
-  }
-  return allData
-}
-```
+**Nueva sección: "Rigor en la Ejecución"** (después de "Tecnología Nativa IA")
 
-### 3. Actualizar conteo de empresas dinámicamente
+Contenido propuesto:
+- **Ejecución sistemática**: "Cada domingo, el sistema ejecuta consultas machine-to-machine vía API con prompts idénticos para las 174 empresas."
+- **Reproducibilidad**: "La estandarización elimina sesgos por usuario, contexto o historial de conversación."
+- **Variables de contraste**: "Junto al RIX, recogemos precio de cierre semanal (cotizadas) y volumen de menciones Tier-1 como anclas empíricas para validación futura."
+- **Calibración continua**: "La ponderación de métricas parte de criterio experto y evolucionará según evidencia estadística conforme madure el dataset."
 
-Modificar la regresión para obtener el conteo real de issuers:
+**Mejora en sección de Divergencia**
 
-```
-text
-// Obtener conteo real de empresas
-const { count } = await supabase
-  .from('repindex_root_issuers')
-  .select('*', { count: 'exact', head: true })
+Reformular para enfatizar que es una medida de incertidumbre epistémica:
+- "Cuando 6 modelos independientes con diferentes arquitecturas, proveedores y datasets coinciden, la señal es robusta. La divergencia alta indica que la realidad informativa está fragmentada."
+
+### 2. Anexo Técnico-Metodológico (`technicalSheetHtml.ts`)
+
+**Nueva sección: "Garantías de Reproducibilidad"**
+
+```text
+EJECUCIÓN SISTEMÁTICA
+- Frecuencia: Semanal (domingos, 52 ciclos/año)
+- Método: API machine-to-machine (sin interfaz de usuario)
+- Prompt: Estructurado, idéntico para todos los modelos
+- Temperatura: 0 (determinismo máximo)
 ```
 
-### 4. Añadir validación de cobertura
+**Nueva sección: "Variables de Contraste"**
 
-Incluir en la respuesta de regresión un reporte de cobertura:
+```text
+VALIDACIÓN CON MERCADO
+Para empresas cotizadas:
+- Precio de cierre semanal (viernes, fuente: EODHD)
+- Mínimo 52 semanas como referencia de volatilidad
+Para todas las empresas:
+- Volumen de menciones Tier-1 de la semana
+- Objetivo: Construir base empírica para calibrar ponderaciones
+```
 
-```
-text
-{
-  dataProfile: {
-    totalIssuers: 174,
-    issuersWithData: 174,
-    issuersWithPrices: 133,
-    coveragePercent: 100,
-    modelsIncluded: ["ChatGPT", "Perplexity", "Gemini", "DeepSeek", "Grok", "Qwen"]
-  }
-}
-```
+**Mejora en Limitaciones**
+
+Añadir honestamente:
+- "La ponderación actual (NVM 15%, DRM 15%, etc.) es criterio experto. La calibración empírica está en desarrollo."
+- "Correlación RIX vs. métricas de negocio: en fase de validación (3+ meses de datos recogidos)."
+
+### 3. Footer del Chat (`MethodologyFooter.tsx`)
+
+**Añadir nueva línea de metadata**
+
+Mostrar cuando haya datos de regresión disponibles:
+- "Anclaje estadístico: Correlación precio-RIX R² = [valor]%" (solo si hay datos)
+
+**Mejorar nota de divergencia**
+
+Cambiar de:
+- "Consenso alto/moderado/divergencia"
+
+A:
+- "σ inter-modelo: [valor] → [interpretación de incertidumbre]"
 
 ---
 
 ## Archivos a Modificar
 
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-regression-analysis/index.ts` | Fusionar datos de V2, paginación, conteo dinámico |
-| `supabase/functions/chat-intelligence/index.ts` | Verificar que el contexto de regresión use datos fusionados |
+| Archivo | Cambio Principal |
+|---------|------------------|
+| `src/pages/Methodology.tsx` | Nueva sección "Rigor en la Ejecución" + mejora divergencia |
+| `src/lib/technicalSheetHtml.ts` | Secciones de reproducibilidad y validación con mercado |
+| `src/components/chat/MethodologyFooter.tsx` | Línea de anclaje estadístico + reformular divergencia |
+
+---
+
+## Redacción Sutil (ejemplos)
+
+### En Metodología (público)
+
+> **No decir**: "Usamos el prompt 'reputación de empresa X la semana pasada'"
+> 
+> **Decir**: "El sistema ejecuta consultas estructuradas e invariables cada domingo, garantizando que todas las empresas sean evaluadas con criterios idénticos."
+
+### En Anexo Técnico (letra pequeña)
+
+> **No decir**: "Estamos construyendo validación porque no tenemos todavía"
+> 
+> **Decir**: "Se recogen variables de contraste (precio de acción, menciones mediáticas) para establecer correlaciones estadísticas conforme madura el dataset longitudinal."
 
 ---
 
 ## Resultado Esperado
 
-Después de la implementación:
-
-- El Agente Rix reportará **174 empresas** (no 154)
-- Las correlaciones incluirán datos de los **6 modelos de IA**
-- El análisis estadístico usará **~11,600 registros** históricos
-- Las empresas de salud y privadas aparecerán en los análisis
-- Los precios de acción de las 133 cotizadas se usarán como ancla real
+1. **Credibilidad reforzada**: Los puntos fuertes validados externamente se comunican sin revelar propiedad intelectual
+2. **Honestidad metodológica**: Las limitaciones reconocidas fortalecen la confianza académica
+3. **Preparación para el futuro**: Se documenta que el sistema está diseñado para evolucionar de descriptivo a predictivo
+4. **Consistencia**: El mensaje es coherente entre página pública, exports y chat
 
 ---
 
-## Verificación Post-Implementación
+## Secciones Técnicas
 
-1. Ejecutar endpoint de regresión y verificar:
-   - `totalRecords` ≈ 11,600
-   - `companiesWithPrices` = 133
-   - `modelsIncluded` = 6 modelos
+### Código para nueva sección en Metodología
 
-2. Preguntar al Agente Rix: "¿Cuántas empresas tienes en tu base de datos?" → Debe responder 174
+```tsx
+{/* Rigor en la Ejecución - Nueva sección */}
+<section className="py-12 px-4">
+  <div className="container mx-auto max-w-4xl">
+    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+      <Shield className="h-6 w-6 text-primary" />
+      Rigor en la Ejecución
+    </h2>
+    <div className="grid md:grid-cols-2 gap-4">
+      <Card>
+        <CardContent className="pt-6">
+          <h3 className="font-semibold mb-3">🔄 Ejecución Sistemática</h3>
+          <p className="text-sm text-muted-foreground">
+            Cada domingo, el sistema ejecuta consultas machine-to-machine 
+            vía API con prompts estructurados e invariables para todas 
+            las empresas del censo.
+          </p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-6">
+          <h3 className="font-semibold mb-3">📊 Variables de Contraste</h3>
+          <p className="text-sm text-muted-foreground">
+            Para empresas cotizadas: precio de cierre semanal. 
+            Para todas: volumen de menciones Tier-1. Estas anclas 
+            empíricas permiten validación estadística futura.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+</section>
+```
 
-3. Verificar en `/admin` que el panel de Vector Store muestre cobertura completa
+### HTML para Anexo Técnico
 
+```html
+<h4>Garantías de Reproducibilidad</h4>
+<p>
+  <strong>Ejecución:</strong> API machine-to-machine (sin interfaz de usuario) | 
+  <strong>Frecuencia:</strong> Semanal (domingos) | 
+  <strong>Prompt:</strong> Estructurado e invariable | 
+  <strong>Temperatura:</strong> 0 (determinismo máximo). 
+  Esta arquitectura elimina sesgos por contexto, usuario o historial de conversación.
+</p>
+
+<h4>Variables de Contraste (Validación en Construcción)</h4>
+<p>
+  El sistema recoge variables empíricas para calibración futura: 
+  <strong>precio de cierre semanal</strong> (133 cotizadas, fuente: EODHD) y 
+  <strong>volumen de menciones Tier-1</strong> (proxy: NVM agregado). 
+  La ponderación actual es criterio experto; evolucionará según evidencia estadística.
+</p>
+```
