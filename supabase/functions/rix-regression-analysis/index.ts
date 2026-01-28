@@ -7,8 +7,9 @@ const corsHeaders = {
 };
 
 // =============================================================================
-// REAL STATISTICAL REGRESSION ANALYSIS
+// REAL STATISTICAL REGRESSION ANALYSIS WITH UNIFIED DATA (V1 + V2)
 // This endpoint performs actual statistical calculations on RIX data with prices
+// Fuses rix_runs (legacy) and rix_runs_v2 (Lovable) with V2 priority
 // =============================================================================
 
 interface RegressionRequest {
@@ -33,10 +34,17 @@ interface RegressionResult {
   analysisDate: string;
   dataProfile: {
     totalRecords: number;
-    companiesWithPrices: number;
+    totalIssuers: number;
+    issuersWithData: number;
+    issuersWithPrices: number;
+    coveragePercent: number;
     weeksAnalyzed: number;
     dateRange: { from: string; to: string };
     modelsIncluded: string[];
+    dataSourceBreakdown: {
+      rixRunsLegacy: number;
+      rixRunsV2: number;
+    };
   };
   metricAnalysis: MetricCorrelation[];
   topPredictors: { metric: string; displayName: string; correlation: number }[];
@@ -58,6 +66,9 @@ const METRIC_NAMES: Record<string, string> = {
   '41_dcm_score': 'DCM (Diferenciación)',
   '44_cxm_score': 'CXM (Experiencia Cliente)',
 };
+
+// V2 uses SAME column names as V1 (with numeric prefixes)
+// No mapping needed - columns are identical
 
 // Calculate Pearson correlation coefficient
 function pearsonCorrelation(x: number[], y: number[]): { r: number; pValue: number } {
@@ -131,6 +142,82 @@ function parsePrice(priceStr: string | null): number | null {
   return isNaN(num) ? null : num;
 }
 
+// =============================================================================
+// PAGINATED FETCH HELPER - Gets ALL records from a table
+// =============================================================================
+async function fetchAllPaginated(
+  supabase: any,
+  table: string,
+  columns: string,
+  filters?: { column: string; op: string; value: any }[]
+): Promise<any[]> {
+  const allData: any[] = [];
+  let offset = 0;
+  const batchSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    let query = supabase
+      .from(table)
+      .select(columns)
+      .order('06_period_from', { ascending: false })
+      .range(offset, offset + batchSize - 1);
+
+    // Apply filters if provided
+    if (filters) {
+      for (const filter of filters) {
+        if (filter.op === 'not.is') {
+          query = query.not(filter.column, 'is', filter.value);
+        } else if (filter.op === 'neq') {
+          query = query.neq(filter.column, filter.value);
+        }
+      }
+    }
+
+    const { data: batch, error } = await query;
+
+    if (error) {
+      console.error(`[rix-regression] Fetch error from ${table}:`, error);
+      break;
+    }
+
+    if (!batch || batch.length === 0) {
+      hasMore = false;
+    } else {
+      allData.push(...batch);
+      offset += batchSize;
+      if (batch.length < batchSize) {
+        hasMore = false;
+      }
+    }
+  }
+
+  return allData;
+}
+
+// =============================================================================
+// DEDUPLICATE WITH V2 PRIORITY
+// V2 uses SAME column names as V1 - no normalization needed
+// =============================================================================
+function deduplicateWithV2Priority(v1Data: any[], v2Data: any[]): any[] {
+  // Create a map with composite key: ticker + week + model
+  const dataMap = new Map<string, any>();
+
+  // First, add all V1 records
+  for (const record of v1Data) {
+    const key = `${record['05_ticker']}_${record['06_period_from']}_${record['02_model_name']}`;
+    dataMap.set(key, { ...record, _source: 'v1' });
+  }
+
+  // Then, override with V2 records (V2 takes priority - same column format)
+  for (const v2Record of v2Data) {
+    const key = `${v2Record['05_ticker']}_${v2Record['06_period_from']}_${v2Record['02_model_name']}`;
+    dataMap.set(key, { ...v2Record, _source: 'v2' });
+  }
+
+  return Array.from(dataMap.values());
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -151,58 +238,72 @@ serve(async (req: Request) => {
     const minWeeks = params.minWeeks || 8;
     const targetMetrics = params.targetMetrics || Object.keys(METRIC_NAMES);
 
-    console.log(`[rix-regression] Starting analysis with minWeeks=${minWeeks}`);
+    console.log(`[rix-regression] Starting unified analysis with minWeeks=${minWeeks}`);
 
     // =============================================================================
-    // STEP 1: Fetch ALL data with prices using pagination
+    // STEP 0: Get dynamic issuer count
     // =============================================================================
-    const allData: any[] = [];
-    let offset = 0;
-    const batchSize = 1000;
-    let hasMore = true;
+    const { count: totalIssuers, error: issuerCountError } = await supabase
+      .from('repindex_root_issuers')
+      .select('*', { count: 'exact', head: true });
 
-    while (hasMore) {
-      const { data: batch, error } = await supabase
-        .from('rix_runs')
-        .select(`
-          05_ticker,
-          02_model_name,
-          06_period_from,
-          07_period_to,
-          09_rix_score,
-          23_nvm_score,
-          26_drm_score,
-          29_sim_score,
-          32_rmm_score,
-          35_cem_score,
-          38_gam_score,
-          41_dcm_score,
-          44_cxm_score,
-          48_precio_accion
-        `)
-        .not('48_precio_accion', 'is', null)
-        .neq('48_precio_accion', 'NC')
-        .not('09_rix_score', 'is', null)
-        .order('06_period_from', { ascending: false })
-        .range(offset, offset + batchSize - 1);
-
-      if (error) {
-        console.error('[rix-regression] Fetch error:', error);
-        break;
-      }
-
-      if (!batch || batch.length === 0) {
-        hasMore = false;
-      } else {
-        allData.push(...batch);
-        offset += batchSize;
-        if (batch.length < batchSize) {
-          hasMore = false;
-        }
-      }
+    if (issuerCountError) {
+      console.error('[rix-regression] Issuer count error:', issuerCountError);
     }
 
-    console.log(`[rix-regression] Fetched ${allData.length} records with prices`);
+    const { count: listedIssuers } = await supabase
+      .from('repindex_root_issuers')
+      .select('*', { count: 'exact', head: true })
+      .eq('cotiza_en_bolsa', true);
+
+    console.log(`[rix-regression] Total issuers: ${totalIssuers}, Listed: ${listedIssuers}`);
+
+    // =============================================================================
+    // STEP 1: Fetch ALL data from BOTH tables with pagination
+    // =============================================================================
+    // V1 and V2 use the SAME column naming convention
+    const columns = `
+      05_ticker,
+      02_model_name,
+      06_period_from,
+      07_period_to,
+      09_rix_score,
+      23_nvm_score,
+      26_drm_score,
+      29_sim_score,
+      32_rmm_score,
+      35_cem_score,
+      38_gam_score,
+      41_dcm_score,
+      44_cxm_score,
+      48_precio_accion
+    `;
+
+    // Fetch from both tables in parallel (same column names)
+    const [v1DataRaw, v2DataRaw] = await Promise.all([
+      fetchAllPaginated(supabase, 'rix_runs', columns, [
+        { column: '48_precio_accion', op: 'not.is', value: null },
+        { column: '48_precio_accion', op: 'neq', value: 'NC' },
+        { column: '09_rix_score', op: 'not.is', value: null },
+      ]),
+      fetchAllPaginated(supabase, 'rix_runs_v2', columns, [
+        { column: '48_precio_accion', op: 'not.is', value: null },
+        { column: '48_precio_accion', op: 'neq', value: 'NC' },
+        { column: '09_rix_score', op: 'not.is', value: null },
+      ]),
+    ]);
+
+    console.log(`[rix-regression] Fetched ${v1DataRaw.length} from rix_runs, ${v2DataRaw.length} from rix_runs_v2`);
+
+    // =============================================================================
+    // STEP 2: Unify and deduplicate with V2 priority
+    // =============================================================================
+    const allData = deduplicateWithV2Priority(v1DataRaw, v2DataRaw);
+    
+    const v1Count = allData.filter(r => r._source === 'v1').length;
+    const v2Count = allData.filter(r => r._source === 'v2').length;
+
+    console.log(`[rix-regression] Unified dataset: ${allData.length} records (V1: ${v1Count}, V2: ${v2Count})`);
 
     if (allData.length < 50) {
       return new Response(JSON.stringify({
@@ -217,7 +318,7 @@ serve(async (req: Request) => {
     }
 
     // =============================================================================
-    // STEP 2: Build company time series and calculate price changes
+    // STEP 3: Build company time series and calculate price changes
     // =============================================================================
     interface CompanyWeekData {
       ticker: string;
@@ -231,6 +332,7 @@ serve(async (req: Request) => {
     const companyData = new Map<string, Map<string, CompanyWeekData>>();
     const allWeeks = new Set<string>();
     const allModels = new Set<string>();
+    const allTickers = new Set<string>();
 
     // Group by company and week
     for (const record of allData) {
@@ -242,6 +344,7 @@ serve(async (req: Request) => {
       if (!ticker || !week || price === null) continue;
 
       allWeeks.add(week);
+      allTickers.add(ticker);
       if (model) allModels.add(model);
 
       if (!companyData.has(ticker)) {
@@ -305,9 +408,10 @@ serve(async (req: Request) => {
     }
 
     console.log(`[rix-regression] ${companiesWithSufficientData.length} companies with ≥${minWeeks} weeks of data`);
+    console.log(`[rix-regression] Models included: ${Array.from(allModels).join(', ')}`);
 
     // =============================================================================
-    // STEP 3: Build correlation analysis for each metric
+    // STEP 4: Build correlation analysis for each metric
     // =============================================================================
     const metricAnalysis: MetricCorrelation[] = [];
 
@@ -362,7 +466,7 @@ serve(async (req: Request) => {
     metricAnalysis.sort((a, b) => Math.abs(b.correlationWithPrice) - Math.abs(a.correlationWithPrice));
 
     // =============================================================================
-    // STEP 4: Calculate simple R² for combined model
+    // STEP 5: Calculate simple R² for combined model
     // =============================================================================
     // Using top 3 metrics as predictors
     const topMetrics = metricAnalysis.slice(0, 3);
@@ -376,20 +480,29 @@ serve(async (req: Request) => {
     const adjustedR2 = Math.max(0, combinedR2 - (3 * (1 - combinedR2)) / (metricAnalysis[0]?.sampleSize || 100 - 3 - 1));
 
     // =============================================================================
-    // STEP 5: Build response
+    // STEP 6: Build response with enhanced dataProfile
     // =============================================================================
+    const coveragePercent = totalIssuers ? Math.round((allTickers.size / totalIssuers) * 100) : 0;
+
     const result: RegressionResult = {
       success: true,
       analysisDate: new Date().toISOString(),
       dataProfile: {
         totalRecords: allData.length,
-        companiesWithPrices: companiesWithSufficientData.length,
+        totalIssuers: totalIssuers || 174,
+        issuersWithData: allTickers.size,
+        issuersWithPrices: companiesWithSufficientData.length,
+        coveragePercent,
         weeksAnalyzed: sortedWeeks.length,
         dateRange: {
           from: sortedWeeks[0] || 'N/A',
           to: sortedWeeks[sortedWeeks.length - 1] || 'N/A',
         },
         modelsIncluded: Array.from(allModels),
+        dataSourceBreakdown: {
+          rixRunsLegacy: v1Count,
+          rixRunsV2: v2Count,
+        },
       },
       metricAnalysis,
       topPredictors: metricAnalysis
@@ -401,17 +514,20 @@ serve(async (req: Request) => {
         .map(m => ({ metric: m.metric, displayName: m.displayName, correlation: m.correlationWithPrice })),
       rSquared: Math.round(combinedR2 * 1000) / 1000,
       adjustedRSquared: Math.round(adjustedR2 * 1000) / 1000,
-      methodology: `Análisis de correlación de Pearson entre métricas RIX (semana t) y variación de precio (semana t+1). Se requieren mínimo ${minWeeks} semanas de datos por empresa. Los valores de correlación oscilan entre -1 (inversa perfecta) y +1 (directa perfecta). Valores p < 0.05 se consideran estadísticamente significativos.`,
+      methodology: `Análisis de correlación de Pearson entre métricas RIX (semana t) y variación de precio (semana t+1). Datos fusionados de rix_runs (legacy) y rix_runs_v2 con prioridad V2. Se requieren mínimo ${minWeeks} semanas de datos por empresa. Los valores de correlación oscilan entre -1 (inversa perfecta) y +1 (directa perfecta). Valores p < 0.05 se consideran estadísticamente significativos.`,
       caveats: [
-        `Datos limitados: ${sortedWeeks.length} semanas (oct 2025 - ene 2026)`,
+        `Universo: ${totalIssuers || 174} empresas (${listedIssuers || 133} cotizadas)`,
+        `Cobertura de datos: ${coveragePercent}% (${allTickers.size} empresas con datos de precio)`,
+        `Datos: ${sortedWeeks.length} semanas (${sortedWeeks[0]} → ${sortedWeeks[sortedWeeks.length - 1]})`,
+        `Modelos IA: ${Array.from(allModels).length} (${Array.from(allModels).join(', ')})`,
         'Correlación no implica causalidad',
         'Precios de mercado tienen múltiples factores externos no capturados',
         'El R² ajustado refleja el poder explicativo del modelo sobre variaciones de precio',
-        'Para conclusiones robustas se recomienda ampliar a 52+ semanas',
       ],
     };
 
     console.log(`[rix-regression] Analysis complete. Top predictor: ${result.topPredictors[0]?.displayName || 'N/A'} (r=${result.topPredictors[0]?.correlation || 0})`);
+    console.log(`[rix-regression] Data profile: ${result.dataProfile.totalRecords} records, ${result.dataProfile.issuersWithData} companies, ${result.dataProfile.modelsIncluded.length} models`);
 
     return new Response(JSON.stringify(result), {
       status: 200,
