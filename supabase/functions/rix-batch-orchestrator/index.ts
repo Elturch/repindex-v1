@@ -856,9 +856,10 @@ Deno.serve(async (req) => {
       get_status?: boolean;
       init_only?: boolean;
       single_company?: boolean;
-      reset_stuck?: boolean;      // NUEVO: reset inmediato de zombis
-      reset_stuck_timeout?: number; // NUEVO: timeout personalizable
-      mode?: string;  // 'resume' para watchdog
+      reset_stuck?: boolean;
+      reset_stuck_timeout?: number;
+      mode?: string;
+      process_triggers_only?: boolean;  // NEW: Process cron triggers immediately
     } = {};
     
     try {
@@ -878,6 +879,7 @@ Deno.serve(async (req) => {
       reset_stuck = false,
       reset_stuck_timeout = 0,
       mode,
+      process_triggers_only = false,
     } = requestBody;
 
     const sweepId = getCurrentSweepId();
@@ -1008,6 +1010,28 @@ Deno.serve(async (req) => {
             completed, 
             failed 
           },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========== NUEVO: Modo process_triggers_only ==========
+    // Procesa solo los cron_triggers pendientes, sin ejecutar barrido de empresas
+    // Útil para ejecutar triggers manualmente desde el panel sin esperar al watchdog
+    if (process_triggers_only) {
+      console.log('[orchestrator] Mode: process_triggers_only');
+      
+      const triggersProcessed = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          mode: 'process_triggers_only',
+          triggersProcessed: triggersProcessed.length,
+          triggers: triggersProcessed,
+          message: triggersProcessed.length > 0 
+            ? `Procesados ${triggersProcessed.length} triggers: ${triggersProcessed.map(t => t.action).join(', ')}`
+            : 'No hay triggers pendientes',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

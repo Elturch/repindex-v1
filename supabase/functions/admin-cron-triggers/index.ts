@@ -5,27 +5,57 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * STRICT origin allowlist:
+ * - localhost / 127.0.0.1 (local development)
+ * - *.lovableproject.com (Lovable project hosting)
+ * - lovable.dev (Lovable dev tools)
+ * - lovable.app ONLY if subdomain contains 'preview' (NOT production domains like repindex-v1.lovable.app)
+ */
 function isAllowedOrigin(req: Request): boolean {
   const origin = req.headers.get('origin') || ''
   const referer = req.headers.get('referer') || ''
-
-  const allowedPatterns = [
-    'localhost',
-    '127.0.0.1',
-    'preview',
-    'lovable.dev',
-    'lovable.app',
-    'lovableproject.com',
-  ]
-
   const source = origin || referer
+
+  if (!source) {
+    console.log('[admin-cron-triggers] No origin/referer header found, denying')
+    return false
+  }
+
   console.log('[admin-cron-triggers] Checking origin:', source)
-  return allowedPatterns.some((pattern) => source.toLowerCase().includes(pattern))
+
+  // Always allow localhost
+  if (source.includes('localhost') || source.includes('127.0.0.1')) {
+    return true
+  }
+
+  // Allow lovableproject.com (development project hosting)
+  if (source.includes('lovableproject.com')) {
+    return true
+  }
+
+  // Allow lovable.dev (development tools)
+  if (source.includes('lovable.dev')) {
+    return true
+  }
+
+  // Allow lovable.app ONLY if it contains 'preview' in the subdomain
+  // This blocks production domains like repindex-v1.lovable.app
+  if (source.includes('lovable.app')) {
+    if (source.includes('preview')) {
+      return true
+    }
+    console.log('[admin-cron-triggers] lovable.app domain without "preview" - denying:', source)
+    return false
+  }
+
+  console.log('[admin-cron-triggers] Origin not in allowlist:', source)
+  return false
 }
 
-type AllowedAction = 'repair_analysis'
+type AllowedAction = 'repair_analysis' | 'get_latest'
 
-const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis']
+const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'get_latest']
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -68,6 +98,29 @@ Deno.serve(async (req) => {
       auth: { persistSession: false },
     })
 
+    // ============ ACTION: get_latest ============
+    // Returns the most recent trigger for a given action type
+    if (action === 'get_latest') {
+      const filterAction = (params.filter_action as string) || 'repair_analysis'
+      
+      const { data, error } = await supabaseAdmin
+        .from('cron_triggers')
+        .select('id, created_at, status, action, processed_at, result')
+        .eq('action', filterAction)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) throw error
+
+      return new Response(JSON.stringify({ trigger: data }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ============ ACTION: repair_analysis ============
+    // Creates a new trigger for the orchestrator to process
     const { data, error } = await supabaseAdmin
       .from('cron_triggers')
       .insert({

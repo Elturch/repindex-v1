@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.send-newsroom-email]
 verify_jwt = false
+
+[functions.admin-cron-triggers]
+verify_jwt = false

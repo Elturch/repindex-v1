@@ -39,6 +39,8 @@ interface AnalysisModelStatus {
   total: number;
   withScore: number;
   pending: number;
+  pendingAnalyzable: number;  // NEW: have raw data, can be analyzed
+  pendingNoData: number;      // NEW: no raw data yet
   percentage: number;
 }
 
@@ -46,9 +48,21 @@ interface AnalysisStatus {
   totalRecords: number;
   withScore: number;
   pendingAnalysis: number;
+  pendingAnalyzable: number;   // NEW: have raw data, can be analyzed
+  pendingNoData: number;       // NEW: no raw data yet
   percentage: number;
   byModel: AnalysisModelStatus[];
   sweepWeek: string;
+}
+
+// ============ TIPO PARA ESTADO DEL TRIGGER DE REPARACIÓN ============
+interface RepairTrigger {
+  id: string;
+  status: string;
+  action: string;
+  created_at: string;
+  processed_at: string | null;
+  result: { processed?: number; success?: boolean; error?: string } | null;
 }
 
 interface SweepStatus {
@@ -217,6 +231,11 @@ export function SweepMonitorPanel() {
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [repairingAnalysis, setRepairingAnalysis] = useState(false);
   
+  // ============ ESTADO DEL TRIGGER DE REPARACIÓN ============
+  const [repairTrigger, setRepairTrigger] = useState<RepairTrigger | null>(null);
+  const [processingTrigger, setProcessingTrigger] = useState(false);
+  const repairPollingRef = useRef<NodeJS.Timeout | null>(null);
+  
   // ============ ESTADO DE ERRORES DE API ============
   const [apiErrors, setApiErrors] = useState<APIErrorRecord[]>([]);
   const [errorSummary, setErrorSummary] = useState<APIErrorSummary[]>([]);
@@ -239,9 +258,10 @@ export function SweepMonitorPanel() {
     setLoadingAnalysis(true);
     try {
       // Obtener la semana más reciente y contar por modelo
+      // IMPORTANTE: Incluir 20_res_gpt_bruto para distinguir "analizables" vs "sin datos"
       const { data, error } = await supabase
         .from('rix_runs_v2')
-        .select('02_model_name, 09_rix_score, 06_period_from')
+        .select('02_model_name, 09_rix_score, 06_period_from, 20_res_gpt_bruto')
         .order('06_period_from', { ascending: false })
         .limit(2000); // Últimas ~2 semanas
 
@@ -256,16 +276,29 @@ export function SweepMonitorPanel() {
       const latestWeek = data[0]['06_period_from'];
       const weekRecords = data.filter(r => r['06_period_from'] === latestWeek);
 
-      // Agrupar por modelo
-      const modelMap = new Map<string, { total: number; withScore: number }>();
+      // Agrupar por modelo con métricas adicionales
+      const modelMap = new Map<string, { 
+        total: number; 
+        withScore: number; 
+        pendingAnalyzable: number; 
+        pendingNoData: number; 
+      }>();
       
       weekRecords.forEach(record => {
         const model = record['02_model_name'] || 'Unknown';
-        const current = modelMap.get(model) || { total: 0, withScore: 0 };
+        const current = modelMap.get(model) || { total: 0, withScore: 0, pendingAnalyzable: 0, pendingNoData: 0 };
         current.total++;
+        
         if (record['09_rix_score'] !== null) {
           current.withScore++;
+        } else if (record['20_res_gpt_bruto'] !== null) {
+          // Tiene respuesta pero no score → analizable
+          current.pendingAnalyzable++;
+        } else {
+          // Sin respuesta ni score → no analizable aún
+          current.pendingNoData++;
         }
+        
         modelMap.set(model, current);
       });
 
@@ -281,6 +314,8 @@ export function SweepMonitorPanel() {
             total: stats.total,
             withScore: stats.withScore,
             pending: stats.total - stats.withScore,
+            pendingAnalyzable: stats.pendingAnalyzable,
+            pendingNoData: stats.pendingNoData,
             percentage: stats.total > 0 ? Math.round((stats.withScore / stats.total) * 100) : 0
           });
         }
@@ -294,6 +329,8 @@ export function SweepMonitorPanel() {
             total: stats.total,
             withScore: stats.withScore,
             pending: stats.total - stats.withScore,
+            pendingAnalyzable: stats.pendingAnalyzable,
+            pendingNoData: stats.pendingNoData,
             percentage: stats.total > 0 ? Math.round((stats.withScore / stats.total) * 100) : 0
           });
         }
@@ -302,11 +339,15 @@ export function SweepMonitorPanel() {
       // Totales
       const totalRecords = weekRecords.length;
       const withScore = weekRecords.filter(r => r['09_rix_score'] !== null).length;
+      const pendingAnalyzable = weekRecords.filter(r => r['09_rix_score'] === null && r['20_res_gpt_bruto'] !== null).length;
+      const pendingNoData = weekRecords.filter(r => r['09_rix_score'] === null && r['20_res_gpt_bruto'] === null).length;
 
       setAnalysisStatus({
         totalRecords,
         withScore,
         pendingAnalysis: totalRecords - withScore,
+        pendingAnalyzable,
+        pendingNoData,
         percentage: totalRecords > 0 ? Math.round((withScore / totalRecords) * 100) : 0,
         byModel,
         sweepWeek: latestWeek || 'N/A'
@@ -316,6 +357,25 @@ export function SweepMonitorPanel() {
       console.error('Error fetching analysis status:', error);
     } finally {
       setLoadingAnalysis(false);
+    }
+  }, []);
+
+  // ============ FETCH ÚLTIMO TRIGGER DE REPARACIÓN ============
+  const fetchLatestRepairTrigger = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-cron-triggers', {
+        body: { action: 'get_latest', params: { filter_action: 'repair_analysis' } },
+      });
+
+      if (error) throw error;
+      
+      if (data?.trigger) {
+        setRepairTrigger(data.trigger as RepairTrigger);
+      } else {
+        setRepairTrigger(null);
+      }
+    } catch (error) {
+      console.error('Error fetching latest repair trigger:', error);
     }
   }, []);
 
@@ -428,13 +488,17 @@ export function SweepMonitorPanel() {
         throw new Error('No se pudo crear el trigger (respuesta inválida)');
       }
 
+      // Guardar el trigger recién creado y empezar polling
+      setRepairTrigger(data.trigger as RepairTrigger);
+
       toast({
         title: '📅 Reparación programada',
-        description: 'El análisis pendiente se ejecutará automáticamente en los próximos minutos (procesado server-to-server).',
+        description: `Trigger ${data.trigger.id.substring(0, 8)}... creado. Pulsa "Procesar Ahora" o espera al cron automático.`,
       });
 
-      // Refrescar estado tras unos segundos
-      setTimeout(() => fetchAnalysisStatus(), 5000);
+      // Empezar polling para actualizar estado del trigger
+      startRepairPolling();
+
     } catch (error: any) {
       console.error('Error scheduling repair:', error);
       toast({
@@ -446,6 +510,90 @@ export function SweepMonitorPanel() {
       setRepairingAnalysis(false);
     }
   };
+
+  // ============ PROCESAR TRIGGERS AHORA (sin esperar cron) ============
+  const handleProcessTriggersNow = async () => {
+    setProcessingTrigger(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { process_triggers_only: true },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: data.triggersProcessed > 0 ? '✅ Triggers procesados' : 'Sin triggers pendientes',
+        description: data.message || `Procesados: ${data.triggersProcessed}`,
+      });
+
+      // Refrescar estado tras procesamiento
+      await fetchLatestRepairTrigger();
+      await fetchAnalysisStatus();
+
+    } catch (error: any) {
+      console.error('Error processing triggers:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo procesar',
+        variant: 'destructive',
+      });
+    } finally {
+      setProcessingTrigger(false);
+    }
+  };
+
+  // ============ POLLING PARA ESTADO DEL TRIGGER ============
+  const startRepairPolling = useCallback(() => {
+    // Limpiar polling anterior
+    if (repairPollingRef.current) {
+      clearInterval(repairPollingRef.current);
+    }
+
+    let pollCount = 0;
+    const maxPolls = 24; // 24 x 5s = 2 minutos máximo
+
+    repairPollingRef.current = setInterval(async () => {
+      pollCount++;
+      
+      await fetchLatestRepairTrigger();
+      
+      // Si el trigger ya no está pending/processing, parar polling
+      const currentTrigger = repairTrigger;
+      if (currentTrigger && (currentTrigger.status === 'completed' || currentTrigger.status === 'failed')) {
+        if (repairPollingRef.current) {
+          clearInterval(repairPollingRef.current);
+          repairPollingRef.current = null;
+        }
+        // Refrescar análisis
+        fetchAnalysisStatus();
+        
+        if (currentTrigger.status === 'completed') {
+          toast({
+            title: '✅ Reparación completada',
+            description: 'El trigger de análisis se procesó exitosamente.',
+          });
+        }
+      }
+      
+      // Parar si excedemos el límite
+      if (pollCount >= maxPolls) {
+        if (repairPollingRef.current) {
+          clearInterval(repairPollingRef.current);
+          repairPollingRef.current = null;
+        }
+      }
+    }, 5000);
+  }, [fetchLatestRepairTrigger, fetchAnalysisStatus, repairTrigger, toast]);
+
+  // Limpiar polling al desmontar
+  useEffect(() => {
+    return () => {
+      if (repairPollingRef.current) {
+        clearInterval(repairPollingRef.current);
+      }
+    };
+  }, []);
 
   // Obtener actividad reciente (últimas 10 empresas procesadas + en proceso)
   const fetchRecentActivity = useCallback(async (sweepId: string) => {
@@ -543,6 +691,7 @@ export function SweepMonitorPanel() {
     fetchStatus();
     fetchAnalysisStatus();
     fetchAPIErrors();
+    fetchLatestRepairTrigger();
   }, []);
 
   // Auto-resume cascade if it was running (survive refresh/tab close)
@@ -571,6 +720,7 @@ export function SweepMonitorPanel() {
     fetchStatus();
     fetchAnalysisStatus();
     fetchAPIErrors();
+    fetchLatestRepairTrigger();
   };
 
   // Reset inmediato de empresas zombis
@@ -1148,7 +1298,7 @@ export function SweepMonitorPanel() {
       {/* ============ NUEVO: PANEL DE ESTADO DE ANÁLISIS V2 ============ */}
       <Card className="border-primary/30 bg-gradient-to-br from-background to-primary/5">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-base flex items-center gap-2">
               <FlaskConical className="h-4 w-4 text-primary" />
               Estado de Análisis V2
@@ -1158,7 +1308,7 @@ export function SweepMonitorPanel() {
                 </Badge>
               )}
             </CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 variant="outline"
                 size="sm"
@@ -1172,15 +1322,30 @@ export function SweepMonitorPanel() {
                 variant="default"
                 size="sm"
                 onClick={handleRepairAnalysis}
-                disabled={repairingAnalysis || loadingAnalysis}
+                disabled={repairingAnalysis || loadingAnalysis || (analysisStatus?.pendingAnalyzable === 0)}
                 className="gap-2"
+                title={analysisStatus?.pendingAnalyzable === 0 ? 'No hay registros analizables pendientes' : ''}
               >
                 {repairingAnalysis ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Wrench className="h-4 w-4" />
                 )}
-                Completar Análisis Pendientes
+                Programar Análisis ({analysisStatus?.pendingAnalyzable || 0})
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleProcessTriggersNow}
+                disabled={processingTrigger}
+                className="gap-2"
+              >
+                {processingTrigger ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                Procesar Ahora
               </Button>
             </div>
           </div>
@@ -1189,6 +1354,45 @@ export function SweepMonitorPanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Estado del trigger de reparación */}
+          {repairTrigger && (
+            <div className={cn(
+              "p-3 rounded-lg border text-sm",
+              repairTrigger.status === 'pending' && "bg-needs-improvement/10 border-needs-improvement/30",
+              repairTrigger.status === 'processing' && "bg-primary/10 border-primary/30",
+              repairTrigger.status === 'completed' && "bg-good/10 border-good/30",
+              repairTrigger.status === 'failed' && "bg-destructive/10 border-destructive/30"
+            )}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {repairTrigger.status === 'pending' && <Clock className="h-4 w-4 text-needs-improvement" />}
+                  {repairTrigger.status === 'processing' && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
+                  {repairTrigger.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-good" />}
+                  {repairTrigger.status === 'failed' && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                  <span className="font-medium">Último trigger:</span>
+                  <Badge variant={
+                    repairTrigger.status === 'completed' ? 'default' :
+                    repairTrigger.status === 'failed' ? 'destructive' :
+                    repairTrigger.status === 'processing' ? 'secondary' : 'outline'
+                  }>
+                    {repairTrigger.status}
+                  </Badge>
+                </div>
+                <span className="text-xs text-muted-foreground font-mono">
+                  {repairTrigger.id.substring(0, 8)}...
+                </span>
+              </div>
+              {repairTrigger.processed_at && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Procesado: {formatDistanceToNow(new Date(repairTrigger.processed_at), { addSuffix: true, locale: es })}
+                </p>
+              )}
+              {repairTrigger.result?.error && (
+                <p className="text-xs text-destructive mt-1">Error: {repairTrigger.result.error}</p>
+              )}
+            </div>
+          )}
+
           {loadingAnalysis && !analysisStatus ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1222,11 +1426,40 @@ export function SweepMonitorPanel() {
                     analysisStatus.percentage < 90 && "[&>div]:bg-needs-improvement"
                   )} 
                 />
-                {analysisStatus.pendingAnalysis > 0 && (
-                  <p className="text-xs text-needs-improvement font-medium">
-                    ⚠️ {analysisStatus.pendingAnalysis} registros pendientes de análisis
-                  </p>
-                )}
+                
+                {/* Métricas separadas: Analizables vs Sin datos */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className={cn(
+                    "p-2 rounded-lg text-center",
+                    analysisStatus.pendingAnalyzable > 0 ? "bg-primary/10" : "bg-muted/50"
+                  )}>
+                    <div className={cn(
+                      "text-xl font-bold",
+                      analysisStatus.pendingAnalyzable > 0 ? "text-primary" : "text-muted-foreground"
+                    )}>
+                      {analysisStatus.pendingAnalyzable}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <Wrench className="h-3 w-3 inline mr-1" />
+                      Analizables (tienen datos)
+                    </div>
+                  </div>
+                  <div className={cn(
+                    "p-2 rounded-lg text-center",
+                    analysisStatus.pendingNoData > 0 ? "bg-needs-improvement/10" : "bg-muted/50"
+                  )}>
+                    <div className={cn(
+                      "text-xl font-bold",
+                      analysisStatus.pendingNoData > 0 ? "text-needs-improvement" : "text-muted-foreground"
+                    )}>
+                      {analysisStatus.pendingNoData}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3 inline mr-1" />
+                      Sin datos (esperando búsqueda)
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Desglose por modelo */}
