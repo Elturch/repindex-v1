@@ -801,7 +801,8 @@ serve(async (req) => {
   }
 
   try {
-    const { ticker, issuer_name } = await req.json();
+    const body = await req.json();
+    const { ticker, issuer_name, single_model, repair_mode } = body;
 
     if (!ticker || !issuer_name) {
       return new Response(
@@ -828,6 +829,87 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SINGLE MODEL MODE: For repair/watchdog - only run ONE specific model
+    // ═══════════════════════════════════════════════════════════════════
+    if (single_model) {
+      console.log(`[rix-search-v2] SINGLE MODEL MODE: ${single_model} for ${ticker}`);
+      const allConfigs = getSearchModelConfigs();
+      const targetConfig = allConfigs.find(c => 
+        c.displayName.toLowerCase() === single_model.toLowerCase() ||
+        c.name.toLowerCase().includes(single_model.toLowerCase())
+      );
+
+      if (!targetConfig) {
+        return new Response(
+          JSON.stringify({ error: `Model not found: ${single_model}` }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Build prompt
+      const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
+      const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
+      const prompt = targetConfig.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
+
+      // For DeepSeek, fetch Tavily context
+      let context: string | undefined;
+      if ((targetConfig as any).usesTavilyRAG) {
+        context = await searchWithTavilyCached(issuer_name, ticker, dateFrom, dateTo);
+      }
+
+      // Call the single model
+      const result = await callSearchModel(targetConfig as any, prompt, context);
+
+      if (!result.success) {
+        console.log(`[rix-search-v2] Single model ${single_model} failed: ${result.error}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            model: single_model,
+            error: result.error,
+            time_ms: result.timeMs 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // In repair mode, update existing record instead of creating new
+      if (repair_mode) {
+        const { data: existingRecord } = await supabase
+          .from('rix_runs_v2')
+          .select('id')
+          .eq('05_ticker', ticker)
+          .eq('02_model_name', targetConfig.displayName)
+          .eq('batch_execution_date', sunday.toISOString())
+          .maybeSingle();
+
+        if (existingRecord) {
+          await supabase
+            .from('rix_runs_v2')
+            .update({
+              [targetConfig.dbColumn]: result.response,
+              search_completed_at: new Date().toISOString(),
+              model_errors: null, // Clear any previous error
+            })
+            .eq('id', existingRecord.id);
+
+          console.log(`[rix-search-v2] Updated existing record ${existingRecord.id} with ${single_model} data`);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          model: single_model,
+          response_length: result.response?.length || 0,
+          time_ms: result.timeMs,
+          repair_mode,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // CRITICAL OPTIMIZATION: Check for existing records BEFORE calling models
@@ -857,7 +939,7 @@ serve(async (req) => {
       );
     }
 
-    // Get model configs (now 5 models, Grok disabled)
+    // Get model configs (now 6 models including Grok)
     const modelConfigs = getSearchModelConfigs();
     console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker}) with ${modelConfigs.length} models`);
 

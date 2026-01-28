@@ -26,7 +26,9 @@ import {
   Key,
   AlertCircle,
   HelpCircle,
-  ExternalLink
+  ExternalLink,
+  Shield,
+  Search
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -126,6 +128,15 @@ interface APIErrorSummary {
   error_rate: number;
   primary_error_type: string;
   last_error_at: string;
+}
+
+// ============ TIPOS PARA CALIDAD DE DATOS ============
+interface QualityReport {
+  latestSweep: string | null;
+  weekStart: string | null;
+  totalReports: number;
+  byStatus: { missing: number; repaired: number; failed_repair: number };
+  byModel: Record<string, { missing: number; repaired: number; failed: number }>;
 }
 
 // ============ CLASIFICADOR DE ERRORES ============
@@ -244,6 +255,12 @@ export function SweepMonitorPanel() {
   const [apiErrors, setApiErrors] = useState<APIErrorRecord[]>([]);
   const [errorSummary, setErrorSummary] = useState<APIErrorSummary[]>([]);
   const [loadingErrors, setLoadingErrors] = useState(false);
+  
+  // ============ ESTADO DE CALIDAD DE DATOS ============
+  const [qualityReport, setQualityReport] = useState<QualityReport | null>(null);
+  const [loadingQuality, setLoadingQuality] = useState(false);
+  const [analyzingQuality, setAnalyzingQuality] = useState(false);
+  const [repairingQuality, setRepairingQuality] = useState(false);
   
   // Estado para cascada 1-empresa-a-la-vez
   const [cascade, setCascade] = useState<CascadeState>({
@@ -508,7 +525,92 @@ export function SweepMonitorPanel() {
     }
   }, []);
 
-  // ============ REPARAR ANÁLISIS PENDIENTES (via CRON trigger) ============
+  // ============ FETCH QUALITY REPORT ============
+  const fetchQualityReport = useCallback(async () => {
+    setLoadingQuality(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-quality-watchdog', {
+        body: { action: 'report' },
+      });
+
+      if (error) throw error;
+      
+      if (data) {
+        setQualityReport({
+          latestSweep: data.latestSweep,
+          weekStart: data.weekStart,
+          totalReports: data.totalReports,
+          byStatus: data.byStatus,
+          byModel: data.byModel,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching quality report:', error);
+    } finally {
+      setLoadingQuality(false);
+    }
+  }, []);
+
+  // ============ ANALYZE QUALITY ============
+  const handleAnalyzeQuality = async () => {
+    setAnalyzingQuality(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-quality-watchdog', {
+        body: { action: 'analyze' },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: '🔍 Análisis completado',
+        description: `${data.totalCompanies} empresas: ${data.completeCompanies} completas (6/6), ${data.partialCompanies} parciales, ${data.failedCompanies} fallidas. ${data.insertedReports} reportes creados.`,
+      });
+
+      // Refrescar el reporte
+      await fetchQualityReport();
+
+    } catch (error: any) {
+      console.error('Error analyzing quality:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo analizar la calidad',
+        variant: 'destructive',
+      });
+    } finally {
+      setAnalyzingQuality(false);
+    }
+  };
+
+  // ============ REPAIR QUALITY ============
+  const handleRepairQuality = async () => {
+    setRepairingQuality(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-quality-watchdog', {
+        body: { action: 'repair', max_repairs: 5 },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: data.repaired > 0 ? '🔧 Reparación completada' : 'Sin cambios',
+        description: `Procesados: ${data.processed}, Reparados: ${data.repaired}, Fallidos: ${data.failedRepairs}`,
+      });
+
+      // Refrescar el reporte
+      await fetchQualityReport();
+
+    } catch (error: any) {
+      console.error('Error repairing quality:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo ejecutar la reparación',
+        variant: 'destructive',
+      });
+    } finally {
+      setRepairingQuality(false);
+    }
+  };
+
   // En lugar de llamar directamente a la Edge Function (bloqueada por extensiones),
   // insertamos un registro en cron_triggers que el orchestrator procesará server-to-server.
   const handleRepairAnalysis = async () => {
@@ -732,6 +834,7 @@ export function SweepMonitorPanel() {
     fetchAnalysisStatus();
     fetchAPIErrors();
     fetchLatestRepairTrigger();
+    fetchQualityReport();
   }, []);
 
   // Auto-resume cascade if it was running (survive refresh/tab close)
@@ -761,6 +864,7 @@ export function SweepMonitorPanel() {
     fetchAnalysisStatus();
     fetchAPIErrors();
     fetchLatestRepairTrigger();
+    fetchQualityReport();
   };
 
   // Reset inmediato de empresas zombis
@@ -1758,6 +1862,194 @@ export function SweepMonitorPanel() {
               <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50 text-good" />
               <p className="text-sm">Sin errores de API detectados</p>
               <p className="text-xs mt-1">Todas las conexiones a IAs funcionando correctamente</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ============ PANEL DE CALIDAD DE DATOS (AGENTE VIGILANTE) ============ */}
+      <Card className="border-primary/40 bg-gradient-to-br from-background to-primary/5">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" />
+              Agente Vigilante de Calidad
+              {qualityReport && qualityReport.totalReports > 0 && (
+                <Badge variant="outline" className="ml-2 text-xs">
+                  {qualityReport.totalReports} problemas detectados
+                </Badge>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchQualityReport}
+                disabled={loadingQuality}
+              >
+                <RefreshCw className={cn("h-4 w-4 mr-2", loadingQuality && "animate-spin")} />
+                Actualizar
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAnalyzeQuality}
+                disabled={analyzingQuality}
+                className="gap-2"
+              >
+                {analyzingQuality ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                Analizar Calidad
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleRepairQuality}
+                disabled={repairingQuality || !qualityReport || qualityReport.byStatus.missing === 0}
+                className="gap-2"
+              >
+                {repairingQuality ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wrench className="h-4 w-4" />
+                )}
+                Reparar Fallidos ({qualityReport?.byStatus.missing || 0})
+              </Button>
+            </div>
+          </div>
+          <CardDescription>
+            Detecta y repara modelos que fallaron silenciosamente durante el barrido semanal
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingQuality && !qualityReport ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : qualityReport && qualityReport.totalReports > 0 ? (
+            <>
+              {/* Resumen por estado */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className={cn(
+                  "p-3 rounded-lg text-center",
+                  qualityReport.byStatus.missing > 0 ? "bg-needs-improvement/10" : "bg-muted/50"
+                )}>
+                  <div className={cn(
+                    "text-2xl font-bold",
+                    qualityReport.byStatus.missing > 0 ? "text-needs-improvement" : "text-muted-foreground"
+                  )}>
+                    {qualityReport.byStatus.missing}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3 inline mr-1" />
+                    Pendientes
+                  </div>
+                </div>
+                <div className={cn(
+                  "p-3 rounded-lg text-center",
+                  qualityReport.byStatus.repaired > 0 ? "bg-good/10" : "bg-muted/50"
+                )}>
+                  <div className={cn(
+                    "text-2xl font-bold",
+                    qualityReport.byStatus.repaired > 0 ? "text-good" : "text-muted-foreground"
+                  )}>
+                    {qualityReport.byStatus.repaired}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    <CheckCircle2 className="h-3 w-3 inline mr-1" />
+                    Reparados
+                  </div>
+                </div>
+                <div className={cn(
+                  "p-3 rounded-lg text-center",
+                  qualityReport.byStatus.failed_repair > 0 ? "bg-destructive/10" : "bg-muted/50"
+                )}>
+                  <div className={cn(
+                    "text-2xl font-bold",
+                    qualityReport.byStatus.failed_repair > 0 ? "text-destructive" : "text-muted-foreground"
+                  )}>
+                    {qualityReport.byStatus.failed_repair}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    <AlertTriangle className="h-3 w-3 inline mr-1" />
+                    Irrecuperables
+                  </div>
+                </div>
+              </div>
+
+              {/* Desglose por modelo */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-muted-foreground">Por Modelo:</div>
+                <div className="grid gap-2">
+                  {Object.entries(qualityReport.byModel)
+                    .filter(([_, stats]) => stats.missing > 0 || stats.repaired > 0 || stats.failed > 0)
+                    .sort(([, a], [, b]) => (b.missing + b.failed) - (a.missing + a.failed))
+                    .map(([model, stats]) => {
+                      const total = stats.missing + stats.repaired + stats.failed;
+                      const repairRate = total > 0 ? Math.round((stats.repaired / total) * 100) : 100;
+                      
+                      return (
+                        <div 
+                          key={model}
+                          className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm w-24">{model}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {stats.missing > 0 && (
+                              <Badge variant="secondary" className="text-xs">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {stats.missing} pend
+                              </Badge>
+                            )}
+                            {stats.repaired > 0 && (
+                              <Badge variant="default" className="text-xs bg-good">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                {stats.repaired} rep
+                              </Badge>
+                            )}
+                            {stats.failed > 0 && (
+                              <Badge variant="destructive" className="text-xs">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                {stats.failed} fail
+                              </Badge>
+                            )}
+                            <span className={cn(
+                              "text-xs font-medium ml-2",
+                              repairRate === 100 && "text-good",
+                              repairRate < 80 && "text-needs-improvement",
+                              repairRate < 50 && "text-destructive"
+                            )}>
+                              {repairRate}% OK
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Info del sweep */}
+              <div className="pt-3 border-t text-xs text-muted-foreground flex items-center gap-4">
+                <div className="flex items-center gap-1">
+                  <Activity className="h-3 w-3" />
+                  <span>Sweep: {qualityReport.latestSweep?.split('T')[0] || 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>Semana: {qualityReport.weekStart || 'N/A'}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Shield className="h-8 w-8 mx-auto mb-2 opacity-50 text-good" />
+              <p className="text-sm">Sin problemas de calidad detectados</p>
+              <p className="text-xs mt-1">Ejecuta "Analizar Calidad" para verificar el barrido actual</p>
             </div>
           )}
         </CardContent>
