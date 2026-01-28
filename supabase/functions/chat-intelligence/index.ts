@@ -597,8 +597,20 @@ interface CompanyData {
 }
 
 /**
- * Intelligent competitor selection with 4-tier prioritization
+ * Result from competitor selection including methodology justification
+ */
+interface CompetitorResult {
+  competitors: CompanyData[];
+  justification: string;
+  tierUsed: string;
+  verifiedCount: number;
+  subsectorCount: number;
+}
+
+/**
+ * Intelligent competitor selection with 5-tier prioritization
  * Prevents irrelevant companies from appearing in bulletins
+ * Returns competitors WITH methodology justification for transparency
  */
 async function getRelevantCompetitors(
   company: CompanyData,
@@ -606,9 +618,14 @@ async function getRelevantCompetitors(
   supabaseClient: any,
   limit: number = 5,
   logPrefix: string = '[Competitors]'
-): Promise<CompanyData[]> {
+): Promise<CompetitorResult> {
   const collected: CompanyData[] = [];
   const usedTickers = new Set<string>([company.ticker]);
+
+  // Tracking variables for methodology justification
+  let tierUsed = 'NONE';
+  let verifiedCount = 0;
+  let subsectorCount = 0;
 
   console.log(`${logPrefix} Getting competitors for ${company.issuer_name} (${company.ticker})`);
   console.log(`${logPrefix} Company sector: ${company.sector_category}, subsector: ${company.subsector}, IBEX: ${company.ibex_family_code}`);
@@ -629,6 +646,34 @@ async function getRelevantCompetitors(
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // TIER 0: Bidirectional verified relationships (also check reverse direction)
+  // ═══════════════════════════════════════════════════════════════════════════
+  try {
+    const { data: reverseRelationships, error: reverseError } = await supabaseClient
+      .from('competitor_relationships')
+      .select('source_ticker, relationship_type, confidence_score')
+      .eq('competitor_ticker', company.ticker)
+      .order('confidence_score', { ascending: false });
+
+    if (!reverseError && reverseRelationships?.length > 0) {
+      console.log(`${logPrefix} TIER 0: Found ${reverseRelationships.length} reverse-direction competitors`);
+      
+      for (const rel of reverseRelationships) {
+        if (collected.length >= limit) break;
+        
+        const competitor = allCompanies.find(c => c.ticker === rel.source_ticker);
+        if (competitor && addCompetitor(competitor)) {
+          verifiedCount++;
+          tierUsed = 'TIER0-BIDIRECTIONAL';
+          console.log(`${logPrefix}   → ${competitor.ticker} (bidirectional verified, ${rel.relationship_type}, score: ${rel.confidence_score})`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} Error fetching reverse competitors:`, e);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // TIER 1: Verified competitors from competitor_relationships table
   // ═══════════════════════════════════════════════════════════════════════════
   try {
@@ -645,8 +690,9 @@ async function getRelevantCompetitors(
         if (collected.length >= limit) break;
         
         const competitor = allCompanies.find(c => c.ticker === rel.competitor_ticker);
-        if (competitor) {
-          addCompetitor(competitor);
+        if (competitor && addCompetitor(competitor)) {
+          verifiedCount++;
+          if (tierUsed === 'NONE') tierUsed = 'TIER1-VERIFIED';
           console.log(`${logPrefix}   → ${competitor.ticker} (verified, ${rel.relationship_type}, score: ${rel.confidence_score})`);
         }
       }
@@ -656,8 +702,9 @@ async function getRelevantCompetitors(
   }
 
   if (collected.length >= limit) {
-    console.log(`${logPrefix} Returning ${collected.length} competitors from TIER 1`);
-    return collected.slice(0, limit);
+    console.log(`${logPrefix} Returning ${collected.length} competitors from TIER 0/1 (verified)`);
+    const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
+    return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -674,13 +721,16 @@ async function getRelevantCompetitors(
     for (const c of tier2) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
+        subsectorCount++;
+        if (tierUsed === 'NONE') tierUsed = 'TIER2-SUBSECTOR-IBEX';
         console.log(`${logPrefix}   → ${c.ticker} (subsector: ${c.subsector}, IBEX: ${c.ibex_family_code})`);
       }
     }
   }
 
   if (collected.length >= limit) {
-    return collected.slice(0, limit);
+    const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
+    return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -696,13 +746,16 @@ async function getRelevantCompetitors(
     for (const c of tier3) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
+        subsectorCount++;
+        if (tierUsed === 'NONE') tierUsed = 'TIER3-SUBSECTOR';
         console.log(`${logPrefix}   → ${c.ticker} (subsector: ${c.subsector})`);
       }
     }
   }
 
   if (collected.length >= limit) {
-    return collected.slice(0, limit);
+    const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
+    return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -719,13 +772,15 @@ async function getRelevantCompetitors(
     for (const c of tier4) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
+        if (tierUsed === 'NONE') tierUsed = 'TIER4-SECTOR-IBEX';
         console.log(`${logPrefix}   → ${c.ticker} (sector: ${c.sector_category}, IBEX: ${c.ibex_family_code})`);
       }
     }
   }
 
   if (collected.length >= limit) {
-    return collected.slice(0, limit);
+    const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
+    return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -767,13 +822,73 @@ async function getRelevantCompetitors(
     for (const c of tier5) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
+        if (tierUsed === 'NONE') tierUsed = 'TIER5-SECTOR';
         console.log(`${logPrefix}   → ${c.ticker} (sector: ${c.sector_category})`);
       }
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TIER 6: FALLBACK - If still no competitors, use top IBEX35 companies
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (collected.length === 0) {
+    console.warn(`${logPrefix} NO COMPETITORS FOUND for ${company.ticker} - using fallback IBEX35`);
+    
+    const ibex35Fallback = allCompanies
+      .filter(c => c.ibex_family_code === 'IBEX35' && c.ticker !== company.ticker)
+      .slice(0, limit);
+    
+    for (const c of ibex35Fallback) {
+      addCompetitor(c);
+    }
+    
+    tierUsed = 'TIER6-FALLBACK-IBEX35';
+  }
+
   console.log(`${logPrefix} Final competitor list (${collected.length}): ${collected.map(c => c.ticker).join(', ')}`);
-  return collected.slice(0, limit);
+  const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
+  return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
+}
+
+/**
+ * Build human-readable justification for competitor selection methodology
+ */
+function buildCompetitorJustification(
+  tierUsed: string,
+  verifiedCount: number,
+  subsectorCount: number,
+  company: CompanyData
+): string {
+  const parts: string[] = [];
+  
+  // Explain the tier used
+  const tierExplanations: Record<string, string> = {
+    'TIER0-BIDIRECTIONAL': 'relaciones bidireccionales verificadas en base de datos',
+    'TIER1-VERIFIED': 'relaciones directas verificadas en base de datos',
+    'TIER2-SUBSECTOR-IBEX': `mismo subsector (${company.subsector}) y familia IBEX (${company.ibex_family_code})`,
+    'TIER3-SUBSECTOR': `mismo subsector (${company.subsector})`,
+    'TIER4-SECTOR-IBEX': `mismo sector (${company.sector_category}) y familia IBEX (${company.ibex_family_code})`,
+    'TIER5-SECTOR': `mismo sector (${company.sector_category}) con filtrado de incompatibilidades`,
+    'TIER6-FALLBACK-IBEX35': 'fallback a empresas del IBEX-35 (sin competidores directos identificados)',
+    'NONE': 'metodología no determinada',
+  };
+
+  parts.push(`Competidores seleccionados mediante: ${tierExplanations[tierUsed] || tierUsed}.`);
+  
+  if (verifiedCount > 0) {
+    parts.push(`${verifiedCount} competidores verificados en base de datos.`);
+  }
+  
+  if (subsectorCount > 0) {
+    parts.push(`${subsectorCount} competidores del mismo subsector (${company.subsector}).`);
+  }
+  
+  // Add warning if using fallback
+  if (tierUsed.includes('FALLBACK')) {
+    parts.push('⚠️ NOTA: Esta empresa no tiene competidores verificados ni subsector definido - las comparativas deben interpretarse con cautela.');
+  }
+  
+  return parts.join(' ');
 }
 
 // =============================================================================
@@ -2117,20 +2232,109 @@ async function handleBulletinRequest(
 
   // 2. Get competitors using intelligent prioritization system (GUARDRAIL)
   const competitorLimit = depthLevel === 'quick' ? 5 : 8;
-  const competitors = await getRelevantCompetitors(
+  const competitorResult = await getRelevantCompetitors(
     matchedCompany,
     companiesCache || [],
     supabaseClient,
     competitorLimit,
     logPrefix
   );
+  const competitors = competitorResult.competitors;
 
   console.log(`${logPrefix} Smart competitor selection: ${competitors.map(c => c.ticker).join(', ')}`);
+  console.log(`${logPrefix} Competitor methodology: ${competitorResult.tierUsed} (verified: ${competitorResult.verifiedCount}, subsector: ${competitorResult.subsectorCount})`);
 
   // 3. Get all tickers to fetch (company + competitors)
   const allTickers = [matchedCompany.ticker, ...competitors.map(c => c.ticker)];
 
-  // 4. Fetch 4 weeks of data for company and competitors with ALL 6 AI models
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 4. VECTOR STORE SEARCH - Qualitative context from AI explanations
+  // ═══════════════════════════════════════════════════════════════════════════
+  let vectorStoreContext = '';
+  const vectorMatchCount = depthLevel === 'quick' ? 10 : depthLevel === 'exhaustive' ? 30 : 20;
+  
+  try {
+    // Generate embedding for the company name
+    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: `${matchedCompany.issuer_name} ${matchedCompany.ticker} reputación corporativa análisis`
+      })
+    });
+
+    if (embeddingResponse.ok) {
+      const embeddingData = await embeddingResponse.json();
+      const queryEmbedding = embeddingData.data?.[0]?.embedding;
+
+      if (queryEmbedding) {
+        // Search Vector Store for relevant documents
+        const { data: vectorDocs, error: vectorError } = await supabaseClient.rpc('match_documents', {
+          query_embedding: queryEmbedding,
+          match_count: vectorMatchCount,
+          filter: {} // Could filter by metadata->ticker if indexed
+        });
+
+        if (!vectorError && vectorDocs?.length > 0) {
+          // Filter results to only include documents about this company
+          const relevantDocs = vectorDocs.filter((doc: any) => {
+            const content = doc.content?.toLowerCase() || '';
+            const metadata = doc.metadata || {};
+            return content.includes(matchedCompany.ticker.toLowerCase()) ||
+                   content.includes(matchedCompany.issuer_name.toLowerCase()) ||
+                   metadata.ticker === matchedCompany.ticker;
+          });
+
+          if (relevantDocs.length > 0) {
+            console.log(`${logPrefix} Vector Store: Found ${relevantDocs.length} relevant documents (from ${vectorDocs.length} total)`);
+            
+            vectorStoreContext = `\n📚 ANÁLISIS CUALITATIVOS DE IAs (Vector Store - ${relevantDocs.length} documentos):\n`;
+            relevantDocs.slice(0, 10).forEach((doc: any, i: number) => {
+              const content = doc.content?.substring(0, 600) || '';
+              const similarity = doc.similarity ? ` [Similaridad: ${(doc.similarity * 100).toFixed(1)}%]` : '';
+              vectorStoreContext += `\n[Fuente ${i + 1}]${similarity}:\n${content}...\n`;
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} Vector Store search failed:`, e);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 5. CORPORATE NEWS - Recent news about the company
+  // ═══════════════════════════════════════════════════════════════════════════
+  let corporateNewsContext = '';
+  
+  try {
+    const { data: corporateNews, error: newsError } = await supabaseClient
+      .from('corporate_news')
+      .select('headline, lead_paragraph, published_date, category')
+      .eq('ticker', matchedCompany.ticker)
+      .order('published_date', { ascending: false })
+      .limit(depthLevel === 'quick' ? 3 : 5);
+
+    if (!newsError && corporateNews?.length > 0) {
+      console.log(`${logPrefix} Corporate News: Found ${corporateNews.length} recent articles`);
+      
+      corporateNewsContext = `\n📰 NOTICIAS CORPORATIVAS RECIENTES (${corporateNews.length}):\n`;
+      corporateNews.forEach((news: any, i: number) => {
+        corporateNewsContext += `${i + 1}. [${news.published_date || 'Sin fecha'}] ${news.headline}\n`;
+        if (news.lead_paragraph) {
+          corporateNewsContext += `   ${news.lead_paragraph.substring(0, 200)}...\n`;
+        }
+      });
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} Corporate news fetch failed:`, e);
+  }
+
+  // 6. Fetch 4 weeks of data for company and competitors with ALL 6 AI models
   // Uses unified helper to combine rix_runs (legacy) + rix_runs_v2 (Grok, Qwen)
   const rixData = await fetchUnifiedRixData({
     supabaseClient,
@@ -2171,7 +2375,7 @@ async function handleBulletinRequest(
 
   console.log(`${logPrefix} Fetched ${rixData?.length || 0} RIX records for bulletin`);
 
-  // 5. Organize data by week and company
+  // 7. Organize data by week and company
   const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
   const uniquePeriods = [...new Set(rixData?.map(getPeriodKey) || [])]
     .sort((a, b) => b.split('|')[1].localeCompare(a.split('|')[1]))
@@ -2179,7 +2383,7 @@ async function handleBulletinRequest(
 
   console.log(`${logPrefix} Unique periods found: ${uniquePeriods.length}`);
 
-  // 6. Build bulletin context
+  // 8. Build bulletin context
   let bulletinContext = '';
 
   // Company info
@@ -2187,15 +2391,30 @@ async function handleBulletinRequest(
   bulletinContext += `- Nombre: ${matchedCompany.issuer_name}\n`;
   bulletinContext += `- Ticker: ${matchedCompany.ticker}\n`;
   bulletinContext += `- Sector: ${matchedCompany.sector_category || 'No especificado'}\n`;
+  bulletinContext += `- Subsector: ${matchedCompany.subsector || 'No definido'}\n`;
   bulletinContext += `- Categoría IBEX: ${matchedCompany.ibex_family_code || 'No IBEX'}\n`;
   bulletinContext += `- Cotiza en bolsa: ${matchedCompany.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
 
-  // Competitors info
-  bulletinContext += `🏢 COMPETIDORES (${competitors.length}):\n`;
+  // Competitors info WITH METHODOLOGY JUSTIFICATION
+  bulletinContext += `🏢 COMPETIDORES (${competitors.length}) - METODOLOGÍA DE SELECCIÓN:\n`;
+  bulletinContext += `${competitorResult.justification}\n\n`;
   competitors.forEach((c, idx) => {
-    bulletinContext += `${idx + 1}. ${c.issuer_name} (${c.ticker}) - ${c.sector_category || 'Sin sector'}\n`;
+    bulletinContext += `${idx + 1}. ${c.issuer_name} (${c.ticker})\n`;
+    bulletinContext += `   - Sector: ${c.sector_category || 'Sin sector'} | Subsector: ${c.subsector || 'N/D'}\n`;
   });
   bulletinContext += '\n';
+
+  // Add Vector Store context if available
+  if (vectorStoreContext) {
+    bulletinContext += vectorStoreContext;
+    bulletinContext += '\n';
+  }
+
+  // Add Corporate News context if available
+  if (corporateNewsContext) {
+    bulletinContext += corporateNewsContext;
+    bulletinContext += '\n';
+  }
 
   // Data by week with DETAILED metrics
   uniquePeriods.forEach((period, weekIdx) => {
@@ -2359,7 +2578,13 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               companyName: matchedCompany.issuer_name,
               ticker: matchedCompany.ticker,
               sector: matchedCompany.sector_category,
+              subsector: matchedCompany.subsector,
               competitorsCount: competitors.length,
+              competitorMethodology: competitorResult.tierUsed,
+              competitorJustification: competitorResult.justification,
+              verifiedCompetitors: competitorResult.verifiedCount,
+              vectorStoreDocsUsed: vectorStoreContext ? true : false,
+              corporateNewsUsed: corporateNewsContext ? true : false,
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
             }
@@ -2667,7 +2892,13 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         companyName: matchedCompany.issuer_name,
         ticker: matchedCompany.ticker,
         sector: matchedCompany.sector_category,
+        subsector: matchedCompany.subsector,
         competitorsCount: competitors.length,
+        competitorMethodology: competitorResult.tierUsed,
+        competitorJustification: competitorResult.justification,
+        verifiedCompetitors: competitorResult.verifiedCount,
+        vectorStoreDocsUsed: vectorStoreContext ? true : false,
+        corporateNewsUsed: corporateNewsContext ? true : false,
         weeksAnalyzed: uniquePeriods.length,
         dataPointsUsed: rixData?.length || 0,
         aiProvider: result.provider,
