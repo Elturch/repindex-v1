@@ -766,6 +766,48 @@ export type Database = {
         }
         Relationships: []
       }
+      data_quality_reports: {
+        Row: {
+          created_at: string | null
+          error_type: string | null
+          id: string
+          model_name: string
+          original_error: string | null
+          repair_attempts: number | null
+          repaired_at: string | null
+          status: string
+          sweep_id: string
+          ticker: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string | null
+          error_type?: string | null
+          id?: string
+          model_name: string
+          original_error?: string | null
+          repair_attempts?: number | null
+          repaired_at?: string | null
+          status?: string
+          sweep_id: string
+          ticker: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string | null
+          error_type?: string | null
+          id?: string
+          model_name?: string
+          original_error?: string | null
+          repair_attempts?: number | null
+          repaired_at?: string | null
+          status?: string
+          sweep_id?: string
+          ticker?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           content: string | null

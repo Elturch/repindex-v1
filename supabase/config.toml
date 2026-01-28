@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.admin-cron-triggers]
 verify_jwt = false
+
+[functions.rix-quality-watchdog]
+verify_jwt = false
