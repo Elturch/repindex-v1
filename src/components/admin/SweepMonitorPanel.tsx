@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   RefreshCw, 
@@ -21,10 +22,16 @@ import {
   Skull,
   Timer,
   FlaskConical,
-  Wrench
+  Wrench,
+  Key,
+  AlertCircle,
+  HelpCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 // ============ TIPOS PARA ESTADO DE ANÁLISIS V2 ============
 interface AnalysisModelStatus {
@@ -82,6 +89,82 @@ interface RecentActivity {
   completed_at: string | null;
 }
 
+// ============ TIPOS PARA ERRORES DE API ============
+interface APIErrorRecord {
+  id: string;
+  ticker: string;
+  issuer_name: string;
+  model_name: string;
+  error_source: string;
+  error_message: string;
+  error_type: 'auth' | 'rate_limit' | 'timeout' | 'payload' | 'connection' | 'unknown';
+  created_at: string;
+}
+
+interface APIErrorSummary {
+  model: string;
+  total_errors: number;
+  total_records: number;
+  error_rate: number;
+  primary_error_type: string;
+  last_error_at: string;
+}
+
+// ============ CLASIFICADOR DE ERRORES ============
+function classifyError(message: string): APIErrorRecord['error_type'] {
+  if (!message) return 'unknown';
+  const lowerMsg = message.toLowerCase();
+  
+  if (lowerMsg.includes('401') || lowerMsg.includes('unauthorized') || lowerMsg.includes('api key') || lowerMsg.includes('authentication')) {
+    return 'auth';
+  }
+  if (lowerMsg.includes('429') || lowerMsg.includes('rate limit') || lowerMsg.includes('quota') || lowerMsg.includes('too many requests')) {
+    return 'rate_limit';
+  }
+  if (lowerMsg.includes('timeout') || lowerMsg.includes('timed out') || lowerMsg.includes('aborted') || lowerMsg.includes('deadline')) {
+    return 'timeout';
+  }
+  if (lowerMsg.includes('422') || lowerMsg.includes('400') || lowerMsg.includes('deserialize') || lowerMsg.includes('json') || lowerMsg.includes('parameters') || lowerMsg.includes('invalid')) {
+    return 'payload';
+  }
+  if (lowerMsg.includes('connection') || lowerMsg.includes('network') || lowerMsg.includes('fetch') || lowerMsg.includes('econnrefused') || lowerMsg.includes('reading a body')) {
+    return 'connection';
+  }
+  return 'unknown';
+}
+
+// ============ ICONOS DE TIPO DE ERROR ============
+function getErrorTypeIcon(type: APIErrorRecord['error_type']) {
+  switch (type) {
+    case 'auth':
+      return <><Key className="h-3 w-3 inline mr-1" /> Auth</>;
+    case 'rate_limit':
+      return <><Timer className="h-3 w-3 inline mr-1" /> Rate Limit</>;
+    case 'timeout':
+      return <><Clock className="h-3 w-3 inline mr-1" /> Timeout</>;
+    case 'payload':
+      return <><AlertCircle className="h-3 w-3 inline mr-1" /> Payload</>;
+    case 'connection':
+      return <><Zap className="h-3 w-3 inline mr-1" /> Conexión</>;
+    default:
+      return <><HelpCircle className="h-3 w-3 inline mr-1" /> Desconocido</>;
+  }
+}
+
+function getErrorTypeBadgeVariant(type: APIErrorRecord['error_type']): 'destructive' | 'secondary' | 'outline' {
+  switch (type) {
+    case 'auth':
+    case 'payload':
+      return 'destructive';
+    case 'rate_limit':
+    case 'timeout':
+      return 'secondary';
+    default:
+      return 'outline';
+  }
+}
+
+
 const CASCADE_STORAGE_KEY = 'repindex_rix_v2_cascade_state';
 
 function loadCascadeFromStorage(): Partial<CascadeState> | null {
@@ -133,6 +216,11 @@ export function SweepMonitorPanel() {
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [repairingAnalysis, setRepairingAnalysis] = useState(false);
+  
+  // ============ ESTADO DE ERRORES DE API ============
+  const [apiErrors, setApiErrors] = useState<APIErrorRecord[]>([]);
+  const [errorSummary, setErrorSummary] = useState<APIErrorSummary[]>([]);
+  const [loadingErrors, setLoadingErrors] = useState(false);
   
   // Estado para cascada 1-empresa-a-la-vez
   const [cascade, setCascade] = useState<CascadeState>({
@@ -228,6 +316,95 @@ export function SweepMonitorPanel() {
       console.error('Error fetching analysis status:', error);
     } finally {
       setLoadingAnalysis(false);
+    }
+  }, []);
+
+  // ============ FETCH ERRORES DE API ============
+  const fetchAPIErrors = useCallback(async () => {
+    setLoadingErrors(true);
+    try {
+      // Obtener registros con errores de las últimas semanas
+      const { data, error } = await supabase
+        .from('rix_runs_v2')
+        .select('id, "02_model_name", "03_target_name", "05_ticker", model_errors, created_at')
+        .not('model_errors', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      // Filtrar solo registros con errores reales (no objetos vacíos)
+      const recordsWithErrors = data?.filter(record => {
+        const errors = record.model_errors as Record<string, string> | null;
+        return errors && Object.keys(errors).length > 0;
+      }) || [];
+
+      // Procesar y clasificar errores
+      const processed: APIErrorRecord[] = recordsWithErrors.flatMap(record => {
+        const errors = record.model_errors as Record<string, string>;
+        return Object.entries(errors)
+          .filter(([key, value]) => !key.endsWith('_timestamp') && typeof value === 'string')
+          .map(([source, message]) => ({
+            id: record.id,
+            ticker: record['05_ticker'] || 'N/A',
+            issuer_name: record['03_target_name'] || 'Desconocido',
+            model_name: record['02_model_name'] || 'Unknown',
+            error_source: source,
+            error_message: message,
+            error_type: classifyError(message),
+            created_at: record.created_at,
+          }));
+      });
+
+      setApiErrors(processed);
+      
+      // Calcular resumen por modelo
+      const modelCounts = new Map<string, { errors: number; total: number; types: Map<string, number>; lastError: string }>();
+      
+      // Primero contar errores por modelo
+      processed.forEach(err => {
+        const current = modelCounts.get(err.model_name) || { 
+          errors: 0, 
+          total: 0, 
+          types: new Map<string, number>(),
+          lastError: err.created_at 
+        };
+        current.errors++;
+        current.types.set(err.error_type, (current.types.get(err.error_type) || 0) + 1);
+        if (new Date(err.created_at) > new Date(current.lastError)) {
+          current.lastError = err.created_at;
+        }
+        modelCounts.set(err.model_name, current);
+      });
+
+      // Convertir a array de resumen
+      const summary: APIErrorSummary[] = Array.from(modelCounts.entries()).map(([model, data]) => {
+        // Encontrar el tipo de error más común
+        let primaryType = 'unknown';
+        let maxCount = 0;
+        data.types.forEach((count, type) => {
+          if (count > maxCount) {
+            maxCount = count;
+            primaryType = type;
+          }
+        });
+
+        return {
+          model,
+          total_errors: data.errors,
+          total_records: data.errors, // Simplificado
+          error_rate: 0, // Se calcularía con total de registros
+          primary_error_type: primaryType,
+          last_error_at: data.lastError,
+        };
+      }).sort((a, b) => b.total_errors - a.total_errors);
+
+      setErrorSummary(summary);
+
+    } catch (error) {
+      console.error('Error fetching API errors:', error);
+    } finally {
+      setLoadingErrors(false);
     }
   }, []);
 
@@ -390,6 +567,7 @@ export function SweepMonitorPanel() {
   useEffect(() => {
     fetchStatus();
     fetchAnalysisStatus();
+    fetchAPIErrors();
   }, []);
 
   // Auto-resume cascade if it was running (survive refresh/tab close)
@@ -417,6 +595,7 @@ export function SweepMonitorPanel() {
     setRefreshing(true);
     fetchStatus();
     fetchAnalysisStatus();
+    fetchAPIErrors();
   };
 
   // Reset inmediato de empresas zombis
@@ -1159,6 +1338,157 @@ export function SweepMonitorPanel() {
             <div className="text-center py-8 text-muted-foreground">
               <FlaskConical className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">No hay datos de análisis disponibles</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ============ PANEL DE ERRORES DE API ============ */}
+      <Card className="border-destructive/30 bg-gradient-to-br from-background to-destructive/5">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              Errores de API - Modelos IA
+              {errorSummary.length > 0 && (
+                <Badge variant="destructive" className="ml-2 text-xs">
+                  {apiErrors.length} errores
+                </Badge>
+              )}
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchAPIErrors}
+              disabled={loadingErrors}
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-2", loadingErrors && "animate-spin")} />
+              Actualizar
+            </Button>
+          </div>
+          <CardDescription>
+            Errores de conexión a APIs de IA detectados en registros recientes
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingErrors && apiErrors.length === 0 ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : apiErrors.length > 0 ? (
+            <>
+              {/* Resumen por modelo */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-muted-foreground">Resumen por Modelo:</div>
+                <div className="grid gap-2">
+                  {errorSummary.map((summary) => (
+                    <div 
+                      key={summary.model}
+                      className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{summary.model}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={summary.total_errors > 5 ? 'destructive' : 'secondary'}>
+                          {summary.total_errors} {summary.total_errors === 1 ? 'error' : 'errores'}
+                        </Badge>
+                        <Badge variant={getErrorTypeBadgeVariant(summary.primary_error_type as APIErrorRecord['error_type'])}>
+                          {getErrorTypeIcon(summary.primary_error_type as APIErrorRecord['error_type'])}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tabla de errores recientes */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-muted-foreground">Errores Recientes:</div>
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="w-24">Modelo</TableHead>
+                        <TableHead className="w-20">Ticker</TableHead>
+                        <TableHead className="w-24">Tipo</TableHead>
+                        <TableHead>Error</TableHead>
+                        <TableHead className="w-28">Fecha</TableHead>
+                        <TableHead className="w-16">Acción</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {apiErrors.slice(0, 10).map((error, idx) => (
+                        <TableRow key={`${error.id}-${error.error_source}-${idx}`}>
+                          <TableCell>
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {error.model_name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">{error.ticker}</TableCell>
+                          <TableCell>
+                            <Badge variant={getErrorTypeBadgeVariant(error.error_type)} className="text-xs">
+                              {getErrorTypeIcon(error.error_type)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell 
+                            className="max-w-xs truncate text-xs text-muted-foreground" 
+                            title={error.error_message}
+                          >
+                            {error.error_message.length > 80 
+                              ? `${error.error_message.substring(0, 80)}...` 
+                              : error.error_message}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(error.created_at), { 
+                              addSuffix: true, 
+                              locale: es 
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-7 w-7 p-0"
+                              onClick={() => window.open(`/rix/${error.id}`, '_blank')}
+                              title="Ver registro"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {apiErrors.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Mostrando 10 de {apiErrors.length} errores
+                  </p>
+                )}
+              </div>
+
+              {/* Diagnóstico rápido */}
+              {errorSummary.some(s => s.primary_error_type === 'payload') && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />
+                    <div>
+                      <p className="font-medium text-destructive">Diagnóstico: Errores de Payload</p>
+                      <p className="text-muted-foreground text-xs mt-1">
+                        Hay errores HTTP 422/400 que indican problemas con la estructura de las peticiones. 
+                        Revisa el esquema de tools/parámetros enviados a las APIs.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50 text-good" />
+              <p className="text-sm">Sin errores de API detectados</p>
+              <p className="text-xs mt-1">Todas las conexiones a IAs funcionando correctamente</p>
             </div>
           )}
         </CardContent>
