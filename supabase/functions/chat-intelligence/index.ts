@@ -4133,17 +4133,17 @@ REGLAS CRÍTICAS PARA ANÁLISIS ESTADÍSTICO:
    de correlación entre métricas RIX y precios"
 
 EJEMPLO DE RESPUESTA CORRECTA:
-"Basándome en el análisis de correlación de Pearson con ${dataProfile.totalRecords} 
-registros y ${dataProfile.companiesWithPrices} empresas cotizadas:
+"Basándome en el análisis de correlación de Pearson con [totalRecords] 
+registros y [companiesWithPrices] empresas cotizadas:
 
 **Métricas con mayor poder predictivo sobre precio:**
 1. CEM (Comunicación/Engagement): r = +0.187, p < 0.05 ✓
 2. RMM (Riesgo/Crisis): r = -0.142, p < 0.05 ✓
 
-El modelo explica aproximadamente un ${rSquared*100}% de la varianza en precios.
+El modelo explica aproximadamente un [rSquared]% de la varianza en precios.
 
 ⚠️ **Limitaciones importantes:**
-- Serie temporal limitada (${dataProfile.weeksAnalyzed} semanas)
+- Serie temporal limitada ([weeksAnalyzed] semanas)
 - Correlación no implica causalidad
 - Factores externos de mercado no capturados"
 
