@@ -406,108 +406,170 @@ export function ChatProvider({ children }: ChatProviderProps) {
           throw new Error(errorText || `HTTP ${response.status}`);
         }
 
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body for streaming');
-        }
+        // =========================================================================
+        // CONTENT-TYPE DETECTION: Handle both SSE and JSON responses
+        // =========================================================================
+        const contentType = response.headers.get('content-type') || '';
+        console.log('[ChatContext] Response Content-Type:', contentType);
 
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let accumulatedContent = '';
-        let finalMetadata: any = null;
-        let suggestedQuestions: string[] = [];
-        let drumrollQuestion: DrumrollQuestion | null = null;
+        // If backend returns JSON instead of SSE, handle it as non-streaming
+        if (contentType.includes('application/json')) {
+          console.log('[ChatContext] Received JSON response (fallback mode)');
+          const data = await response.json();
+          
+          // Update the streaming message with the actual content
+          setMessages(prev => {
+            const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.content = data.answer || '';
+              lastMsg.isStreaming = false;
+              lastMsg.suggestedQuestions = data.suggestedQuestions || [];
+              lastMsg.drumrollQuestion = data.drumrollQuestion || null;
+              lastMsg.metadata = {
+                type: data.metadata?.type || 'standard',
+                companyName: data.metadata?.companyName,
+                documentsFound: data.metadata?.documentsFound,
+                structuredDataFound: data.metadata?.structuredDataFound,
+                depthLevel: options?.depthLevel || 'complete',
+                questionCategory: data.metadata?.questionCategory,
+                methodology: data.metadata?.methodology || {
+                  hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
+                  modelsUsed: data.metadata?.modelsUsed || [],
+                  periodFrom: data.metadata?.periodFrom,
+                  periodTo: data.metadata?.periodTo,
+                  observationsCount: data.metadata?.structuredDataFound || 0,
+                  divergenceLevel: data.metadata?.divergenceLevel || 'unknown',
+                  divergencePoints: data.metadata?.divergencePoints || 0,
+                  uniqueCompanies: data.metadata?.uniqueCompanies,
+                  uniqueWeeks: data.metadata?.uniqueWeeks,
+                },
+              };
+            }
+            return updated;
+          });
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          toast({
+            title: "Respuesta recibida",
+            description: `${data.metadata?.documentsFound || 0} documentos analizados`,
+          });
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+        } else {
+          // =========================================================================
+          // SSE STREAMING MODE: Parse event stream
+          // =========================================================================
+          console.log('[ChatContext] Received SSE stream');
+          
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error('No response body for streaming');
+          }
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let accumulatedContent = '';
+          let finalMetadata: any = null;
+          let suggestedQuestions: string[] = [];
+          let drumrollQuestion: DrumrollQuestion | null = null;
 
-              try {
-                const parsed = JSON.parse(data);
-                
-                if (parsed.type === 'chunk' && parsed.text) {
-                  accumulatedContent += parsed.text;
-                  // Update the last message with accumulated content
-                  setMessages(prev => {
-                    const updated = [...prev];
-                    const lastMsg = updated[updated.length - 1];
-                    if (lastMsg?.role === 'assistant') {
-                      lastMsg.content = accumulatedContent;
-                    }
-                    return updated;
-                  });
-                } else if (parsed.type === 'done') {
-                  // Capture final metadata
-                  suggestedQuestions = parsed.suggestedQuestions || [];
-                  drumrollQuestion = parsed.drumrollQuestion || null;
-                  finalMetadata = parsed.metadata || {};
-                } else if (parsed.type === 'error') {
-                  throw new Error(parsed.error || 'Streaming error');
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              // Skip empty lines and keep-alive comments
+              if (!line.trim() || line.startsWith(':')) continue;
+              
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+
+                try {
+                  const parsed = JSON.parse(data);
+                  
+                  if (parsed.type === 'chunk' && parsed.text) {
+                    accumulatedContent += parsed.text;
+                    // Update the last message with accumulated content
+                    setMessages(prev => {
+                      const updated = [...prev];
+                      const lastMsg = updated[updated.length - 1];
+                      if (lastMsg?.role === 'assistant') {
+                        lastMsg.content = accumulatedContent;
+                      }
+                      return updated;
+                    });
+                  } else if (parsed.type === 'done') {
+                    // Capture final metadata
+                    suggestedQuestions = parsed.suggestedQuestions || [];
+                    drumrollQuestion = parsed.drumrollQuestion || null;
+                    finalMetadata = parsed.metadata || {};
+                  } else if (parsed.type === 'error') {
+                    throw new Error(parsed.error || 'Streaming error');
+                  }
+                } catch {
+                  // Ignore parse errors for incomplete chunks
                 }
-              } catch {
-                // Ignore parse errors for incomplete chunks
               }
             }
           }
-        }
 
-        // Mark streaming as complete and add final metadata including methodology
-        setMessages(prev => {
-          const updated = [...prev];
-          const lastMsg = updated[updated.length - 1];
-          if (lastMsg?.role === 'assistant') {
-            lastMsg.isStreaming = false;
-            lastMsg.suggestedQuestions = suggestedQuestions;
-            lastMsg.drumrollQuestion = drumrollQuestion;
-            lastMsg.metadata = {
-              type: finalMetadata?.type || 'standard',
-              companyName: finalMetadata?.companyName,
-              documentsFound: finalMetadata?.documentsFound,
-              structuredDataFound: finalMetadata?.structuredDataFound,
-              depthLevel: options?.depthLevel || 'complete',
-              questionCategory: finalMetadata?.questionCategory,
-              // Methodology metadata for "Radar Reputacional" validation sheet
-              methodology: finalMetadata?.methodology || {
-                hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
-                modelsUsed: finalMetadata?.modelsUsed || [],
-                periodFrom: finalMetadata?.periodFrom,
-                periodTo: finalMetadata?.periodTo,
-                observationsCount: finalMetadata?.structuredDataFound || 0,
-                divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
-                divergencePoints: finalMetadata?.divergencePoints || 0,
-                uniqueCompanies: finalMetadata?.uniqueCompanies,
-                uniqueWeeks: finalMetadata?.uniqueWeeks,
-              },
-            };
+          // Safety check: if stream ended with empty content, show error
+          if (!accumulatedContent.trim()) {
+            console.error('[ChatContext] Stream completed but no content received');
+            toast({
+              title: "Error en la respuesta",
+              description: "No se recibió contenido del asistente. Intenta de nuevo.",
+              variant: "destructive",
+            });
+            // Remove the empty assistant message
+            setMessages(prev => prev.filter((_, idx) => idx !== prev.length - 1));
+            return;
           }
-          return updated;
-        });
 
-        // Save assistant message to DB
-        await supabase.from('chat_intelligence_sessions').insert({
-          session_id: sessionId,
-          role: 'assistant',
-          content: accumulatedContent,
-          suggested_questions: suggestedQuestions,
-          documents_found: finalMetadata?.documentsFound,
-          structured_data_found: finalMetadata?.structuredDataFound,
-          user_id: currentUserId,
-          conversation_id: convId,
-        });
+          // Mark streaming as complete and add final metadata including methodology
+          setMessages(prev => {
+            const updated = [...prev];
+            const lastMsg = updated[updated.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.isStreaming = false;
+              lastMsg.suggestedQuestions = suggestedQuestions;
+              lastMsg.drumrollQuestion = drumrollQuestion;
+              lastMsg.metadata = {
+                type: finalMetadata?.type || 'standard',
+                companyName: finalMetadata?.companyName,
+                documentsFound: finalMetadata?.documentsFound,
+                structuredDataFound: finalMetadata?.structuredDataFound,
+                depthLevel: options?.depthLevel || 'complete',
+                questionCategory: finalMetadata?.questionCategory,
+                // Methodology metadata for "Radar Reputacional" validation sheet
+                methodology: finalMetadata?.methodology || {
+                  hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
+                  modelsUsed: finalMetadata?.modelsUsed || [],
+                  periodFrom: finalMetadata?.periodFrom,
+                  periodTo: finalMetadata?.periodTo,
+                  observationsCount: finalMetadata?.structuredDataFound || 0,
+                  divergenceLevel: finalMetadata?.divergenceLevel || 'unknown',
+                  divergencePoints: finalMetadata?.divergencePoints || 0,
+                  uniqueCompanies: finalMetadata?.uniqueCompanies,
+                  uniqueWeeks: finalMetadata?.uniqueWeeks,
+                },
+              };
+            }
+            return updated;
+          });
 
-        toast({
-          title: "Respuesta recibida",
-          description: `${finalMetadata?.documentsFound || 0} documentos analizados`,
-        });
+          // NOTE: Backend already saves to DB in streaming mode, so we skip client-side insert
+          // to avoid duplicate entries in chat_intelligence_sessions
+
+          toast({
+            title: "Respuesta recibida",
+            description: `${finalMetadata?.documentsFound || 0} documentos analizados`,
+          });
+        }
 
       } else {
         // =========================================================================

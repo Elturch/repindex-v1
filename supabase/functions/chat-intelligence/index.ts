@@ -1792,7 +1792,8 @@ serve(async (req) => {
       depthLevel,
       roleId,      // NEW: pass role info
       roleName,
-      rolePrompt
+      rolePrompt,
+      streamMode   // Pass streaming mode to standard chat handler
     );
 
   } catch (error) {
@@ -2973,7 +2974,8 @@ async function handleStandardChat(
   depthLevel: 'quick' | 'complete' | 'exhaustive' = 'complete',
   roleId?: string,
   roleName?: string,
-  rolePrompt?: string
+  rolePrompt?: string,
+  streamMode: boolean = false
 ) {
   console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || 'General'}`);
   // =============================================================================
@@ -4090,13 +4092,252 @@ ${context}
 
 Responde en ${languageName} usando SOLO información del contexto anterior.`;
 
-  console.log(`${logPrefix} Calling AI model...`);
+  console.log(`${logPrefix} Calling AI model (streaming: ${streamMode})...`);
   const messages = [
     { role: 'system', content: systemPrompt },
     ...conversationHistory,
     { role: 'user', content: userPrompt }
   ];
 
+  // =========================================================================
+  // STREAMING MODE: Return SSE stream for real-time text generation
+  // =========================================================================
+  if (streamMode) {
+    console.log(`${logPrefix} Starting STREAMING standard chat...`);
+    
+    const sseEncoder = createSSEEncoder();
+    
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Send initial metadata
+          controller.enqueue(sseEncoder({
+            type: 'start',
+            metadata: {
+              language,
+              languageName,
+              depthLevel,
+              detectedCompanies: detectedCompanies.map(c => c.issuer_name),
+            }
+          }));
+
+          let accumulatedContent = '';
+          let provider: 'openai' | 'gemini' = 'openai';
+          let inputTokens = 0;
+          let outputTokens = 0;
+          let streamError = false;
+
+          // Try OpenAI first
+          console.log(`${logPrefix} Trying OpenAI stream first...`);
+          for await (const chunk of streamOpenAIResponse(messages, 'o3', 24000, logPrefix, 120000)) {
+            if (chunk.type === 'chunk' && chunk.text) {
+              accumulatedContent += chunk.text;
+              controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
+            } else if (chunk.type === 'done') {
+              inputTokens = chunk.inputTokens || 0;
+              outputTokens = chunk.outputTokens || 0;
+              break;
+            } else if (chunk.type === 'error') {
+              console.warn(`${logPrefix} OpenAI stream error: ${chunk.error}, falling back to Gemini...`);
+              streamError = true;
+              controller.enqueue(sseEncoder({ type: 'fallback', metadata: { provider: 'gemini' } }));
+              break;
+            }
+          }
+
+          // Fallback to Gemini if OpenAI failed
+          if (streamError || accumulatedContent.length === 0) {
+            provider = 'gemini';
+            accumulatedContent = ''; // Reset for Gemini response
+            
+            console.log(`${logPrefix} Using Gemini stream (gemini-2.5-flash)...`);
+            for await (const chunk of streamGeminiResponse(messages, 'gemini-2.5-flash', 24000, logPrefix, 120000)) {
+              if (chunk.type === 'chunk' && chunk.text) {
+                accumulatedContent += chunk.text;
+                controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
+              } else if (chunk.type === 'done') {
+                inputTokens = chunk.inputTokens || 0;
+                outputTokens = chunk.outputTokens || 0;
+                break;
+              } else if (chunk.type === 'error') {
+                console.error(`${logPrefix} Gemini stream also failed: ${chunk.error}`);
+                controller.enqueue(sseEncoder({ 
+                  type: 'error', 
+                  error: `Error generando respuesta: ${chunk.error}` 
+                }));
+                controller.close();
+                return;
+              }
+            }
+          }
+
+          console.log(`${logPrefix} Standard chat stream completed (via ${provider}), length: ${accumulatedContent.length}`);
+          const answer = accumulatedContent;
+
+          // Log API usage in background
+          logApiUsage({
+            supabaseClient,
+            edgeFunction: 'chat-intelligence',
+            provider,
+            model: provider === 'openai' ? 'o3' : 'gemini-2.5-flash',
+            actionType: 'chat_stream',
+            inputTokens,
+            outputTokens,
+            userId,
+            sessionId,
+            metadata: { 
+              depth_level: depthLevel,
+              role: roleId || null,
+              role_name: roleName || null,
+              streaming: true,
+            },
+          }).catch(e => console.warn('Failed to log usage:', e));
+
+          // =============================================================================
+          // Generate suggested questions and drumroll (same logic as non-streaming)
+          // =============================================================================
+          console.log(`${logPrefix} Generating follow-up questions for streaming response...`);
+          
+          // Simplified question generation for streaming (avoid long delay)
+          let suggestedQuestions: string[] = [];
+          let drumrollQuestion: DrumrollQuestion | null = null;
+          
+          try {
+            // Quick question generation
+            const questionPrompt = `Based on this analysis about ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'corporate reputation'}, generate 3 follow-up questions in ${languageName}. Respond ONLY with a JSON array of 3 strings.`;
+            const questionResult = await callAISimple([
+              { role: 'system', content: `Generate follow-up questions in ${languageName}. Respond ONLY with JSON array.` },
+              { role: 'user', content: questionPrompt }
+            ], 'gpt-4o-mini', 300, logPrefix);
+            
+            if (questionResult) {
+              const cleanText = questionResult.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              suggestedQuestions = JSON.parse(cleanText);
+            }
+          } catch (qError) {
+            console.warn(`${logPrefix} Error generating questions:`, qError);
+          }
+
+          // Generate drumroll question for complete/exhaustive depth
+          if (depthLevel !== 'quick' && detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
+            try {
+              const insights = extractAnalysisInsights(allRixData, detectedCompanies[0], answer);
+              if (insights) {
+                drumrollQuestion = await generateDrumrollQuestion(
+                  question,
+                  insights,
+                  detectedCompanies,
+                  companiesCache,
+                  language,
+                  languageName,
+                  logPrefix
+                );
+              }
+            } catch (dError) {
+              console.warn(`${logPrefix} Error generating drumroll:`, dError);
+            }
+          }
+
+          // Calculate methodology metadata
+          const modelScores = allRixData
+            ?.filter(r => r['09_rix_score'] != null && r['09_rix_score'] > 0)
+            ?.map(r => r['09_rix_score']) || [];
+          const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
+          const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
+          const divergencePointsMethod = maxScoreMethod - minScoreMethod;
+          const divergenceLevelMethod = divergencePointsMethod <= 8 ? 'low' : divergencePointsMethod <= 15 ? 'medium' : 'high';
+          const modelsUsedMethod = [...new Set(allRixData?.map(r => r['02_model_name']).filter(Boolean) || [])];
+          const periodFromMethod = allRixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
+          const periodToMethod = allRixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
+          const uniqueCompaniesCount = new Set(allRixData?.map(r => r['05_ticker']).filter(Boolean) || []).size;
+          const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0;
+
+          // Save to database
+          if (sessionId) {
+            supabaseClient.from('chat_intelligence_sessions').insert([
+              {
+                session_id: sessionId,
+                role: 'user',
+                content: question,
+                user_id: userId,
+                depth_level: depthLevel
+              },
+              {
+                session_id: sessionId,
+                role: 'assistant',
+                content: answer,
+                documents_found: vectorDocs?.length || 0,
+                structured_data_found: allRixData?.length || 0,
+                suggested_questions: suggestedQuestions,
+                drumroll_question: drumrollQuestion,
+                depth_level: depthLevel,
+                question_category: detectedCompanies.length > 0 ? 'corporate_analysis' : 'general_query',
+                user_id: userId
+              }
+            ]).then(() => console.log(`${logPrefix} Session saved`))
+              .catch((e: Error) => console.warn('Failed to save session:', e));
+          }
+
+          // Send final done event with all metadata
+          controller.enqueue(sseEncoder({
+            type: 'done',
+            suggestedQuestions,
+            drumrollQuestion,
+            metadata: {
+              type: 'standard',
+              documentsFound: vectorDocs?.length || 0,
+              structuredDataFound: allRixData?.length || 0,
+              dataWeeks: uniqueWeeksCount,
+              aiProvider: provider,
+              depthLevel,
+              questionCategory: detectedCompanies.length > 0 ? 'corporate_analysis' : 'general_query',
+              modelsUsed: modelsUsedMethod,
+              periodFrom: periodFromMethod,
+              periodTo: periodToMethod,
+              divergenceLevel: divergenceLevelMethod,
+              divergencePoints: divergencePointsMethod,
+              uniqueCompanies: uniqueCompaniesCount,
+              uniqueWeeks: uniqueWeeksCount,
+              methodology: {
+                hasRixData: (allRixData?.length || 0) > 0,
+                modelsUsed: modelsUsedMethod,
+                periodFrom: periodFromMethod,
+                periodTo: periodToMethod,
+                observationsCount: allRixData?.length || 0,
+                divergenceLevel: divergenceLevelMethod,
+                divergencePoints: divergencePointsMethod,
+                uniqueCompanies: uniqueCompaniesCount,
+                uniqueWeeks: uniqueWeeksCount,
+              },
+            }
+          }));
+
+          controller.close();
+          
+        } catch (error) {
+          console.error(`${logPrefix} Streaming error:`, error);
+          controller.enqueue(sseEncoder({ 
+            type: 'error', 
+            error: error instanceof Error ? error.message : 'Error de streaming desconocido'
+          }));
+          controller.close();
+        }
+      }
+    });
+
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      }
+    });
+  }
+
+  // =========================================================================
+  // NON-STREAMING MODE: Original behavior (for backwards compatibility)
+  // =========================================================================
   const chatResult = await callAIWithFallback(messages, 'o3', 24000, logPrefix);
   const answer = chatResult.content;
 
