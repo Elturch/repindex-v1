@@ -19,10 +19,30 @@ import {
   Square,
   Activity,
   Skull,
-  Timer
+  Timer,
+  FlaskConical,
+  Wrench
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+// ============ TIPOS PARA ESTADO DE ANÁLISIS V2 ============
+interface AnalysisModelStatus {
+  model: string;
+  total: number;
+  withScore: number;
+  pending: number;
+  percentage: number;
+}
+
+interface AnalysisStatus {
+  totalRecords: number;
+  withScore: number;
+  pendingAnalysis: number;
+  percentage: number;
+  byModel: AnalysisModelStatus[];
+  sweepWeek: string;
+}
 
 interface SweepStatus {
   sweepId: string;
@@ -109,6 +129,11 @@ export function SweepMonitorPanel() {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [processingCompanies, setProcessingCompanies] = useState<RecentActivity[]>([]);
   
+  // ============ ESTADO DE ANÁLISIS V2 ============
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [repairingAnalysis, setRepairingAnalysis] = useState(false);
+  
   // Estado para cascada 1-empresa-a-la-vez
   const [cascade, setCascade] = useState<CascadeState>({
     isRunning: false,
@@ -120,6 +145,120 @@ export function SweepMonitorPanel() {
   const cascadeAbortRef = useRef(false);
   const cascadeRunIdRef = useRef(0);
   const resumeStateRef = useRef<Partial<CascadeState> | null>(null);
+
+  // ============ FETCH ESTADO DE ANÁLISIS V2 ============
+  const fetchAnalysisStatus = useCallback(async () => {
+    setLoadingAnalysis(true);
+    try {
+      // Obtener la semana más reciente y contar por modelo
+      const { data, error } = await supabase
+        .from('rix_runs_v2')
+        .select('02_model_name, 09_rix_score, 06_period_from')
+        .order('06_period_from', { ascending: false })
+        .limit(2000); // Últimas ~2 semanas
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setAnalysisStatus(null);
+        return;
+      }
+
+      // Determinar la semana más reciente
+      const latestWeek = data[0]['06_period_from'];
+      const weekRecords = data.filter(r => r['06_period_from'] === latestWeek);
+
+      // Agrupar por modelo
+      const modelMap = new Map<string, { total: number; withScore: number }>();
+      
+      weekRecords.forEach(record => {
+        const model = record['02_model_name'] || 'Unknown';
+        const current = modelMap.get(model) || { total: 0, withScore: 0 };
+        current.total++;
+        if (record['09_rix_score'] !== null) {
+          current.withScore++;
+        }
+        modelMap.set(model, current);
+      });
+
+      // Convertir a array ordenado
+      const byModel: AnalysisModelStatus[] = [];
+      const modelOrder = ['ChatGPT', 'Deepseek', 'Gemini', 'Grok', 'Perplexity', 'Qwen'];
+      
+      modelOrder.forEach(modelName => {
+        const stats = modelMap.get(modelName);
+        if (stats) {
+          byModel.push({
+            model: modelName,
+            total: stats.total,
+            withScore: stats.withScore,
+            pending: stats.total - stats.withScore,
+            percentage: stats.total > 0 ? Math.round((stats.withScore / stats.total) * 100) : 0
+          });
+        }
+      });
+
+      // Añadir modelos no esperados
+      modelMap.forEach((stats, model) => {
+        if (!modelOrder.includes(model)) {
+          byModel.push({
+            model,
+            total: stats.total,
+            withScore: stats.withScore,
+            pending: stats.total - stats.withScore,
+            percentage: stats.total > 0 ? Math.round((stats.withScore / stats.total) * 100) : 0
+          });
+        }
+      });
+
+      // Totales
+      const totalRecords = weekRecords.length;
+      const withScore = weekRecords.filter(r => r['09_rix_score'] !== null).length;
+
+      setAnalysisStatus({
+        totalRecords,
+        withScore,
+        pendingAnalysis: totalRecords - withScore,
+        percentage: totalRecords > 0 ? Math.round((withScore / totalRecords) * 100) : 0,
+        byModel,
+        sweepWeek: latestWeek || 'N/A'
+      });
+
+    } catch (error) {
+      console.error('Error fetching analysis status:', error);
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  }, []);
+
+  // ============ REPARAR ANÁLISIS PENDIENTES ============
+  const handleRepairAnalysis = async () => {
+    setRepairingAnalysis(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
+        body: { action: 'reprocess_pending', batch_size: 3 }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: '🔧 Reparación iniciada',
+        description: data?.message || 'Procesando análisis pendientes en segundo plano...',
+      });
+
+      // Refrescar después de unos segundos
+      setTimeout(fetchAnalysisStatus, 5000);
+    } catch (error: any) {
+      console.error('Error repairing analysis:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo iniciar la reparación',
+        variant: 'destructive',
+      });
+    } finally {
+      setRepairingAnalysis(false);
+    }
+  };
 
   // Obtener actividad reciente (últimas 10 empresas procesadas + en proceso)
   const fetchRecentActivity = useCallback(async (sweepId: string) => {
@@ -215,6 +354,7 @@ export function SweepMonitorPanel() {
   // Initial fetch only on mount
   useEffect(() => {
     fetchStatus();
+    fetchAnalysisStatus();
   }, []);
 
   // Auto-resume cascade if it was running (survive refresh/tab close)
@@ -241,6 +381,7 @@ export function SweepMonitorPanel() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchStatus();
+    fetchAnalysisStatus();
   };
 
   // Reset inmediato de empresas zombis
@@ -814,6 +955,180 @@ export function SweepMonitorPanel() {
           </CardContent>
         </Card>
       )}
+
+      {/* ============ NUEVO: PANEL DE ESTADO DE ANÁLISIS V2 ============ */}
+      <Card className="border-primary/30 bg-gradient-to-br from-background to-primary/5">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FlaskConical className="h-4 w-4 text-primary" />
+              Estado de Análisis V2
+              {analysisStatus && (
+                <Badge variant="outline" className="ml-2 text-xs">
+                  Semana: {analysisStatus.sweepWeek}
+                </Badge>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchAnalysisStatus}
+                disabled={loadingAnalysis}
+              >
+                <RefreshCw className={cn("h-4 w-4 mr-2", loadingAnalysis && "animate-spin")} />
+                Actualizar
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleRepairAnalysis}
+                disabled={repairingAnalysis || loadingAnalysis}
+                className="gap-2"
+              >
+                {repairingAnalysis ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wrench className="h-4 w-4" />
+                )}
+                Completar Análisis Pendientes
+              </Button>
+            </div>
+          </div>
+          <CardDescription>
+            Muestra el estado real de análisis (scores RIX generados) vs búsquedas completadas
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loadingAnalysis && !analysisStatus ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : analysisStatus ? (
+            <>
+              {/* Barra de progreso general */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Análisis completados</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-foreground">
+                      {analysisStatus.withScore.toLocaleString()}/{analysisStatus.totalRecords.toLocaleString()}
+                    </span>
+                    <Badge 
+                      variant={analysisStatus.percentage === 100 ? "default" : "secondary"}
+                      className={cn(
+                        analysisStatus.percentage === 100 && "bg-good text-white",
+                        analysisStatus.percentage < 90 && "bg-needs-improvement text-white"
+                      )}
+                    >
+                      {analysisStatus.percentage}%
+                    </Badge>
+                  </div>
+                </div>
+                <Progress 
+                  value={analysisStatus.percentage} 
+                  className={cn(
+                    "h-3",
+                    analysisStatus.percentage === 100 && "[&>div]:bg-good",
+                    analysisStatus.percentage < 90 && "[&>div]:bg-needs-improvement"
+                  )} 
+                />
+                {analysisStatus.pendingAnalysis > 0 && (
+                  <p className="text-xs text-needs-improvement font-medium">
+                    ⚠️ {analysisStatus.pendingAnalysis} registros pendientes de análisis
+                  </p>
+                )}
+              </div>
+
+              {/* Desglose por modelo */}
+              <div className="space-y-3">
+                <div className="text-sm font-medium text-muted-foreground">Por Modelo:</div>
+                <div className="grid gap-2">
+                  {analysisStatus.byModel.map((modelStatus) => {
+                    const isComplete = modelStatus.pending === 0;
+                    const isCritical = modelStatus.percentage < 70;
+                    const isWarning = modelStatus.percentage < 90 && !isCritical;
+                    
+                    return (
+                      <div 
+                        key={modelStatus.model}
+                        className={cn(
+                          "flex items-center gap-3 p-2 rounded-lg",
+                          isComplete && "bg-good/10",
+                          isWarning && "bg-needs-improvement/10",
+                          isCritical && "bg-destructive/10"
+                        )}
+                      >
+                        <div className="w-24 font-medium text-sm">{modelStatus.model}</div>
+                        <div className="flex-1">
+                          <Progress 
+                            value={modelStatus.percentage} 
+                            className={cn(
+                              "h-2",
+                              isComplete && "[&>div]:bg-good",
+                              isWarning && "[&>div]:bg-needs-improvement",
+                              isCritical && "[&>div]:bg-destructive"
+                            )} 
+                          />
+                        </div>
+                        <div className="w-28 text-right text-sm font-mono">
+                          <span className={cn(
+                            isComplete && "text-good",
+                            isWarning && "text-needs-improvement",
+                            isCritical && "text-destructive"
+                          )}>
+                            {modelStatus.withScore}/{modelStatus.total}
+                          </span>
+                          <span className="text-muted-foreground ml-1">
+                            ({modelStatus.percentage}%)
+                          </span>
+                        </div>
+                        {modelStatus.pending > 0 && (
+                          <Badge 
+                            variant="outline" 
+                            className={cn(
+                              "text-xs",
+                              isCritical && "border-destructive text-destructive",
+                              isWarning && "border-needs-improvement text-needs-improvement"
+                            )}
+                          >
+                            {modelStatus.pending} pend.
+                          </Badge>
+                        )}
+                        {isComplete && (
+                          <CheckCircle2 className="h-4 w-4 text-good" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Info adicional */}
+              <div className="pt-3 border-t text-xs text-muted-foreground flex items-center gap-4">
+                <div className="flex items-center gap-1">
+                  <FlaskConical className="h-3 w-3" />
+                  <span>Análisis: GPT-5</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>~60-90s por registro</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Wrench className="h-3 w-3" />
+                  <span>Batch: 3 registros/invocación</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <FlaskConical className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No hay datos de análisis disponibles</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {status?.initialized && phaseDetails.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
