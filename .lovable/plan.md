@@ -302,10 +302,20 @@ CREATE TABLE public.pipeline_logs (
 
 ---
 
-### Plan de Ejecución
+### Progreso de Implementación (28 Enero 2026)
 
-1. **Hoy**: Corregir bug de Grok-3 y redesplegar
-2. **Hoy**: Ejecutar reparación de análisis pendientes manualmente
-3. **Esta semana**: Implementar healthchecks automáticos
-4. **Siguiente semana**: Dashboard de tendencias y alertas por email
+| Tarea | Estado | Notas |
+|-------|--------|-------|
+| Corregir bug Grok-3 HTTP 422 | ✅ COMPLETADO | Cambiado `search: true` → `tools: [{type: 'web_search_preview'}]` |
+| Crear tablas `pipeline_health_checks` y `pipeline_logs` | ✅ COMPLETADO | Migración ejecutada con RLS |
+| Añadir healthchecks al orchestrator | ✅ COMPLETADO | Función `performHealthChecks()` añadida |
+| Auto-trigger de análisis pendientes | ✅ COMPLETADO | Se activa cuando hay >20 pendientes |
+| Panel de alertas en /admin | ✅ COMPLETADO | Nueva pestaña "Alertas" con `PipelineAlertsPanel` |
+| Desplegar edge functions | ✅ COMPLETADO | `rix-search-v2` y `rix-batch-orchestrator` desplegados |
+
+### Próximos Pasos
+
+1. **Verificar** que Grok funciona correctamente en el próximo barrido
+2. **Ejecutar** reparación de análisis pendientes desde /admin → Barrido V2 → "Reparar Análisis"
+3. **Monitorear** la pestaña "Alertas" para detectar problemas automáticamente
 

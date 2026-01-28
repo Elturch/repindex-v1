@@ -52,7 +52,8 @@ import { CronMonitorPanel } from '@/components/admin/CronMonitorPanel';
 import { CorporateScrapePanel } from '@/components/admin/CorporateScrapePanel';
 import { VectorStorePanel } from '@/components/admin/VectorStorePanel';
 import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
-import { DollarSign, Radar, DatabaseBackup, Timer } from 'lucide-react';
+import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
+import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -837,6 +838,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="ai-models" className="flex items-center gap-1.5 px-3 text-xs">
               <Sparkles className="h-3.5 w-3.5" />
               Modelos IA
+            </TabsTrigger>
+            <TabsTrigger value="pipeline-alerts" className="flex items-center gap-1.5 px-3 text-xs">
+              <AlertTriangleIcon className="h-3.5 w-3.5" />
+              Alertas
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -2713,6 +2718,11 @@ const Admin: React.FC = () => {
           {/* ==================== AI MODELS DASHBOARD ==================== */}
           <TabsContent value="ai-models">
             <AIModelsDashboard />
+          </TabsContent>
+
+          {/* ==================== PIPELINE ALERTS ==================== */}
+          <TabsContent value="pipeline-alerts">
+            <PipelineAlertsPanel />
           </TabsContent>
         </Tabs>
       </div>
