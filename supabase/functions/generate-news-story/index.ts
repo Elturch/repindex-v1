@@ -402,6 +402,42 @@ ${qualitativeContext}
         }
         
         console.log(`✅ Saved ${(newsData.stories?.length || 0) + 1} individual articles`);
+        
+        // =====================================================================
+        // TRIGGER: Send Newsroom email to active users
+        // =====================================================================
+        if (weekId) {
+          console.log('Triggering Newsroom email distribution...');
+          try {
+            const emailPayload = {
+              weeklyNewsId: weekId,
+              weekLabel: newsData.weekLabel,
+              mainHeadline: newsData.mainStory?.headline || '',
+              mainLead: newsData.mainStory?.lead || '',
+              stories: (newsData.stories || []).slice(0, 4).map((s: any) => ({
+                headline: s.headline,
+                lead: s.lead
+              }))
+            };
+            
+            // Fire and forget - don't block the main response
+            fetch(`${supabaseUrl}/functions/v1/send-newsroom-email`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseKey}`
+              },
+              body: JSON.stringify(emailPayload)
+            }).then(res => {
+              console.log(`📧 Newsroom email trigger response: ${res.status}`);
+            }).catch(err => {
+              console.error('📧 Newsroom email trigger failed:', err.message);
+            });
+          } catch (emailTriggerError: any) {
+            console.error('Error triggering newsroom email:', emailTriggerError);
+            // Don't throw - email failure shouldn't break news generation
+          }
+        }
       }
     }
 
