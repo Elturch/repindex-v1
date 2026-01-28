@@ -349,12 +349,29 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
         <strong>Penalizaciones:</strong> Si DRM &lt;40 o SIM &lt;40 → RIX máximo = 64 | Si datos_antiguos → RMM máximo = 69
       </p>
 
+      <h4>Garantías de Reproducibilidad</h4>
+      <p>
+        <strong>Ejecución:</strong> API machine-to-machine (sin interfaz de usuario) | 
+        <strong>Frecuencia:</strong> Semanal (domingos, 52 ciclos/año) | 
+        <strong>Prompt:</strong> Estructurado e invariable | 
+        <strong>Temperatura:</strong> 0 (determinismo máximo). 
+        Esta arquitectura elimina sesgos por contexto, usuario o historial de conversación.
+      </p>
+
       <h4>Control de Sesgo: Divergencia Inter-modelo</h4>
       <p>
         La divergencia (σ) entre 6 modelos independientes es una medida de incertidumbre epistémica. 
         <strong>σ &lt;5:</strong> consenso robusto | <strong>σ 5-15:</strong> narrativa estable | 
         <strong>σ &gt;15:</strong> alta incertidumbre. Modelos con diferentes datasets, arquitecturas y 
         proveedores que coinciden generan señal robusta.
+      </p>
+
+      <h4>Variables de Contraste (Validación Empírica)</h4>
+      <p>
+        El sistema recoge variables empíricas para calibración: 
+        <strong>precio de cierre semanal</strong> (133 cotizadas, fuente: EODHD) y 
+        <strong>volumen de menciones Tier-1</strong> (proxy: NVM agregado). 
+        La ponderación actual es criterio experto; evolucionará según evidencia estadística.
       </p>
 
       <h4>Jerarquía de Fuentes (SIM)</h4>
@@ -388,6 +405,7 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
       <div class="disclaimer-box">
         <h4 style="border: none; margin-top: 0;">Limitaciones Metodológicas</h4>
         <p>(1) El RIX mide percepción algorítmica, no reputación real. (2) Las IAs pueden heredar sesgos de sus datos de entrenamiento. (3) La cobertura depende de la visibilidad mediática. (4) No sustituye estudios de stakeholders (encuestas, NPS). (5) No debe usarse como única fuente para decisiones de M&A, inversión regulada o ESG certificado.</p>
+        <p style="margin-top: 8px;">(6) La ponderación actual (NVM 15%, DRM 15%, etc.) es criterio experto inicial. (7) La calibración empírica RIX vs. métricas de negocio está en desarrollo (dataset longitudinal en construcción).</p>
         <p style="margin-top: 8px;"><strong>DISCLAIMER LEGAL:</strong> Este informe refleja la percepción de sistemas de IA y no constituye asesoramiento financiero, legal o de inversión. Las fuentes citadas son responsabilidad de los modelos de IA. RepIndex no garantiza la exactitud de las citas externas.</p>
       </div>
 
