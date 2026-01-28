@@ -409,42 +409,84 @@ export function SweepMonitorPanel() {
   }, []);
 
   // ============ REPARAR ANÁLISIS PENDIENTES ============
-  // Usar supabase.functions.invoke para evitar problemas de CORS y manejo automático de headers
+  // Nota: hay extensiones (p.ej. frame_ant) que interceptan window.fetch y rompen supabase-js.
+  // Para esta acción crítica usamos XHR (no fetch) para evitar esa interceptación.
+  const postJsonViaXhr = <T,>(
+    url: string,
+    body: unknown,
+    headers: Record<string, string>,
+    timeoutMs = 300000,
+  ): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.timeout = timeoutMs;
+      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+
+      xhr.onload = () => {
+        const text = xhr.responseText || '';
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve((text ? JSON.parse(text) : {}) as T);
+          } catch {
+            reject(new Error(`Respuesta inválida (no JSON). HTTP ${xhr.status}: ${text.slice(0, 500)}`));
+          }
+        } else {
+          reject(new Error(`HTTP ${xhr.status}: ${text}`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('NetworkError'));
+      xhr.ontimeout = () => {
+        const err = new Error('Timeout');
+        (err as any).name = 'TimeoutError';
+        reject(err);
+      };
+
+      xhr.send(JSON.stringify(body));
+    });
+  };
+
   const handleRepairAnalysis = async () => {
     setRepairingAnalysis(true);
-    
-    // Mostrar toast de inicio inmediatamente
+
     toast({
       title: '🔧 Análisis iniciado',
       description: 'Procesando registros pendientes... Esto puede tardar varios minutos.',
     });
-    
-    try {
-      // Usar supabase.functions.invoke en lugar de fetch directo
-      const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
-        body: { action: 'reprocess_pending', batch_size: 3 },
-      });
 
-      if (error) {
-        throw error;
-      }
+    try {
+      const data = await postJsonViaXhr<any>(
+        `${SUPABASE_URL}/functions/v1/rix-analyze-v2`,
+        { action: 'reprocess_pending', batch_size: 3 },
+        {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        300000,
+      );
 
       toast({
         title: '✅ Análisis completado',
         description: data?.message || `Procesados ${data?.processed || 0} registros exitosamente`,
       });
 
-      // Refrescar estado
       fetchAnalysisStatus();
     } catch (error: any) {
       console.error('Error repairing analysis:', error);
-      
-      // Detectar si es un error de conexión/extensiones
+
       const errorMsg = error?.message || String(error);
-      if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+      if (errorMsg.includes('NetworkError') || errorMsg.includes('Failed to fetch') || errorMsg.includes('Failed to send a request')) {
         toast({
           title: 'Error de conexión',
-          description: 'No se pudo conectar al servidor. Si el problema persiste, prueba a desactivar extensiones del navegador o usar modo incógnito.',
+          description: 'La petición fue bloqueada por el navegador (posible extensión). Prueba modo incógnito o desactiva extensiones tipo “frame_ant”.',
+          variant: 'destructive',
+        });
+      } else if (error?.name === 'TimeoutError') {
+        toast({
+          title: 'Timeout',
+          description: 'El proceso tardó demasiado. Revisa los logs para verificar el progreso.',
           variant: 'destructive',
         });
       } else {
