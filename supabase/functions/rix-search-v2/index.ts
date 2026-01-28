@@ -226,13 +226,14 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return content + (citations ? '\n\nFuentes:\n' + citations : '');
     },
   },
-  // 2. Grok 3 (xAI) - ✅ Web Search + X Search nativos
-  // Usando el nuevo endpoint /v1/responses con tools de xAI
+  // 2. Grok 3 (xAI) - ✅ Web Search via Responses API
+  // Usando el endpoint /v1/responses con herramienta web_search_preview
+  // IMPORTANTE: No usar 'search: true', usar tools: [{type: "web_search_preview"}]
   {
     name: 'grok-3',
     displayName: 'Grok',
     apiKeyEnv: 'XAI_API_KEY',
-    endpoint: 'https://api.x.ai/v1/responses',  // Nuevo endpoint correcto
+    endpoint: 'https://api.x.ai/v1/responses',
     hasRealWebSearch: true,
     dbColumn: 'respuesta_bruto_grok',
     buildRequest: (prompt: string, apiKey: string) => ({
@@ -242,8 +243,10 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       },
       body: {
         model: 'grok-3',
-        input: prompt,  // El nuevo endpoint usa 'input' directamente como string
-        search: true,   // Habilitar búsqueda web nativa de Grok
+        input: prompt,
+        // Usar tools con web_search_preview en lugar de 'search: true'
+        // El endpoint /v1/responses requiere este formato específico
+        tools: [{ type: 'web_search_preview' }],
         temperature: 0.1,
       },
     }),
