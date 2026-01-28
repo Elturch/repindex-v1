@@ -71,6 +71,66 @@ async function logApiUsage(params: ApiUsageParams): Promise<void> {
 }
 
 // =============================================================================
+// UNIFIED RIX DATA HELPER - Combines rix_runs and rix_runs_v2
+// =============================================================================
+// This ensures we get data from all 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen)
+interface FetchUnifiedRixOptions {
+  supabaseClient: any;
+  columns: string;
+  tickerFilter?: string | string[];
+  limit?: number;
+  logPrefix?: string;
+}
+
+async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any[]> {
+  const { supabaseClient, columns, tickerFilter, limit = 1000, logPrefix = '[Unified-RIX]' } = options;
+  
+  // Build queries for both tables
+  let queryRix = supabaseClient.from('rix_runs').select(columns).order('batch_execution_date', { ascending: false });
+  let queryV2 = supabaseClient.from('rix_runs_v2').select(columns).not('analysis_completed_at', 'is', null).order('batch_execution_date', { ascending: false });
+  
+  // Apply ticker filter if provided
+  if (tickerFilter) {
+    if (Array.isArray(tickerFilter)) {
+      queryRix = queryRix.in('"05_ticker"', tickerFilter);
+      queryV2 = queryV2.in('"05_ticker"', tickerFilter);
+    } else {
+      queryRix = queryRix.eq('"05_ticker"', tickerFilter);
+      queryV2 = queryV2.eq('"05_ticker"', tickerFilter);
+    }
+  }
+  
+  // Apply limits
+  queryRix = queryRix.limit(limit);
+  queryV2 = queryV2.limit(limit);
+  
+  // Execute in parallel
+  const [rixResult, v2Result] = await Promise.all([queryRix, queryV2]);
+  
+  const rixData = rixResult.data || [];
+  const v2Data = v2Result.data || [];
+  
+  // Combine and deduplicate by ticker + model + period
+  const combined = [...rixData, ...v2Data];
+  const dedupeMap = new Map<string, any>();
+  
+  combined.forEach(record => {
+    const key = `${record['05_ticker']}_${record['02_model_name']}_${record['06_period_from']}_${record['07_period_to']}`;
+    const existing = dedupeMap.get(key);
+    // Keep the record with the most recent batch_execution_date
+    if (!existing || (record.batch_execution_date && existing.batch_execution_date && 
+        new Date(record.batch_execution_date) > new Date(existing.batch_execution_date))) {
+      dedupeMap.set(key, record);
+    }
+  });
+  
+  const result = Array.from(dedupeMap.values());
+  console.log(`${logPrefix} Combined RIX data: ${rixData.length} legacy + ${v2Data.length} v2 = ${result.length} unique records`);
+  
+  return result;
+}
+
+// =============================================================================
 // SSE STREAMING HELPERS
 // =============================================================================
 
@@ -2046,10 +2106,11 @@ async function handleBulletinRequest(
   // 3. Get all tickers to fetch (company + competitors)
   const allTickers = [matchedCompany.ticker, ...competitors.map(c => c.ticker)];
 
-  // 4. Fetch 4 weeks of data for company and competitors with ALL metrics
-  const { data: rixData, error: rixError } = await supabaseClient
-    .from('rix_runs')
-    .select(`
+  // 4. Fetch 4 weeks of data for company and competitors with ALL 6 AI models
+  // Uses unified helper to combine rix_runs (legacy) + rix_runs_v2 (Grok, Qwen)
+  const rixData = await fetchUnifiedRixData({
+    supabaseClient,
+    columns: `
       "02_model_name",
       "03_target_name",
       "05_ticker",
@@ -2078,15 +2139,11 @@ async function handleBulletinRequest(
       "46_cxm_categoria",
       "25_explicaciones_detalladas",
       batch_execution_date
-    `)
-    .in('"05_ticker"', allTickers)
-    .order('batch_execution_date', { ascending: false })
-    .limit(800);
-
-  if (rixError) {
-    console.error(`${logPrefix} Error fetching RIX data:`, rixError);
-    throw rixError;
-  }
+    `,
+    tickerFilter: allTickers,
+    limit: 800,
+    logPrefix
+  });
 
   console.log(`${logPrefix} Fetched ${rixData?.length || 0} RIX records for bulletin`);
 
@@ -2884,52 +2941,54 @@ async function handleStandardChat(
   let detectedCompanyFullData: any[] = [];
   
   if (detectedCompanies.length > 0) {
-    console.log(`${logPrefix} Loading FULL DATA (including raw texts) for detected companies...`);
+    console.log(`${logPrefix} Loading FULL DATA (including raw texts) for detected companies - ALL 6 AI MODELS...`);
     
-    for (const company of detectedCompanies.slice(0, 8)) { // Aumentado de 5 a 8 empresas
-      const { data: companyData, error: companyError } = await supabaseClient
-        .from('rix_runs')
-        .select(`
-          "02_model_name",
-          "03_target_name",
-          "05_ticker",
-          "06_period_from",
-          "07_period_to",
-          "09_rix_score",
-          "51_rix_score_adjusted",
-          "10_resumen",
-          "11_puntos_clave",
-          "20_res_gpt_bruto",
-          "21_res_perplex_bruto",
-          "22_res_gemini_bruto",
-          "23_res_deepseek_bruto",
-          "22_explicacion",
-          "25_explicaciones_detalladas",
-          "23_nvm_score",
-          "26_drm_score",
-          "29_sim_score",
-          "32_rmm_score",
-          "35_cem_score",
-          "38_gam_score",
-          "41_dcm_score",
-          "44_cxm_score",
-          "25_nvm_categoria",
-          "28_drm_categoria",
-          "31_sim_categoria",
-          "34_rmm_categoria",
-          "37_cem_categoria",
-          "40_gam_categoria",
-          "43_dcm_categoria",
-          "46_cxm_categoria"
-        `)
-        .eq('"05_ticker"', company.ticker)
-        .order('batch_execution_date', { ascending: false })
-        .limit(32); // 4 models × 8 weeks - más historial
+    const fullDataColumns = `
+      "02_model_name",
+      "03_target_name",
+      "05_ticker",
+      "06_period_from",
+      "07_period_to",
+      "09_rix_score",
+      "51_rix_score_adjusted",
+      "10_resumen",
+      "11_puntos_clave",
+      "20_res_gpt_bruto",
+      "21_res_perplex_bruto",
+      "22_res_gemini_bruto",
+      "23_res_deepseek_bruto",
+      "22_explicacion",
+      "25_explicaciones_detalladas",
+      "23_nvm_score",
+      "26_drm_score",
+      "29_sim_score",
+      "32_rmm_score",
+      "35_cem_score",
+      "38_gam_score",
+      "41_dcm_score",
+      "44_cxm_score",
+      "25_nvm_categoria",
+      "28_drm_categoria",
+      "31_sim_categoria",
+      "34_rmm_categoria",
+      "37_cem_categoria",
+      "40_gam_categoria",
+      "43_dcm_categoria",
+      "46_cxm_categoria",
+      batch_execution_date
+    `;
+    
+    for (const company of detectedCompanies.slice(0, 8)) {
+      const companyFullData = await fetchUnifiedRixData({
+        supabaseClient,
+        columns: fullDataColumns,
+        tickerFilter: company.ticker,
+        limit: 48, // 6 models × 8 weeks
+        logPrefix
+      });
       
-      if (!companyError && companyData) {
-        console.log(`${logPrefix} Loaded ${companyData.length} full records for ${company.issuer_name}`);
-        detectedCompanyFullData.push(...companyData);
-      }
+      console.log(`${logPrefix} Loaded ${companyFullData.length} full records for ${company.issuer_name}`);
+      detectedCompanyFullData.push(...companyFullData);
     }
   }
 
@@ -2968,11 +3027,11 @@ async function handleStandardChat(
   // =============================================================================
   // PASO 5: CARGAR DATOS ESTRUCTURADOS (últimas 2 semanas para ranking)
   // =============================================================================
-  console.log(`${logPrefix} Loading structured RIX data for rankings...`);
+  console.log(`${logPrefix} Loading structured RIX data for rankings - ALL 6 AI MODELS...`);
   
-  const { data: allRixData, error: rixError } = await supabaseClient
-    .from('rix_runs')
-    .select(`
+  const allRixData = await fetchUnifiedRixData({
+    supabaseClient,
+    columns: `
       "01_run_id",
       "02_model_name",
       "03_target_name",
@@ -2985,16 +3044,12 @@ async function handleStandardChat(
       "10_resumen",
       "11_puntos_clave",
       batch_execution_date
-    `)
-    .order('batch_execution_date', { ascending: false })
-    .limit(50000); // BASE DE DATOS COMPLETA - sin límite práctico
+    `,
+    limit: 50000,
+    logPrefix
+  });
 
-  if (rixError) {
-    console.error(`${logPrefix} Error loading RIX data:`, rixError);
-    throw rixError;
-  }
-
-  console.log(`${logPrefix} Total RIX records loaded: ${allRixData?.length || 0}`);
+  console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0}`);
 
   // =============================================================================
   // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
