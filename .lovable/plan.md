@@ -1,321 +1,121 @@
 
+## Diagnóstico (por qué “no se mueve nada” aunque salga el toast)
+Ahora mismo el botón **sí está creando el trigger**, pero:
+1) En tu BD hay un `cron_triggers` **en estado `pending`** (lo he comprobado).  
+2) El procesamiento de `cron_triggers` en `rix-batch-orchestrator` **solo ocurre cuando la función se invoca con `trigger: 'watchdog'`**.  
+   - Cuando tú “actualizas” en la UI, el panel llama a `rix-batch-orchestrator` con `{ get_status: true }`, y en ese modo **no procesa triggers**.
+3) Además, el contador de “pendientes” del panel de análisis V2 cuenta *todo lo que no tiene `09_rix_score`*, pero **solo una parte es “analizable”** (tiene `20_res_gpt_bruto` y por tanto `rix-analyze-v2` puede recalcularlo).  
+   - En este momento hay **muy pocos “pendientes analizables”** (he visto ~11), así que aunque el repair corra, el número grande del panel puede no cambiar como esperas.
 
-## Auditoría Completa del Sistema de Recogida de Datos Semanal
-
-### Estado Actual del Sistema
-
-#### Arquitectura del Pipeline RIX V2
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          PIPELINE RIX V2 SEMANAL                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌──────────────┐     ┌──────────────────┐     ┌────────────────────┐      │
-│  │ CRON Watchdog│────>│ rix-batch-       │────>│ rix-search-v2      │      │
-│  │ (cada 5 min) │     │ orchestrator     │     │ (6 modelos IA)     │      │
-│  └──────────────┘     └──────────────────┘     └────────────────────┘      │
-│         │                     │                        │                    │
-│         │                     v                        v                    │
-│         │            ┌──────────────────┐     ┌────────────────────┐       │
-│         │            │ sweep_progress   │     │ rix_runs_v2        │       │
-│         │            │ (estado empresa) │     │ (datos crudos)     │       │
-│         │            └──────────────────┘     └────────────────────┘       │
-│         │                     │                        │                    │
-│         │                     v                        v                    │
-│         │            ┌──────────────────┐     ┌────────────────────┐       │
-│         └───────────>│ cron_triggers    │────>│ rix-analyze-v2     │       │
-│                      │ (reparaciones)   │     │ (GPT-5 scoring)    │       │
-│                      └──────────────────┘     └────────────────────┘       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Resultado: ves el toast de “programado”, pero si no entra un “watchdog” en ese rato (o entra tarde), el trigger sigue `pending` y los números no cambian; y aun cuando se procese, puede que cambie poco.
 
 ---
 
-### Fortalezas del Sistema Actual
-
-| Fortaleza | Descripción | Impacto |
-|-----------|-------------|---------|
-| **Arquitectura 1-empresa-por-invocación** | Evita timeouts al procesar una empresa a la vez | Ninguna empresa puede bloquear el barrido completo |
-| **Sistema "zombi" con reset automático** | Empresas atascadas en "processing" > 5 min se resetean automáticamente | Auto-recuperación sin intervención manual |
-| **Persistencia en localStorage** | Estado de cascada se guarda localmente | Sobrevive a cierres de navegador |
-| **MAX_RETRIES = 1000** | Reintentos muy altos por empresa | Sistema no se rinde ante fallos transitorios |
-| **Sincronización dinámica de nuevos issuers** | Nuevas empresas se añaden al sweep automáticamente | No requiere configuración manual |
-| **cron_triggers server-to-server** | Reparaciones ejecutadas sin pasar por el navegador | Evita bloqueos de extensiones |
-| **Panel de monitoreo en /admin** | Visibilidad de estado por fase, modelo y errores | Diagnóstico inmediato de problemas |
-| **Múltiples modelos IA con fallback** | 6 modelos independientes con aislamiento de fallos | Un modelo fallando no afecta a los demás |
+## Objetivo de la mejora
+Que el admin **muestre progreso real** (estado del trigger y cuántos pendientes son realmente procesables) y que tengas un botón para **ejecutar el trigger “ahora”** (sin depender del watchdog/cron).
 
 ---
 
-### Debilidades Identificadas
+## Cambios propuestos (implementación)
 
-| Debilidad | Severidad | Estado Actual | Impacto |
-|-----------|-----------|---------------|---------|
-| **Grok-3 HTTP 422 (100% fallos)** | CRITICA | 0/18 registros esta semana | Pérdida total de cobertura de un modelo |
-| **Sin alertas proactivas** | ALTA | No hay notificaciones automáticas | Los problemas se descubren tarde |
-| **Dependencia de CRON externo** | MEDIA | pg_cron + pg_net | Si falla el CRON, el barrido se detiene |
-| **Sin dashboard de salud histórico** | MEDIA | Solo estado actual | No hay tendencias para detectar degradación |
-| **Análisis V2 pendientes (34/108)** | ALTA | 31% sin RIX score | Datos incompletos para reportes |
-| **Sin validación de calidad de respuesta** | MEDIA | Solo verifica longitud > 100 | Respuestas de baja calidad pasan desapercibidas |
-| **Logs dispersos en múltiples funciones** | BAJA | Cada función loguea independiente | Difícil correlacionar fallos |
-| **Sin métricas de tiempo de ejecución** | BAJA | Solo duración total | No se detectan degradaciones de APIs |
+### 1) Backend: permitir “procesar triggers ahora” desde el panel
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
 
----
+- Añadir un modo explícito para procesar solo triggers, por ejemplo:
+  - `trigger: 'process_triggers'` o un boolean `process_triggers_only: true`
+- En ese modo la función hará:
+  - `processCronTriggers(...)`
+  - devolverá `{ triggersProcessed: [...], success: true }`
+  - **no** ejecutará barrido de empresas (para que sea rápido y seguro).
 
-### Problemas Específicos Detectados Ahora
-
-#### 1. Bug Crítico: Grok-3 HTTP 422
-
-**Error**: `Failed to deserialize the JSON body into the target type: tools[0]: missing field 'parameters'`
-
-**Causa**: El endpoint `/v1/responses` de xAI requiere un campo `parameters` en la definición de tools, pero el código actual no lo incluye.
-
-**Ubicación**: `supabase/functions/rix-search-v2/index.ts` líneas 228-249
-
-**Impacto**: 18/18 registros de Grok sin datos esta semana (100% fallo)
-
-#### 2. Análisis Pendientes (GPT-5)
-
-**Estado actual por modelo**:
-| Modelo | Analizados | Pendientes | Completitud |
-|--------|------------|------------|-------------|
-| Grok | 0 | 18 | 0% |
-| Perplexity | 12 | 6 | 67% |
-| ChatGPT | 14 | 4 | 78% |
-| Google Gemini | 14 | 4 | 78% |
-| Deepseek | 17 | 1 | 94% |
-| Qwen | 17 | 1 | 94% |
-
-**Nota**: Grok tiene 18 registros con `has_raw_response=18` pero 0 analizados. Esto indica que las llamadas a Grok están fallando en la fase de búsqueda, no en el análisis.
-
-#### 3. cron_triggers vacía
-
-La tabla `cron_triggers` está vacía, lo que significa que el botón "Reparar Análisis" no ha insertado triggers exitosamente o ya fueron procesados.
+Esto permite que el panel, tras crear el trigger, dispare una ejecución controlada que lo procese inmediatamente.
 
 ---
 
-### Plan de Mejora: Sistema de Recogida Sin Errores
+### 2) Backend: endurecer seguridad del Edge Function `admin-cron-triggers`
+**Archivo:** `supabase/functions/admin-cron-triggers/index.ts`
 
-#### Fase 1: Corrección Inmediata de Bugs (Prioridad: CRITICA)
+Ahora mismo el allowlist acepta cualquier `*.lovable.app`, lo que incluye **producción** (`repindex-v1.lovable.app`). Como esta función usa **service role**, eso es demasiado permisivo.
 
-##### 1.1 Corregir payload de Grok-3
+- Cambiar `isAllowedOrigin()` para que:
+  - Permita `localhost`, `127.0.0.1`, `*.lovableproject.com`, `lovable.dev`
+  - Permita `*.lovable.app` **solo si** el host contiene `preview` (ej: `id-preview--...lovable.app`)
+  - Si no hay `origin`/`referer`, denegar por defecto
+- (Opcional pero recomendado) exigir autenticación:
+  - leer `Authorization: Bearer <jwt>`
+  - validar usuario con `supabaseAdmin.auth.getUser(token)`
+  - comprobar rol admin (tabla `user_roles` / función existente `has_role`) y si no, `403`
 
-**Archivo**: `supabase/functions/rix-search-v2/index.ts`
-
-**Cambio**: El endpoint `/v1/responses` de xAI tiene un formato diferente. Opciones:
-- **Opción A**: Usar endpoint legacy `/v1/chat/completions` que no requiere tools
-- **Opción B**: Corregir el payload para incluir `parameters` vacío si se usan tools
-- **Opción C**: Eliminar `tools` del request y usar solo `search: true`
-
-**Recomendación**: Opción C (más simple y ya tiene búsqueda nativa)
-
-```typescript
-buildRequest: (prompt: string, apiKey: string) => ({
-  headers: {
-    'Authorization': `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-  },
-  body: {
-    model: 'grok-3',
-    input: prompt,
-    search: true,   // Búsqueda web nativa
-    temperature: 0.1,
-    // NO incluir 'tools' - causa el error 422
-  },
-}),
-```
-
-##### 1.2 Ejecutar reparación de análisis pendientes
-
-Después de corregir Grok, re-ejecutar `rix-analyze-v2` con `action: reprocess_pending` para completar los 34 análisis pendientes.
+**Archivo:** `supabase/config.toml`
+- Añadir sección:
+  - `[functions.admin-cron-triggers] verify_jwt = false`
+  (y validar JWT manualmente en el código, si activamos la comprobación)
 
 ---
 
-#### Fase 2: Sistema de Alertas Proactivas (Prioridad: ALTA)
+### 3) Frontend: mostrar estado del trigger y progreso (para que “se vea”)
+**Archivo:** `src/components/admin/SweepMonitorPanel.tsx`
 
-##### 2.1 Nueva tabla `pipeline_health_checks`
+#### 3.1. Añadir “Estado de Reparación”
+- Crear estado local `repairTrigger` con:
+  - `id`, `status`, `created_at`, `processed_at`, `result`
+- Añadir una función `fetchLatestRepairTrigger()` que lea el último trigger `repair_analysis`
+  - O bien por tabla (si el usuario siempre está logueado y RLS permite)
+  - O mejor: ampliar `admin-cron-triggers` para aceptar `action: 'get_latest'` y devolver el último trigger (así no dependemos de RLS)
 
-```sql
-CREATE TABLE public.pipeline_health_checks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  check_type text NOT NULL,  -- 'sweep_progress', 'analysis_completion', 'model_errors'
-  sweep_id text,
-  status text NOT NULL,      -- 'healthy', 'warning', 'critical'
-  details jsonb,
-  checked_at timestamptz DEFAULT now()
-);
-```
+#### 3.2. Polling automático tras programar reparación
+Después de pulsar “Completar Análisis Pendientes”:
+- Guardar el `trigger.id` devuelto
+- Lanzar polling cada 5s durante 60–120s:
+  - refrescar estado del trigger
+  - si pasa a `completed/failed`, parar polling y refrescar `fetchAnalysisStatus()`
 
-##### 2.2 Función de healthcheck en el orchestrator
+Así el usuario ve:
+- `pending -> processing -> completed` (o `failed`) aunque el score tarde.
 
-Añadir al watchdog:
+#### 3.3. Botón “Procesar ahora”
+Añadir un botón junto al de reparación:
+- “Procesar ahora (sin esperar cron)”
+- Llama a `supabase.functions.invoke('rix-batch-orchestrator', { body: { trigger: 'process_triggers' }})`
+- Luego refresca `fetchLatestRepairTrigger()` y `fetchAnalysisStatus()`
 
-```typescript
-async function performHealthCheck(supabase, sweepId) {
-  const checks = [];
-  
-  // Check 1: Progreso del sweep
-  const { data: progress } = await supabase
-    .from('sweep_progress')
-    .select('status')
-    .eq('sweep_id', sweepId);
-  
-  const stuckCount = progress.filter(p => p.status === 'processing').length;
-  if (stuckCount > 5) {
-    checks.push({ type: 'sweep_stuck', status: 'warning', details: { stuck: stuckCount }});
-  }
-  
-  // Check 2: Errores de modelo
-  const { data: errors } = await supabase
-    .from('rix_runs_v2')
-    .select('02_model_name, model_errors')
-    .not('model_errors', 'is', null);
-  
-  const errorsByModel = groupBy(errors, '02_model_name');
-  Object.entries(errorsByModel).forEach(([model, errs]) => {
-    if (errs.length > 10) {
-      checks.push({ type: 'model_errors', status: 'critical', details: { model, count: errs.length }});
-    }
-  });
-  
-  // Check 3: Análisis pendientes
-  const { data: pending } = await supabase
-    .from('rix_runs_v2')
-    .select('id')
-    .is('09_rix_score', null)
-    .not('20_res_gpt_bruto', 'is', null);
-  
-  if (pending.length > 20) {
-    checks.push({ type: 'analysis_backlog', status: 'warning', details: { pending: pending.length }});
-  }
-  
-  // Guardar checks
-  for (const check of checks) {
-    await supabase.from('pipeline_health_checks').insert({
-      check_type: check.type,
-      sweep_id: sweepId,
-      status: check.status,
-      details: check.details
-    });
-  }
-  
-  return checks;
-}
-```
-
-##### 2.3 Panel de alertas en /admin
-
-Añadir sección "Alertas del Sistema" en `SweepMonitorPanel.tsx` que muestre:
-- Estado de salud por modelo
-- Alertas activas con severidad
-- Historial de incidencias
+Esto elimina la dependencia del schedule y hace que “Actualizar” tenga efecto real.
 
 ---
 
-#### Fase 3: Redundancia y Auto-Reparación (Prioridad: MEDIA)
+### 4) Frontend: separar “Pendientes” en 2 métricas (clave para evitar confusión)
+**Archivo:** `src/components/admin/SweepMonitorPanel.tsx`
 
-##### 3.1 Auto-trigger de análisis pendientes
+Modificar `fetchAnalysisStatus()` para traer campos extra y calcular:
+- **Pendientes totales**: `09_rix_score IS NULL`
+- **Pendientes analizables**: `09_rix_score IS NULL AND 20_res_gpt_bruto IS NOT NULL`
+- **Pendientes sin datos (no analizables)**: `09_rix_score IS NULL AND 20_res_gpt_bruto IS NULL`
+- También por modelo (para que Grok quede claro si lo que falta es búsqueda vs análisis)
 
-Modificar el watchdog para que automáticamente dispare reparación de análisis cuando:
-- El sweep de búsqueda está completo (100%)
-- Hay > 10 registros sin `09_rix_score`
-
-```typescript
-// En el watchdog, después de verificar progreso
-if (sweepComplete && pendingAnalysis > 10) {
-  console.log(`[watchdog] Auto-triggering analysis repair for ${pendingAnalysis} pending`);
-  await supabase.from('cron_triggers').insert({
-    action: 'repair_analysis',
-    params: { batch_size: 5, auto_triggered: true }
-  });
-}
-```
-
-##### 3.2 Retry inteligente por modelo
-
-Implementar backoff exponencial específico por modelo:
-
-```typescript
-const MODEL_RETRY_CONFIG = {
-  'Grok': { maxRetries: 3, backoffMs: 30000 },      // Grok tiene rate limits estrictos
-  'Perplexity': { maxRetries: 5, backoffMs: 10000 },
-  'ChatGPT': { maxRetries: 5, backoffMs: 5000 },
-  'Deepseek': { maxRetries: 5, backoffMs: 10000 },
-  'Google Gemini': { maxRetries: 5, backoffMs: 5000 },
-  'Qwen': { maxRetries: 5, backoffMs: 10000 },
-};
-```
+Actualizar el UI para:
+- Mostrar ambos contadores
+- Cambiar el texto del botón a algo tipo:
+  - “Completar análisis (solo analizables)”
+- En el toast indicar cuántos registros se intentarán procesar realmente.
 
 ---
 
-#### Fase 4: Monitoreo y Métricas (Prioridad: BAJA)
-
-##### 4.1 Dashboard de tendencias
-
-Añadir gráficos de:
-- Tiempo promedio de ejecución por modelo (últimas 4 semanas)
-- Tasa de errores por modelo (tendencia)
-- Cobertura de análisis por semana
-
-##### 4.2 Logs centralizados
-
-Crear una tabla `pipeline_logs` para correlacionar eventos:
-
-```sql
-CREATE TABLE public.pipeline_logs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sweep_id text,
-  ticker text,
-  model_name text,
-  stage text,          -- 'search', 'analyze', 'vectorize'
-  status text,         -- 'started', 'completed', 'failed'
-  duration_ms integer,
-  error_message text,
-  created_at timestamptz DEFAULT now()
-);
-```
+## Cómo validaremos que queda resuelto (checklist)
+1) Pulsas “Completar Análisis Pendientes” y aparece “Trigger creado: <id>”.
+2) En “Estado de Reparación” ves el trigger en `pending`.
+3) Pulsas “Procesar ahora” y el trigger pasa a `processing` y luego `completed` (o muestra error claro).
+4) El contador de “Pendientes analizables” baja (y, si procede, el total con score sube).
+5) Verificación de seguridad: desde el dominio publicado **no** debe permitir origin (y si activamos auth+rol, sin admin no debe dejar).
 
 ---
 
-### Comparativa con Make.com
-
-| Aspecto | Make.com | Lovable/Supabase Actual | Mejora Propuesta |
-|---------|----------|-------------------------|------------------|
-| **Visibilidad de errores** | Dashboard visual | Panel /admin (bueno) | +Alertas proactivas |
-| **Reintentos automáticos** | Configurable por módulo | MAX_RETRIES=1000 (excesivo) | Backoff por modelo |
-| **Notificaciones** | Email/Slack integrado | No existe | +Webhooks/Email |
-| **Logs centralizados** | Historial por ejecución | Dispersos en funciones | +pipeline_logs |
-| **Monitoreo de salud** | Panel de ejecuciones | Solo estado actual | +health_checks |
-| **Recuperación de fallos** | Replay manual | Auto-reset zombis (bueno) | +Auto-repair analysis |
+## Archivos a tocar
+- `supabase/functions/rix-batch-orchestrator/index.ts` (nuevo modo: procesar triggers bajo demanda)
+- `supabase/functions/admin-cron-triggers/index.ts` (allowlist estricta + opcional auth/rol + endpoint para status)
+- `supabase/config.toml` (añadir sección de función `admin-cron-triggers`)
+- `src/components/admin/SweepMonitorPanel.tsx` (UI: estado trigger, polling, botón procesar ahora, métricas “analizable/no-analizable”)
 
 ---
 
-### Archivos a Modificar
-
-| Archivo | Cambio | Prioridad |
-|---------|--------|-----------|
-| `supabase/functions/rix-search-v2/index.ts` | Corregir payload de Grok-3 | CRITICA |
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir healthchecks + auto-repair | ALTA |
-| `src/components/admin/SweepMonitorPanel.tsx` | Panel de alertas | ALTA |
-| Migración SQL | Crear `pipeline_health_checks` y `pipeline_logs` | MEDIA |
-
----
-
-### Progreso de Implementación (28 Enero 2026)
-
-| Tarea | Estado | Notas |
-|-------|--------|-------|
-| Corregir bug Grok-3 HTTP 422 | ✅ COMPLETADO | Cambiado `search: true` → `tools: [{type: 'web_search_preview'}]` |
-| Crear tablas `pipeline_health_checks` y `pipeline_logs` | ✅ COMPLETADO | Migración ejecutada con RLS |
-| Añadir healthchecks al orchestrator | ✅ COMPLETADO | Función `performHealthChecks()` añadida |
-| Auto-trigger de análisis pendientes | ✅ COMPLETADO | Se activa cuando hay >20 pendientes |
-| Panel de alertas en /admin | ✅ COMPLETADO | Nueva pestaña "Alertas" con `PipelineAlertsPanel` |
-| Desplegar edge functions | ✅ COMPLETADO | `rix-search-v2` y `rix-batch-orchestrator` desplegados |
-
-### Próximos Pasos
-
-1. **Verificar** que Grok funciona correctamente en el próximo barrido
-2. **Ejecutar** reparación de análisis pendientes desde /admin → Barrido V2 → "Reparar Análisis"
-3. **Monitorear** la pestaña "Alertas" para detectar problemas automáticamente
-
+## Nota importante (contexto del “cron”)
+Aunque tengas un watchdog programado “cada 5 min”, en la práctica ahora mismo no se está ejecutando con esa frecuencia (en logs solo aparece una invocación). Con el botón “Procesar ahora”, el sistema funciona igual incluso si el scheduling falla o se retrasa.
