@@ -1132,7 +1132,14 @@ export function SweepMonitorPanel() {
             </div>
             <Progress value={status?.progress || 0} className="h-3" />
             
-            {/* Stats row */}
+            {/* Stats row - CORREGIDO: "Completados" = búsqueda + análisis ambos OK */}
+            {/* 
+              - Total empresas: del sweep_progress
+              - Completados: registros con 09_rix_score (análisis terminado) 
+              - Procesando: sweep_progress.status = processing
+              - Pendientes: búsqueda OK pero sin score (pendingAnalyzable) + sin datos (pendingNoData)
+              - Fallidos: sweep_progress.status = failed
+            */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-3">
               <div className="text-center p-3 rounded-lg bg-muted/50">
                 <div className="text-2xl font-bold text-foreground">{status?.totalCompanies || 0}</div>
@@ -1142,10 +1149,16 @@ export function SweepMonitorPanel() {
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-good/10">
-                <div className="text-2xl font-bold text-good">{status?.byStatus?.completed || 0}</div>
+                {/* CORREGIDO: Solo contar como completado si tiene score de análisis */}
+                <div className="text-2xl font-bold text-good">
+                  {analysisStatus ? Math.floor(analysisStatus.withScore / 6) : 0}
+                </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <CheckCircle2 className="h-3 w-3" />
                   Completados
+                </div>
+                <div className="text-[10px] text-muted-foreground/70">
+                  (búsqueda + análisis)
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-primary/10">
@@ -1156,11 +1169,19 @@ export function SweepMonitorPanel() {
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-needs-improvement/10">
-                <div className="text-2xl font-bold text-needs-improvement">{status?.byStatus?.pending || 0}</div>
+                {/* Pendientes: suma de pendientes de búsqueda + pendientes de análisis */}
+                <div className="text-2xl font-bold text-needs-improvement">
+                  {(status?.byStatus?.pending || 0) + (analysisStatus?.pendingAnalysis || 0)}
+                </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <Clock className="h-3 w-3" />
                   Pendientes
                 </div>
+                {analysisStatus && analysisStatus.pendingAnalysis > 0 && (
+                  <div className="text-[10px] text-muted-foreground/70">
+                    ({analysisStatus.pendingAnalyzable} analizables)
+                  </div>
+                )}
               </div>
               <div className="text-center p-3 rounded-lg bg-destructive/10">
                 <div className="text-2xl font-bold text-destructive">{status?.byStatus?.failed || 0}</div>
