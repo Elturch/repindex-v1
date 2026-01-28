@@ -323,9 +323,10 @@ async function fetchAllFromTable(tableName: 'rix_runs' | 'rix_runs_v2', columns:
       query = query.gte("batch_execution_date", limitDate.toISOString());
     }
     
-    // For V2, only include completed analyses
+    // For V2, include records with completed analysis OR valid rix_score
+    // This ensures we get Grok & Qwen even if analysis is pending for newest week
     if (tableName === 'rix_runs_v2') {
-      query = query.not('analysis_completed_at', 'is', null);
+      query = query.or('analysis_completed_at.not.is.null,09_rix_score.not.is.null');
     }
     
     const { data, error } = await query.range(start, end);
