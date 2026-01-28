@@ -10,6 +10,10 @@ export interface MethodologyMetadata {
   divergencePoints?: number;
   uniqueCompanies?: number;
   uniqueWeeks?: number;
+  // Statistical anchoring
+  rSquared?: number;
+  pValue?: number;
+  hasRegressionData?: boolean;
 }
 
 interface MethodologyFooterProps {
@@ -41,24 +45,24 @@ function formatModels(models: string[]): string {
   return unique.join(', ');
 }
 
-// Get divergence label
+// Get divergence label with sigma notation
 function getDivergenceLabel(level: string, points: number, langCode: string): { text: string; color: string } {
   const isSpanish = langCode === 'es';
   
   switch (level) {
     case 'low':
       return { 
-        text: isSpanish ? `Consenso alto (±${points} pts)` : `High consensus (±${points} pts)`,
+        text: isSpanish ? `σ=${points} → Consenso robusto` : `σ=${points} → Robust consensus`,
         color: 'text-green-600 dark:text-green-400'
       };
     case 'medium':
       return { 
-        text: isSpanish ? `Consenso moderado (±${points} pts)` : `Moderate consensus (±${points} pts)`,
+        text: isSpanish ? `σ=${points} → Narrativa estable` : `σ=${points} → Stable narrative`,
         color: 'text-amber-600 dark:text-amber-400'
       };
     case 'high':
       return { 
-        text: isSpanish ? `Alta divergencia (±${points} pts)` : `High divergence (±${points} pts)`,
+        text: isSpanish ? `σ=${points} → Alta incertidumbre` : `σ=${points} → High uncertainty`,
         color: 'text-red-600 dark:text-red-400'
       };
     default:
@@ -125,17 +129,32 @@ export function MethodologyFooter({ metadata, languageCode = 'es' }: Methodology
         
         <div>
           <span className="font-medium text-muted-foreground/90">
-            {isSpanish ? 'Consenso:' : 'Consensus:'}
+            {isSpanish ? 'Divergencia:' : 'Divergence:'}
           </span>{' '}
           <span className={divergence.color}>{divergence.text}</span>
         </div>
       </div>
       
+      {/* Statistical Anchoring (only show if regression data available) */}
+      {metadata.hasRegressionData && metadata.rSquared !== undefined && (
+        <div className="text-[8px] text-muted-foreground/60 mt-2">
+          <span className="font-medium">
+            {isSpanish ? '📈 Anclaje estadístico:' : '📈 Statistical anchoring:'}
+          </span>{' '}
+          <span>
+            R² = {(metadata.rSquared * 100).toFixed(1)}%
+            {metadata.pValue !== undefined && metadata.pValue < 0.05 && (
+              <span className="text-green-600 dark:text-green-400 ml-1">(p&lt;0.05)</span>
+            )}
+          </span>
+        </div>
+      )}
+      
       {/* Methodology Note */}
       <p className="text-[8px] italic text-muted-foreground/50 leading-relaxed max-w-3xl">
         {isSpanish 
-          ? 'El RIX mide la percepción algorítmica: la probabilidad de que una narrativa gane tracción en el ecosistema informativo de IA. No sustituye estudios tradicionales; los complementa con una capa que nadie más está midiendo. 100% búsqueda web real.'
-          : 'The RIX measures algorithmic perception: the probability that a narrative gains traction in the AI information ecosystem. It does not replace traditional studies; it complements them with a layer no one else is measuring. 100% real web search.'
+          ? 'El RIX mide la percepción algorítmica: la probabilidad de que una narrativa gane tracción en el ecosistema informativo de IA. Ejecución sistemática vía API (machine-to-machine) con prompts invariables. No sustituye estudios tradicionales; los complementa con una capa que nadie más está midiendo.'
+          : 'The RIX measures algorithmic perception: the probability that a narrative gains traction in the AI information ecosystem. Systematic API execution (machine-to-machine) with invariable prompts. It does not replace traditional studies; it complements them with a layer no one else is measuring.'
         }
       </p>
       

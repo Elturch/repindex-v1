@@ -469,8 +469,74 @@ export default function Methodology() {
           </div>
         </section>
 
-        {/* Cobertura y Frecuencia */}
+        {/* Rigor en la Ejecución - Nueva sección */}
         <section className="py-12 px-4 bg-accent/5">
+          <div className="container mx-auto max-w-4xl">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+            >
+              <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                <Shield className="h-6 w-6 text-primary" />
+                Rigor en la Ejecución
+              </h2>
+              <p className="text-muted-foreground mb-8">
+                La arquitectura del sistema garantiza reproducibilidad, estandarización y control de sesgos.
+              </p>
+              <div className="grid md:grid-cols-2 gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold mb-3">🔄 Ejecución Sistemática</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Cada domingo, el sistema ejecuta consultas machine-to-machine 
+                      vía API con prompts estructurados e invariables para todas 
+                      las empresas del censo.
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold mb-3">📊 Variables de Contraste</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Para empresas cotizadas: precio de cierre semanal (viernes). 
+                      Para todas: volumen de menciones Tier-1. Anclas empíricas 
+                      que permiten validación estadística continua.
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold mb-3">⚙️ Reproducibilidad</h3>
+                    <p className="text-sm text-muted-foreground">
+                      La estandarización elimina sesgos por usuario, contexto o 
+                      historial de conversación. Consultas idénticas para todos los 
+                      modelos garantizan comparabilidad.
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold mb-3">🔬 Divergencia Inter-modelo</h3>
+                    <p className="text-sm text-muted-foreground">
+                      La divergencia (σ) entre 6 modelos independientes es una medida 
+                      de incertidumbre epistémica. Cuando coinciden, la señal es robusta.
+                      La divergencia alta indica realidad informativa fragmentada.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+              <p className="text-xs text-muted-foreground/70 mt-6 italic text-center">
+                La ponderación de métricas parte de criterio experto y evolucionará 
+                según evidencia estadística conforme madure el dataset longitudinal.
+              </p>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Cobertura y Frecuencia */}
+        <section className="py-12 px-4">
           <div className="container mx-auto max-w-4xl">
             <div className="grid md:grid-cols-2 gap-8">
               <motion.div
