@@ -605,6 +605,119 @@ async function resetStuckProcessingCompanies(
 }
 
 // ============================================================================
+// PROCESO DE CRON TRIGGERS (server-to-server, sin bloqueo de extensiones)
+// ============================================================================
+interface CronTrigger {
+  id: string;
+  action: string;
+  params: { batch_size?: number } | null;
+  status: string;
+  created_at: string;
+}
+
+async function processCronTriggers(
+  supabase: ReturnType<typeof createClient>,
+  supabaseUrl: string,
+  serviceKey: string
+): Promise<Array<{ id: string; action: string; success: boolean; result?: unknown; error?: string }>> {
+  const results: Array<{ id: string; action: string; success: boolean; result?: unknown; error?: string }> = [];
+  
+  // Obtener triggers pendientes (máximo 5 por invocación)
+  const { data: triggers, error } = await supabase
+    .from('cron_triggers')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .limit(5);
+
+  if (error || !triggers || triggers.length === 0) {
+    return results;
+  }
+
+  console.log(`[cron_triggers] Found ${triggers.length} pending triggers`);
+
+  for (const trigger of triggers as CronTrigger[]) {
+    // Marcar como processing
+    await supabase
+      .from('cron_triggers')
+      .update({ status: 'processing' })
+      .eq('id', trigger.id);
+
+    try {
+      if (trigger.action === 'repair_analysis') {
+        console.log(`[cron_triggers] Processing repair_analysis trigger ${trigger.id}`);
+        
+        // Llamada server-to-server a rix-analyze-v2 (sin extensiones bloqueando)
+        const response = await fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            action: 'reprocess_pending', 
+            batch_size: trigger.params?.batch_size || 3 
+          }),
+        });
+
+        const responseText = await response.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        // Marcar como completado
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: data as Record<string, unknown>
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
+        console.log(`[cron_triggers] Trigger ${trigger.id} completed successfully`);
+      } else {
+        // Acción desconocida
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'failed',
+            processed_at: new Date().toISOString(),
+            result: { error: `Unknown action: ${trigger.action}` }
+          })
+          .eq('id', trigger.id);
+        
+        results.push({ id: trigger.id, action: trigger.action, success: false, error: `Unknown action: ${trigger.action}` });
+      }
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.error(`[cron_triggers] Error processing trigger ${trigger.id}:`, errorMsg);
+      
+      await supabase
+        .from('cron_triggers')
+        .update({ 
+          status: 'failed',
+          processed_at: new Date().toISOString(),
+          result: { error: errorMsg }
+        })
+        .eq('id', trigger.id);
+
+      results.push({ id: trigger.id, action: trigger.action, success: false, error: errorMsg });
+    }
+  }
+
+  return results;
+}
+
+// ============================================================================
 // DENO SERVER
 // ============================================================================
 Deno.serve(async (req) => {
@@ -699,7 +812,13 @@ Deno.serve(async (req) => {
 
       console.log(`[watchdog] Sweep ${sweepId}: pending=${pending}, processing=${processing}, completed=${completed}, failed=${failed}`);
 
-      // 3. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
+      // 3. Procesar cron_triggers pendientes (server-to-server, sin bloqueo de extensiones)
+      const triggersProcessed = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+      if (triggersProcessed.length > 0) {
+        console.log(`[watchdog] Processed ${triggersProcessed.length} cron triggers: ${triggersProcessed.map(t => t.action).join(', ')}`);
+      }
+
+      // 4. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
       if (pending === 0 && processing === 0 && failed === 0) {
         console.log(`[watchdog] Sweep ${sweepId} is complete (${completed}/${total}). Nothing to resume.`);
         return new Response(
@@ -710,6 +829,7 @@ Deno.serve(async (req) => {
             action: 'complete',
             reason: 'Sweep already completed',
             stats: { pending, processing, completed, failed, total },
+            triggersProcessed: triggersProcessed.length,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -762,6 +882,7 @@ Deno.serve(async (req) => {
           tickers: batchResults.filter(r => r.ticker).map(r => r.ticker),
           remaining: lastResult?.remaining || 0,
           zombiesReset: stuckReset.count > 0 ? stuckReset : undefined,
+          triggersProcessed: triggersProcessed.length,
           stats: { 
             pendingBefore: pending + stuckReset.count, 
             processing, 
