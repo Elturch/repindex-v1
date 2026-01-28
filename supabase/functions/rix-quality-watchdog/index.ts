@@ -5,14 +5,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// 6 modelos que monitoreamos
-const ALL_MODELS = ['ChatGPT', 'Deepseek', 'Gemini', 'Grok', 'Perplexity', 'Qwen']
+// 6 modelos que monitoreamos (display names esperados)
+const ALL_MODELS = ['ChatGPT', 'Deepseek', 'Google Gemini', 'Grok', 'Perplexity', 'Qwen']
 
-// Columnas de respuesta bruta por modelo
+// Alias de nombres para normalizar 'Gemini' ↔ 'Google Gemini'
+const MODEL_ALIASES: Record<string, string> = {
+  'Gemini': 'Google Gemini',
+  'Google Gemini': 'Google Gemini',
+}
+
+// Normaliza el nombre de modelo a un canonical name (aplica alias)
+function normalizeModelName(name: string): string {
+  if (!name) return 'Unknown'
+  return MODEL_ALIASES[name] || name
+}
+
+// Columnas de respuesta bruta por modelo (usando canonical names)
 const MODEL_RAW_COLUMNS: Record<string, string> = {
   'ChatGPT': '20_res_gpt_bruto',
   'Deepseek': '23_res_deepseek_bruto',
-  'Gemini': '22_res_gemini_bruto',
+  'Google Gemini': '22_res_gemini_bruto',
   'Grok': 'respuesta_bruto_grok',
   'Perplexity': '21_res_perplex_bruto',
   'Qwen': 'respuesta_bruto_qwen',
@@ -196,8 +208,11 @@ async function analyzeQuality(supabase: any, forcedSweepId?: string): Promise<An
 
   weekRecords.forEach((record: any) => {
     const ticker = record['05_ticker']
-    const modelName = record['02_model_name']
-    if (!ticker || !modelName) return
+    const rawModelName = record['02_model_name']
+    if (!ticker || !rawModelName) return
+
+    // Normalizar nombre de modelo para que 'Gemini' y 'Google Gemini' se traten igual
+    const modelName = normalizeModelName(rawModelName)
 
     if (!tickerModels.has(ticker)) {
       tickerModels.set(ticker, new Map())
@@ -500,8 +515,9 @@ async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<
     else if (report.status === 'repaired') byStatus.repaired++
     else if (report.status === 'failed_repair') byStatus.failed_repair++
 
-    // Por modelo
-    const modelStats = byModel[report.model_name]
+    // Por modelo (normalizar nombre para alias)
+    const normalizedModel = normalizeModelName(report.model_name)
+    const modelStats = byModel[normalizedModel]
     if (modelStats) {
       if (report.status === 'missing') modelStats.missing++
       else if (report.status === 'repaired') modelStats.repaired++
