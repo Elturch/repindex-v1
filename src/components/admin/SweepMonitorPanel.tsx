@@ -409,7 +409,7 @@ export function SweepMonitorPanel() {
   }, []);
 
   // ============ REPARAR ANÁLISIS PENDIENTES ============
-  // Usar fetch con timeout extendido (5 min) porque el análisis puede tardar ~140s por registro
+  // Usar supabase.functions.invoke para evitar problemas de CORS y manejo automático de headers
   const handleRepairAnalysis = async () => {
     setRepairingAnalysis(true);
     
@@ -420,29 +420,14 @@ export function SweepMonitorPanel() {
     });
     
     try {
-      // Crear AbortController con timeout de 5 minutos
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min
-      
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/rix-analyze-v2`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ action: 'reprocess_pending', batch_size: 3 }),
-        signal: controller.signal,
+      // Usar supabase.functions.invoke en lugar de fetch directo
+      const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
+        body: { action: 'reprocess_pending', batch_size: 3 },
       });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+
+      if (error) {
+        throw error;
       }
-      
-      const data = await response.json();
 
       toast({
         title: '✅ Análisis completado',
@@ -454,16 +439,18 @@ export function SweepMonitorPanel() {
     } catch (error: any) {
       console.error('Error repairing analysis:', error);
       
-      if (error.name === 'AbortError') {
+      // Detectar si es un error de conexión/extensiones
+      const errorMsg = error?.message || String(error);
+      if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
         toast({
-          title: 'Timeout',
-          description: 'El proceso tardó demasiado. Revisa los logs para verificar el progreso.',
+          title: 'Error de conexión',
+          description: 'No se pudo conectar al servidor. Si el problema persiste, prueba a desactivar extensiones del navegador o usar modo incógnito.',
           variant: 'destructive',
         });
       } else {
         toast({
           title: 'Error',
-          description: error.message || 'No se pudo completar el análisis',
+          description: errorMsg || 'No se pudo completar el análisis',
           variant: 'destructive',
         });
       }
