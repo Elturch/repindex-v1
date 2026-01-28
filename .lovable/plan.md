@@ -1,254 +1,110 @@
 
+Objetivo
+- Corregir que en /chat el Agente Rix “no conteste” y solo aparezca el botón “Descargar como informe”, dejando un mensaje asistente vacío.
 
-## Plan: Agente Vigilante de Calidad de Datos RIX
+Diagnóstico (causa real)
+- El frontend (ChatContext) envía las preguntas a la edge function `chat-intelligence` con `streamMode: true` y entra en “STREAMING MODE” (SSE).
+- Pero el backend `supabase/functions/chat-intelligence/index.ts` solo implementa SSE real para “bulletins” (boletines). Para el flujo estándar (handleStandardChat) devuelve JSON (`Content-Type: application/json`) siempre.
+- Resultado: el frontend intenta parsear la respuesta como SSE (busca líneas `data: ...`), no encuentra chunks, `accumulatedContent` se queda vacío y termina mostrando un mensaje asistente sin contenido. Aun así, el botón de descarga aparece porque `showDownload` se activa cuando `isStreaming` es false.
 
-### Diagnóstico Confirmado
+Evidencia en el código
+- Frontend (`src/contexts/ChatContext.tsx`): en modo streaming hace `fetch(.../chat-intelligence)` y parsea SSE esperando `data: { type: 'chunk' | 'done' | 'error' }`.
+- Backend (`supabase/functions/chat-intelligence/index.ts`):
+  - Si `streamMode` es true: solo hace log (“STREAMING MODE enabled…”) pero “cae” al flujo estándar sin devolver SSE.
+  - `handleStandardChat` termina con `return new Response(JSON.stringify({ answer, ... }), { 'Content-Type': 'application/json' })`.
 
-He verificado los datos reales del barrido del domingo 25 de enero (semana `2026-01-18`):
+Solución (implementación)
+Vamos a hacerlo robusto en dos capas para que no vuelva a pasar:
+A) Backend: Streaming SSE real para el chat estándar cuando `streamMode === true`
+B) Frontend: fallback automático si el backend devuelve JSON (para compatibilidad y resiliencia)
 
-| Métrica | Valor | Problema |
-|---------|-------|----------|
-| Total empresas | 156 | OK |
-| Empresas con 6/6 modelos | **102** | SOLO 65% de cobertura completa |
-| Empresas con 1-5 modelos | **53** | 34% cobertura parcial |
-| Empresas con 0 scores | **1** | ART completamente fallida |
+A) Cambios backend (chat-intelligence) — SSE para Standard Chat
+1) Pasar `streamMode` al handler estándar
+- En el `serve()` principal, al llamar a `handleStandardChat(...)`, añadir el parámetro `streamMode`.
+- Ajustar la firma de `handleStandardChat` para recibir `streamMode: boolean`.
 
-**Desglose por modelo:**
-| Modelo | Con Score | Sin Datos | Tasa Éxito |
-|--------|-----------|-----------|------------|
-| Perplexity | 151 | 5 | 97% |
-| Qwen | 150 | 6 | 96% |
-| Deepseek | 148 | 8 | 95% |
-| Gemini | 148 | 8 | 95% |
-| ChatGPT | 147 | 2+7 | 94% |
-| **Grok** | **120** | **36** | **77%** |
+2) Implementar rama `if (streamMode)` dentro de `handleStandardChat`
+- Crear un `ReadableStream` y usar `createSSEEncoder()` (ya existe).
+- Emitir eventos SSE:
+  - Opcional: `start` (metadata básica: idioma, depth, empresas detectadas).
+  - Durante generación: eventos `chunk` con texto incremental (igual que en bulletins).
+  - Al finalizar: evento `done` con `suggestedQuestions`, `drumrollQuestion` y `metadata` (incluyendo `methodology`).
+  - En fallo: evento `error` con mensaje usable para UI.
 
-**Problema crítico:** Grok falla silenciosamente (sin registrar errores) en ~23% de los casos, probablemente por error HTTP 422 con el formato de `tools` en el endpoint `/v1/responses`.
+3) Reutilizar el streaming ya existente
+- Generación en streaming:
+  - Intentar `streamOpenAIResponse(...)` con el mismo prompt/mensajes usados hoy (system + conversationHistory + userPrompt).
+  - Si falla o no hay contenido: fallback a `streamGeminiResponse(...)` (ya está implementado).
+- Después de completar el texto (ya con `accumulatedContent`):
+  - Ejecutar la parte final existente: extracción de insights + drumroll + suggested questions.
+  - Emitir el evento final `done`.
 
----
+4) Headers SSE correctos
+- Devolver `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive` como ya se hace en bulletins.
 
-### Objetivo del Agente Vigilante
+5) Persistencia coherente
+- Mantener el guardado en DB desde el backend (como ya hace hoy) para que:
+  - El historial sea consistente incluso si el navegador recarga.
+  - La metadata metodológica sea la “fuente de verdad”.
 
-Crear un sistema automatizado que:
-1. **Detecte** datos incompletos o de baja calidad después de cada barrido
-2. **Diagnostique** qué modelos fallaron y por qué
-3. **Repare** automáticamente relanzando búsquedas para los modelos fallidos
-4. **Reporte** métricas precisas para visibilidad del admin
+B) Cambios frontend (ChatContext) — fallback JSON + recuperación
+1) Detectar Content-Type antes de parsear
+- En el camino `useStreaming`:
+  - Si `response.headers.get('content-type')` incluye `application/json`, no intentar SSE:
+    - `const data = await response.json()`
+    - Completar el mensaje asistente con `data.answer`
+    - Asignar `suggestedQuestions`, `drumrollQuestion`, `metadata` como en el flujo no-streaming.
 
----
+2) Mantener SSE cuando realmente sea SSE
+- Si el content-type es `text/event-stream`, usar el parser actual.
+- (Opcional mejora) Hacer el parser un poco más estricto:
+  - Ignorar líneas vacías y comentarios `:` (keep-alive), para evitar falsos negativos.
 
-### Arquitectura Propuesta
+3) Evitar “mensajes vacíos”
+- Si al finalizar el “streaming” `accumulatedContent.trim()` es vacío:
+  - Mostrar toast de error (“No se recibió contenido del asistente. Reintentando recuperación…”).
+  - Recuperar desde DB el último mensaje asistente no vacío para ese `sessionId` y pintarlo (fallback de seguridad).
+  - Esto cubre casos raros de proxies o cortes de stream.
 
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       AGENTE VIGILANTE DE CALIDAD                       │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐           │
-│  │  1. DETECTAR  │───▶│ 2. DIAGNOSTICAR│───▶│  3. REPARAR   │           │
-│  │   (Análisis)  │    │   (Clasificar) │    │  (Re-lanzar)  │           │
-│  └───────────────┘    └───────────────┘    └───────────────┘           │
-│         │                    │                    │                     │
-│         ▼                    ▼                    ▼                     │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    data_quality_reports (nueva tabla)           │   │
-│  │  - sweep_id, ticker, model, status, error_type, retry_count     │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                         │
-│  TRIGGERS:                                                              │
-│  - CRON: Lunes 08:00 CET (después del barrido del domingo)              │
-│  - CRON: Martes 08:00 CET (segunda pasada de reparación)                │
-│  - Manual: Botón en /admin                                              │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+4) Reducir duplicados en `chat_intelligence_sessions` (recomendado)
+- Actualmente el cliente inserta el mensaje del usuario y el asistente en DB, y el backend también inserta. Esto puede duplicar el historial.
+- Ajuste recomendado:
+  - En modo streaming: no insertar en `chat_intelligence_sessions` desde el cliente (o al menos no insertar el asistente).
+  - Dejar que el backend sea el único escritor de sesiones para el chat estándar.
+- Nota: esto no es imprescindible para “ver la respuesta”, pero evita historial con entradas repetidas o vacías.
 
----
+Validación / pruebas (lo que verificaremos)
+1) Prueba manual en /chat:
+- Enviar una pregunta “normal” (no boletín) con profundidad Exhaustivo.
+- Ver que aparece respuesta en tiempo real (texto incremental) o, si no hay SSE por cualquier motivo, que aparece respuesta completa vía JSON fallback.
+- Confirmar que el botón “Descargar como informe” exporta el HTML con contenido real.
 
-### Cambios Propuestos
+2) Prueba de red:
+- Confirmar que la llamada a `/functions/v1/chat-intelligence` devuelve:
+  - `Content-Type: text/event-stream` cuando `streamMode: true`
+  - `application/json` cuando `streamMode: false`
 
-#### 1. Nueva Edge Function: `rix-quality-watchdog`
+3) Prueba de regresión:
+- Generación de boletines (que ya usa SSE) sigue funcionando.
+- Enriquecimiento por rol (action=enrich) sigue devolviendo JSON y el frontend lo maneja (no usa stream ahí).
 
-**Archivo:** `supabase/functions/rix-quality-watchdog/index.ts`
+Archivos a modificar (exactos)
+- `supabase/functions/chat-intelligence/index.ts`
+  - Pasar `streamMode` a `handleStandardChat`
+  - Añadir implementación SSE en Standard Chat
+- `src/contexts/ChatContext.tsx`
+  - Detectar `Content-Type` y fallback a JSON
+  - (Opcional) recuperación desde DB si respuesta queda vacía
+  - (Recomendado) evitar inserciones duplicadas en `chat_intelligence_sessions` en modo streaming
 
-Esta función será el "agente vigilante" que:
+Riesgos y mitigaciones
+- Riesgo: Al añadir SSE al chat estándar, algunos navegadores/proxies pueden cortar streams largos.
+  - Mitigación: fallback automático a JSON y/o recuperación desde DB si el contenido queda vacío.
+- Riesgo: “done event” tarda porque después del streaming se generan sugerencias/drumroll.
+  - Mitigación: seguir streameando solo el cuerpo principal; el “done” puede llegar 1–3s después sin afectar la UX.
 
-**Modo `analyze`:**
-- Consulta `rix_runs_v2` para la semana más reciente
-- Agrupa por empresa y modelo
-- Identifica registros con `20_res_gpt_bruto IS NULL` (sin datos de búsqueda)
-- Clasifica el tipo de fallo:
-  - `no_response`: API no devolvió contenido
-  - `timeout`: El request expiró
-  - `rate_limit`: Límite de API alcanzado
-  - `payload_error`: Error de formato (ej: Grok 422)
-  - `api_key_issue`: Problema de autenticación
-- Inserta resumen en nueva tabla `data_quality_reports`
-
-**Modo `repair`:**
-- Obtiene empresas con modelos incompletos
-- Para cada empresa-modelo faltante:
-  - Llama a `rix-search-v2` con parámetro `single_model` (nuevo)
-  - Solo relanza el modelo que falló, no los 6
-- Actualiza el registro en `rix_runs_v2` con los nuevos datos
-- Máximo 10 reparaciones por invocación (para evitar timeouts)
-
-**Modo `report`:**
-- Devuelve estadísticas consolidadas para el panel admin
-
-#### 2. Modificar `rix-search-v2` para soportar reparaciones individuales
-
-**Archivo:** `supabase/functions/rix-search-v2/index.ts`
-
-Añadir modo `single_model`:
-- Parámetro: `{ ticker, issuer_name, single_model: 'Grok' }`
-- En lugar de ejecutar los 6 modelos, solo ejecuta el modelo especificado
-- Actualiza solo esa columna en el registro existente (no crea duplicado)
-
-#### 3. Nueva tabla para seguimiento de calidad
-
-**SQL Migration:**
-```sql
-CREATE TABLE data_quality_reports (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  sweep_id TEXT NOT NULL,
-  week_start DATE NOT NULL,
-  ticker TEXT NOT NULL,
-  model_name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'missing', -- missing, repaired, failed_repair
-  error_type TEXT, -- no_response, timeout, rate_limit, payload_error, api_key
-  original_error TEXT,
-  repair_attempts INTEGER DEFAULT 0,
-  repaired_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  
-  UNIQUE(sweep_id, ticker, model_name)
-);
-
-CREATE INDEX idx_dqr_sweep ON data_quality_reports(sweep_id);
-CREATE INDEX idx_dqr_status ON data_quality_reports(status);
-```
-
-#### 4. CRON Jobs para ejecución automática
-
-**Programar vía `pg_cron`:**
-- **Lunes 08:00 CET:** `rix-quality-watchdog?action=analyze` - Detecta problemas
-- **Lunes 09:00 CET:** `rix-quality-watchdog?action=repair` - Primera reparación
-- **Martes 08:00 CET:** `rix-quality-watchdog?action=repair` - Segunda pasada
-
-#### 5. Panel de Calidad en /admin
-
-**Archivo:** `src/components/admin/SweepMonitorPanel.tsx`
-
-Añadir nueva sección "Calidad de Datos" con:
-
-**Métricas corregidas:**
-- Total empresas en sweep
-- Empresas con 6/6 modelos completos (100% coverage)
-- Empresas con cobertura parcial (desglose)
-- Empresas sin datos
-
-**Tabla de diagnóstico:**
-| Modelo | OK | Fallidos | Reparados | Pendientes | Tasa Éxito |
-|--------|-----|----------|-----------|------------|------------|
-| Perplexity | 151 | 5 | 4 | 1 | 99% |
-| Grok | 120 | 36 | 28 | 8 | 95% |
-
-**Botones de acción:**
-- "Analizar Calidad" → Ejecuta `analyze`
-- "Reparar Fallidos" → Ejecuta `repair`
-- "Ver Detalles" → Modal con lista de empresas afectadas
-
-#### 6. Corregir incoherencias del panel actual
-
-**Problema 1:** El panel muestra la semana `2026-01-19` cuando debería mostrar `2026-01-18`
-- **Solución:** Ordenar por número de registros, no solo por fecha más reciente
-
-**Problema 2:** "Completados" usa formula incorrecta
-- **Solución:** Ya corregido con `uniqueCompaniesComplete`, pero verificar que consulta la semana correcta
-
-**Problema 3:** No distingue entre "sin datos" y "analizable"
-- **Solución:** Ya implementado, pero asegurar visibilidad clara
-
----
-
-### Archivos a crear/modificar
-
-| Archivo | Acción | Descripción |
-|---------|--------|-------------|
-| `supabase/functions/rix-quality-watchdog/index.ts` | **CREAR** | Agente vigilante principal |
-| `supabase/functions/rix-search-v2/index.ts` | MODIFICAR | Añadir modo `single_model` para reparaciones |
-| `supabase/config.toml` | MODIFICAR | Añadir config de nueva función |
-| SQL Migration | CREAR | Tabla `data_quality_reports` |
-| `src/components/admin/SweepMonitorPanel.tsx` | MODIFICAR | Panel de calidad + corrección de métricas |
-
----
-
-### Flujo de Reparación Automática
-
-```text
-DOMINGO 03:00-23:00 CET
-│
-├─ rix-batch-orchestrator ejecuta barrido de 174 empresas
-│  └─ rix-search-v2 ejecuta 6 modelos por empresa
-│
-LUNES 08:00 CET
-│
-├─ rix-quality-watchdog (analyze)
-│  ├─ Detecta: 54 empresas con cobertura < 100%
-│  ├─ Clasifica: 36 fallos Grok, 8 Deepseek, 8 Gemini, etc.
-│  └─ Inserta en data_quality_reports
-│
-LUNES 09:00 CET
-│
-├─ rix-quality-watchdog (repair)
-│  ├─ Obtiene 10 empresas prioritarias (menos modelos OK)
-│  ├─ Relanza SOLO modelos fallidos (no los 6)
-│  └─ Actualiza registros en rix_runs_v2
-│
-MARTES 08:00 CET
-│
-├─ rix-quality-watchdog (repair) - Segunda pasada
-│  ├─ Procesa siguientes 10-20 empresas
-│  └─ Marca como "failed_repair" si 3+ intentos fallidos
-│
-RESULTADO: Cobertura 95%+ antes del viernes (generación de noticias)
-```
-
----
-
-### Priorización de Reparaciones
-
-El agente priorizará empresas y modelos así:
-
-1. **Prioridad CRÍTICA:** Empresas con 0-2 modelos OK (completamente incompletas)
-2. **Prioridad ALTA:** Empresas con 3-4 modelos OK (análisis parcial posible)
-3. **Prioridad MEDIA:** Empresas con 5 modelos OK (solo falta 1)
-
-Dentro de cada prioridad, ordenar por:
-- Empresas IBEX 35 primero
-- Luego por `retry_count` ascendente (evitar bucles en problemáticas)
-
----
-
-### Validación del Éxito
-
-Después de implementar, estas métricas deben mejorar:
-
-| Métrica | Antes | Objetivo |
-|---------|-------|----------|
-| Empresas 6/6 modelos | 65% (102/156) | >95% (148+/156) |
-| Modelos Grok OK | 77% (120/156) | >95% (148+/156) |
-| Fallos silenciosos | Muchos | 0 (todos registrados) |
-| Tiempo hasta cobertura completa | N/A | <48h post-barrido |
-
----
-
-### Consideración Técnica: Por qué falla Grok
-
-El endpoint `/v1/responses` de xAI con `tools: [{type: 'web_search_preview'}]` devuelve **HTTP 422** en algunos casos. El código actual no captura correctamente este error.
-
-**Solución en reparación:** 
-- Añadir retry con backoff exponencial específico para Grok
-- Si falla 3 veces, marcar como `failed_repair` y usar solo 5 modelos para esa empresa
-- Registrar el error exacto para diagnóstico
-
+Resultado esperado
+- Al preguntar al Agente Rix en /chat, siempre habrá respuesta visible:
+  - En streaming real cuando esté activo, y
+  - En modo JSON fallback cuando no haya SSE disponible,
+  eliminando el caso “solo aparece el botón de descargar sin contestación”.
