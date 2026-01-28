@@ -118,7 +118,7 @@ export function RixRunDetail() {
   const flags = rixRun.flags || [];
 
   // Parse puntos_clave
-  const puntosClave = rixRun.puntos_clave || [];
+  const puntosClave = normalizeStringList(rixRun.puntos_clave);
 
   // Function to normalize flag names
   const normalizeFlag = (flag: string) => {
@@ -574,4 +574,43 @@ export function RixRunDetail() {
       </div>
     </Layout>
   );
+}
+
+function normalizeStringList(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return input
+      .map((v) => (typeof v === "string" ? v : v == null ? "" : String(v)))
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof input === "string") {
+    const raw = input.trim();
+    if (!raw) return [];
+
+    // Attempt JSON parse when it looks like JSON
+    if (raw.startsWith("[") || raw.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(raw);
+        return normalizeStringList(parsed);
+      } catch {
+        // fall through to heuristic split
+      }
+    }
+
+    // Heuristic split for plaintext bullet lists
+    return raw
+      .split(/\r?\n|\u2022|•|\s+-\s+/g)
+      .map((s) => s.replace(/^\s*-\s*/, "").trim())
+      .filter(Boolean);
+  }
+
+  if (input && typeof input === "object") {
+    // Common shapes: { items: [...] } or numeric-key objects
+    const obj = input as Record<string, unknown>;
+    if (Array.isArray(obj.items)) return normalizeStringList(obj.items);
+    return normalizeStringList(Object.values(obj));
+  }
+
+  return [];
 }
