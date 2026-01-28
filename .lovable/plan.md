@@ -1,32 +1,99 @@
-# Plan de Desarrollo RepIndex
 
-## ✅ Completado: Sistema de Visibilidad de Errores de API
+## Plan: Corregir Error de Fetch en Panel de Análisis
 
-**Fecha**: 2026-01-28
+### Diagnóstico del Problema
 
-Se implementó un panel de errores de API en `SweepMonitorPanel.tsx` que proporciona:
+Se identificaron **DOS causas** del error "Failed to fetch":
 
-1. **Resumen por modelo**: Conteo de errores y tipo principal de error por cada IA (ChatGPT, Grok, Deepseek, etc.)
-2. **Clasificación automática**: Los errores se clasifican en 6 tipos:
-   - `auth`: Errores de autenticación (401, API key)
-   - `rate_limit`: Límites de tasa (429, quota)
-   - `timeout`: Timeouts de conexión
-   - `payload`: Errores de estructura (422, 400, deserialize)
-   - `connection`: Errores de red
-   - `unknown`: No clasificados
-3. **Tabla de errores recientes**: Muestra los últimos 10 errores con ticker, modelo, tipo y timestamp
-4. **Diagnóstico automático**: Alertas especiales para errores críticos (ej: errores de payload)
+1. **Extensión de Chrome bloqueando**: El stack trace muestra que una extensión (`frame_ant`) está interceptando `window.fetch` y bloqueando la petición antes de llegar al servidor. Esto está fuera de nuestro control directo.
 
-### Archivos Modificados
-- `src/components/admin/SweepMonitorPanel.tsx`: Panel de errores de API con UI completa
+2. **Headers CORS incompletos**: La Edge Function `rix-analyze-v2` solo declara 4 headers permitidos, pero el cliente Supabase JS envía headers adicionales como `x-supabase-client-platform`.
 
-### Hallazgo Importante
-Se detectó que **Grok tiene errores HTTP 422** debido a un problema con el esquema de `tools` (missing field `parameters`). Esto es un bug separado en `rix-search-v2` que debe corregirse.
+**Evidencia**:
+- La llamada directa desde el servidor (curl) funciona correctamente (HTTP 200)
+- Las llamadas desde el navegador del usuario fallan sin status code
+- El stack trace muestra interceptación por extensión de Chrome
 
----
+### Solución Propuesta
 
-## Próximas Mejoras Potenciales
+#### Cambio 1: Actualizar CORS Headers en Edge Function
 
-1. **Corregir bug de Grok**: El esquema de tools enviado a xAI tiene formato incorrecto
-2. **Acción de reintentar**: Añadir botón para reintentar análisis fallidos directamente desde el panel
-3. **Alertas proactivas**: Notificaciones cuando el % de errores supere un umbral
+En `supabase/functions/rix-analyze-v2/index.ts`, actualizar los headers CORS para incluir todos los headers que Supabase JS puede enviar:
+
+```typescript
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+};
+```
+
+#### Cambio 2: Usar supabase.functions.invoke en lugar de fetch
+
+En `src/components/admin/SweepMonitorPanel.tsx`, cambiar de `fetch` directo a `supabase.functions.invoke` que ya tiene manejo integrado de headers y timeouts:
+
+```typescript
+const handleRepairAnalysis = async () => {
+  setRepairingAnalysis(true);
+  
+  toast({
+    title: 'Análisis iniciado',
+    description: 'Procesando registros pendientes... Esto puede tardar varios minutos.',
+  });
+  
+  try {
+    // Usar supabase.functions.invoke para evitar problemas de CORS
+    const { data, error } = await supabase.functions.invoke('rix-analyze-v2', {
+      body: { action: 'reprocess_pending', batch_size: 3 },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    toast({
+      title: 'Análisis completado',
+      description: data?.message || `Procesados ${data?.processed || 0} registros`,
+    });
+
+    fetchAnalysisStatus();
+  } catch (error: any) {
+    console.error('Error repairing analysis:', error);
+    toast({
+      title: 'Error',
+      description: error.message || 'No se pudo completar el análisis',
+      variant: 'destructive',
+    });
+  } finally {
+    setRepairingAnalysis(false);
+  }
+};
+```
+
+#### Cambio 3: Agregar Información de Diagnóstico
+
+Añadir un mensaje informativo para el usuario si el problema persiste, sugiriendo que desactive extensiones del navegador:
+
+```typescript
+// En el catch del error
+if (error.message?.includes('Failed to fetch')) {
+  toast({
+    title: 'Error de conexión',
+    description: 'No se pudo conectar al servidor. Si el problema persiste, prueba a desactivar extensiones del navegador o usar modo incógnito.',
+    variant: 'destructive',
+  });
+}
+```
+
+### Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `supabase/functions/rix-analyze-v2/index.ts` | Actualizar corsHeaders con headers completos de Supabase JS |
+| `src/components/admin/SweepMonitorPanel.tsx` | Cambiar de `fetch` a `supabase.functions.invoke` + mensaje de diagnóstico |
+
+### Beneficios
+
+1. **Mayor compatibilidad**: Los headers CORS completos evitan rechazos de preflight
+2. **Menos puntos de fallo**: Usar el cliente SDK evita errores de configuración manual
+3. **Mejor UX**: Mensaje claro si hay interferencia de extensiones
+4. **Consistencia**: Alinea con el patrón usado en otras partes de la aplicación
