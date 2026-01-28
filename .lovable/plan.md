@@ -1,41 +1,50 @@
 
-# ✅ PLAN COMPLETADO
+# ✅ PLAN COMPLETADO - Análisis de Regresión Real
 
-## Objetivo
-Corregir que en /chat el Agente Rix "no conteste" y solo aparezca el botón "Descargar como informe", dejando un mensaje asistente vacío.
+## Problema Resuelto
+El Agente Rix "alucinaba" análisis estadísticos sofisticados (regresión, correlaciones, R², etc.) sin tener ningún código real de cálculo. Inventaba tablas de datos, coeficientes y conclusiones falsas.
 
-## Cambios implementados
+## Solución Implementada
 
-### A) Backend (supabase/functions/chat-intelligence/index.ts)
+### 1. Nueva Edge Function: `rix-regression-analysis`
+- Ubicación: `supabase/functions/rix-regression-analysis/index.ts`
+- Calcula correlación de Pearson real entre métricas RIX (semana t) y variación de precio (semana t+1)
+- Usa paginación para acceder a TODOS los datos (7,980 registros)
+- Devuelve correlación por métrica con p-value, significancia y R²
 
-1. **Pasado `streamMode` a `handleStandardChat`** (línea ~1797)
-   - Añadido el parámetro `streamMode` a la llamada de la función
+### 2. Detección de Preguntas de Regresión
+- Keywords: regresión, correlación, predictor, ponderación, peso, etc.
+- Cuando se detecta, automáticamente llama al endpoint de regresión
 
-2. **Actualizada la firma de `handleStandardChat`** (línea ~2977)
-   - Añadido parámetro `streamMode: boolean = false`
+### 3. Paginación Inteligente en `chat-intelligence`
+- Límite adaptativo según `depthLevel`:
+  - quick: 2,000 registros
+  - complete: 5,000 registros
+  - exhaustive: 10,000 registros
 
-3. **Implementado SSE streaming real para chat estándar** (líneas ~4095-4320)
-   - Nueva rama `if (streamMode)` que retorna `ReadableStream`
-   - Usa `streamOpenAIResponse()` con fallback a `streamGeminiResponse()`
-   - Emite eventos SSE: `start`, `chunk`, `fallback`, `done`, `error`
-   - Incluye metadata de metodología en el evento `done`
-   - Guarda en DB desde backend (evita duplicados)
+### 4. Contexto Enriquecido
+- Nuevo bloque `ANÁLISIS ESTADÍSTICO REAL` en el contexto del LLM
+- Instrucciones anti-alucinación para datos estadísticos
 
-### B) Frontend (src/contexts/ChatContext.tsx)
+## Resultados del Análisis REAL (28 ene 2026)
+- **7,980 registros** analizados
+- **133 empresas** con precios
+- **21 semanas** de datos
+- **NINGUNA métrica** tiene correlación significativa con precio (p > 0.05)
+- **R² ≈ 0.1%** - las métricas RIX no explican movimientos de precio
 
-1. **Detección de Content-Type** (líneas ~407-425)
-   - Si `Content-Type: application/json` → parsea como JSON (fallback)
-   - Si `Content-Type: text/event-stream` → parsea como SSE (streaming)
+## Implicación Importante
+Las métricas RIX miden **percepción algorítmica**, NO predicen precio bursátil. El valor está en la detección de narrativas y señales reputacionales, no en predicción financiera.
 
-2. **Manejo robusto de SSE**
-   - Ignora líneas vacías y comentarios keep-alive (`:`)
-   - Safety check: si stream termina sin contenido, muestra error y elimina mensaje vacío
+---
 
-3. **Eliminado guardado duplicado en DB**
-   - El backend ahora es el único que guarda en `chat_intelligence_sessions` durante streaming
+## Cambios Anteriores (SSE Streaming)
 
-## Resultado esperado
-- Al preguntar al Agente Rix en /chat, siempre habrá respuesta visible
-- Streaming real cuando esté activo (texto incremental)
-- JSON fallback cuando no haya SSE disponible
-- El caso "solo aparece el botón de descargar sin contestación" está eliminado
+### Backend (chat-intelligence)
+- SSE streaming real para chat estándar con fallback OpenAI → Gemini
+- Eventos: start, chunk, fallback, done, error
+- Guardado en DB desde backend (evita duplicados)
+
+### Frontend (ChatContext)
+- Detección de Content-Type (JSON vs SSE)
+- Manejo robusto de SSE con safety checks

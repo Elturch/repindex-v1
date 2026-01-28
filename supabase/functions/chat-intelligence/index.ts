@@ -3282,36 +3282,183 @@ async function handleStandardChat(
   console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
 
   // =============================================================================
-  // PASO 5: CARGAR DATOS ESTRUCTURADOS (últimas 2 semanas para ranking)
+  // PASO 4.5: DETECTAR PREGUNTAS DE REGRESIÓN/ANÁLISIS PREDICTIVO
+  // =============================================================================
+  const regressionKeywords = [
+    'regresión', 'regression', 'correlación', 'correlation', 'predic', 'ponderación',
+    'peso', 'weight', 'predictor', 'r2', 'r-squared', 'estadístic', 'statistic',
+    'métrica predice', 'qué métrica', 'influye en precio', 'afecta al precio',
+    'efecto en cotización', 'impacto precio', 'precio acción', 'stock price',
+    'movimiento precio', 'price movement', 'análisis cuantitativo', 'quantitative',
+    'coeficiente', 'coefficient', 'significativ', 'p-value', 'beta'
+  ];
+  
+  const normalizedQ = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const isRegressionQuery = regressionKeywords.some(kw => normalizedQ.includes(kw));
+  
+  interface RegressionAnalysisResult {
+    success: boolean;
+    dataProfile?: {
+      totalRecords: number;
+      companiesWithPrices: number;
+      weeksAnalyzed: number;
+      dateRange: { from: string; to: string };
+      modelsIncluded: string[];
+    };
+    metricAnalysis?: Array<{
+      metric: string;
+      displayName: string;
+      correlationWithPrice: number;
+      pValue: number;
+      isSignificant: boolean;
+      direction: 'positive' | 'negative' | 'none';
+      sampleSize: number;
+    }>;
+    topPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
+    weakPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
+    rSquared?: number;
+    adjustedRSquared?: number;
+    methodology?: string;
+    caveats?: string[];
+  }
+  
+  let regressionAnalysis: RegressionAnalysisResult | null = null;
+  
+  if (isRegressionQuery) {
+    console.log(`${logPrefix} REGRESSION QUERY DETECTED - calling rix-regression-analysis...`);
+    
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+      
+      const regressionResponse = await fetch(`${supabaseUrl}/functions/v1/rix-regression-analysis`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ minWeeks: 8 }),
+      });
+      
+      if (regressionResponse.ok) {
+        regressionAnalysis = await regressionResponse.json();
+        console.log(`${logPrefix} Regression analysis received: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records analyzed`);
+      } else {
+        console.warn(`${logPrefix} Regression analysis failed: ${regressionResponse.status}`);
+      }
+    } catch (regError) {
+      console.error(`${logPrefix} Error calling regression analysis:`, regError);
+    }
+  }
+
+  // =============================================================================
+  // PASO 5: CARGAR DATOS ESTRUCTURADOS (con paginación inteligente)
   // =============================================================================
   console.log(`${logPrefix} Loading structured RIX data for rankings - ALL 6 AI MODELS...`);
   
-  const allRixData = await fetchUnifiedRixData({
-    supabaseClient,
-    columns: `
-      "01_run_id",
-      "02_model_name",
-      "03_target_name",
-      "05_ticker",
-      "06_period_from",
-      "07_period_to",
-      "09_rix_score",
-      "51_rix_score_adjusted",
-      "32_rmm_score",
-      "10_resumen",
-      "11_puntos_clave",
-      batch_execution_date
-    `,
-    limit: 50000,
-    logPrefix
-  });
+  // Use pagination for large requests
+  let allRixData: any[] = [];
+  let rixOffset = 0;
+  const rixBatchSize = 2000;
+  const maxRixRecords = depthLevel === 'exhaustive' ? 10000 : 5000;
+  
+  while (rixOffset < maxRixRecords) {
+    const batch = await fetchUnifiedRixData({
+      supabaseClient,
+      columns: `
+        "01_run_id",
+        "02_model_name",
+        "03_target_name",
+        "05_ticker",
+        "06_period_from",
+        "07_period_to",
+        "09_rix_score",
+        "51_rix_score_adjusted",
+        "32_rmm_score",
+        "10_resumen",
+        "11_puntos_clave",
+        batch_execution_date
+      `,
+      limit: rixBatchSize,
+      logPrefix
+    });
+    
+    if (!batch || batch.length === 0) break;
+    
+    allRixData.push(...batch);
+    rixOffset += batch.length;
+    
+    if (batch.length < rixBatchSize) break;
+    
+    // For quick depth, stop after first batch
+    if (depthLevel === 'quick') break;
+  }
 
-  console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0}`);
+  console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0} (depth: ${depthLevel})`);
 
   // =============================================================================
   // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
   // =============================================================================
   let context = '';
+
+  // 6.0-REGRESSION: ANÁLISIS ESTADÍSTICO REAL (si hay pregunta de regresión)
+  if (regressionAnalysis && regressionAnalysis.success) {
+    context += `📊 ======================================================================\n`;
+    context += `📊 ANÁLISIS ESTADÍSTICO REAL - REGRESIÓN MÉTRICAS RIX VS PRECIO\n`;
+    context += `📊 DATOS VERIFICADOS CON CÁLCULO REAL DE CORRELACIÓN DE PEARSON\n`;
+    context += `📊 ======================================================================\n\n`;
+    
+    context += `### Perfil de Datos Analizados:\n`;
+    context += `- **Total registros**: ${regressionAnalysis.dataProfile?.totalRecords.toLocaleString() || 'N/A'}\n`;
+    context += `- **Empresas con precios**: ${regressionAnalysis.dataProfile?.companiesWithPrices || 'N/A'}\n`;
+    context += `- **Semanas analizadas**: ${regressionAnalysis.dataProfile?.weeksAnalyzed || 'N/A'}\n`;
+    context += `- **Rango temporal**: ${regressionAnalysis.dataProfile?.dateRange?.from || 'N/A'} a ${regressionAnalysis.dataProfile?.dateRange?.to || 'N/A'}\n`;
+    context += `- **Modelos IA incluidos**: ${regressionAnalysis.dataProfile?.modelsIncluded?.join(', ') || 'N/A'}\n\n`;
+    
+    context += `### Métricas TOP Predictoras (estadísticamente significativas):\n`;
+    if (regressionAnalysis.topPredictors && regressionAnalysis.topPredictors.length > 0) {
+      context += `| Métrica | Nombre | Correlación | Interpretación |\n`;
+      context += `|---------|--------|-------------|----------------|\n`;
+      regressionAnalysis.topPredictors.forEach(p => {
+        const interp = p.correlation > 0 
+          ? `Mayor ${p.displayName} → precio tiende a subir` 
+          : `Mayor ${p.displayName} → precio tiende a bajar`;
+        context += `| ${p.metric.replace(/^\d+_/, '')} | ${p.displayName} | ${p.correlation > 0 ? '+' : ''}${p.correlation.toFixed(3)} | ${interp} |\n`;
+      });
+    } else {
+      context += `No se encontraron métricas con correlación estadísticamente significativa con el precio.\n`;
+    }
+    context += `\n`;
+    
+    context += `### Análisis Completo por Métrica:\n`;
+    if (regressionAnalysis.metricAnalysis && regressionAnalysis.metricAnalysis.length > 0) {
+      context += `| Métrica | Correlación | p-value | Significativo | Dirección | Muestra |\n`;
+      context += `|---------|-------------|---------|---------------|-----------|--------|\n`;
+      regressionAnalysis.metricAnalysis.forEach(m => {
+        const sigSymbol = m.isSignificant ? '✓' : '✗';
+        const dirSymbol = m.direction === 'positive' ? '↗' : m.direction === 'negative' ? '↘' : '→';
+        context += `| ${m.displayName} | ${m.correlationWithPrice > 0 ? '+' : ''}${m.correlationWithPrice.toFixed(3)} | ${m.pValue.toFixed(3)} | ${sigSymbol} | ${dirSymbol} | n=${m.sampleSize} |\n`;
+      });
+    }
+    context += `\n`;
+    
+    context += `### Calidad del Modelo:\n`;
+    context += `- **R² (varianza explicada)**: ${((regressionAnalysis.rSquared || 0) * 100).toFixed(1)}%\n`;
+    context += `- **R² ajustado**: ${((regressionAnalysis.adjustedRSquared || 0) * 100).toFixed(1)}%\n\n`;
+    
+    context += `### Metodología:\n`;
+    context += `${regressionAnalysis.methodology || 'Correlación de Pearson entre métricas RIX y variación de precio semanal.'}\n\n`;
+    
+    context += `### ⚠️ Limitaciones y Caveats:\n`;
+    if (regressionAnalysis.caveats) {
+      regressionAnalysis.caveats.forEach(c => {
+        context += `- ${c}\n`;
+      });
+    }
+    context += `\n`;
+    
+    context += `📊 ======================================================================\n\n`;
+  }
 
   // 6.0-A MEMENTO CORPORATIVO - DATOS VERIFICADOS (PRIORIDAD MÁXIMA)
   if (corporateMementos.length > 0) {
@@ -3956,6 +4103,41 @@ Si el Memento Corporativo tiene campos VACÍOS para liderazgo de una empresa:
 
 Esta regla existe porque los cargos directivos cambian con frecuencia 
 (fusiones, dimisiones, nombramientos) y el LLM puede tener información obsoleta.
+
+═══════════════════════════════════════════════════════════════════════════════
+                         ANÁLISIS ESTADÍSTICO (REGRESIÓN)
+═══════════════════════════════════════════════════════════════════════════════
+
+Cuando el usuario pregunte sobre regresión, correlación, ponderaciones, o qué 
+métricas predicen movimientos de precio, USARÁS los datos del bloque 
+"ANÁLISIS ESTADÍSTICO REAL" si está presente en el contexto.
+
+REGLAS CRÍTICAS PARA ANÁLISIS ESTADÍSTICO:
+1. SOLO usa los coeficientes de correlación y p-values del análisis real
+2. NUNCA inventes cifras estadísticas - usa las que aparecen en el contexto
+3. Interpreta la correlación correctamente:
+   - |r| > 0.3: Correlación moderada
+   - |r| > 0.5: Correlación fuerte
+   - p-value < 0.05: Estadísticamente significativo
+4. SIEMPRE menciona las limitaciones del análisis (semanas disponibles, R²)
+5. Si NO hay bloque de regresión en el contexto, indica que no tienes 
+   datos calculados y sugiere preguntar específicamente sobre "análisis 
+   de correlación entre métricas RIX y precios"
+
+EJEMPLO DE RESPUESTA CORRECTA:
+"Basándome en el análisis de correlación de Pearson con ${dataProfile.totalRecords} 
+registros y ${dataProfile.companiesWithPrices} empresas cotizadas:
+
+**Métricas con mayor poder predictivo sobre precio:**
+1. CEM (Comunicación/Engagement): r = +0.187, p < 0.05 ✓
+2. RMM (Riesgo/Crisis): r = -0.142, p < 0.05 ✓
+
+El modelo explica aproximadamente un ${rSquared*100}% de la varianza en precios.
+
+⚠️ **Limitaciones importantes:**
+- Serie temporal limitada (${dataProfile.weeksAnalyzed} semanas)
+- Correlación no implica causalidad
+- Factores externos de mercado no capturados"
 
 ═══════════════════════════════════════════════════════════════════════════════
                           FUENTES DE INFORMACIÓN
