@@ -1,100 +1,163 @@
 
 
-## Plan: Indicador de Estado de Análisis V2 para Panel de Admin
+## Plan: Vector Store en Boletines + Competidores Verificados Robustos
 
 ### Contexto del Problema
 
-El panel "Barrido RIX" actualmente muestra el progreso de **búsquedas** (tabla `sweep_progress`), que aparece como 100% completado (174/174 empresas). Sin embargo, hay un segundo paso crítico: el **análisis** de cada respuesta de búsqueda que genera los scores RIX.
+Actualmente existen DOS brechas críticas que causan inconsistencias en los informes ejecutivos:
 
-**Datos actuales invisibles:**
-| Modelo | Total | Con Score | Pendientes Análisis |
-|--------|-------|-----------|---------------------|
-| Grok | 18 | 0 | **18 (100%)** |
-| ChatGPT | 18 | 14 | 4 |
-| Perplexity | 18 | 12 | 6 |
-| Gemini | 18 | 14 | 4 |
-| Qwen | 18 | 17 | 1 |
-| Deepseek | 18 | 17 | 1 |
+1. **El Vector Store está subutilizado**: 11,862 documentos indexados con explicaciones cualitativas de las IAs, PERO los boletines ejecutivos NO los consultan - solo usan datos estructurados de `rix_runs`/`rix_runs_v2`
 
-Esto explica por qué Grok y otros modelos aparecen incompletos en los boletines.
+2. **Sistema de competidores incompleto**:
+   - Solo 22 de 174 empresas (12.6%) tienen competidores verificados en la base de datos
+   - Solo 24 de 174 empresas tienen `subsector` definido
+   - 150 empresas caen a fallbacks genéricos por sector, causando comparaciones irrelevantes
 
----
-
-### Solución Propuesta
-
-Agregar un nuevo panel "Estado de Análisis V2" dentro de `SweepMonitorPanel.tsx` que muestre:
-
-1. **Resumen general**: Total de registros pendientes de análisis vs completados
-2. **Desglose por modelo**: 6 modelos con barras de progreso individuales
-3. **Botón de reparación**: Lanzar `reprocess_pending` directamente desde el panel
+**Datos actuales:**
+| Sector | Total | Con Subsector | Sin Subsector |
+|--------|-------|---------------|---------------|
+| Otros Sectores | 40 | 0 | 40 |
+| Construcción e Infraestructuras | 25 | 3 | 22 |
+| Telecomunicaciones y Tecnología | 23 | 8 | 15 |
+| Salud y Farmacéutico | 16 | 0 | 16 |
+| Energía y Gas | 15 | 5 | 10 |
+| Banca y Servicios Financieros | 11 | 7 | 4 |
 
 ---
 
-### Cambios Técnicos
+### Solución Propuesta: 2 Fases
 
-#### 1. Nuevo Estado y Tipo de Datos
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        ARQUITECTURA MEJORADA                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   BOLETÍN EJECUTIVO                                                     │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐             │
+│   │ Datos RIX    │ +  │ Vector Store │ +  │ Competidores │             │
+│   │ Estructurado │    │ Cualitativo  │    │ Verificados  │             │
+│   └──────────────┘    └──────────────┘    └──────────────┘             │
+│          │                    │                    │                    │
+│          v                    v                    v                    │
+│   ┌──────────────────────────────────────────────────────────┐         │
+│   │           CONTEXTO ENRIQUECIDO PARA LLM                  │         │
+│   │  - Scores + Métricas (estructurado)                      │         │
+│   │  - Explicaciones narrativas de IAs (vector)              │         │
+│   │  - Comparativas justificadas (competidores verificados)  │         │
+│   └──────────────────────────────────────────────────────────┘         │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### FASE 1: Integrar Vector Store en Boletines
+
+**Objetivo**: Enriquecer los boletines ejecutivos con contenido cualitativo del Vector Store
+
+**Cambios en `supabase/functions/chat-intelligence/index.ts`:**
+
+1. **Agregar búsqueda vectorial en `handleBulletinRequest`** (después de obtener datos de rix_runs):
 
 ```typescript
-interface AnalysisStatus {
-  totalRecords: number;
-  withScore: number;
-  pendingAnalysis: number;
-  byModel: {
-    model: string;
-    total: number;
-    withScore: number;
-    pending: number;
-  }[];
-  sweepWeek: string;
+// Generar embedding del nombre de empresa para búsqueda vectorial
+const bulletinEmbedding = await generateEmbedding(matchedCompany.issuer_name);
+
+// Buscar documentos relevantes en Vector Store
+const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
+  query_embedding: bulletinEmbedding,
+  match_count: 30, // Top 30 documentos más relevantes
+  filter: { ticker: matchedCompany.ticker } // Filtrar por ticker si está en metadata
+});
+
+// Agregar contexto cualitativo al bulletinContext
+if (vectorDocs?.length > 0) {
+  bulletinContext += `\n📚 ANÁLISIS CUALITATIVOS DE IAs (Vector Store):\n`;
+  vectorDocs.slice(0, 15).forEach((doc, i) => {
+    bulletinContext += `\n[Fuente ${i + 1}]: ${doc.content?.substring(0, 800)}\n`;
+  });
 }
 ```
 
-#### 2. Nueva Función para Consultar Estado
+2. **Incluir noticias corporativas si están disponibles**:
 
 ```typescript
-const fetchAnalysisStatus = async () => {
-  // Query rix_runs_v2 for the latest week
-  const { data, error } = await supabase
-    .from('rix_runs_v2')
-    .select('02_model_name, 09_rix_score, analysis_completed_at, 06_period_from')
-    .order('06_period_from', { ascending: false });
-  
-  // Aggregate by model and calculate pending vs completed
-};
-```
+// Buscar noticias corporativas recientes
+const { data: corporateNews } = await supabaseClient
+  .from('corporate_news')
+  .select('headline, lead_paragraph, published_date')
+  .eq('ticker', matchedCompany.ticker)
+  .order('published_date', { ascending: false })
+  .limit(5);
 
-#### 3. Nuevo Componente Visual
-
-Ubicación: Debajo del panel de "Progreso general" existente
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 🧪 Estado de Análisis V2                    [Actualizar] [🔧]│
-├─────────────────────────────────────────────────────────────┤
-│ Semana: 2026-W05 (19 ene - 25 ene)                          │
-│                                                              │
-│ ■■■■■■■■■■░░ 873/1,044 (83.6%) análisis completos           │
-│                                                              │
-│ Por Modelo:                                                  │
-│ ChatGPT     ■■■■■■■■░░ 161/174 (92.5%)                      │
-│ Deepseek    ■■■■■■■■■░ 165/174 (94.8%)                      │
-│ Gemini      ■■■■■■■■░░ 162/174 (93.1%)                      │
-│ Grok        ■■■■■■░░░░ 120/174 (68.9%)  ⚠️ 54 pendientes    │
-│ Perplexity  ■■■■■■■■░░ 163/174 (93.6%)                      │
-│ Qwen        ■■■■■■■■■░ 167/174 (95.9%)                      │
-│                                                              │
-│ [Completar Análisis Pendientes] [Ver Detalle por Empresa]   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-#### 4. Botón de Reparación
-
-```typescript
-const handleRepairAnalysis = async () => {
-  await supabase.functions.invoke('rix-analyze-v2', {
-    body: { action: 'reprocess_pending', batch_size: 5 }
+if (corporateNews?.length > 0) {
+  bulletinContext += `\n📰 NOTICIAS CORPORATIVAS RECIENTES:\n`;
+  corporateNews.forEach((news, i) => {
+    bulletinContext += `${i + 1}. [${news.published_date}] ${news.headline}\n   ${news.lead_paragraph}\n`;
   });
+}
+```
+
+---
+
+### FASE 2: Robustez del Sistema de Competidores
+
+**Objetivo**: Garantizar que cada empresa tenga competidores justificados, explicitando la metodología usada
+
+**Cambios en `getRelevantCompetitors()` de `chat-intelligence/index.ts`:**
+
+1. **Agregar log de justificación para el LLM**:
+
+```typescript
+interface CompetitorResult {
+  competitors: CompanyData[];
+  justification: string; // Nueva: explicación para el informe
+}
+
+// Modificar retorno para incluir justificación:
+return {
+  competitors: collected,
+  justification: `Competidores seleccionados mediante: ${tierUsed}. ` +
+    `${verifiedCount > 0 ? `${verifiedCount} verificados en base de datos.` : ''} ` +
+    `${subsectorCount > 0 ? `${subsectorCount} del mismo subsector (${company.subsector}).` : ''}`
 };
+```
+
+2. **Incluir la justificación en el bulletinContext**:
+
+```typescript
+bulletinContext += `\n🏢 COMPETIDORES (${competitors.length}) - METODOLOGÍA:\n`;
+bulletinContext += `${competitorResult.justification}\n\n`;
+competitors.forEach((c, idx) => {
+  bulletinContext += `${idx + 1}. ${c.issuer_name} (${c.ticker})\n`;
+  bulletinContext += `   Sector: ${c.sector_category} | Subsector: ${c.subsector || 'N/D'}\n`;
+});
+```
+
+3. **Agregar TIER 0: Competidores bidireccionales verificados**:
+
+```typescript
+// TIER 0: También verificar relaciones inversas
+const { data: reverseRelationships } = await supabaseClient
+  .from('competitor_relationships')
+  .select('source_ticker, relationship_type, confidence_score')
+  .eq('competitor_ticker', company.ticker)
+  .order('confidence_score', { ascending: false });
+```
+
+4. **Fallback explícito para empresas sin competidores**:
+
+```typescript
+if (collected.length === 0) {
+  console.warn(`${logPrefix} NO COMPETITORS FOUND for ${company.ticker} - using top 3 from IBEX35`);
+  
+  const ibex35Fallback = allCompanies
+    .filter(c => c.ibex_family_code === 'IBEX35' && c.ticker !== company.ticker)
+    .slice(0, 3);
+  
+  collected.push(...ibex35Fallback);
+  tierUsed = 'FALLBACK-IBEX35';
+}
 ```
 
 ---
@@ -103,14 +166,22 @@ const handleRepairAnalysis = async () => {
 
 | Archivo | Cambio |
 |---------|--------|
-| `src/components/admin/SweepMonitorPanel.tsx` | Agregar sección de análisis V2 con estado, visual y botones |
+| `supabase/functions/chat-intelligence/index.ts` | Integrar Vector Store en `handleBulletinRequest`, mejorar `getRelevantCompetitors` con justificaciones |
 
 ---
 
-### Beneficios
+### Beneficios Esperados
 
-1. **Visibilidad completa**: Ver el estado real de análisis, no solo búsquedas
-2. **Identificación de problemas**: Detectar qué modelos tienen más fallos (Grok)
-3. **Acción directa**: Lanzar reparaciones sin necesidad de comandos manuales
-4. **Monitoreo en tiempo real**: Actualización durante procesos de reparación
+1. **Boletines más ricos**: Acceso a explicaciones narrativas de las IAs, no solo scores numéricos
+2. **Comparativas justificadas**: Cada boletín explica POR QUÉ se eligieron esos competidores
+3. **Transparencia metodológica**: El usuario entiende si los competidores son verificados, por subsector, o fallback
+4. **Consistencia**: Eliminación de comparaciones irrelevantes gracias a justificación explícita
+
+---
+
+### Consideraciones Técnicas
+
+1. **Performance**: La búsqueda vectorial añade ~500ms al proceso, pero es aceptable para boletines
+2. **Tokens**: El contexto adicional del Vector Store podría añadir 2,000-5,000 tokens, ajustar `match_count` según `depthLevel`
+3. **Calidad**: Filtrar documentos del Vector Store por similitud mínima (threshold 0.7) para evitar ruido
 
