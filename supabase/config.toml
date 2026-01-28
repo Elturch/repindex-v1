@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.rix-quality-watchdog]
 verify_jwt = false
+
+[functions.rix-regression-analysis]
+verify_jwt = false
