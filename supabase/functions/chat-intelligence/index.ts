@@ -155,6 +155,102 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
 }
 
 // =============================================================================
+// VERIFIED SOURCE EXTRACTOR - Only ChatGPT (utm_source=openai) and Perplexity
+// =============================================================================
+// CRITICAL: Other models (Gemini, DeepSeek, Grok, Qwen) are IGNORED because
+// they may contain fabricated/hallucinated URLs.
+
+interface VerifiedSource {
+  url: string;
+  domain: string;
+  title?: string;
+  sourceModel: 'ChatGPT' | 'Perplexity';
+  citationNumber?: number;
+}
+
+function extractVerifiedSources(
+  chatGptRaw: string | null,
+  perplexityRaw: string | null
+): VerifiedSource[] {
+  const sources: VerifiedSource[] = [];
+  
+  // Extract ChatGPT sources (only with utm_source=openai)
+  if (chatGptRaw) {
+    const chatGptPattern = /\[([^\]]+)\]\((https?:\/\/[^)]+utm_source=openai[^)]*)\)/g;
+    let match;
+    while ((match = chatGptPattern.exec(chatGptRaw)) !== null) {
+      const title = match[1].trim();
+      const url = match[2].trim();
+      try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname.replace(/^www\./, '');
+        if (!sources.some(s => s.url === url)) {
+          sources.push({ url, domain, title: title || undefined, sourceModel: 'ChatGPT' });
+        }
+      } catch { /* Invalid URL */ }
+    }
+  }
+  
+  // Extract Perplexity sources
+  if (perplexityRaw) {
+    // Try JSON parsing first
+    try {
+      const parsed = JSON.parse(perplexityRaw);
+      if (parsed.citations && Array.isArray(parsed.citations)) {
+        parsed.citations.forEach((citation: string, index: number) => {
+          if (citation && citation.startsWith('http')) {
+            try {
+              const urlObj = new URL(citation);
+              const domain = urlObj.hostname.replace(/^www\./, '');
+              if (!sources.some(s => s.url === citation)) {
+                sources.push({ url: citation, domain, sourceModel: 'Perplexity', citationNumber: index + 1 });
+              }
+            } catch { /* Invalid URL */ }
+          }
+        });
+      }
+    } catch { /* Not JSON, try regex */ }
+    
+    // Markdown links from Perplexity
+    const markdownPattern = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+    let match;
+    while ((match = markdownPattern.exec(perplexityRaw)) !== null) {
+      const title = match[1].trim();
+      const url = match[2].trim();
+      if (sources.some(s => s.url === url)) continue;
+      if (url.includes('perplexity.ai')) continue;
+      try {
+        const urlObj = new URL(url);
+        const domain = urlObj.hostname.replace(/^www\./, '');
+        sources.push({ url, domain, title: title || undefined, sourceModel: 'Perplexity' });
+      } catch { /* Invalid URL */ }
+    }
+  }
+  
+  return sources;
+}
+
+function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
+  const allSources: VerifiedSource[] = [];
+  
+  for (const run of rixData) {
+    const sources = extractVerifiedSources(
+      run['20_res_gpt_bruto'] ?? null,
+      run['21_res_perplex_bruto'] ?? null
+    );
+    allSources.push(...sources);
+  }
+  
+  // Deduplicate by URL
+  const seen = new Set<string>();
+  return allSources.filter(source => {
+    if (seen.has(source.url)) return false;
+    seen.add(source.url);
+    return true;
+  });
+}
+
+// =============================================================================
 // SSE STREAMING HELPERS
 // =============================================================================
 
@@ -2779,6 +2875,10 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           const periodFrom = rixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
           const periodTo = rixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
 
+          // Extract verified sources from raw AI responses (only ChatGPT + Perplexity)
+          const verifiedSources = extractSourcesFromRixData(rixData || []);
+          console.log(`${logPrefix} Extracted ${verifiedSources.length} verified sources from RIX data`);
+
           // Send final done event with enriched methodology metadata
           controller.enqueue(sseEncoder({
             type: 'done',
@@ -2792,6 +2892,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
               aiProvider: provider,
+              // Verified sources from ChatGPT and Perplexity for bibliography
+              verifiedSources: verifiedSources.length > 0 ? verifiedSources : undefined,
               // Methodology metadata for "Radar Reputacional" validation sheet
               methodology: {
                 hasRixData: (rixData?.length || 0) > 0,
@@ -4511,6 +4613,10 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               .catch((e: Error) => console.warn('Failed to save session:', e));
           }
 
+          // Extract verified sources from full RIX data (includes raw AI responses)
+          const verifiedSourcesStandard = extractSourcesFromRixData(detectedCompanyFullData || []);
+          console.log(`${logPrefix} Extracted ${verifiedSourcesStandard.length} verified sources from RIX data`);
+
           // Send final done event with all metadata
           controller.enqueue(sseEncoder({
             type: 'done',
@@ -4531,6 +4637,8 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               divergencePoints: divergencePointsMethod,
               uniqueCompanies: uniqueCompaniesCount,
               uniqueWeeks: uniqueWeeksCount,
+              // Verified sources from ChatGPT and Perplexity for bibliography
+              verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
               methodology: {
                 hasRixData: (allRixData?.length || 0) > 0,
                 modelsUsed: modelsUsedMethod,

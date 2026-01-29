@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml";
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
+import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -112,6 +113,8 @@ export interface MessageMetadata {
   questionCategory?: string;
   // Methodology metadata for "Radar Reputacional" validation sheet
   methodology?: MethodologyMetadata;
+  // Verified sources from ChatGPT and Perplexity for bibliography
+  verifiedSources?: VerifiedSource[];
 }
 
 export interface Message {
@@ -597,6 +600,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 structuredDataFound: finalMetadata?.structuredDataFound,
                 depthLevel: options?.depthLevel || 'complete',
                 questionCategory: finalMetadata?.questionCategory,
+                // Verified sources from ChatGPT and Perplexity for bibliography
+                verifiedSources: finalMetadata?.verifiedSources,
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: finalMetadata?.methodology || {
                   hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
@@ -1274,6 +1279,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
               `;
             }).join('')}
           </main>
+          
+          ${(() => {
+            // Collect all verified sources from assistant messages
+            const allSources: VerifiedSource[] = [];
+            messages.forEach(msg => {
+              if (msg.role === 'assistant' && msg.metadata?.verifiedSources) {
+                allSources.push(...msg.metadata.verifiedSources);
+              }
+            });
+            // Deduplicate by URL
+            const uniqueSources = allSources.filter((source, index, self) => 
+              index === self.findIndex(s => s.url === source.url)
+            );
+            return generateBibliographyHtml(uniqueSources);
+          })()}
           
           <footer class="report-footer">
             <div class="logo">RepIndex</div>
