@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown, Loader2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format, addDays } from "date-fns";
@@ -42,6 +42,10 @@ export function Dashboard() {
   const [sectorFilter, setSectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
   const [batchFilter, setBatchFilter] = useState<string>("all");
+  const [sortConfig, setSortConfig] = useState<{
+    key: 'rix' | 'nvm' | 'drm' | 'sim' | 'rmm' | 'cem' | 'gam' | 'dcm' | 'cxm';
+    direction: 'asc' | 'desc';
+  }>({ key: 'rix', direction: 'desc' });
   const navigate = useNavigate();
   
   const { data: rixRuns, isLoading, error } = useUnifiedRixRuns({
@@ -188,6 +192,16 @@ export function Dashboard() {
     setBatchFilter("all");
   };
 
+  // Handle column sorting
+  const handleSort = (key: typeof sortConfig.key) => {
+    setSortConfig(current => ({
+      key,
+      direction: current.key === key 
+        ? (current.direction === 'desc' ? 'asc' : 'desc')
+        : 'desc'
+    }));
+  };
+
   // Sort and filter RIX runs
   const sortedRixRuns = useMemo(() => {
     if (!rixRuns) return [];
@@ -207,23 +221,38 @@ export function Dashboard() {
     }
     
     return [...filteredByBatch].sort((a, b) => {
+      // Invalid data always at the bottom
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
       
-      const scoreA = a.displayRixScore ?? a.rix_score ?? 0;
-      const scoreB = b.displayRixScore ?? b.rix_score ?? 0;
+      // Get scores based on sort key
+      let scoreA: number;
+      let scoreB: number;
       
-      if (scoreB !== scoreA) {
-        return scoreB - scoreA;
+      if (sortConfig.key === 'rix') {
+        scoreA = a.displayRixScore ?? a.rix_score ?? 0;
+        scoreB = b.displayRixScore ?? b.rix_score ?? 0;
+      } else {
+        const scoreKey = `${sortConfig.key}_score` as keyof typeof a;
+        scoreA = (a as any)[scoreKey] ?? 0;
+        scoreB = (b as any)[scoreKey] ?? 0;
       }
       
+      // Apply sort direction
+      const multiplier = sortConfig.direction === 'desc' ? 1 : -1;
+      
+      if (scoreB !== scoreA) {
+        return (scoreB - scoreA) * multiplier;
+      }
+      
+      // Secondary sort by date
       if (a.batch_execution_date && b.batch_execution_date) {
         return new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime();
       }
       
       return 0;
     });
-  }, [rixRuns, batchFilter, searchQuery]);
+  }, [rixRuns, batchFilter, searchQuery, sortConfig]);
 
   // Progressive loading
   const {
@@ -649,10 +678,37 @@ export function Dashboard() {
                       {aiFilter === "all" && (
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
                       )}
-                      <TableHead className="text-center">RIX</TableHead>
+                      <TableHead 
+                        className="text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => handleSort('rix')}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>RIX</span>
+                          {sortConfig.key === 'rix' ? (
+                            sortConfig.direction === 'desc' ? 
+                              <ArrowDown className="h-3 w-3" /> : 
+                              <ArrowUp className="h-3 w-3" />
+                          ) : (
+                            <ArrowUpDown className="h-3 w-3 opacity-30" />
+                          )}
+                        </div>
+                      </TableHead>
                       {metrics.map((metric) => (
-                        <TableHead key={metric.key} className="text-center w-16">
-                          {metric.label}
+                        <TableHead 
+                          key={metric.key} 
+                          className="text-center w-16 cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => handleSort(metric.key as typeof sortConfig.key)}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>{metric.label}</span>
+                            {sortConfig.key === metric.key ? (
+                              sortConfig.direction === 'desc' ? 
+                                <ArrowDown className="h-3 w-3" /> : 
+                                <ArrowUp className="h-3 w-3" />
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3 opacity-30" />
+                            )}
+                          </div>
                         </TableHead>
                       ))}
                       <TableHead className="w-40">Ibex Family Code</TableHead>
