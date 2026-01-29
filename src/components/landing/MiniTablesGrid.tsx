@@ -1,6 +1,8 @@
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Trophy, Building2, Briefcase, Calendar } from "lucide-react";
 import { useLandingTopFives } from "@/hooks/useLandingTopFives";
+import { useLandingAIModel } from "@/contexts/LandingAIModelContext";
+import { AIModelSelector } from "./AIModelSelector";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +61,7 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
       <div className="space-y-1.5 sm:space-y-2">
         {safeData.slice(0, 5).map((item, idx) => (
           <div
-            key={`${item.ticker}-${item.ai}-${idx}`}
+            key={`${item.ticker}-${idx}`}
             className="flex items-center justify-between py-1.5 sm:py-2 border-b border-border/50 last:border-0 gap-2"
           >
             <div className="flex-1 min-w-0">
@@ -84,7 +86,8 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
 };
 
 export function MiniTablesGrid() {
-  const { data, isLoading } = useLandingTopFives();
+  const { selectedModel } = useLandingAIModel();
+  const { data, isLoading } = useLandingTopFives(selectedModel);
 
   if (isLoading) {
     return (
@@ -204,9 +207,12 @@ export function MiniTablesGrid() {
               </span>
             </div>
           )}
-          <p className="text-muted-foreground text-xs sm:text-sm md:text-base lg:text-lg max-w-2xl mx-auto px-1" style={{ fontSize: 'clamp(0.7rem, 2vw, 1.125rem)' }}>
+          <p className="text-muted-foreground text-xs sm:text-sm md:text-base lg:text-lg max-w-2xl mx-auto px-1 mb-4" style={{ fontSize: 'clamp(0.7rem, 2vw, 1.125rem)' }}>
             Explora las métricas de reputación corporativa analizadas por inteligencias artificiales
           </p>
+          
+          {/* AI Model Selector */}
+          <AIModelSelector />
         </motion.div>
 
         {/* IBEX 35 Section */}
