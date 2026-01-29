@@ -192,14 +192,21 @@ export function Dashboard() {
     setBatchFilter("all");
   };
 
-  // Handle column sorting
+  // Handle column sorting - click again on active column to reset to default
   const handleSort = (key: typeof sortConfig.key) => {
-    setSortConfig(current => ({
-      key,
-      direction: current.key === key 
-        ? (current.direction === 'desc' ? 'asc' : 'desc')
-        : 'desc'
-    }));
+    setSortConfig(current => {
+      // If clicking on the already active column
+      if (current.key === key) {
+        // If it's desc, switch to asc
+        if (current.direction === 'desc') {
+          return { key, direction: 'asc' };
+        }
+        // If it's asc, reset to default (rix desc)
+        return { key: 'rix', direction: 'desc' };
+      }
+      // New column, start with desc
+      return { key, direction: 'desc' };
+    });
   };
 
   // Sort and filter RIX runs
@@ -679,38 +686,55 @@ export function Dashboard() {
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
                       )}
                       <TableHead 
-                        className="text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                        className={cn(
+                          "text-center cursor-pointer hover:bg-muted/50 transition-colors",
+                          sortConfig.key === 'rix' && "bg-primary/10 text-primary"
+                        )}
                         onClick={() => handleSort('rix')}
                       >
                         <div className="flex items-center justify-center gap-1">
-                          <span>RIX</span>
+                          <span className={cn(sortConfig.key === 'rix' && "font-bold")}>RIX</span>
                           {sortConfig.key === 'rix' ? (
-                            sortConfig.direction === 'desc' ? 
-                              <ArrowDown className="h-3 w-3" /> : 
-                              <ArrowUp className="h-3 w-3" />
+                            <span className="flex items-center gap-0.5">
+                              {sortConfig.direction === 'desc' ? 
+                                <ArrowDown className="h-3 w-3 text-primary" /> : 
+                                <ArrowUp className="h-3 w-3 text-primary" />
+                              }
+                              <X className="h-3 w-3 text-muted-foreground hover:text-destructive ml-0.5" />
+                            </span>
                           ) : (
                             <ArrowUpDown className="h-3 w-3 opacity-30" />
                           )}
                         </div>
                       </TableHead>
-                      {metrics.map((metric) => (
-                        <TableHead 
-                          key={metric.key} 
-                          className="text-center w-16 cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => handleSort(metric.key as typeof sortConfig.key)}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            <span>{metric.label}</span>
-                            {sortConfig.key === metric.key ? (
-                              sortConfig.direction === 'desc' ? 
-                                <ArrowDown className="h-3 w-3" /> : 
-                                <ArrowUp className="h-3 w-3" />
-                            ) : (
-                              <ArrowUpDown className="h-3 w-3 opacity-30" />
+                      {metrics.map((metric) => {
+                        const isActive = sortConfig.key === metric.key;
+                        return (
+                          <TableHead 
+                            key={metric.key} 
+                            className={cn(
+                              "text-center w-16 cursor-pointer hover:bg-muted/50 transition-colors",
+                              isActive && "bg-primary/10 text-primary"
                             )}
-                          </div>
-                        </TableHead>
-                      ))}
+                            onClick={() => handleSort(metric.key as typeof sortConfig.key)}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <span className={cn(isActive && "font-bold")}>{metric.label}</span>
+                              {isActive ? (
+                                <span className="flex items-center gap-0.5">
+                                  {sortConfig.direction === 'desc' ? 
+                                    <ArrowDown className="h-3 w-3 text-primary" /> : 
+                                    <ArrowUp className="h-3 w-3 text-primary" />
+                                  }
+                                  <X className="h-3 w-3 text-muted-foreground hover:text-destructive ml-0.5" />
+                                </span>
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 opacity-30" />
+                              )}
+                            </div>
+                          </TableHead>
+                        );
+                      })}
                       <TableHead className="w-40">Ibex Family Code</TableHead>
                       <TableHead className="min-w-48">Sector Category</TableHead>
                     </TableRow>
