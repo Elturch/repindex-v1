@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.rix-regression-analysis]
 verify_jwt = false
+
+[functions.import-verified-competitors]
+verify_jwt = false
