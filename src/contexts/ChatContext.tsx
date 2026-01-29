@@ -129,13 +129,16 @@ interface PageContext {
   dynamicData?: Record<string, any>;
 }
 
+// Session configuration types
+export type DepthLevel = 'quick' | 'complete' | 'exhaustive';
+
 interface ChatContextType {
   sessionId: string;
   messages: Message[];
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -156,6 +159,11 @@ interface ChatContextType {
   downloadAsHtml: () => void;
   // Streaming state
   isStreaming: boolean;
+  // Session configuration - persists for entire conversation
+  sessionDepthLevel: DepthLevel;
+  sessionRoleId: string;
+  isSessionConfigured: boolean;
+  configureSession: (depthLevel: DepthLevel, roleId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -187,6 +195,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
+  // Session configuration state - persists for entire conversation
+  const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('complete');
+  const [sessionRoleId, setSessionRoleId] = useState<string>('general');
+  const [isSessionConfigured, setIsSessionConfigured] = useState(false);
+  
   // Use auth context for user ID - this syncs properly with AuthProvider
   const { user, isAuthenticated } = useAuth();
   const currentUserId = user?.id || null;
@@ -201,7 +214,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [isAuthenticated, currentUserId, sessionId]);
 
   // Create or update user_conversations record when user is authenticated
-  const ensureConversationRecord = useCallback(async (title?: string) => {
+  const ensureConversationRecord = useCallback(async (title?: string, depthLevel?: DepthLevel, roleId?: string) => {
     if (!currentUserId) return null;
     
     try {
@@ -214,18 +227,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
         .single();
 
       if (existing) {
-        // Update messages count and last_message_at
+        // Update messages count and last_message_at, and session config if provided
+        const updateData: Record<string, unknown> = { 
+          last_message_at: new Date().toISOString(),
+          messages_count: messages.length + 1,
+          title: title || 'Nueva conversación'
+        };
+        if (depthLevel) updateData.session_depth_level = depthLevel;
+        if (roleId) updateData.session_role_id = roleId;
+        
         await supabase
           .from('user_conversations')
-          .update({ 
-            last_message_at: new Date().toISOString(),
-            messages_count: messages.length + 1,
-            title: title || 'Nueva conversación'
-          })
+          .update(updateData)
           .eq('id', existing.id);
         return existing.id;
       } else {
-        // Create new conversation record
+        // Create new conversation record with session config
         const { data: newConv, error } = await supabase
           .from('user_conversations')
           .insert({
@@ -233,7 +250,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
             user_id: currentUserId,
             title: title || 'Nueva conversación',
             last_message_at: new Date().toISOString(),
-            messages_count: 1
+            messages_count: 1,
+            session_depth_level: depthLevel || 'complete',
+            session_role_id: roleId || 'general'
           })
           .select('id')
           .single();
@@ -247,6 +266,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return null;
     }
   }, [currentUserId, sessionId, messages.length]);
+
+  // Configure session (depth + role) - called once at start of conversation
+  const configureSession = useCallback(async (depthLevel: DepthLevel, roleId: string) => {
+    setSessionDepthLevel(depthLevel);
+    setSessionRoleId(roleId);
+    setIsSessionConfigured(true);
+    
+    // Persist to database if authenticated
+    if (currentUserId && conversationId) {
+      try {
+        await supabase
+          .from('user_conversations')
+          .update({ 
+            session_depth_level: depthLevel,
+            session_role_id: roleId 
+          })
+          .eq('id', conversationId);
+      } catch (error) {
+        console.error('Error saving session config:', error);
+      }
+    }
+    
+    console.log('[ChatContext] Session configured:', { depthLevel, roleId });
+  }, [currentUserId, conversationId]);
 
   // Load conversation history from DB on mount
   useEffect(() => {
@@ -273,14 +316,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
           const convId = data[0].conversation_id;
           if (convId) {
             setConversationId(convId);
-            // Fetch starred status
+            // Fetch starred status AND session config
             const { data: convData } = await supabase
               .from('user_conversations')
-              .select('is_starred')
+              .select('is_starred, session_depth_level, session_role_id')
               .eq('id', convId)
               .single();
             if (convData) {
               setIsStarred(convData.is_starred || false);
+              // Restore session configuration
+              if (convData.session_depth_level) {
+                setSessionDepthLevel(convData.session_depth_level as DepthLevel);
+              }
+              if (convData.session_role_id) {
+                setSessionRoleId(convData.session_role_id);
+              }
+              // Mark as configured if conversation has messages (already started)
+              setIsSessionConfigured(true);
             }
           }
         }
@@ -772,6 +824,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(false);
+    // Reset session configuration for new conversation
+    setSessionDepthLevel('complete');
+    setSessionRoleId('general');
+    setIsSessionConfigured(false);
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
@@ -784,6 +840,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(true);
+    // Reset session config - will be loaded from DB in loadHistory
+    setIsSessionConfigured(false);
   }, []);
 
   // Toggle star status for current conversation
@@ -1285,6 +1343,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
         downloadAsJson,
         downloadAsHtml,
         isStreaming,
+        // Session configuration
+        sessionDepthLevel,
+        sessionRoleId,
+        isSessionConfigured,
+        configureSession,
       }}
     >
       {children}
