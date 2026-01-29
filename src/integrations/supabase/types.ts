@@ -1391,6 +1391,7 @@ export type Database = {
           status: string | null
           subsector: string | null
           ticker: string
+          verified_competitors: Json | null
           website: string | null
         }
         Insert: {
@@ -1416,6 +1417,7 @@ export type Database = {
           status?: string | null
           subsector?: string | null
           ticker: string
+          verified_competitors?: Json | null
           website?: string | null
         }
         Update: {
@@ -1441,6 +1443,7 @@ export type Database = {
           status?: string | null
           subsector?: string | null
           ticker?: string
+          verified_competitors?: Json | null
           website?: string | null
         }
         Relationships: []
