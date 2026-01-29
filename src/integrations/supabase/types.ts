@@ -2474,7 +2474,9 @@ export type Database = {
           is_starred: boolean | null
           last_message_at: string | null
           messages_count: number | null
+          session_depth_level: string | null
           session_id: string
+          session_role_id: string | null
           title: string | null
           updated_at: string | null
           user_id: string
@@ -2486,7 +2488,9 @@ export type Database = {
           is_starred?: boolean | null
           last_message_at?: string | null
           messages_count?: number | null
+          session_depth_level?: string | null
           session_id: string
+          session_role_id?: string | null
           title?: string | null
           updated_at?: string | null
           user_id: string
@@ -2498,7 +2502,9 @@ export type Database = {
           is_starred?: boolean | null
           last_message_at?: string | null
           messages_count?: number | null
+          session_depth_level?: string | null
           session_id?: string
+          session_role_id?: string | null
           title?: string | null
           updated_at?: string | null
           user_id?: string
