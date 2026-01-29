@@ -429,7 +429,8 @@ async function insertIssuer(
       ibex_family_code: issuer.ibex_family_code,
       sector_category: issuer.sector_category,
       fase: issuer.fase,
-      notes: issuer.verification_notes || null
+      notes: issuer.verification_notes || null,
+      verified_competitors: [] // Initialize as empty array - will be populated later from curated list
     });
 
   if (error) {

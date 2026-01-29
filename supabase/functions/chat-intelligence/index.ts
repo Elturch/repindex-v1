@@ -594,6 +594,7 @@ interface CompanyData {
   sector_category?: string;
   subsector?: string;
   ibex_family_code?: string;
+  verified_competitors?: string[]; // Array of tickers of verified direct competitors
 }
 
 /**
@@ -608,7 +609,8 @@ interface CompetitorResult {
 }
 
 /**
- * Intelligent competitor selection with 5-tier prioritization
+ * Intelligent competitor selection with verified_competitors priority
+ * NEW TIER 0: Uses verified_competitors array from repindex_root_issuers (EXCLUSIVE if populated)
  * Prevents irrelevant companies from appearing in bulletins
  * Returns competitors WITH methodology justification for transparency
  */
@@ -629,6 +631,7 @@ async function getRelevantCompetitors(
 
   console.log(`${logPrefix} Getting competitors for ${company.issuer_name} (${company.ticker})`);
   console.log(`${logPrefix} Company sector: ${company.sector_category}, subsector: ${company.subsector}, IBEX: ${company.ibex_family_code}`);
+  console.log(`${logPrefix} Verified competitors from issuer record: ${JSON.stringify(company.verified_competitors || [])}`);
 
   // Helper to add companies avoiding duplicates
   const addCompetitor = (c: CompanyData): boolean => {
@@ -646,7 +649,36 @@ async function getRelevantCompetitors(
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 0: Bidirectional verified relationships (also check reverse direction)
+  // TIER 0 (NEW PRIORITY): Verified competitors from repindex_root_issuers.verified_competitors
+  // If this field is populated, use EXCLUSIVELY these competitors and skip all other tiers
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (company.verified_competitors && Array.isArray(company.verified_competitors) && company.verified_competitors.length > 0) {
+    console.log(`${logPrefix} TIER 0 (VERIFIED_COMPETITORS): Found ${company.verified_competitors.length} verified competitors in issuer record`);
+    
+    for (const competitorTicker of company.verified_competitors) {
+      if (collected.length >= limit) break;
+      
+      const competitor = allCompanies.find(c => c.ticker === competitorTicker);
+      if (competitor && addCompetitor(competitor)) {
+        verifiedCount++;
+        tierUsed = 'TIER0-VERIFIED-ISSUER';
+        console.log(`${logPrefix}   → ${competitor.ticker} (verified from issuer record)`);
+      } else if (!competitor) {
+        console.warn(`${logPrefix}   ⚠️ Verified competitor ticker not found in companies cache: ${competitorTicker}`);
+      }
+    }
+    
+    // EXCLUSIVE: If we have verified_competitors, we return ONLY these - no fallback to other tiers
+    if (collected.length > 0) {
+      console.log(`${logPrefix} Returning ${collected.length} competitors EXCLUSIVELY from TIER 0 (verified_competitors)`);
+      const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
+      return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TIER 1: Bidirectional verified relationships from competitor_relationships table
+  // Only reached if verified_competitors is empty
   // ═══════════════════════════════════════════════════════════════════════════
   try {
     const { data: reverseRelationships, error: reverseError } = await supabaseClient
@@ -656,7 +688,7 @@ async function getRelevantCompetitors(
       .order('confidence_score', { ascending: false });
 
     if (!reverseError && reverseRelationships?.length > 0) {
-      console.log(`${logPrefix} TIER 0: Found ${reverseRelationships.length} reverse-direction competitors`);
+      console.log(`${logPrefix} TIER 1: Found ${reverseRelationships.length} reverse-direction competitors`);
       
       for (const rel of reverseRelationships) {
         if (collected.length >= limit) break;
@@ -664,7 +696,7 @@ async function getRelevantCompetitors(
         const competitor = allCompanies.find(c => c.ticker === rel.source_ticker);
         if (competitor && addCompetitor(competitor)) {
           verifiedCount++;
-          tierUsed = 'TIER0-BIDIRECTIONAL';
+          tierUsed = 'TIER1-BIDIRECTIONAL';
           console.log(`${logPrefix}   → ${competitor.ticker} (bidirectional verified, ${rel.relationship_type}, score: ${rel.confidence_score})`);
         }
       }
@@ -674,7 +706,7 @@ async function getRelevantCompetitors(
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 1: Verified competitors from competitor_relationships table
+  // TIER 2: Verified competitors from competitor_relationships table
   // ═══════════════════════════════════════════════════════════════════════════
   try {
     const { data: verifiedRelationships, error } = await supabaseClient
@@ -684,7 +716,7 @@ async function getRelevantCompetitors(
       .order('confidence_score', { ascending: false });
 
     if (!error && verifiedRelationships?.length > 0) {
-      console.log(`${logPrefix} TIER 1: Found ${verifiedRelationships.length} verified competitors`);
+      console.log(`${logPrefix} TIER 2: Found ${verifiedRelationships.length} verified competitors from relationships table`);
       
       for (const rel of verifiedRelationships) {
         if (collected.length >= limit) break;
@@ -692,8 +724,8 @@ async function getRelevantCompetitors(
         const competitor = allCompanies.find(c => c.ticker === rel.competitor_ticker);
         if (competitor && addCompetitor(competitor)) {
           verifiedCount++;
-          if (tierUsed === 'NONE') tierUsed = 'TIER1-VERIFIED';
-          console.log(`${logPrefix}   → ${competitor.ticker} (verified, ${rel.relationship_type}, score: ${rel.confidence_score})`);
+          if (tierUsed === 'NONE') tierUsed = 'TIER2-VERIFIED-RELATIONSHIPS';
+          console.log(`${logPrefix}   → ${competitor.ticker} (verified relationship, ${rel.relationship_type}, score: ${rel.confidence_score})`);
         }
       }
     }
@@ -702,27 +734,28 @@ async function getRelevantCompetitors(
   }
 
   if (collected.length >= limit) {
-    console.log(`${logPrefix} Returning ${collected.length} competitors from TIER 0/1 (verified)`);
+    console.log(`${logPrefix} Returning ${collected.length} competitors from TIER 1/2 (verified relationships)`);
     const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
     return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 2: Same SUBSECTOR + Same IBEX Family (highest precision)
+  // TIER 3: Same SUBSECTOR + Same IBEX Family (highest precision after verified)
+  // NOTE: From this tier onwards, competitors are "por categoría" and need disclosure
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.subsector && company.ibex_family_code) {
-    const tier2 = allCompanies.filter(c => 
+    const tier3 = allCompanies.filter(c => 
       c.subsector === company.subsector &&
       c.ibex_family_code === company.ibex_family_code
     );
     
-    console.log(`${logPrefix} TIER 2: Found ${tier2.length} same-subsector + same-IBEX companies`);
+    console.log(`${logPrefix} TIER 3: Found ${tier3.length} same-subsector + same-IBEX companies`);
     
-    for (const c of tier2) {
+    for (const c of tier3) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
         subsectorCount++;
-        if (tierUsed === 'NONE') tierUsed = 'TIER2-SUBSECTOR-IBEX';
+        if (tierUsed === 'NONE') tierUsed = 'TIER3-SUBSECTOR-IBEX';
         console.log(`${logPrefix}   → ${c.ticker} (subsector: ${c.subsector}, IBEX: ${c.ibex_family_code})`);
       }
     }
@@ -734,20 +767,20 @@ async function getRelevantCompetitors(
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 3: Same SUBSECTOR only (any IBEX family)
+  // TIER 4: Same SUBSECTOR only (any IBEX family)
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.subsector) {
-    const tier3 = allCompanies.filter(c => 
+    const tier4 = allCompanies.filter(c => 
       c.subsector === company.subsector
     );
     
-    console.log(`${logPrefix} TIER 3: Found ${tier3.length} same-subsector companies (any IBEX)`);
+    console.log(`${logPrefix} TIER 4: Found ${tier4.length} same-subsector companies (any IBEX)`);
     
-    for (const c of tier3) {
+    for (const c of tier4) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
         subsectorCount++;
-        if (tierUsed === 'NONE') tierUsed = 'TIER3-SUBSECTOR';
+        if (tierUsed === 'NONE') tierUsed = 'TIER4-SUBSECTOR';
         console.log(`${logPrefix}   → ${c.ticker} (subsector: ${c.subsector})`);
       }
     }
@@ -759,20 +792,20 @@ async function getRelevantCompetitors(
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 4: Same SECTOR + Same IBEX Family (fallback, AND not OR!)
+  // TIER 5: Same SECTOR + Same IBEX Family (fallback, AND not OR!)
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.sector_category && company.ibex_family_code) {
-    const tier4 = allCompanies.filter(c => 
+    const tier5 = allCompanies.filter(c => 
       c.sector_category === company.sector_category &&
       c.ibex_family_code === company.ibex_family_code
     );
     
-    console.log(`${logPrefix} TIER 4: Found ${tier4.length} same-sector + same-IBEX companies`);
+    console.log(`${logPrefix} TIER 5: Found ${tier5.length} same-sector + same-IBEX companies`);
     
-    for (const c of tier4) {
+    for (const c of tier5) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
-        if (tierUsed === 'NONE') tierUsed = 'TIER4-SECTOR-IBEX';
+        if (tierUsed === 'NONE') tierUsed = 'TIER5-SECTOR-IBEX';
         console.log(`${logPrefix}   → ${c.ticker} (sector: ${c.sector_category}, IBEX: ${c.ibex_family_code})`);
       }
     }
@@ -784,11 +817,11 @@ async function getRelevantCompetitors(
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 5: Same SECTOR only (last resort, but still AND-based logic from subsector)
+  // TIER 6: Same SECTOR only (last resort, but still AND-based logic from subsector)
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.sector_category) {
     // If we have subsector, only accept companies in same or related subsectors
-    const tier5 = allCompanies.filter(c => {
+    const tier6 = allCompanies.filter(c => {
       if (c.sector_category !== company.sector_category) return false;
       
       // If source has subsector, prefer matching or empty subsectors
@@ -817,19 +850,19 @@ async function getRelevantCompetitors(
       return true;
     });
     
-    console.log(`${logPrefix} TIER 5: Found ${tier5.length} filtered same-sector companies`);
+    console.log(`${logPrefix} TIER 6: Found ${tier6.length} filtered same-sector companies`);
     
-    for (const c of tier5) {
+    for (const c of tier6) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
-        if (tierUsed === 'NONE') tierUsed = 'TIER5-SECTOR';
+        if (tierUsed === 'NONE') tierUsed = 'TIER6-SECTOR';
         console.log(`${logPrefix}   → ${c.ticker} (sector: ${c.sector_category})`);
       }
     }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 6: FALLBACK - If still no competitors, use top IBEX35 companies
+  // TIER 7: FALLBACK - If still no competitors, use top IBEX35 companies
   // ═══════════════════════════════════════════════════════════════════════════
   if (collected.length === 0) {
     console.warn(`${logPrefix} NO COMPETITORS FOUND for ${company.ticker} - using fallback IBEX35`);
@@ -842,7 +875,7 @@ async function getRelevantCompetitors(
       addCompetitor(c);
     }
     
-    tierUsed = 'TIER6-FALLBACK-IBEX35';
+    tierUsed = 'TIER7-FALLBACK-IBEX35';
   }
 
   console.log(`${logPrefix} Final competitor list (${collected.length}): ${collected.map(c => c.ticker).join(', ')}`);
@@ -863,19 +896,23 @@ function buildCompetitorJustification(
   
   // Explain the tier used
   const tierExplanations: Record<string, string> = {
-    'TIER0-BIDIRECTIONAL': 'relaciones bidireccionales verificadas en base de datos',
-    'TIER1-VERIFIED': 'relaciones directas verificadas en base de datos',
-    'TIER2-SUBSECTOR-IBEX': `mismo subsector (${company.subsector}) y familia IBEX (${company.ibex_family_code})`,
-    'TIER3-SUBSECTOR': `mismo subsector (${company.subsector})`,
-    'TIER4-SECTOR-IBEX': `mismo sector (${company.sector_category}) y familia IBEX (${company.ibex_family_code})`,
-    'TIER5-SECTOR': `mismo sector (${company.sector_category}) con filtrado de incompatibilidades`,
-    'TIER6-FALLBACK-IBEX35': 'fallback a empresas del IBEX-35 (sin competidores directos identificados)',
+    'TIER0-VERIFIED-ISSUER': 'competidores directos verificados manualmente (lista curada)',
+    'TIER1-BIDIRECTIONAL': 'relaciones bidireccionales verificadas en base de datos',
+    'TIER2-VERIFIED-RELATIONSHIPS': 'relaciones directas verificadas en tabla de competidores',
+    'TIER3-SUBSECTOR-IBEX': `mismo subsector (${company.subsector}) y familia IBEX (${company.ibex_family_code})`,
+    'TIER4-SUBSECTOR': `mismo subsector (${company.subsector})`,
+    'TIER5-SECTOR-IBEX': `mismo sector (${company.sector_category}) y familia IBEX (${company.ibex_family_code})`,
+    'TIER6-SECTOR': `mismo sector (${company.sector_category}) con filtrado de incompatibilidades`,
+    'TIER7-FALLBACK-IBEX35': 'fallback a empresas del IBEX-35 (sin competidores directos identificados)',
     'NONE': 'metodología no determinada',
   };
 
   parts.push(`Competidores seleccionados mediante: ${tierExplanations[tierUsed] || tierUsed}.`);
   
-  if (verifiedCount > 0) {
+  // Special case: TIER0-VERIFIED-ISSUER has highest confidence
+  if (tierUsed === 'TIER0-VERIFIED-ISSUER') {
+    parts.push(`✓ ${verifiedCount} competidores directos confirmados.`);
+  } else if (verifiedCount > 0) {
     parts.push(`${verifiedCount} competidores verificados en base de datos.`);
   }
   
@@ -883,7 +920,13 @@ function buildCompetitorJustification(
     parts.push(`${subsectorCount} competidores del mismo subsector (${company.subsector}).`);
   }
   
-  // Add warning if using fallback
+  // Add warning if using category-based fallback (TIER3+)
+  const categoryTiers = ['TIER3-SUBSECTOR-IBEX', 'TIER4-SUBSECTOR', 'TIER5-SECTOR-IBEX', 'TIER6-SECTOR'];
+  if (categoryTiers.includes(tierUsed)) {
+    parts.push('⚠️ NOTA: Esta empresa no tiene competidores verificados definidos. Los competidores mostrados pertenecen a la misma categoría/subsector y se incluyen con fines de contexto sectorial, no como competencia directa confirmada.');
+  }
+  
+  // Add warning if using full fallback
   if (tierUsed.includes('FALLBACK')) {
     parts.push('⚠️ NOTA: Esta empresa no tiene competidores verificados ni subsector definido - las comparativas deben interpretarse con cautela.');
   }
