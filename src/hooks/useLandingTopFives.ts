@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { AIModelOption } from "@/contexts/LandingAIModelContext";
 
 interface TopCompany {
   empresa: string;
@@ -15,9 +16,9 @@ interface TopByAI {
   perplexity: TopCompany[];
 }
 
-export function useLandingTopFives() {
+export function useLandingTopFives(selectedModel: AIModelOption = "ChatGPT") {
   return useQuery({
-    queryKey: ["landing-top-fives"],
+    queryKey: ["landing-top-fives", selectedModel],
     queryFn: async () => {
       // Get latest and previous batch weeks (DISTINCT to avoid duplicates)
       const { data: allWeeks } = await supabase
@@ -34,7 +35,7 @@ export function useLandingTopFives() {
       const latestWeek = latestBatches[0].batch_week;
       const previousWeek = latestBatches.length > 1 ? latestBatches[1].batch_week : null;
 
-      // Top 5 by each AI model
+      // Top 5 by each AI model (kept for backwards compatibility)
       const topByAI: TopByAI = {
         chatgpt: [],
         deepseek: [],
@@ -74,139 +75,121 @@ export function useLandingTopFives() {
         }
       }
 
-      // === IBEX 35 RANKINGS ===
-      // Top 5 IBEX 35
+      // === FILTERED BY SELECTED MODEL ===
+      
+      // Top 5 IBEX 35 (filtered by model)
       const { data: topIbex } = await supabase
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
         .eq("ibex_family_code", "IBEX-35")
+        .eq("model_name", selectedModel)
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Bottom 5 IBEX 35
+      // Bottom 5 IBEX 35 (filtered by model)
       const { data: bottomIbex } = await supabase
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
         .eq("ibex_family_code", "IBEX-35")
+        .eq("model_name", selectedModel)
         .order("rix_score", { ascending: true })
         .limit(5);
 
-      // === NON-IBEX RANKINGS ===
-      // Top 5 traded companies (excluding IBEX 35)
+      // Top 5 traded companies (excluding IBEX 35, filtered by model)
       const { data: topTraded } = await supabase
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, is_traded, ibex_family_code")
         .eq("batch_week", latestWeek)
         .eq("is_traded", true)
         .neq("ibex_family_code", "IBEX-35")
+        .eq("model_name", selectedModel)
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Top 5 untraded companies
+      // Top 5 untraded companies (filtered by model)
       const { data: topUntraded } = await supabase
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, is_traded")
         .eq("batch_week", latestWeek)
         .eq("is_traded", false)
+        .eq("model_name", selectedModel)
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Top 5 overall (excluding IBEX 35)
+      // Top 5 overall (excluding IBEX 35, filtered by model)
       const { data: topOverall } = await supabase
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
         .neq("ibex_family_code", "IBEX-35")
+        .eq("model_name", selectedModel)
         .order("rix_score", { ascending: false })
         .limit(5);
 
-      // Bottom 5 overall (excluding IBEX 35)
+      // Bottom 5 overall (excluding IBEX 35, filtered by model)
       const { data: bottomOverall } = await supabase
         .from("rix_trends")
         .select("company_name, ticker, rix_score, model_name, ibex_family_code")
         .eq("batch_week", latestWeek)
         .neq("ibex_family_code", "IBEX-35")
+        .eq("model_name", selectedModel)
         .order("rix_score", { ascending: true })
         .limit(5);
 
-      // Top Movers UP and DOWN (if previous week exists)
+      // Top Movers UP and DOWN (filtered by selected model)
       let topMoversUp: TopCompany[] = [];
       let topMoversDown: TopCompany[] = [];
       let ibexMoversUp: TopCompany[] = [];
       let ibexMoversDown: TopCompany[] = [];
 
       if (previousWeek) {
-        // Get current week data
+        // Get current week data for selected model
         const { data: currentData } = await supabase
           .from("rix_trends")
           .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-          .eq("batch_week", latestWeek);
+          .eq("batch_week", latestWeek)
+          .eq("model_name", selectedModel);
 
-        // Get previous week data
+        // Get previous week data for selected model
         const { data: previousData } = await supabase
           .from("rix_trends")
           .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-          .eq("batch_week", previousWeek);
+          .eq("batch_week", previousWeek)
+          .eq("model_name", selectedModel);
 
         if (currentData && previousData) {
-          // 1. Calculate raw changes per ticker+model
-          const rawChanges = currentData
+          // Calculate changes per ticker (single model = no duplicates possible)
+          const changes = currentData
             .map(curr => {
-              const prev = previousData.find(
-                p => p.ticker === curr.ticker && p.model_name === curr.model_name
-              );
+              const prev = previousData.find(p => p.ticker === curr.ticker);
               if (!prev) return null;
               return {
-                ticker: curr.ticker,
                 empresa: curr.company_name,
+                ticker: curr.ticker,
+                rix: curr.rix_score,
+                ai: curr.model_name,
                 ibex_family_code: curr.ibex_family_code,
-                change: curr.rix_score - prev.rix_score,
-                currentScore: curr.rix_score
+                change: curr.rix_score - prev.rix_score
               };
             })
-            .filter(Boolean) as { ticker: string; empresa: string; ibex_family_code: string | null; change: number; currentScore: number }[];
+            .filter(Boolean) as (TopCompany & { ibex_family_code: string | null; change: number })[];
 
-          // 2. Aggregate by ticker (average changes across all models)
-          const tickerMap = new Map<string, { ticker: string; empresa: string; ibex_family_code: string | null; changes: number[]; scores: number[] }>();
-          rawChanges.forEach(item => {
-            if (!tickerMap.has(item.ticker)) {
-              tickerMap.set(item.ticker, {
-                ticker: item.ticker,
-                empresa: item.empresa,
-                ibex_family_code: item.ibex_family_code,
-                changes: [],
-                scores: []
-              });
-            }
-            tickerMap.get(item.ticker)!.changes.push(item.change);
-            tickerMap.get(item.ticker)!.scores.push(item.currentScore);
-          });
+          // Separate IBEX and non-IBEX
+          const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX-35");
+          ibexMoversUp = [...ibexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
+          ibexMoversDown = [...ibexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
 
-          // 3. Calculate averages and create final list
-          const aggregatedChanges = Array.from(tickerMap.values()).map(item => ({
-            empresa: item.empresa,
-            ticker: item.ticker,
-            rix: Math.round(item.scores.reduce((a, b) => a + b, 0) / item.scores.length),
-            ai: "Promedio",
-            ibex_family_code: item.ibex_family_code,
-            change: item.changes.reduce((a, b) => a + b, 0) / item.changes.length
-          }));
-
-          // 4. Separate IBEX and non-IBEX, sort by change
-          const ibexAggregated = aggregatedChanges.filter(c => c.ibex_family_code === "IBEX-35");
-          ibexMoversUp = [...ibexAggregated].sort((a, b) => b.change - a.change).slice(0, 5);
-          ibexMoversDown = [...ibexAggregated].sort((a, b) => a.change - b.change).slice(0, 5);
-
-          const nonIbexAggregated = aggregatedChanges.filter(c => c.ibex_family_code !== "IBEX-35");
-          topMoversUp = [...nonIbexAggregated].sort((a, b) => b.change - a.change).slice(0, 5);
-          topMoversDown = [...nonIbexAggregated].sort((a, b) => a.change - b.change).slice(0, 5);
+          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35");
+          topMoversUp = [...nonIbexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
+          topMoversDown = [...nonIbexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
         }
       }
 
       return {
         latestWeek,
+        selectedModel,
         topByAI,
         // IBEX 35 section
         topIbex: topIbex?.map(d => ({
