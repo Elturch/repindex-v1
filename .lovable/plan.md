@@ -1,190 +1,193 @@
 
-# Plan: Incorporar Insights de Validación Metodológica
+# Plan: Sistema de Competidores Verificados Guardados en Base de Datos
 
 ## Resumen Ejecutivo
 
-La evaluación externa (8.5/10) destaca fortalezas clave que debemos comunicar mejor y señala áreas que fortalecen la credibilidad del sistema. El plan incorpora estos insights de forma sutil en dos lugares: la página de Metodología pública y el "Anexo Técnico" de letra pequeña que aparece en cada informe del Agente Rix.
+Implementar una nueva columna `verified_competitors` en `repindex_root_issuers` que almacene los competidores directos de cada empresa. Cuando esta columna tenga datos, el sistema de guardrails usará EXCLUSIVAMENTE estos competidores. Cuando esté vacía, aplicará la lógica de fallback por categoría/subcategoría, pero declarando explícitamente que son "competidores por categoría, no verificados".
 
 ---
 
-## Insights Clave a Incorporar
+## Diagnóstico Actual
 
-### Fortalezas Validadas (comunicar sin revelar detalles sensibles)
+### Datos del Excel Subido
+- **174 empresas** con columna "Competidores directos"
+- Muchas tienen competidores definidos (ej: BBVA → "Banco Santander, CaixaBank, Banco Sabadell, Bankinter, Unicaja Banco")
+- Algunas tienen casilla vacía (ej: AENA, AGIL, AIRBUS)
 
-| Insight | Cómo Comunicar | Dónde |
-|---------|---------------|-------|
-| Consultas machine-to-machine vía API | "Ejecución sistemática vía API" | Metodología + Footer |
-| Prompt estandarizado idéntico | "Prompt estructurado e invariable" | Anexo técnico |
-| Ejecución semanal sincronizada (domingos) | "Frecuencia semanal homogénea" | Ya está - reforzar |
-| 6 modelos con grounding real | Ya comunicado bien | Mantener |
-| Precio de acción como ancla | "Variables de contraste con mercado" | Anexo técnico |
-| Volumen de menciones recogido | "Señales de cobertura mediática" | Metodología |
-| Divergencia como medida de incertidumbre | "σ inter-modelo como incertidumbre epistémica" | Ya está - mejorar redacción |
+### Tabla `competitor_relationships` Existente
+- Solo **32 relaciones** para **16 empresas** (cobertura < 10%)
+- No está sincronizada con el listado del Excel
 
-### Preguntas Abiertas (reconocer honestamente)
-
-| Pregunta | Respuesta Honesta |
-|----------|-------------------|
-| ¿Correlación con métricas reales? | "En construcción - recogiendo datos de contraste" |
-| ¿Ponderación empírica o experta? | "Criterio experto inicial, calibración futura basada en datos" |
-| ¿Prompts públicos? | "Estructura pública, contenido propietario" |
+### Sistema de Guardrails Actual
+- **TIER 0**: Relaciones bidireccionales en `competitor_relationships`
+- **TIER 1**: Relaciones directas en `competitor_relationships`
+- **TIER 2-6**: Fallbacks por subsector/sector/IBEX
 
 ---
 
 ## Cambios Propuestos
 
-### 1. Página de Metodología (`/metodologia`)
+### 1. Migración de Base de Datos
 
-**Nueva sección: "Rigor en la Ejecución"** (después de "Tecnología Nativa IA")
+Añadir columna `verified_competitors` a `repindex_root_issuers`:
 
-Contenido propuesto:
-- **Ejecución sistemática**: "Cada domingo, el sistema ejecuta consultas machine-to-machine vía API con prompts idénticos para las 174 empresas."
-- **Reproducibilidad**: "La estandarización elimina sesgos por usuario, contexto o historial de conversación."
-- **Variables de contraste**: "Junto al RIX, recogemos precio de cierre semanal (cotizadas) y volumen de menciones Tier-1 como anclas empíricas para validación futura."
-- **Calibración continua**: "La ponderación de métricas parte de criterio experto y evolucionará según evidencia estadística conforme madure el dataset."
+```sql
+ALTER TABLE repindex_root_issuers 
+ADD COLUMN verified_competitors jsonb DEFAULT '[]'::jsonb;
 
-**Mejora en sección de Divergencia**
-
-Reformular para enfatizar que es una medida de incertidumbre epistémica:
-- "Cuando 6 modelos independientes con diferentes arquitecturas, proveedores y datasets coinciden, la señal es robusta. La divergencia alta indica que la realidad informativa está fragmentada."
-
-### 2. Anexo Técnico-Metodológico (`technicalSheetHtml.ts`)
-
-**Nueva sección: "Garantías de Reproducibilidad"**
-
-```text
-EJECUCIÓN SISTEMÁTICA
-- Frecuencia: Semanal (domingos, 52 ciclos/año)
-- Método: API machine-to-machine (sin interfaz de usuario)
-- Prompt: Estructurado, idéntico para todos los modelos
-- Temperatura: 0 (determinismo máximo)
+COMMENT ON COLUMN repindex_root_issuers.verified_competitors IS 
+'Lista de tickers de competidores directos verificados manualmente. Formato: ["BBVA", "CABK", "SAB"]. Si está vacío, se usan competidores por categoría.';
 ```
 
-**Nueva sección: "Variables de Contraste"**
-
-```text
-VALIDACIÓN CON MERCADO
-Para empresas cotizadas:
-- Precio de cierre semanal (viernes, fuente: EODHD)
-- Mínimo 52 semanas como referencia de volatilidad
-Para todas las empresas:
-- Volumen de menciones Tier-1 de la semana
-- Objetivo: Construir base empírica para calibrar ponderaciones
+Esta columna almacenará un array JSON de tickers, por ejemplo:
+```json
+["BBVA", "CABK", "SAB", "BKT", "UNI"]
 ```
 
-**Mejora en Limitaciones**
+### 2. Poblar la Columna con Datos del Excel
 
-Añadir honestamente:
-- "La ponderación actual (NVM 15%, DRM 15%, etc.) es criterio experto. La calibración empírica está en desarrollo."
-- "Correlación RIX vs. métricas de negocio: en fase de validación (3+ meses de datos recogidos)."
+Crear script/endpoint para procesar el Excel y convertir nombres a tickers:
 
-### 3. Footer del Chat (`MethodologyFooter.tsx`)
+| Empresa | Excel (nombres) | DB (tickers) |
+|---------|-----------------|--------------|
+| BBVA | "Banco Santander, CaixaBank, Banco Sabadell, Bankinter, Unicaja Banco" | `["SAN", "CABK", "SAB", "BKT", "UNI"]` |
+| ACS | "Ferrovial, Acciona, Sacyr, FCC, OHLA" | `["FER", "ANA", "SCYR", "FCC-PRIV", "OHL"]` |
+| AENA | (vacío) | `[]` |
 
-**Añadir nueva línea de metadata**
+El proceso:
+1. Para cada nombre de competidor, buscar el ticker correspondiente en `repindex_root_issuers.issuer_name`
+2. Si no se encuentra match exacto, buscar por similitud (Iberdrola, Naturgy Energy Group, etc.)
+3. Guardar array de tickers en `verified_competitors`
 
-Mostrar cuando haya datos de regresión disponibles:
-- "Anclaje estadístico: Correlación precio-RIX R² = [valor]%" (solo si hay datos)
+### 3. Modificar Sistema de Guardrails (`chat-intelligence/index.ts`)
 
-**Mejorar nota de divergencia**
+Cambiar la función `getRelevantCompetitors`:
 
-Cambiar de:
-- "Consenso alto/moderado/divergencia"
+```text
+ANTES:
+- TIER 0: competitor_relationships bidireccional
+- TIER 1: competitor_relationships directo
+- TIER 2-6: Fallbacks por categoría
 
-A:
-- "σ inter-modelo: [valor] → [interpretación de incertidumbre]"
+DESPUÉS:
+- TIER 0: verified_competitors (si existe y no está vacío) → EXCLUSIVO, no continúa
+- TIER 1-fallback: Solo si verified_competitors está vacío
+  → Usa lógica de categoría/subcategoría
+  → Declara: "competidores añadidos por pertenecer a la misma categoría"
+```
+
+### 4. Actualizar Justificación de Metodología
+
+Cuando se usen competidores verificados:
+> "Competidores seleccionados mediante: relaciones directas verificadas manualmente."
+
+Cuando se usen fallbacks por categoría:
+> "⚠️ NOTA: Esta empresa no tiene competidores verificados definidos. Los competidores mostrados pertenecen a la misma categoría ([sector_category]) y se incluyen con fines de contexto sectorial, no como competencia directa confirmada."
 
 ---
 
 ## Archivos a Modificar
 
-| Archivo | Cambio Principal |
-|---------|------------------|
-| `src/pages/Methodology.tsx` | Nueva sección "Rigor en la Ejecución" + mejora divergencia |
-| `src/lib/technicalSheetHtml.ts` | Secciones de reproducibilidad y validación con mercado |
-| `src/components/chat/MethodologyFooter.tsx` | Línea de anclaje estadístico + reformular divergencia |
+| Archivo | Cambio |
+|---------|--------|
+| Nueva migración SQL | Añadir columna `verified_competitors` |
+| `supabase/functions/chat-intelligence/index.ts` | Modificar `getRelevantCompetitors` para priorizar `verified_competitors` |
+| `supabase/functions/ingest-new-issuer/index.ts` | Añadir campo `verified_competitors` al insertar nuevos issuers |
+| `src/components/admin/IssuerIngestPanel.tsx` | Mostrar campo para editar competidores en la UI de ingesta |
 
 ---
 
-## Redacción Sutil (ejemplos)
+## Script de Importación del Excel
 
-### En Metodología (público)
+Se creará un script para procesar el Excel y poblar la base de datos:
 
-> **No decir**: "Usamos el prompt 'reputación de empresa X la semana pasada'"
-> 
-> **Decir**: "El sistema ejecuta consultas estructuradas e invariables cada domingo, garantizando que todas las empresas sean evaluadas con criterios idénticos."
+```text
+1. Leer columna "Competidores directos" de cada fila
+2. Si está vacía → verified_competitors = []
+3. Si tiene datos:
+   a. Split por comas
+   b. Para cada nombre, buscar ticker en repindex_root_issuers
+   c. Si match → añadir ticker al array
+   d. Si no match → log warning, saltar
+4. UPDATE repindex_root_issuers SET verified_competitors = [array] WHERE ticker = [ticker]
+```
 
-### En Anexo Técnico (letra pequeña)
+---
 
-> **No decir**: "Estamos construyendo validación porque no tenemos todavía"
-> 
-> **Decir**: "Se recogen variables de contraste (precio de acción, menciones mediáticas) para establecer correlaciones estadísticas conforme madura el dataset longitudinal."
+## Lógica de Fallback Detallada
+
+```text
+function getRelevantCompetitors(company, allCompanies):
+  
+  // TIER 0 (NUEVO): Competidores verificados - SI EXISTEN, SON EXCLUSIVOS
+  IF company.verified_competitors && company.verified_competitors.length > 0:
+    competitors = buscar empresas por tickers en verified_competitors
+    justification = "Competidores directos verificados manualmente"
+    RETURN (competitors, justification, "TIER0-VERIFIED")
+  
+  // FALLBACK: Si verified_competitors está vacío
+  // La lógica actual de TIER 1-6 se mantiene, pero con justificación diferente
+  
+  [... lógica existente de subsector/sector ...]
+  
+  // IMPORTANTE: Modificar justificación para declarar que son "por categoría"
+  IF tierUsed in [TIER2, TIER3, TIER4, TIER5]:
+    justification += "⚠️ Competidores incluidos por pertenecer a la misma categoría/subsector, no verificados como competencia directa."
+```
+
+---
+
+## Impacto en Boletines y Agente Rix
+
+### Boletines Ejecutivos
+- Si hay `verified_competitors` → Usa solo esos, comparativas directas
+- Si está vacío → Usa categoría, pero el boletín incluirá nota de transparencia
+
+### Agente Rix (Chat)
+- Misma lógica: prioriza verificados, fallback a categoría con disclosure
+- Las respuestas incluirán la justificación de metodología
+
+---
+
+## Beneficios
+
+1. **Control total**: Cada empresa tiene sus competidores exactos definidos manualmente
+2. **Transparencia**: Cuando no hay verificados, se declara explícitamente
+3. **Escalabilidad**: Nuevas empresas pueden añadirse con o sin competidores
+4. **Retrocompatibilidad**: La lógica actual de categoría sigue funcionando como fallback
+
+---
+
+## Mapeo de Competidores del Excel
+
+Empresas con competidores definidos (muestra):
+
+| Ticker | Competidores (Nombres) | Competidores (Tickers) |
+|--------|------------------------|------------------------|
+| BBVA | Banco Santander, CaixaBank, Banco Sabadell, Bankinter, Unicaja Banco | SAN, CABK, SAB, BKT, UNI |
+| TEF | Grupo MASORANGE | MASOR-PRIV |
+| IBE | Endesa, Naturgy Energy Group, Repsol | ELE, NTGY, REP |
+| ITX | Adolfo Domínguez, Puig Brands | ADZ, PUIG |
+| GRF | PharmaMar, Laboratorios Farmacéuticos Rovi, Faes Farma, Almirall | PHM, ROVI, FAE, ALM |
+
+Empresas sin competidores (usarán fallback por categoría):
+- AENA, AGIL, AIRBUS, AMS, APPS, ART, ART2, AZK, BKY, CCEP, etc.
+
+---
+
+## Flujo de Actualización Futura
+
+Para añadir/modificar competidores de una empresa:
+1. Ir al panel de Admin → Issuers
+2. Editar campo `verified_competitors` (array de tickers)
+3. Guardar → El sistema usará inmediatamente los nuevos competidores
 
 ---
 
 ## Resultado Esperado
 
-1. **Credibilidad reforzada**: Los puntos fuertes validados externamente se comunican sin revelar propiedad intelectual
-2. **Honestidad metodológica**: Las limitaciones reconocidas fortalecen la confianza académica
-3. **Preparación para el futuro**: Se documenta que el sistema está diseñado para evolucionar de descriptivo a predictivo
-4. **Consistencia**: El mensaje es coherente entre página pública, exports y chat
-
----
-
-## Secciones Técnicas
-
-### Código para nueva sección en Metodología
-
-```tsx
-{/* Rigor en la Ejecución - Nueva sección */}
-<section className="py-12 px-4">
-  <div className="container mx-auto max-w-4xl">
-    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-      <Shield className="h-6 w-6 text-primary" />
-      Rigor en la Ejecución
-    </h2>
-    <div className="grid md:grid-cols-2 gap-4">
-      <Card>
-        <CardContent className="pt-6">
-          <h3 className="font-semibold mb-3">🔄 Ejecución Sistemática</h3>
-          <p className="text-sm text-muted-foreground">
-            Cada domingo, el sistema ejecuta consultas machine-to-machine 
-            vía API con prompts estructurados e invariables para todas 
-            las empresas del censo.
-          </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="pt-6">
-          <h3 className="font-semibold mb-3">📊 Variables de Contraste</h3>
-          <p className="text-sm text-muted-foreground">
-            Para empresas cotizadas: precio de cierre semanal. 
-            Para todas: volumen de menciones Tier-1. Estas anclas 
-            empíricas permiten validación estadística futura.
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-  </div>
-</section>
-```
-
-### HTML para Anexo Técnico
-
-```html
-<h4>Garantías de Reproducibilidad</h4>
-<p>
-  <strong>Ejecución:</strong> API machine-to-machine (sin interfaz de usuario) | 
-  <strong>Frecuencia:</strong> Semanal (domingos) | 
-  <strong>Prompt:</strong> Estructurado e invariable | 
-  <strong>Temperatura:</strong> 0 (determinismo máximo). 
-  Esta arquitectura elimina sesgos por contexto, usuario o historial de conversación.
-</p>
-
-<h4>Variables de Contraste (Validación en Construcción)</h4>
-<p>
-  El sistema recoge variables empíricas para calibración futura: 
-  <strong>precio de cierre semanal</strong> (133 cotizadas, fuente: EODHD) y 
-  <strong>volumen de menciones Tier-1</strong> (proxy: NVM agregado). 
-  La ponderación actual es criterio experto; evolucionará según evidencia estadística.
-</p>
-```
+Después de la implementación:
+- Las 174 empresas tendrán `verified_competitors` poblado según el Excel
+- Los boletines y el Agente Rix usarán SOLO estos competidores cuando existan
+- Cuando no existan, se declara transparentemente que son "por categoría"
+- No hay riesgo de mezclar empresas de sectores incompatibles
