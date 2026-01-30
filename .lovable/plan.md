@@ -1,121 +1,196 @@
-# Arquitectura Híbrida Vector + Grafo para Agente Rix
 
-## Estado de Implementación: ✅ COMPLETADO
+# Plan: Unificación del Glosario de Métricas RIX
 
-### Resumen
+## Diagnóstico del Problema
 
-El Agente Rix ha sido evolucionado de un sistema RAG puramente vectorial a una **arquitectura híbrida Vector + Grafo** que combina:
+Se ha detectado una **incoherencia ontológica crítica** entre dos sistemas de definición de métricas que coexisten en el codebase:
 
-1. **Vector Search** (existente): Localiza documentos relevantes por similitud semántica
-2. **Graph Expansion** (NUEVO): Descubre relaciones verificadas entre entidades empresariales
-3. **Structured Context** (NUEVO): Proporciona al LLM una vista estructurada del ecosistema corporativo
+### Ontología A: "Técnica" (Fuente de Verdad)
+Usada en: `rix-analyze-v2`, `glossary-dialog.tsx`, `RixRunDetail.tsx`, `technicalSheetHtml.ts`
+
+| Sigla | Nombre Técnico Inglés | Descripción Técnica |
+|-------|----------------------|---------------------|
+| NVM | Narrative Value Metric | Calidad de la narrativa (tono + controversia + alucinación) |
+| DRM | Data Reliability Metric | Fortaleza de evidencia documental |
+| SIM | Source Integrity Metric | Jerarquía de fuentes T1-T4 |
+| RMM | Reputational Momentum Metric | Frescura temporal de menciones |
+| CEM | Controversy Exposure Metric | Exposición a controversias (inverso) |
+| GAM | Governance Autonomy Metric | Percepción de independencia de gobierno |
+| DCM | Data Consistency Metric | Coherencia de información entre modelos |
+| CXM | Corporate Execution Metric | Ejecución corporativa + cotización |
+
+### Ontología B: "Marketing" (Incorrecta)
+Usada en: `Methodology.tsx`, `chat-intelligence (prompts)`, `graphContextBuilder.ts`
+
+| Sigla | Nombre "Inventado" | Significado Falso |
+|-------|-------------------|-------------------|
+| NVM | Narrativa y Visibilidad Mediática | Cobertura mediática |
+| DRM | Desempeño y Resultados Empresariales | Rendimiento financiero |
+| SIM | Sostenibilidad e Impacto Ambiental | ESG/Huella carbono |
+| RMM | Reputación de Marca y Marketing | Branding/Diferenciación |
+| CEM | Comportamiento Ético y Gobierno | Ética empresarial |
+| GAM | Gestión y Atracción del Talento | RRHH/Employer branding |
+| DCM | Digital y Capacidad de Innovación | I+D/Transformación digital |
+| CXM | Experiencia del Cliente | Satisfacción cliente |
+
+**Impacto**: Un cliente que lea que "SIM mide sostenibilidad" optimizará sus comunicaciones ESG, pero la métrica real evalúa si Reuters o Bloomberg mencionan a la empresa. Esto destruye la credibilidad del sistema.
 
 ---
 
-## Componentes Implementados
+## Solución: Sistema de Glosario Canónico Centralizado
 
-### 1. Funciones PostgreSQL de Grafo
+### Fase 1: Crear Fuente Única de Verdad
 
-| Función | Propósito | Estado |
-|---------|-----------|--------|
-| `expand_entity_graph(ticker, depth)` | Traversal de grafo desde empresa semilla | ✅ |
-| `expand_entity_graph_with_scores(ticker, depth, weeks)` | Grafo + scores RIX de todas las entidades | ✅ |
-| `get_sector_graph(sector, include_scores)` | Grafo completo de un sector | ✅ |
+**Nuevo archivo**: `src/lib/rixMetricsGlossary.ts`
 
-**Tipos de Relaciones:**
-- `COMPITE_CON` (confianza 0.9): Competidores verificados de `verified_competitors`
-- `MISMO_SUBSECTOR` (confianza 0.7): Peers del mismo subsector específico
-- `MISMO_SECTOR` (confianza 0.5): Empresas del mismo sector amplio
+Este archivo será el **único lugar** donde se definen las métricas. Contiene:
 
-### 2. Integración en chat-intelligence
+1. **Definición técnica** (nombre inglés, fórmula, qué mide realmente)
+2. **Definición ejecutiva** (interpretación de negocio coherente con la técnica)
+3. **Mapeo explícito** técnico → ejecutivo con justificación
 
-**Flujo Actualizado:**
+```typescript
+// Estructura del glosario canónico
+export interface MetricDefinition {
+  acronym: string;
+  technicalName: string;           // Ej: "Narrative Value Metric"
+  technicalDescription: string;    // Fórmula/metodología real
+  executiveName: string;           // Ej: "Calidad de la Narrativa"
+  executiveDescription: string;    // Interpretación de negocio
+  mappingJustification: string;    // Por qué el nombre ejecutivo es correcto
+  icon: string;                    // Icono para UI
+  weight: number;                  // Peso en el RIX (ej: 0.15)
+}
+
+export const RIX_METRICS_GLOSSARY: MetricDefinition[] = [
+  {
+    acronym: "NVM",
+    technicalName: "Narrative Value Metric",
+    technicalDescription: "NVM = clip(50*(s̄+1) - 20*c̄ - 30*h̄). Donde s̄ = sentimiento medio, c̄ = controversia, h̄ = alucinación.",
+    executiveName: "Calidad de la Narrativa",
+    executiveDescription: "Evalúa la coherencia y calidad del discurso público según las IAs. Un NVM alto indica narrativa clara, baja controversia y afirmaciones verificables.",
+    mappingJustification: "El nombre ejecutivo refleja que esta métrica mide 'cómo de bien cuenta su historia la empresa', no visibilidad mediática.",
+    icon: "MessageSquare",
+    weight: 0.15,
+  },
+  // ... resto de métricas
+];
 ```
-Pregunta Usuario
-      │
-      ├─────────────────┬────────────────────┐
-      ▼                 ▼                    ▼
- Vector Search   Entity Detection   Graph Expansion
-      │                 │                    │
-      ▼                 ▼                    ▼
-┌─────────────────────────────────────────────────┐
-│     STRUCTURED CONTEXT (JSON para LLM)          │
-│  - primary_entity + scores                      │
-│  - competitors (COMPITE_CON)                    │
-│  - sector_peers (MISMO_SUBSECTOR/SECTOR)        │
-│  - sector_context (avg, top/bottom performer)   │
-│  - relationship_summary                         │
-└─────────────────────────────────────────────────┘
-      │
-      ▼
-   LLM (GPT-4o / Gemini)
-   Razona sobre ESTRUCTURA, no texto plano
+
+### Fase 2: Actualizar Todos los Consumidores
+
+**Archivos a modificar** (importarán desde el glosario canónico):
+
+| Archivo | Cambio Requerido |
+|---------|------------------|
+| `src/components/ui/glossary-dialog.tsx` | Importar de `rixMetricsGlossary.ts` |
+| `src/pages/Methodology.tsx` | Importar de `rixMetricsGlossary.ts` (corregir ontología B) |
+| `src/lib/graphContextBuilder.ts` | Importar de `rixMetricsGlossary.ts` |
+| `src/pages/RixRunDetail.tsx` | Importar de `rixMetricsGlossary.ts` |
+| `src/pages/Dashboard.tsx` | Importar de `rixMetricsGlossary.ts` |
+| `supabase/functions/chat-intelligence/index.ts` | Sincronizar prompts con glosario |
+| `supabase/functions/rix-regression-analysis/index.ts` | Importar constantes del glosario |
+| `src/lib/technicalSheetHtml.ts` | Corregir NVM ("Net Vision" → "Narrative Value") |
+| `public/llms.txt` | Actualizar descripciones para agentes externos |
+
+### Fase 3: Añadir Tabla de Mapeo en Informes
+
+**Nuevo componente**: `src/components/ui/MetricMappingTable.tsx`
+
+Tabla que aparece automáticamente en informes exhaustivos:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     CORRESPONDENCIA DE MÉTRICAS RIX                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Sigla │ Nombre Técnico          │ Interpretación Ejecutiva                 │
+├───────┼─────────────────────────┼──────────────────────────────────────────┤
+│ NVM   │ Narrative Value Metric  │ Calidad de la Narrativa                  │
+│ DRM   │ Data Reliability Metric │ Fortaleza de Evidencia                   │
+│ SIM   │ Source Integrity Metric │ Autoridad de Fuentes                     │
+│ RMM   │ Reputational Momentum   │ Actualidad y Empuje                      │
+│ CEM   │ Controversy Exposure    │ Gestión de Controversias (inverso)       │
+│ GAM   │ Governance Autonomy     │ Percepción de Gobierno Independiente     │
+│ DCM   │ Data Consistency Metric │ Coherencia Informativa                   │
+│ CXM   │ Corporate Execution     │ Ejecución Corporativa                    │
+└───────┴─────────────────────────┴──────────────────────────────────────────┘
 ```
 
-### 3. Graph-Aware System Prompt
+### Fase 4: Inyectar en chat-intelligence
 
-El system prompt ahora incluye:
-- Explicación de tipos de relaciones
-- Reglas para comparativas (solo COMPITE_CON para competencia directa)
-- Instrucciones para benchmarking con grafo
-- Prohibición de inventar relaciones no existentes
+**Modificar prompts** en `chat-intelligence/index.ts`:
 
-### 4. Frontend Utilities
+1. Incluir el glosario canónico en el system prompt
+2. Obligar al LLM a usar SOLO los nombres del glosario
+3. Para informes `exhaustive`, incluir la tabla de mapeo automáticamente
 
-**Archivo:** `src/lib/graphContextBuilder.ts`
+```typescript
+const METRICS_GLOSSARY_PROMPT = `
+## GLOSARIO OBLIGATORIO DE MÉTRICAS RIX
 
-Tipos y funciones para trabajar con el grafo en frontend:
-- `GraphEntity`, `EntityScore`, `GraphExpansionResult`
-- `buildStructuredContext()`: Transforma grafo en contexto estructurado
-- `formatGraphContextForPrompt()`: Formatea para inyección en prompt
-- `getGraphAwarePromptSection()`: Sección de instrucciones del grafo
+IMPORTANTE: Usa EXACTAMENTE estos nombres. No inventes interpretaciones.
 
----
+| Sigla | Nombre Técnico | Qué Mide Realmente |
+|-------|----------------|-------------------|
+| NVM | Narrative Value Metric | Calidad de narrativa: tono + coherencia |
+| DRM | Data Reliability Metric | Evidencia documental verificable |
+| SIM | Source Integrity Metric | Calidad de fuentes (T1=CNMV/Reuters) |
+| RMM | Reputational Momentum | Frescura de menciones (% en ventana) |
+| CEM | Controversy Exposure | Exposición a controversias (inverso) |
+| GAM | Governance Autonomy | Percepción de independencia gobierno |
+| DCM | Data Consistency | Coherencia entre modelos de IA |
+| CXM | Corporate Execution | Ejecución + cotización bursátil |
 
-## Beneficios Logrados
+⚠️ SIM NO mide sostenibilidad/ESG. Mide jerarquía de fuentes.
+⚠️ DRM NO mide desempeño financiero. Mide calidad de evidencia.
+⚠️ DCM NO mide innovación digital. Mide coherencia de datos.
+`;
+```
 
-| Métrica | Antes | Después |
-|---------|-------|---------|
-| Preguntas multi-empresa | Contexto fragmentado | Grafo conecta entidades |
-| Descubrimiento de relaciones | Implícito (LLM adivina) | Explícito (edges verificados) |
-| Comparativas sectoriales | Manual (sin estructura) | Automático (scores + rankings) |
-| Alucinaciones relacionales | Frecuentes | Controladas (reglas estrictas) |
-| Transparencia de razonamiento | Baja | Alta (justificación de tier usado) |
+### Fase 5: Validación Automática
 
----
+**Nuevo test** (opcional): `src/lib/__tests__/metricsGlossary.test.ts`
 
-## Ejemplo de Uso
-
-**Pregunta:** "¿Cómo afectó la controversia de Grifols a la percepción del sector farmacéutico?"
-
-**Flujo Anterior (Vector-Only):**
-1. Vector search → documentos de "Grifols"
-2. LLM "adivina" conexiones con PharmaMar, Rovi, etc.
-
-**Flujo Actual (Híbrido):**
-1. Vector search → documentos de "Grifols"
-2. Graph expansion → `(Grifols)-[COMPITE_CON]->(PharmaMar, Rovi)` + peers de subsector "Farmacéutico"
-3. Scores RIX de todas las entidades conectadas
-4. LLM recibe grafo estructurado con:
-   - Competidores verificados y sus scores
-   - Promedio sectorial
-   - Líder y rezagado del sector
-   - Delta vs competidores
+Test que verifica que todos los archivos usan definiciones del glosario canónico.
 
 ---
 
-## Notas de Performance
+## Tabla de Definiciones Correctas (Nueva Ontología Unificada)
 
-- Graph expansion con `depth=2`: ~50-100ms
-- Se ejecuta en paralelo con vector search
-- Solo se activa para `complete` y `exhaustive` (no `quick`)
-- Máximo 3 empresas detectadas para expansión simultánea
+| Sigla | Nombre Técnico (EN) | Nombre Ejecutivo (ES) | Qué Mide Realmente |
+|-------|---------------------|----------------------|-------------------|
+| **NVM** | Narrative Value Metric | Calidad de la Narrativa | Coherencia del discurso: tono medio, nivel de controversia, afirmaciones sin soporte |
+| **DRM** | Data Reliability Metric | Fortaleza de Evidencia | Calidad de documentación: fuentes primarias, corroboración, trazabilidad |
+| **SIM** | Source Integrity Metric | Autoridad de Fuentes | Jerarquía de fuentes citadas: T1 (reguladores/financieros) → T4 (opinión/redes) |
+| **RMM** | Reputational Momentum Metric | Actualidad y Empuje | Frescura temporal: % de hechos dentro de la ventana semanal analizada |
+| **CEM** | Controversy Exposure Metric | Gestión de Controversias | Exposición a riesgos: judiciales, políticos, laborales (puntuación inversa) |
+| **GAM** | Governance Autonomy Metric | Percepción de Gobierno | Independencia percibida: policies declaradas, conflictos de interés |
+| **DCM** | Data Consistency Metric | Coherencia Informativa | Consistencia entre modelos: nombres, fechas, roles, cifras |
+| **CXM** | Corporate Execution Metric | Ejecución Corporativa | Impacto en mercado: cotización bursátil, ratings ESG verificables |
 
 ---
 
-## Próximas Mejoras Potenciales
+## Archivos a Crear/Modificar
 
-1. **Caché de grafos**: Cachear por ticker + semana para respuestas más rápidas
-2. **Grafos temporales**: Añadir edges `PRECEDIDA_POR` para tendencias históricas
-3. **Migración a Apache AGE**: Si escala > 10K empresas, considerar grafo nativo
-4. **Visualización de grafos**: Componente frontend para mostrar relaciones al usuario
+| Archivo | Acción | Prioridad |
+|---------|--------|-----------|
+| `src/lib/rixMetricsGlossary.ts` | CREAR | Alta |
+| `src/components/ui/glossary-dialog.tsx` | Refactorizar para usar glosario | Alta |
+| `src/pages/Methodology.tsx` | Corregir ontología incorrecta | Alta |
+| `src/lib/graphContextBuilder.ts` | Sincronizar con glosario | Alta |
+| `src/lib/technicalSheetHtml.ts` | Corregir "Net Vision" → "Narrative Value" | Alta |
+| `supabase/functions/chat-intelligence/index.ts` | Inyectar glosario en prompts | Alta |
+| `src/pages/RixRunDetail.tsx` | Importar de glosario | Media |
+| `supabase/functions/rix-regression-analysis/index.ts` | Sincronizar | Media |
+| `public/llms.txt` | Actualizar para agentes externos | Media |
+| `.lovable/plan.md` | Documentar decisión arquitectónica | Baja |
+
+---
+
+## Beneficios
+
+1. **Fuente única de verdad**: Una sola definición por métrica
+2. **Coherencia técnico-ejecutiva**: Mapeo explícito y justificado
+3. **Autolegitimación**: Los informes incluyen tabla de correspondencia
+4. **Mantenibilidad**: Cambiar una definición actualiza todo el sistema
+5. **Credibilidad**: El cliente entiende exactamente qué optimizar
