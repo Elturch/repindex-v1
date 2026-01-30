@@ -88,7 +88,7 @@ const validateRequest = (data: ContactRequest): { valid: boolean; error?: string
   return { valid: true };
 };
 
-const generateEmailHtml = (name: string, email: string, company: string | undefined, message: string): string => {
+const generateInternalEmailHtml = (name: string, email: string, company: string | undefined, message: string): string => {
   const timestamp = new Date().toLocaleString("es-ES", { 
     timeZone: "Europe/Madrid",
     dateStyle: "full",
@@ -183,6 +183,88 @@ ${message}
   `;
 };
 
+const generateConfirmationEmailHtml = (name: string): string => {
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f8fafc;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); padding: 32px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+                ¡Gracias por contactarnos!
+              </h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px 32px;">
+              <p style="margin: 0 0 20px 0; font-size: 18px; color: #1e293b; line-height: 1.6;">
+                Hola <strong>${name}</strong>,
+              </p>
+              
+              <p style="margin: 0 0 20px 0; font-size: 16px; color: #475569; line-height: 1.7;">
+                Hemos recibido tu mensaje correctamente. Nuestro equipo lo revisará y <strong>nos pondremos en contacto contigo lo antes posible</strong>.
+              </p>
+              
+              <p style="margin: 0 0 20px 0; font-size: 16px; color: #475569; line-height: 1.7;">
+                Normalmente respondemos en un plazo de <strong>24-48 horas laborables</strong>.
+              </p>
+              
+              <!-- Divider -->
+              <div style="border-top: 1px solid #e2e8f0; margin: 32px 0;"></div>
+              
+              <!-- What is RepIndex -->
+              <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                ¿Qué es RepIndex?
+              </p>
+              
+              <p style="margin: 0 0 20px 0; font-size: 15px; color: #475569; line-height: 1.7;">
+                RepIndex mide cómo las principales IAs (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) describen a las empresas del IBEX 35 y empresas cotizadas. Es el primer índice de reputación algorítmica en España.
+              </p>
+              
+              <!-- CTA -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-top: 16px;">
+                    <a href="https://repindex.ai" style="display: inline-block; padding: 14px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px;">
+                      Explorar RepIndex
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 32px; background-color: #f1f5f9; border-top: 1px solid #e2e8f0; border-radius: 0 0 12px 12px;">
+              <p style="margin: 0 0 8px 0; font-size: 14px; color: #64748b; text-align: center;">
+                <strong>RepIndex.ai</strong> — Análisis Reputacional Inteligente
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #94a3b8; text-align: center;">
+                Este es un mensaje automático. Por favor, no respondas a este correo.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+};
+
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -232,27 +314,45 @@ const handler = async (req: Request): Promise<Response> => {
     const company = data.company?.trim() || undefined;
     const message = data.message.trim();
 
-    // Generate email HTML
-    const html = generateEmailHtml(name, email, company, message);
+    // Generate email HTML for internal notification
+    const internalHtml = generateInternalEmailHtml(name, email, company, message);
+    
+    // Generate confirmation email HTML for user
+    const confirmationHtml = generateConfirmationEmailHtml(name);
 
-    // Send email via Resend
-    const { data: emailData, error: emailError } = await resend.emails.send({
+    // Send internal notification email
+    const { data: internalEmailData, error: internalEmailError } = await resend.emails.send({
       from: "RepIndex <no-reply@repindex.ai>",
       to: ["informes@hablamosde.com"],
       replyTo: [email],
       subject: `[Contacto Web] ${name}${company ? ` - ${company}` : ''}`,
-      html,
+      html: internalHtml,
     });
 
-    if (emailError) {
-      console.error("Resend error:", emailError);
+    if (internalEmailError) {
+      console.error("Resend error (internal):", internalEmailError);
       return new Response(
         JSON.stringify({ error: "Error al enviar el mensaje. Por favor, inténtalo de nuevo." }),
         { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    console.log("Email sent successfully:", emailData);
+    console.log("Internal email sent successfully:", internalEmailData);
+
+    // Send confirmation email to user
+    const { data: confirmationEmailData, error: confirmationEmailError } = await resend.emails.send({
+      from: "RepIndex <no-reply@repindex.ai>",
+      to: [email],
+      subject: "¡Gracias por contactar con RepIndex!",
+      html: confirmationHtml,
+    });
+
+    if (confirmationEmailError) {
+      // Log error but don't fail the request - internal email was already sent
+      console.error("Resend error (confirmation):", confirmationEmailError);
+    } else {
+      console.log("Confirmation email sent successfully:", confirmationEmailData);
+    }
 
     return new Response(
       JSON.stringify({ success: true, message: "Mensaje enviado correctamente" }),
