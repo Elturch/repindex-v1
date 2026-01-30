@@ -1,89 +1,85 @@
 
-# Plan: Resolver el Conflicto Depth Level vs Role Prompt
+# Plan: Clarificar el Tratamiento de CXM para Empresas No Cotizadas
 
-## Diagnóstico Confirmado
+## Objetivo
 
-La respuesta del chat ("nota de prensa de RepIndex") solo generó **1,143 tokens** (~800 palabras) cuando el nivel `exhaustive` debía producir **hasta 4,500 palabras** con tablas detalladas.
+Añadir información clara en la página de Metodología que explique que **CXM (Corporate Execution Metric) no aplica a empresas no cotizadas** y que el RIX se calcula redistribuyendo su peso (10%) al resto de métricas. Esto evitará que los usuarios interpreten un CXM = 0 como una puntuación negativa.
 
-| Elemento | Esperado (Exhaustive) | Recibido |
-|----------|----------------------|----------|
-| Longitud | 4,500 palabras (~6K tokens) | 800 palabras (1.1K tokens) |
-| Secciones | 5 secciones con tablas | 6 puntos periodísticos |
-| Tablas | Scores por modelo, métricas, evolución | Ninguna |
-| Citas | Extractos de los 6 modelos IA | Citas implícitas genéricas |
+## Diagnóstico Actual
 
-**Causa raíz**: Conflicto de instrucciones entre el **depth level** (exhaustive = informe largo con tablas) y el **role** (periodista = formato noticia breve).
+| Elemento | Estado Actual |
+|----------|---------------|
+| Glosario canónico (`rixMetricsGlossary.ts`) | Ya menciona "Solo aplica a empresas cotizadas; si no cotiza, se redistribuyen pesos" en `technicalDescription` |
+| Función `getMetricMappingTableMarkdown()` | Incluye nota pequeña: "CXM solo aplica a cotizadas" |
+| Página de Metodología (`Methodology.tsx`) | No muestra esta información de forma visible |
+| Cards de métricas | Muestran peso "10%" para CXM sin aclaración |
 
 ## Solución Propuesta
 
-Modificar el sistema para que el **depth level siempre tenga prioridad** sobre el role prompt, y que los roles solo modifiquen el *tono* sin reducir la *extensión*.
+### Cambio 1: Añadir Callout en la Sección de Métricas
 
-### Cambio 1: Reforzar el Depth Prompt para Exhaustive
+Añadir un callout informativo después de la grid de métricas que explique el tratamiento especial de CXM y CEM.
 
-**Archivo**: `supabase/functions/chat-intelligence/index.ts`
-**Ubicación**: Función `buildDepthPrompt()` (líneas 1216-1276)
+**Ubicación**: Después de la grid de métricas (línea ~365), antes del cierre de la sección.
 
-Añadir una instrucción clara de longitud mínima en el prompt exhaustive:
-
+**Contenido**:
 ```
-## EXTENSIÓN OBLIGATORIA
-- Mínimo 2,500 palabras (~15,000 caracteres)
-- TODAS las secciones numeradas son OBLIGATORIAS
-- Si el usuario pide formato periodístico, MANTÉN la extensión pero adapta el tono
-- Una respuesta corta en modo exhaustive es un ERROR
+Nota metodológica:
+- CXM (Ejecución Corporativa) solo aplica a empresas cotizadas. Para no cotizadas, 
+  su peso (10%) se redistribuye proporcionalmente entre las otras 7 métricas.
+  Un valor de 0 en CXM no indica mal desempeño, sino que la métrica no es aplicable.
+- CEM (Gestión de Controversias) usa puntuación inversa: 100 = sin controversias detectadas.
 ```
 
-### Cambio 2: Modificar la Combinación Role + Depth
+### Cambio 2: Actualizar la Descripción de CXM en la Card
 
-**Archivo**: `supabase/functions/chat-intelligence/index.ts`
-**Ubicación**: Construcción del system prompt (líneas 4759-4771)
+Modificar la descripción ejecutiva de CXM en el glosario canónico para que incluya la aclaración de forma más visible.
 
-Añadir instrucción de prioridad cuando hay rol + depth exhaustive:
+**Archivo**: `src/lib/rixMetricsGlossary.ts`
+**Ubicación**: Línea 152, campo `executiveDescription` de CXM
 
+**Nueva descripción**:
 ```
-Si el usuario ha seleccionado un ROL específico (${roleName}) Y la profundidad es EXHAUSTIVE:
-- PRIORIDAD 1: Estructura y extensión del formato exhaustive (4,500 palabras, tablas, secciones)
-- PRIORIDAD 2: Tono y enfoque del rol (${roleName})
-- El rol adapta el TONO, no reduce la EXTENSIÓN
-```
-
-### Cambio 3: Actualizar Rol Periodista
-
-**Archivo**: `src/lib/chatRoles.ts`
-**Ubicación**: Rol "periodista" (líneas 128-144)
-
-Añadir clarificación de extensión:
-
-```
-NOTA: Si el nivel de profundidad es EXHAUSTIVE o COMPLETE, mantén la extensión 
-solicitada. Puedes estructurar el contenido como reportaje de investigación largo
-(vs nota de prensa breve) para acomodar la profundidad requerida.
+"Mide la percepción de ejecución corporativa y su reflejo en indicadores de mercado. 
+Solo aplica a empresas cotizadas; para no cotizadas, esta métrica no se evalúa y 
+su peso se redistribuye al resto. Un CXM = 0 indica inaplicabilidad, no mal desempeño."
 ```
 
-## Impacto
+### Cambio 3: Añadir Badge Visual en la Card de CXM
 
-| Aspecto | Antes | Después |
-|---------|-------|---------|
-| Exhaustive + Periodista | ~800 palabras (nota breve) | ~3,000+ palabras (reportaje largo) |
-| Exhaustive + CEO | Variable | Mínimo 2,500 palabras garantizado |
-| Quick + Periodista | ~500 palabras | ~500 palabras (sin cambio) |
+Añadir un badge "(Solo cotizadas)" junto al peso de CXM para hacerlo visualmente evidente.
+
+**Archivo**: `src/pages/Methodology.tsx`
+**Ubicación**: Grid de métricas (líneas 342-365)
+
+**Lógica**:
+```
+{metric.code === "CXM" && (
+  <Badge variant="secondary" className="ml-2 text-xs">
+    Solo cotizadas
+  </Badge>
+)}
+```
 
 ## Archivos a Modificar
 
 | Archivo | Cambio | Líneas |
 |---------|--------|--------|
-| `supabase/functions/chat-intelligence/index.ts` | Reforzar extensión mínima en exhaustive | ~1216-1276 |
-| `supabase/functions/chat-intelligence/index.ts` | Instrucción de prioridad depth > role | ~4759-4771 |
-| `src/lib/chatRoles.ts` | Clarificar que roles no reducen extensión | ~128-144 |
+| `src/pages/Methodology.tsx` | Añadir callout metodológico + badge en CXM | ~365 |
+| `src/lib/rixMetricsGlossary.ts` | Actualizar descripción ejecutiva de CXM | ~152 |
 
-## Alternativa: Mantener Comportamiento Actual
+## Resultado Visual Esperado
 
-Si el comportamiento actual es intencional (periodista = siempre breve), el sistema está funcionando correctamente. En este caso:
+Después de los cambios, la sección de métricas incluirá:
 
-1. Documentar que **el rol tiene prioridad** sobre el depth level para formato
-2. Añadir UI que muestre advertencia: "El rol Periodista genera respuestas más breves"
-3. Recomendar usar rol "General" para informes exhaustivos completos
+1. **En la card de CXM**: Badge visible "(Solo cotizadas)" junto al peso
+2. **Callout amarillo/informativo**: Explicación clara bajo la grid con el tratamiento de CXM y CEM
+3. **Descripción actualizada**: La card de CXM incluirá la aclaración de redistribución
 
-## Recomendación
+## Impacto
 
-**Implementar el Cambio 1 + Cambio 2**: El depth level debe ser respetado siempre, y los roles solo modifican el tono. Un usuario que selecciona "exhaustive" espera una respuesta larga independientemente del rol.
+| Aspecto | Antes | Después |
+|---------|-------|---------|
+| Claridad sobre CXM = 0 | Confuso (parece negativo) | Claro (indica inaplicabilidad) |
+| Redistribución de pesos | No mencionada | Explicada visualmente |
+| Consistencia con glosario | Parcial | Completa |
