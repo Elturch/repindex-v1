@@ -8,6 +8,8 @@ import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
 import { ResponseFeedback } from "./ResponseFeedback";
 import { MethodologyFooter } from "./MethodologyFooter";
+import { InlineChartRenderer } from "./InlineChartRenderer";
+import { SegmentedSourcesFooter } from "./SegmentedSourcesFooter";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight } from "lucide-react";
@@ -228,6 +230,14 @@ export function ChatMessages({
                 )
               ) : (
                 <div className="relative">
+                  {/* Inline Chart - shown before text content when not streaming */}
+                  {message.metadata?.chartData && !message.isStreaming && (
+                    <InlineChartRenderer 
+                      chartData={message.metadata.chartData} 
+                      compact={compact} 
+                    />
+                  )}
+                  
                   <MarkdownMessage 
                     content={message.content} 
                     showDownload={!message.isStreaming}
@@ -288,6 +298,15 @@ export function ChatMessages({
               {message.role === 'assistant' && !message.isStreaming && message.metadata?.methodology?.hasRixData && (
                 <MethodologyFooter 
                   metadata={message.metadata.methodology}
+                  languageCode={languageCode}
+                />
+              )}
+
+              {/* Segmented Sources Footer - only show when NOT streaming and has sources */}
+              {message.role === 'assistant' && !message.isStreaming && message.metadata?.segmentedSources && (
+                <SegmentedSourcesFooter 
+                  segmentedSources={message.metadata.segmentedSources}
+                  compact={compact}
                   languageCode={languageCode}
                 />
               )}

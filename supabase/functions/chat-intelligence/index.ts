@@ -251,8 +251,225 @@ function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
 }
 
 // =============================================================================
-// SSE STREAMING HELPERS
+// CHART DATA BUILDING HELPERS - For trend visualizations in chat
 // =============================================================================
+
+interface TrendPoint {
+  week: string;
+  date: string;
+  rixScore: number;
+  marketAverage?: number;
+  delta?: number;
+}
+
+interface ComparisonPoint {
+  name: string;
+  score: number;
+  color?: string;
+}
+
+interface RadarPoint {
+  subject: string;
+  value: number;
+  fullMark: number;
+}
+
+interface ChartData {
+  type: 'trend' | 'comparison' | 'radar';
+  data: TrendPoint[] | ComparisonPoint[] | RadarPoint[];
+  title?: string;
+  subtitle?: string;
+  companyName?: string;
+}
+
+/**
+ * Build trend chart data from RIX runs.
+ * Shows RIX score evolution over recent weeks for a company.
+ */
+function buildTrendChartData(
+  companyRixData: any[],
+  allMarketData: any[],
+  companyName: string,
+  numWeeks: number = 4
+): ChartData | null {
+  if (!companyRixData || companyRixData.length === 0) return null;
+
+  // Group by week (batch_execution_date)
+  const weeklyData = new Map<string, { scores: number[]; date: string }>();
+  
+  companyRixData.forEach(run => {
+    const weekDate = run.batch_execution_date?.split('T')[0];
+    if (!weekDate || run['09_rix_score'] == null) return;
+    
+    if (!weeklyData.has(weekDate)) {
+      weeklyData.set(weekDate, { scores: [], date: weekDate });
+    }
+    weeklyData.get(weekDate)!.scores.push(run['09_rix_score']);
+  });
+
+  // Calculate market average by week
+  const marketWeeklyAvg = new Map<string, number>();
+  if (allMarketData && allMarketData.length > 0) {
+    const marketByWeek = new Map<string, number[]>();
+    allMarketData.forEach(run => {
+      const weekDate = run.batch_execution_date?.split('T')[0];
+      if (!weekDate || run['09_rix_score'] == null) return;
+      if (!marketByWeek.has(weekDate)) marketByWeek.set(weekDate, []);
+      marketByWeek.get(weekDate)!.push(run['09_rix_score']);
+    });
+    marketByWeek.forEach((scores, week) => {
+      marketWeeklyAvg.set(week, scores.reduce((a, b) => a + b, 0) / scores.length);
+    });
+  }
+
+  // Convert to array and sort chronologically
+  const sortedWeeks = Array.from(weeklyData.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-numWeeks);
+
+  if (sortedWeeks.length < 2) return null;
+
+  const trendData: TrendPoint[] = sortedWeeks.map(([weekDate, data], idx) => {
+    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    const prevWeek = idx > 0 ? sortedWeeks[idx - 1] : null;
+    const prevAvg = prevWeek 
+      ? prevWeek[1].scores.reduce((a, b) => a + b, 0) / prevWeek[1].scores.length 
+      : avgScore;
+    
+    return {
+      week: `S${idx + 1}`,
+      date: weekDate,
+      rixScore: Math.round(avgScore * 10) / 10,
+      marketAverage: marketWeeklyAvg.get(weekDate) 
+        ? Math.round(marketWeeklyAvg.get(weekDate)! * 10) / 10 
+        : undefined,
+      delta: Math.round((avgScore - prevAvg) * 10) / 10,
+    };
+  });
+
+  return {
+    type: 'trend',
+    data: trendData,
+    title: `📈 Evolución RIX - ${companyName}`,
+    subtitle: `Últimas ${trendData.length} semanas`,
+    companyName,
+  };
+}
+
+/**
+ * Build comparison chart data for multiple companies.
+ */
+function buildComparisonChartData(
+  companies: { name: string; score: number }[]
+): ChartData | null {
+  if (!companies || companies.length === 0) return null;
+
+  const data: ComparisonPoint[] = companies
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6)
+    .map(c => ({
+      name: c.name.length > 12 ? c.name.substring(0, 12) + '...' : c.name,
+      score: Math.round(c.score * 10) / 10,
+    }));
+
+  return {
+    type: 'comparison',
+    data,
+    title: '📊 Comparativa RIX',
+  };
+}
+
+/**
+ * Build radar chart data from RIX metrics (8 dimensions).
+ */
+function buildRadarChartData(rixRun: any, companyName: string): ChartData | null {
+  if (!rixRun) return null;
+
+  const metrics = [
+    { key: '23_nvm_score', label: 'NVM' },
+    { key: '26_drm_score', label: 'DRM' },
+    { key: '29_sim_score', label: 'SIM' },
+    { key: '32_rmm_score', label: 'RMM' },
+    { key: '35_cem_score', label: 'CEM' },
+    { key: '38_gam_score', label: 'GAM' },
+    { key: '41_dcm_score', label: 'DCM' },
+    { key: '44_cxm_score', label: 'CXM' },
+  ];
+
+  const radarData: RadarPoint[] = [];
+  let validCount = 0;
+
+  metrics.forEach(m => {
+    const value = rixRun[m.key];
+    if (value != null && value > 0) {
+      radarData.push({
+        subject: m.label,
+        value: Math.round(value),
+        fullMark: 100,
+      });
+      validCount++;
+    }
+  });
+
+  // Need at least 4 metrics for a meaningful radar
+  if (validCount < 4) return null;
+
+  return {
+    type: 'radar',
+    data: radarData,
+    title: `🎯 Métricas RIX - ${companyName}`,
+    companyName,
+  };
+}
+
+/**
+ * Segment sources by temporal window.
+ */
+interface SegmentedSources {
+  window: VerifiedSource[];
+  reinforcement: VerifiedSource[];
+  periodLabel?: string;
+}
+
+function segmentSourcesByWindow(
+  sources: VerifiedSource[],
+  windowStart: string | null,
+  windowEnd: string | null
+): SegmentedSources {
+  if (!windowStart || !windowEnd || sources.length === 0) {
+    return { window: [], reinforcement: sources };
+  }
+
+  const startDate = new Date(windowStart);
+  const endDate = new Date(windowEnd);
+  
+  // Format period label
+  const formatLabel = () => {
+    const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+    const startStr = startDate.toLocaleDateString('es-ES', opts);
+    const endStr = endDate.toLocaleDateString('es-ES', { ...opts, year: 'numeric' });
+    return `${startStr} - ${endStr}`;
+  };
+
+  const windowSources: VerifiedSource[] = [];
+  const reinforcementSources: VerifiedSource[] = [];
+
+  sources.forEach(source => {
+    // ChatGPT sources with utm_source=openai are typically current
+    if (source.sourceModel === 'ChatGPT') {
+      windowSources.push(source);
+    } else {
+      // Perplexity sources go to reinforcement by default
+      reinforcementSources.push(source);
+    }
+  });
+
+  return {
+    window: windowSources,
+    reinforcement: reinforcementSources,
+    periodLabel: formatLabel(),
+  };
+}
 
 type SSEEventType = 'start' | 'chunk' | 'metadata' | 'done' | 'error' | 'fallback';
 
@@ -2715,7 +2932,16 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Send initial metadata
+          // Build chart data for visualization (trend over weeks)
+          const chartData = buildTrendChartData(
+            rixData || [], 
+            [], // No market average for bulletins
+            matchedCompany.issuer_name,
+            4
+          );
+          console.log(`${logPrefix} Built trend chart data: ${chartData ? 'yes' : 'no'}`);
+
+          // Send initial metadata with chart data
           controller.enqueue(sseEncoder({
             type: 'start',
             metadata: {
@@ -2731,6 +2957,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               corporateNewsUsed: corporateNewsContext ? true : false,
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
+              // Chart data for inline visualization
+              chartData: chartData || undefined,
             }
           }));
 
@@ -2883,6 +3111,9 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           const verifiedSources = extractSourcesFromRixData(rixData || []);
           console.log(`${logPrefix} Extracted ${verifiedSources.length} verified sources from RIX data`);
 
+          // Segment sources by temporal window
+          const segmentedSources = segmentSourcesByWindow(verifiedSources, periodFrom, periodTo);
+
           // Send final done event with enriched methodology metadata
           controller.enqueue(sseEncoder({
             type: 'done',
@@ -2896,8 +3127,14 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
               aiProvider: provider,
+              // Chart data for inline visualization
+              chartData: chartData || undefined,
               // Verified sources from ChatGPT and Perplexity for bibliography
               verifiedSources: verifiedSources.length > 0 ? verifiedSources : undefined,
+              // Segmented sources by temporal window
+              segmentedSources: (segmentedSources.window.length > 0 || segmentedSources.reinforcement.length > 0) 
+                ? segmentedSources 
+                : undefined,
               // Methodology metadata for "Radar Reputacional" validation sheet
               methodology: {
                 hasRixData: (rixData?.length || 0) > 0,
@@ -4700,7 +4937,18 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Send initial metadata
+          // Build chart data if we have company-specific RIX data
+          let chartData: ChartData | null = null;
+          if (detectedCompanies.length > 0 && detectedCompanyFullData && detectedCompanyFullData.length > 0) {
+            chartData = buildTrendChartData(
+              detectedCompanyFullData,
+              allRixData || [],
+              detectedCompanies[0].issuer_name,
+              4
+            );
+          }
+
+          // Send initial metadata with chart data
           controller.enqueue(sseEncoder({
             type: 'start',
             metadata: {
@@ -4708,6 +4956,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               languageName,
               depthLevel,
               detectedCompanies: detectedCompanies.map(c => c.issuer_name),
+              chartData: chartData || undefined,
             }
           }));
 
@@ -4872,6 +5121,13 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           const verifiedSourcesStandard = extractSourcesFromRixData(detectedCompanyFullData || []);
           console.log(`${logPrefix} Extracted ${verifiedSourcesStandard.length} verified sources from RIX data`);
 
+          // Segment sources by temporal window
+          const segmentedSourcesStandard = segmentSourcesByWindow(
+            verifiedSourcesStandard, 
+            periodFromMethod, 
+            periodToMethod
+          );
+
           // Send final done event with all metadata
           controller.enqueue(sseEncoder({
             type: 'done',
@@ -4892,8 +5148,14 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               divergencePoints: divergencePointsMethod,
               uniqueCompanies: uniqueCompaniesCount,
               uniqueWeeks: uniqueWeeksCount,
+              // Chart data for inline visualization
+              chartData: chartData || undefined,
               // Verified sources from ChatGPT and Perplexity for bibliography
               verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
+              // Segmented sources by temporal window
+              segmentedSources: (segmentedSourcesStandard.window.length > 0 || segmentedSourcesStandard.reinforcement.length > 0)
+                ? segmentedSourcesStandard
+                : undefined,
               methodology: {
                 hasRixData: (allRixData?.length || 0) > 0,
                 modelsUsed: modelsUsedMethod,
