@@ -231,12 +231,21 @@ export function ChatMessages({
               ) : (
                 <div className="relative">
                   {/* Inline Chart - shown before text content when not streaming */}
-                  {message.metadata?.chartData && !message.isStreaming && (
-                    <InlineChartRenderer 
-                      chartData={message.metadata.chartData} 
-                      compact={compact} 
-                    />
-                  )}
+                  {(() => {
+                    console.log('[ChatMessages] Checking chartData for message:', idx, {
+                      hasMetadata: !!message.metadata,
+                      hasChartData: !!message.metadata?.chartData,
+                      isStreaming: message.isStreaming,
+                      chartType: message.metadata?.chartData?.type,
+                      chartDataLength: message.metadata?.chartData?.data?.length
+                    });
+                    return message.metadata?.chartData && !message.isStreaming ? (
+                      <InlineChartRenderer 
+                        chartData={message.metadata.chartData} 
+                        compact={compact} 
+                      />
+                    ) : null;
+                  })()}
                   
                   <MarkdownMessage 
                     content={message.content} 
