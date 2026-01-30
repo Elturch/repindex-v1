@@ -2,54 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { BookOpen } from "lucide-react";
-
-const glossaryData = [
-  {
-    acronym: "RIX",
-    fullName: "Reputation Index",
-    description: "Índice general que mide la reputación de la empresa (antes PARI - Public Attention Reputational Index)."
-  },
-  {
-    acronym: "NVM",
-    fullName: "Narrative Value Metric",
-    description: "Calidad de la narrativa - Evalúa la coherencia y calidad del discurso público de la empresa según análisis de modelos de lenguaje (antes LNS)."
-  },
-  {
-    acronym: "DRM",
-    fullName: "Data Reliability Metric",
-    description: "Fortaleza de evidencia - Mide la solidez y verificabilidad de las afirmaciones y datos presentados por la empresa (antes ES)."
-  },
-  {
-    acronym: "SIM",
-    fullName: "Source Integrity Metric",
-    description: "Autoridad de fuentes - Evalúa la diversidad y credibilidad de las fuentes que mencionan a la empresa (antes SAM)."
-  },
-  {
-    acronym: "RMM",
-    fullName: "Reputational Momentum Metric",
-    description: "Actualidad y empuje - Mide la relevancia temporal y el impulso de las menciones recientes de la empresa (antes RM)."
-  },
-  {
-    acronym: "CEM",
-    fullName: "Controversy Exposure Metric",
-    description: "Controversia y riesgo - Evalúa el nivel de controversias y riesgos asociados con la empresa (puntuación inversa, antes CLR)."
-  },
-  {
-    acronym: "GAM",
-    fullName: "Governance Autonomy Metric",
-    description: "Independencia de gobierno - Mide cómo se percibe la autonomía de la empresa respecto a influencias gubernamentales (antes GIP)."
-  },
-  {
-    acronym: "DCM",
-    fullName: "Data Consistency Metric",
-    description: "Integridad del grafo de conocimiento - Evalúa la consistencia y coherencia de la información sobre la empresa en diferentes fuentes (antes KGI)."
-  },
-  {
-    acronym: "CXM",
-    fullName: "Corporate Execution Metric",
-    description: "Ejecución corporativa - Mide la capacidad de ejecución y el impacto percibido de la empresa en el mercado (antes MPI)."
-  }
-];
+import { RIX_METRICS_GLOSSARY, getMetricIcon } from "@/lib/rixMetricsGlossary";
 
 export function GlossaryDialog() {
   const [open, setOpen] = useState(false);
@@ -77,18 +30,36 @@ export function GlossaryDialog() {
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2 mt-4">
-          {glossaryData.map((item) => (
-            <div key={item.acronym} className="space-y-2 p-4 bg-muted/30 rounded-lg">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-primary">{item.acronym}</span>
-                <span className="text-sm text-muted-foreground">-</span>
-                <span className="text-sm font-medium">{item.fullName}</span>
+          {RIX_METRICS_GLOSSARY.map((item) => {
+            const IconComponent = getMetricIcon(item.acronym);
+            return (
+              <div key={item.acronym} className="space-y-2 p-4 bg-muted/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <IconComponent className={`h-4 w-4 ${item.colorClass}`} />
+                  <span className="text-lg font-bold text-primary">{item.acronym}</span>
+                  <span className="text-sm text-muted-foreground">-</span>
+                  <span className="text-sm font-medium">{item.technicalName}</span>
+                </div>
+                <div className="text-xs text-muted-foreground font-medium">
+                  → {item.executiveName} {item.inverseScoring && "(puntuación inversa)"}
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {item.executiveDescription}
+                </p>
+                <div className="text-xs text-muted-foreground/70 italic border-t border-muted pt-2 mt-2">
+                  Peso: {Math.round(item.weight * 100)}% del RIX total
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {item.description}
-              </p>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+        <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <h4 className="font-semibold text-amber-800 dark:text-amber-200 mb-2">⚠️ Nota Metodológica</h4>
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Las métricas RIX miden <strong>percepción algorítmica</strong>, no reputación tradicional. 
+            SIM evalúa jerarquía de fuentes (no sostenibilidad), DRM mide calidad de evidencia 
+            (no desempeño financiero), DCM evalúa coherencia entre IAs (no innovación digital).
+          </p>
         </div>
       </DialogContent>
     </Dialog>
