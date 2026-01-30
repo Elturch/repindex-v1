@@ -354,6 +354,11 @@ export default function Methodology() {
                           <metric.icon className={`h-5 w-5 ${metric.color}`} />
                           <Badge variant="outline" className="mr-2">{metric.code}</Badge>
                           {metric.name}
+                          {metric.code === "CXM" && (
+                            <Badge variant="secondary" className="ml-auto text-xs">
+                              Solo cotizadas
+                            </Badge>
+                          )}
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
@@ -362,6 +367,24 @@ export default function Methodology() {
                     </Card>
                   </motion.div>
                 ))}
+              </div>
+              
+              {/* Nota metodológica sobre CXM y CEM */}
+              <div className="mt-8 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <h4 className="font-semibold text-amber-800 dark:text-amber-200 mb-2 flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Nota Metodológica
+                </h4>
+                <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-2">
+                  <li>
+                    <strong>CXM (Ejecución Corporativa)</strong> solo aplica a empresas cotizadas. 
+                    Para no cotizadas, su peso (10%) se redistribuye proporcionalmente entre las otras 7 métricas. 
+                    <strong className="block mt-1">Un valor de 0 en CXM no indica mal desempeño, sino que la métrica no es aplicable.</strong>
+                  </li>
+                  <li>
+                    <strong>CEM (Gestión de Controversias)</strong> usa puntuación inversa: 100 = sin controversias detectadas, 0 = alta exposición a controversias.
+                  </li>
+                </ul>
               </div>
             </motion.div>
           </div>

@@ -149,7 +149,7 @@ export const RIX_METRICS_GLOSSARY: MetricDefinition[] = [
     technicalName: "Corporate Execution Metric",
     technicalDescription: "CXM = f(cotización_bursátil, ratings_ESG_verificables, percepciones_ejecución). Solo aplica a empresas cotizadas; si no cotiza, se redistribuyen pesos.",
     executiveName: "Ejecución Corporativa",
-    executiveDescription: "Mide la percepción de ejecución corporativa y su reflejo en indicadores de mercado. Para cotizadas, incluye correlación con cotización bursátil y ratings ESG verificables.",
+    executiveDescription: "Mide la percepción de ejecución corporativa y su reflejo en indicadores de mercado. Solo aplica a empresas cotizadas; para no cotizadas, esta métrica no se evalúa y su peso (10%) se redistribuye proporcionalmente al resto. Un CXM = 0 indica inaplicabilidad, no mal desempeño.",
     mappingJustification: "El nombre ejecutivo 'Ejecución Corporativa' refleja que esta métrica mide impacto en mercado, NO experiencia del cliente ni satisfacción.",
     iconName: "TrendingUp",
     weight: 0.10,
