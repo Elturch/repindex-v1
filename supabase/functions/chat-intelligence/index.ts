@@ -419,6 +419,7 @@ async function* streamOpenAIResponse(
         messages,
         max_completion_tokens: maxTokens,
         stream: true,
+        stream_options: { include_usage: true },
       }),
       signal: controller.signal,
     });
