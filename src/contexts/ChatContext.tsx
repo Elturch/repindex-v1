@@ -564,6 +564,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           let buffer = '';
           let accumulatedContent = '';
           let finalMetadata: any = null;
+          let startMetadata: any = null;  // Capture metadata from 'start' event (includes early chartData)
           let suggestedQuestions: string[] = [];
           let drumrollQuestion: DrumrollQuestion | null = null;
 
@@ -586,7 +587,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 try {
                   const parsed = JSON.parse(data);
                   
-                  if (parsed.type === 'chunk' && parsed.text) {
+                  if (parsed.type === 'start') {
+                    // Capture initial metadata including chart data (sent early)
+                    startMetadata = parsed.metadata || {};
+                    console.log('[ChatContext] Received start event with chartData:', !!startMetadata.chartData);
+                  } else if (parsed.type === 'chunk' && parsed.text) {
                     accumulatedContent += parsed.text;
                     // Update the last message with accumulated content
                     setMessages(prev => {
@@ -642,8 +647,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 questionCategory: finalMetadata?.questionCategory,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
-                // Chart data for inline visualizations
-                chartData: finalMetadata?.chartData,
+                // Chart data for inline visualizations - prefer startMetadata (sent early) over finalMetadata
+                chartData: startMetadata?.chartData || finalMetadata?.chartData,
                 // Segmented sources by temporal window
                 segmentedSources: finalMetadata?.segmentedSources,
                 // Methodology metadata for "Radar Reputacional" validation sheet

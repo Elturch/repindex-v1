@@ -426,21 +426,29 @@ function buildRadarChartData(rixRun: any, companyName: string): ChartData | null
 // SECTOR DETECTION AND COMPARISON CHARTS
 // =============================================================================
 
+// SECTOR_KEYWORDS aligned with actual sector_category values in repindex_root_issuers table
 const SECTOR_KEYWORDS: Record<string, string[]> = {
-  'Banca': ['banco', 'banca', 'bancario', 'bancos', 'banking', 'bank'],
-  'Energía': ['energía', 'energético', 'energy', 'utilities', 'eléctricas', 'electricas', 'gas', 'petróleo', 'petroleo'],
-  'Telecomunicaciones': ['teleco', 'telecom', 'telecomunicaciones', 'telefonía', 'telefonia'],
-  'Construcción e Infraestructuras': ['construcción', 'construccion', 'infraestructuras', 'inmobiliario', 'construccion'],
-  'Alimentación y Bebidas': ['alimentación', 'alimentacion', 'bebidas', 'food', 'beverages'],
-  'Turismo y Ocio': ['turismo', 'hoteles', 'ocio', 'viajes', 'tourism'],
-  'Servicios Financieros': ['financiero', 'seguros', 'aseguradoras', 'insurance', 'financial'],
-  'Tecnología': ['tecnología', 'tecnologia', 'tech', 'software', 'it'],
-  'Farmacia y Salud': ['farmacia', 'salud', 'pharma', 'health', 'healthcare'],
-  'Industrial': ['industrial', 'industria', 'manufacturing', 'fabricación'],
-  'Retail': ['retail', 'distribución', 'distribucion', 'comercio', 'tiendas'],
-  'Transporte': ['transporte', 'logística', 'logistica', 'transport', 'aviación', 'aviacion'],
-  'Química': ['química', 'quimica', 'chemical'],
-  'Medios y Comunicación': ['medios', 'media', 'comunicación', 'comunicacion', 'publicidad'],
+  'Alimentación': ['alimentación', 'alimentacion', 'comida', 'food', 'beverages', 'bebidas'],
+  'Automoción': ['automoción', 'automocion', 'coches', 'automotive', 'car', 'vehículos', 'vehiculos'],
+  'Banca y Servicios Financieros': ['banco', 'banca', 'bancario', 'bancos', 'banking', 'bank', 'financiero', 'financieros'],
+  'Construcción': ['construcción', 'construccion'],
+  'Construcción e Infraestructuras': ['infraestructuras', 'inmobiliario', 'obra', 'obras'],
+  'Consultoría y Auditoría': ['consultoría', 'consultoria', 'auditoría', 'auditoria', 'consulting', 'audit'],
+  'Distribución': ['distribución', 'distribucion', 'mayorista'],
+  'Energía y Gas': ['energía', 'energia', 'energético', 'energetico', 'energy', 'gas', 'utilities', 'eléctricas', 'electricas', 'eléctrico', 'electrico'],
+  'Hoteles y Turismo': ['turismo', 'hoteles', 'hotel', 'ocio', 'viajes', 'tourism', 'hotelero'],
+  'Industria': ['industrial', 'industria', 'manufacturing', 'fabricación', 'fabricacion'],
+  'Logística': ['logística', 'logistica', 'logistics', 'almacén', 'almacen'],
+  'Materias Primas y Siderurgia': ['materias primas', 'siderurgia', 'acero', 'steel', 'mining', 'minería', 'mineria'],
+  'Moda y Distribución': ['moda', 'retail', 'tiendas', 'fashion', 'textil', 'ropa'],
+  'Otros Sectores': ['otros'],
+  'Petróleo y Energía': ['petróleo', 'petroleo', 'oil', 'refinería', 'refineria', 'crudo'],
+  'Restauración': ['restauración', 'restauracion', 'restaurantes', 'catering', 'hostelería', 'hosteleria'],
+  'Salud y Farmacéutico': ['farmacia', 'salud', 'pharma', 'health', 'healthcare', 'farmacéutico', 'farmaceutico', 'hospital'],
+  'Seguros': ['seguros', 'aseguradoras', 'insurance', 'aseguradora'],
+  'Telecomunicaciones': ['teleco', 'telecom', 'telecomunicaciones', 'telefonía', 'telefonia', 'telecos'],
+  'Telecomunicaciones y Tecnología': ['tecnología', 'tecnologia', 'tech', 'software', 'it', 'digital'],
+  'Transporte': ['transporte', 'transport', 'aviación', 'aviacion', 'aéreo', 'aereo', 'ferrocarril'],
 };
 
 /**
@@ -619,6 +627,59 @@ function buildSectorTopCompaniesChart(
     data: comparisonData.slice(0, 6),
     title: `🏆 Top ${sectorName}`,
     subtitle: `Líderes RIX - Semana del ${latestWeek}`,
+  };
+}
+
+/**
+ * Build market overview chart showing top companies by RIX.
+ * Used as FALLBACK when no specific company or sector is detected.
+ */
+function buildMarketOverviewChart(
+  allRixData: any[],
+  numCompanies: number = 6
+): ChartData | null {
+  if (!allRixData || allRixData.length === 0) return null;
+  
+  // Get latest week data
+  const sortedData = [...allRixData].sort((a, b) => 
+    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
+  );
+  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
+  if (!latestWeek) return null;
+  
+  // Aggregate scores by company (average across all models for that week)
+  const companyScores = new Map<string, { name: string; scores: number[] }>();
+  sortedData.forEach(run => {
+    const weekDate = run.batch_execution_date?.split('T')[0];
+    if (weekDate !== latestWeek) return;
+    const ticker = run['05_ticker'];
+    const score = run['09_rix_score'];
+    const name = run['03_target_name'];
+    if (!ticker || score == null) return;
+    if (!companyScores.has(ticker)) {
+      companyScores.set(ticker, { name: name || ticker, scores: [] });
+    }
+    companyScores.get(ticker)!.scores.push(score);
+  });
+  
+  // Build comparison data
+  const comparisonData: ComparisonPoint[] = [];
+  companyScores.forEach((data) => {
+    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    comparisonData.push({
+      name: data.name.length > 12 ? data.name.substring(0, 12) + '...' : data.name,
+      score: Math.round(avgScore * 10) / 10,
+    });
+  });
+  
+  // Sort by score and take top N
+  comparisonData.sort((a, b) => b.score - a.score);
+  
+  return {
+    type: 'comparison',
+    data: comparisonData.slice(0, numCompanies),
+    title: '🏆 Top RIX del Mercado',
+    subtitle: `Semana del ${latestWeek}`,
   };
 }
 
@@ -5178,6 +5239,20 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               console.log(`${logPrefix} Built general sector comparison chart: ${chartData ? 'yes' : 'no'}`);
             }
           }
+          
+          // Case 5: FALLBACK UNIVERSAL - If still no chart, show top 6 companies by RIX
+          if (!chartData && allRixData && allRixData.length > 0) {
+            chartData = buildMarketOverviewChart(allRixData, 6);
+            console.log(`${logPrefix} Built market overview fallback chart: ${chartData ? 'yes' : 'no'}`);
+          }
+          
+          // Enhanced logging for debugging chart generation
+          console.log(`${logPrefix} Chart generation context:
+  - detectedCompanies: ${detectedCompanies.length}
+  - detectedSectors: ${JSON.stringify(detectedSectors)}
+  - allRixData available: ${allRixData?.length || 0}
+  - companiesCache available: ${companiesCache?.length || 0}
+  - chartData generated: ${chartData ? chartData.type : 'none'}`);
 
           // Send initial metadata with chart data
           controller.enqueue(sseEncoder({
