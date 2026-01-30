@@ -3104,6 +3104,18 @@ export type Database = {
         }[]
       }
       execute_sql: { Args: { sql_query: string }; Returns: Json }
+      expand_entity_graph: {
+        Args: { p_depth?: number; p_ticker: string }
+        Returns: Json
+      }
+      expand_entity_graph_with_scores: {
+        Args: { p_depth?: number; p_ticker: string; p_weeks?: number }
+        Returns: Json
+      }
+      get_sector_graph: {
+        Args: { p_include_scores?: boolean; p_sector: string }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

@@ -3203,6 +3203,189 @@ async function handleStandardChat(
   }
 
   // =============================================================================
+  // PASO 0.55: GRAPH EXPANSION - Knowledge Graph Traversal
+  // Expands detected entities to discover related companies via verified relationships
+  // =============================================================================
+  interface GraphEntity {
+    ticker: string;
+    name: string;
+    sector: string | null;
+    subsector: string | null;
+    ibex_family: string | null;
+    depth: number;
+    relation: 'ORIGIN' | 'COMPITE_CON' | 'MISMO_SUBSECTOR' | 'MISMO_SECTOR';
+    strength: number;
+    path: string[];
+  }
+
+  interface EntityScore {
+    avg_rix: number;
+    min_rix: number;
+    max_rix: number;
+    models_count: number;
+    models: string[];
+    by_model: any[];
+  }
+
+  interface GraphExpansionResult {
+    primary_entity: {
+      ticker: string;
+      name: string;
+      sector: string | null;
+      subsector: string | null;
+      ibex_family: string | null;
+    };
+    graph: GraphEntity[];
+    entity_scores: Record<string, EntityScore>;
+    metadata: {
+      generated_at: string;
+      depth: number;
+      weeks_requested: number;
+      total_entities: number;
+      entities_with_scores: number;
+    };
+  }
+
+  let entityGraphs: GraphExpansionResult[] = [];
+  let graphContextString = '';
+  
+  // Only perform graph expansion for complete/exhaustive depth and when companies are detected
+  const shouldExpandGraph = depthLevel !== 'quick' && detectedCompanies.length > 0;
+  
+  if (shouldExpandGraph) {
+    console.log(`${logPrefix} GRAPH EXPANSION: Traversing knowledge graph for ${detectedCompanies.slice(0, 3).map(c => c.ticker).join(', ')}...`);
+    
+    try {
+      // Expand graph for up to 3 detected companies (parallel calls)
+      const graphPromises = detectedCompanies.slice(0, 3).map(async (company) => {
+        const { data, error } = await supabaseClient.rpc('expand_entity_graph_with_scores', {
+          p_ticker: company.ticker,
+          p_depth: 2,
+          p_weeks: 4
+        });
+        
+        if (error) {
+          console.warn(`${logPrefix} Graph expansion error for ${company.ticker}:`, error.message);
+          return null;
+        }
+        
+        return data as GraphExpansionResult;
+      });
+      
+      const results = await Promise.all(graphPromises);
+      entityGraphs = results.filter((r): r is GraphExpansionResult => r !== null);
+      
+      console.log(`${logPrefix} Graph expansion complete: ${entityGraphs.length} graphs, ${entityGraphs.reduce((sum, g) => sum + (g.metadata?.total_entities || 0), 0)} total entities`);
+      
+      // Build graph context string for LLM
+      if (entityGraphs.length > 0) {
+        graphContextString = buildGraphContextString(entityGraphs, detectedCompanies);
+      }
+    } catch (graphError) {
+      console.error(`${logPrefix} Graph expansion failed:`, graphError);
+    }
+  } else {
+    console.log(`${logPrefix} Skipping graph expansion (depth=${depthLevel}, companies=${detectedCompanies.length})`);
+  }
+
+  // Helper function to build graph context string
+  function buildGraphContextString(graphs: GraphExpansionResult[], companies: any[]): string {
+    const sections: string[] = [];
+    
+    sections.push(`🕸️ ======================================================================`);
+    sections.push(`🕸️ GRAFO DE CONOCIMIENTO EMPRESARIAL (Relaciones Verificadas)`);
+    sections.push(`🕸️ ======================================================================\n`);
+    
+    for (const graph of graphs) {
+      if (!graph.primary_entity || !graph.graph) continue;
+      
+      const primary = graph.primary_entity;
+      const primaryScore = graph.entity_scores?.[primary.ticker];
+      
+      sections.push(`## ENTIDAD PRINCIPAL: ${primary.name} (${primary.ticker})`);
+      sections.push(`- Sector: ${primary.sector || 'N/A'}`);
+      sections.push(`- Subsector: ${primary.subsector || 'N/A'}`);
+      if (primaryScore) {
+        sections.push(`- RIX Promedio: ${primaryScore.avg_rix} pts (rango: ${primaryScore.min_rix}-${primaryScore.max_rix})`);
+        sections.push(`- Modelos analizados: ${primaryScore.models?.join(', ') || 'N/A'}`);
+      }
+      
+      // Verified competitors (COMPITE_CON)
+      const competitors = graph.graph.filter(e => e.relation === 'COMPITE_CON');
+      if (competitors.length > 0) {
+        sections.push(`\n### COMPETIDORES VERIFICADOS (COMPITE_CON - Alta confianza):`);
+        for (const comp of competitors) {
+          const compScore = graph.entity_scores?.[comp.ticker];
+          const delta = compScore && primaryScore 
+            ? (compScore.avg_rix - primaryScore.avg_rix).toFixed(1)
+            : null;
+          const deltaStr = delta ? ` (${parseFloat(delta) >= 0 ? '+' : ''}${delta} vs primaria)` : '';
+          sections.push(`- ${comp.name} (${comp.ticker}): RIX ${compScore?.avg_rix || 'N/A'}${deltaStr}`);
+        }
+      }
+      
+      // Same subsector peers
+      const subsectorPeers = graph.graph.filter(e => e.relation === 'MISMO_SUBSECTOR');
+      if (subsectorPeers.length > 0) {
+        sections.push(`\n### MISMO SUBSECTOR (${primary.subsector}):`);
+        for (const peer of subsectorPeers.slice(0, 8)) {
+          const peerScore = graph.entity_scores?.[peer.ticker];
+          sections.push(`- ${peer.name} (${peer.ticker}): RIX ${peerScore?.avg_rix || 'N/A'}`);
+        }
+      }
+      
+      // Sector-level aggregates
+      const allEntityScores = Object.entries(graph.entity_scores || {})
+        .filter(([ticker]) => ticker !== primary.ticker)
+        .map(([ticker, score]) => ({ ticker, ...score }))
+        .filter(e => e.avg_rix);
+      
+      if (allEntityScores.length > 0) {
+        const avgSectorRix = Math.round(allEntityScores.reduce((sum, e) => sum + e.avg_rix, 0) / allEntityScores.length * 10) / 10;
+        const sortedByRix = [...allEntityScores].sort((a, b) => b.avg_rix - a.avg_rix);
+        const topPerformer = sortedByRix[0];
+        const bottomPerformer = sortedByRix[sortedByRix.length - 1];
+        
+        sections.push(`\n### CONTEXTO SECTORIAL:`);
+        sections.push(`- RIX promedio del sector: ${avgSectorRix}`);
+        if (primaryScore) {
+          const diff = (primaryScore.avg_rix - avgSectorRix).toFixed(1);
+          const comparison = parseFloat(diff) >= 0 ? 'por encima' : 'por debajo';
+          sections.push(`- ${primary.name} está ${Math.abs(parseFloat(diff))} pts ${comparison} del promedio sectorial`);
+        }
+        if (topPerformer) {
+          const topName = graph.graph.find(e => e.ticker === topPerformer.ticker)?.name || topPerformer.ticker;
+          sections.push(`- Líder sectorial: ${topName} (RIX ${topPerformer.avg_rix})`);
+        }
+        if (bottomPerformer && bottomPerformer.ticker !== topPerformer?.ticker) {
+          const bottomName = graph.graph.find(e => e.ticker === bottomPerformer.ticker)?.name || bottomPerformer.ticker;
+          sections.push(`- Rezagado sectorial: ${bottomName} (RIX ${bottomPerformer.avg_rix})`);
+        }
+      }
+      
+      // Relationship summary
+      sections.push(`\n### RESUMEN DEL GRAFO:`);
+      sections.push(`- Total entidades conectadas: ${graph.metadata?.total_entities || graph.graph.length}`);
+      sections.push(`- Competidores verificados: ${competitors.length}`);
+      sections.push(`- Mismo subsector: ${subsectorPeers.length}`);
+      sections.push(`- Entidades con scores RIX: ${graph.metadata?.entities_with_scores || 0}`);
+      
+      // Confidence note
+      if (competitors.length > 0) {
+        sections.push(`\n⚠️ ALTA CONFIANZA: Competidores verificados + datos RIX completos disponibles.`);
+      } else if (subsectorPeers.length > 0) {
+        sections.push(`\n⚠️ CONFIANZA MEDIA: Sin competidores verificados, usando peers de subsector.`);
+      } else {
+        sections.push(`\n⚠️ CONFIANZA BAJA: Datos limitados, comparativas solo contextuales.`);
+      }
+      
+      sections.push(`\n---\n`);
+    }
+    
+    return sections.join('\n');
+  }
+
+  // =============================================================================
   // PASO 0.6: CARGAR NOTICIAS CORPORATIVAS RECIENTES
   // =============================================================================
   interface CorporateNewsItem {
@@ -3611,6 +3794,13 @@ async function handleStandardChat(
     context += `\n`;
     
     context += `📊 ======================================================================\n\n`;
+  }
+
+  // 6.0-GRAPH: GRAFO DE CONOCIMIENTO EMPRESARIAL (Hybrid RAG)
+  // Provides structured entity relationships for reasoning about connections
+  if (graphContextString) {
+    context += graphContextString;
+    context += '\n';
   }
 
   // 6.0-A MEMENTO CORPORATIVO - DATOS VERIFICADOS (PRIORIDAD MÁXIMA)
@@ -4293,10 +4483,65 @@ El modelo explica aproximadamente un [rSquared]% de la varianza en precios.
 - Factores externos de mercado no capturados"
 
 ═══════════════════════════════════════════════════════════════════════════════
+                   GRAFO DE CONOCIMIENTO EMPRESARIAL (HYBRID RAG)
+═══════════════════════════════════════════════════════════════════════════════
+
+Tienes acceso a un GRAFO DE CONOCIMIENTO que conecta empresas mediante relaciones 
+verificadas. Este grafo complementa la búsqueda vectorial con estructura explícita.
+
+TIPOS DE RELACIONES (edges):
+
+| Relación       | Significado                              | Confianza |
+|----------------|------------------------------------------|-----------|
+| COMPITE_CON    | Competidor directo verificado            | Alta (0.9)|
+| MISMO_SUBSECTOR| Empresa del mismo subsector específico   | Media (0.7)|
+| MISMO_SECTOR   | Empresa del mismo sector amplio          | Baja (0.5)|
+
+CÓMO USAR EL GRAFO EN TUS RESPUESTAS:
+
+1. PARA COMPARATIVAS COMPETITIVAS:
+   - Usa SOLO entidades con relación COMPITE_CON
+   - Compara RIX, métricas dimensionales, tendencias
+   - Ejemplo: "Frente a sus competidores directos (Santander, CaixaBank), BBVA..."
+
+2. PARA ANÁLISIS SECTORIAL:
+   - Incluye MISMO_SUBSECTOR para contexto granular
+   - Incluye MISMO_SECTOR solo si no hay subsector data
+   - Ejemplo: "En el subsector Operadores Telecom, Telefónica lidera con..."
+
+3. PARA BENCHMARKING:
+   - Compara RIX de entidad primaria vs promedio de competidores
+   - Destaca gaps vs líder sectorial
+   - Ejemplo: "Con un RIX de 58, Grifols está 12 pts por debajo del líder sectorial Rovi (70)"
+
+4. PARA DETECCIÓN DE OPORTUNIDADES:
+   - Identifica métricas donde la empresa está por debajo de competidores
+   - Sugiere acciones basadas en lo que hacen bien los líderes
+
+REGLAS CRÍTICAS DEL GRAFO:
+
+❌ NUNCA inventes relaciones que no estén en el contexto
+❌ NUNCA asumas competencia solo porque dos empresas estén en el mismo sector
+✅ Si una conexión no existe, dilo: "No hay relación verificada entre X e Y"
+✅ Prioriza COMPITE_CON sobre MISMO_SECTOR para comparativas directas
+✅ Menciona la confianza de las relaciones cuando sea relevante
+
+EJEMPLO DE USO CORRECTO:
+"Según el grafo de conocimiento, los competidores directos verificados de Telefónica 
+son Orange, Vodafone y MásMóvil. Comparando sus RIX de esta semana:
+- Telefónica: 62 pts (↗ +3)
+- Orange: 58 pts (→ estable)
+- Vodafone: 55 pts (↘ -2)
+- MásMóvil: 67 pts (↗ +5)
+
+Telefónica está 5 pts por debajo del líder del subsector (MásMóvil)."
+
+═══════════════════════════════════════════════════════════════════════════════
                           FUENTES DE INFORMACIÓN
 ═══════════════════════════════════════════════════════════════════════════════
 
 Recibes datos de:
+• GRAFO DE CONOCIMIENTO: Relaciones verificadas entre empresas (competidores, sector, subsector)
 • MEMENTO CORPORATIVO: Datos verificados de directivos, sede, con fecha
 • NOTICIAS CORPORATIVAS: Noticias de fuentes oficiales con fecha
 • DATOS RIX: Scores por modelo, métricas dimensionales, rankings
