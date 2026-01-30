@@ -8,6 +8,7 @@ import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml"
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
+import { chartDataToSvg } from "@/lib/chartToSvg";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -1202,6 +1203,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
             .message-assistant .message-content h2 { font-size: 1.3em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
             .message-assistant .message-content h3 { font-size: 1.15em; color: var(--primary-dark); }
             
+            /* Chart styling for PDF export */
+            .message-chart {
+              margin-bottom: 20px;
+              display: flex;
+              justify-content: center;
+            }
+            
+            .message-chart svg {
+              max-width: 100%;
+              height: auto;
+              border-radius: 8px;
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            }
+            
             .suggested-questions {
               margin-top: 16px;
               padding-top: 16px;
@@ -1328,10 +1343,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
               // Convert markdown to premium HTML using shared converter
               const content = convertMarkdownToHtml(msg.content);
               
+              // Generate chart SVG if available (for assistant messages)
+              const chartSvg = !isUser && msg.metadata?.chartData 
+                ? `<div class="message-chart">${chartDataToSvg(msg.metadata.chartData)}</div>`
+                : '';
+              
               return `
                 <div class="message">
                   <div class="message-${isUser ? 'user' : 'assistant'}">
                     <div class="message-role">${role}</div>
+                    ${chartSvg}
                     <div class="message-content">${content}</div>
                     ${!isUser ? questions : ''}
                   </div>
