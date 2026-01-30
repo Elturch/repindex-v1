@@ -1,202 +1,395 @@
 
-# Plan: Unificación del Glosario de Métricas RIX
 
-## ✅ COMPLETADO (2026-01-30)
+# Plan: Gráficos de Tendencia en Streaming + Fuentes Temporales Segmentadas
 
-### Archivos Creados/Modificados:
-- ✅ `src/lib/rixMetricsGlossary.ts` - Fuente única de verdad (NUEVO)
-- ✅ `src/components/ui/glossary-dialog.tsx` - Refactorizado para usar glosario
-- ✅ `src/pages/Methodology.tsx` - Corregida ontología incorrecta
-- ✅ `src/lib/graphContextBuilder.ts` - Sincronizado con glosario canónico
-- ✅ `src/lib/technicalSheetHtml.ts` - Corregido "Net Vision" → "Narrative Value"
-- ✅ `supabase/functions/chat-intelligence/index.ts` - Inyectado glosario en prompts
-- ✅ `public/llms.txt` - Actualizado para agentes externos
+## Evaluación de Viabilidad: ✅ FACTIBLE (Dificultad Media-Alta)
 
----
+### Análisis Técnico
 
-| Sigla | Nombre Técnico Inglés | Descripción Técnica |
-|-------|----------------------|---------------------|
-| NVM | Narrative Value Metric | Calidad de la narrativa (tono + controversia + alucinación) |
-| DRM | Data Reliability Metric | Fortaleza de evidencia documental |
-| SIM | Source Integrity Metric | Jerarquía de fuentes T1-T4 |
-| RMM | Reputational Momentum Metric | Frescura temporal de menciones |
-| CEM | Controversy Exposure Metric | Exposición a controversias (inverso) |
-| GAM | Governance Autonomy Metric | Percepción de independencia de gobierno |
-| DCM | Data Consistency Metric | Coherencia de información entre modelos |
-| CXM | Corporate Execution Metric | Ejecución corporativa + cotización |
+**Lo que tenemos a favor:**
+- Ya existen componentes de gráficos reutilizables (`MiniLineChart`, `MiniBarChart`, `ScoreBadge`, `ModelComparison` en `src/components/news/MiniCharts.tsx`)
+- El sistema SSE ya envía metadatos estructurados en el evento `done`
+- Los datos de tendencia ya se calculan en el backend (`period_from`, `period_to`, RIX por semana)
+- El extractor de fuentes verificadas (`verifiedSourceExtractor.ts`) ya separa ChatGPT/Perplexity
+- El sistema de streaming ya acumula contenido incrementalmente
 
-### Ontología B: "Marketing" (Incorrecta)
-Usada en: `Methodology.tsx`, `chat-intelligence (prompts)`, `graphContextBuilder.ts`
-
-| Sigla | Nombre "Inventado" | Significado Falso |
-|-------|-------------------|-------------------|
-| NVM | Narrativa y Visibilidad Mediática | Cobertura mediática |
-| DRM | Desempeño y Resultados Empresariales | Rendimiento financiero |
-| SIM | Sostenibilidad e Impacto Ambiental | ESG/Huella carbono |
-| RMM | Reputación de Marca y Marketing | Branding/Diferenciación |
-| CEM | Comportamiento Ético y Gobierno | Ética empresarial |
-| GAM | Gestión y Atracción del Talento | RRHH/Employer branding |
-| DCM | Digital y Capacidad de Innovación | I+D/Transformación digital |
-| CXM | Experiencia del Cliente | Satisfacción cliente |
-
-**Impacto**: Un cliente que lea que "SIM mide sostenibilidad" optimizará sus comunicaciones ESG, pero la métrica real evalúa si Reuters o Bloomberg mencionan a la empresa. Esto destruye la credibilidad del sistema.
+**Complejidad principal:**
+1. Los gráficos no pueden renderizarse "en streaming" (requieren datos completos)
+2. Necesitamos enviar datos estructurados para gráficos ANTES o DESPUÉS del texto
+3. La separación de fuentes por ventana temporal requiere análisis de fechas en el backend
 
 ---
 
-## Solución: Sistema de Glosario Canónico Centralizado
-
-### Fase 1: Crear Fuente Única de Verdad
-
-**Nuevo archivo**: `src/lib/rixMetricsGlossary.ts`
-
-Este archivo será el **único lugar** donde se definen las métricas. Contiene:
-
-1. **Definición técnica** (nombre inglés, fórmula, qué mide realmente)
-2. **Definición ejecutiva** (interpretación de negocio coherente con la técnica)
-3. **Mapeo explícito** técnico → ejecutivo con justificación
-
-```typescript
-// Estructura del glosario canónico
-export interface MetricDefinition {
-  acronym: string;
-  technicalName: string;           // Ej: "Narrative Value Metric"
-  technicalDescription: string;    // Fórmula/metodología real
-  executiveName: string;           // Ej: "Calidad de la Narrativa"
-  executiveDescription: string;    // Interpretación de negocio
-  mappingJustification: string;    // Por qué el nombre ejecutivo es correcto
-  icon: string;                    // Icono para UI
-  weight: number;                  // Peso en el RIX (ej: 0.15)
-}
-
-export const RIX_METRICS_GLOSSARY: MetricDefinition[] = [
-  {
-    acronym: "NVM",
-    technicalName: "Narrative Value Metric",
-    technicalDescription: "NVM = clip(50*(s̄+1) - 20*c̄ - 30*h̄). Donde s̄ = sentimiento medio, c̄ = controversia, h̄ = alucinación.",
-    executiveName: "Calidad de la Narrativa",
-    executiveDescription: "Evalúa la coherencia y calidad del discurso público según las IAs. Un NVM alto indica narrativa clara, baja controversia y afirmaciones verificables.",
-    mappingJustification: "El nombre ejecutivo refleja que esta métrica mide 'cómo de bien cuenta su historia la empresa', no visibilidad mediática.",
-    icon: "MessageSquare",
-    weight: 0.15,
-  },
-  // ... resto de métricas
-];
-```
-
-### Fase 2: Actualizar Todos los Consumidores
-
-**Archivos a modificar** (importarán desde el glosario canónico):
-
-| Archivo | Cambio Requerido |
-|---------|------------------|
-| `src/components/ui/glossary-dialog.tsx` | Importar de `rixMetricsGlossary.ts` |
-| `src/pages/Methodology.tsx` | Importar de `rixMetricsGlossary.ts` (corregir ontología B) |
-| `src/lib/graphContextBuilder.ts` | Importar de `rixMetricsGlossary.ts` |
-| `src/pages/RixRunDetail.tsx` | Importar de `rixMetricsGlossary.ts` |
-| `src/pages/Dashboard.tsx` | Importar de `rixMetricsGlossary.ts` |
-| `supabase/functions/chat-intelligence/index.ts` | Sincronizar prompts con glosario |
-| `supabase/functions/rix-regression-analysis/index.ts` | Importar constantes del glosario |
-| `src/lib/technicalSheetHtml.ts` | Corregir NVM ("Net Vision" → "Narrative Value") |
-| `public/llms.txt` | Actualizar descripciones para agentes externos |
-
-### Fase 3: Añadir Tabla de Mapeo en Informes
-
-**Nuevo componente**: `src/components/ui/MetricMappingTable.tsx`
-
-Tabla que aparece automáticamente en informes exhaustivos:
+## Arquitectura Propuesta
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     CORRESPONDENCIA DE MÉTRICAS RIX                         │
+│                         FLUJO SSE MEJORADO                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ Sigla │ Nombre Técnico          │ Interpretación Ejecutiva                 │
-├───────┼─────────────────────────┼──────────────────────────────────────────┤
-│ NVM   │ Narrative Value Metric  │ Calidad de la Narrativa                  │
-│ DRM   │ Data Reliability Metric │ Fortaleza de Evidencia                   │
-│ SIM   │ Source Integrity Metric │ Autoridad de Fuentes                     │
-│ RMM   │ Reputational Momentum   │ Actualidad y Empuje                      │
-│ CEM   │ Controversy Exposure    │ Gestión de Controversias (inverso)       │
-│ GAM   │ Governance Autonomy     │ Percepción de Gobierno Independiente     │
-│ DCM   │ Data Consistency Metric │ Coherencia Informativa                   │
-│ CXM   │ Corporate Execution     │ Ejecución Corporativa                    │
-└───────┴─────────────────────────┴──────────────────────────────────────────┘
+│                                                                             │
+│  1. start     → metadata inicial + datos de gráfico (pre-calculados)        │
+│  2. chunk     → texto streaming (igual que ahora)                           │
+│  3. chunk     → texto streaming...                                          │
+│  4. done      → metadata final + fuentes segmentadas + preguntas sugeridas  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
-
-### Fase 4: Inyectar en chat-intelligence
-
-**Modificar prompts** en `chat-intelligence/index.ts`:
-
-1. Incluir el glosario canónico en el system prompt
-2. Obligar al LLM a usar SOLO los nombres del glosario
-3. Para informes `exhaustive`, incluir la tabla de mapeo automáticamente
-
-```typescript
-const METRICS_GLOSSARY_PROMPT = `
-## GLOSARIO OBLIGATORIO DE MÉTRICAS RIX
-
-IMPORTANTE: Usa EXACTAMENTE estos nombres. No inventes interpretaciones.
-
-| Sigla | Nombre Técnico | Qué Mide Realmente |
-|-------|----------------|-------------------|
-| NVM | Narrative Value Metric | Calidad de narrativa: tono + coherencia |
-| DRM | Data Reliability Metric | Evidencia documental verificable |
-| SIM | Source Integrity Metric | Calidad de fuentes (T1=CNMV/Reuters) |
-| RMM | Reputational Momentum | Frescura de menciones (% en ventana) |
-| CEM | Controversy Exposure | Exposición a controversias (inverso) |
-| GAM | Governance Autonomy | Percepción de independencia gobierno |
-| DCM | Data Consistency | Coherencia entre modelos de IA |
-| CXM | Corporate Execution | Ejecución + cotización bursátil |
-
-⚠️ SIM NO mide sostenibilidad/ESG. Mide jerarquía de fuentes.
-⚠️ DRM NO mide desempeño financiero. Mide calidad de evidencia.
-⚠️ DCM NO mide innovación digital. Mide coherencia de datos.
-`;
-```
-
-### Fase 5: Validación Automática
-
-**Nuevo test** (opcional): `src/lib/__tests__/metricsGlossary.test.ts`
-
-Test que verifica que todos los archivos usan definiciones del glosario canónico.
 
 ---
 
-## Tabla de Definiciones Correctas (Nueva Ontología Unificada)
+## Fase 1: Gráficos de Tendencia en Respuestas
 
-| Sigla | Nombre Técnico (EN) | Nombre Ejecutivo (ES) | Qué Mide Realmente |
-|-------|---------------------|----------------------|-------------------|
-| **NVM** | Narrative Value Metric | Calidad de la Narrativa | Coherencia del discurso: tono medio, nivel de controversia, afirmaciones sin soporte |
-| **DRM** | Data Reliability Metric | Fortaleza de Evidencia | Calidad de documentación: fuentes primarias, corroboración, trazabilidad |
-| **SIM** | Source Integrity Metric | Autoridad de Fuentes | Jerarquía de fuentes citadas: T1 (reguladores/financieros) → T4 (opinión/redes) |
-| **RMM** | Reputational Momentum Metric | Actualidad y Empuje | Frescura temporal: % de hechos dentro de la ventana semanal analizada |
-| **CEM** | Controversy Exposure Metric | Gestión de Controversias | Exposición a riesgos: judiciales, políticos, laborales (puntuación inversa) |
-| **GAM** | Governance Autonomy Metric | Percepción de Gobierno | Independencia percibida: policies declaradas, conflictos de interés |
-| **DCM** | Data Consistency Metric | Coherencia Informativa | Consistencia entre modelos: nombres, fechas, roles, cifras |
-| **CXM** | Corporate Execution Metric | Ejecución Corporativa | Impacto en mercado: cotización bursátil, ratings ESG verificables |
+### 1.1 Ampliar Interfaz de Metadatos SSE
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
+
+Añadir al evento `start`:
+
+```typescript
+interface SSEStartMetadata {
+  // Existente
+  language: string;
+  languageName: string;
+  depthLevel: string;
+  detectedCompanies: string[];
+  
+  // NUEVO: Datos para gráficos
+  chartData?: {
+    type: 'trend' | 'comparison' | 'radar';
+    data: TrendPoint[] | ComparisonPoint[] | RadarPoint[];
+    title?: string;
+    subtitle?: string;
+  };
+}
+
+interface TrendPoint {
+  week: string;       // "S1", "S2", etc.
+  date: string;       // "2026-01-20"
+  rixScore: number;
+  marketAverage: number;
+  delta?: number;     // vs semana anterior
+}
+```
+
+### 1.2 Calcular Datos de Gráfico en Backend
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
+
+En `handleStandardChat`, después de cargar datos RIX:
+
+```typescript
+// Calcular tendencia para empresa detectada
+function buildTrendChartData(
+  detectedCompanyData: any[],
+  allRixData: any[],
+  numWeeks: number = 4
+): TrendPoint[] {
+  // 1. Agrupar por semana
+  // 2. Calcular media de mercado por semana
+  // 3. Calcular RIX empresa por semana (promedio de 6 modelos)
+  // 4. Retornar últimas N semanas ordenadas cronológicamente
+}
+```
+
+### 1.3 Crear Componente de Gráfico Inline
+
+**Archivo nuevo:** `src/components/chat/InlineChartRenderer.tsx`
+
+```typescript
+interface InlineChartRendererProps {
+  chartData?: {
+    type: 'trend' | 'comparison' | 'radar';
+    data: any[];
+    title?: string;
+  };
+  compact?: boolean;
+}
+
+export function InlineChartRenderer({ chartData, compact }: InlineChartRendererProps) {
+  if (!chartData?.data?.length) return null;
+  
+  switch (chartData.type) {
+    case 'trend':
+      return (
+        <Card className="my-4 p-4">
+          <h4 className="text-sm font-semibold mb-2">{chartData.title || 'Evolución RIX'}</h4>
+          <MiniLineChart 
+            data={chartData.data.map(p => ({ name: p.week, value: p.rixScore }))} 
+            width={compact ? 200 : 320}
+            height={compact ? 80 : 120}
+            showTrend
+          />
+        </Card>
+      );
+    case 'comparison':
+      return <ModelComparison models={chartData.data} />;
+    case 'radar':
+      return <MiniRadarChart data={chartData.data} size={compact ? 160 : 220} />;
+  }
+}
+```
+
+### 1.4 Integrar en ChatMessages
+
+**Archivo:** `src/components/chat/ChatMessages.tsx`
+
+Renderizar gráfico ANTES del contenido markdown si hay `chartData`:
+
+```tsx
+{message.metadata?.chartData && !message.isStreaming && (
+  <InlineChartRenderer 
+    chartData={message.metadata.chartData} 
+    compact={compact} 
+  />
+)}
+<MarkdownMessage content={message.content} ... />
+```
+
+---
+
+## Fase 2: Fuentes Segmentadas por Ventana Temporal
+
+### 2.1 Ampliar Extractor de Fuentes
+
+**Archivo:** `src/lib/verifiedSourceExtractor.ts`
+
+```typescript
+export interface TemporalSource extends VerifiedSource {
+  temporalGroup: 'window' | 'reinforcement';
+  mentionDate?: string;  // Fecha extraída del contexto si disponible
+}
+
+export interface SegmentedSources {
+  windowSources: VerifiedSource[];      // Menciones en ventana (última semana)
+  reinforcementSources: VerifiedSource[]; // Menciones históricas de refuerzo
+  methodology: string;
+}
+
+export function segmentSourcesByWindow(
+  sources: VerifiedSource[],
+  windowStart: string,  // "2026-01-20"
+  windowEnd: string     // "2026-01-27"
+): SegmentedSources {
+  // Analizar contexto de cada fuente para detectar fecha
+  // Si la fecha está dentro de la ventana → windowSources
+  // Si está fuera o es indeterminada → reinforcementSources
+}
+```
+
+### 2.2 Modificar Backend para Segmentar Fuentes
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
+
+Al extraer fuentes verificadas, añadir segmentación:
+
+```typescript
+// En el evento 'done' del SSE
+const allSources = extractSourcesFromRixData(detectedCompanyFullData);
+const periodFrom = detectedCompanyFullData[0]?.['06_period_from'];
+const periodTo = detectedCompanyFullData[0]?.['07_period_to'];
+
+const segmentedSources = segmentSourcesByWindow(allSources, periodFrom, periodTo);
+
+// Incluir en metadata final
+metadata: {
+  ...existingMetadata,
+  segmentedSources: {
+    window: segmentedSources.windowSources,
+    reinforcement: segmentedSources.reinforcementSources,
+  }
+}
+```
+
+### 2.3 Renderizar Fuentes Segmentadas en UI
+
+**Archivo nuevo:** `src/components/chat/SegmentedSourcesFooter.tsx`
+
+```typescript
+interface SegmentedSourcesFooterProps {
+  windowSources: VerifiedSource[];
+  reinforcementSources: VerifiedSource[];
+  periodLabel: string; // "20-27 enero 2026"
+}
+
+export function SegmentedSourcesFooter({ 
+  windowSources, 
+  reinforcementSources,
+  periodLabel 
+}: SegmentedSourcesFooterProps) {
+  return (
+    <Collapsible className="mt-4 border-t pt-3">
+      <CollapsibleTrigger className="text-xs text-muted-foreground">
+        📚 Ver fuentes citadas ({windowSources.length + reinforcementSources.length})
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 space-y-3">
+        {windowSources.length > 0 && (
+          <div>
+            <Badge variant="default" className="mb-2">
+              🎯 Menciones en ventana ({periodLabel})
+            </Badge>
+            <ul className="text-xs space-y-1">
+              {windowSources.map((s, i) => (
+                <li key={i}>
+                  <a href={s.url} target="_blank" className="text-primary hover:underline">
+                    {s.domain}
+                  </a>
+                  {s.title && <span className="text-muted-foreground"> — {s.title}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {reinforcementSources.length > 0 && (
+          <div>
+            <Badge variant="secondary" className="mb-2">
+              📖 Menciones de refuerzo (históricas)
+            </Badge>
+            <ul className="text-xs space-y-1 opacity-80">
+              {reinforcementSources.map((s, i) => (
+                <li key={i}>
+                  <a href={s.url} target="_blank" className="text-primary hover:underline">
+                    {s.domain}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+```
+
+---
+
+## Fase 3: Actualizar ChatContext para Nuevos Metadatos
+
+**Archivo:** `src/contexts/ChatContext.tsx`
+
+Ampliar interfaz `MessageMetadata`:
+
+```typescript
+export interface MessageMetadata {
+  // Existentes...
+  
+  // NUEVO: Datos para gráficos inline
+  chartData?: {
+    type: 'trend' | 'comparison' | 'radar';
+    data: any[];
+    title?: string;
+    subtitle?: string;
+  };
+  
+  // NUEVO: Fuentes segmentadas
+  segmentedSources?: {
+    window: VerifiedSource[];
+    reinforcement: VerifiedSource[];
+    periodLabel?: string;
+  };
+}
+```
+
+---
+
+## Fase 4: Tipos de Gráficos por Contexto
+
+| Tipo de Pregunta | Gráfico Sugerido |
+|------------------|------------------|
+| "¿Cómo va Telefónica?" | `trend` (evolución 4 semanas) |
+| "Compara Telefónica con Orange" | `comparison` (barras lado a lado) |
+| "Analiza métricas de BBVA" | `radar` (8 dimensiones RIX) |
+| "¿Quién lidera en banca?" | `comparison` (top 5 del sector) |
+| Boletín ejecutivo | `trend` + `radar` + `comparison` |
 
 ---
 
 ## Archivos a Crear/Modificar
 
-| Archivo | Acción | Prioridad |
-|---------|--------|-----------|
-| `src/lib/rixMetricsGlossary.ts` | CREAR | Alta |
-| `src/components/ui/glossary-dialog.tsx` | Refactorizar para usar glosario | Alta |
-| `src/pages/Methodology.tsx` | Corregir ontología incorrecta | Alta |
-| `src/lib/graphContextBuilder.ts` | Sincronizar con glosario | Alta |
-| `src/lib/technicalSheetHtml.ts` | Corregir "Net Vision" → "Narrative Value" | Alta |
-| `supabase/functions/chat-intelligence/index.ts` | Inyectar glosario en prompts | Alta |
-| `src/pages/RixRunDetail.tsx` | Importar de glosario | Media |
-| `supabase/functions/rix-regression-analysis/index.ts` | Sincronizar | Media |
-| `public/llms.txt` | Actualizar para agentes externos | Media |
-| `.lovable/plan.md` | Documentar decisión arquitectónica | Baja |
+| Archivo | Acción | Complejidad |
+|---------|--------|-------------|
+| `src/components/chat/InlineChartRenderer.tsx` | CREAR | Baja |
+| `src/components/chat/SegmentedSourcesFooter.tsx` | CREAR | Baja |
+| `src/components/chat/ChatMessages.tsx` | Modificar (renderizar gráficos) | Media |
+| `src/contexts/ChatContext.tsx` | Modificar (nuevos tipos) | Baja |
+| `src/lib/verifiedSourceExtractor.ts` | Modificar (segmentación temporal) | Media |
+| `supabase/functions/chat-intelligence/index.ts` | Modificar (calcular chartData, segmentar fuentes) | Alta |
 
 ---
 
-## Beneficios
+## Consideraciones de Riesgo
 
-1. **Fuente única de verdad**: Una sola definición por métrica
-2. **Coherencia técnico-ejecutiva**: Mapeo explícito y justificado
-3. **Autolegitimación**: Los informes incluyen tabla de correspondencia
-4. **Mantenibilidad**: Cambiar una definición actualiza todo el sistema
-5. **Credibilidad**: El cliente entiende exactamente qué optimizar
+### Bajo Riesgo
+- Componentes de UI nuevos (no tocan lógica existente)
+- Extensión de interfaces de metadatos (retrocompatible)
+
+### Riesgo Medio
+- Cálculo de chartData en backend (puede añadir latencia ~50-100ms)
+- Segmentación de fuentes (depende de calidad de fechas extraídas)
+
+### Mitigación
+- Calcular chartData en paralelo con otras operaciones
+- Cache de datos de tendencia por ticker
+- Fallback: si no hay datos suficientes, no mostrar gráfico
+
+---
+
+## Impacto Visual Esperado
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  🤖 Respuesta del Agente Rix                                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────┐                │
+│  │  📈 Evolución RIX - Telefónica (4 semanas)          │                │
+│  │  ▲                                                  │                │
+│  │  │    ╭──────╮                                      │                │
+│  │  │   ╱        ╲     ╭───╮                           │                │
+│  │  │  ╱          ╲   ╱     ╲                          │                │
+│  │  │ ╱            ╰─╯       ──────                    │                │
+│  │  └────────────────────────────────►                 │                │
+│  │    S1    S2    S3    S4                             │                │
+│  │                           ↗ +3.2 pts vs semana ant. │                │
+│  └─────────────────────────────────────────────────────┘                │
+│                                                                         │
+│  ## Análisis de Telefónica                                              │
+│                                                                         │
+│  Telefónica cierra la semana con un RIX de 62 puntos, consolidando      │
+│  una tendencia alcista que la sitúa 5 puntos por encima de la media...  │
+│                                                                         │
+│  [... resto del texto markdown ...]                                     │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│  📚 Ver fuentes citadas (12)                                    [▼]    │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │ 🎯 Menciones en ventana (20-27 ene 2026)                          │  │
+│  │   • expansion.com — "Telefónica refuerza su apuesta por..."       │  │
+│  │   • reuters.com — "Spanish telco posts quarterly results"         │  │
+│  │   • bloomberg.com — "Telefonica CEO on AI investments"            │  │
+│  │                                                                    │  │
+│  │ 📖 Menciones de refuerzo (históricas)                             │  │
+│  │   • elpais.com — "La transformación digital de Telefónica"        │  │
+│  │   • cincodias.com — "Análisis del sector telecom español"         │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Resumen Ejecutivo
+
+**¿Es fácil?** 
+- UI components: **Fácil** (reutilizamos MiniCharts existentes)
+- Backend data preparation: **Medio** (requiere cálculos adicionales)
+- Segmentación temporal de fuentes: **Medio-Alto** (depende de calidad de fechas)
+
+**Estimación de esfuerzo:** 3-4 horas de desarrollo
+
+**¿Hará los informes más contundentes?** 
+**Sí, significativamente:**
+- Gráfico de tendencia = impacto visual inmediato
+- Fuentes segmentadas = credibilidad y trazabilidad
+- Mantiene todo lo existente (footer metodológico, feedback, drumroll)
+
+**Riesgo operacional:** Bajo (cambios aditivos, no destructivos)
+
