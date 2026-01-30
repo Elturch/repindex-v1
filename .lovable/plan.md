@@ -1,102 +1,89 @@
 
-
-# Plan: Corregir Registro de Tokens en Modo Streaming
+# Plan: Resolver el Conflicto Depth Level vs Role Prompt
 
 ## Diagnóstico Confirmado
 
-El panel de "Mapa de Procesos" muestra 0 calls, $0.0000, 0 tokens porque:
+La respuesta del chat ("nota de prensa de RepIndex") solo generó **1,143 tokens** (~800 palabras) cuando el nivel `exhaustive` debía producir **hasta 4,500 palabras** con tablas detalladas.
 
-| Modo | Tokens Registrados | Coste Registrado |
-|------|-------------------|------------------|
-| No-streaming (`action_type: 'chat'`) | **Correcto** | **Correcto** |
-| Streaming (`action_type: 'chat_stream'`) | **0** | **$0.00** |
+| Elemento | Esperado (Exhaustive) | Recibido |
+|----------|----------------------|----------|
+| Longitud | 4,500 palabras (~6K tokens) | 800 palabras (1.1K tokens) |
+| Secciones | 5 secciones con tablas | 6 puntos periodísticos |
+| Tablas | Scores por modelo, métricas, evolución | Ninguna |
+| Citas | Extractos de los 6 modelos IA | Citas implícitas genéricas |
 
-**Causa raíz**: OpenAI NO envía `usage` (tokens) en las respuestas de streaming **por defecto**. El código actual espera recibirlos pero nunca llegan:
+**Causa raíz**: Conflicto de instrucciones entre el **depth level** (exhaustive = informe largo con tablas) y el **role** (periodista = formato noticia breve).
 
-```typescript
-// Líneas 469-473 - Nunca se ejecuta porque parsed.usage siempre es undefined
-if (parsed.usage) {
-  totalInputTokens = parsed.usage.prompt_tokens || 0;
-  totalOutputTokens = parsed.usage.completion_tokens || 0;
-}
+## Solución Propuesta
+
+Modificar el sistema para que el **depth level siempre tenga prioridad** sobre el role prompt, y que los roles solo modifiquen el *tono* sin reducir la *extensión*.
+
+### Cambio 1: Reforzar el Depth Prompt para Exhaustive
+
+**Archivo**: `supabase/functions/chat-intelligence/index.ts`
+**Ubicación**: Función `buildDepthPrompt()` (líneas 1216-1276)
+
+Añadir una instrucción clara de longitud mínima en el prompt exhaustive:
+
+```
+## EXTENSIÓN OBLIGATORIA
+- Mínimo 2,500 palabras (~15,000 caracteres)
+- TODAS las secciones numeradas son OBLIGATORIAS
+- Si el usuario pide formato periodístico, MANTÉN la extensión pero adapta el tono
+- Una respuesta corta en modo exhaustive es un ERROR
 ```
 
-## Solución
+### Cambio 2: Modificar la Combinación Role + Depth
 
-Añadir `stream_options: { include_usage: true }` a la petición de OpenAI, lo cual hace que el API envíe un chunk final con la información de tokens.
+**Archivo**: `supabase/functions/chat-intelligence/index.ts`
+**Ubicación**: Construcción del system prompt (líneas 4759-4771)
+
+Añadir instrucción de prioridad cuando hay rol + depth exhaustive:
+
+```
+Si el usuario ha seleccionado un ROL específico (${roleName}) Y la profundidad es EXHAUSTIVE:
+- PRIORIDAD 1: Estructura y extensión del formato exhaustive (4,500 palabras, tablas, secciones)
+- PRIORIDAD 2: Tono y enfoque del rol (${roleName})
+- El rol adapta el TONO, no reduce la EXTENSIÓN
+```
+
+### Cambio 3: Actualizar Rol Periodista
+
+**Archivo**: `src/lib/chatRoles.ts`
+**Ubicación**: Rol "periodista" (líneas 128-144)
+
+Añadir clarificación de extensión:
+
+```
+NOTA: Si el nivel de profundidad es EXHAUSTIVE o COMPLETE, mantén la extensión 
+solicitada. Puedes estructurar el contenido como reportaje de investigación largo
+(vs nota de prensa breve) para acomodar la profundidad requerida.
+```
+
+## Impacto
+
+| Aspecto | Antes | Después |
+|---------|-------|---------|
+| Exhaustive + Periodista | ~800 palabras (nota breve) | ~3,000+ palabras (reportaje largo) |
+| Exhaustive + CEO | Variable | Mínimo 2,500 palabras garantizado |
+| Quick + Periodista | ~500 palabras | ~500 palabras (sin cambio) |
 
 ## Archivos a Modificar
 
-| Archivo | Cambio | Riesgo |
+| Archivo | Cambio | Líneas |
 |---------|--------|--------|
-| `supabase/functions/chat-intelligence/index.ts` | Añadir `stream_options` a peticiones de OpenAI streaming | Bajo |
+| `supabase/functions/chat-intelligence/index.ts` | Reforzar extensión mínima en exhaustive | ~1216-1276 |
+| `supabase/functions/chat-intelligence/index.ts` | Instrucción de prioridad depth > role | ~4759-4771 |
+| `src/lib/chatRoles.ts` | Clarificar que roles no reducen extensión | ~128-144 |
 
-## Cambios Técnicos
+## Alternativa: Mantener Comportamiento Actual
 
-### Función `streamOpenAIResponse` (líneas 411-423)
+Si el comportamiento actual es intencional (periodista = siempre breve), el sistema está funcionando correctamente. En este caso:
 
-Cambio en el body de la petición:
+1. Documentar que **el rol tiene prioridad** sobre el depth level para formato
+2. Añadir UI que muestre advertencia: "El rol Periodista genera respuestas más breves"
+3. Recomendar usar rol "General" para informes exhaustivos completos
 
-```typescript
-// ANTES (líneas 417-422)
-body: JSON.stringify({
-  model,
-  messages,
-  max_completion_tokens: maxTokens,
-  stream: true,
-}),
+## Recomendación
 
-// DESPUÉS
-body: JSON.stringify({
-  model,
-  messages,
-  max_completion_tokens: maxTokens,
-  stream: true,
-  stream_options: { include_usage: true }, // Añadir esta línea
-}),
-```
-
-### Ubicaciones Afectadas
-
-Hay que aplicar este cambio en todas las llamadas a OpenAI con streaming:
-
-1. **Función `streamOpenAIResponse`** (línea ~417)
-   - Usada por el flujo principal de chat streaming
-   
-2. **Cualquier otra llamada directa a OpenAI con `stream: true`** (revisar si existe)
-
-## Comportamiento Esperado Después del Fix
-
-Con `stream_options: { include_usage: true }`, OpenAI enviará un chunk adicional al final con:
-
-```json
-{
-  "id": "chatcmpl-xxx",
-  "object": "chat.completion.chunk",
-  "usage": {
-    "prompt_tokens": 1200,
-    "completion_tokens": 800,
-    "total_tokens": 2000
-  }
-}
-```
-
-Este chunk será capturado por el código existente en líneas 469-473, que ya está preparado para procesarlo.
-
-## Impacto en Producción
-
-- **Riesgo**: Muy bajo
-- **Afectación al pipeline RIX**: Ninguna (solo afecta a chat-intelligence)
-- **Compatibilidad**: OpenAI soporta `stream_options` desde GPT-4o y modelos posteriores
-- **Fallback Gemini**: Necesita revisión para ver si tiene opción equivalente
-
-## Verificación Post-Implementación
-
-1. Hacer una consulta al chat en modo streaming
-2. Verificar en `api_usage_logs` que el nuevo registro tiene `input_tokens > 0`
-3. Refrescar el panel de admin para confirmar que los costes aparecen
-
-## Nota sobre Gemini
-
-El streaming de Gemini también necesita revisión. Su API devuelve tokens en el último chunk de forma diferente. Hay que verificar que la función `streamGeminiResponse` también los captura correctamente.
-
+**Implementar el Cambio 1 + Cambio 2**: El depth level debe ser respetado siempre, y los roles solo modifican el tono. Un usuario que selecciona "exhaustive" espera una respuesta larga independientemente del rol.
