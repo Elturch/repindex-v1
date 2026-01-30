@@ -422,6 +422,206 @@ function buildRadarChartData(rixRun: any, companyName: string): ChartData | null
   };
 }
 
+// =============================================================================
+// SECTOR DETECTION AND COMPARISON CHARTS
+// =============================================================================
+
+const SECTOR_KEYWORDS: Record<string, string[]> = {
+  'Banca': ['banco', 'banca', 'bancario', 'bancos', 'banking', 'bank'],
+  'Energía': ['energía', 'energético', 'energy', 'utilities', 'eléctricas', 'electricas', 'gas', 'petróleo', 'petroleo'],
+  'Telecomunicaciones': ['teleco', 'telecom', 'telecomunicaciones', 'telefonía', 'telefonia'],
+  'Construcción e Infraestructuras': ['construcción', 'construccion', 'infraestructuras', 'inmobiliario', 'construccion'],
+  'Alimentación y Bebidas': ['alimentación', 'alimentacion', 'bebidas', 'food', 'beverages'],
+  'Turismo y Ocio': ['turismo', 'hoteles', 'ocio', 'viajes', 'tourism'],
+  'Servicios Financieros': ['financiero', 'seguros', 'aseguradoras', 'insurance', 'financial'],
+  'Tecnología': ['tecnología', 'tecnologia', 'tech', 'software', 'it'],
+  'Farmacia y Salud': ['farmacia', 'salud', 'pharma', 'health', 'healthcare'],
+  'Industrial': ['industrial', 'industria', 'manufacturing', 'fabricación'],
+  'Retail': ['retail', 'distribución', 'distribucion', 'comercio', 'tiendas'],
+  'Transporte': ['transporte', 'logística', 'logistica', 'transport', 'aviación', 'aviacion'],
+  'Química': ['química', 'quimica', 'chemical'],
+  'Medios y Comunicación': ['medios', 'media', 'comunicación', 'comunicacion', 'publicidad'],
+};
+
+/**
+ * Detect sectors mentioned in a question.
+ */
+function detectSectorsInQuestion(question: string): string[] {
+  const lowerQuestion = question.toLowerCase();
+  const detectedSectors: string[] = [];
+  
+  for (const [sectorName, keywords] of Object.entries(SECTOR_KEYWORDS)) {
+    for (const keyword of keywords) {
+      if (lowerQuestion.includes(keyword)) {
+        if (!detectedSectors.includes(sectorName)) {
+          detectedSectors.push(sectorName);
+        }
+        break;
+      }
+    }
+  }
+  
+  return detectedSectors;
+}
+
+/**
+ * Build sector comparison chart data.
+ * Compares average RIX scores across multiple sectors.
+ */
+function buildSectorComparisonChartData(
+  allRixData: any[],
+  companiesCache: any[],
+  detectedSectors: string[]
+): ChartData | null {
+  if (!allRixData || allRixData.length === 0 || detectedSectors.length === 0) return null;
+  
+  // Map companies to their sectors
+  const companyToSector = new Map<string, string>();
+  companiesCache.forEach(c => {
+    if (c.sector_category) {
+      companyToSector.set(c.ticker, c.sector_category);
+    }
+  });
+  
+  // Group RIX scores by sector (only from the latest week)
+  const sectorScores = new Map<string, number[]>();
+  
+  // Get latest week
+  const sortedData = [...allRixData].sort((a, b) => 
+    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
+  );
+  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
+  
+  if (!latestWeek) return null;
+  
+  sortedData.forEach(run => {
+    const weekDate = run.batch_execution_date?.split('T')[0];
+    if (weekDate !== latestWeek) return;
+    
+    const ticker = run['05_ticker'];
+    const score = run['09_rix_score'];
+    if (!ticker || score == null) return;
+    
+    const sector = companyToSector.get(ticker);
+    if (!sector) return;
+    
+    if (!sectorScores.has(sector)) {
+      sectorScores.set(sector, []);
+    }
+    sectorScores.get(sector)!.push(score);
+  });
+  
+  // Build comparison data for detected sectors
+  const comparisonData: ComparisonPoint[] = [];
+  
+  detectedSectors.forEach(sector => {
+    const scores = sectorScores.get(sector);
+    if (scores && scores.length > 0) {
+      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+      comparisonData.push({
+        name: sector.length > 15 ? sector.substring(0, 15) + '...' : sector,
+        score: Math.round(avgScore * 10) / 10,
+      });
+    }
+  });
+  
+  // If we didn't find data for detected sectors, try to include top sectors
+  if (comparisonData.length < 2) {
+    const allSectorAverages: { name: string; score: number }[] = [];
+    sectorScores.forEach((scores, sectorName) => {
+      if (scores.length > 0) {
+        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+        allSectorAverages.push({ 
+          name: sectorName.length > 15 ? sectorName.substring(0, 15) + '...' : sectorName,
+          score: Math.round(avgScore * 10) / 10 
+        });
+      }
+    });
+    
+    // Sort by score and take top 5
+    allSectorAverages.sort((a, b) => b.score - a.score);
+    return {
+      type: 'comparison',
+      data: allSectorAverages.slice(0, 6),
+      title: '📊 Comparativa por Sectores (RIX Medio)',
+      subtitle: `Semana del ${latestWeek}`,
+    };
+  }
+  
+  comparisonData.sort((a, b) => b.score - a.score);
+  
+  return {
+    type: 'comparison',
+    data: comparisonData,
+    title: `📊 ${detectedSectors.join(' vs ')}`,
+    subtitle: `RIX promedio - Semana del ${latestWeek}`,
+  };
+}
+
+/**
+ * Build top companies chart for a specific sector.
+ */
+function buildSectorTopCompaniesChart(
+  allRixData: any[],
+  companiesCache: any[],
+  sectorName: string
+): ChartData | null {
+  if (!allRixData || allRixData.length === 0) return null;
+  
+  // Find companies in this sector
+  const sectorCompanyTickers = companiesCache
+    .filter(c => c.sector_category === sectorName)
+    .map(c => c.ticker);
+  
+  if (sectorCompanyTickers.length === 0) return null;
+  
+  // Get latest week data for these companies
+  const sortedData = [...allRixData].sort((a, b) => 
+    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
+  );
+  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
+  
+  if (!latestWeek) return null;
+  
+  // Aggregate scores by company (average across models)
+  const companyScores = new Map<string, { name: string; scores: number[] }>();
+  
+  sortedData.forEach(run => {
+    const weekDate = run.batch_execution_date?.split('T')[0];
+    if (weekDate !== latestWeek) return;
+    
+    const ticker = run['05_ticker'];
+    const score = run['09_rix_score'];
+    const name = run['03_target_name'];
+    if (!ticker || score == null || !sectorCompanyTickers.includes(ticker)) return;
+    
+    if (!companyScores.has(ticker)) {
+      companyScores.set(ticker, { name: name || ticker, scores: [] });
+    }
+    companyScores.get(ticker)!.scores.push(score);
+  });
+  
+  // Build comparison data
+  const comparisonData: ComparisonPoint[] = [];
+  companyScores.forEach((data, ticker) => {
+    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    comparisonData.push({
+      name: data.name.length > 12 ? data.name.substring(0, 12) + '...' : data.name,
+      score: Math.round(avgScore * 10) / 10,
+    });
+  });
+  
+  // Sort by score and take top 6
+  comparisonData.sort((a, b) => b.score - a.score);
+  
+  return {
+    type: 'comparison',
+    data: comparisonData.slice(0, 6),
+    title: `🏆 Top ${sectorName}`,
+    subtitle: `Líderes RIX - Semana del ${latestWeek}`,
+  };
+}
+
 /**
  * Segment sources by temporal window.
  */
@@ -4937,15 +5137,46 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Build chart data if we have company-specific RIX data
+          // Build chart data - prioritize company-specific, then sector comparison
           let chartData: ChartData | null = null;
+          const detectedSectors = detectSectorsInQuestion(question);
+          
           if (detectedCompanies.length > 0 && detectedCompanyFullData && detectedCompanyFullData.length > 0) {
+            // Case 1: Company-specific trend chart
             chartData = buildTrendChartData(
               detectedCompanyFullData,
               allRixData || [],
               detectedCompanies[0].issuer_name,
               4
             );
+            console.log(`${logPrefix} Built company trend chart for ${detectedCompanies[0].issuer_name}: ${chartData ? 'yes' : 'no'}`);
+          } else if (detectedSectors.length >= 2 && allRixData && companiesCache) {
+            // Case 2: Multi-sector comparison chart
+            chartData = buildSectorComparisonChartData(
+              allRixData,
+              companiesCache,
+              detectedSectors
+            );
+            console.log(`${logPrefix} Built sector comparison chart for ${detectedSectors.join(' vs ')}: ${chartData ? 'yes' : 'no'}`);
+          } else if (detectedSectors.length === 1 && allRixData && companiesCache) {
+            // Case 3: Single sector - show top companies in that sector
+            chartData = buildSectorTopCompaniesChart(
+              allRixData,
+              companiesCache,
+              detectedSectors[0]
+            );
+            console.log(`${logPrefix} Built sector top companies chart for ${detectedSectors[0]}: ${chartData ? 'yes' : 'no'}`);
+          } else if (allRixData && companiesCache && allRixData.length > 0) {
+            // Case 4: General question - show overall sector comparison
+            const allSectors = [...new Set(companiesCache.filter(c => c.sector_category).map(c => c.sector_category))];
+            if (allSectors.length > 0) {
+              chartData = buildSectorComparisonChartData(
+                allRixData,
+                companiesCache,
+                allSectors.slice(0, 6)
+              );
+              console.log(`${logPrefix} Built general sector comparison chart: ${chartData ? 'yes' : 'no'}`);
+            }
           }
 
           // Send initial metadata with chart data
@@ -4956,6 +5187,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               languageName,
               depthLevel,
               detectedCompanies: detectedCompanies.map(c => c.issuer_name),
+              detectedSectors: detectedSectors.length > 0 ? detectedSectors : undefined,
               chartData: chartData || undefined,
             }
           }));
