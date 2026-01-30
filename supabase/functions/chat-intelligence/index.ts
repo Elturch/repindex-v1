@@ -159,6 +159,11 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
 // =============================================================================
 // CRITICAL: Other models (Gemini, DeepSeek, Grok, Qwen) are IGNORED because
 // they may contain fabricated/hallucinated URLs.
+//
+// TEMPORAL CLASSIFICATION:
+// - 'window': Sources within the analysis period (period_from to period_to)
+// - 'reinforcement': Historical/contextual sources used by AIs
+// - 'unknown': Cannot determine temporal category
 
 interface VerifiedSource {
   url: string;
@@ -166,13 +171,94 @@ interface VerifiedSource {
   title?: string;
   sourceModel: 'ChatGPT' | 'Perplexity';
   citationNumber?: number;
+  temporalCategory: 'window' | 'reinforcement' | 'unknown';
+  extractedDate?: string;
+}
+
+// Spanish month names for date extraction
+const SPANISH_MONTHS: Record<string, number> = {
+  'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3,
+  'mayo': 4, 'junio': 5, 'julio': 6, 'agosto': 7,
+  'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11
+};
+
+/**
+ * Extract dates from text near a URL position (within ~200 chars).
+ */
+function extractNearestDate(text: string, urlPosition: number): Date | null {
+  const start = Math.max(0, urlPosition - 200);
+  const end = Math.min(text.length, urlPosition + 200);
+  const context = text.slice(start, end);
+  
+  const dates: { date: Date; distance: number }[] = [];
+  
+  // Pattern 1: "DD de MES de AAAA" (Spanish full date)
+  const fullDatePattern = /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4})/gi;
+  let match;
+  while ((match = fullDatePattern.exec(context)) !== null) {
+    const day = parseInt(match[1], 10);
+    const month = SPANISH_MONTHS[match[2].toLowerCase()];
+    const year = parseInt(match[3], 10);
+    if (month !== undefined && year >= 2020 && year <= 2030) {
+      dates.push({
+        date: new Date(year, month, day),
+        distance: Math.abs(match.index - (urlPosition - start))
+      });
+    }
+  }
+  
+  // Pattern 2: "MES de AAAA" or "MES AAAA"
+  const monthYearPattern = /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})/gi;
+  while ((match = monthYearPattern.exec(context)) !== null) {
+    const month = SPANISH_MONTHS[match[1].toLowerCase()];
+    const year = parseInt(match[2], 10);
+    if (month !== undefined && year >= 2020 && year <= 2030) {
+      dates.push({
+        date: new Date(year, month, 15),
+        distance: Math.abs(match.index - (urlPosition - start))
+      });
+    }
+  }
+  
+  if (dates.length === 0) return null;
+  dates.sort((a, b) => a.distance - b.distance);
+  return dates[0].date;
+}
+
+/**
+ * Classify a source temporally based on extracted date and analysis period.
+ */
+function classifyTemporally(
+  extractedDate: Date | null,
+  periodFrom: Date | null,
+  periodTo: Date | null
+): 'window' | 'reinforcement' | 'unknown' {
+  if (!extractedDate) return 'unknown';
+  if (!periodFrom || !periodTo) return 'unknown';
+  
+  // Extend window by 3 days on each side
+  const windowStart = new Date(periodFrom);
+  windowStart.setDate(windowStart.getDate() - 3);
+  const windowEnd = new Date(periodTo);
+  windowEnd.setDate(windowEnd.getDate() + 3);
+  
+  if (extractedDate >= windowStart && extractedDate <= windowEnd) {
+    return 'window';
+  } else if (extractedDate < periodFrom) {
+    return 'reinforcement';
+  }
+  return 'unknown';
 }
 
 function extractVerifiedSources(
   chatGptRaw: string | null,
-  perplexityRaw: string | null
+  perplexityRaw: string | null,
+  periodFrom: string | null = null,
+  periodTo: string | null = null
 ): VerifiedSource[] {
   const sources: VerifiedSource[] = [];
+  const periodFromDate = periodFrom ? new Date(periodFrom) : null;
+  const periodToDate = periodTo ? new Date(periodTo) : null;
   
   // Extract ChatGPT sources (only with utm_source=openai)
   if (chatGptRaw) {
@@ -181,11 +267,21 @@ function extractVerifiedSources(
     while ((match = chatGptPattern.exec(chatGptRaw)) !== null) {
       const title = match[1].trim();
       const url = match[2].trim();
+      const urlPosition = match.index;
       try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname.replace(/^www\./, '');
         if (!sources.some(s => s.url === url)) {
-          sources.push({ url, domain, title: title || undefined, sourceModel: 'ChatGPT' });
+          const extractedDate = extractNearestDate(chatGptRaw, urlPosition);
+          const temporalCategory = classifyTemporally(extractedDate, periodFromDate, periodToDate);
+          sources.push({ 
+            url, 
+            domain, 
+            title: title || undefined, 
+            sourceModel: 'ChatGPT',
+            temporalCategory,
+            extractedDate: extractedDate?.toISOString(),
+          });
         }
       } catch { /* Invalid URL */ }
     }
@@ -203,7 +299,13 @@ function extractVerifiedSources(
               const urlObj = new URL(citation);
               const domain = urlObj.hostname.replace(/^www\./, '');
               if (!sources.some(s => s.url === citation)) {
-                sources.push({ url: citation, domain, sourceModel: 'Perplexity', citationNumber: index + 1 });
+                sources.push({ 
+                  url: citation, 
+                  domain, 
+                  sourceModel: 'Perplexity', 
+                  citationNumber: index + 1,
+                  temporalCategory: 'unknown', // JSON structure doesn't provide date context
+                });
               }
             } catch { /* Invalid URL */ }
           }
@@ -217,12 +319,22 @@ function extractVerifiedSources(
     while ((match = markdownPattern.exec(perplexityRaw)) !== null) {
       const title = match[1].trim();
       const url = match[2].trim();
+      const urlPosition = match.index;
       if (sources.some(s => s.url === url)) continue;
       if (url.includes('perplexity.ai')) continue;
       try {
         const urlObj = new URL(url);
         const domain = urlObj.hostname.replace(/^www\./, '');
-        sources.push({ url, domain, title: title || undefined, sourceModel: 'Perplexity' });
+        const extractedDate = extractNearestDate(perplexityRaw, urlPosition);
+        const temporalCategory = classifyTemporally(extractedDate, periodFromDate, periodToDate);
+        sources.push({ 
+          url, 
+          domain, 
+          title: title || undefined, 
+          sourceModel: 'Perplexity',
+          temporalCategory,
+          extractedDate: extractedDate?.toISOString(),
+        });
       } catch { /* Invalid URL */ }
     }
   }
@@ -236,7 +348,9 @@ function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
   for (const run of rixData) {
     const sources = extractVerifiedSources(
       run['20_res_gpt_bruto'] ?? null,
-      run['21_res_perplex_bruto'] ?? null
+      run['21_res_perplex_bruto'] ?? null,
+      run['06_period_from'] ?? null,
+      run['07_period_to'] ?? null
     );
     allSources.push(...sources);
   }
