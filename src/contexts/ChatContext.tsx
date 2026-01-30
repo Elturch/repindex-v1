@@ -8,7 +8,6 @@ import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml"
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
-import { chartDataToSvg } from "@/lib/chartToSvg";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -103,42 +102,6 @@ export interface MethodologyMetadata {
   uniqueWeeks?: number;
 }
 
-// Chart data types for inline visualizations
-export interface TrendPoint {
-  week: string;
-  date: string;
-  rixScore: number;
-  marketAverage?: number;
-  delta?: number;
-}
-
-export interface ComparisonPoint {
-  name: string;
-  score: number;
-  color?: string;
-}
-
-export interface RadarPoint {
-  subject: string;
-  value: number;
-  fullMark?: number;
-}
-
-export interface ChartData {
-  type: 'trend' | 'comparison' | 'radar';
-  data: TrendPoint[] | ComparisonPoint[] | RadarPoint[];
-  title?: string;
-  subtitle?: string;
-  companyName?: string;
-}
-
-// Segmented sources for temporal separation
-export interface SegmentedSources {
-  window: VerifiedSource[];
-  reinforcement: VerifiedSource[];
-  periodLabel?: string;
-}
-
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
   companyName?: string;
@@ -152,10 +115,6 @@ export interface MessageMetadata {
   methodology?: MethodologyMetadata;
   // Verified sources from ChatGPT and Perplexity for bibliography
   verifiedSources?: VerifiedSource[];
-  // Chart data for inline visualizations (trend, comparison, radar)
-  chartData?: ChartData;
-  // Segmented sources by temporal window
-  segmentedSources?: SegmentedSources;
 }
 
 export interface Message {
@@ -565,7 +524,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           let buffer = '';
           let accumulatedContent = '';
           let finalMetadata: any = null;
-          let startMetadata: any = null;  // Capture metadata from 'start' event (includes early chartData)
           let suggestedQuestions: string[] = [];
           let drumrollQuestion: DrumrollQuestion | null = null;
 
@@ -587,17 +545,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
                 try {
                   const parsed = JSON.parse(data);
-                  console.log('[ChatContext SSE] Parsed event type:', parsed.type);
                   
-                  if (parsed.type === 'start') {
-                    // Capture initial metadata including chart data (sent early)
-                    startMetadata = parsed.metadata || {};
-                    console.log('[ChatContext SSE] START event received, chartData present:', !!startMetadata.chartData);
-                    if (startMetadata.chartData) {
-                      console.log('[ChatContext SSE] chartData type:', startMetadata.chartData.type);
-                      console.log('[ChatContext SSE] chartData data length:', startMetadata.chartData.data?.length);
-                    }
-                  } else if (parsed.type === 'chunk' && parsed.text) {
+                  if (parsed.type === 'chunk' && parsed.text) {
                     accumulatedContent += parsed.text;
                     // Update the last message with accumulated content
                     setMessages(prev => {
@@ -609,17 +558,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
                       return updated;
                     });
                   } else if (parsed.type === 'done') {
-                    console.log('[ChatContext SSE] DONE event received');
                     // Capture final metadata
                     suggestedQuestions = parsed.suggestedQuestions || [];
                     drumrollQuestion = parsed.drumrollQuestion || null;
                     finalMetadata = parsed.metadata || {};
-                    console.log('[ChatContext SSE] finalMetadata chartData:', !!finalMetadata?.chartData);
                   } else if (parsed.type === 'error') {
                     throw new Error(parsed.error || 'Streaming error');
                   }
-                } catch (parseError) {
-                  console.error('[ChatContext SSE] Parse error:', parseError, 'for data:', data.substring(0, 200));
+                } catch {
+                  // Ignore parse errors for incomplete chunks
                 }
               }
             }
@@ -639,10 +586,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
 
           // Mark streaming as complete and add final metadata including methodology
-          console.log('[ChatContext SSE] Final metadata assignment:');
-          console.log('  - startMetadata:', !!startMetadata, startMetadata?.chartData ? 'HAS chartData' : 'NO chartData');
-          console.log('  - finalMetadata:', !!finalMetadata, finalMetadata?.chartData ? 'HAS chartData' : 'NO chartData');
-          
           setMessages(prev => {
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
@@ -659,10 +602,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 questionCategory: finalMetadata?.questionCategory,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
-                // Chart data for inline visualizations - prefer startMetadata (sent early) over finalMetadata
-                chartData: startMetadata?.chartData || finalMetadata?.chartData,
-                // Segmented sources by temporal window
-                segmentedSources: finalMetadata?.segmentedSources,
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: finalMetadata?.methodology || {
                   hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
@@ -1203,20 +1142,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
             .message-assistant .message-content h2 { font-size: 1.3em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
             .message-assistant .message-content h3 { font-size: 1.15em; color: var(--primary-dark); }
             
-            /* Chart styling for PDF export */
-            .message-chart {
-              margin-bottom: 20px;
-              display: flex;
-              justify-content: center;
-            }
-            
-            .message-chart svg {
-              max-width: 100%;
-              height: auto;
-              border-radius: 8px;
-              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-            }
-            
             .suggested-questions {
               margin-top: 16px;
               padding-top: 16px;
@@ -1343,16 +1268,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
               // Convert markdown to premium HTML using shared converter
               const content = convertMarkdownToHtml(msg.content);
               
-              // Generate chart SVG if available (for assistant messages)
-              const chartSvg = !isUser && msg.metadata?.chartData 
-                ? `<div class="message-chart">${chartDataToSvg(msg.metadata.chartData)}</div>`
-                : '';
-              
               return `
                 <div class="message">
                   <div class="message-${isUser ? 'user' : 'assistant'}">
                     <div class="message-role">${role}</div>
-                    ${chartSvg}
                     <div class="message-content">${content}</div>
                     ${!isUser ? questions : ''}
                   </div>

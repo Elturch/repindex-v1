@@ -1,176 +1,202 @@
 
-# Plan: Corrección de Gráficos que No se Muestran en Chat
+# Plan: Unificación del Glosario de Métricas RIX
 
-## Diagnóstico Final
+## ✅ COMPLETADO (2026-01-30)
 
-### Evidencia Recopilada
-
-1. **Backend funciona correctamente**:
-   - Logs del edge function muestran: `Built sector comparison chart for Automoción vs Banca y Servicios Financieros vs Energía y Gas: yes`
-   - `chartData generated: comparison`
-
-2. **Network requests confirman envío**:
-   ```json
-   {"type":"start","metadata":{...,"chartData":{"type":"comparison","data":[{"name":"Energía y Gas","score":62.8},{"name":"Banca y Servici...","score":61.4},{"name":"Automoción","score":58.8}],"title":"📊 Automoción vs Banca y Servicios Financieros vs Energía y Gas","subtitle":"RIX promedio - Semana del 2026-01-25"}}}
-   ```
-
-3. **Frontend NO procesa el evento `start`**:
-   - El log `[ChatContext] Received start event with chartData:` NO aparece en console
-   - Los gráficos NO aparecen en la UI
-
-### Bug Identificado
-
-El problema está en cómo el browser procesa el SSE stream. Cuando el primer chunk llega, puede contener el evento `start` pero el buffer split puede no procesarlo correctamente en todos los casos debido al timing del `ReadableStream`.
-
-Sin embargo, revisando más cuidadosamente el código, identifico que **hay un problema adicional**: el código actual asume que `startMetadata` estará disponible cuando se ejecute `setMessages` al final, pero la variable `startMetadata` se declara con `let` dentro del scope del `while(true)` loop y el closure puede no capturar correctamente su valor actualizado.
-
-### Problema Real: Scope y Timing
-
-En líneas 566-567:
-```typescript
-let finalMetadata: any = null;
-let startMetadata: any = null;
-```
-
-Y en línea 651:
-```typescript
-chartData: startMetadata?.chartData || finalMetadata?.chartData,
-```
-
-El código PARECE correcto, pero el evento `start` puede no estar siendo parseado correctamente porque:
-
-1. **El evento `start` puede llegar en el mismo chunk inicial que múltiples eventos `chunk`**
-2. **El parsing con `split('\n')` puede fallar si el SSE no termina exactamente en `\n\n`**
+### Archivos Creados/Modificados:
+- ✅ `src/lib/rixMetricsGlossary.ts` - Fuente única de verdad (NUEVO)
+- ✅ `src/components/ui/glossary-dialog.tsx` - Refactorizado para usar glosario
+- ✅ `src/pages/Methodology.tsx` - Corregida ontología incorrecta
+- ✅ `src/lib/graphContextBuilder.ts` - Sincronizado con glosario canónico
+- ✅ `src/lib/technicalSheetHtml.ts` - Corregido "Net Vision" → "Narrative Value"
+- ✅ `supabase/functions/chat-intelligence/index.ts` - Inyectado glosario en prompts
+- ✅ `public/llms.txt` - Actualizado para agentes externos
 
 ---
 
-## Solución en 3 Partes
+| Sigla | Nombre Técnico Inglés | Descripción Técnica |
+|-------|----------------------|---------------------|
+| NVM | Narrative Value Metric | Calidad de la narrativa (tono + controversia + alucinación) |
+| DRM | Data Reliability Metric | Fortaleza de evidencia documental |
+| SIM | Source Integrity Metric | Jerarquía de fuentes T1-T4 |
+| RMM | Reputational Momentum Metric | Frescura temporal de menciones |
+| CEM | Controversy Exposure Metric | Exposición a controversias (inverso) |
+| GAM | Governance Autonomy Metric | Percepción de independencia de gobierno |
+| DCM | Data Consistency Metric | Coherencia de información entre modelos |
+| CXM | Corporate Execution Metric | Ejecución corporativa + cotización |
 
-### Parte 1: Añadir Logging de Debugging Robusto
+### Ontología B: "Marketing" (Incorrecta)
+Usada en: `Methodology.tsx`, `chat-intelligence (prompts)`, `graphContextBuilder.ts`
 
-Necesitamos ver exactamente qué está pasando. Añadir logs antes y después del parsing.
+| Sigla | Nombre "Inventado" | Significado Falso |
+|-------|-------------------|-------------------|
+| NVM | Narrativa y Visibilidad Mediática | Cobertura mediática |
+| DRM | Desempeño y Resultados Empresariales | Rendimiento financiero |
+| SIM | Sostenibilidad e Impacto Ambiental | ESG/Huella carbono |
+| RMM | Reputación de Marca y Marketing | Branding/Diferenciación |
+| CEM | Comportamiento Ético y Gobierno | Ética empresarial |
+| GAM | Gestión y Atracción del Talento | RRHH/Employer branding |
+| DCM | Digital y Capacidad de Innovación | I+D/Transformación digital |
+| CXM | Experiencia del Cliente | Satisfacción cliente |
 
-**Archivo:** `src/contexts/ChatContext.tsx`
+**Impacto**: Un cliente que lea que "SIM mide sostenibilidad" optimizará sus comunicaciones ESG, pero la métrica real evalúa si Reuters o Bloomberg mencionan a la empresa. Esto destruye la credibilidad del sistema.
+
+---
+
+## Solución: Sistema de Glosario Canónico Centralizado
+
+### Fase 1: Crear Fuente Única de Verdad
+
+**Nuevo archivo**: `src/lib/rixMetricsGlossary.ts`
+
+Este archivo será el **único lugar** donde se definen las métricas. Contiene:
+
+1. **Definición técnica** (nombre inglés, fórmula, qué mide realmente)
+2. **Definición ejecutiva** (interpretación de negocio coherente con la técnica)
+3. **Mapeo explícito** técnico → ejecutivo con justificación
 
 ```typescript
-// Dentro del for loop (líneas 579-616)
-for (const line of lines) {
-  // Skip empty lines and keep-alive comments
-  if (!line.trim() || line.startsWith(':')) continue;
-  
-  if (line.startsWith('data: ')) {
-    const data = line.slice(6).trim();
-    if (data === '[DONE]') continue;
-
-    console.log('[ChatContext SSE] Raw data line:', data.substring(0, 100) + '...');
-
-    try {
-      const parsed = JSON.parse(data);
-      console.log('[ChatContext SSE] Parsed event type:', parsed.type);
-      
-      if (parsed.type === 'start') {
-        startMetadata = parsed.metadata || {};
-        console.log('[ChatContext SSE] START event received, chartData present:', !!startMetadata.chartData);
-        if (startMetadata.chartData) {
-          console.log('[ChatContext SSE] chartData type:', startMetadata.chartData.type);
-          console.log('[ChatContext SSE] chartData data length:', startMetadata.chartData.data?.length);
-        }
-      } else if (parsed.type === 'chunk' && parsed.text) {
-        // ... existing chunk handling
-      } else if (parsed.type === 'done') {
-        console.log('[ChatContext SSE] DONE event received');
-        // ... existing done handling
-      }
-    } catch (parseError) {
-      console.error('[ChatContext SSE] Parse error:', parseError, 'for data:', data.substring(0, 200));
-    }
-  }
+// Estructura del glosario canónico
+export interface MetricDefinition {
+  acronym: string;
+  technicalName: string;           // Ej: "Narrative Value Metric"
+  technicalDescription: string;    // Fórmula/metodología real
+  executiveName: string;           // Ej: "Calidad de la Narrativa"
+  executiveDescription: string;    // Interpretación de negocio
+  mappingJustification: string;    // Por qué el nombre ejecutivo es correcto
+  icon: string;                    // Icono para UI
+  weight: number;                  // Peso en el RIX (ej: 0.15)
 }
+
+export const RIX_METRICS_GLOSSARY: MetricDefinition[] = [
+  {
+    acronym: "NVM",
+    technicalName: "Narrative Value Metric",
+    technicalDescription: "NVM = clip(50*(s̄+1) - 20*c̄ - 30*h̄). Donde s̄ = sentimiento medio, c̄ = controversia, h̄ = alucinación.",
+    executiveName: "Calidad de la Narrativa",
+    executiveDescription: "Evalúa la coherencia y calidad del discurso público según las IAs. Un NVM alto indica narrativa clara, baja controversia y afirmaciones verificables.",
+    mappingJustification: "El nombre ejecutivo refleja que esta métrica mide 'cómo de bien cuenta su historia la empresa', no visibilidad mediática.",
+    icon: "MessageSquare",
+    weight: 0.15,
+  },
+  // ... resto de métricas
+];
 ```
 
-### Parte 2: Añadir Log en setMessages Final
+### Fase 2: Actualizar Todos los Consumidores
 
-Para confirmar que `startMetadata` tiene valor cuando se asigna:
+**Archivos a modificar** (importarán desde el glosario canónico):
 
-**Archivo:** `src/contexts/ChatContext.tsx` (línea 633)
+| Archivo | Cambio Requerido |
+|---------|------------------|
+| `src/components/ui/glossary-dialog.tsx` | Importar de `rixMetricsGlossary.ts` |
+| `src/pages/Methodology.tsx` | Importar de `rixMetricsGlossary.ts` (corregir ontología B) |
+| `src/lib/graphContextBuilder.ts` | Importar de `rixMetricsGlossary.ts` |
+| `src/pages/RixRunDetail.tsx` | Importar de `rixMetricsGlossary.ts` |
+| `src/pages/Dashboard.tsx` | Importar de `rixMetricsGlossary.ts` |
+| `supabase/functions/chat-intelligence/index.ts` | Sincronizar prompts con glosario |
+| `supabase/functions/rix-regression-analysis/index.ts` | Importar constantes del glosario |
+| `src/lib/technicalSheetHtml.ts` | Corregir NVM ("Net Vision" → "Narrative Value") |
+| `public/llms.txt` | Actualizar descripciones para agentes externos |
+
+### Fase 3: Añadir Tabla de Mapeo en Informes
+
+**Nuevo componente**: `src/components/ui/MetricMappingTable.tsx`
+
+Tabla que aparece automáticamente en informes exhaustivos:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     CORRESPONDENCIA DE MÉTRICAS RIX                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Sigla │ Nombre Técnico          │ Interpretación Ejecutiva                 │
+├───────┼─────────────────────────┼──────────────────────────────────────────┤
+│ NVM   │ Narrative Value Metric  │ Calidad de la Narrativa                  │
+│ DRM   │ Data Reliability Metric │ Fortaleza de Evidencia                   │
+│ SIM   │ Source Integrity Metric │ Autoridad de Fuentes                     │
+│ RMM   │ Reputational Momentum   │ Actualidad y Empuje                      │
+│ CEM   │ Controversy Exposure    │ Gestión de Controversias (inverso)       │
+│ GAM   │ Governance Autonomy     │ Percepción de Gobierno Independiente     │
+│ DCM   │ Data Consistency Metric │ Coherencia Informativa                   │
+│ CXM   │ Corporate Execution     │ Ejecución Corporativa                    │
+└───────┴─────────────────────────┴──────────────────────────────────────────┘
+```
+
+### Fase 4: Inyectar en chat-intelligence
+
+**Modificar prompts** en `chat-intelligence/index.ts`:
+
+1. Incluir el glosario canónico en el system prompt
+2. Obligar al LLM a usar SOLO los nombres del glosario
+3. Para informes `exhaustive`, incluir la tabla de mapeo automáticamente
 
 ```typescript
-// Mark streaming as complete and add final metadata including methodology
-console.log('[ChatContext SSE] Final metadata assignment:');
-console.log('  - startMetadata:', !!startMetadata, startMetadata?.chartData ? 'HAS chartData' : 'NO chartData');
-console.log('  - finalMetadata:', !!finalMetadata);
+const METRICS_GLOSSARY_PROMPT = `
+## GLOSARIO OBLIGATORIO DE MÉTRICAS RIX
 
-setMessages(prev => {
-  // ...existing code
-});
+IMPORTANTE: Usa EXACTAMENTE estos nombres. No inventes interpretaciones.
+
+| Sigla | Nombre Técnico | Qué Mide Realmente |
+|-------|----------------|-------------------|
+| NVM | Narrative Value Metric | Calidad de narrativa: tono + coherencia |
+| DRM | Data Reliability Metric | Evidencia documental verificable |
+| SIM | Source Integrity Metric | Calidad de fuentes (T1=CNMV/Reuters) |
+| RMM | Reputational Momentum | Frescura de menciones (% en ventana) |
+| CEM | Controversy Exposure | Exposición a controversias (inverso) |
+| GAM | Governance Autonomy | Percepción de independencia gobierno |
+| DCM | Data Consistency | Coherencia entre modelos de IA |
+| CXM | Corporate Execution | Ejecución + cotización bursátil |
+
+⚠️ SIM NO mide sostenibilidad/ESG. Mide jerarquía de fuentes.
+⚠️ DRM NO mide desempeño financiero. Mide calidad de evidencia.
+⚠️ DCM NO mide innovación digital. Mide coherencia de datos.
+`;
 ```
 
-### Parte 3: Verificar que InlineChartRenderer recibe datos
+### Fase 5: Validación Automática
 
-**Archivo:** `src/components/chat/ChatMessages.tsx` (línea 233)
+**Nuevo test** (opcional): `src/lib/__tests__/metricsGlossary.test.ts`
 
-```typescript
-{/* Inline Chart - shown before text content when not streaming */}
-{(() => {
-  console.log('[ChatMessages] Checking chartData for message:', idx, {
-    hasMetadata: !!message.metadata,
-    hasChartData: !!message.metadata?.chartData,
-    isStreaming: message.isStreaming,
-    chartType: message.metadata?.chartData?.type,
-    chartDataLength: message.metadata?.chartData?.data?.length
-  });
-  return message.metadata?.chartData && !message.isStreaming ? (
-    <InlineChartRenderer 
-      chartData={message.metadata.chartData} 
-      compact={compact} 
-    />
-  ) : null;
-})()}
-```
+Test que verifica que todos los archivos usan definiciones del glosario canónico.
 
 ---
 
-## Cambios en Archivos
+## Tabla de Definiciones Correctas (Nueva Ontología Unificada)
 
-| Archivo | Cambio | Propósito |
+| Sigla | Nombre Técnico (EN) | Nombre Ejecutivo (ES) | Qué Mide Realmente |
+|-------|---------------------|----------------------|-------------------|
+| **NVM** | Narrative Value Metric | Calidad de la Narrativa | Coherencia del discurso: tono medio, nivel de controversia, afirmaciones sin soporte |
+| **DRM** | Data Reliability Metric | Fortaleza de Evidencia | Calidad de documentación: fuentes primarias, corroboración, trazabilidad |
+| **SIM** | Source Integrity Metric | Autoridad de Fuentes | Jerarquía de fuentes citadas: T1 (reguladores/financieros) → T4 (opinión/redes) |
+| **RMM** | Reputational Momentum Metric | Actualidad y Empuje | Frescura temporal: % de hechos dentro de la ventana semanal analizada |
+| **CEM** | Controversy Exposure Metric | Gestión de Controversias | Exposición a riesgos: judiciales, políticos, laborales (puntuación inversa) |
+| **GAM** | Governance Autonomy Metric | Percepción de Gobierno | Independencia percibida: policies declaradas, conflictos de interés |
+| **DCM** | Data Consistency Metric | Coherencia Informativa | Consistencia entre modelos: nombres, fechas, roles, cifras |
+| **CXM** | Corporate Execution Metric | Ejecución Corporativa | Impacto en mercado: cotización bursátil, ratings ESG verificables |
+
+---
+
+## Archivos a Crear/Modificar
+
+| Archivo | Acción | Prioridad |
 |---------|--------|-----------|
-| `src/contexts/ChatContext.tsx` | Añadir logs de debugging en SSE parsing | Identificar exactamente dónde falla |
-| `src/contexts/ChatContext.tsx` | Log antes de setMessages final | Confirmar estado de startMetadata |
-| `src/components/chat/ChatMessages.tsx` | Log en renderizado de chart | Confirmar que chartData llega al componente |
+| `src/lib/rixMetricsGlossary.ts` | CREAR | Alta |
+| `src/components/ui/glossary-dialog.tsx` | Refactorizar para usar glosario | Alta |
+| `src/pages/Methodology.tsx` | Corregir ontología incorrecta | Alta |
+| `src/lib/graphContextBuilder.ts` | Sincronizar con glosario | Alta |
+| `src/lib/technicalSheetHtml.ts` | Corregir "Net Vision" → "Narrative Value" | Alta |
+| `supabase/functions/chat-intelligence/index.ts` | Inyectar glosario en prompts | Alta |
+| `src/pages/RixRunDetail.tsx` | Importar de glosario | Media |
+| `supabase/functions/rix-regression-analysis/index.ts` | Sincronizar | Media |
+| `public/llms.txt` | Actualizar para agentes externos | Media |
+| `.lovable/plan.md` | Documentar decisión arquitectónica | Baja |
 
 ---
 
-## Alternativa: Si el problema es el buffer SSE
+## Beneficios
 
-Si los logs revelan que el evento `start` nunca se parsea, el problema podría ser que el primer chunk del ReadableStream contiene el evento `start` pero sin el newline final que el split necesita.
-
-**Solución adicional** en el parsing:
-
-```typescript
-// Antes de procesar líneas, asegurar que procesamos también el buffer restante
-buffer += decoder.decode(value, { stream: true });
-
-// Procesar líneas completas (terminan en \n)
-const lines = buffer.split('\n');
-
-// Procesar todas las líneas excepto la última (que puede estar incompleta)
-for (let i = 0; i < lines.length - 1; i++) {
-  const line = lines[i];
-  // ... process line
-}
-
-// Mantener solo la última línea en buffer (puede estar incompleta)
-buffer = lines[lines.length - 1] || '';
-```
-
----
-
-## Estimación
-
-- **Complejidad**: Baja (solo logging y posible fix de parsing)
-- **Riesgo**: Muy bajo (cambios de debugging no afectan funcionalidad)
-- **Tiempo**: ~30 minutos
-
-## Siguiente Paso
-
-Una vez implementados los logs, necesitamos que el usuario ejecute otra consulta y nos comparta los console logs para identificar exactamente en qué punto falla la captura de `chartData`.
+1. **Fuente única de verdad**: Una sola definición por métrica
+2. **Coherencia técnico-ejecutiva**: Mapeo explícito y justificado
+3. **Autolegitimación**: Los informes incluyen tabla de correspondencia
+4. **Mantenibilidad**: Cambiar una definición actualiza todo el sistema
+5. **Credibilidad**: El cliente entiende exactamente qué optimizar

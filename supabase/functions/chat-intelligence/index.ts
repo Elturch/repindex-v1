@@ -251,486 +251,8 @@ function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
 }
 
 // =============================================================================
-// CHART DATA BUILDING HELPERS - For trend visualizations in chat
+// SSE STREAMING HELPERS
 // =============================================================================
-
-interface TrendPoint {
-  week: string;
-  date: string;
-  rixScore: number;
-  marketAverage?: number;
-  delta?: number;
-}
-
-interface ComparisonPoint {
-  name: string;
-  score: number;
-  color?: string;
-}
-
-interface RadarPoint {
-  subject: string;
-  value: number;
-  fullMark: number;
-}
-
-interface ChartData {
-  type: 'trend' | 'comparison' | 'radar';
-  data: TrendPoint[] | ComparisonPoint[] | RadarPoint[];
-  title?: string;
-  subtitle?: string;
-  companyName?: string;
-}
-
-/**
- * Build trend chart data from RIX runs.
- * Shows RIX score evolution over recent weeks for a company.
- */
-function buildTrendChartData(
-  companyRixData: any[],
-  allMarketData: any[],
-  companyName: string,
-  numWeeks: number = 4
-): ChartData | null {
-  if (!companyRixData || companyRixData.length === 0) return null;
-
-  // Group by week (batch_execution_date)
-  const weeklyData = new Map<string, { scores: number[]; date: string }>();
-  
-  companyRixData.forEach(run => {
-    const weekDate = run.batch_execution_date?.split('T')[0];
-    if (!weekDate || run['09_rix_score'] == null) return;
-    
-    if (!weeklyData.has(weekDate)) {
-      weeklyData.set(weekDate, { scores: [], date: weekDate });
-    }
-    weeklyData.get(weekDate)!.scores.push(run['09_rix_score']);
-  });
-
-  // Calculate market average by week
-  const marketWeeklyAvg = new Map<string, number>();
-  if (allMarketData && allMarketData.length > 0) {
-    const marketByWeek = new Map<string, number[]>();
-    allMarketData.forEach(run => {
-      const weekDate = run.batch_execution_date?.split('T')[0];
-      if (!weekDate || run['09_rix_score'] == null) return;
-      if (!marketByWeek.has(weekDate)) marketByWeek.set(weekDate, []);
-      marketByWeek.get(weekDate)!.push(run['09_rix_score']);
-    });
-    marketByWeek.forEach((scores, week) => {
-      marketWeeklyAvg.set(week, scores.reduce((a, b) => a + b, 0) / scores.length);
-    });
-  }
-
-  // Convert to array and sort chronologically
-  const sortedWeeks = Array.from(weeklyData.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-numWeeks);
-
-  if (sortedWeeks.length < 2) return null;
-
-  const trendData: TrendPoint[] = sortedWeeks.map(([weekDate, data], idx) => {
-    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-    const prevWeek = idx > 0 ? sortedWeeks[idx - 1] : null;
-    const prevAvg = prevWeek 
-      ? prevWeek[1].scores.reduce((a, b) => a + b, 0) / prevWeek[1].scores.length 
-      : avgScore;
-    
-    return {
-      week: `S${idx + 1}`,
-      date: weekDate,
-      rixScore: Math.round(avgScore * 10) / 10,
-      marketAverage: marketWeeklyAvg.get(weekDate) 
-        ? Math.round(marketWeeklyAvg.get(weekDate)! * 10) / 10 
-        : undefined,
-      delta: Math.round((avgScore - prevAvg) * 10) / 10,
-    };
-  });
-
-  return {
-    type: 'trend',
-    data: trendData,
-    title: `📈 Evolución RIX - ${companyName}`,
-    subtitle: `Últimas ${trendData.length} semanas`,
-    companyName,
-  };
-}
-
-/**
- * Build comparison chart data for multiple companies.
- */
-function buildComparisonChartData(
-  companies: { name: string; score: number }[]
-): ChartData | null {
-  if (!companies || companies.length === 0) return null;
-
-  const data: ComparisonPoint[] = companies
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6)
-    .map(c => ({
-      name: c.name.length > 12 ? c.name.substring(0, 12) + '...' : c.name,
-      score: Math.round(c.score * 10) / 10,
-    }));
-
-  return {
-    type: 'comparison',
-    data,
-    title: '📊 Comparativa RIX',
-  };
-}
-
-/**
- * Build radar chart data from RIX metrics (8 dimensions).
- */
-function buildRadarChartData(rixRun: any, companyName: string): ChartData | null {
-  if (!rixRun) return null;
-
-  const metrics = [
-    { key: '23_nvm_score', label: 'NVM' },
-    { key: '26_drm_score', label: 'DRM' },
-    { key: '29_sim_score', label: 'SIM' },
-    { key: '32_rmm_score', label: 'RMM' },
-    { key: '35_cem_score', label: 'CEM' },
-    { key: '38_gam_score', label: 'GAM' },
-    { key: '41_dcm_score', label: 'DCM' },
-    { key: '44_cxm_score', label: 'CXM' },
-  ];
-
-  const radarData: RadarPoint[] = [];
-  let validCount = 0;
-
-  metrics.forEach(m => {
-    const value = rixRun[m.key];
-    if (value != null && value > 0) {
-      radarData.push({
-        subject: m.label,
-        value: Math.round(value),
-        fullMark: 100,
-      });
-      validCount++;
-    }
-  });
-
-  // Need at least 4 metrics for a meaningful radar
-  if (validCount < 4) return null;
-
-  return {
-    type: 'radar',
-    data: radarData,
-    title: `🎯 Métricas RIX - ${companyName}`,
-    companyName,
-  };
-}
-
-// =============================================================================
-// SECTOR DETECTION AND COMPARISON CHARTS
-// =============================================================================
-
-// SECTOR_KEYWORDS aligned with actual sector_category values in repindex_root_issuers table
-const SECTOR_KEYWORDS: Record<string, string[]> = {
-  'Alimentación': ['alimentación', 'alimentacion', 'comida', 'food', 'beverages', 'bebidas'],
-  'Automoción': ['automoción', 'automocion', 'coches', 'automotive', 'car', 'vehículos', 'vehiculos'],
-  'Banca y Servicios Financieros': ['banco', 'banca', 'bancario', 'bancos', 'banking', 'bank', 'financiero', 'financieros'],
-  'Construcción': ['construcción', 'construccion'],
-  'Construcción e Infraestructuras': ['infraestructuras', 'inmobiliario', 'obra', 'obras'],
-  'Consultoría y Auditoría': ['consultoría', 'consultoria', 'auditoría', 'auditoria', 'consulting', 'audit'],
-  'Distribución': ['distribución', 'distribucion', 'mayorista'],
-  'Energía y Gas': ['energía', 'energia', 'energético', 'energetico', 'energy', 'gas', 'utilities', 'eléctricas', 'electricas', 'eléctrico', 'electrico'],
-  'Hoteles y Turismo': ['turismo', 'hoteles', 'hotel', 'ocio', 'viajes', 'tourism', 'hotelero'],
-  'Industria': ['industrial', 'industria', 'manufacturing', 'fabricación', 'fabricacion'],
-  'Logística': ['logística', 'logistica', 'logistics', 'almacén', 'almacen'],
-  'Materias Primas y Siderurgia': ['materias primas', 'siderurgia', 'acero', 'steel', 'mining', 'minería', 'mineria'],
-  'Moda y Distribución': ['moda', 'retail', 'tiendas', 'fashion', 'textil', 'ropa'],
-  'Otros Sectores': ['otros'],
-  'Petróleo y Energía': ['petróleo', 'petroleo', 'oil', 'refinería', 'refineria', 'crudo'],
-  'Restauración': ['restauración', 'restauracion', 'restaurantes', 'catering', 'hostelería', 'hosteleria'],
-  'Salud y Farmacéutico': ['farmacia', 'salud', 'pharma', 'health', 'healthcare', 'farmacéutico', 'farmaceutico', 'hospital'],
-  'Seguros': ['seguros', 'aseguradoras', 'insurance', 'aseguradora'],
-  'Telecomunicaciones': ['teleco', 'telecom', 'telecomunicaciones', 'telefonía', 'telefonia', 'telecos'],
-  'Telecomunicaciones y Tecnología': ['tecnología', 'tecnologia', 'tech', 'software', 'it', 'digital'],
-  'Transporte': ['transporte', 'transport', 'aviación', 'aviacion', 'aéreo', 'aereo', 'ferrocarril'],
-};
-
-/**
- * Detect sectors mentioned in a question.
- */
-function detectSectorsInQuestion(question: string): string[] {
-  const lowerQuestion = question.toLowerCase();
-  const detectedSectors: string[] = [];
-  
-  for (const [sectorName, keywords] of Object.entries(SECTOR_KEYWORDS)) {
-    for (const keyword of keywords) {
-      if (lowerQuestion.includes(keyword)) {
-        if (!detectedSectors.includes(sectorName)) {
-          detectedSectors.push(sectorName);
-        }
-        break;
-      }
-    }
-  }
-  
-  return detectedSectors;
-}
-
-/**
- * Build sector comparison chart data.
- * Compares average RIX scores across multiple sectors.
- */
-function buildSectorComparisonChartData(
-  allRixData: any[],
-  companiesCache: any[],
-  detectedSectors: string[]
-): ChartData | null {
-  if (!allRixData || allRixData.length === 0 || detectedSectors.length === 0) return null;
-  
-  // Map companies to their sectors
-  const companyToSector = new Map<string, string>();
-  companiesCache.forEach(c => {
-    if (c.sector_category) {
-      companyToSector.set(c.ticker, c.sector_category);
-    }
-  });
-  
-  // Group RIX scores by sector (only from the latest week)
-  const sectorScores = new Map<string, number[]>();
-  
-  // Get latest week
-  const sortedData = [...allRixData].sort((a, b) => 
-    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
-  );
-  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
-  
-  if (!latestWeek) return null;
-  
-  sortedData.forEach(run => {
-    const weekDate = run.batch_execution_date?.split('T')[0];
-    if (weekDate !== latestWeek) return;
-    
-    const ticker = run['05_ticker'];
-    const score = run['09_rix_score'];
-    if (!ticker || score == null) return;
-    
-    const sector = companyToSector.get(ticker);
-    if (!sector) return;
-    
-    if (!sectorScores.has(sector)) {
-      sectorScores.set(sector, []);
-    }
-    sectorScores.get(sector)!.push(score);
-  });
-  
-  // Build comparison data for detected sectors
-  const comparisonData: ComparisonPoint[] = [];
-  
-  detectedSectors.forEach(sector => {
-    const scores = sectorScores.get(sector);
-    if (scores && scores.length > 0) {
-      const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-      comparisonData.push({
-        name: sector.length > 15 ? sector.substring(0, 15) + '...' : sector,
-        score: Math.round(avgScore * 10) / 10,
-      });
-    }
-  });
-  
-  // If we didn't find data for detected sectors, try to include top sectors
-  if (comparisonData.length < 2) {
-    const allSectorAverages: { name: string; score: number }[] = [];
-    sectorScores.forEach((scores, sectorName) => {
-      if (scores.length > 0) {
-        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-        allSectorAverages.push({ 
-          name: sectorName.length > 15 ? sectorName.substring(0, 15) + '...' : sectorName,
-          score: Math.round(avgScore * 10) / 10 
-        });
-      }
-    });
-    
-    // Sort by score and take top 5
-    allSectorAverages.sort((a, b) => b.score - a.score);
-    return {
-      type: 'comparison',
-      data: allSectorAverages.slice(0, 6),
-      title: '📊 Comparativa por Sectores (RIX Medio)',
-      subtitle: `Semana del ${latestWeek}`,
-    };
-  }
-  
-  comparisonData.sort((a, b) => b.score - a.score);
-  
-  return {
-    type: 'comparison',
-    data: comparisonData,
-    title: `📊 ${detectedSectors.join(' vs ')}`,
-    subtitle: `RIX promedio - Semana del ${latestWeek}`,
-  };
-}
-
-/**
- * Build top companies chart for a specific sector.
- */
-function buildSectorTopCompaniesChart(
-  allRixData: any[],
-  companiesCache: any[],
-  sectorName: string
-): ChartData | null {
-  if (!allRixData || allRixData.length === 0) return null;
-  
-  // Find companies in this sector
-  const sectorCompanyTickers = companiesCache
-    .filter(c => c.sector_category === sectorName)
-    .map(c => c.ticker);
-  
-  if (sectorCompanyTickers.length === 0) return null;
-  
-  // Get latest week data for these companies
-  const sortedData = [...allRixData].sort((a, b) => 
-    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
-  );
-  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
-  
-  if (!latestWeek) return null;
-  
-  // Aggregate scores by company (average across models)
-  const companyScores = new Map<string, { name: string; scores: number[] }>();
-  
-  sortedData.forEach(run => {
-    const weekDate = run.batch_execution_date?.split('T')[0];
-    if (weekDate !== latestWeek) return;
-    
-    const ticker = run['05_ticker'];
-    const score = run['09_rix_score'];
-    const name = run['03_target_name'];
-    if (!ticker || score == null || !sectorCompanyTickers.includes(ticker)) return;
-    
-    if (!companyScores.has(ticker)) {
-      companyScores.set(ticker, { name: name || ticker, scores: [] });
-    }
-    companyScores.get(ticker)!.scores.push(score);
-  });
-  
-  // Build comparison data
-  const comparisonData: ComparisonPoint[] = [];
-  companyScores.forEach((data, ticker) => {
-    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-    comparisonData.push({
-      name: data.name.length > 12 ? data.name.substring(0, 12) + '...' : data.name,
-      score: Math.round(avgScore * 10) / 10,
-    });
-  });
-  
-  // Sort by score and take top 6
-  comparisonData.sort((a, b) => b.score - a.score);
-  
-  return {
-    type: 'comparison',
-    data: comparisonData.slice(0, 6),
-    title: `🏆 Top ${sectorName}`,
-    subtitle: `Líderes RIX - Semana del ${latestWeek}`,
-  };
-}
-
-/**
- * Build market overview chart showing top companies by RIX.
- * Used as FALLBACK when no specific company or sector is detected.
- */
-function buildMarketOverviewChart(
-  allRixData: any[],
-  numCompanies: number = 6
-): ChartData | null {
-  if (!allRixData || allRixData.length === 0) return null;
-  
-  // Get latest week data
-  const sortedData = [...allRixData].sort((a, b) => 
-    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
-  );
-  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
-  if (!latestWeek) return null;
-  
-  // Aggregate scores by company (average across all models for that week)
-  const companyScores = new Map<string, { name: string; scores: number[] }>();
-  sortedData.forEach(run => {
-    const weekDate = run.batch_execution_date?.split('T')[0];
-    if (weekDate !== latestWeek) return;
-    const ticker = run['05_ticker'];
-    const score = run['09_rix_score'];
-    const name = run['03_target_name'];
-    if (!ticker || score == null) return;
-    if (!companyScores.has(ticker)) {
-      companyScores.set(ticker, { name: name || ticker, scores: [] });
-    }
-    companyScores.get(ticker)!.scores.push(score);
-  });
-  
-  // Build comparison data
-  const comparisonData: ComparisonPoint[] = [];
-  companyScores.forEach((data) => {
-    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-    comparisonData.push({
-      name: data.name.length > 12 ? data.name.substring(0, 12) + '...' : data.name,
-      score: Math.round(avgScore * 10) / 10,
-    });
-  });
-  
-  // Sort by score and take top N
-  comparisonData.sort((a, b) => b.score - a.score);
-  
-  return {
-    type: 'comparison',
-    data: comparisonData.slice(0, numCompanies),
-    title: '🏆 Top RIX del Mercado',
-    subtitle: `Semana del ${latestWeek}`,
-  };
-}
-
-/**
- * Segment sources by temporal window.
- */
-interface SegmentedSources {
-  window: VerifiedSource[];
-  reinforcement: VerifiedSource[];
-  periodLabel?: string;
-}
-
-function segmentSourcesByWindow(
-  sources: VerifiedSource[],
-  windowStart: string | null,
-  windowEnd: string | null
-): SegmentedSources {
-  if (!windowStart || !windowEnd || sources.length === 0) {
-    return { window: [], reinforcement: sources };
-  }
-
-  const startDate = new Date(windowStart);
-  const endDate = new Date(windowEnd);
-  
-  // Format period label
-  const formatLabel = () => {
-    const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
-    const startStr = startDate.toLocaleDateString('es-ES', opts);
-    const endStr = endDate.toLocaleDateString('es-ES', { ...opts, year: 'numeric' });
-    return `${startStr} - ${endStr}`;
-  };
-
-  const windowSources: VerifiedSource[] = [];
-  const reinforcementSources: VerifiedSource[] = [];
-
-  sources.forEach(source => {
-    // ChatGPT sources with utm_source=openai are typically current
-    if (source.sourceModel === 'ChatGPT') {
-      windowSources.push(source);
-    } else {
-      // Perplexity sources go to reinforcement by default
-      reinforcementSources.push(source);
-    }
-  });
-
-  return {
-    window: windowSources,
-    reinforcement: reinforcementSources,
-    periodLabel: formatLabel(),
-  };
-}
 
 type SSEEventType = 'start' | 'chunk' | 'metadata' | 'done' | 'error' | 'fallback';
 
@@ -3193,16 +2715,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Build chart data for visualization (trend over weeks)
-          const chartData = buildTrendChartData(
-            rixData || [], 
-            [], // No market average for bulletins
-            matchedCompany.issuer_name,
-            4
-          );
-          console.log(`${logPrefix} Built trend chart data: ${chartData ? 'yes' : 'no'}`);
-
-          // Send initial metadata with chart data
+          // Send initial metadata
           controller.enqueue(sseEncoder({
             type: 'start',
             metadata: {
@@ -3218,8 +2731,6 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               corporateNewsUsed: corporateNewsContext ? true : false,
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
-              // Chart data for inline visualization
-              chartData: chartData || undefined,
             }
           }));
 
@@ -3372,9 +2883,6 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           const verifiedSources = extractSourcesFromRixData(rixData || []);
           console.log(`${logPrefix} Extracted ${verifiedSources.length} verified sources from RIX data`);
 
-          // Segment sources by temporal window
-          const segmentedSources = segmentSourcesByWindow(verifiedSources, periodFrom, periodTo);
-
           // Send final done event with enriched methodology metadata
           controller.enqueue(sseEncoder({
             type: 'done',
@@ -3388,14 +2896,8 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
               weeksAnalyzed: uniquePeriods.length,
               dataPointsUsed: rixData?.length || 0,
               aiProvider: provider,
-              // Chart data for inline visualization
-              chartData: chartData || undefined,
               // Verified sources from ChatGPT and Perplexity for bibliography
               verifiedSources: verifiedSources.length > 0 ? verifiedSources : undefined,
-              // Segmented sources by temporal window
-              segmentedSources: (segmentedSources.window.length > 0 || segmentedSources.reinforcement.length > 0) 
-                ? segmentedSources 
-                : undefined,
               // Methodology metadata for "Radar Reputacional" validation sheet
               methodology: {
                 hasRixData: (rixData?.length || 0) > 0,
@@ -5198,63 +4700,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Build chart data - prioritize company-specific, then sector comparison
-          let chartData: ChartData | null = null;
-          const detectedSectors = detectSectorsInQuestion(question);
-          
-          if (detectedCompanies.length > 0 && detectedCompanyFullData && detectedCompanyFullData.length > 0) {
-            // Case 1: Company-specific trend chart
-            chartData = buildTrendChartData(
-              detectedCompanyFullData,
-              allRixData || [],
-              detectedCompanies[0].issuer_name,
-              4
-            );
-            console.log(`${logPrefix} Built company trend chart for ${detectedCompanies[0].issuer_name}: ${chartData ? 'yes' : 'no'}`);
-          } else if (detectedSectors.length >= 2 && allRixData && companiesCache) {
-            // Case 2: Multi-sector comparison chart
-            chartData = buildSectorComparisonChartData(
-              allRixData,
-              companiesCache,
-              detectedSectors
-            );
-            console.log(`${logPrefix} Built sector comparison chart for ${detectedSectors.join(' vs ')}: ${chartData ? 'yes' : 'no'}`);
-          } else if (detectedSectors.length === 1 && allRixData && companiesCache) {
-            // Case 3: Single sector - show top companies in that sector
-            chartData = buildSectorTopCompaniesChart(
-              allRixData,
-              companiesCache,
-              detectedSectors[0]
-            );
-            console.log(`${logPrefix} Built sector top companies chart for ${detectedSectors[0]}: ${chartData ? 'yes' : 'no'}`);
-          } else if (allRixData && companiesCache && allRixData.length > 0) {
-            // Case 4: General question - show overall sector comparison
-            const allSectors = [...new Set(companiesCache.filter(c => c.sector_category).map(c => c.sector_category))];
-            if (allSectors.length > 0) {
-              chartData = buildSectorComparisonChartData(
-                allRixData,
-                companiesCache,
-                allSectors.slice(0, 6)
-              );
-              console.log(`${logPrefix} Built general sector comparison chart: ${chartData ? 'yes' : 'no'}`);
-            }
-          }
-          
-          // Case 5: FALLBACK UNIVERSAL - If still no chart, show top 6 companies by RIX
-          if (!chartData && allRixData && allRixData.length > 0) {
-            chartData = buildMarketOverviewChart(allRixData, 6);
-            console.log(`${logPrefix} Built market overview fallback chart: ${chartData ? 'yes' : 'no'}`);
-          }
-          
-          // Enhanced logging for debugging chart generation
-          console.log(`${logPrefix} Chart generation context:
-  - detectedCompanies: ${detectedCompanies.length}
-  - detectedSectors: ${JSON.stringify(detectedSectors)}
-  - allRixData available: ${allRixData?.length || 0}
-  - companiesCache available: ${companiesCache?.length || 0}
-  - chartData generated: ${chartData ? chartData.type : 'none'}`);
-
-          // Send initial metadata with chart data
+          // Send initial metadata
           controller.enqueue(sseEncoder({
             type: 'start',
             metadata: {
@@ -5262,8 +4708,6 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               languageName,
               depthLevel,
               detectedCompanies: detectedCompanies.map(c => c.issuer_name),
-              detectedSectors: detectedSectors.length > 0 ? detectedSectors : undefined,
-              chartData: chartData || undefined,
             }
           }));
 
@@ -5428,13 +4872,6 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           const verifiedSourcesStandard = extractSourcesFromRixData(detectedCompanyFullData || []);
           console.log(`${logPrefix} Extracted ${verifiedSourcesStandard.length} verified sources from RIX data`);
 
-          // Segment sources by temporal window
-          const segmentedSourcesStandard = segmentSourcesByWindow(
-            verifiedSourcesStandard, 
-            periodFromMethod, 
-            periodToMethod
-          );
-
           // Send final done event with all metadata
           controller.enqueue(sseEncoder({
             type: 'done',
@@ -5455,14 +4892,8 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
               divergencePoints: divergencePointsMethod,
               uniqueCompanies: uniqueCompaniesCount,
               uniqueWeeks: uniqueWeeksCount,
-              // Chart data for inline visualization
-              chartData: chartData || undefined,
               // Verified sources from ChatGPT and Perplexity for bibliography
               verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
-              // Segmented sources by temporal window
-              segmentedSources: (segmentedSourcesStandard.window.length > 0 || segmentedSourcesStandard.reinforcement.length > 0)
-                ? segmentedSourcesStandard
-                : undefined,
               methodology: {
                 hasRixData: (allRixData?.length || 0) > 0,
                 modelsUsed: modelsUsedMethod,
