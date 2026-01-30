@@ -26,6 +26,11 @@ import MyConversations from "./pages/MyConversations";
 import UserProfile from "./pages/UserProfile";
 import Admin from "./pages/Admin";
 import Methodology from "./pages/Methodology";
+import TermsAndConditions from "./pages/legal/TermsAndConditions";
+import CookiePolicy from "./pages/legal/CookiePolicy";
+import PrivacyPolicy from "./pages/legal/PrivacyPolicy";
+import GdprForm from "./pages/legal/GdprForm";
+import ComplaintsForm from "./pages/legal/ComplaintsForm";
 import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
@@ -48,6 +53,11 @@ const App = () => (
                 <Route path="/noticias/archivo" element={<NewsArchive />} />
                 <Route path="/noticias/:slug" element={<NewsArticleDetail />} />
                 <Route path="/metodologia" element={<Methodology />} />
+                <Route path="/termos" element={<TermsAndConditions />} />
+                <Route path="/cookies" element={<CookiePolicy />} />
+                <Route path="/privacidade" element={<PrivacyPolicy />} />
+                <Route path="/rgpd" element={<GdprForm />} />
+                <Route path="/reclamacoes" element={<ComplaintsForm />} />
                 <Route path="/login" element={<Login />} />
                 
                 {/* Protected routes */}
