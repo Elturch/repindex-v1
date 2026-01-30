@@ -140,7 +140,13 @@ Tono: Orientado al cliente, competitivo, creativo.`,
 6. **CITAS IMPLÍCITAS**: "Los números hablan por sí solos..." - frases periodísticas
 
 Formato: Estilo periodístico narrativo, entradilla + desarrollo + cierre.
-Tono: Periodístico de investigación, provocador pero riguroso.`,
+Tono: Periodístico de investigación, provocador pero riguroso.
+
+NOTA IMPORTANTE: Si el nivel de profundidad es EXHAUSTIVE o COMPLETE, mantén la extensión 
+solicitada por ese nivel. Estructura el contenido como un REPORTAJE DE INVESTIGACIÓN LARGO 
+(no una nota de prensa breve) para acomodar la profundidad requerida. Puedes usar múltiples 
+secciones periodísticas: contexto histórico, análisis de datos, entrevistas simuladas, 
+proyecciones, y conclusiones editoriales.`,
   },
 
   // FINANZAS E INVERSIÓN
