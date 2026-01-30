@@ -1,395 +1,247 @@
 
+# Plan: Corrección de Gráficos Inline para Cualquier Pregunta
 
-# Plan: Gráficos de Tendencia en Streaming + Fuentes Temporales Segmentadas
+## Diagnóstico del Problema
 
-## Evaluación de Viabilidad: ✅ FACTIBLE (Dificultad Media-Alta)
+Se identificaron **3 problemas críticos** que causan que los gráficos no se generen:
 
-### Análisis Técnico
+### Problema 1: Mismatch entre Nombres de Sectores (CRÍTICO)
 
-**Lo que tenemos a favor:**
-- Ya existen componentes de gráficos reutilizables (`MiniLineChart`, `MiniBarChart`, `ScoreBadge`, `ModelComparison` en `src/components/news/MiniCharts.tsx`)
-- El sistema SSE ya envía metadatos estructurados en el evento `done`
-- Los datos de tendencia ya se calculan en el backend (`period_from`, `period_to`, RIX por semana)
-- El extractor de fuentes verificadas (`verifiedSourceExtractor.ts`) ya separa ChatGPT/Perplexity
-- El sistema de streaming ya acumula contenido incrementalmente
+**Código actual (línea 429-444):**
+```typescript
+const SECTOR_KEYWORDS: Record<string, string[]> = {
+  'Banca': ['banco', 'banca', 'bancario', ...],
+  'Energía': ['energía', 'energético', ...],
+  ...
+};
+```
 
-**Complejidad principal:**
-1. Los gráficos no pueden renderizarse "en streaming" (requieren datos completos)
-2. Necesitamos enviar datos estructurados para gráficos ANTES o DESPUÉS del texto
-3. La separación de fuentes por ventana temporal requiere análisis de fechas en el backend
+**Valores reales en la BD (`sector_category`):**
+- `'Banca y Servicios Financieros'`
+- `'Energía y Gas'`
+- `'Petróleo y Energía'`
+- `'Telecomunicaciones y Tecnología'`
+- `'Construcción e Infraestructuras'`
+- etc.
+
+**Impacto:** La función `buildSectorComparisonChartData` busca el sector `'Banca'` en el mapa, pero `sectorScores` tiene la clave `'Banca y Servicios Financieros'`. **Nunca coinciden**, por lo que `comparisonData` queda vacío.
+
+### Problema 2: Frontend ignora evento SSE `start`
+
+El parser SSE en `ChatContext.tsx` (líneas 589-607) solo maneja `chunk`, `done` y `error`. El evento `start` que envía `chartData` anticipadamente **es ignorado**.
+
+Aunque el backend también envía `chartData` en el evento `done`, si la lógica del problema 1 falla, `chartData` será `null`.
+
+### Problema 3: Sin fallback universal
+
+No hay lógica de fallback para preguntas que:
+- No mencionan empresas específicas
+- No mencionan sectores reconocidos
+- Son preguntas genéricas sobre "el mercado" o "las empresas"
 
 ---
 
-## Arquitectura Propuesta
+## Solución Propuesta
+
+### Fase 1: Alinear SECTOR_KEYWORDS con la BD
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (líneas 429-444)
+
+Cambiar el mapa para que las **keys** coincidan con los valores exactos de `sector_category` en la BD:
+
+```typescript
+const SECTOR_KEYWORDS: Record<string, string[]> = {
+  'Banca y Servicios Financieros': ['banco', 'banca', 'bancario', 'bancos', 'banking', 'bank', 'financiero'],
+  'Energía y Gas': ['energía', 'energético', 'energy', 'gas', 'utilities', 'eléctricas', 'electricas'],
+  'Petróleo y Energía': ['petróleo', 'petroleo', 'oil', 'refinería'],
+  'Telecomunicaciones': ['teleco', 'telecom', 'telecomunicaciones', 'telefonía', 'telefonia'],
+  'Telecomunicaciones y Tecnología': ['tecnología', 'tecnologia', 'tech', 'software', 'it'],
+  'Construcción e Infraestructuras': ['construcción', 'construccion', 'infraestructuras', 'inmobiliario'],
+  'Alimentación': ['alimentación', 'alimentacion', 'comida', 'food'],
+  'Hoteles y Turismo': ['turismo', 'hoteles', 'ocio', 'viajes', 'tourism'],
+  'Seguros': ['seguros', 'aseguradoras', 'insurance'],
+  'Salud y Farmacéutico': ['farmacia', 'salud', 'pharma', 'health', 'healthcare'],
+  'Industria': ['industrial', 'industria', 'manufacturing', 'fabricación'],
+  'Moda y Distribución': ['retail', 'moda', 'distribución', 'distribucion', 'comercio', 'tiendas'],
+  'Transporte': ['transporte', 'logística', 'logistica', 'transport', 'aviación', 'aviacion'],
+  'Automoción': ['automoción', 'automocion', 'coches', 'automotive', 'car'],
+};
+```
+
+---
+
+### Fase 2: Añadir Fallback Universal (Chart de Mercado)
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts`
+
+Crear nueva función `buildMarketOverviewChart` que muestra el top 6 empresas del mercado por RIX:
+
+```typescript
+function buildMarketOverviewChart(
+  allRixData: any[],
+  numCompanies: number = 6
+): ChartData | null {
+  if (!allRixData || allRixData.length === 0) return null;
+  
+  // Get latest week data
+  const sortedData = [...allRixData].sort((a, b) => 
+    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
+  );
+  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
+  if (!latestWeek) return null;
+  
+  // Aggregate scores by company
+  const companyScores = new Map<string, { name: string; scores: number[] }>();
+  sortedData.forEach(run => {
+    const weekDate = run.batch_execution_date?.split('T')[0];
+    if (weekDate !== latestWeek) return;
+    const ticker = run['05_ticker'];
+    const score = run['09_rix_score'];
+    const name = run['03_target_name'];
+    if (!ticker || score == null) return;
+    if (!companyScores.has(ticker)) {
+      companyScores.set(ticker, { name: name || ticker, scores: [] });
+    }
+    companyScores.get(ticker)!.scores.push(score);
+  });
+  
+  // Build comparison
+  const comparisonData: ComparisonPoint[] = [];
+  companyScores.forEach((data) => {
+    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+    comparisonData.push({
+      name: data.name.length > 12 ? data.name.substring(0, 12) + '...' : data.name,
+      score: Math.round(avgScore * 10) / 10,
+    });
+  });
+  
+  comparisonData.sort((a, b) => b.score - a.score);
+  
+  return {
+    type: 'comparison',
+    data: comparisonData.slice(0, numCompanies),
+    title: '🏆 Top RIX del Mercado',
+    subtitle: `Semana del ${latestWeek}`,
+  };
+}
+```
+
+Modificar la lógica de selección de charts (líneas 5140-5180) para añadir Case 5:
+
+```typescript
+// Case 5: FALLBACK - Show market overview for any other question
+if (!chartData && allRixData && allRixData.length > 0) {
+  chartData = buildMarketOverviewChart(allRixData, 6);
+  console.log(`${logPrefix} Built market overview fallback chart: ${chartData ? 'yes' : 'no'}`);
+}
+```
+
+---
+
+### Fase 3: Manejar evento SSE `start` en Frontend
+
+**Archivo:** `src/contexts/ChatContext.tsx` (líneas 586-610)
+
+Añadir handler para el evento `start` que capture `chartData` anticipadamente:
+
+```typescript
+let startMetadata: any = null;  // Nueva variable
+
+// Dentro del loop de parsing:
+if (parsed.type === 'start') {
+  // Capture initial metadata including chart data
+  startMetadata = parsed.metadata || {};
+  console.log('[ChatContext] Received start event with chartData:', !!startMetadata.chartData);
+} else if (parsed.type === 'chunk' && parsed.text) {
+  // ... existing chunk handling
+}
+```
+
+Y modificar la asignación final de metadata para fusionar `startMetadata` con `finalMetadata`:
+
+```typescript
+// Chart data: prefer startMetadata (sent early) over finalMetadata
+chartData: startMetadata?.chartData || finalMetadata?.chartData,
+```
+
+---
+
+### Fase 4: Mejorar Logging para Debugging
+
+Añadir logs más detallados en el backend para entender por qué los charts fallan:
+
+```typescript
+console.log(`${logPrefix} Chart generation context:
+  - detectedCompanies: ${detectedCompanies.length}
+  - detectedSectors: ${JSON.stringify(detectedSectors)}
+  - allRixData available: ${allRixData?.length || 0}
+  - companiesCache available: ${companiesCache?.length || 0}
+`);
+```
+
+---
+
+## Archivos a Modificar
+
+| Archivo | Cambio | Prioridad |
+|---------|--------|-----------|
+| `supabase/functions/chat-intelligence/index.ts` | Alinear SECTOR_KEYWORDS con BD | CRÍTICA |
+| `supabase/functions/chat-intelligence/index.ts` | Añadir `buildMarketOverviewChart` fallback | ALTA |
+| `supabase/functions/chat-intelligence/index.ts` | Mejorar logging de chart generation | MEDIA |
+| `src/contexts/ChatContext.tsx` | Manejar evento SSE `start` | ALTA |
+
+---
+
+## Flujo Corregido
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FLUJO SSE MEJORADO                                  │
+│                     LÓGICA DE SELECCIÓN DE CHART                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  1. start     → metadata inicial + datos de gráfico (pre-calculados)        │
-│  2. chunk     → texto streaming (igual que ahora)                           │
-│  3. chunk     → texto streaming...                                          │
-│  4. done      → metadata final + fuentes segmentadas + preguntas sugeridas  │
+│  Pregunta del usuario                                                       │
+│         ↓                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Case 1: ¿Empresas detectadas?                                       │   │
+│  │         → Trend chart de la primera empresa                         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│         ↓ NO                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Case 2: ¿2+ sectores detectados?                                    │   │
+│  │         → Comparison chart entre sectores                           │   │
+│  │         (usando keys alineadas con sector_category de BD)           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│         ↓ NO                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Case 3: ¿1 sector detectado?                                        │   │
+│  │         → Top companies de ese sector                               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│         ↓ NO                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Case 4: ¿Datos de mercado disponibles?                              │   │
+│  │         → Comparison chart de todos los sectores                    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│         ↓ NO                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Case 5: FALLBACK UNIVERSAL                                          │   │
+│  │         → Top 6 empresas del mercado por RIX                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
+│  Resultado: SIEMPRE hay un chart para cualquier pregunta                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Fase 1: Gráficos de Tendencia en Respuestas
+## Impacto Esperado
 
-### 1.1 Ampliar Interfaz de Metadatos SSE
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-
-Añadir al evento `start`:
-
-```typescript
-interface SSEStartMetadata {
-  // Existente
-  language: string;
-  languageName: string;
-  depthLevel: string;
-  detectedCompanies: string[];
-  
-  // NUEVO: Datos para gráficos
-  chartData?: {
-    type: 'trend' | 'comparison' | 'radar';
-    data: TrendPoint[] | ComparisonPoint[] | RadarPoint[];
-    title?: string;
-    subtitle?: string;
-  };
-}
-
-interface TrendPoint {
-  week: string;       // "S1", "S2", etc.
-  date: string;       // "2026-01-20"
-  rixScore: number;
-  marketAverage: number;
-  delta?: number;     // vs semana anterior
-}
-```
-
-### 1.2 Calcular Datos de Gráfico en Backend
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-
-En `handleStandardChat`, después de cargar datos RIX:
-
-```typescript
-// Calcular tendencia para empresa detectada
-function buildTrendChartData(
-  detectedCompanyData: any[],
-  allRixData: any[],
-  numWeeks: number = 4
-): TrendPoint[] {
-  // 1. Agrupar por semana
-  // 2. Calcular media de mercado por semana
-  // 3. Calcular RIX empresa por semana (promedio de 6 modelos)
-  // 4. Retornar últimas N semanas ordenadas cronológicamente
-}
-```
-
-### 1.3 Crear Componente de Gráfico Inline
-
-**Archivo nuevo:** `src/components/chat/InlineChartRenderer.tsx`
-
-```typescript
-interface InlineChartRendererProps {
-  chartData?: {
-    type: 'trend' | 'comparison' | 'radar';
-    data: any[];
-    title?: string;
-  };
-  compact?: boolean;
-}
-
-export function InlineChartRenderer({ chartData, compact }: InlineChartRendererProps) {
-  if (!chartData?.data?.length) return null;
-  
-  switch (chartData.type) {
-    case 'trend':
-      return (
-        <Card className="my-4 p-4">
-          <h4 className="text-sm font-semibold mb-2">{chartData.title || 'Evolución RIX'}</h4>
-          <MiniLineChart 
-            data={chartData.data.map(p => ({ name: p.week, value: p.rixScore }))} 
-            width={compact ? 200 : 320}
-            height={compact ? 80 : 120}
-            showTrend
-          />
-        </Card>
-      );
-    case 'comparison':
-      return <ModelComparison models={chartData.data} />;
-    case 'radar':
-      return <MiniRadarChart data={chartData.data} size={compact ? 160 : 220} />;
-  }
-}
-```
-
-### 1.4 Integrar en ChatMessages
-
-**Archivo:** `src/components/chat/ChatMessages.tsx`
-
-Renderizar gráfico ANTES del contenido markdown si hay `chartData`:
-
-```tsx
-{message.metadata?.chartData && !message.isStreaming && (
-  <InlineChartRenderer 
-    chartData={message.metadata.chartData} 
-    compact={compact} 
-  />
-)}
-<MarkdownMessage content={message.content} ... />
-```
+1. **Cualquier pregunta genera un gráfico** - fallback universal garantizado
+2. **Sectores detectados correctamente** - keys alineadas con BD
+3. **Chart visible inmediatamente** - evento `start` procesado
+4. **Debugging mejorado** - logs detallados para identificar problemas futuros
 
 ---
 
-## Fase 2: Fuentes Segmentadas por Ventana Temporal
+## Riesgo
 
-### 2.1 Ampliar Extractor de Fuentes
-
-**Archivo:** `src/lib/verifiedSourceExtractor.ts`
-
-```typescript
-export interface TemporalSource extends VerifiedSource {
-  temporalGroup: 'window' | 'reinforcement';
-  mentionDate?: string;  // Fecha extraída del contexto si disponible
-}
-
-export interface SegmentedSources {
-  windowSources: VerifiedSource[];      // Menciones en ventana (última semana)
-  reinforcementSources: VerifiedSource[]; // Menciones históricas de refuerzo
-  methodology: string;
-}
-
-export function segmentSourcesByWindow(
-  sources: VerifiedSource[],
-  windowStart: string,  // "2026-01-20"
-  windowEnd: string     // "2026-01-27"
-): SegmentedSources {
-  // Analizar contexto de cada fuente para detectar fecha
-  // Si la fecha está dentro de la ventana → windowSources
-  // Si está fuera o es indeterminada → reinforcementSources
-}
-```
-
-### 2.2 Modificar Backend para Segmentar Fuentes
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-
-Al extraer fuentes verificadas, añadir segmentación:
-
-```typescript
-// En el evento 'done' del SSE
-const allSources = extractSourcesFromRixData(detectedCompanyFullData);
-const periodFrom = detectedCompanyFullData[0]?.['06_period_from'];
-const periodTo = detectedCompanyFullData[0]?.['07_period_to'];
-
-const segmentedSources = segmentSourcesByWindow(allSources, periodFrom, periodTo);
-
-// Incluir en metadata final
-metadata: {
-  ...existingMetadata,
-  segmentedSources: {
-    window: segmentedSources.windowSources,
-    reinforcement: segmentedSources.reinforcementSources,
-  }
-}
-```
-
-### 2.3 Renderizar Fuentes Segmentadas en UI
-
-**Archivo nuevo:** `src/components/chat/SegmentedSourcesFooter.tsx`
-
-```typescript
-interface SegmentedSourcesFooterProps {
-  windowSources: VerifiedSource[];
-  reinforcementSources: VerifiedSource[];
-  periodLabel: string; // "20-27 enero 2026"
-}
-
-export function SegmentedSourcesFooter({ 
-  windowSources, 
-  reinforcementSources,
-  periodLabel 
-}: SegmentedSourcesFooterProps) {
-  return (
-    <Collapsible className="mt-4 border-t pt-3">
-      <CollapsibleTrigger className="text-xs text-muted-foreground">
-        📚 Ver fuentes citadas ({windowSources.length + reinforcementSources.length})
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 space-y-3">
-        {windowSources.length > 0 && (
-          <div>
-            <Badge variant="default" className="mb-2">
-              🎯 Menciones en ventana ({periodLabel})
-            </Badge>
-            <ul className="text-xs space-y-1">
-              {windowSources.map((s, i) => (
-                <li key={i}>
-                  <a href={s.url} target="_blank" className="text-primary hover:underline">
-                    {s.domain}
-                  </a>
-                  {s.title && <span className="text-muted-foreground"> — {s.title}</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {reinforcementSources.length > 0 && (
-          <div>
-            <Badge variant="secondary" className="mb-2">
-              📖 Menciones de refuerzo (históricas)
-            </Badge>
-            <ul className="text-xs space-y-1 opacity-80">
-              {reinforcementSources.map((s, i) => (
-                <li key={i}>
-                  <a href={s.url} target="_blank" className="text-primary hover:underline">
-                    {s.domain}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-```
-
----
-
-## Fase 3: Actualizar ChatContext para Nuevos Metadatos
-
-**Archivo:** `src/contexts/ChatContext.tsx`
-
-Ampliar interfaz `MessageMetadata`:
-
-```typescript
-export interface MessageMetadata {
-  // Existentes...
-  
-  // NUEVO: Datos para gráficos inline
-  chartData?: {
-    type: 'trend' | 'comparison' | 'radar';
-    data: any[];
-    title?: string;
-    subtitle?: string;
-  };
-  
-  // NUEVO: Fuentes segmentadas
-  segmentedSources?: {
-    window: VerifiedSource[];
-    reinforcement: VerifiedSource[];
-    periodLabel?: string;
-  };
-}
-```
-
----
-
-## Fase 4: Tipos de Gráficos por Contexto
-
-| Tipo de Pregunta | Gráfico Sugerido |
-|------------------|------------------|
-| "¿Cómo va Telefónica?" | `trend` (evolución 4 semanas) |
-| "Compara Telefónica con Orange" | `comparison` (barras lado a lado) |
-| "Analiza métricas de BBVA" | `radar` (8 dimensiones RIX) |
-| "¿Quién lidera en banca?" | `comparison` (top 5 del sector) |
-| Boletín ejecutivo | `trend` + `radar` + `comparison` |
-
----
-
-## Archivos a Crear/Modificar
-
-| Archivo | Acción | Complejidad |
-|---------|--------|-------------|
-| `src/components/chat/InlineChartRenderer.tsx` | CREAR | Baja |
-| `src/components/chat/SegmentedSourcesFooter.tsx` | CREAR | Baja |
-| `src/components/chat/ChatMessages.tsx` | Modificar (renderizar gráficos) | Media |
-| `src/contexts/ChatContext.tsx` | Modificar (nuevos tipos) | Baja |
-| `src/lib/verifiedSourceExtractor.ts` | Modificar (segmentación temporal) | Media |
-| `supabase/functions/chat-intelligence/index.ts` | Modificar (calcular chartData, segmentar fuentes) | Alta |
-
----
-
-## Consideraciones de Riesgo
-
-### Bajo Riesgo
-- Componentes de UI nuevos (no tocan lógica existente)
-- Extensión de interfaces de metadatos (retrocompatible)
-
-### Riesgo Medio
-- Cálculo de chartData en backend (puede añadir latencia ~50-100ms)
-- Segmentación de fuentes (depende de calidad de fechas extraídas)
-
-### Mitigación
-- Calcular chartData en paralelo con otras operaciones
-- Cache de datos de tendencia por ticker
-- Fallback: si no hay datos suficientes, no mostrar gráfico
-
----
-
-## Impacto Visual Esperado
-
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│  🤖 Respuesta del Agente Rix                                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────┐                │
-│  │  📈 Evolución RIX - Telefónica (4 semanas)          │                │
-│  │  ▲                                                  │                │
-│  │  │    ╭──────╮                                      │                │
-│  │  │   ╱        ╲     ╭───╮                           │                │
-│  │  │  ╱          ╲   ╱     ╲                          │                │
-│  │  │ ╱            ╰─╯       ──────                    │                │
-│  │  └────────────────────────────────►                 │                │
-│  │    S1    S2    S3    S4                             │                │
-│  │                           ↗ +3.2 pts vs semana ant. │                │
-│  └─────────────────────────────────────────────────────┘                │
-│                                                                         │
-│  ## Análisis de Telefónica                                              │
-│                                                                         │
-│  Telefónica cierra la semana con un RIX de 62 puntos, consolidando      │
-│  una tendencia alcista que la sitúa 5 puntos por encima de la media...  │
-│                                                                         │
-│  [... resto del texto markdown ...]                                     │
-│                                                                         │
-├─────────────────────────────────────────────────────────────────────────┤
-│  📚 Ver fuentes citadas (12)                                    [▼]    │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ 🎯 Menciones en ventana (20-27 ene 2026)                          │  │
-│  │   • expansion.com — "Telefónica refuerza su apuesta por..."       │  │
-│  │   • reuters.com — "Spanish telco posts quarterly results"         │  │
-│  │   • bloomberg.com — "Telefonica CEO on AI investments"            │  │
-│  │                                                                    │  │
-│  │ 📖 Menciones de refuerzo (históricas)                             │  │
-│  │   • elpais.com — "La transformación digital de Telefónica"        │  │
-│  │   • cincodias.com — "Análisis del sector telecom español"         │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Resumen Ejecutivo
-
-**¿Es fácil?** 
-- UI components: **Fácil** (reutilizamos MiniCharts existentes)
-- Backend data preparation: **Medio** (requiere cálculos adicionales)
-- Segmentación temporal de fuentes: **Medio-Alto** (depende de calidad de fechas)
-
-**Estimación de esfuerzo:** 3-4 horas de desarrollo
-
-**¿Hará los informes más contundentes?** 
-**Sí, significativamente:**
-- Gráfico de tendencia = impacto visual inmediato
-- Fuentes segmentadas = credibilidad y trazabilidad
-- Mantiene todo lo existente (footer metodológico, feedback, drumroll)
-
-**Riesgo operacional:** Bajo (cambios aditivos, no destructivos)
-
+**Bajo:** Los cambios son aditivos y retrocompatibles. No afectan el pipeline de recogida de datos ni la lógica de generación de texto.
