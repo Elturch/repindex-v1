@@ -173,22 +173,28 @@ function TrendChart({ data, title, subtitle, compact }: {
   );
 }
 
-function ComparisonChart({ data, title, compact }: { 
+function ComparisonChart({ data, title, subtitle, compact }: { 
   data: ComparisonPoint[]; 
   title?: string;
+  subtitle?: string;
   compact?: boolean;
 }) {
   if (!data || data.length === 0) return null;
   
-  const chartWidth = compact ? 220 : 280;
-  const chartHeight = compact ? 120 : 160;
+  const chartWidth = compact ? 240 : 320;
+  const chartHeight = Math.max(compact ? 100 : 140, data.length * 28);
 
   return (
     <Card className="my-3 border-primary/20 bg-gradient-to-br from-background to-muted/30">
       <CardContent className={compact ? 'p-3' : 'p-4'}>
-        <h4 className={`${compact ? 'text-xs' : 'text-sm'} font-semibold mb-3`}>
-          {title || '📊 Comparativa RIX'}
-        </h4>
+        <div className="mb-3">
+          <h4 className={`${compact ? 'text-xs' : 'text-sm'} font-semibold`}>
+            {title || '📊 Comparativa RIX'}
+          </h4>
+          {subtitle && (
+            <p className="text-[10px] text-muted-foreground">{subtitle}</p>
+          )}
+        </div>
         
         <div className="flex justify-center">
           <ResponsiveContainer width={chartWidth} height={chartHeight}>
@@ -299,6 +305,7 @@ export function InlineChartRenderer({ chartData, compact = false }: InlineChartR
         <ComparisonChart 
           data={chartData.data as ComparisonPoint[]} 
           title={chartData.title}
+          subtitle={chartData.subtitle}
           compact={compact}
         />
       );
