@@ -102,6 +102,42 @@ export interface MethodologyMetadata {
   uniqueWeeks?: number;
 }
 
+// Chart data types for inline visualizations
+export interface TrendPoint {
+  week: string;
+  date: string;
+  rixScore: number;
+  marketAverage?: number;
+  delta?: number;
+}
+
+export interface ComparisonPoint {
+  name: string;
+  score: number;
+  color?: string;
+}
+
+export interface RadarPoint {
+  subject: string;
+  value: number;
+  fullMark?: number;
+}
+
+export interface ChartData {
+  type: 'trend' | 'comparison' | 'radar';
+  data: TrendPoint[] | ComparisonPoint[] | RadarPoint[];
+  title?: string;
+  subtitle?: string;
+  companyName?: string;
+}
+
+// Segmented sources for temporal separation
+export interface SegmentedSources {
+  window: VerifiedSource[];
+  reinforcement: VerifiedSource[];
+  periodLabel?: string;
+}
+
 export interface MessageMetadata {
   type?: 'standard' | 'bulletin' | 'enriched';
   companyName?: string;
@@ -115,6 +151,10 @@ export interface MessageMetadata {
   methodology?: MethodologyMetadata;
   // Verified sources from ChatGPT and Perplexity for bibliography
   verifiedSources?: VerifiedSource[];
+  // Chart data for inline visualizations (trend, comparison, radar)
+  chartData?: ChartData;
+  // Segmented sources by temporal window
+  segmentedSources?: SegmentedSources;
 }
 
 export interface Message {
@@ -602,6 +642,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 questionCategory: finalMetadata?.questionCategory,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
+                // Chart data for inline visualizations
+                chartData: finalMetadata?.chartData,
+                // Segmented sources by temporal window
+                segmentedSources: finalMetadata?.segmentedSources,
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: finalMetadata?.methodology || {
                   hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
