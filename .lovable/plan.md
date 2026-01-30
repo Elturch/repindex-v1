@@ -1,247 +1,176 @@
 
-# Plan: Corrección de Gráficos Inline para Cualquier Pregunta
+# Plan: Corrección de Gráficos que No se Muestran en Chat
 
-## Diagnóstico del Problema
+## Diagnóstico Final
 
-Se identificaron **3 problemas críticos** que causan que los gráficos no se generen:
+### Evidencia Recopilada
 
-### Problema 1: Mismatch entre Nombres de Sectores (CRÍTICO)
+1. **Backend funciona correctamente**:
+   - Logs del edge function muestran: `Built sector comparison chart for Automoción vs Banca y Servicios Financieros vs Energía y Gas: yes`
+   - `chartData generated: comparison`
 
-**Código actual (línea 429-444):**
+2. **Network requests confirman envío**:
+   ```json
+   {"type":"start","metadata":{...,"chartData":{"type":"comparison","data":[{"name":"Energía y Gas","score":62.8},{"name":"Banca y Servici...","score":61.4},{"name":"Automoción","score":58.8}],"title":"📊 Automoción vs Banca y Servicios Financieros vs Energía y Gas","subtitle":"RIX promedio - Semana del 2026-01-25"}}}
+   ```
+
+3. **Frontend NO procesa el evento `start`**:
+   - El log `[ChatContext] Received start event with chartData:` NO aparece en console
+   - Los gráficos NO aparecen en la UI
+
+### Bug Identificado
+
+El problema está en cómo el browser procesa el SSE stream. Cuando el primer chunk llega, puede contener el evento `start` pero el buffer split puede no procesarlo correctamente en todos los casos debido al timing del `ReadableStream`.
+
+Sin embargo, revisando más cuidadosamente el código, identifico que **hay un problema adicional**: el código actual asume que `startMetadata` estará disponible cuando se ejecute `setMessages` al final, pero la variable `startMetadata` se declara con `let` dentro del scope del `while(true)` loop y el closure puede no capturar correctamente su valor actualizado.
+
+### Problema Real: Scope y Timing
+
+En líneas 566-567:
 ```typescript
-const SECTOR_KEYWORDS: Record<string, string[]> = {
-  'Banca': ['banco', 'banca', 'bancario', ...],
-  'Energía': ['energía', 'energético', ...],
-  ...
-};
+let finalMetadata: any = null;
+let startMetadata: any = null;
 ```
 
-**Valores reales en la BD (`sector_category`):**
-- `'Banca y Servicios Financieros'`
-- `'Energía y Gas'`
-- `'Petróleo y Energía'`
-- `'Telecomunicaciones y Tecnología'`
-- `'Construcción e Infraestructuras'`
-- etc.
-
-**Impacto:** La función `buildSectorComparisonChartData` busca el sector `'Banca'` en el mapa, pero `sectorScores` tiene la clave `'Banca y Servicios Financieros'`. **Nunca coinciden**, por lo que `comparisonData` queda vacío.
-
-### Problema 2: Frontend ignora evento SSE `start`
-
-El parser SSE en `ChatContext.tsx` (líneas 589-607) solo maneja `chunk`, `done` y `error`. El evento `start` que envía `chartData` anticipadamente **es ignorado**.
-
-Aunque el backend también envía `chartData` en el evento `done`, si la lógica del problema 1 falla, `chartData` será `null`.
-
-### Problema 3: Sin fallback universal
-
-No hay lógica de fallback para preguntas que:
-- No mencionan empresas específicas
-- No mencionan sectores reconocidos
-- Son preguntas genéricas sobre "el mercado" o "las empresas"
-
----
-
-## Solución Propuesta
-
-### Fase 1: Alinear SECTOR_KEYWORDS con la BD
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (líneas 429-444)
-
-Cambiar el mapa para que las **keys** coincidan con los valores exactos de `sector_category` en la BD:
-
+Y en línea 651:
 ```typescript
-const SECTOR_KEYWORDS: Record<string, string[]> = {
-  'Banca y Servicios Financieros': ['banco', 'banca', 'bancario', 'bancos', 'banking', 'bank', 'financiero'],
-  'Energía y Gas': ['energía', 'energético', 'energy', 'gas', 'utilities', 'eléctricas', 'electricas'],
-  'Petróleo y Energía': ['petróleo', 'petroleo', 'oil', 'refinería'],
-  'Telecomunicaciones': ['teleco', 'telecom', 'telecomunicaciones', 'telefonía', 'telefonia'],
-  'Telecomunicaciones y Tecnología': ['tecnología', 'tecnologia', 'tech', 'software', 'it'],
-  'Construcción e Infraestructuras': ['construcción', 'construccion', 'infraestructuras', 'inmobiliario'],
-  'Alimentación': ['alimentación', 'alimentacion', 'comida', 'food'],
-  'Hoteles y Turismo': ['turismo', 'hoteles', 'ocio', 'viajes', 'tourism'],
-  'Seguros': ['seguros', 'aseguradoras', 'insurance'],
-  'Salud y Farmacéutico': ['farmacia', 'salud', 'pharma', 'health', 'healthcare'],
-  'Industria': ['industrial', 'industria', 'manufacturing', 'fabricación'],
-  'Moda y Distribución': ['retail', 'moda', 'distribución', 'distribucion', 'comercio', 'tiendas'],
-  'Transporte': ['transporte', 'logística', 'logistica', 'transport', 'aviación', 'aviacion'],
-  'Automoción': ['automoción', 'automocion', 'coches', 'automotive', 'car'],
-};
-```
-
----
-
-### Fase 2: Añadir Fallback Universal (Chart de Mercado)
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-
-Crear nueva función `buildMarketOverviewChart` que muestra el top 6 empresas del mercado por RIX:
-
-```typescript
-function buildMarketOverviewChart(
-  allRixData: any[],
-  numCompanies: number = 6
-): ChartData | null {
-  if (!allRixData || allRixData.length === 0) return null;
-  
-  // Get latest week data
-  const sortedData = [...allRixData].sort((a, b) => 
-    (b.batch_execution_date || '').localeCompare(a.batch_execution_date || '')
-  );
-  const latestWeek = sortedData[0]?.batch_execution_date?.split('T')[0];
-  if (!latestWeek) return null;
-  
-  // Aggregate scores by company
-  const companyScores = new Map<string, { name: string; scores: number[] }>();
-  sortedData.forEach(run => {
-    const weekDate = run.batch_execution_date?.split('T')[0];
-    if (weekDate !== latestWeek) return;
-    const ticker = run['05_ticker'];
-    const score = run['09_rix_score'];
-    const name = run['03_target_name'];
-    if (!ticker || score == null) return;
-    if (!companyScores.has(ticker)) {
-      companyScores.set(ticker, { name: name || ticker, scores: [] });
-    }
-    companyScores.get(ticker)!.scores.push(score);
-  });
-  
-  // Build comparison
-  const comparisonData: ComparisonPoint[] = [];
-  companyScores.forEach((data) => {
-    const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-    comparisonData.push({
-      name: data.name.length > 12 ? data.name.substring(0, 12) + '...' : data.name,
-      score: Math.round(avgScore * 10) / 10,
-    });
-  });
-  
-  comparisonData.sort((a, b) => b.score - a.score);
-  
-  return {
-    type: 'comparison',
-    data: comparisonData.slice(0, numCompanies),
-    title: '🏆 Top RIX del Mercado',
-    subtitle: `Semana del ${latestWeek}`,
-  };
-}
-```
-
-Modificar la lógica de selección de charts (líneas 5140-5180) para añadir Case 5:
-
-```typescript
-// Case 5: FALLBACK - Show market overview for any other question
-if (!chartData && allRixData && allRixData.length > 0) {
-  chartData = buildMarketOverviewChart(allRixData, 6);
-  console.log(`${logPrefix} Built market overview fallback chart: ${chartData ? 'yes' : 'no'}`);
-}
-```
-
----
-
-### Fase 3: Manejar evento SSE `start` en Frontend
-
-**Archivo:** `src/contexts/ChatContext.tsx` (líneas 586-610)
-
-Añadir handler para el evento `start` que capture `chartData` anticipadamente:
-
-```typescript
-let startMetadata: any = null;  // Nueva variable
-
-// Dentro del loop de parsing:
-if (parsed.type === 'start') {
-  // Capture initial metadata including chart data
-  startMetadata = parsed.metadata || {};
-  console.log('[ChatContext] Received start event with chartData:', !!startMetadata.chartData);
-} else if (parsed.type === 'chunk' && parsed.text) {
-  // ... existing chunk handling
-}
-```
-
-Y modificar la asignación final de metadata para fusionar `startMetadata` con `finalMetadata`:
-
-```typescript
-// Chart data: prefer startMetadata (sent early) over finalMetadata
 chartData: startMetadata?.chartData || finalMetadata?.chartData,
 ```
 
+El código PARECE correcto, pero el evento `start` puede no estar siendo parseado correctamente porque:
+
+1. **El evento `start` puede llegar en el mismo chunk inicial que múltiples eventos `chunk`**
+2. **El parsing con `split('\n')` puede fallar si el SSE no termina exactamente en `\n\n`**
+
 ---
 
-### Fase 4: Mejorar Logging para Debugging
+## Solución en 3 Partes
 
-Añadir logs más detallados en el backend para entender por qué los charts fallan:
+### Parte 1: Añadir Logging de Debugging Robusto
+
+Necesitamos ver exactamente qué está pasando. Añadir logs antes y después del parsing.
+
+**Archivo:** `src/contexts/ChatContext.tsx`
 
 ```typescript
-console.log(`${logPrefix} Chart generation context:
-  - detectedCompanies: ${detectedCompanies.length}
-  - detectedSectors: ${JSON.stringify(detectedSectors)}
-  - allRixData available: ${allRixData?.length || 0}
-  - companiesCache available: ${companiesCache?.length || 0}
-`);
+// Dentro del for loop (líneas 579-616)
+for (const line of lines) {
+  // Skip empty lines and keep-alive comments
+  if (!line.trim() || line.startsWith(':')) continue;
+  
+  if (line.startsWith('data: ')) {
+    const data = line.slice(6).trim();
+    if (data === '[DONE]') continue;
+
+    console.log('[ChatContext SSE] Raw data line:', data.substring(0, 100) + '...');
+
+    try {
+      const parsed = JSON.parse(data);
+      console.log('[ChatContext SSE] Parsed event type:', parsed.type);
+      
+      if (parsed.type === 'start') {
+        startMetadata = parsed.metadata || {};
+        console.log('[ChatContext SSE] START event received, chartData present:', !!startMetadata.chartData);
+        if (startMetadata.chartData) {
+          console.log('[ChatContext SSE] chartData type:', startMetadata.chartData.type);
+          console.log('[ChatContext SSE] chartData data length:', startMetadata.chartData.data?.length);
+        }
+      } else if (parsed.type === 'chunk' && parsed.text) {
+        // ... existing chunk handling
+      } else if (parsed.type === 'done') {
+        console.log('[ChatContext SSE] DONE event received');
+        // ... existing done handling
+      }
+    } catch (parseError) {
+      console.error('[ChatContext SSE] Parse error:', parseError, 'for data:', data.substring(0, 200));
+    }
+  }
+}
+```
+
+### Parte 2: Añadir Log en setMessages Final
+
+Para confirmar que `startMetadata` tiene valor cuando se asigna:
+
+**Archivo:** `src/contexts/ChatContext.tsx` (línea 633)
+
+```typescript
+// Mark streaming as complete and add final metadata including methodology
+console.log('[ChatContext SSE] Final metadata assignment:');
+console.log('  - startMetadata:', !!startMetadata, startMetadata?.chartData ? 'HAS chartData' : 'NO chartData');
+console.log('  - finalMetadata:', !!finalMetadata);
+
+setMessages(prev => {
+  // ...existing code
+});
+```
+
+### Parte 3: Verificar que InlineChartRenderer recibe datos
+
+**Archivo:** `src/components/chat/ChatMessages.tsx` (línea 233)
+
+```typescript
+{/* Inline Chart - shown before text content when not streaming */}
+{(() => {
+  console.log('[ChatMessages] Checking chartData for message:', idx, {
+    hasMetadata: !!message.metadata,
+    hasChartData: !!message.metadata?.chartData,
+    isStreaming: message.isStreaming,
+    chartType: message.metadata?.chartData?.type,
+    chartDataLength: message.metadata?.chartData?.data?.length
+  });
+  return message.metadata?.chartData && !message.isStreaming ? (
+    <InlineChartRenderer 
+      chartData={message.metadata.chartData} 
+      compact={compact} 
+    />
+  ) : null;
+})()}
 ```
 
 ---
 
-## Archivos a Modificar
+## Cambios en Archivos
 
-| Archivo | Cambio | Prioridad |
+| Archivo | Cambio | Propósito |
 |---------|--------|-----------|
-| `supabase/functions/chat-intelligence/index.ts` | Alinear SECTOR_KEYWORDS con BD | CRÍTICA |
-| `supabase/functions/chat-intelligence/index.ts` | Añadir `buildMarketOverviewChart` fallback | ALTA |
-| `supabase/functions/chat-intelligence/index.ts` | Mejorar logging de chart generation | MEDIA |
-| `src/contexts/ChatContext.tsx` | Manejar evento SSE `start` | ALTA |
+| `src/contexts/ChatContext.tsx` | Añadir logs de debugging en SSE parsing | Identificar exactamente dónde falla |
+| `src/contexts/ChatContext.tsx` | Log antes de setMessages final | Confirmar estado de startMetadata |
+| `src/components/chat/ChatMessages.tsx` | Log en renderizado de chart | Confirmar que chartData llega al componente |
 
 ---
 
-## Flujo Corregido
+## Alternativa: Si el problema es el buffer SSE
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     LÓGICA DE SELECCIÓN DE CHART                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Pregunta del usuario                                                       │
-│         ↓                                                                   │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Case 1: ¿Empresas detectadas?                                       │   │
-│  │         → Trend chart de la primera empresa                         │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│         ↓ NO                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Case 2: ¿2+ sectores detectados?                                    │   │
-│  │         → Comparison chart entre sectores                           │   │
-│  │         (usando keys alineadas con sector_category de BD)           │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│         ↓ NO                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Case 3: ¿1 sector detectado?                                        │   │
-│  │         → Top companies de ese sector                               │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│         ↓ NO                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Case 4: ¿Datos de mercado disponibles?                              │   │
-│  │         → Comparison chart de todos los sectores                    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│         ↓ NO                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ Case 5: FALLBACK UNIVERSAL                                          │   │
-│  │         → Top 6 empresas del mercado por RIX                        │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  Resultado: SIEMPRE hay un chart para cualquier pregunta                   │
-└─────────────────────────────────────────────────────────────────────────────┘
+Si los logs revelan que el evento `start` nunca se parsea, el problema podría ser que el primer chunk del ReadableStream contiene el evento `start` pero sin el newline final que el split necesita.
+
+**Solución adicional** en el parsing:
+
+```typescript
+// Antes de procesar líneas, asegurar que procesamos también el buffer restante
+buffer += decoder.decode(value, { stream: true });
+
+// Procesar líneas completas (terminan en \n)
+const lines = buffer.split('\n');
+
+// Procesar todas las líneas excepto la última (que puede estar incompleta)
+for (let i = 0; i < lines.length - 1; i++) {
+  const line = lines[i];
+  // ... process line
+}
+
+// Mantener solo la última línea en buffer (puede estar incompleta)
+buffer = lines[lines.length - 1] || '';
 ```
 
 ---
 
-## Impacto Esperado
+## Estimación
 
-1. **Cualquier pregunta genera un gráfico** - fallback universal garantizado
-2. **Sectores detectados correctamente** - keys alineadas con BD
-3. **Chart visible inmediatamente** - evento `start` procesado
-4. **Debugging mejorado** - logs detallados para identificar problemas futuros
+- **Complejidad**: Baja (solo logging y posible fix de parsing)
+- **Riesgo**: Muy bajo (cambios de debugging no afectan funcionalidad)
+- **Tiempo**: ~30 minutos
 
----
+## Siguiente Paso
 
-## Riesgo
-
-**Bajo:** Los cambios son aditivos y retrocompatibles. No afectan el pipeline de recogida de datos ni la lógica de generación de texto.
+Una vez implementados los logs, necesitamos que el usuario ejecute otra consulta y nos comparta los console logs para identificar exactamente en qué punto falla la captura de `chartData`.
