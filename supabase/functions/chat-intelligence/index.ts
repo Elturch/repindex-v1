@@ -1218,6 +1218,13 @@ RECUERDA: Este informe se presenta a alta dirección. Profesionalismo absoluto.
          FORMATO REQUERIDO: INFORME EXHAUSTIVO (máximo 4500 palabras)
 ═══════════════════════════════════════════════════════════════════════════════
 
+## EXTENSIÓN OBLIGATORIA
+- Mínimo 2,500 palabras (~15,000 caracteres) - UNA RESPUESTA CORTA ES UN ERROR
+- TODAS las secciones numeradas (1-5) son OBLIGATORIAS
+- Si el usuario ha seleccionado un ROL específico (periodista, CEO, etc.), MANTÉN esta extensión
+- Adapta el TONO al rol pero NUNCA reduzcas la EXTENSIÓN requerida
+- Si el rol es "Periodista", genera un REPORTAJE DE INVESTIGACIÓN LARGO, no una nota breve
+
 Estructura OBLIGATORIA (respeta este orden exacto):
 
 ## 1. Síntesis Estratégica
@@ -4762,8 +4769,24 @@ ${roleId && rolePrompt ? `
 ═══════════════════════════════════════════════════════════════════════════════
 
 El usuario ha solicitado que la respuesta esté adaptada a la perspectiva de ${roleName}.
-Aplica las siguientes instrucciones ADEMÁS del formato de profundidad indicado arriba:
 
+## REGLA DE PRIORIDAD ABSOLUTA
+${depthLevel === 'exhaustive' ? `
+⚠️ MODO EXHAUSTIVO ACTIVO - PRIORIDADES:
+1. PRIORIDAD 1 (EXTENSIÓN): Mínimo 2,500 palabras con TODAS las secciones obligatorias
+2. PRIORIDAD 2 (TONO): Adapta el tono y enfoque al rol "${roleName}"
+
+El rol "${roleName}" modifica CÓMO presentas el contenido, pero NUNCA reduce la extensión.
+Si el rol sugiere formato breve (ej. "nota de prensa"), conviértelo en REPORTAJE LARGO.
+` : depthLevel === 'complete' ? `
+⚠️ MODO COMPLETO ACTIVO - PRIORIDADES:
+1. PRIORIDAD 1 (EXTENSIÓN): Mínimo 1,500 palabras con estructura completa
+2. PRIORIDAD 2 (TONO): Adapta el tono al rol "${roleName}"
+` : `
+Modo rápido: El rol "${roleName}" puede determinar el formato.
+`}
+
+INSTRUCCIONES DEL ROL:
 ${rolePrompt}
 
 IMPORTANTE: La respuesta ya debe estar adaptada a esta perspectiva desde el inicio.
