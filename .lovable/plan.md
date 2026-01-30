@@ -1,245 +1,102 @@
 
-# Plan: Bibliografía Dividida — Fuentes de Ventana vs Fuentes de Refuerzo
 
-## Objetivo
+# Plan: Corregir Registro de Tokens en Modo Streaming
 
-Modificar el sistema de extracción de fuentes verificadas para clasificar las citas en dos categorías:
+## Diagnóstico Confirmado
 
-1. **Menciones de Ventana Temporal** — Fuentes que corresponden al período semanal analizado (ej: 18-25 enero 2026)
-2. **Menciones de Refuerzo** — Fuentes históricas o contextuales que las IAs usan para enriquecer el análisis
+El panel de "Mapa de Procesos" muestra 0 calls, $0.0000, 0 tokens porque:
 
-Esta clasificación aumenta la transparencia metodológica y permite al lector distinguir entre información actual y contexto histórico.
+| Modo | Tokens Registrados | Coste Registrado |
+|------|-------------------|------------------|
+| No-streaming (`action_type: 'chat'`) | **Correcto** | **Correcto** |
+| Streaming (`action_type: 'chat_stream'`) | **0** | **$0.00** |
 
----
-
-## Análisis del Sistema Actual
-
-### Flujo de Datos
-
-```text
-rix_runs (BD)
-    ├── 20_res_gpt_bruto     → URLs con utm_source=openai
-    ├── 21_res_perplex_bruto → JSON estructurado con citaciones
-    ├── 06_period_from       → Inicio de ventana (ej: 2026-01-18)
-    └── 07_period_to         → Fin de ventana (ej: 2026-01-25)
-           │
-           ▼
-verifiedSourceExtractor.ts
-    ├── extractChatGptSources()   → Extrae URLs verificadas
-    ├── extractPerplexitySources() → Extrae citaciones [n]
-    └── generateBibliographyHtml() → Genera sección de bibliografía
-           │
-           ▼
-ChatContext.tsx (downloadAsHtml)
-    └── Inserta bibliografía en el informe PDF/HTML
-```
-
-### Problema Detectado
-
-El sistema actual:
-- Extrae todas las fuentes sin clasificarlas temporalmente
-- No aprovecha los campos `06_period_from` / `07_period_to` para contextualizar
-- No diferencia entre fuentes contemporáneas y fuentes históricas
-
----
-
-## Solución Propuesta
-
-### Fase 1: Extender Interfaz de Fuentes Verificadas
-
-**Archivo:** `src/lib/verifiedSourceExtractor.ts`
-
-Añadir clasificación temporal a la interfaz:
+**Causa raíz**: OpenAI NO envía `usage` (tokens) en las respuestas de streaming **por defecto**. El código actual espera recibirlos pero nunca llegan:
 
 ```typescript
-export interface VerifiedSource {
-  url: string;
-  domain: string;
-  title?: string;
-  sourceModel: 'ChatGPT' | 'Perplexity';
-  citationNumber?: number;
-  // NUEVOS CAMPOS:
-  temporalCategory: 'window' | 'reinforcement' | 'unknown';
-  extractedDate?: string; // Fecha detectada en el contexto
-  contextSnippet?: string; // Fragmento donde aparece la mención
+// Líneas 469-473 - Nunca se ejecuta porque parsed.usage siempre es undefined
+if (parsed.usage) {
+  totalInputTokens = parsed.usage.prompt_tokens || 0;
+  totalOutputTokens = parsed.usage.completion_tokens || 0;
 }
 ```
 
-### Fase 2: Implementar Clasificación Temporal
+## Solución
 
-**Estrategia de clasificación:**
-
-1. **Perplexity (JSON estructurado):**
-   - Si la cita está en `periodo_busqueda_especifico` → `window`
-   - Si está en `informacion_general_relevante` / `contexto_reputacional_historico` → `reinforcement`
-
-2. **ChatGPT (texto con URLs):**
-   - Extraer la fecha más cercana a cada URL en el texto (regex: fechas en español)
-   - Si la fecha está dentro del rango `period_from` - `period_to` → `window`
-   - Si es anterior → `reinforcement`
-
-**Nuevas funciones:**
-
-```typescript
-// Clasificador de fechas en español
-function extractNearestDate(text: string, urlPosition: number): Date | null;
-
-// Clasificador temporal
-function classifyTemporally(
-  source: VerifiedSource,
-  periodFrom: Date,
-  periodTo: Date
-): 'window' | 'reinforcement' | 'unknown';
-
-// Extractor mejorado con clasificación
-export function extractVerifiedSourcesWithTemporal(
-  chatGptRaw: string | null,
-  perplexityRaw: string | null,
-  periodFrom: string | null,
-  periodTo: string | null
-): VerifiedSource[];
-```
-
-### Fase 3: Actualizar Generador de Bibliografía HTML
-
-**Archivo:** `src/lib/verifiedSourceExtractor.ts`
-
-Modificar `generateBibliographyHtml()` para mostrar dos secciones:
-
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│           📚 ANEXO: REFERENCIAS CITADAS POR LAS IAS                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ▶ MENCIONES DE VENTANA (18-25 ene 2026)                                   │
-│    Fuentes contemporáneas al período analizado                              │
-│    ──────────────────────────────────────────────────────────────────────── │
-│    [G] europapress.es — "Fluidra anuncia dividendo..." (22 ene 2026)       │
-│    [P] expansion.com — "Resultados trimestrales..." (20 ene 2026)          │
-│                                                                             │
-│  ▶ MENCIONES DE REFUERZO                                                   │
-│    Fuentes históricas o contextuales usadas por las IAs                    │
-│    ──────────────────────────────────────────────────────────────────────── │
-│    [G] infobae.com — "Fluidra gana 48M hasta marzo..." (may 2025)          │
-│    [P] wikipedia.org — Perfil corporativo de Fluidra                       │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  📋 Nota metodológica:                                                      │
-│  Solo se incluyen fuentes verificables de ChatGPT (utm_source=openai) y    │
-│  Perplexity (citaciones estructuradas). Fuentes de otros modelos no se     │
-│  listan por no poder verificar su procedencia documental.                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Fase 4: Propagar Período Temporal al Contexto
-
-**Archivo:** `src/contexts/ChatContext.tsx`
-
-Modificar para pasar los períodos temporales a la función de extracción:
-
-```typescript
-// En la función que genera bibliografía
-const sources = extractVerifiedSourcesWithTemporal(
-  msg.metadata?.rawGptResponse,
-  msg.metadata?.rawPerplexityResponse,
-  msg.metadata?.periodFrom,
-  msg.metadata?.periodTo
-);
-```
-
-### Fase 5: Actualizar Edge Function (Opcional)
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts`
-
-Si el metadata de los mensajes no incluye actualmente los campos `periodFrom`/`periodTo`, añadirlos al extraer datos de `rix_runs`:
-
-```typescript
-verifiedSources: extractedSources,
-periodFrom: rixRun['06_period_from'],
-periodTo: rixRun['07_period_to'],
-```
-
----
+Añadir `stream_options: { include_usage: true }` a la petición de OpenAI, lo cual hace que el API envíe un chunk final con la información de tokens.
 
 ## Archivos a Modificar
 
-| Archivo | Cambios | Prioridad |
-|---------|---------|-----------|
-| `src/lib/verifiedSourceExtractor.ts` | Extender interfaz, añadir clasificación temporal, modificar HTML | Alta |
-| `src/contexts/ChatContext.tsx` | Pasar períodos a extractor (si aplica) | Alta |
-| `supabase/functions/chat-intelligence/index.ts` | Añadir `periodFrom`/`periodTo` al metadata | Media |
+| Archivo | Cambio | Riesgo |
+|---------|--------|--------|
+| `supabase/functions/chat-intelligence/index.ts` | Añadir `stream_options` a peticiones de OpenAI streaming | Bajo |
 
----
+## Cambios Técnicos
 
-## Reglas de Clasificación Temporal
+### Función `streamOpenAIResponse` (líneas 411-423)
 
-### Para Perplexity (JSON estructurado)
+Cambio en el body de la petición:
 
 ```typescript
-const perplexityClassification = {
-  // Secciones que indican ventana temporal
-  'periodo_busqueda_especifico': 'window',
-  'menciones_recientes': 'window',
-  'noticias_semana': 'window',
-  
-  // Secciones que indican refuerzo
-  'informacion_general_relevante': 'reinforcement',
-  'contexto_reputacional_historico': 'reinforcement',
-  'perfil_corporativo': 'reinforcement',
-  'datos_basicos': 'reinforcement',
-};
+// ANTES (líneas 417-422)
+body: JSON.stringify({
+  model,
+  messages,
+  max_completion_tokens: maxTokens,
+  stream: true,
+}),
+
+// DESPUÉS
+body: JSON.stringify({
+  model,
+  messages,
+  max_completion_tokens: maxTokens,
+  stream: true,
+  stream_options: { include_usage: true }, // Añadir esta línea
+}),
 ```
 
-### Para ChatGPT (texto con fechas)
+### Ubicaciones Afectadas
 
-```typescript
-// Patrones de fecha en español
-const spanishDatePatterns = [
-  /(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre) de (\d{4})/gi,
-  /(enero|febrero|...) de (\d{4})/gi,
-  /(\d{1,2})\/(\d{1,2})\/(\d{4})/g,
-];
+Hay que aplicar este cambio en todas las llamadas a OpenAI con streaming:
 
-// Clasificación
-if (extractedDate >= periodFrom && extractedDate <= periodTo) {
-  return 'window';
-} else if (extractedDate < periodFrom) {
-  return 'reinforcement';
-} else {
-  return 'unknown';
+1. **Función `streamOpenAIResponse`** (línea ~417)
+   - Usada por el flujo principal de chat streaming
+   
+2. **Cualquier otra llamada directa a OpenAI con `stream: true`** (revisar si existe)
+
+## Comportamiento Esperado Después del Fix
+
+Con `stream_options: { include_usage: true }`, OpenAI enviará un chunk adicional al final con:
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion.chunk",
+  "usage": {
+    "prompt_tokens": 1200,
+    "completion_tokens": 800,
+    "total_tokens": 2000
+  }
 }
 ```
 
----
+Este chunk será capturado por el código existente en líneas 469-473, que ya está preparado para procesarlo.
 
-## Diseño Visual de la Bibliografía Dividida
+## Impacto en Producción
 
-### Sección "Menciones de Ventana"
+- **Riesgo**: Muy bajo
+- **Afectación al pipeline RIX**: Ninguna (solo afecta a chat-intelligence)
+- **Compatibilidad**: OpenAI soporta `stream_options` desde GPT-4o y modelos posteriores
+- **Fallback Gemini**: Necesita revisión para ver si tiene opción equivalente
 
-- Fondo: `#f0fdf4` (verde muy claro)
-- Borde: `#22c55e` (verde)
-- Icono: 🗓️ Calendario
-- Encabezado: "Menciones de Ventana (DD-DD mes AAAA)"
+## Verificación Post-Implementación
 
-### Sección "Menciones de Refuerzo"
+1. Hacer una consulta al chat en modo streaming
+2. Verificar en `api_usage_logs` que el nuevo registro tiene `input_tokens > 0`
+3. Refrescar el panel de admin para confirmar que los costes aparecen
 
-- Fondo: `#fef9c3` (amarillo muy claro)
-- Borde: `#eab308` (amarillo)
-- Icono: 📚 Libros
-- Encabezado: "Menciones de Refuerzo"
+## Nota sobre Gemini
 
-### Disclaimer Metodológico
+El streaming de Gemini también necesita revisión. Su API devuelve tokens en el último chunk de forma diferente. Hay que verificar que la función `streamGeminiResponse` también los captura correctamente.
 
-Texto actualizado:
-
-> "**Política de Cero Invención**: Esta bibliografía incluye únicamente fuentes con URLs verificables provenientes de modelos con búsqueda web activa (ChatGPT, Perplexity). Las **Menciones de Ventana** corresponden al período analizado; las **Menciones de Refuerzo** son citas históricas o contextuales. Las afirmaciones de otros modelos (Gemini, DeepSeek, Grok, Qwen) no se incluyen por no poder verificar su procedencia documental."
-
----
-
-## Beneficios
-
-1. **Transparencia metodológica**: El lector sabe qué información es contemporánea vs histórica
-2. **Credibilidad aumentada**: Demuestra rigor en la clasificación de fuentes
-3. **Valor añadido para clientes**: Pueden citar fuentes recientes con confianza
-4. **Defensa ante auditoría**: Evidencia de que el sistema distingue entre tipos de menciones
-5. **Consistencia con memoria**: Implementa el concepto documentado en `chat-intelligence-verified-bibliography`
