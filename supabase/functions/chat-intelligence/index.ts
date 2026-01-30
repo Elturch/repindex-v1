@@ -1126,16 +1126,16 @@ IMPORTANTE:
 |---------|---------|------------|--------|----------|----------|-------------|
 [Incluir TODOS los datos disponibles]
 
-### 3.2 Desglose de Métricas
+### 3.2 Desglose de Métricas (Glosario Canónico)
 Para cada métrica relevante (solo si hay datos):
-- **NVM (Narrativa y Visibilidad Mediática)**: [Score] - [Interpretación ejecutiva]
-- **DRM (Reputación Digital)**: [Score] - [Interpretación ejecutiva]
-- **SIM (Imagen Social)**: [Score] - [Interpretación ejecutiva]
-- **RMM (Riesgo y Gestión de Crisis)**: [Score] - [Interpretación ejecutiva]
-- **CEM (Comunicación y Engagement)**: [Score] - [Interpretación ejecutiva]
-- **GAM (Gobierno y Transparencia)**: [Score] - [Interpretación ejecutiva]
-- **DCM (Diferenciación Competitiva)**: [Score] - [Interpretación ejecutiva]
-- **CXM (Experiencia de Cliente)**: [Score] - [Interpretación ejecutiva]
+- **NVM (Calidad de la Narrativa)**: [Score] - Coherencia del discurso, controversia, verificabilidad
+- **DRM (Fortaleza de Evidencia)**: [Score] - Calidad de fuentes primarias, corroboración
+- **SIM (Autoridad de Fuentes)**: [Score] - Jerarquía de fuentes (T1-T4)
+- **RMM (Actualidad y Empuje)**: [Score] - Frescura temporal de menciones
+- **CEM (Gestión de Controversias)**: [Score] - Exposición a riesgos (inverso: 100=sin riesgo)
+- **GAM (Percepción de Gobierno)**: [Score] - Independencia de gobierno corporativo
+- **DCM (Coherencia Informativa)**: [Score] - Consistencia entre modelos de IA
+- **CXM (Ejecución Corporativa)**: [Score] - Percepción de ejecución en mercado
 
 ### 3.3 Evolución Temporal
 Tendencia de las últimas 4 semanas si hay datos disponibles.
@@ -1658,15 +1658,17 @@ Los titulares deben ser:
 ### Metodología RepIndex
 [Explicación breve del sistema de scoring]
 
-### Glosario de Métricas
-- **Calidad de la Narrativa (NVM)**: Mide cuánto y cómo aparece la empresa en las respuestas de las IAs, evaluando tono y sentimiento
-- **Fortaleza de Evidencia (DRM)**: Mide la solidez documental y la calidad de las fuentes primarias citadas
-- **Autoridad de Fuentes (SIM)**: Mide la mezcla de fuentes por tiers (reguladores, prensa financiera, generalistas, redes)
-- **Actualidad y Empuje (RMM)**: Mide qué tan recientes son los datos y el momentum de la reputación
-- **Controversia y Riesgo (CEM)**: Mide exposición a riesgos judiciales, políticos y laborales (100 = sin riesgo)
-- **Independencia de Gobierno (GAM)**: Mide percepción de buenas prácticas de gobierno corporativo
-- **Integridad del Grafo (DCM)**: Mide la consistencia y coherencia de la información sobre la empresa
-- **Ejecución Corporativa (CXM)**: Mide percepción de la ejecución en mercado y resultados (solo cotizadas)
+### Glosario de Métricas (Canónico)
+- **NVM (Narrative Value Metric → Calidad de la Narrativa)**: Coherencia del discurso, nivel de controversia, afirmaciones verificables
+- **DRM (Data Reliability Metric → Fortaleza de Evidencia)**: Solidez documental, fuentes primarias, corroboración
+- **SIM (Source Integrity Metric → Autoridad de Fuentes)**: Jerarquía de fuentes citadas (T1: reguladores/financieros → T4: redes/opinión)
+- **RMM (Reputational Momentum Metric → Actualidad y Empuje)**: Frescura temporal de menciones en ventana semanal
+- **CEM (Controversy Exposure Metric → Gestión de Controversias)**: Exposición a riesgos judiciales/políticos/laborales (100 = sin riesgo, inverso)
+- **GAM (Governance Autonomy Metric → Percepción de Gobierno)**: Percepción de independencia y buenas prácticas de gobernanza
+- **DCM (Data Consistency Metric → Coherencia Informativa)**: Consistencia de información entre diferentes modelos de IA
+- **CXM (Corporate Execution Metric → Ejecución Corporativa)**: Percepción de ejecución en mercado y cotización (solo cotizadas)
+
+⚠️ NOTA METODOLÓGICA: SIM mide jerarquía de fuentes, NO sostenibilidad. DRM mide calidad de evidencia, NO desempeño financiero. DCM mide coherencia entre IAs, NO innovación digital.
 
 ---
 
@@ -2092,19 +2094,21 @@ async function handleEnrichRequest(
 - ✅ CORRECTO: Simplemente adapta el enfoque y las recomendaciones sin mencionar el perfil
 - ✅ CORRECTO: El contenido debe reflejar las prioridades del perfil SIN decirlo explícitamente
 
-**EXPLICA SIEMPRE LAS MÉTRICAS RepIndex:**
+**EXPLICA SIEMPRE LAS MÉTRICAS RepIndex (GLOSARIO CANÓNICO):**
 El lector NO conoce de memoria qué significa cada métrica. SIEMPRE incluye una explicación breve cuando menciones cualquier métrica:
 
-- **NVM (Narrativa y Visibilidad Mediática)**: Mide la presencia y calidad de cobertura en medios
-- **DRM (Reputación Digital)**: Evalúa la huella digital y percepción online
-- **SIM (Imagen Social)**: Analiza la responsabilidad social y percepción ciudadana
-- **RMM (Riesgo y Gestión de Crisis)**: Mide la vulnerabilidad a crisis reputacionales
-- **CEM (Comunicación y Engagement)**: Evalúa la efectividad comunicativa
-- **GAM (Gobierno y Transparencia)**: Mide la gobernanza corporativa
-- **DCM (Diferenciación Competitiva)**: Evalúa el posicionamiento vs competencia
-- **CXM (Experiencia de Cliente)**: Mide la percepción del cliente/usuario
+- **NVM (Calidad de la Narrativa)**: Coherencia del discurso, nivel de controversia, afirmaciones verificables
+- **DRM (Fortaleza de Evidencia)**: Calidad de fuentes primarias, corroboración, trazabilidad documental
+- **SIM (Autoridad de Fuentes)**: Jerarquía de fuentes citadas (T1: reguladores/financieros → T4: redes/opinión)
+- **RMM (Actualidad y Empuje)**: Frescura temporal de menciones dentro de la ventana analizada
+- **CEM (Gestión de Controversias)**: Exposición a riesgos (puntuación inversa: 100 = sin controversias)
+- **GAM (Percepción de Gobierno)**: Percepción de independencia y buenas prácticas de gobernanza
+- **DCM (Coherencia Informativa)**: Consistencia de información entre diferentes modelos de IA
+- **CXM (Ejecución Corporativa)**: Percepción de ejecución en mercado y cotización (solo cotizadas)
 
-Cuando menciones un score (ej: "CEM: 72"), añade contexto: "CEM (Comunicación y Engagement): 72 puntos, lo que indica..."
+⚠️ ERRORES A EVITAR: SIM NO mide sostenibilidad. DRM NO mide desempeño financiero. DCM NO mide innovación digital.
+
+Cuando menciones un score (ej: "CEM: 72"), añade contexto: "CEM (Gestión de Controversias): 72 puntos, lo que indica baja exposición a riesgos..."
 
 ## IMPORTANTE: ESTO ES UNA EXPANSIÓN, NO UN RESUMEN
 
@@ -4318,34 +4322,41 @@ Tabla comparativa con competidores directos mostrando todas las métricas.
 Para preguntas simples, adapta la profundidad manteniendo el rigor.
 
 ═══════════════════════════════════════════════════════════════════════════════
-                    LAS 8 MÉTRICAS DIMENSIONALES
+                    LAS 8 MÉTRICAS DIMENSIONALES (GLOSARIO CANÓNICO)
 ═══════════════════════════════════════════════════════════════════════════════
 
 SIEMPRE explica cada métrica en su PRIMERA MENCIÓN. Después usa la sigla.
+USA EXCLUSIVAMENTE ESTOS NOMBRES TÉCNICOS. NO inventes interpretaciones alternativas.
 
-• NVM (Narrativa y Visibilidad Mediática): mide la presencia y calidad de 
-  la cobertura en medios tradicionales, especializados y respuestas de IA.
+• NVM (Narrative Value Metric → Calidad de la Narrativa): mide la coherencia 
+  del discurso público, nivel de controversia y afirmaciones verificables.
 
-• DRM (Reputación Digital): evalúa la huella digital y la percepción online, 
-  incluyendo redes sociales, foros y amplificación orgánica de marca.
+• DRM (Data Reliability Metric → Fortaleza de Evidencia): evalúa la calidad 
+  de fuentes primarias, corroboración múltiple y trazabilidad documental.
 
-• SIM (Imagen Social): analiza la responsabilidad social corporativa y la 
-  percepción ciudadana de la marca como actor social.
+• SIM (Source Integrity Metric → Autoridad de Fuentes): analiza la jerarquía 
+  de fuentes citadas. T1: reguladores/financieros → T4: redes/opinión.
+  ⚠️ NO mide sostenibilidad/ESG. Mide JERARQUÍA DE FUENTES.
 
-• RMM (Riesgo y Gestión de Crisis): mide la vulnerabilidad percibida y la 
-  capacidad de respuesta ante crisis reputacionales.
+• RMM (Reputational Momentum Metric → Actualidad y Empuje): mide la frescura 
+  temporal de menciones dentro de la ventana semanal analizada.
+  ⚠️ NO mide marketing/branding. Mide FRESCURA TEMPORAL.
 
-• CEM (Comunicación y Engagement): evalúa la efectividad comunicativa y la 
-  exposición al riesgo. Un CEM de 90-100 = ALTA exposición a crisis.
+• CEM (Controversy Exposure Metric → Gestión de Controversias): evalúa la 
+  exposición a riesgos judiciales, políticos y laborales. 
+  Puntuación INVERSA: 100 = sin controversias, 0 = máxima exposición.
 
-• GAM (Gobierno y Transparencia): mide la calidad de la gobernanza 
-  corporativa y la transparencia informativa.
+• GAM (Governance Autonomy Metric → Percepción de Gobierno): mide la 
+  percepción de independencia y buenas prácticas de gobernanza corporativa.
+  ⚠️ NO mide gestión de talento/RRHH. Mide GOBIERNO CORPORATIVO.
 
-• DCM (Diferenciación Competitiva): evalúa el posicionamiento único frente 
-  a competidores directos.
+• DCM (Data Consistency Metric → Coherencia Informativa): evalúa la 
+  consistencia de información sobre la empresa entre diferentes modelos de IA.
+  ⚠️ NO mide innovación digital. Mide COHERENCIA ENTRE MODELOS.
 
-• CXM (Experiencia de Cliente): mide la satisfacción, confianza y percepción 
-  del cliente/usuario final.
+• CXM (Corporate Execution Metric → Ejecución Corporativa): mide la percepción 
+  de ejecución en mercado y correlación con cotización bursátil (solo cotizadas).
+  ⚠️ NO mide experiencia del cliente. Mide EJECUCIÓN CORPORATIVA.
 
 ESCALA RIX GLOBAL (0-100):
 • 80-100: Excelencia reputacional
@@ -4355,14 +4366,13 @@ ESCALA RIX GLOBAL (0-100):
 • 0-34: Reputación crítica
 
 EJEMPLO DE INTEGRACIÓN CORRECTA:
-"La Narrativa y Visibilidad Mediática (NVM, que mide la presencia en medios 
-y respuestas de IA) alcanza 53 puntos de media, impulsada por los contratos 
-internacionales recientes. Sin embargo, la Reputación Digital (DRM, que 
-evalúa la huella online) se mantiene baja en 29,8 puntos, reflejando que 
-la conversación online depende de foros de inversores minoristas más que 
-de cobertura institucional. Esta brecha de 23 puntos entre NVM y DRM es 
-sintomática de una comunicación corporativa que genera titulares pero no 
-consigue amplificación orgánica."
+"La Calidad de la Narrativa (NVM, que mide coherencia del discurso y 
+afirmaciones verificables) alcanza 53 puntos de media, impulsada por los 
+contratos internacionales recientes. Sin embargo, la Fortaleza de Evidencia 
+(DRM, que evalúa calidad de fuentes primarias) se mantiene baja en 29,8 
+puntos, reflejando documentación insuficiente en las afirmaciones de las IAs.
+Esta brecha de 23 puntos entre NVM y DRM indica una narrativa atractiva pero 
+con poca evidencia verificable que la respalde."
 
 ═══════════════════════════════════════════════════════════════════════════════
                     TABLAS DE DATOS EN INFORMES

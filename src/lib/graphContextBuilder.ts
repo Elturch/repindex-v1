@@ -296,18 +296,19 @@ export function formatGraphContextForPrompt(contexts: StructuredGraphContext[]):
       lines.push(`- Modelos analizados: ${ctx.primary_entity.models_analyzed.join(', ')}`);
     }
     
-    // Metrics if available
+    // Metrics if available - using CANONICAL metric names
     if (Object.values(ctx.primary_entity.latest_metrics).some(v => v !== null)) {
       lines.push('\n### Métricas Detalladas:');
+      // CANONICAL metric labels from rixMetricsGlossary.ts
       const metricLabels: Record<string, string> = {
-        nvm: 'NVM (Narrativa y Visibilidad)',
-        drm: 'DRM (Reputación Digital)',
-        sim: 'SIM (Imagen Social)',
-        rmm: 'RMM (Riesgo y Crisis)',
-        cem: 'CEM (Comunicación)',
-        gam: 'GAM (Gobierno)',
-        dcm: 'DCM (Diferenciación)',
-        cxm: 'CXM (Experiencia Cliente)',
+        nvm: 'NVM (Calidad de la Narrativa)',
+        drm: 'DRM (Fortaleza de Evidencia)',
+        sim: 'SIM (Autoridad de Fuentes)',
+        rmm: 'RMM (Actualidad y Empuje)',
+        cem: 'CEM (Gestión de Controversias)',
+        gam: 'GAM (Percepción de Gobierno)',
+        dcm: 'DCM (Coherencia Informativa)',
+        cxm: 'CXM (Ejecución Corporativa)',
       };
       for (const [key, value] of Object.entries(ctx.primary_entity.latest_metrics)) {
         if (value !== null) {

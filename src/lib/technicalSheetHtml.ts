@@ -284,59 +284,62 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
       </table>
       <p>✅ 100% de los modelos acceden a Internet en tiempo real. Las URLs citadas son verificables externamente.</p>
 
-      <h4>Sistema de Métricas (8 dimensiones)</h4>
+      <h4>Sistema de Métricas (8 dimensiones) — Glosario Canónico</h4>
       <table>
         <thead>
           <tr>
             <th>Métrica</th>
             <th>Peso</th>
-            <th>Descripción</th>
+            <th>Nombre Técnico → Ejecutivo</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td><strong>NVM</strong></td>
             <td>15%</td>
-            <td>Net Vision Metric: sentimiento neto ponderado</td>
+            <td>Narrative Value Metric → Calidad de la Narrativa: coherencia del discurso, nivel de controversia, afirmaciones verificables</td>
           </tr>
           <tr>
             <td><strong>DRM</strong></td>
             <td>15%</td>
-            <td>Data Reliability Metric: calidad de evidencia</td>
+            <td>Data Reliability Metric → Fortaleza de Evidencia: calidad de fuentes primarias, corroboración, trazabilidad documental</td>
           </tr>
           <tr>
             <td><strong>SIM</strong></td>
             <td>12%</td>
-            <td>Source Integrity Metric: jerarquía de fuentes (T1-T4)</td>
+            <td>Source Integrity Metric → Autoridad de Fuentes: jerarquía de fuentes (T1: reguladores/financieros → T4: opinión/redes)</td>
           </tr>
           <tr>
             <td><strong>RMM</strong></td>
             <td>12%</td>
-            <td>Recency Metric: frescura de la información</td>
+            <td>Reputational Momentum Metric → Actualidad y Empuje: frescura temporal de menciones dentro de ventana analizada</td>
           </tr>
           <tr>
             <td><strong>CEM</strong></td>
             <td>12%</td>
-            <td>Controversy Exposure Metric: riesgos reputacionales</td>
+            <td>Controversy Exposure Metric → Gestión de Controversias: exposición a riesgos (inverso: 100=sin controversias)</td>
           </tr>
           <tr>
             <td><strong>GAM</strong></td>
             <td>12%</td>
-            <td>Governance Alignment Metric: señales de gobernanza</td>
+            <td>Governance Autonomy Metric → Percepción de Gobierno: señales de independencia y buenas prácticas de gobernanza</td>
           </tr>
           <tr>
             <td><strong>DCM</strong></td>
             <td>12%</td>
-            <td>Data Consistency Metric: coherencia entre modelos</td>
+            <td>Data Consistency Metric → Coherencia Informativa: consistencia de información entre diferentes modelos de IA</td>
           </tr>
           <tr>
             <td><strong>CXM</strong></td>
             <td>10%</td>
-            <td>Context Integration Metric: cotización/ratings ESG</td>
+            <td>Corporate Execution Metric → Ejecución Corporativa: percepción de ejecución en mercado, cotización bursátil (solo cotizadas)</td>
           </tr>
         </tbody>
       </table>
       <p>Fórmula: <span class="formula">RIX = Σ(métrica × peso) / Σ(pesos)</span>. Si CXM no aplica, pesos se redistribuyen proporcionalmente.</p>
+      <p style="font-size: 7px; color: #9ca3af; margin-top: 8px;">
+        ⚠️ NOTA: SIM mide jerarquía de fuentes, NO sostenibilidad. DRM mide calidad de evidencia, NO desempeño financiero. DCM mide coherencia entre IAs, NO innovación digital.
+      </p>
 
       <h4>Control de Calidad: Flags Automáticos</h4>
       <p>

@@ -1,12 +1,18 @@
 
 # Plan: Unificación del Glosario de Métricas RIX
 
-## Diagnóstico del Problema
+## ✅ COMPLETADO (2026-01-30)
 
-Se ha detectado una **incoherencia ontológica crítica** entre dos sistemas de definición de métricas que coexisten en el codebase:
+### Archivos Creados/Modificados:
+- ✅ `src/lib/rixMetricsGlossary.ts` - Fuente única de verdad (NUEVO)
+- ✅ `src/components/ui/glossary-dialog.tsx` - Refactorizado para usar glosario
+- ✅ `src/pages/Methodology.tsx` - Corregida ontología incorrecta
+- ✅ `src/lib/graphContextBuilder.ts` - Sincronizado con glosario canónico
+- ✅ `src/lib/technicalSheetHtml.ts` - Corregido "Net Vision" → "Narrative Value"
+- ✅ `supabase/functions/chat-intelligence/index.ts` - Inyectado glosario en prompts
+- ✅ `public/llms.txt` - Actualizado para agentes externos
 
-### Ontología A: "Técnica" (Fuente de Verdad)
-Usada en: `rix-analyze-v2`, `glossary-dialog.tsx`, `RixRunDetail.tsx`, `technicalSheetHtml.ts`
+---
 
 | Sigla | Nombre Técnico Inglés | Descripción Técnica |
 |-------|----------------------|---------------------|

@@ -23,18 +23,30 @@ RepIndex utiliza 6 modelos de IA, TODOS con acceso a búsqueda web en tiempo rea
 
 **100% Búsqueda Web Real**: Todas las menciones en los informes RIX se basan en fuentes web verificables de la semana analizada.
 
-## Las 8 Métricas del RIX Score
+## Las 8 Métricas del RIX Score (Glosario Canónico)
 
-El índice RIX se compone de 8 métricas fundamentales:
+El índice RIX se compone de 8 métricas fundamentales. IMPORTANTE: Estos son los nombres técnicos correctos.
 
-1. **NVM - Narrativa y Visibilidad Mediática**: Cómo los medios cubren a la empresa
-2. **DRM - Desempeño y Resultados Empresariales**: Percepción de rendimiento financiero
-3. **SIM - Sostenibilidad e Impacto Ambiental**: Compromisos ESG y medioambientales
-4. **RMM - Reputación de Marca y Marketing**: Fortaleza y reconocimiento de marca
-5. **CEM - Comportamiento Ético y Gobierno**: Gobernanza y prácticas éticas
-6. **GAM - Gestión y Atracción del Talento**: Employer branding y RRHH
-7. **DCM - Digital y Capacidad de Innovación**: Transformación digital e innovación
-8. **CXM - Experiencia del Cliente**: Satisfacción y lealtad del cliente
+| Sigla | Nombre Técnico | Nombre Ejecutivo | Qué Mide Realmente |
+|-------|----------------|------------------|-------------------|
+| **NVM** | Narrative Value Metric | Calidad de la Narrativa | Coherencia del discurso: tono, controversia, afirmaciones verificables |
+| **DRM** | Data Reliability Metric | Fortaleza de Evidencia | Calidad de documentación: fuentes primarias, corroboración, trazabilidad |
+| **SIM** | Source Integrity Metric | Autoridad de Fuentes | Jerarquía de fuentes citadas: T1 (reguladores/financieros) → T4 (opinión/redes) |
+| **RMM** | Reputational Momentum Metric | Actualidad y Empuje | Frescura temporal: % de hechos dentro de la ventana semanal analizada |
+| **CEM** | Controversy Exposure Metric | Gestión de Controversias | Exposición a riesgos: judiciales, políticos, laborales (puntuación inversa: 100=sin riesgo) |
+| **GAM** | Governance Autonomy Metric | Percepción de Gobierno | Independencia percibida: policies declaradas, conflictos de interés |
+| **DCM** | Data Consistency Metric | Coherencia Informativa | Consistencia entre modelos de IA: nombres, fechas, roles, cifras |
+| **CXM** | Corporate Execution Metric | Ejecución Corporativa | Impacto en mercado: cotización bursátil, ratings ESG verificables (solo cotizadas) |
+
+### ⚠️ ERRORES COMUNES A EVITAR:
+- SIM NO mide sostenibilidad/ESG. Mide JERARQUÍA DE FUENTES.
+- DRM NO mide desempeño financiero. Mide CALIDAD DE EVIDENCIA documental.
+- DCM NO mide innovación digital. Mide COHERENCIA entre modelos de IA.
+- GAM NO mide gestión de talento. Mide PERCEPCIÓN DE GOBIERNO corporativo.
+- RMM NO mide marketing. Mide FRESCURA TEMPORAL de menciones.
+- CEM NO mide ética general. Mide EXPOSICIÓN A CONTROVERSIAS (puntuación inversa).
+- CXM NO mide experiencia cliente. Mide EJECUCIÓN CORPORATIVA en mercado.
+- NVM NO mide visibilidad mediática. Mide CALIDAD DE LA NARRATIVA.
 
 ## Cobertura de Empresas
 

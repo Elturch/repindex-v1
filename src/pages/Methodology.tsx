@@ -6,78 +6,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Brain, 
   BarChart3, 
-  Leaf, 
-  Award, 
-  Shield, 
-  Users, 
-  Cpu, 
-  Heart,
   Calendar,
   Building2,
   TrendingUp,
   Globe,
-  CheckCircle2
+  CheckCircle2,
+  Award,
+  Shield
 } from "lucide-react";
 import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
+import { RIX_METRICS_GLOSSARY, getMetricIcon } from "@/lib/rixMetricsGlossary";
 
-const metrics = [
-  {
-    code: "NVM",
-    name: "Narrativa y Visibilidad Mediática",
-    description: "Evalúa cómo los medios de comunicación cubren a la empresa. Incluye frecuencia de menciones, tono de la cobertura y alcance mediático percibido por las IAs.",
-    icon: BarChart3,
-    color: "text-blue-500"
-  },
-  {
-    code: "DRM",
-    name: "Desempeño y Resultados Empresariales",
-    description: "Mide la percepción del rendimiento financiero y operativo. Las IAs evalúan resultados, crecimiento, estabilidad y proyecciones de la empresa.",
-    icon: TrendingUp,
-    color: "text-green-500"
-  },
-  {
-    code: "SIM",
-    name: "Sostenibilidad e Impacto Ambiental",
-    description: "Analiza los compromisos ESG y medioambientales. Incluye iniciativas de sostenibilidad, huella de carbono y responsabilidad ambiental.",
-    icon: Leaf,
-    color: "text-emerald-500"
-  },
-  {
-    code: "RMM",
-    name: "Reputación de Marca y Marketing",
-    description: "Evalúa la fortaleza y reconocimiento de marca. Considera posicionamiento, diferenciación, campañas publicitarias y percepción del consumidor.",
-    icon: Award,
-    color: "text-purple-500"
-  },
-  {
-    code: "CEM",
-    name: "Comportamiento Ético y Gobierno",
-    description: "Mide la gobernanza corporativa y prácticas éticas. Incluye transparencia, cumplimiento normativo, diversidad en órganos de gobierno y ética empresarial.",
-    icon: Shield,
-    color: "text-amber-500"
-  },
-  {
-    code: "GAM",
-    name: "Gestión y Atracción del Talento",
-    description: "Analiza el employer branding y gestión de RRHH. Evalúa cultura empresarial, satisfacción de empleados, desarrollo profesional y atracción de talento.",
-    icon: Users,
-    color: "text-pink-500"
-  },
-  {
-    code: "DCM",
-    name: "Digital y Capacidad de Innovación",
-    description: "Mide la transformación digital e innovación. Incluye inversión en I+D, adopción tecnológica, patentes y capacidad de adaptación al cambio.",
-    icon: Cpu,
-    color: "text-cyan-500"
-  },
-  {
-    code: "CXM",
-    name: "Experiencia del Cliente",
-    description: "Evalúa la satisfacción y lealtad del cliente. Analiza calidad de servicio, atención al cliente, opiniones de usuarios y fidelización.",
-    icon: Heart,
-    color: "text-red-500"
-  }
-];
+// Build metrics array from canonical glossary
+const metrics = RIX_METRICS_GLOSSARY.map((metric) => ({
+  code: metric.acronym,
+  name: metric.executiveName,
+  technicalName: metric.technicalName,
+  description: metric.executiveDescription,
+  icon: getMetricIcon(metric.acronym),
+  color: metric.colorClass,
+  weight: `${Math.round(metric.weight * 100)}%`,
+  inverseScoring: metric.inverseScoring,
+}));
 
 const aiModels = [
   {
