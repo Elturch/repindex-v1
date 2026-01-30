@@ -586,11 +586,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
                 try {
                   const parsed = JSON.parse(data);
+                  console.log('[ChatContext SSE] Parsed event type:', parsed.type);
                   
                   if (parsed.type === 'start') {
                     // Capture initial metadata including chart data (sent early)
                     startMetadata = parsed.metadata || {};
-                    console.log('[ChatContext] Received start event with chartData:', !!startMetadata.chartData);
+                    console.log('[ChatContext SSE] START event received, chartData present:', !!startMetadata.chartData);
+                    if (startMetadata.chartData) {
+                      console.log('[ChatContext SSE] chartData type:', startMetadata.chartData.type);
+                      console.log('[ChatContext SSE] chartData data length:', startMetadata.chartData.data?.length);
+                    }
                   } else if (parsed.type === 'chunk' && parsed.text) {
                     accumulatedContent += parsed.text;
                     // Update the last message with accumulated content
@@ -603,15 +608,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
                       return updated;
                     });
                   } else if (parsed.type === 'done') {
+                    console.log('[ChatContext SSE] DONE event received');
                     // Capture final metadata
                     suggestedQuestions = parsed.suggestedQuestions || [];
                     drumrollQuestion = parsed.drumrollQuestion || null;
                     finalMetadata = parsed.metadata || {};
+                    console.log('[ChatContext SSE] finalMetadata chartData:', !!finalMetadata?.chartData);
                   } else if (parsed.type === 'error') {
                     throw new Error(parsed.error || 'Streaming error');
                   }
-                } catch {
-                  // Ignore parse errors for incomplete chunks
+                } catch (parseError) {
+                  console.error('[ChatContext SSE] Parse error:', parseError, 'for data:', data.substring(0, 200));
                 }
               }
             }
@@ -631,6 +638,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
 
           // Mark streaming as complete and add final metadata including methodology
+          console.log('[ChatContext SSE] Final metadata assignment:');
+          console.log('  - startMetadata:', !!startMetadata, startMetadata?.chartData ? 'HAS chartData' : 'NO chartData');
+          console.log('  - finalMetadata:', !!finalMetadata, finalMetadata?.chartData ? 'HAS chartData' : 'NO chartData');
+          
           setMessages(prev => {
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
