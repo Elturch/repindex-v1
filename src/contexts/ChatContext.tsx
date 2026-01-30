@@ -1281,18 +1281,32 @@ export function ChatProvider({ children }: ChatProviderProps) {
           </main>
           
           ${(() => {
-            // Collect all verified sources from assistant messages
+            // Collect all verified sources and period dates from assistant messages
             const allSources: VerifiedSource[] = [];
+            let periodFrom: string | null = null;
+            let periodTo: string | null = null;
+            
             messages.forEach(msg => {
-              if (msg.role === 'assistant' && msg.metadata?.verifiedSources) {
-                allSources.push(...msg.metadata.verifiedSources);
+              if (msg.role === 'assistant') {
+                if (msg.metadata?.verifiedSources) {
+                  allSources.push(...msg.metadata.verifiedSources);
+                }
+                // Extract period dates from methodology metadata
+                if (msg.metadata?.methodology) {
+                  if (msg.metadata.methodology.periodFrom && !periodFrom) {
+                    periodFrom = msg.metadata.methodology.periodFrom;
+                  }
+                  if (msg.metadata.methodology.periodTo && !periodTo) {
+                    periodTo = msg.metadata.methodology.periodTo;
+                  }
+                }
               }
             });
             // Deduplicate by URL
             const uniqueSources = allSources.filter((source, index, self) => 
               index === self.findIndex(s => s.url === source.url)
             );
-            return generateBibliographyHtml(uniqueSources);
+            return generateBibliographyHtml(uniqueSources, periodFrom, periodTo);
           })()}
           
           <footer class="report-footer">
