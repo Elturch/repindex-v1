@@ -8,6 +8,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Simple in-memory rate limiting (resets on cold start)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const MAX_REQUESTS_PER_WINDOW = 5; // 5 requests per hour per IP
+
+function isRateLimited(clientIp: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(clientIp);
+  
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(clientIp, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  
+  if (entry.count >= MAX_REQUESTS_PER_WINDOW) {
+    return true;
+  }
+  
+  entry.count++;
+  return false;
+}
+
+// Clean up old entries periodically
+function cleanupRateLimitMap() {
+  const now = Date.now();
+  for (const [key, value] of rateLimitMap.entries()) {
+    if (now > value.resetAt) {
+      rateLimitMap.delete(key);
+    }
+  }
+}
+
 interface ContactRequest {
   name: string;
   email: string;
@@ -158,13 +190,30 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    // Rate limiting check
+    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || 
+                     req.headers.get("cf-connecting-ip") || 
+                     "unknown";
+    
+    // Cleanup old entries (simple garbage collection)
+    if (Math.random() < 0.1) cleanupRateLimitMap();
+    
+    if (isRateLimited(clientIp)) {
+      console.log(`Rate limit exceeded for IP: ${clientIp}`);
+      return new Response(
+        JSON.stringify({ error: "Demasiadas solicitudes. Por favor, inténtalo más tarde." }),
+        { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
     const data: ContactRequest = await req.json();
     
     console.log("Contact form submission received:", { 
       name: data.name, 
       email: data.email, 
       company: data.company,
-      messageLength: data.message?.length 
+      messageLength: data.message?.length,
+      clientIp: clientIp.substring(0, 10) + "***" // Log partial IP for debugging
     });
 
     // Validate request
