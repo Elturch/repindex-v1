@@ -1,88 +1,62 @@
 
 
-# Plan: Actualizar CRONs Automáticamente via Edge Function
+# Plan: Actualizar CRONs con cron.alter_job()
 
-## Por qué no puedo hacerlo directamente
+## Diagnóstico
 
-| Herramienta | Capacidad |
-|-------------|-----------|
-| `supabase--read-query` | Solo SELECT (lectura) |
-| `supabase--deploy_edge_functions` | Puedo crear/desplegar funciones |
-| `supabase--curl_edge_functions` | Puedo ejecutar funciones |
+El error `permission denied for table job` ocurre porque:
+1. La tabla `cron.job` pertenece al sistema pg_cron
+2. El `UPDATE` directo está bloqueado incluso para postgres via PostgREST
+3. La función `execute_sql` tampoco hereda permisos suficientes
 
-La tabla `cron.job` requiere permisos de superusuario (`postgres`). Pero puedo crear una Edge Function con `SUPABASE_SERVICE_ROLE_KEY` que ejecute el SQL.
+## Solución: Usar cron.alter_job() nativo
 
----
-
-## Solución Propuesta
-
-### Paso 1: Crear Edge Function `update-cron-schedules`
-
-Crearé una función temporal que:
-1. Se conecta a la base de datos con el service role
-2. Ejecuta los 34 UPDATE de los CRONs
-3. Devuelve confirmación
-
-### Paso 2: Desplegar y Ejecutar
-
-1. Despliego la función automáticamente
-2. La ejecuto con `curl_edge_functions`
-3. Verifico que los schedules se actualizaron
-
-### Paso 3: Verificar Cambios
-
-Consulto `cron.job` para confirmar que todos muestran el nuevo horario.
-
----
+pg_cron proporciona una función oficial `cron.alter_job()` que SÍ puede modificar los schedules sin necesidad de UPDATE directo.
 
 ## Cambios Técnicos
 
-### Nuevo archivo: `supabase/functions/update-cron-schedules/index.ts`
+### 1. Modificar Edge Function `update-cron-schedules`
+
+Cambiaré la estrategia para usar `cron.alter_job(job_id, schedule => '...')` en lugar de UPDATE:
 
 ```typescript
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// Antes (no funciona):
+const sql = `UPDATE cron.job SET schedule = '0 0 * * 0' WHERE jobname = 'rix-sweep-phase-01'`
 
-Deno.serve(async (req) => {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    db: { schema: 'cron' }
-  })
-
-  // Usar la función execute_sql existente (SECURITY DEFINER)
-  const updates = [
-    "UPDATE cron.job SET schedule = '0 0 * * 0' WHERE jobname = 'rix-sweep-phase-01'",
-    "UPDATE cron.job SET schedule = '5 0 * * 0' WHERE jobname = 'rix-sweep-phase-02'",
-    // ... los 34 updates
-  ]
-
-  const results = []
-  for (const sql of updates) {
-    const { data, error } = await supabase.rpc('execute_sql', { sql_query: sql })
-    results.push({ sql: sql.substring(0, 50), success: !error, error })
-  }
-
-  return new Response(JSON.stringify({ success: true, results }))
-})
+// Después (usar función nativa):
+const sql = `SELECT cron.alter_job(10, schedule => '0 0 * * 0')`
 ```
 
----
+Usaré los `jobid` (10-43) que ya tenemos identificados para las 34 fases.
+
+### 2. Mapping de jobid a nuevo schedule
+
+| jobid | Fase | Nuevo Schedule | Hora CET |
+|-------|------|----------------|----------|
+| 10 | 01 | `0 0 * * 0` | 01:00 |
+| 11 | 02 | `5 0 * * 0` | 01:05 |
+| 12 | 03 | `10 0 * * 0` | 01:10 |
+| ... | ... | ... | ... |
+| 42 | 33 | `40 2 * * 0` | 03:40 |
+| 43 | 34 | `45 2 * * 0` | 03:45 |
+
+### 3. Archivos a Modificar
+
+- `supabase/functions/update-cron-schedules/index.ts`
+  - Reemplazar UPDATE por SELECT cron.alter_job()
+  - Usar jobid directos (10-43) en lugar de jobname
 
 ## Resultado Esperado
 
-| Antes | Después |
-|-------|---------|
-| Fase 01: `0 4 * * 0` (05:00 CET) | Fase 01: `0 0 * * 0` (01:00 CET) |
-| Fase 34: `45 6 * * 0` (07:45 CET) | Fase 34: `45 2 * * 0` (03:45 CET) |
+- Los 34 CRONs se actualizan automáticamente
+- Fase 01 empieza a las 01:00 CET (00:00 UTC)
+- Fase 34 termina a las 03:45 CET (02:45 UTC)
+- Total sweep: ~2h 45min cada domingo
 
----
+## Pasos de Implementación
 
-## Tiempo Estimado
-
-- Crear función: 2 minutos
-- Desplegar: 1 minuto
-- Ejecutar y verificar: 2 minutos
-
-**Total: ~5 minutos y no tienes que hacer nada manual**
+1. Actualizar la Edge Function con la nueva lógica
+2. Desplegar la función
+3. Ejecutar la función via curl
+4. Verificar que los schedules cambiaron consultando cron.job
 
