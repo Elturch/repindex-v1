@@ -18,43 +18,45 @@ Deno.serve(async (req) => {
       auth: { persistSession: false }
     })
 
-    // Generate all 34 phase updates
+    // Mapping: jobid 10-43 correspond to phases 01-34
     // New schedule: start at 00:00 UTC (01:00 CET), 5 min intervals
-    const updates: { jobname: string; schedule: string }[] = []
+    const updates: { jobid: number; phase: number; schedule: string }[] = []
     
     for (let phase = 1; phase <= 34; phase++) {
+      const jobid = phase + 9  // jobid 10 = phase 1, jobid 43 = phase 34
       const totalMinutes = (phase - 1) * 5  // 0, 5, 10, 15...
       const hour = Math.floor(totalMinutes / 60)
       const minute = totalMinutes % 60
       
-      const phaseStr = phase.toString().padStart(2, '0')
       updates.push({
-        jobname: `rix-sweep-phase-${phaseStr}`,
+        jobid,
+        phase,
         schedule: `${minute} ${hour} * * 0`  // Every Sunday at the specified time
       })
     }
 
-    console.log(`[update-cron-schedules] Updating ${updates.length} cron jobs...`)
+    console.log(`[update-cron-schedules] Updating ${updates.length} cron jobs using cron.alter_job()...`)
 
-    const results: { jobname: string; schedule: string; success: boolean; error?: string }[] = []
+    const results: { jobid: number; phase: number; schedule: string; success: boolean; error?: string }[] = []
     
     for (const update of updates) {
-      // Use the execute_sql SECURITY DEFINER function
-      const sql = `UPDATE cron.job SET schedule = '${update.schedule}' WHERE jobname = '${update.jobname}'`
+      // Use cron.alter_job() native function instead of UPDATE
+      const sql = `SELECT cron.alter_job(${update.jobid}, schedule => '${update.schedule}')`
       
       const { data, error } = await supabase.rpc('execute_sql', { sql_query: sql })
       
       results.push({
-        jobname: update.jobname,
+        jobid: update.jobid,
+        phase: update.phase,
         schedule: update.schedule,
         success: !error,
         error: error?.message
       })
       
       if (error) {
-        console.error(`[update-cron-schedules] Failed to update ${update.jobname}:`, error.message)
+        console.error(`[update-cron-schedules] Failed to update jobid ${update.jobid} (phase ${update.phase}):`, error.message)
       } else {
-        console.log(`[update-cron-schedules] Updated ${update.jobname} to ${update.schedule}`)
+        console.log(`[update-cron-schedules] Updated jobid ${update.jobid} (phase ${update.phase}) to ${update.schedule}`)
       }
     }
 
