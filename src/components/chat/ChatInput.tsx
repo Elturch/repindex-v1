@@ -291,7 +291,7 @@ export function ChatInput({
             </TooltipTrigger>
             {!isSessionConfigured && value.trim() && (
               <TooltipContent side="top">
-                <p className="text-xs">Selecciona profundidad y perfil para enviar</p>
+                <p className="text-xs">Selecciona tu perspectiva profesional para enviar</p>
               </TooltipContent>
             )}
           </Tooltip>

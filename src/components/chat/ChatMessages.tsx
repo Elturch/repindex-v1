@@ -8,10 +8,11 @@ import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
 import { ResponseFeedback } from "./ResponseFeedback";
 import { MethodologyFooter } from "./MethodologyFooter";
+import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight } from "lucide-react";
-import { Message } from "@/contexts/ChatContext";
+import { Message, useChatContext } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,6 +47,7 @@ export function ChatMessages({
   const vectorStoreStatus = useVectorStoreStatus();
   const tr = getChatTranslations(languageCode);
   const { user } = useAuth();
+  const { configureSession } = useChatContext();
   
   // Smart suggestions with live data and personalization
   const { 
@@ -288,6 +290,15 @@ export function ChatMessages({
               {message.role === 'assistant' && !message.isStreaming && message.metadata?.methodology?.hasRixData && (
                 <MethodologyFooter 
                   metadata={message.metadata.methodology}
+                  languageCode={languageCode}
+                />
+              )}
+
+              {/* Role Enrichment Bar - allows changing perspective for next questions */}
+              {message.role === 'assistant' && !message.isStreaming && !compact && (
+                <RoleEnrichmentBar
+                  onEnrich={(roleId) => configureSession(roleId)}
+                  disabled={isLoading}
                   languageCode={languageCode}
                 />
               )}
