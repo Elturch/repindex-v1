@@ -1,75 +1,124 @@
 
-# Plan: Actualizar Descripción de DCM con Foco en Datos Estructurales e Impacto Reputacional
+# Plan: Añadir Tooltips Explicativos a las Métricas del Dashboard
 
 ## Objetivo
 
-Mejorar la descripción de DCM (Data Consistency Metric) para que:
-1. Especifique qué datos estructurales se evalúan (actividad, liderazgo, estructura corporativa, relaciones)
-2. Liste explícitamente los 6 modelos analizados
-3. Conecte la inconsistencia con el impacto reputacional ("erosiona credibilidad y debilita el edificio reputacional")
+Mostrar un tooltip explicativo al pasar el cursor por encima de cada cabecera de métrica (RIX, NVM, DRM, SIM, etc.) en la tabla del Dashboard, **sin interferir** con la funcionalidad de ordenación existente (click para ordenar ascendente/descendente).
 
-## Cambios Propuestos
+## Diagnóstico Actual
 
-### Cambio 1: Actualizar `executiveDescription` de DCM
+| Elemento | Estado |
+|----------|--------|
+| Cabeceras de métricas | Click funciona para ordenar (3 estados: desc → asc → reset) |
+| Tooltips | Componente existe (`src/components/ui/tooltip.tsx`) pero no se usa en Dashboard |
+| Glosario canónico | Contiene `executiveName` para cada métrica (ej: NVM → "Calidad de la Narrativa") |
 
-**Archivo**: `src/lib/rixMetricsGlossary.ts`
-**Ubicación**: Línea 140
+## Solución Propuesta
 
-| Campo | Valor Actual | Valor Nuevo |
-|-------|--------------|-------------|
-| `executiveDescription` | "Evalúa la consistencia de la información sobre la empresa entre diferentes modelos de IA. Un DCM alto indica que ChatGPT, Gemini, Perplexity, etc. citan datos coherentes entre sí." | "Mide la coherencia de los datos estructurales clave de la empresa (actividad, liderazgo, estructura corporativa, relaciones) entre los 6 modelos de IA analizados (ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen). Un DCM alto indica que los modelos coinciden en los hechos fundamentales. La inconsistencia en estos datos erosiona la credibilidad y debilita el resto del edificio reputacional algorítmico." |
+### Cambio 1: Importar Tooltip y Glosario en Dashboard
 
-### Cambio 2: Actualizar `technicalDescription` de DCM
+Añadir las importaciones necesarias:
 
-**Archivo**: `src/lib/rixMetricsGlossary.ts`
-**Ubicación**: Línea 138
+```typescript
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { getMetricByAcronym } from "@/lib/rixMetricsGlossary";
+```
 
-| Campo | Valor Actual | Valor Nuevo |
-|-------|--------------|-------------|
-| `technicalDescription` | "DCM = 1 - (σ_intermodelo / μ_intermodelo). Mide coherencia de información sobre la empresa entre diferentes modelos de IA (nombres, fechas, roles, cifras)." | "DCM = 1 - (σ_intermodelo / μ_intermodelo). Evalúa coherencia de datos estructurales (actividad principal, liderazgo ejecutivo, estructura accionarial, relaciones corporativas) entre los 6 modelos. Factores: coincidencia en CEO/presidente, sector declarado, fechas de fundación, cifras de empleados, principales accionistas." |
+### Cambio 2: Envolver la Tabla en TooltipProvider
 
-### Cambio 3: Actualizar `mappingJustification` de DCM
+El `TooltipProvider` debe envolver la tabla para que los tooltips funcionen.
 
-**Archivo**: `src/lib/rixMetricsGlossary.ts`
-**Ubicación**: Línea 141
+### Cambio 3: Añadir Tooltip a Cada Cabecera de Métrica
 
-| Campo | Valor Actual | Valor Nuevo |
-|-------|--------------|-------------|
-| `mappingJustification` | "El nombre ejecutivo 'Coherencia Informativa' refleja que esta métrica mide consistencia entre modelos, NO capacidad digital ni innovación tecnológica." | "El nombre ejecutivo 'Coherencia Informativa' refleja que esta métrica mide estabilidad de datos estructurales clave entre modelos de IA. La inconsistencia en información fundamental (liderazgo, actividad, estructura) erosiona la credibilidad y debilita las demás métricas reputacionales. NO mide capacidad digital ni innovación tecnológica." |
-
-### Cambio 4: Actualizar el prompt del glosario para LLMs
-
-**Archivo**: `src/lib/rixMetricsGlossary.ts`
-**Ubicación**: Función `getMetricsGlossaryPrompt()` (línea 213)
-
-Añadir clarificación específica para DCM:
+Modificar el renderizado de las cabeceras (líneas 710-736) para que cada `<TableHead>` tenga un tooltip:
 
 ```
-- **DCM** NO mide innovación digital. Mide COHERENCIA DE DATOS ESTRUCTURALES 
-  (actividad, liderazgo, estructura, relaciones) entre los 6 modelos de IA. 
-  La inconsistencia erosiona credibilidad.
+text
+┌─────────────────────────────────────────────────────────────┐
+│  TableHead (clickeable para ordenar)                        │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │  Tooltip                                                ││
+│  │  ┌─────────────────────────────────────────────────────┐││
+│  │  │  TooltipTrigger (span con asChild={false})         │││
+│  │  │    → NVM + flechas de ordenación                   │││
+│  │  └─────────────────────────────────────────────────────┘││
+│  │  ┌─────────────────────────────────────────────────────┐││
+│  │  │  TooltipContent                                    │││
+│  │  │    → "Calidad de la Narrativa"                     │││
+│  │  │    → Descripción corta                             │││
+│  │  └─────────────────────────────────────────────────────┘││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+```
+
+La clave es que:
+- El `onClick` permanece en el `TableHead` (ordenación)
+- El `TooltipTrigger` usa `asChild={false}` para no interferir con el click
+- El tooltip aparece con hover, el click sigue ordenando
+
+### Cambio 4: Contenido del Tooltip
+
+Cada tooltip mostrará:
+1. **Línea 1**: Nombre ejecutivo en negrita (ej: "Calidad de la Narrativa")
+2. **Línea 2**: Peso en la fórmula (ej: "Peso: 15%")
+3. **Opcional**: Indicador si es puntuación inversa (para CEM)
+
+Ejemplo visual:
+```
+┌─────────────────────────────────────┐
+│ Calidad de la Narrativa            │
+│ Peso: 15% · Click para ordenar     │
+└─────────────────────────────────────┘
+```
+
+### Cambio 5: Tooltip para RIX
+
+El RIX también tendrá tooltip explicando que es el índice compuesto:
+```
+┌─────────────────────────────────────┐
+│ Índice Reputacional                 │
+│ Puntuación global (0-100)           │
+└─────────────────────────────────────┘
 ```
 
 ## Archivos a Modificar
 
 | Archivo | Cambio | Líneas |
 |---------|--------|--------|
-| `src/lib/rixMetricsGlossary.ts` | Actualizar `technicalDescription`, `executiveDescription` y `mappingJustification` de DCM | 138-141 |
-| `src/lib/rixMetricsGlossary.ts` | Actualizar error común de DCM en `getMetricsGlossaryPrompt()` | 213 |
+| `src/pages/Dashboard.tsx` | Importar Tooltip + getMetricByAcronym | ~1-31 |
+| `src/pages/Dashboard.tsx` | Envolver tabla con TooltipProvider | ~680 |
+| `src/pages/Dashboard.tsx` | Añadir Tooltip a cabecera RIX | ~688-709 |
+| `src/pages/Dashboard.tsx` | Añadir Tooltip a cabeceras de métricas | ~710-736 |
 
-## Resultado
+## Comportamiento Esperado
 
-La página de Metodología (`/metodologia`) se actualizará automáticamente porque consume el glosario canónico. La card de DCM mostrará la nueva descripción que conecta:
+| Acción | Resultado |
+|--------|-----------|
+| **Hover** sobre NVM | Aparece tooltip: "Calidad de la Narrativa - Peso: 15%" |
+| **Click** sobre NVM | Ordena por NVM (desc → asc → reset) |
+| **Hover** sobre CEM | Aparece tooltip: "Gestión de Controversias - Peso: 12% (inverso)" |
+| **Click** sobre CEM | Ordena por CEM |
 
-1. **Qué datos**: actividad, liderazgo, estructura corporativa, relaciones
-2. **Entre quiénes**: los 6 modelos (ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen)
-3. **Por qué importa**: la inconsistencia erosiona credibilidad y debilita el edificio reputacional
+## Consideraciones Técnicas
 
-## Impacto en Otros Componentes
+1. **No bloquea eventos**: Los tooltips de Radix UI no bloquean clicks por defecto
+2. **Delay corto**: Se puede añadir `delayDuration={300}` para evitar tooltips accidentales
+3. **Posición**: `side="bottom"` para que no tape los filtros superiores
+4. **Mobile**: Los tooltips no aparecen en touch (comportamiento esperado), solo en hover
 
-| Componente | Efecto |
-|------------|--------|
-| `GlossaryDialog` | Se actualiza automáticamente |
-| Página Metodología | Se actualiza automáticamente |
-| Prompts del Agente Rix | Se actualizan vía `getMetricsGlossaryPrompt()` |
-| Reportes PDF | Se actualizan vía `getMetricDefinitionsForAnnex()` |
+## Vista Previa del Resultado
+
+Antes:
+```
+| RIX ↓ | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
+```
+
+Después (al hacer hover sobre NVM):
+```
+| RIX ↓ | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
+          ▼
+    ┌──────────────────────────────┐
+    │ Calidad de la Narrativa      │
+    │ Peso: 15%                    │
+    └──────────────────────────────┘
+```
