@@ -127,99 +127,32 @@ export function MarketEvolution() {
       .sort((a, b) => a.issuer_name.localeCompare(b.issuer_name));
   }, [companies, ibexFilter, sectorFilter]);
 
-  // Normalize values to base 100 index
-  // Uses the first valid non-zero value as the base to avoid flat 100 lines
-  const normalizeToIndex = (values: number[]): number[] => {
-    if (values.length === 0) return [];
-    
-    // Find the first valid, non-zero value as base
-    const baseValue = values.find(v => Number.isFinite(v) && v !== 0);
-    
-    if (!baseValue || !Number.isFinite(baseValue)) {
-      return values.map(() => 100);
-    }
-    
-    return values.map(v => {
-      if (!Number.isFinite(v)) return 100;
-      return (v / baseValue) * 100;
-    });
-  };
-
-  // Prepare chart data for each model (data is already combined in useTrendDataLight)
+  // Prepare chart data with absolute RIX values (0-100 scale)
+  // No normalization - just pass through the actual RIX scores
   const prepareChartData = React.useCallback((data: any[], companies: string[]) => {
     if (!data || data.length === 0) return [];
     
-    // If no companies selected, just return market data normalized
+    // If no companies selected, just return market data
     if (companies.length === 0) {
-      const marketRixValues = data.map(p => p.market);
-      const marketRixIndex = normalizeToIndex(marketRixValues);
-      
-      return data.map((point: any, idx: number) => ({
+      return data.map((point: any) => ({
         date: point.batchLabel,
-        market_index: marketRixIndex[idx],
+        market: point.market, // Absolute RIX value (e.g., 65)
       }));
     }
     
-    // First, extract complete series per company to normalize
-    const companySeries: Record<string, {rix: number[], price: number[], isTraded: boolean}> = {};
-    
-    companies.forEach(ticker => {
-      companySeries[ticker] = {
-        rix: [],
-        price: [],
-        isTraded: false
-      };
-    });
-    
-    // Collect all values per company
-    data.forEach((point: any) => {
-      companies.forEach(ticker => {
-        if (point[ticker] !== undefined) {
-          companySeries[ticker].rix.push(point[ticker]);
-          const priceValue = point[`${ticker}_price`] || 0;
-          if (priceValue > 0) {
-            companySeries[ticker].price.push(priceValue);
-          }
-          companySeries[ticker].isTraded = point[`${ticker}_isTraded`] || false;
-        }
-      });
-    });
-    
-    // Normalize series to base 100 index
-    const normalizedSeries: Record<string, {rixIndex: number[], priceIndex: number[], isTraded: boolean}> = {};
-    
-    Object.keys(companySeries).forEach(ticker => {
-      const {rix, price, isTraded} = companySeries[ticker];
-      normalizedSeries[ticker] = {
-        rixIndex: normalizeToIndex(rix),
-        priceIndex: isTraded && price.length > 0 ? normalizeToIndex(price) : [],
-        isTraded
-      };
-    });
-    
-    // Also normalize market average
-    const marketRixValues = data.map(p => p.market);
-    const marketRixIndex = normalizeToIndex(marketRixValues);
-    
-    // Build data points with normalized indices
-    return data.map((point: any, idx: number) => {
+    // Build data points with absolute RIX values
+    return data.map((point: any) => {
       const dataPoint: any = {
         date: point.batchLabel,
-        market_index: marketRixIndex[idx],
+        market: point.market, // Absolute RIX value (e.g., 65)
       };
       
-      // Add indices per company
+      // Add absolute RIX values per company
       companies.forEach(ticker => {
-        if (normalizedSeries[ticker]) {
-          const ns = normalizedSeries[ticker];
-          dataPoint[`${ticker}_rix_index`] = ns.rixIndex[idx];
+        if (point[ticker] !== undefined) {
+          dataPoint[`${ticker}_rix`] = point[ticker]; // Absolute RIX value
           dataPoint[`${ticker}_name`] = point[`${ticker}_name`] || ticker;
-          dataPoint[`${ticker}_isTraded`] = ns.isTraded;
-          
-          // Only add price_index if traded AND has data
-          if (ns.isTraded && ns.priceIndex.length > 0) {
-            dataPoint[`${ticker}_price_index`] = ns.priceIndex[idx];
-          }
+          dataPoint[`${ticker}_isTraded`] = point[`${ticker}_isTraded`] || false;
         }
       });
       

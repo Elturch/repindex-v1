@@ -22,45 +22,9 @@ const COMPANY_COLORS = [
   'hsl(var(--destructive))',
 ];
 
-// Calculate dynamic domain for index values
-// When variation is minimal, expand the range to show the actual movement clearly
-const calculateIndexDomain = (chartData: any[], selectedCompanies: string[]): [number, number] => {
-  if (!chartData || chartData.length === 0) return [95, 105];
-  
-  const allIndexValues: number[] = [];
-  
-  chartData.forEach(point => {
-    // Always include market index
-    if (point.market_index !== undefined && point.market_index !== null) {
-      allIndexValues.push(point.market_index);
-    }
-    // Include company indices if any
-    selectedCompanies.forEach(ticker => {
-      if (point[`${ticker}_rix_index`]) allIndexValues.push(point[`${ticker}_rix_index`]);
-      if (point[`${ticker}_price_index`]) allIndexValues.push(point[`${ticker}_price_index`]);
-    });
-  });
-  
-  if (allIndexValues.length === 0) return [95, 105];
-  
-  const minValue = Math.min(...allIndexValues);
-  const maxValue = Math.max(...allIndexValues);
-  const range = maxValue - minValue;
-  
-  // If variation is very small (less than 10%), expand to show at least ±5 points
-  // This prevents "flat line" appearance when data is stable
-  const minRange = 10;
-  const effectiveRange = Math.max(range, minRange);
-  const padding = Math.max(effectiveRange * 0.2, 2);
-  
-  const center = (minValue + maxValue) / 2;
-  const halfSpan = (effectiveRange / 2) + padding;
-  
-  return [
-    Math.floor(center - halfSpan),
-    Math.ceil(center + halfSpan)
-  ];
-};
+// Fixed domain for absolute RIX values (0-100 scale)
+// RIX scores are always between 0-100, with typical values between 30-85
+const FIXED_RIX_DOMAIN: [number, number] = [0, 100];
 
 export function ModelChart({
   modelName,
@@ -86,9 +50,6 @@ export function ModelChart({
     );
   }
 
-  // Calculate dynamic index domain
-  const indexDomain = calculateIndexDomain(chartData, selectedCompanies);
-
   return (
     <Card>
       <CardHeader>
@@ -107,13 +68,13 @@ export function ModelChart({
               fontSize={12}
             />
             
-            {/* Single Y-axis: Base 100 Index */}
+            {/* Single Y-axis: Absolute RIX Score (0-100) */}
             <YAxis 
               stroke="hsl(var(--muted-foreground))"
               fontSize={12}
-              domain={indexDomain}
+              domain={FIXED_RIX_DOMAIN}
               label={{ 
-                value: 'Índice Base 100', 
+                value: 'Puntuación RIX', 
                 angle: -90, 
                 position: 'insideLeft',
                 style: { fill: 'hsl(var(--muted-foreground))', textAnchor: 'middle' }
@@ -129,34 +90,31 @@ export function ModelChart({
             />
             <Legend />
             
-            {/* Market average RIX index */}
+            {/* Market average RIX (absolute value) */}
             <Line
               type="monotone"
-              dataKey="market_index"
+              dataKey="market"
               stroke="hsl(var(--muted-foreground))"
               strokeWidth={2}
               name="Media Mercado"
               dot={false}
             />
             
-            {/* Company RIX and Price indices */}
+            {/* Company RIX scores (absolute values) */}
             {selectedCompanies.map((ticker, index) => {
               const color = COMPANY_COLORS[index % COMPANY_COLORS.length];
               const companyName = chartData[0]?.[`${ticker}_name`] || ticker;
-              const isTraded = chartData[0]?.[`${ticker}_isTraded`] || false;
               
               return (
-                <React.Fragment key={ticker}>
-                  {/* RIX Index line (always show) */}
-                  <Line
-                    type="monotone"
-                    dataKey={`${ticker}_rix_index`}
-                    stroke={color}
-                    strokeWidth={2}
-                    name={`${companyName} RIX`}
-                    dot={false}
-                  />
-                </React.Fragment>
+                <Line
+                  key={ticker}
+                  type="monotone"
+                  dataKey={`${ticker}_rix`}
+                  stroke={color}
+                  strokeWidth={2}
+                  name={`${companyName}`}
+                  dot={false}
+                />
               );
             })}
           </LineChart>
