@@ -166,7 +166,7 @@ interface ChatContextType {
   sessionDepthLevel: DepthLevel;
   sessionRoleId: string;
   isSessionConfigured: boolean;
-  configureSession: (depthLevel: DepthLevel, roleId: string) => Promise<void>;
+  configureSession: (roleId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -199,7 +199,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { toast } = useToast();
   
   // Session configuration state - persists for entire conversation
-  const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('complete');
+  const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('exhaustive');
   const [sessionRoleId, setSessionRoleId] = useState<string>('general');
   const [isSessionConfigured, setIsSessionConfigured] = useState(false);
   
@@ -270,9 +270,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [currentUserId, sessionId, messages.length]);
 
-  // Configure session (depth + role) - called once at start of conversation
-  const configureSession = useCallback(async (depthLevel: DepthLevel, roleId: string) => {
-    setSessionDepthLevel(depthLevel);
+  // Configure session (role only) - depth is always 'exhaustive'
+  const configureSession = useCallback(async (roleId: string) => {
+    setSessionDepthLevel('exhaustive'); // Always exhaustive
     setSessionRoleId(roleId);
     setIsSessionConfigured(true);
     
@@ -282,7 +282,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         await supabase
           .from('user_conversations')
           .update({ 
-            session_depth_level: depthLevel,
+            session_depth_level: 'exhaustive',
             session_role_id: roleId 
           })
           .eq('id', conversationId);
@@ -291,7 +291,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
     }
     
-    console.log('[ChatContext] Session configured:', { depthLevel, roleId });
+    console.log('[ChatContext] Session configured:', { depthLevel: 'exhaustive', roleId });
   }, [currentUserId, conversationId]);
 
   // Load conversation history from DB on mount
