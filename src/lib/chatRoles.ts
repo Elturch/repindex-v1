@@ -187,6 +187,24 @@ Formato: Checklist de inversión, alertas, comparativa riesgo/oportunidad.
 Tono: Pragmático, orientado a rentabilidad, cauteloso.`,
   },
   {
+    id: 'cfo',
+    emoji: '💼',
+    name: 'Director Financiero (CFO)',
+    shortDescription: 'Impacto financiero, valoración, riesgo',
+    category: 'finanzas',
+    prompt: `Reformula esta respuesta para un Director Financiero (CFO):
+
+1. **IMPACTO EN VALORACIÓN**: ¿Cómo afecta la reputación al valor de la empresa?
+2. **RIESGO FINANCIERO IMPLÍCITO**: ¿Hay señales que puedan afectar a resultados?
+3. **COSTE DE CAPITAL**: ¿La percepción impacta en financiación o rating crediticio?
+4. **COMPARATIVA DE MÚLTIPLOS**: ¿Empresas mejor percibidas cotizan a mayor múltiplo?
+5. **INVERSIONES EN REPUTACIÓN**: ¿Qué ROI tienen las inversiones en imagen?
+6. **REPORTING AL CONSEJO**: Datos clave para presentar en comité de dirección
+
+Formato: Tablas financieras, impacto en P&L, análisis coste-beneficio.
+Tono: Cuantitativo, orientado a resultados, pragmático.`,
+  },
+  {
     id: 'consultor_ma',
     emoji: '🔄',
     name: 'Consultor M&A',
@@ -335,6 +353,6 @@ export function getSpecializedRoles(): ChatRole[] {
 
 // Get featured roles (most commonly used)
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ['ceo', 'periodista', 'analista_mercados', 'inversor', 'dircom', 'marketing'];
+  const featuredIds = ['ceo', 'cfo', 'periodista', 'analista_mercados', 'inversor', 'dircom', 'marketing'];
   return CHAT_ROLES.filter(role => featuredIds.includes(role.id));
 }
