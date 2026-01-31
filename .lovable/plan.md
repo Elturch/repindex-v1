@@ -1,122 +1,231 @@
 
-# Plan: Corregir Visualización de Datos en Evolución del Mercado
 
-## Problema Identificado
+# Plan: Arreglar Grok y Adelantar Barrido a 01:00 CET
 
-Los gráficos muestran valores superiores a 100 porque usan **normalización Base 100** (índice relativo), donde:
-- Primer valor de la serie = 100
-- Cambios porcentuales se reflejan: si RIX sube 32%, el índice muestra 132
+## Problema 1: Grok con 69% de Fallos
 
-Esto confunde al usuario porque el RIX real siempre está entre 0-100 (en la práctica, 30-85).
+### Diagnóstico
 
-### Datos reales (semana 25 ene 2026):
-| Modelo | RIX Medio | RIX Mín | RIX Máx |
-|--------|-----------|---------|---------|
-| ChatGPT | 65 | 34 | 85 |
-| Deepseek | 56 | 33 | 78 |
-| Perplexity | 54 | 33 | 68 |
+| Error | Causa | Impacto |
+|-------|-------|---------|
+| HTTP 422: `unknown variant web_search_preview` | xAI deprecó `web_search_preview` en enero 2026 | 100% de llamadas a Grok fallan |
+| Respuesta: `[object Object]` (15 chars) | El parser no extrae correctamente el texto | Datos corruptos en BD |
 
-## Solución Propuesta
+**Prueba real ejecutada**:
+```
+POST /rix-search-v2 {"ticker": "IBE", "single_model": "grok"}
+→ HTTP 422: unknown variant `web_search_preview`, expected `web_search` or `x_search`
+```
 
-Cambiar de **Índice Base 100** (relativo) a **Puntuación RIX Absoluta** (0-100):
+### Solución Técnica
 
-### Opción Recomendada: Mostrar Valores RIX Reales
+**Archivo**: `supabase/functions/rix-search-v2/index.ts`
 
-| Aspecto | Antes (Índice) | Después (Absoluto) |
-|---------|----------------|---------------------|
-| Eje Y | 95-132 (variable) | 0-100 (fijo) |
-| Mercado | 100 → 108 | 53 → 65 |
-| Empresa | 100 → 125 | 48 → 72 |
-| Etiqueta | "Índice Base 100" | "Puntuación RIX" |
-| Interpretación | Confusa | Directa e intuitiva |
-
-## Cambios Técnicos
-
-### Cambio 1: Eliminar Normalización Base 100
-
-**Archivo**: `src/pages/MarketEvolution.tsx`
-
-Eliminar la función `normalizeToIndex` y simplificar `prepareChartData` para pasar valores RIX directos:
+**Cambio 1**: Actualizar el tipo de herramienta de Grok (línea ~249)
 
 ```typescript
-// ANTES: Normalización relativa
-const normalizeToIndex = (values: number[]): number[] => {
-  const baseValue = values.find(v => Number.isFinite(v) && v !== 0);
-  return values.map(v => (v / baseValue) * 100);
-};
+// ANTES (deprecated desde 12 ene 2026)
+tools: [{ type: 'web_search_preview' }],
 
-// DESPUÉS: Valores directos
-const prepareChartData = (data, companies) => {
-  return data.map(point => ({
-    date: point.batchLabel,
-    market: point.market, // Valor RIX directo (ej: 65)
-    ...companyData        // Valores RIX directos
-  }));
-};
+// DESPUÉS (formato actual de xAI)
+tools: [{ type: 'web_search' }],
 ```
 
-### Cambio 2: Actualizar ModelChart para Valores Absolutos
+**Cambio 2**: Corregir el parser de respuestas de Grok (líneas ~253-298)
 
-**Archivo**: `src/components/ModelChart.tsx`
-
-1. Cambiar dataKeys de `market_index` → `market`, `ticker_rix_index` → `ticker_rix`
-2. Fijar dominio del eje Y a [0, 100]
-3. Actualizar etiqueta del eje Y: "Puntuación RIX"
+La API `/v1/responses` de xAI devuelve el contenido en `output_text` directamente o en un array `output` con objetos de tipo `message`:
 
 ```typescript
-// ANTES
-<YAxis 
-  domain={indexDomain} // Dinámico: 95-132
-  label={{ value: 'Índice Base 100' }}
-/>
-<Line dataKey="market_index" name="Media Mercado" />
-
-// DESPUÉS
-<YAxis 
-  domain={[0, 100]} // Fijo: 0-100
-  label={{ value: 'Puntuación RIX' }}
-/>
-<Line dataKey="market" name="Media Mercado (RIX)" />
+parseResponse: (data: any) => {
+  console.log('[Grok-Parse] Response:', JSON.stringify(data).substring(0, 500));
+  
+  // Formato actual de xAI Responses API (enero 2026)
+  // La respuesta viene en output_text (string) o output (array)
+  
+  // Prioridad 1: output_text directo
+  if (data.output_text && typeof data.output_text === 'string') {
+    return data.output_text;
+  }
+  
+  // Prioridad 2: output como array con mensajes
+  if (Array.isArray(data.output)) {
+    const textParts = data.output
+      .filter((item: any) => item.type === 'message')
+      .map((item: any) => {
+        // El contenido puede estar en content[].text o text directo
+        if (Array.isArray(item.content)) {
+          return item.content
+            .filter((c: any) => c.type === 'output_text' || c.type === 'text')
+            .map((c: any) => c.text)
+            .join('');
+        }
+        return item.text || item.content || '';
+      })
+      .filter(Boolean);
+    
+    if (textParts.length > 0) {
+      return textParts.join('\n');
+    }
+  }
+  
+  // Fallback: intentar extraer de cualquier campo text/content
+  if (data.text) return data.text;
+  if (data.content) return typeof data.content === 'string' 
+    ? data.content 
+    : JSON.stringify(data.content);
+  
+  console.log('[Grok-Parse] Could not extract text from:', Object.keys(data));
+  return '';
+}
 ```
 
-### Cambio 3: Simplificar useTrendDataLight (opcional)
+---
 
-Los datos ya vienen con valores RIX absolutos, solo hay que asegurar que se pasan tal cual sin transformación.
+## Problema 2: Adelantar Horario a 01:00 CET
 
-## Resultado Visual
+### Cambio Requerido
 
-### Antes (confuso)
+Los 34 CRONs de fases están programados actualmente así:
 ```
-Eje Y: Índice Base 100
-  132 ┤        ╭─
-  116 ┤    ╭───╯
-  100 ┼────╯
-   84 ┤
+Fase 01: 0 4 * * 0  (04:00 UTC = 05:00 CET)
+Fase 02: 5 4 * * 0  (04:05 UTC)
+...
+Fase 34: 45 6 * * 0 (06:45 UTC = 07:45 CET)
 ```
-Usuario piensa: "¿Cómo puede tener 132 si RIX máximo es 100?"
 
-### Después (claro)
+**Nuevo horario (01:00 CET = 00:00 UTC)**:
 ```
-Eje Y: Puntuación RIX
-  100 ┤
-   75 ┤        ╭─
-   65 ┤    ╭───╯
-   53 ┼────╯
-   25 ┤
-    0 ┤
+Fase 01: 0 0 * * 0  (00:00 UTC = 01:00 CET)
+Fase 02: 5 0 * * 0  (00:05 UTC)
+...
+Fase 34: 45 2 * * 0 (02:45 UTC = 03:45 CET)
 ```
-Usuario entiende: "El mercado pasó de RIX 53 a RIX 65 en 6 semanas"
+
+### SQL para Actualizar CRONs
+
+Este SQL debe ejecutarse manualmente en Supabase:
+
+```sql
+-- Adelantar barrido 4 horas (de 04:00 UTC a 00:00 UTC)
+-- Fase 01-12: hora 4 → hora 0
+UPDATE cron.job SET schedule = CONCAT(SUBSTRING(schedule, 1, 2), '0 * * 0')
+WHERE jobname ~ '^rix-sweep-phase-0[1-9]$' OR jobname = 'rix-sweep-phase-10' 
+   OR jobname = 'rix-sweep-phase-11' OR jobname = 'rix-sweep-phase-12';
+
+-- Fase 13-24: hora 5 → hora 1
+UPDATE cron.job SET schedule = CONCAT(SUBSTRING(schedule, 1, 2), '1 * * 0')
+WHERE jobname ~ '^rix-sweep-phase-1[3-9]$' OR jobname ~ '^rix-sweep-phase-2[0-4]$';
+
+-- Fase 25-34: hora 6 → hora 2
+UPDATE cron.job SET schedule = CONCAT(SUBSTRING(schedule, 1, 2), '2 * * 0')
+WHERE jobname ~ '^rix-sweep-phase-2[5-9]$' OR jobname ~ '^rix-sweep-phase-3[0-4]$';
+```
+
+**Script alternativo más seguro (fase por fase)**:
+
+```sql
+-- Ejecutar en Supabase SQL Editor
+UPDATE cron.job SET schedule = '0 0 * * 0' WHERE jobname = 'rix-sweep-phase-01';
+UPDATE cron.job SET schedule = '5 0 * * 0' WHERE jobname = 'rix-sweep-phase-02';
+UPDATE cron.job SET schedule = '10 0 * * 0' WHERE jobname = 'rix-sweep-phase-03';
+UPDATE cron.job SET schedule = '15 0 * * 0' WHERE jobname = 'rix-sweep-phase-04';
+UPDATE cron.job SET schedule = '20 0 * * 0' WHERE jobname = 'rix-sweep-phase-05';
+UPDATE cron.job SET schedule = '25 0 * * 0' WHERE jobname = 'rix-sweep-phase-06';
+UPDATE cron.job SET schedule = '30 0 * * 0' WHERE jobname = 'rix-sweep-phase-07';
+UPDATE cron.job SET schedule = '35 0 * * 0' WHERE jobname = 'rix-sweep-phase-08';
+UPDATE cron.job SET schedule = '40 0 * * 0' WHERE jobname = 'rix-sweep-phase-09';
+UPDATE cron.job SET schedule = '45 0 * * 0' WHERE jobname = 'rix-sweep-phase-10';
+UPDATE cron.job SET schedule = '50 0 * * 0' WHERE jobname = 'rix-sweep-phase-11';
+UPDATE cron.job SET schedule = '55 0 * * 0' WHERE jobname = 'rix-sweep-phase-12';
+UPDATE cron.job SET schedule = '0 1 * * 0' WHERE jobname = 'rix-sweep-phase-13';
+UPDATE cron.job SET schedule = '5 1 * * 0' WHERE jobname = 'rix-sweep-phase-14';
+UPDATE cron.job SET schedule = '10 1 * * 0' WHERE jobname = 'rix-sweep-phase-15';
+UPDATE cron.job SET schedule = '15 1 * * 0' WHERE jobname = 'rix-sweep-phase-16';
+UPDATE cron.job SET schedule = '20 1 * * 0' WHERE jobname = 'rix-sweep-phase-17';
+UPDATE cron.job SET schedule = '25 1 * * 0' WHERE jobname = 'rix-sweep-phase-18';
+UPDATE cron.job SET schedule = '30 1 * * 0' WHERE jobname = 'rix-sweep-phase-19';
+UPDATE cron.job SET schedule = '35 1 * * 0' WHERE jobname = 'rix-sweep-phase-20';
+UPDATE cron.job SET schedule = '40 1 * * 0' WHERE jobname = 'rix-sweep-phase-21';
+UPDATE cron.job SET schedule = '45 1 * * 0' WHERE jobname = 'rix-sweep-phase-22';
+UPDATE cron.job SET schedule = '50 1 * * 0' WHERE jobname = 'rix-sweep-phase-23';
+UPDATE cron.job SET schedule = '55 1 * * 0' WHERE jobname = 'rix-sweep-phase-24';
+UPDATE cron.job SET schedule = '0 2 * * 0' WHERE jobname = 'rix-sweep-phase-25';
+UPDATE cron.job SET schedule = '5 2 * * 0' WHERE jobname = 'rix-sweep-phase-26';
+UPDATE cron.job SET schedule = '10 2 * * 0' WHERE jobname = 'rix-sweep-phase-27';
+UPDATE cron.job SET schedule = '15 2 * * 0' WHERE jobname = 'rix-sweep-phase-28';
+UPDATE cron.job SET schedule = '20 2 * * 0' WHERE jobname = 'rix-sweep-phase-29';
+UPDATE cron.job SET schedule = '25 2 * * 0' WHERE jobname = 'rix-sweep-phase-30';
+UPDATE cron.job SET schedule = '30 2 * * 0' WHERE jobname = 'rix-sweep-phase-31';
+UPDATE cron.job SET schedule = '35 2 * * 0' WHERE jobname = 'rix-sweep-phase-32';
+UPDATE cron.job SET schedule = '40 2 * * 0' WHERE jobname = 'rix-sweep-phase-33';
+UPDATE cron.job SET schedule = '45 2 * * 0' WHERE jobname = 'rix-sweep-phase-34';
+
+-- Verificar cambios
+SELECT jobname, schedule FROM cron.job 
+WHERE jobname LIKE 'rix-sweep-phase%' 
+ORDER BY jobname;
+```
+
+---
+
+## Nuevo Cronograma Dominical
+
+| Hora CET | Hora UTC | Evento |
+|----------|----------|--------|
+| **01:00** | 00:00 | Inicio Fase 01 |
+| 02:00 | 01:00 | Fase 13 |
+| 03:00 | 02:00 | Fase 25 |
+| **03:45** | 02:45 | Fin Fase 34 (último CRON) |
+| 04:00-06:00 | 03:00-05:00 | Watchdog completa pendientes |
+| **~06:00** | ~05:00 | Barrido RIX completo |
+
+---
 
 ## Archivos a Modificar
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/pages/MarketEvolution.tsx` | Eliminar `normalizeToIndex`, simplificar `prepareChartData` |
-| `src/components/ModelChart.tsx` | Cambiar dataKeys, fijar dominio Y [0,100], actualizar etiqueta |
+| Archivo | Cambio | Urgencia |
+|---------|--------|----------|
+| `supabase/functions/rix-search-v2/index.ts` | Fix Grok: `web_search_preview` → `web_search` + parser | **CRÍTICO** |
+| Supabase SQL Editor | Ejecutar SQL para adelantar CRONs | **CRÍTICO** |
 
-## Beneficios
+---
 
-1. **Claridad**: Los valores mostrados son puntuaciones RIX reales
-2. **Consistencia**: Coincide con lo que el usuario ve en el Dashboard
-3. **Interpretación directa**: No requiere entender normalización estadística
-4. **Comparabilidad**: Se puede comparar entre modelos en escala común
+## Verificación Post-Despliegue
+
+### Paso 1: Probar Grok corregido
+```bash
+POST /rix-search-v2
+{"ticker": "IBE", "issuer_name": "Iberdrola", "single_model": "grok"}
+# Esperar: success: true, response con >4000 caracteres
+```
+
+### Paso 2: Verificar horarios actualizados
+```sql
+SELECT jobname, schedule FROM cron.job 
+WHERE jobname LIKE 'rix-sweep-phase%' 
+ORDER BY jobname;
+-- Fase 01 debe mostrar: '0 0 * * 0'
+```
+
+### Paso 3: Monitorear domingo 01:00 CET
+- Verificar en logs que las fases arrancan
+- Comprobar que Grok devuelve contenido válido (>4000 chars)
+
+---
+
+## Resumen Ejecutivo
+
+1. **Grok está roto** por cambio de API de xAI (enero 2026)
+   - Fix: cambiar `web_search_preview` → `web_search`
+   - Fix: actualizar parser para nuevo formato de respuesta
+
+2. **Horario se adelanta 4 horas**
+   - Antes: 05:00-07:45 CET
+   - Después: 01:00-03:45 CET
+   - SQL listo para ejecutar en Supabase
+
+3. **Tiempo estimado**: 
+   - Código: 15 minutos
+   - SQL: 5 minutos
+   - Verificación: 10 minutos
+
