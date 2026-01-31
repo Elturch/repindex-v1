@@ -18,13 +18,13 @@ Deno.serve(async (req) => {
       auth: { persistSession: false }
     })
 
-    // Mapping: jobid 10-43 correspond to phases 01-34
+    // Mapping: jobid 10-44 correspond to phases 01-35
     // New schedule: start at 00:00 UTC (01:00 CET), 5 min intervals
     const updates: { jobid: number; phase: number; schedule: string }[] = []
     
-    for (let phase = 1; phase <= 34; phase++) {
-      const jobid = phase + 9  // jobid 10 = phase 1, jobid 43 = phase 34
-      const totalMinutes = (phase - 1) * 5  // 0, 5, 10, 15...
+    for (let phase = 1; phase <= 35; phase++) {
+      const jobid = phase + 9  // jobid 10 = phase 1, jobid 44 = phase 35
+      const totalMinutes = (phase - 1) * 5  // 0, 5, 10, 15... up to 170 min (2:50)
       const hour = Math.floor(totalMinutes / 60)
       const minute = totalMinutes % 60
       
