@@ -124,7 +124,7 @@ export const RIX_METRICS_GLOSSARY: MetricDefinition[] = [
     acronym: "GAM",
     technicalName: "Governance Autonomy Metric",
     technicalDescription: "GAM = percepción de independencia de gobierno corporativo. Factores: policies declaradas, conflictos de interés, transparencia de junta directiva.",
-    executiveName: "Percepción de Gobierno",
+    executiveName: "Percepción de Gobernanza Corporativa",
     executiveDescription: "Mide cómo las IAs perciben la autonomía e independencia del gobierno corporativo de la empresa. Un GAM alto indica percepción de buenas prácticas de gobernanza y baja interferencia externa.",
     mappingJustification: "El nombre ejecutivo 'Percepción de Gobierno' refleja que esta métrica mide independencia percibida, NO gestión de talento ni employer branding.",
     iconName: "Building2",
