@@ -80,3 +80,6 @@ verify_jwt = false
 
 [functions.import-verified-competitors]
 verify_jwt = false
+
+[functions.update-cron-schedules]
+verify_jwt = false
