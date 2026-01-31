@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Search, List, Grid, AlertCircle, CalendarIcon, X, Building2, Calendar as CalendarDays, Brain, BarChart3, Factory, AlertTriangle, Check, ChevronsUpDown, Loader2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -30,6 +31,7 @@ import { GrokIcon } from "@/components/ui/grok-icon";
 import { QwenIcon } from "@/components/ui/qwen-icon";
 import { WeeklyReadingError } from "@/components/ui/weekly-reading-error";
 import { trackDashboardFilter, trackCompanyDetailView } from "@/lib/gtmEvents";
+import { getMetricByAcronym } from "@/lib/rixMetricsGlossary";
 
 // AI Filter type for the 6 models
 type AIFilter = "all" | "ChatGPT" | "Google Gemini" | "Perplexity" | "Deepseek" | "Grok" | "Qwen" | "comparison";
@@ -677,6 +679,7 @@ export function Dashboard() {
         {!isLoading && !error && rixRuns && rixRuns.length > 0 && aiFilter !== "comparison" && (
           <>
             {viewMode === "list" && (
+              <TooltipProvider delayDuration={300}>
               <div className="rounded-md border overflow-x-auto shadow-card">
                 <Table>
                   <TableHeader>
@@ -692,35 +695,11 @@ export function Dashboard() {
                         )}
                         onClick={() => handleSort('rix')}
                       >
-                        <div className="flex items-center justify-center gap-1">
-                          <span className={cn(sortConfig.key === 'rix' && "font-bold")}>RIX</span>
-                          {sortConfig.key === 'rix' ? (
-                            <span className="flex items-center gap-0.5">
-                              {sortConfig.direction === 'desc' ? 
-                                <ArrowDown className="h-3 w-3 text-primary" /> : 
-                                <ArrowUp className="h-3 w-3 text-primary" />
-                              }
-                              <X className="h-3 w-3 text-muted-foreground hover:text-destructive ml-0.5" />
-                            </span>
-                          ) : (
-                            <ArrowUpDown className="h-3 w-3 opacity-30" />
-                          )}
-                        </div>
-                      </TableHead>
-                      {metrics.map((metric) => {
-                        const isActive = sortConfig.key === metric.key;
-                        return (
-                          <TableHead 
-                            key={metric.key} 
-                            className={cn(
-                              "text-center w-16 cursor-pointer hover:bg-muted/50 transition-colors",
-                              isActive && "bg-primary/10 text-primary"
-                            )}
-                            onClick={() => handleSort(metric.key as typeof sortConfig.key)}
-                          >
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <div className="flex items-center justify-center gap-1">
-                              <span className={cn(isActive && "font-bold")}>{metric.label}</span>
-                              {isActive ? (
+                              <span className={cn(sortConfig.key === 'rix' && "font-bold")}>RIX</span>
+                              {sortConfig.key === 'rix' ? (
                                 <span className="flex items-center gap-0.5">
                                   {sortConfig.direction === 'desc' ? 
                                     <ArrowDown className="h-3 w-3 text-primary" /> : 
@@ -732,6 +711,50 @@ export function Dashboard() {
                                 <ArrowUpDown className="h-3 w-3 opacity-30" />
                               )}
                             </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-xs">
+                            <p className="font-semibold">Índice Reputacional</p>
+                            <p className="text-xs text-muted-foreground">Puntuación global (0-100)</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableHead>
+                      {metrics.map((metric) => {
+                        const isActive = sortConfig.key === metric.key;
+                        const metricDef = getMetricByAcronym(metric.label);
+                        return (
+                          <TableHead 
+                            key={metric.key} 
+                            className={cn(
+                              "text-center w-16 cursor-pointer hover:bg-muted/50 transition-colors",
+                              isActive && "bg-primary/10 text-primary"
+                            )}
+                            onClick={() => handleSort(metric.key as typeof sortConfig.key)}
+                          >
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center justify-center gap-1">
+                                  <span className={cn(isActive && "font-bold")}>{metric.label}</span>
+                                  {isActive ? (
+                                    <span className="flex items-center gap-0.5">
+                                      {sortConfig.direction === 'desc' ? 
+                                        <ArrowDown className="h-3 w-3 text-primary" /> : 
+                                        <ArrowUp className="h-3 w-3 text-primary" />
+                                      }
+                                      <X className="h-3 w-3 text-muted-foreground hover:text-destructive ml-0.5" />
+                                    </span>
+                                  ) : (
+                                    <ArrowUpDown className="h-3 w-3 opacity-30" />
+                                  )}
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="max-w-xs">
+                                <p className="font-semibold">{metricDef?.executiveName || metric.label}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Peso: {metricDef ? Math.round(metricDef.weight * 100) : 0}%
+                                  {metricDef?.inverseScoring && " · Puntuación inversa"}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
                           </TableHead>
                         );
                       })}
@@ -864,6 +887,7 @@ export function Dashboard() {
                   )}
                 </div>
               </div>
+              </TooltipProvider>
             )}
 
             {viewMode === "cards" && (
