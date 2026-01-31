@@ -135,10 +135,10 @@ export const RIX_METRICS_GLOSSARY: MetricDefinition[] = [
   {
     acronym: "DCM",
     technicalName: "Data Consistency Metric",
-    technicalDescription: "DCM = 1 - (σ_intermodelo / μ_intermodelo). Mide coherencia de información sobre la empresa entre diferentes modelos de IA (nombres, fechas, roles, cifras).",
+    technicalDescription: "DCM = 1 - (σ_intermodelo / μ_intermodelo). Evalúa coherencia de datos estructurales (actividad principal, liderazgo ejecutivo, estructura accionarial, relaciones corporativas) entre los 6 modelos. Factores: coincidencia en CEO/presidente, sector declarado, fechas de fundación, cifras de empleados, principales accionistas.",
     executiveName: "Coherencia Informativa",
-    executiveDescription: "Evalúa la consistencia de la información sobre la empresa entre diferentes modelos de IA. Un DCM alto indica que ChatGPT, Gemini, Perplexity, etc. citan datos coherentes entre sí.",
-    mappingJustification: "El nombre ejecutivo 'Coherencia Informativa' refleja que esta métrica mide consistencia entre modelos, NO capacidad digital ni innovación tecnológica.",
+    executiveDescription: "Mide la coherencia de los datos estructurales clave de la empresa (actividad, liderazgo, estructura corporativa, relaciones) entre los 6 modelos de IA analizados (ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen). Un DCM alto indica que los modelos coinciden en los hechos fundamentales. La inconsistencia en estos datos erosiona la credibilidad y debilita el resto del edificio reputacional algorítmico.",
+    mappingJustification: "El nombre ejecutivo 'Coherencia Informativa' refleja que esta métrica mide estabilidad de datos estructurales clave entre modelos de IA. La inconsistencia en información fundamental (liderazgo, actividad, estructura) erosiona la credibilidad y debilita las demás métricas reputacionales. NO mide capacidad digital ni innovación tecnológica.",
     iconName: "Database",
     weight: 0.12,
     inverseScoring: false,
@@ -210,7 +210,7 @@ ${RIX_METRICS_GLOSSARY.map(m => `- **${m.acronym}** (${m.technicalName}): ${m.ex
 ### ⚠️ ERRORES COMUNES A EVITAR:
 - **SIM** NO mide sostenibilidad/ESG. Mide JERARQUÍA DE FUENTES (Tier 1-4).
 - **DRM** NO mide desempeño financiero. Mide CALIDAD DE EVIDENCIA documental.
-- **DCM** NO mide innovación digital. Mide COHERENCIA entre modelos de IA.
+- **DCM** NO mide innovación digital. Mide COHERENCIA DE DATOS ESTRUCTURALES (actividad, liderazgo, estructura, relaciones) entre los 6 modelos de IA. La inconsistencia erosiona credibilidad.
 - **GAM** NO mide gestión de talento. Mide PERCEPCIÓN DE GOBIERNO corporativo.
 - **RMM** NO mide marketing. Mide FRESCURA TEMPORAL de menciones.
 - **CEM** NO mide ética general. Mide EXPOSICIÓN A CONTROVERSIAS (puntuación inversa).
