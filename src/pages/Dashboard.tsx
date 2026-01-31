@@ -752,6 +752,7 @@ export function Dashboard() {
                                 <p className="text-xs text-muted-foreground">
                                   Peso: {metricDef ? Math.round(metricDef.weight * 100) : 0}%
                                   {metricDef?.inverseScoring && " · Puntuación inversa"}
+                                  {metric.label === "CXM" && " · Solo cotizadas"}
                                 </p>
                               </TooltipContent>
                             </Tooltip>
