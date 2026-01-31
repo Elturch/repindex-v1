@@ -226,11 +226,11 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
       return content + (citations ? '\n\nFuentes:\n' + citations : '');
     },
   },
-  // 2. Grok 3 (xAI) - ✅ Web Search via Responses API
-  // Usando el endpoint /v1/responses con herramienta web_search_preview
-  // IMPORTANTE: No usar 'search: true', usar tools: [{type: "web_search_preview"}]
+  // 2. Grok (xAI) - ✅ Web Search via Responses API
+  // Actualizado enero 2026: grok-3 → grok-4 (requerido para web_search tools)
+  // Actualizado enero 2026: web_search_preview → web_search
   {
-    name: 'grok-3',
+    name: 'grok-4',
     displayName: 'Grok',
     apiKeyEnv: 'XAI_API_KEY',
     endpoint: 'https://api.x.ai/v1/responses',
@@ -242,59 +242,76 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         'Content-Type': 'application/json',
       },
       body: {
-        model: 'grok-3',
+        // grok-4 es requerido para server-side tools (web_search)
+        model: 'grok-4',
         input: prompt,
-        // Usar tools con web_search_preview en lugar de 'search: true'
-        // El endpoint /v1/responses requiere este formato específico
-        tools: [{ type: 'web_search_preview' }],
+        // web_search (antes web_search_preview, deprecated 12 ene 2026)
+        tools: [{ type: 'web_search' }],
         temperature: 0.1,
       },
     }),
     parseResponse: (data: any) => {
       // Debug: Log estructura de respuesta Grok
-      console.log('[Grok-Parse] Response keys:', Object.keys(data || {}));
-      console.log('[Grok-Parse] output type:', typeof data.output, 'value:', JSON.stringify(data.output)?.substring(0, 200));
+      console.log('[Grok-Parse] Response structure:', JSON.stringify(data).substring(0, 500));
       
-      let content = '';
+      // Formato xAI Responses API (enero 2026):
+      // - output_text: string directo con el texto completo
+      // - output: array de objetos con type='message' y content[]
       
-      // Formato 1: output_text directo (nuevo endpoint responses)
+      // Prioridad 1: output_text directo (formato más común)
       if (data.output_text && typeof data.output_text === 'string') {
-        content = data.output_text;
-      }
-      // Formato 2: output como string directo
-      else if (typeof data.output === 'string') {
-        content = data.output;
-      }
-      // Formato 3: output como array de items
-      else if (Array.isArray(data.output)) {
-        content = data.output.map((item: any) => {
-          if (typeof item === 'string') return item;
-          // xAI puede devolver {type: 'text', text: '...'} o {content: '...'}
-          return item.text || item.content || item.message?.content || '';
-        }).filter(Boolean).join('\n');
-      }
-      // Formato 4: output como objeto con text/content
-      else if (data.output && typeof data.output === 'object') {
-        content = data.output.text || data.output.content || data.output.message?.content || '';
-      }
-      // Formato 5: choices (compatibilidad con chat/completions)
-      else if (data.choices?.[0]?.message?.content) {
-        content = data.choices[0].message.content;
+        console.log('[Grok-Parse] Using output_text, length:', data.output_text.length);
+        return data.output_text;
       }
       
-      // Si aún no hay contenido, intentar extraer de cualquier campo
-      if (!content && data.output) {
-        content = JSON.stringify(data.output);
-        console.log('[Grok-Parse] Fallback to stringify:', content.substring(0, 100));
+      // Prioridad 2: output como array con mensajes
+      if (Array.isArray(data.output)) {
+        const textParts = data.output
+          .filter((item: any) => item.type === 'message')
+          .map((item: any) => {
+            // El contenido puede estar en content[].text o text directo
+            if (Array.isArray(item.content)) {
+              return item.content
+                .filter((c: any) => c.type === 'output_text' || c.type === 'text')
+                .map((c: any) => c.text)
+                .filter(Boolean)
+                .join('');
+            }
+            return item.text || (typeof item.content === 'string' ? item.content : '') || '';
+          })
+          .filter(Boolean);
+        
+        if (textParts.length > 0) {
+          const content = textParts.join('\n');
+          console.log('[Grok-Parse] Extracted from output array, length:', content.length);
+          return content;
+        }
       }
       
-      // Añadir citaciones si existen
-      const citations = data.citations?.map((c: any) => 
-        typeof c === 'string' ? c : c.url || c.source || c.title || ''
-      ).filter(Boolean).join('\n') || '';
+      // Prioridad 3: output como string directo
+      if (typeof data.output === 'string') {
+        console.log('[Grok-Parse] Using output string, length:', data.output.length);
+        return data.output;
+      }
       
-      console.log('[Grok-Parse] Final content length:', content.length, 'citations:', citations.length);
-      return content + (citations ? '\n\nFuentes Grok:\n' + citations : '');
+      // Prioridad 4: output como objeto con text/content
+      if (data.output && typeof data.output === 'object') {
+        const content = data.output.text || data.output.content || '';
+        if (content && typeof content === 'string') {
+          console.log('[Grok-Parse] Using output object, length:', content.length);
+          return content;
+        }
+      }
+      
+      // Prioridad 5: choices (compatibilidad con chat/completions)
+      if (data.choices?.[0]?.message?.content) {
+        console.log('[Grok-Parse] Using choices format');
+        return data.choices[0].message.content;
+      }
+      
+      // Fallback: log para debug y retornar vacío
+      console.log('[Grok-Parse] Could not extract text from:', Object.keys(data));
+      return '';
     },
   },
   // 3. DeepSeek - ✅ Ahora con RAG via Tavily Search API
