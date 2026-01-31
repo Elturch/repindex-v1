@@ -1,62 +1,58 @@
 
 
-# Plan: Actualizar CRONs con cron.alter_job()
+# Plan: Crear CRON Job para Fase 35
 
-## Diagnóstico
+## Situación Actual
 
-El error `permission denied for table job` ocurre porque:
-1. La tabla `cron.job` pertenece al sistema pg_cron
-2. El `UPDATE` directo está bloqueado incluso para postgres via PostgREST
-3. La función `execute_sql` tampoco hereda permisos suficientes
+- **174 empresas** en el sistema
+- **34 fases con CRON** (fases 01-34) → cubren 170 empresas
+- **Fase 35 sin CRON** → 4 empresas hospitalarias huérfanas:
+  - Grupo Hospitalario HLA (HLA)
+  - Ribera Salud (RS)
+  - Viamed Salud (VIA)
+  - Vithas (VIT)
 
-## Solución: Usar cron.alter_job() nativo
+## Solución
 
-pg_cron proporciona una función oficial `cron.alter_job()` que SÍ puede modificar los schedules sin necesidad de UPDATE directo.
+Crear un nuevo CRON job `rix-sweep-phase-35` que se ejecute a las **02:50 UTC (03:50 CET)**, 5 minutos después de la fase 34.
+
+## Comando SQL a Ejecutar
+
+El CRON debe seguir el mismo patrón que los existentes:
+
+```sql
+SELECT cron.schedule(
+  'rix-sweep-phase-35',
+  '50 2 * * 0',
+  $$
+  SELECT net.http_post(
+    url:='https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/rix-batch-orchestrator',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU"}'::jsonb,
+    body:='{"trigger": "cron", "fase": 35}'::jsonb
+  )
+  $$
+);
+```
 
 ## Cambios Técnicos
 
-### 1. Modificar Edge Function `update-cron-schedules`
+### 1. Actualizar Edge Function `update-cron-schedules`
 
-Cambiaré la estrategia para usar `cron.alter_job(job_id, schedule => '...')` en lugar de UPDATE:
+Modificar para que:
+- Soporte 35 fases en lugar de 34
+- Pueda crear CRONs nuevos además de actualizarlos
 
-```typescript
-// Antes (no funciona):
-const sql = `UPDATE cron.job SET schedule = '0 0 * * 0' WHERE jobname = 'rix-sweep-phase-01'`
+### 2. Ejecutar Creación del CRON
 
-// Después (usar función nativa):
-const sql = `SELECT cron.alter_job(10, schedule => '0 0 * * 0')`
-```
+Usar el SQL insert tool para crear el CRON directamente.
 
-Usaré los `jobid` (10-43) que ya tenemos identificados para las 34 fases.
+## Resultado Final
 
-### 2. Mapping de jobid a nuevo schedule
+| Fase | Hora UTC | Hora CET | Empresas |
+|------|----------|----------|----------|
+| 34 | 02:45 | 03:45 | 5 empresas |
+| 35 | 02:50 | 03:50 | 4 hospitales |
 
-| jobid | Fase | Nuevo Schedule | Hora CET |
-|-------|------|----------------|----------|
-| 10 | 01 | `0 0 * * 0` | 01:00 |
-| 11 | 02 | `5 0 * * 0` | 01:05 |
-| 12 | 03 | `10 0 * * 0` | 01:10 |
-| ... | ... | ... | ... |
-| 42 | 33 | `40 2 * * 0` | 03:40 |
-| 43 | 34 | `45 2 * * 0` | 03:45 |
-
-### 3. Archivos a Modificar
-
-- `supabase/functions/update-cron-schedules/index.ts`
-  - Reemplazar UPDATE por SELECT cron.alter_job()
-  - Usar jobid directos (10-43) en lugar de jobname
-
-## Resultado Esperado
-
-- Los 34 CRONs se actualizan automáticamente
-- Fase 01 empieza a las 01:00 CET (00:00 UTC)
-- Fase 34 termina a las 03:45 CET (02:45 UTC)
-- Total sweep: ~2h 45min cada domingo
-
-## Pasos de Implementación
-
-1. Actualizar la Edge Function con la nueva lógica
-2. Desplegar la función
-3. Ejecutar la función via curl
-4. Verificar que los schedules cambiaron consultando cron.job
+- **Total sweep**: 00:00 - 02:50 UTC (01:00 - 03:50 CET)
+- **174/174 empresas cubiertas** ✅
 
