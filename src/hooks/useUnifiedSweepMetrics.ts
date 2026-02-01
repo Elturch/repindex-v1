@@ -180,21 +180,36 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
     queryKey: ["unified-sweep-metrics", forcedSweepId],
     queryFn: async (): Promise<UnifiedSweepMetrics> => {
       // CRITICAL FIX: Get actual week start from the most recent data in rix_runs_v2
-      // instead of calculating from sweepId (which can be off due to ISO week edge cases)
-      const { data: latestPeriod } = await supabase
+      // Instead of looking at any single record, find the week with the MOST records (active sweep)
+      const { data: weekCounts } = await supabase
         .from('rix_runs_v2')
         .select('06_period_from')
         .order('06_period_from', { ascending: false })
-        .limit(1);
+        .limit(500);
       
-      // Use the actual date from DB, fallback to calculated if no data
-      const weekStart = latestPeriod?.[0]?.['06_period_from'] || getWeekStartFromSweepId(getCurrentSweepId());
+      // Count records per week and find the most populated recent week
+      const weekCountMap = new Map<string, number>();
+      (weekCounts || []).forEach(r => {
+        const week = r['06_period_from'];
+        if (week) weekCountMap.set(week, (weekCountMap.get(week) || 0) + 1);
+      });
       
-      // IMPORTANT: sweep_progress uses a sweepId derived from *current date* (see orchestrator).
-      // Using weekStart-derived week numbers caused mismatches like W05 vs W06.
-      const sweepId = forcedSweepId || getCurrentSweepId();
+      // Sort by count descending and pick the most populated recent week
+      const sortedWeeks = Array.from(weekCountMap.entries())
+        .sort((a, b) => b[1] - a[1]);
       
-      console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart}, sweepId: ${sweepId}`);
+      const weekStart = sortedWeeks[0]?.[0] || getWeekStartFromSweepId(getCurrentSweepId());
+      
+      // Derive sweepId from the actual week we're looking at for consistency
+      const weekDate = new Date(weekStart);
+      const startOfYear = new Date(weekDate.getFullYear(), 0, 1);
+      const days = Math.floor((weekDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+      const derivedSweepId = `${weekDate.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+      
+      const sweepId = forcedSweepId || derivedSweepId;
+      
+      console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart} (${weekCountMap.get(weekStart)} records), sweepId: ${sweepId}`);
       
       
       // Parallel queries for maximum efficiency
