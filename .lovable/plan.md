@@ -1,153 +1,111 @@
 
-# Plan: Añadir Bibliografía Verificada a la Exportación Individual
+# Plan: Dashboard de Monitorización en Tiempo Real del Barrido
 
-## Problema Identificado
+## Problema Central
 
-El botón "Descargar como informe" en respuestas individuales (componente `MarkdownMessage`) **no incluye** la sección de fuentes verificadas, mientras que la exportación de conversación completa (`downloadAsHtml` en ChatContext) **sí las incluye**.
+El panel actual `SweepMonitorPanel` tiene ~2200 líneas de código con múltiples secciones pero **ninguna vista unificada del estado en tiempo real**. No hay forma de ver de un vistazo:
+- Si el sistema está funcionando o muerto
+- Cuál es el progreso real vs esperado
+- Qué acciones tomar para resolver problemas
 
-La diferencia está en que:
-- **Exportación completa**: Itera sobre todos los mensajes, extrae `verifiedSources` del metadata, y llama a `generateBibliographyHtml()` 
-- **Exportación individual**: La función `generateExportHtml()` no recibe ni usa las fuentes verificadas
+## Solución: Panel de Estado Unificado
 
-## Cambios Requeridos
+Crear un nuevo componente `SweepHealthDashboard` que muestre:
 
-### 1. Modificar MarkdownMessage (src/components/ui/markdown-message.tsx)
-
-**Añadir props para recibir datos de bibliografía:**
-
-```typescript
-interface MarkdownMessageProps {
-  content: string;
-  showDownload?: boolean;
-  languageCode?: string;
-  roleName?: string;
-  // NUEVAS PROPS:
-  verifiedSources?: VerifiedSource[];
-  periodFrom?: string;
-  periodTo?: string;
-}
-```
-
-**Pasar las fuentes a generateExportHtml:**
-
-```typescript
-const downloadMessage = () => {
-  // ...
-  const htmlContent = generateExportHtml(
-    content, 
-    tr, 
-    languageCode, 
-    roleName,
-    verifiedSources,  // NUEVO
-    periodFrom,       // NUEVO
-    periodTo          // NUEVO
-  );
-  // ...
-};
-```
-
-### 2. Modificar generateExportHtml (markdown-message.tsx)
-
-**Actualizar la firma de la función:**
-
-```typescript
-function generateExportHtml(
-  markdown: string, 
-  tr: ChatUITranslations, 
-  languageCode: string, 
-  roleName?: string,
-  verifiedSources?: VerifiedSource[],
-  periodFrom?: string,
-  periodTo?: string
-): string
-```
-
-**Añadir el import de generateBibliographyHtml:**
-
-```typescript
-import { VerifiedSource, generateBibliographyHtml } from '@/lib/verifiedSourceExtractor';
-```
-
-**Insertar la bibliografía antes del footer:**
-
-```html
-<main class="content">
-  ${bodyContent}
-</main>
-
-${generateBibliographyHtml(verifiedSources || [], periodFrom, periodTo)}
-
-<footer class="report-footer">
-  ...
-</footer>
-```
-
-### 3. Modificar ChatMessages (src/components/chat/ChatMessages.tsx)
-
-**Pasar el metadata al MarkdownMessage:**
-
-```tsx
-<MarkdownMessage 
-  content={message.content} 
-  showDownload={!message.isStreaming}
-  languageCode={languageCode}
-  roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
-  // NUEVAS PROPS:
-  verifiedSources={message.metadata?.verifiedSources}
-  periodFrom={message.metadata?.methodology?.periodFrom}
-  periodTo={message.metadata?.methodology?.periodTo}
-/>
-```
-
-## Flujo de Datos Actualizado
+### 1. Header de Estado Global (siempre visible)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│  Edge Function (chat-intelligence)                              │
-│  ├── Extrae verifiedSources de ChatGPT y Perplexity             │
-│  └── Incluye en metadata del mensaje                            │
-└───────────────────────┬─────────────────────────────────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  ChatContext                                                     │
-│  ├── message.metadata.verifiedSources                           │
-│  └── message.metadata.methodology.periodFrom/periodTo           │
-└───────────────────────┬─────────────────────────────────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  ChatMessages.tsx                                                │
-│  └── Pasa verifiedSources + periodFrom/periodTo a MarkdownMessage│
-└───────────────────────┬─────────────────────────────────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  MarkdownMessage.tsx                                             │
-│  ├── Recibe props con fuentes verificadas                       │
-│  └── downloadMessage() → generateExportHtml() con bibliografía  │
-└───────────────────────┬─────────────────────────────────────────┘
-                        ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  HTML Exportado Individual                                       │
-│  ├── Header corporativo                                          │
-│  ├── Contenido del mensaje                                       │
-│  ├── 📚 Bibliografía Verificada (NUEVO)                          │
-│  │   ├── Menciones de Ventana                                   │
-│  │   └── Menciones de Refuerzo                                  │
-│  └── Footer + Technical Sheet                                    │
+│  🔴 BARRIDO ATASCADO                    2026-W06               │
+│  ═══════════════════════════════════════════════════════════════│
+│  75/174 empresas (43%)    ⏱️ 9h 12m    📊 Esperado: 100%       │
+│  [████████░░░░░░░░░░░░] 43%            🎯 Meta: 03:50 CET      │
+│                                                                 │
+│  🔴 BBVA atascado (10 min)  ⚠️ 101 pendientes  ❌ 1 fallida    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Archivos a Modificar
+### 2. Indicadores de Salud del Sistema
 
-| Archivo | Cambios |
-|---------|---------|
-| `src/components/ui/markdown-message.tsx` | Añadir props, import, y bibliografía en generateExportHtml |
-| `src/components/chat/ChatMessages.tsx` | Pasar metadata de fuentes a MarkdownMessage |
+| Indicador | Estado | Descripción |
+|-----------|--------|-------------|
+| **Heartbeat** | 🔴 Muerto | Último procesamiento hace >5 min |
+| **Zombis** | ⚠️ 1 detectado | BBVA en processing >5 min |
+| **Tasa de éxito** | ⚠️ 88% | Por debajo del 95% objetivo |
+| **APIs** | ✅ OK | Sin errores de autenticación |
+
+### 3. Timeline Visual de Fases
+
+```text
+Fase:  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23...
+       ✓  ✓  ✓  ✓  ✓  ✓  ⚠️ ✓  ✓  ✓  ⚠️ ✓  ✓  ✓  ⚠️ ✓  ✓  ⚠️ ✓  ⚠️ ❌ ⚠️ ⚠️
+       │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │
+       ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼
+      5/5 5/5 4/6 5/5 5/5 3/5 2/5 ...                              0/5 1/6
+
+Leyenda: ✓ Completa (100%)  ⚠️ Parcial (>0%)  ❌ Sin procesar (0%)
+```
+
+### 4. Acciones Rápidas Contextuales
+
+Botones que aparecen según el estado:
+
+- **Si hay zombis**: `[🧟 Limpiar Zombis]` - Reset automático de registros atascados
+- **Si hay pendientes analizables**: `[🔧 Completar Análisis]` - Trigger de reparación
+- **Si el barrido está parado**: `[▶️ Reanudar Cascada]` - Inicia procesamiento manual
+- **Si hay errores de API**: `[🔑 Verificar APIs]` - Diagnóstico de credenciales
+
+## Cambios Técnicos
+
+### Archivo: `src/components/admin/SweepHealthDashboard.tsx` (NUEVO)
+
+Componente dedicado de ~400 líneas que:
+1. Consulta `sweep_progress` cada 10 segundos
+2. Calcula métricas de salud en tiempo real
+3. Detecta zombis (processing > 5 min)
+4. Compara progreso real vs esperado basado en hora actual
+5. Muestra acciones contextuales según el estado
+
+### Archivo: `src/components/admin/SweepMonitorPanel.tsx` (MODIFICAR)
+
+- Integrar `SweepHealthDashboard` como primera sección del panel
+- Colapsar las secciones detalladas por defecto
+- El dashboard de salud siempre visible arriba
+
+### Lógica de Estados
+
+```typescript
+type SweepHealthStatus = 
+  | 'healthy'      // Procesando normalmente, sin zombis
+  | 'slow'         // Procesando pero por debajo del ritmo esperado  
+  | 'stuck'        // Zombi detectado (>5 min sin cambios)
+  | 'dead'         // Sin actividad en >10 min
+  | 'completed'    // 100% completado
+  | 'error';       // Errores críticos de API
+
+function calculateExpectedProgress(sweepStartTime: Date): number {
+  const hoursElapsed = (Date.now() - sweepStartTime.getTime()) / 3600000;
+  // El barrido debería completarse en ~3 horas
+  return Math.min(100, Math.round((hoursElapsed / 3) * 100));
+}
+
+function detectZombies(records: SweepRecord[]): SweepRecord[] {
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  return records.filter(r => 
+    r.status === 'processing' && 
+    new Date(r.started_at).getTime() < fiveMinutesAgo
+  );
+}
+```
 
 ## Resultado Esperado
 
-Cuando un usuario haga clic en "Descargar como informe" en cualquier respuesta individual:
+Al abrir `/admin` > "Barrido V2":
 
-1. El HTML generado incluirá la sección "📚 Anexo: Referencias Citadas por las IAs"
-2. Las fuentes estarán clasificadas temporalmente (Menciones de Ventana vs Refuerzo)
-3. El diseño será idéntico al de la exportación de conversación completa
-4. Se mantendrá la política de "Cero Invención" (solo ChatGPT + Perplexity)
+1. **Vista inmediata** del estado: verde/amarillo/rojo
+2. **Progreso claro**: X de 174 empresas, Y% completado
+3. **Tiempo**: Cuánto lleva, cuánto debería llevar
+4. **Problemas**: Zombis, fallos, APIs caídas
+5. **Acciones**: Botones para resolver cada problema
+
+El administrador sabrá en 5 segundos si el barrido está funcionando y qué hacer si no.
