@@ -162,35 +162,44 @@ export function SweepHealthDashboard() {
 
   return (
     <div className="space-y-4 mb-6">
-      {/* SECCIÓN 0: BARRA DE TRIGGERS - MUY VISIBLE */}
+      {/* SECCIÓN 0: BARRA DE ESTADO EN TIEMPO REAL */}
       <Card className={cn("border-2", speed.borderColor, speed.bgColor)}>
         <CardContent className="py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              {/* Indicador visual grande */}
+              {/* Indicador visual grande con heartbeat */}
               <div className="relative">
                 {hasActiveProcesses ? (
                   <>
                     <Activity className={cn("h-8 w-8 animate-pulse", speed.color)} />
                     <span className="absolute -top-1 -right-1 flex h-4 w-4">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-4 w-4 bg-primary text-[10px] text-primary-foreground font-bold flex items-center justify-center">
+                      <span className="relative inline-flex rounded-full h-4 w-4 bg-primary text-[10px] text-primary-foreground font-bold items-center justify-center">
                         {totalActive}
                       </span>
                     </span>
                   </>
                 ) : hasPendingWork ? (
-                  <Clock className="h-8 w-8 text-muted-foreground" />
+                  <>
+                    <Clock className="h-8 w-8 text-amber-500 animate-pulse" />
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500 text-[10px] text-white font-bold items-center justify-center">
+                        !
+                      </span>
+                    </span>
+                  </>
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-muted-foreground/20 flex items-center justify-center">
-                    <span className="text-xs text-muted-foreground">—</span>
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                    <span className="text-xs text-muted-foreground">✓</span>
                   </div>
                 )}
               </div>
               
               {/* Info de procesos */}
-              <div>
-                <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Estado principal */}
                   <span className="text-lg font-semibold">
                     {hasActiveProcesses ? (
                       <>
@@ -199,7 +208,7 @@ export function SweepHealthDashboard() {
                         {activeSearches > 0 && <span>{activeSearches} búsquedas</span>}
                       </>
                     ) : pendingTriggers > 0 ? (
-                      <span className="text-amber-600 dark:text-amber-400">{pendingTriggers} triggers en cola</span>
+                      <span className="text-amber-600 dark:text-amber-400">{pendingTriggers} triggers esperando</span>
                     ) : recordsNeedingWork > 0 ? (
                       <span className="text-muted-foreground">
                         {metrics.recordsNoData > 0 && <>{metrics.recordsNoData} sin datos</>}
@@ -207,9 +216,10 @@ export function SweepHealthDashboard() {
                         {metrics.recordsPendingAnalysis > 0 && <>{metrics.recordsPendingAnalysis} sin analizar</>}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">Sin trabajo pendiente</span>
+                      <span className="text-muted-foreground">Barrido completo</span>
                     )}
                   </span>
+                  
                   {/* Badge de velocidad */}
                   <span className={cn(
                     "px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide",
@@ -219,48 +229,61 @@ export function SweepHealthDashboard() {
                     {speed.label}
                   </span>
                 </div>
-                {/* Indicador de progreso del trigger activo */}
+                
+                {/* Indicador de actividad en tiempo real */}
                 {metrics.activeTrigger && (
-                  <div className="flex items-center gap-2 mt-1">
-                    {/* Progress bar - solo si hay datos numéricos */}
-                    {(metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) && (
-                      <div className="flex-1 max-w-[200px]">
-                        <Progress 
-                          value={metrics.activeTrigger.processed + metrics.activeTrigger.remaining > 0 
-                            ? (metrics.activeTrigger.processed / (metrics.activeTrigger.processed + metrics.activeTrigger.remaining)) * 100 
-                            : 0
-                          } 
-                          className="h-1.5" 
-                        />
-                      </div>
-                    )}
-                    {/* Status text - siempre visible */}
-                    <span className="text-xs text-muted-foreground tabular-nums flex items-center gap-1">
-                      {metrics.activeTrigger.action === 'repair_search' ? '🔍' : '📊'}
-                      <span className="font-medium">
-                        {metrics.activeTrigger.action === 'repair_search' ? 'Búsqueda' : 'Análisis'}
+                  <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-background/50 border border-border/50">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                      <span className="text-sm font-medium">
+                        {metrics.activeTrigger.action === 'repair_search' ? '🔍 Buscando datos' : '📊 Analizando'}
                       </span>
-                      {(metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) ? (
-                        <span>
+                    </div>
+                    {(metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) ? (
+                      <>
+                        <div className="flex-1 max-w-[150px]">
+                          <Progress 
+                            value={metrics.activeTrigger.processed + metrics.activeTrigger.remaining > 0 
+                              ? (metrics.activeTrigger.processed / (metrics.activeTrigger.processed + metrics.activeTrigger.remaining)) * 100 
+                              : 0
+                            } 
+                            className="h-1.5" 
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums">
                           {metrics.activeTrigger.processed}/{metrics.activeTrigger.processed + metrics.activeTrigger.remaining}
                         </span>
-                      ) : (
-                        <span className="animate-pulse">en proceso...</span>
-                      )}
-                      {metrics.activeTrigger.lastTicker && (
-                        <span className="font-mono text-primary">{metrics.activeTrigger.lastTicker}</span>
-                      )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground animate-pulse">procesando...</span>
+                    )}
+                    {metrics.activeTrigger.lastTicker && (
+                      <span className="text-xs font-mono text-primary font-medium">{metrics.activeTrigger.lastTicker}</span>
+                    )}
+                  </div>
+                )}
+                
+                {/* Si hay trabajo pendiente pero el sistema no está procesando, mostrar alerta */}
+                {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && (
+                  <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm text-amber-700 dark:text-amber-400">
+                      Sistema detenido — pulsa <strong>Forzar</strong> para reanudar
                     </span>
                   </div>
                 )}
-                <div className="text-sm text-muted-foreground">
-                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas completas • {metrics.recordsWithScore}/{metrics.totalRecords} registros
+                
+                {/* Resumen del barrido */}
+                <div className="text-sm text-muted-foreground mt-1">
+                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas • {metrics.recordsWithScore}/{metrics.totalRecords} registros
                 </div>
               </div>
             </div>
             
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleForce} disabled={forcing}>
+            <div className="flex gap-2 flex-shrink-0">
+              <Button size="sm" onClick={handleForce} disabled={forcing} className={cn(
+                hasPendingWork && !hasActiveProcesses && "animate-pulse"
+              )}>
                 {forcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 <span className="ml-1">Forzar</span>
               </Button>
