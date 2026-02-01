@@ -1,180 +1,165 @@
 
-# Plan: Corregir Bloqueo del Encadenamiento Automático
 
-## Problema Raíz
+# Plan: Feedback Visual y Procesamiento Inmediato de Triggers
 
-El sistema muestra "Esperando - Sin actividad" porque:
+## Problema Actual
 
-1. **6 empresas fallidas bloquean todo el encadenamiento**
-   - DOM, ROVI, AMS, MAP, LOG, IZE tienen status `failed` con error `HTTP 504`
-   - La condición actual requiere `failed === 0` para disparar el encadenamiento
-   - Como `failed = 6`, nunca entra al bloque que crea triggers de `repair_analysis`
+Cuando presionas "Forzar Ahora":
+1. ✅ El sistema detecta 916 registros sin datos + 23 analizables
+2. ✅ Inserta triggers `repair_search` y `repair_analysis` en la BD
+3. ❌ **NO los procesa inmediatamente** - esperan hasta el próximo CRON (5 min)
+4. ❌ **La UI no muestra feedback** - solo dice "Auto-recovery disparado" sin detalles
 
-2. **Los 19 registros analizables quedan en el limbo**
-   - Tienen datos de búsqueda (`20_res_gpt_bruto` no es NULL)
-   - Pero no tienen score (`09_rix_score` es NULL)
-   - El sistema no dispara `repair_analysis` porque está bloqueado
+El flujo actual en `rix-batch-orchestrator`:
+```
+processCronTriggers()  →  verificar encadenamiento  →  insertar nuevos triggers
+                                                              ↓
+                                    (triggers quedan pendientes para próximo CRON)
+```
 
-## Lógica Actual (Incorrecta)
+## Solución: 2 Cambios
+
+### Cambio 1: Procesar Triggers Inmediatamente Después de Insertarlos
+
+Añadir una **segunda llamada** a `processCronTriggers()` después de insertar los nuevos triggers:
 
 ```typescript
-// Línea 1248 en rix-batch-orchestrator/index.ts
-if (pending === 0 && processing === 0 && failed === 0) {
-  // Solo entra aquí si NO hay fallidos
-  // Verificar datos y disparar encadenamiento...
+// DESPUÉS de insertar triggers (línea ~1340):
+if (triggersInserted.length > 0) {
+  console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ')}`);
+  
+  // NUEVO: Procesar inmediatamente los triggers recién creados
+  console.log(`[${triggerMode}] Processing newly inserted triggers...`);
+  const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+  console.log(`[${triggerMode}] Immediate processing: ${immediateResults.length} triggers processed`);
 }
 ```
 
-## Solución Propuesta
+### Cambio 2: Mostrar Estado de Triggers en la UI
 
-Cambiar la lógica para que el encadenamiento se ejecute cuando:
-- `pending === 0 && processing === 0` (independientemente de los `failed`)
-- Los `failed` son empresas sin datos de búsqueda, pero no deben bloquear el análisis de las que SÍ tienen datos
+En `SweepHealthDashboard.tsx`, añadir consulta y visualización de triggers pendientes:
 
-### Nuevo Flujo
+```typescript
+// Nueva query para obtener triggers pendientes
+const { data: pendingTriggers } = await supabase
+  .from('cron_triggers')
+  .select('action, created_at, params')
+  .eq('status', 'pending')
+  .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize'])
+  .order('created_at', { ascending: false });
 
-```text
-┌───────────────────────────────────────────────────────────────────┐
-│ auto_recovery detecta:                                            │
-│   pending=0, processing=0, failed=6                               │
-│                    ↓                                              │
-│ ANTES: failed > 0 → NO entra al encadenamiento → BLOQUEADO       │
-│                                                                   │
-│ DESPUÉS: pending=0 && processing=0 → Entra al encadenamiento     │
-│                    ↓                                              │
-│ 1. ¿Hay registros sin datos? → repair_search (para los failed)   │
-│ 2. ¿Hay registros analizables? → repair_analysis (los 19)        │
-│ 3. ¿Todo listo? → auto_sanitize                                  │
-└───────────────────────────────────────────────────────────────────┘
+// Mostrar en la UI:
+// 🔄 2 triggers pendientes: repair_search (952), repair_analysis (23)
 ```
 
-## Archivo a Modificar
+## Archivos a Modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Cambiar condición de `failed === 0` a permitir encadenamiento incluso con empresas fallidas |
-
-## Cambio Específico
-
-### Línea ~1248: Modificar condición de encadenamiento
-
-```typescript
-// ANTES:
-if (pending === 0 && processing === 0 && failed === 0) {
-  // Encadenamiento solo cuando todo está limpio
-}
-
-// DESPUÉS:
-if (pending === 0 && processing === 0) {
-  // Encadenamiento cuando no hay trabajo activo
-  // Los "failed" no bloquean - serán manejados por repair_search
-  console.log(`[${triggerMode}] Sweep progress complete (${completed} completed, ${failed} failed). Checking data state...`);
-  
-  // ... resto del código de encadenamiento igual ...
-}
-```
-
-### Mejora Adicional: Priorizar repair_search para los failed
-
-Cuando hay empresas `failed`, el sistema debe:
-1. Contar cuántos registros faltan datos de búsqueda
-2. Si hay registros sin datos → disparar `repair_search`
-3. Simultáneamente, si hay registros analizables → disparar `repair_analysis`
-
-```typescript
-// Dentro del bloque de encadenamiento:
-
-// PRIORIDAD 1: Si hay registros sin datos de búsqueda (incluye los failed)
-if (missingDataCount && missingDataCount > 0) {
-  // Insertar repair_search para re-intentar búsqueda
-  await insertTriggerIfNotExists('repair_search', { count: missingDataCount, batch_size: 5 });
-}
-
-// PRIORIDAD 2: Si hay registros analizables (independiente de los failed)
-// NOTA: Esto puede correr EN PARALELO con repair_search
-if (analyzableCount && analyzableCount > 0) {
-  await insertTriggerIfNotExists('repair_analysis', { count: analyzableCount, batch_size: 5 });
-}
-
-// PRIORIDAD 3: Solo sanitizar si no hay más trabajo pendiente
-if ((missingDataCount || 0) === 0 && (analyzableCount || 0) === 0) {
-  await insertTriggerIfNotExists('auto_sanitize', { sweep_id: sweepId, auto_repair: true });
-}
-```
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir segunda llamada a `processCronTriggers()` después de insertar triggers |
+| `src/components/admin/SweepHealthDashboard.tsx` | Mostrar triggers pendientes y su estado |
 
 ## Resultado Esperado
 
-| Estado Actual | Estado Después |
-|---------------|----------------|
-| 19 registros bloqueados | `repair_analysis` se dispara automáticamente |
-| 6 empresas failed ignoradas | `repair_search` se dispara para reintentar |
-| Botón "Forzar Ahora" no hace nada | Dispara encadenamiento completo |
-| Panel muestra "Sin actividad" | Panel muestra progreso real |
+### Antes (actual):
+1. Presionar "Forzar Ahora" → Toast: "Auto-recovery disparado"
+2. Esperar 5 minutos para que el CRON procese los triggers
+3. No hay visibilidad del estado
 
-## Validación
+### Después:
+1. Presionar "Forzar Ahora" → Toast: "Auto-recovery disparado"
+2. **Inmediatamente**: Los triggers se procesan
+3. **UI muestra**: "🔄 Procesando: repair_search (5/952), repair_analysis (0/23)"
+4. El progreso aumenta visiblemente cada 10 segundos (auto-refresh)
 
-Tras el cambio, al presionar "Forzar Ahora":
-1. Verás en logs: `Inserting repair_analysis trigger for 19 analyzable records`
-2. En 5 minutos (próximo CRON): Se procesarán los 19 registros
-3. El panel mostrará progreso: 866/990 → 885/990 → etc.
+## Flujo Corregido
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Presionar "Forzar Ahora"                                                │
+│                    ↓                                                    │
+│ auto_recovery:                                                          │
+│   1. processCronTriggers() - procesar existentes                       │
+│   2. Verificar datos reales                                            │
+│   3. Insertar repair_search + repair_analysis                          │
+│   4. processCronTriggers() - NUEVO: procesar los recién insertados    │
+│                    ↓                                                    │
+│ UI muestra:                                                             │
+│   "✅ Procesando 2 triggers: repair_search, repair_analysis"           │
+│   Barra de progreso actualizada                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Sección Técnica
 
-### Detalle de la condición corregida
+### Cambio en rix-batch-orchestrator (línea ~1345)
 
 ```typescript
-// Línea ~1247-1250 en rix-batch-orchestrator/index.ts
-
-// CAMBIO 1: Remover condición && failed === 0
-if (pending === 0 && processing === 0) {  // Ya no requiere failed === 0
-  console.log(`[${triggerMode}] Sweep ${sweepId} progress complete (${completed} completed, ${failed} failed)`);
+// DESPUÉS del bloque de inserción de triggers:
+if (triggersInserted.length > 0) {
+  console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ')}`);
   
-  // CAMBIO 2: Disparar ambos triggers si corresponde (no son mutuamente excluyentes)
-  const triggersInserted: string[] = [];
-  
-  // repair_search para empresas sin datos
-  if (missingDataCount && missingDataCount > 0) {
-    const { data: existing } = await supabase
-      .from('cron_triggers')
-      .select('id')
-      .eq('action', 'repair_search')
-      .eq('status', 'pending')
-      .maybeSingle();
-    
-    if (!existing) {
-      await supabase.from('cron_triggers').insert({
-        action: 'repair_search',
-        params: { sweep_id: sweepId, count: missingDataCount, batch_size: 5 },
-        status: 'pending',
-      });
-      triggersInserted.push('repair_search');
+  // ========== NUEVO: Procesar inmediatamente ==========
+  // Esto evita esperar 5 minutos para el próximo CRON
+  console.log(`[${triggerMode}] Executing immediate trigger processing...`);
+  try {
+    const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+    if (immediateResults.length > 0) {
+      console.log(`[${triggerMode}] Immediate processing completed: ${immediateResults.map(r => r.action).join(', ')}`);
     }
+  } catch (e) {
+    console.error(`[${triggerMode}] Immediate processing error:`, e);
+    // No fallar la request - el CRON lo procesará después
   }
-  
-  // repair_analysis para registros analizables (puede correr en paralelo)
-  if (analyzableCount && analyzableCount > 0) {
-    const { data: existing } = await supabase
-      .from('cron_triggers')
-      .select('id')
-      .eq('action', 'repair_analysis')
-      .eq('status', 'pending')
-      .maybeSingle();
-    
-    if (!existing) {
-      await supabase.from('cron_triggers').insert({
-        action: 'repair_analysis',
-        params: { sweep_id: sweepId, count: analyzableCount, batch_size: 5 },
-        status: 'pending',
-      });
-      triggersInserted.push('repair_analysis');
-    }
-  }
-  
-  // auto_sanitize solo cuando ya no hay trabajo pendiente
-  if ((missingDataCount || 0) === 0 && (analyzableCount || 0) === 0) {
-    // ... insertar auto_sanitize ...
-  }
-  
-  console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ') || 'none'}`);
 }
 ```
+
+### Cambio en SweepHealthDashboard.tsx
+
+Añadir hook para consultar triggers pendientes:
+
+```typescript
+// Nueva query dentro del componente o en useUnifiedSweepMetrics
+const [pendingTriggers, setPendingTriggers] = useState<Array<{
+  action: string;
+  created_at: string;
+  params: { count?: number };
+}>>([]);
+
+useEffect(() => {
+  const fetchTriggers = async () => {
+    const { data } = await supabase
+      .from('cron_triggers')
+      .select('action, created_at, params')
+      .eq('status', 'pending')
+      .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']);
+    setPendingTriggers(data || []);
+  };
+  fetchTriggers();
+  const interval = setInterval(fetchTriggers, 10000);
+  return () => clearInterval(interval);
+}, []);
+```
+
+Añadir visualización:
+
+```tsx
+{pendingTriggers.length > 0 && (
+  <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg mb-4">
+    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span className="font-medium">
+        {pendingTriggers.length} trigger{pendingTriggers.length > 1 ? 's' : ''} en cola:
+      </span>
+    </div>
+    <div className="mt-2 flex flex-wrap gap-2">
+      {pendingTriggers.map((t, i) => (
+        <Badge key={i} variant="outline" className="bg-white dark:bg-gray-800">
+          {t.action} ({(t.params as any)?.count || '?'} registros)
+        </Badge>
+      ))}
+    </div>
+  </div>
+)}
+```
+
