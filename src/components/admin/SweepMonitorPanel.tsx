@@ -35,6 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useUnifiedSweepMetrics, useRefreshSweepMetrics } from '@/hooks/useUnifiedSweepMetrics';
 
 // ============ TIPOS PARA ESTADO DE ANÁLISIS V2 ============
 interface AnalysisModelStatus {
@@ -237,6 +238,10 @@ export function SweepMonitorPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resettingZombis, setResettingZombis] = useState(false);
+  
+  // ============ UNIFIED SWEEP METRICS (Source of Truth) ============
+  const { data: unifiedMetrics, refetch: refetchUnifiedMetrics } = useUnifiedSweepMetrics();
+  const refreshAllMetrics = useRefreshSweepMetrics();
   
   // Actividad reciente
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
@@ -874,6 +879,8 @@ export function SweepMonitorPanel() {
     fetchAPIErrors();
     fetchLatestRepairTrigger();
     fetchQualityReport();
+    // Also refresh unified metrics to keep all panels in sync
+    refreshAllMetrics();
   };
 
   // Reset inmediato de empresas zombis
@@ -1298,49 +1305,55 @@ export function SweepMonitorPanel() {
             */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-3">
               <div className="text-center p-3 rounded-lg bg-muted/50">
-                <div className="text-2xl font-bold text-foreground">{status?.totalCompanies || 0}</div>
+                <div className="text-2xl font-bold text-foreground">
+                  {unifiedMetrics?.totalCompanies || status?.totalCompanies || 0}
+                </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <Building2 className="h-3 w-3" />
                   Total empresas
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-good/10">
-                {/* CORREGIDO: Empresas con 6/6 modelos analizados */}
+                {/* UNIFIED: Empresas con 6/6 modelos analizados */}
                 <div className="text-2xl font-bold text-good">
-                  {analysisStatus?.uniqueCompaniesComplete || 0}
+                  {unifiedMetrics?.companiesComplete || analysisStatus?.uniqueCompaniesComplete || 0}
                 </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <CheckCircle2 className="h-3 w-3" />
                   Completados (6/6)
                 </div>
                 <div className="text-[10px] text-muted-foreground/70">
-                  de {analysisStatus?.totalUniqueCompanies || 0} empresas
+                  de {unifiedMetrics?.totalCompanies || analysisStatus?.totalUniqueCompanies || 0} empresas
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-primary/10">
-                <div className="text-2xl font-bold text-primary">{status?.byStatus?.processing || 0}</div>
+                <div className="text-2xl font-bold text-primary">
+                  {unifiedMetrics?.searchProcessing || status?.byStatus?.processing || 0}
+                </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <Loader2 className="h-3 w-3" />
                   Procesando
                 </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-needs-improvement/10">
-                {/* Pendientes: suma de pendientes de búsqueda + pendientes de análisis */}
+                {/* UNIFIED: Pendientes de análisis */}
                 <div className="text-2xl font-bold text-needs-improvement">
-                  {(status?.byStatus?.pending || 0) + (analysisStatus?.pendingAnalysis || 0)}
+                  {unifiedMetrics?.recordsPendingAnalysis || analysisStatus?.pendingAnalysis || 0}
                 </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <Clock className="h-3 w-3" />
-                  Pendientes
+                  Pendientes análisis
                 </div>
-                {analysisStatus && analysisStatus.pendingAnalysis > 0 && (
+                {(unifiedMetrics?.recordsPendingAnalysis || 0) > 0 && (
                   <div className="text-[10px] text-muted-foreground/70">
-                    ({analysisStatus.pendingAnalyzable} analizables)
+                    (analizables)
                   </div>
                 )}
               </div>
               <div className="text-center p-3 rounded-lg bg-destructive/10">
-                <div className="text-2xl font-bold text-destructive">{status?.byStatus?.failed || 0}</div>
+                <div className="text-2xl font-bold text-destructive">
+                  {unifiedMetrics?.searchFailed || status?.byStatus?.failed || 0}
+                </div>
                 <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
                   Fallidos
@@ -1479,11 +1492,10 @@ export function SweepMonitorPanel() {
             <CardTitle className="text-base flex items-center gap-2">
               <FlaskConical className="h-4 w-4 text-primary" />
               Estado de Análisis V2
-              {analysisStatus && (
-                <Badge variant="outline" className="ml-2 text-xs">
-                  Semana: {analysisStatus.sweepWeek}
-                </Badge>
-              )}
+              {/* Use unified metrics for consistent sweep ID display */}
+              <Badge variant="outline" className="ml-2 text-xs">
+                Semana: {unifiedMetrics?.sweepId || analysisStatus?.sweepWeek || 'N/A'}
+              </Badge>
             </CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
               <Button
