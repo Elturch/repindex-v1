@@ -161,7 +161,6 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         rixRunsResult,
         sweepProgressResult,
         pendingTriggersResult,
-        ghostCompaniesResult,
       ] = await Promise.all([
         // Get all records for this week from rix_runs_v2 - include ALL response columns
         supabase
@@ -169,10 +168,10 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .select('05_ticker, 02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
           .eq('06_period_from', weekStart),
         
-        // Get sweep_progress status counts
+        // Get sweep_progress status counts (include ticker for ghost detection)
         supabase
           .from('sweep_progress')
-          .select('status')
+          .select('status, ticker')
           .eq('sweep_id', sweepId),
           
         // Get pending triggers count
@@ -181,14 +180,6 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .select('action')
           .eq('status', 'pending')
           .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']),
-          
-        // Detect ghost companies: completed in sweep_progress with models_completed < 1
-        supabase
-          .from('sweep_progress')
-          .select('ticker, models_completed')
-          .eq('sweep_id', sweepId)
-          .eq('status', 'completed')
-          .lt('models_completed', 1),
       ]);
       
       if (rixRunsResult.error) throw rixRunsResult.error;
@@ -196,7 +187,17 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const records = rixRunsResult.data || [];
       const progressRecords = sweepProgressResult.data || [];
       const pendingTriggers = pendingTriggersResult.data || [];
-      const ghostCompanies = ghostCompaniesResult.data || [];
+      
+      // Calculate ghost companies by CROSS-REFERENCING with real data
+      // Ghost = marked 'completed' in sweep_progress BUT has NO records in rix_runs_v2
+      const completedTickersInProgress = progressRecords
+        .filter(p => p.status === 'completed')
+        .map(p => p.ticker);
+      
+      const tickersWithRealData = new Set(records.map(r => r['05_ticker']));
+      
+      const ghostTickersList = completedTickersInProgress
+        .filter(ticker => ticker && !tickersWithRealData.has(ticker));
       
       // Calculate sweep_progress metrics
       const searchCompleted = progressRecords.filter(p => p.status === 'completed').length;
@@ -342,9 +343,9 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         searchProcessing,
         searchFailed,
         
-        // Ghost companies: marked completed but have 0 records
-        ghostCompanies: ghostCompanies.length,
-        ghostTickers: ghostCompanies.map(g => g.ticker),
+        // Ghost companies: completed in sweep_progress but NO records in rix_runs_v2
+        ghostCompanies: ghostTickersList.length,
+        ghostTickers: ghostTickersList,
         
         systemState,
         
