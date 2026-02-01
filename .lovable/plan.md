@@ -1,151 +1,291 @@
 
 
-# Plan: Fix Duplicados + Auto-Completion Garantizada
+# Plan: Pipeline Completo Auto-Encadenado
 
-## Diagnóstico del Problema
+## Problema Actual
 
-### Causa Raíz Identificada
+El pipeline tiene **3 tipos de registros incompletos** que no se procesan automáticamente:
 
-El bug está en `rix-search-v2/index.ts` líneas **1060-1076**:
+| Tipo | Cantidad | Descripción | Acción Requerida |
+|------|----------|-------------|------------------|
+| Sin datos de búsqueda | 105 | `20_res_gpt_bruto = NULL` | Re-búsqueda (rix-search-v2) |
+| Datos sin análisis | 19 | Tienen respuesta pero `09_rix_score = NULL` | Análisis (rix-analyze-v2) |
+| Respuestas inválidas | ? | Rechazos, muy cortas, sin estructura | Re-búsqueda + re-análisis |
 
-```
-Cuando detecta duplicado → return Response inmediatamente
-                        → SIN actualizar sweep_progress a "completed"
-                        → Empresa queda "pending" eternamente
-                        → Se vuelve a intentar cada ciclo
-                        → Bucle infinito de reintentos
-```
+**El auto_recovery actual solo dispara sanitización cuando el sweep está "complete" (pending=0, processing=0, failed=0), pero NO verifica si los datos están realmente completos.**
 
-### Evidencia Concreta
+---
 
-| Métrica | Valor |
-|---------|-------|
-| Empresas "pending" que ya tienen 6/6 modelos | **31** |
-| Empresas procesándose repetidamente (ROBOT, NET, PAR) | Logs muestran 2+ intentos |
-| Tiempo perdido por duplicado | ~1 min por empresa por ciclo |
-| Velocidad actual | ~7 empresas/hora |
-| Velocidad teórica (sin duplicados) | ~50-60 empresas/hora |
+## Solución: 4 Cambios Críticos
 
-### Flujo Actual (Bugueado)
+### Cambio 1: Corregir useUnifiedSweepMetrics.ts
 
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Orquestador selecciona empresa "pending"                               │
-│                    ↓                                                    │
-│ rix-search-v2 detecta 6 modelos ya existen                             │
-│                    ↓                                                    │
-│ return { skipped: true } ← SIN actualizar sweep_progress               │
-│                    ↓                                                    │
-│ Empresa sigue "pending"                                                 │
-│                    ↓                                                    │
-│ Siguiente ciclo: se vuelve a seleccionar                               │
-│                    ↓                                                    │
-│ BUCLE INFINITO                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+**Problema:** Calcula `weekStart` incorrectamente, causando datos inconsistentes.
 
-## Solución: 2 Cambios Críticos
-
-### Cambio 1: Auto-Completion en DUPLICATE-SKIP-EARLY
-
-Modificar `rix-search-v2/index.ts` líneas 1060-1076 para actualizar `sweep_progress` antes de retornar:
+**Solución:** Obtener la fecha directamente del registro más reciente en `rix_runs_v2`.
 
 ```typescript
-if (!checkError && existingRecords && existingRecords.length >= 5) {
-  console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} - ${existingRecords.length} models already exist`);
-  
-  // NUEVO: Marcar como completed ANTES de retornar
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-  const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-  const currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+// ANTES: Calcular desde sweepId (erróneo)
+const weekStart = getWeekStartFromSweepId(sweepId);
 
-  await supabase
-    .from('sweep_progress')
-    .update({ 
-      status: 'completed', 
-      completed_at: new Date().toISOString(),
-      models_completed: existingRecords.length
-    })
-    .eq('sweep_id', currentSweepId)
-    .eq('ticker', ticker);
-
-  console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} marked as completed in sweep_progress`);
+// DESPUÉS: Obtener directamente de la base de datos
+const { data: latestPeriod } = await supabase
+  .from('rix_runs_v2')
+  .select('06_period_from')
+  .order('06_period_from', { ascending: false })
+  .limit(1);
   
-  return new Response(...);
+const weekStart = latestPeriod?.[0]?.['06_period_from'];
+```
+
+---
+
+### Cambio 2: Auto-Trigger de Re-Búsqueda para Registros Sin Datos
+
+**En `rix-batch-orchestrator` → modo `auto_recovery`:**
+
+Cuando el sweep de `sweep_progress` está "completo" pero hay registros sin datos en `rix_runs_v2`:
+
+```typescript
+// Después de verificar sweep complete (pending=0, processing=0, failed=0):
+
+// Verificar registros SIN DATOS de búsqueda
+const { count: missingData } = await supabase
+  .from('rix_runs_v2')
+  .select('*', { count: 'exact', head: true })
+  .gte('06_period_from', periodFromStr)
+  .is('20_res_gpt_bruto', null);
+
+if (missingData && missingData > 0) {
+  console.log(`[auto_recovery] Found ${missingData} records WITHOUT search data, triggering repair_search`);
+  
+  // Insertar trigger para repair_search
+  await supabase.from('cron_triggers').insert({
+    action: 'repair_search',  // NUEVO tipo de acción
+    params: { sweep_id: sweepId, count: missingData },
+    status: 'pending',
+  });
 }
 ```
 
-### Cambio 2: Pre-Limpieza de Duplicados en Orquestador
+---
 
-Añadir paso en `rix-batch-orchestrator` (en `auto_recovery`) para auto-completar empresas que ya tienen datos:
+### Cambio 3: Auto-Trigger de Análisis para Registros Analizables
+
+**En `rix-batch-orchestrator` → modo `auto_recovery`:**
+
+Cuando hay registros con datos pero sin score:
 
 ```typescript
-// ANTES de seleccionar empresas pendientes:
-// Auto-completar empresas que ya tienen 6 modelos pero siguen "pending"
-const { data: alreadyComplete } = await supabase
-  .from('sweep_progress')
-  .select('ticker')
-  .eq('sweep_id', sweepId)
-  .eq('status', 'pending')
-  .limit(50);
+// Verificar registros CON DATOS pero SIN SCORE
+const { count: analyzable } = await supabase
+  .from('rix_runs_v2')
+  .select('*', { count: 'exact', head: true })
+  .gte('06_period_from', periodFromStr)
+  .is('09_rix_score', null)
+  .not('20_res_gpt_bruto', 'is', null);
 
-if (alreadyComplete?.length) {
-  for (const sp of alreadyComplete) {
-    const { count } = await supabase
-      .from('rix_runs_v2')
-      .select('*', { count: 'exact', head: true })
-      .eq('05_ticker', sp.ticker)
-      .gte('07_period_to', dateFrom);
+if (analyzable && analyzable > 0) {
+  // Verificar que no haya trigger pendiente
+  const { data: existingTrigger } = await supabase
+    .from('cron_triggers')
+    .select('id')
+    .eq('action', 'repair_analysis')
+    .eq('status', 'pending')
+    .single();
+
+  if (!existingTrigger) {
+    console.log(`[auto_recovery] Found ${analyzable} analyzable records, triggering repair_analysis`);
     
-    if ((count || 0) >= 5) {
-      await supabase
-        .from('sweep_progress')
-        .update({ status: 'completed', completed_at: new Date().toISOString() })
-        .eq('sweep_id', sweepId)
-        .eq('ticker', sp.ticker);
-      console.log(`[auto_recovery] Auto-completed duplicate: ${sp.ticker}`);
-    }
+    await supabase.from('cron_triggers').insert({
+      action: 'repair_analysis',
+      params: { sweep_id: sweepId, batch_size: 5 },
+      status: 'pending',
+    });
   }
 }
 ```
 
-## Flujo Corregido
+---
+
+### Cambio 4: Añadir Handler para `repair_search` en processCronTriggers
+
+**En `rix-batch-orchestrator` → función `processCronTriggers`:**
+
+```typescript
+} else if (trigger.action === 'repair_search') {
+  // ============================================================
+  // REPAIR_SEARCH: Re-ejecuta búsqueda para registros sin datos
+  // ============================================================
+  console.log(`[cron_triggers] Processing repair_search trigger ${trigger.id}`);
+  
+  const triggerParams = trigger.params as { sweep_id?: string; batch_size?: number } | null;
+  const batchSize = triggerParams?.batch_size || 5;
+  
+  // Obtener registros sin datos de búsqueda
+  const { data: missingRecords } = await supabase
+    .from('rix_runs_v2')
+    .select('05_ticker, 02_model_name')
+    .gte('06_period_from', periodFromStr)
+    .is('20_res_gpt_bruto', null)
+    .limit(batchSize);
+  
+  const results = [];
+  
+  for (const record of (missingRecords || [])) {
+    try {
+      // Re-ejecutar búsqueda para este modelo específico
+      const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ 
+          ticker: record['05_ticker'],
+          single_model: record['02_model_name'],
+          repair_mode: true,
+        }),
+      });
+      
+      results.push({ 
+        ticker: record['05_ticker'], 
+        model: record['02_model_name'], 
+        success: response.ok 
+      });
+    } catch (e) {
+      results.push({ 
+        ticker: record['05_ticker'], 
+        model: record['02_model_name'], 
+        success: false, 
+        error: e.message 
+      });
+    }
+  }
+  
+  // Marcar como completado
+  await supabase.from('cron_triggers')
+    .update({ 
+      status: 'completed',
+      processed_at: new Date().toISOString(),
+      result: { processed: results.length, results }
+    })
+    .eq('id', trigger.id);
+}
+```
+
+---
+
+### Cambio 5: Auto-Sanitización Mejorada
+
+**En `rix-batch-orchestrator` → cuando sweep está "complete":**
+
+El código actual YA dispara `auto_sanitize` cuando el sweep termina, pero necesita:
+1. Verificar también que no hay registros sin datos
+2. Verificar que no hay registros analizables pendientes
+3. Solo entonces ejecutar sanitización final
+
+```typescript
+// Solo sanitizar si:
+// 1. Sweep progress está 100% (pending=0, processing=0, failed=0)
+// 2. No hay registros sin datos de búsqueda
+// 3. No hay registros analizables pendientes
+
+const { count: missingData } = await supabase
+  .from('rix_runs_v2')
+  .select('*', { count: 'exact', head: true })
+  .gte('06_period_from', periodFromStr)
+  .is('20_res_gpt_bruto', null);
+
+const { count: analyzable } = await supabase
+  .from('rix_runs_v2')
+  .select('*', { count: 'exact', head: true })
+  .gte('06_period_from', periodFromStr)
+  .is('09_rix_score', null)
+  .not('20_res_gpt_bruto', 'is', null);
+
+// Encadenar según lo que falte:
+if (missingData && missingData > 0) {
+  // Prioridad 1: Hay registros sin datos → repair_search
+  await insertTrigger('repair_search', { count: missingData });
+  
+} else if (analyzable && analyzable > 0) {
+  // Prioridad 2: Hay registros analizables → repair_analysis
+  await insertTrigger('repair_analysis', { batch_size: 5 });
+  
+} else {
+  // Prioridad 3: Todo listo → auto_sanitize (validar respuestas inválidas)
+  await insertTrigger('auto_sanitize', { sweep_id: sweepId, auto_repair: true });
+}
+```
+
+---
+
+## Flujo Completo Encadenado
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ Orquestador auto_recovery                                               │
+│ rix-batch-orchestrator (CRON cada 5 min)                               │
 │                    ↓                                                    │
-│ PASO 0 (NUEVO): Auto-completar duplicados existentes                   │
+│ 1. Reset zombies (>5 min processing)                                   │
+│ 2. Auto-completar duplicados                                           │
+│ 3. Lanzar búsquedas pendientes (max 3 slots)                          │
 │                    ↓                                                    │
-│ PASO 1: Seleccionar empresas realmente pendientes                      │
+│ ¿Sweep progress 100% completado?                                       │
+│      ├── NO → Continuar ciclo                                          │
+│      └── SÍ → Verificar datos reales                                   │
 │                    ↓                                                    │
-│ rix-search-v2 procesa empresa                                          │
-│      ├── Duplicado → Marcar "completed" → Return                       │
-│      └── Nueva → Procesar → Marcar "completed" → Return                │
+│ ¿Hay registros SIN DATOS (20_res_gpt_bruto = NULL)?                    │
+│      ├── SÍ → Insertar trigger "repair_search"                         │
+│      └── NO → Verificar análisis                                       │
 │                    ↓                                                    │
-│ Auto-relaunch si hay más pendientes                                    │
+│ ¿Hay registros CON DATOS pero SIN SCORE?                               │
+│      ├── SÍ → Insertar trigger "repair_analysis"                       │
+│      └── NO → Verificar calidad                                        │
+│                    ↓                                                    │
+│ Insertar trigger "auto_sanitize"                                       │
+│                    ↓                                                    │
+│ auto_sanitize detecta respuestas inválidas                             │
+│      ├── Rechazos de IA                                                │
+│      ├── Respuestas muy cortas                                         │
+│      └── Sin estructura markdown                                       │
+│                    ↓                                                    │
+│ auto_repair = true → Insertar trigger "repair_invalid_responses"       │
+│                    ↓                                                    │
+│ Ciclo se repite hasta 100% completado y validado                       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Impacto Esperado
-
-| Métrica | Antes | Después |
-|---------|-------|---------|
-| Empresas duplicadas bloqueando | 31 | 0 |
-| Velocidad efectiva | ~7 emp/h | ~50-60 emp/h |
-| Tiempo para completar 66 pendientes | ~10 horas | ~1.5 horas |
-| Ciclos desperdiciados en duplicados | Infinitos | 0 |
+---
 
 ## Archivos a Modificar
 
 | Archivo | Cambios |
 |---------|---------|
-| `supabase/functions/rix-search-v2/index.ts` | Añadir actualización de `sweep_progress` en el bloque DUPLICATE-SKIP-EARLY (líneas 1060-1076) |
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir paso de pre-limpieza de duplicados al inicio de `auto_recovery` |
+| `src/hooks/useUnifiedSweepMetrics.ts` | Obtener `weekStart` directamente de la BD en lugar de calcularlo |
+| `supabase/functions/rix-batch-orchestrator/index.ts` | (1) Añadir verificación de registros sin datos después del sweep complete, (2) Añadir verificación de registros analizables, (3) Añadir handler `repair_search` en `processCronTriggers`, (4) Encadenar triggers según prioridad |
 
-## Ejecución Inmediata
+---
 
-Tras implementar estos cambios, las 31 empresas duplicadas se auto-completarán en el primer ciclo, liberando slots para las ~35 empresas realmente pendientes. Con una velocidad real de ~50-60 emp/h, el barrido debería completarse en **~1-2 horas adicionales**.
+## Resultado Esperado
+
+| Antes | Después |
+|-------|---------|
+| 105 registros sin datos → ignorados | 105 registros → `repair_search` automático |
+| 19 registros analizables → ignorados | 19 registros → `repair_analysis` automático |
+| Respuestas inválidas → no detectadas | Respuestas → `auto_sanitize` → `repair_invalid_responses` |
+| Pipeline se detiene al terminar sweep | Pipeline continúa hasta 100% datos válidos |
+
+---
+
+## Sección Técnica: Orden de Prioridad
+
+El encadenamiento sigue este orden estricto:
+
+1. **`repair_search`** (máxima prioridad): Sin datos = no hay nada que analizar
+2. **`repair_analysis`**: Hay datos pero no score = puede analizarse
+3. **`auto_sanitize`**: Todo analizado = verificar calidad de respuestas
+4. **`repair_invalid_responses`**: Respuestas inválidas = re-ejecutar búsqueda
+
+Cada acción se ejecuta solo cuando la anterior ya no tiene trabajo pendiente, garantizando que el pipeline avanza hacia el 100% de forma determinista.
 
