@@ -891,100 +891,113 @@ const {
     const sweepId = getCurrentSweepId();
     console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}`);
 
-    // ========== MODO PARALLEL_BATCH: Workers paralelos ==========
-    if (mode === 'parallel_batch') {
-      console.log(`[parallel] Launching ${workers} parallel workers...`);
+    // ========== MODO CONCURRENT_STABLE: Procesa N empresas en paralelo ESPERANDO resultados ==========
+    // NUEVO: Reemplaza parallel_batch - Este modo SÍ espera a que todas las empresas terminen
+    // antes de responder, evitando zombies por abandono de procesamiento.
+    if (mode === 'concurrent_stable' || mode === 'parallel_batch') {
+      const CONCURRENT_COMPANIES = Math.min(workers, 4);  // Máximo 4 empresas en paralelo por seguridad
       
-      // Inicializar sweep si no existe
+      console.log(`[concurrent_stable] Starting with ${CONCURRENT_COMPANIES} concurrent companies...`);
+      
+      // 1. Inicializar sweep si no existe
       await initializeSweepIfNeeded(supabase, sweepId);
       
-      // Limpiar zombies antes de empezar
+      // 2. Limpiar zombies (>5 min stuck) antes de empezar
       const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
       if (stuckReset.count > 0) {
-        console.log(`[parallel] Auto-reset ${stuckReset.count} zombies: ${stuckReset.tickers.join(', ')}`);
+        console.log(`[concurrent_stable] Auto-reset ${stuckReset.count} zombies: ${stuckReset.tickers.join(', ')}`);
       }
       
-      // Función de worker paralelo
-      const runParallelWorker = async (workerId: number): Promise<{
-        workerId: number;
-        processed: number;
-        errors: number;
-        tickers: string[];
-      }> => {
-        let processed = 0;
-        let errors = 0;
-        const tickers: string[] = [];
+      // 3. Claim N empresas de forma atómica (una por una para evitar race conditions)
+      const claimedCompanies: Array<{id: string; ticker: string; issuer_name: string | null}> = [];
+      
+      for (let i = 0; i < CONCURRENT_COMPANIES; i++) {
+        const { data: claimed, error: claimError } = await supabase.rpc('claim_next_sweep_company', {
+          p_sweep_id: sweepId,
+          p_worker_id: i
+        });
         
-        console.log(`[parallel] Worker ${workerId} starting...`);
+        if (claimError) {
+          console.error(`[concurrent_stable] Claim ${i} error:`, claimError);
+          continue;
+        }
         
-        while (processed + errors < max_per_worker) {
-          // Usar la función SQL para claim atómico
-          const { data: claimed, error: claimError } = await supabase.rpc('claim_next_sweep_company', {
-            p_sweep_id: sweepId,
-            p_worker_id: workerId
-          });
+        if (claimed && claimed.length > 0) {
+          claimedCompanies.push(claimed[0]);
+        }
+      }
+      
+      // 4. Si no hay empresas, el barrido está completo
+      if (claimedCompanies.length === 0) {
+        // Contar estadísticas finales
+        const { count: completedCount } = await supabase
+          .from('sweep_progress')
+          .select('*', { count: 'exact', head: true })
+          .eq('sweep_id', sweepId)
+          .eq('status', 'completed');
           
-          if (claimError) {
-            console.error(`[parallel] Worker ${workerId} claim error:`, claimError);
-            break;
-          }
-          
-          if (!claimed || claimed.length === 0) {
-            console.log(`[parallel] Worker ${workerId}: No more pending companies`);
-            break;
-          }
-          
-          const company = claimed[0];
-          tickers.push(company.ticker);
-          
-          console.log(`[parallel] Worker ${workerId} processing: ${company.ticker}`);
-          
-          const result = await processCompany(
+        const { count: totalCount } = await supabase
+          .from('sweep_progress')
+          .select('*', { count: 'exact', head: true })
+          .eq('sweep_id', sweepId);
+        
+        console.log(`[concurrent_stable] No pending companies. Sweep complete: ${completedCount}/${totalCount}`);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          mode: 'concurrent_stable',
+          sweepId,
+          message: 'No hay empresas pendientes - Barrido completado',
+          completed: true,
+          stats: { completed: completedCount, total: totalCount },
+          zombiesReset: stuckReset.count,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      
+      console.log(`[concurrent_stable] Processing ${claimedCompanies.length} companies in parallel: ${claimedCompanies.map(c => c.ticker).join(', ')}`);
+      
+      // 5. Procesar TODAS en paralelo y ESPERAR a que terminen (clave del fix)
+      const startProcessing = Date.now();
+      const results = await Promise.allSettled(
+        claimedCompanies.map(company => 
+          processCompany(
             supabase,
             company.id,
             company.ticker,
             company.issuer_name || company.ticker,
             supabaseUrl,
             supabaseServiceKey
-          );
-          
-          if (result.success) processed++;
-          else errors++;
-          
-          // Pequeña pausa entre empresas (2s)
-          await sleep(2000);
-        }
-        
-        console.log(`[parallel] Worker ${workerId} finished: ${processed} processed, ${errors} errors`);
-        return { workerId, processed, errors, tickers };
-      };
-      
-      // Lanzar N workers en paralelo
-      const workerPromises = Array.from({ length: workers }, (_, i) => runParallelWorker(i));
-      const results = await Promise.allSettled(workerPromises);
-      
-      // Agregar estadísticas
-      const summary = results.map((r, i) => 
-        r.status === 'fulfilled' 
-          ? r.value 
-          : { workerId: i, processed: 0, errors: 0, tickers: [], error: String(r.reason) }
+          )
+        )
       );
+      const processingDuration = Date.now() - startProcessing;
       
-      const totalProcessed = summary.reduce((acc, w) => acc + w.processed, 0);
-      const totalErrors = summary.reduce((acc, w) => acc + w.errors, 0);
+      // 6. Contar resultados
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+      const failCount = claimedCompanies.length - successCount;
+      const processedTickers = claimedCompanies.map(c => c.ticker);
       
-      console.log(`[parallel] All workers completed. Total: ${totalProcessed} processed, ${totalErrors} errors`);
+      // 7. Contar cuántas quedan pendientes
+      const { count: remainingCount } = await supabase
+        .from('sweep_progress')
+        .select('*', { count: 'exact', head: true })
+        .eq('sweep_id', sweepId)
+        .in('status', ['pending', 'failed']);
+      
+      console.log(`[concurrent_stable] Completed: ${successCount}/${claimedCompanies.length} in ${processingDuration}ms. Remaining: ${remainingCount}`);
       
       return new Response(JSON.stringify({
         success: true,
-        mode: 'parallel_batch',
+        mode: 'concurrent_stable',
         sweepId,
-        workerCount: workers,
-        workers: summary,
-        totalProcessed,
-        totalErrors,
+        processed: claimedCompanies.length,
+        succeeded: successCount,
+        failed: failCount,
+        tickers: processedTickers,
+        remaining: remainingCount || 0,
+        durationMs: processingDuration,
         zombiesReset: stuckReset.count,
-        message: `${workers} workers procesaron ${totalProcessed} empresas (${totalErrors} errores)`,
+        message: `Procesadas ${successCount}/${claimedCompanies.length} empresas. Pendientes: ${remainingCount}`,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
