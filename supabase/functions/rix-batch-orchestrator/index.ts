@@ -1101,6 +1101,58 @@ const {
         console.log(`[${triggerMode}] Auto-reset ${stuckReset.count} zombie companies: ${stuckReset.tickers.join(', ')}`);
       }
 
+      // ═══════════════════════════════════════════════════════════════════
+      // 2.5 CRITICAL FIX: Auto-complete "pending" companies that already have data
+      // This prevents infinite retry loops for duplicates
+      // ═══════════════════════════════════════════════════════════════════
+      const { data: pendingCompanies } = await supabase
+        .from('sweep_progress')
+        .select('ticker')
+        .eq('sweep_id', sweepId)
+        .eq('status', 'pending')
+        .limit(50);
+
+      if (pendingCompanies && pendingCompanies.length > 0) {
+        // Calculate the analysis period (Monday to Sunday of PREVIOUS week)
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const periodFrom = new Date(now);
+        periodFrom.setDate(now.getDate() + mondayOffset - 7);
+        const periodFromStr = periodFrom.toISOString().split('T')[0];
+        
+        let autoCompletedCount = 0;
+        
+        for (const company of pendingCompanies) {
+          // Check if this company already has ≥5 models for this period
+          const { count } = await supabase
+            .from('rix_runs_v2')
+            .select('*', { count: 'exact', head: true })
+            .eq('05_ticker', company.ticker)
+            .gte('06_period_from', periodFromStr);
+          
+          if ((count || 0) >= 5) {
+            // Auto-complete this duplicate
+            await supabase
+              .from('sweep_progress')
+              .update({ 
+                status: 'completed', 
+                completed_at: new Date().toISOString(),
+                models_completed: count
+              })
+              .eq('sweep_id', sweepId)
+              .eq('ticker', company.ticker);
+            
+            console.log(`[${triggerMode}] Auto-completed duplicate: ${company.ticker} (${count} models already exist)`);
+            autoCompletedCount++;
+          }
+        }
+        
+        if (autoCompletedCount > 0) {
+          console.log(`[${triggerMode}] Auto-completed ${autoCompletedCount} duplicate companies in pre-cleanup`);
+        }
+      }
+
       // 3. Contar empresas por estado
       const { data: statusCounts } = await supabase
         .from('sweep_progress')
