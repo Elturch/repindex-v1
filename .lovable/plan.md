@@ -1,142 +1,151 @@
 
 
-# Plan: Auto-Relanzamiento Inmediato del Orquestador
+# Plan: Fix Duplicados + Auto-Completion Garantizada
 
-## Problema
-Cuando el CRON dispara empresas, el ciclo termina y hay que esperar 5 minutos para el siguiente. Si hay trabajo pendiente y slots disponibles, se pierde tiempo valioso.
+## Diagnóstico del Problema
 
-## Solución
-Añadir **auto-relanzamiento** al final de cada ciclo `auto_recovery`: si quedan empresas pendientes y hay slots libres, el orquestador se llama a sí mismo inmediatamente usando `EdgeRuntime.waitUntil()`.
+### Causa Raíz Identificada
 
-## Arquitectura Propuesta
+El bug está en `rix-search-v2/index.ts` líneas **1060-1076**:
+
+```
+Cuando detecta duplicado → return Response inmediatamente
+                        → SIN actualizar sweep_progress a "completed"
+                        → Empresa queda "pending" eternamente
+                        → Se vuelve a intentar cada ciclo
+                        → Bucle infinito de reintentos
+```
+
+### Evidencia Concreta
+
+| Métrica | Valor |
+|---------|-------|
+| Empresas "pending" que ya tienen 6/6 modelos | **31** |
+| Empresas procesándose repetidamente (ROBOT, NET, PAR) | Logs muestran 2+ intentos |
+| Tiempo perdido por duplicado | ~1 min por empresa por ciclo |
+| Velocidad actual | ~7 empresas/hora |
+| Velocidad teórica (sin duplicados) | ~50-60 empresas/hora |
+
+### Flujo Actual (Bugueado)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ CRON cada 5 minutos → rix-batch-orchestrator (auto_recovery)           │
-│                                                                         │
-│  1. Limpiar zombies                                                    │
-│  2. Contar estados (pending, processing, completed)                    │
-│  3. ¿Sweep completo? → Insertar auto_sanitize → FIN                   │
-│  4. ¿Ya hay 3 procesando? → throttle → FIN                            │
-│  5. Disparar N empresas (hasta completar 3 slots)                      │
-│  6. ¿Quedan pendientes Y slots libres?                                 │
-│      │                                                                  │
-│      ├── NO → Esperar próximo CRON (5 min)                            │
-│      │                                                                  │
-│      └── SÍ → NUEVO: Auto-relanzar en 30 segundos                     │
-│               EdgeRuntime.waitUntil(sleep(30s) → self-invoke)          │
-│                                                                         │
-│  El CRON sigue corriendo cada 5 min como respaldo, pero si hay        │
-│  trabajo el sistema se auto-alimenta SIN esperar.                      │
+│ Orquestador selecciona empresa "pending"                               │
+│                    ↓                                                    │
+│ rix-search-v2 detecta 6 modelos ya existen                             │
+│                    ↓                                                    │
+│ return { skipped: true } ← SIN actualizar sweep_progress               │
+│                    ↓                                                    │
+│ Empresa sigue "pending"                                                 │
+│                    ↓                                                    │
+│ Siguiente ciclo: se vuelve a seleccionar                               │
+│                    ↓                                                    │
+│ BUCLE INFINITO                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Cambios Técnicos
+## Solución: 2 Cambios Críticos
 
-### Modificación en `rix-batch-orchestrator/index.ts`
+### Cambio 1: Auto-Completion en DUPLICATE-SKIP-EARLY
 
-Después de disparar empresas (línea ~1260), añadir lógica de auto-relanzamiento:
+Modificar `rix-search-v2/index.ts` líneas 1060-1076 para actualizar `sweep_progress` antes de retornar:
 
 ```typescript
-// 10. Retornar INMEDIATAMENTE
-console.log(`[${triggerMode}] Fired ${firedCompanies.length} companies`);
-
-// 11. AUTO-RELAUNCH: Si quedan pendientes y hay slots, auto-relanzar en 30s
-const newPending = pending - firedCompanies.length;
-const newProcessing = processing + firedCompanies.length;
-const slotsAfterFire = MAX_CONCURRENT - newProcessing;
-
-if (newPending > 0 && slotsAfterFire > 0) {
-  console.log(`[${triggerMode}] Auto-relaunching in 30s (${newPending} pending, ${slotsAfterFire} slots free)`);
+if (!checkError && existingRecords && existingRecords.length >= 5) {
+  console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} - ${existingRecords.length} models already exist`);
   
-  EdgeRuntime.waitUntil(
-    (async () => {
-      await new Promise(r => setTimeout(r, 30000)); // Esperar 30s
-      
-      try {
-        await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({ trigger: 'auto_recovery' }),
-        });
-        console.log(`[${triggerMode}] Auto-relaunch executed successfully`);
-      } catch (e) {
-        console.error(`[${triggerMode}] Auto-relaunch failed:`, e);
-      }
-    })()
-  );
-}
+  // NUEVO: Marcar como completed ANTES de retornar
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+  const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+  const currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 
-return new Response(JSON.stringify({
-  ...existingResponse,
-  autoRelaunch: newPending > 0 && slotsAfterFire > 0,
-  autoRelaunchIn: newPending > 0 && slotsAfterFire > 0 ? '30s' : null,
-}));
+  await supabase
+    .from('sweep_progress')
+    .update({ 
+      status: 'completed', 
+      completed_at: new Date().toISOString(),
+      models_completed: existingRecords.length
+    })
+    .eq('sweep_id', currentSweepId)
+    .eq('ticker', ticker);
+
+  console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} marked as completed in sweep_progress`);
+  
+  return new Response(...);
+}
 ```
 
-### Por Qué 30 Segundos
+### Cambio 2: Pre-Limpieza de Duplicados en Orquestador
 
-- **Demasiado corto (5s)**: Podría crear bucles muy rápidos si hay errores
-- **Demasiado largo (2min)**: Pierde eficiencia
-- **30 segundos**: Balance perfecto - da tiempo a que las empresas en vuelo progresen, pero no espera innecesariamente
-
-### Protección Anti-Bucle Infinito
-
-Para evitar que un error cree bucles infinitos, añadir contador de relanzamientos:
+Añadir paso en `rix-batch-orchestrator` (en `auto_recovery`) para auto-completar empresas que ya tienen datos:
 
 ```typescript
-// Añadir al body del request
-const relaunchCount = body.relaunch_count || 0;
-const MAX_RELAUNCHES_PER_CYCLE = 20; // Máximo 20 relanzamientos consecutivos
+// ANTES de seleccionar empresas pendientes:
+// Auto-completar empresas que ya tienen 6 modelos pero siguen "pending"
+const { data: alreadyComplete } = await supabase
+  .from('sweep_progress')
+  .select('ticker')
+  .eq('sweep_id', sweepId)
+  .eq('status', 'pending')
+  .limit(50);
 
-// En la lógica de auto-relaunch
-if (newPending > 0 && slotsAfterFire > 0 && relaunchCount < MAX_RELAUNCHES_PER_CYCLE) {
-  EdgeRuntime.waitUntil(
-    (async () => {
-      await new Promise(r => setTimeout(r, 30000));
-      await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-        method: 'POST',
-        headers: { ... },
-        body: JSON.stringify({ 
-          trigger: 'auto_recovery',
-          relaunch_count: relaunchCount + 1  // Incrementar contador
-        }),
-      });
-    })()
-  );
+if (alreadyComplete?.length) {
+  for (const sp of alreadyComplete) {
+    const { count } = await supabase
+      .from('rix_runs_v2')
+      .select('*', { count: 'exact', head: true })
+      .eq('05_ticker', sp.ticker)
+      .gte('07_period_to', dateFrom);
+    
+    if ((count || 0) >= 5) {
+      await supabase
+        .from('sweep_progress')
+        .update({ status: 'completed', completed_at: new Date().toISOString() })
+        .eq('sweep_id', sweepId)
+        .eq('ticker', sp.ticker);
+      console.log(`[auto_recovery] Auto-completed duplicate: ${sp.ticker}`);
+    }
+  }
 }
 ```
 
-## Flujo Resultante
+## Flujo Corregido
 
 ```text
-Domingo 01:00:00 - CRON dispara fase 1 (5 empresas)
-         01:00:30 - Auto-relaunch (quedan pendientes)
-         01:01:00 - Auto-relaunch (sigue habiendo)
-         ...
-         01:10:00 - Max concurrent alcanzado, espera
-         01:05:00 - CRON backup (cada 5 min)
-         ...
-Domingo ~06:00   - Sweep 100% completo
-                   Auto-sanitización disparada
-Lunes AM         - Sistema listo, 95%+ cobertura
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Orquestador auto_recovery                                               │
+│                    ↓                                                    │
+│ PASO 0 (NUEVO): Auto-completar duplicados existentes                   │
+│                    ↓                                                    │
+│ PASO 1: Seleccionar empresas realmente pendientes                      │
+│                    ↓                                                    │
+│ rix-search-v2 procesa empresa                                          │
+│      ├── Duplicado → Marcar "completed" → Return                       │
+│      └── Nueva → Procesar → Marcar "completed" → Return                │
+│                    ↓                                                    │
+│ Auto-relaunch si hay más pendientes                                    │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Resultado
+## Impacto Esperado
 
 | Métrica | Antes | Después |
 |---------|-------|---------|
-| Tiempo entre disparos | 5 minutos fijo | 30 segundos si hay trabajo |
-| Velocidad teórica máx | 12 empresas/hora | ~120 empresas/hora |
-| Tiempo para 174 empresas | ~15 horas | ~2-3 horas |
-| Dependencia del CRON | 100% | Respaldo (el sistema se auto-alimenta) |
+| Empresas duplicadas bloqueando | 31 | 0 |
+| Velocidad efectiva | ~7 emp/h | ~50-60 emp/h |
+| Tiempo para completar 66 pendientes | ~10 horas | ~1.5 horas |
+| Ciclos desperdiciados en duplicados | Infinitos | 0 |
 
-## Archivo a Modificar
+## Archivos a Modificar
 
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir lógica de auto-relanzamiento después del paso de fire-and-forget |
+| Archivo | Cambios |
+|---------|---------|
+| `supabase/functions/rix-search-v2/index.ts` | Añadir actualización de `sweep_progress` en el bloque DUPLICATE-SKIP-EARLY (líneas 1060-1076) |
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir paso de pre-limpieza de duplicados al inicio de `auto_recovery` |
+
+## Ejecución Inmediata
+
+Tras implementar estos cambios, las 31 empresas duplicadas se auto-completarán en el primer ciclo, liberando slots para las ~35 empresas realmente pendientes. Con una velocidad real de ~50-60 emp/h, el barrido debería completarse en **~1-2 horas adicionales**.
 
