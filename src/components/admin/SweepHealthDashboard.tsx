@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,150 +11,138 @@ import {
   Play,
   RefreshCw,
   Skull,
-  XCircle,
   RotateCcw,
   Search,
   Wrench,
-  AlertTriangle
+  AlertTriangle,
+  Activity,
+  Pause
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInSeconds } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-// ============ TIPOS SIMPLIFICADOS ============
-interface SweepHealthData {
+// ============ TIPOS ============
+interface SweepStatus {
   sweepId: string;
-  totalCompanies: number;
   completed: number;
   pending: number;
+  processing: number;
   failed: number;
+  total: number;
   progress: number;
-  zombieCount: number;
   lastActivity: Date | null;
-  estimatedSpeed: number; // empresas/hora
-  estimatedETA: string;
+  secondsSinceActivity: number;
+  isStuck: boolean;
+  isHealthy: boolean;
+  zombieCount: number;
 }
 
-interface QualityData {
-  totalResponses: number;
-  validResponses: number;
-  invalidResponses: number;
-  missingResponses: number;
+interface QualityStatus {
+  valid: number;
+  invalid: number;
+  missing: number;
   byModel: Record<string, { valid: number; invalid: number; missing: number }>;
 }
 
-// ============ COMPONENTE PRINCIPAL: SEMÁFORO DE SALUD ============
+type SystemState = 'running' | 'stuck' | 'idle' | 'complete' | 'unknown';
+
+// ============ COMPONENTE PRINCIPAL ============
 export function SweepHealthDashboard() {
   const { toast } = useToast();
-  const [data, setData] = useState<SweepHealthData | null>(null);
-  const [qualityData, setQualityData] = useState<QualityData | null>(null);
+  const [status, setStatus] = useState<SweepStatus | null>(null);
+  const [quality, setQuality] = useState<QualityStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [resettingZombies, setResettingZombies] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const prevCompletedRef = useRef<number>(0);
+  
+  // Action states
+  const [cleaningZombies, setCleaningZombies] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [resettingAll, setResettingAll] = useState(false);
   const [sanitizing, setSanitizing] = useState(false);
-  const [repairingInvalid, setRepairingInvalid] = useState(false);
+  const [repairing, setRepairing] = useState(false);
 
-  const fetchHealthData = useCallback(async () => {
+  // ============ FETCH DATA ============
+  const fetchStatus = useCallback(async () => {
     try {
-      // 1. Get sweep status from orchestrator
-      const { data: statusData, error: statusError } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      // 1. Get orchestrator status
+      const { data: orchData, error: orchError } = await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { get_status: true },
       });
 
-      if (statusError) throw statusError;
-      if (!statusData?.initialized) {
-        setData(null);
+      if (orchError || !orchData?.initialized) {
+        setStatus(null);
+        setLoading(false);
         return;
       }
 
-      const sweepId = statusData.sweepId;
-
-      // 2. Fetch all progress records
-      const { data: progressData, error: progressError } = await supabase
-        .from('sweep_progress')
-        .select('ticker, status, started_at, completed_at')
-        .eq('sweep_id', sweepId);
-
-      if (progressError || !progressData) {
-        throw new Error('Failed to fetch progress data');
-      }
-
-      // 3. Calculate simple metrics
-      const completed = progressData.filter(r => r.status === 'completed').length;
-      const pending = progressData.filter(r => r.status === 'pending').length;
-      const processing = progressData.filter(r => r.status === 'processing').length;
-      const failed = progressData.filter(r => r.status === 'failed').length;
-      const total = progressData.length;
-
-      // 4. Detect zombies (processing > 5 min)
-      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-      const zombieCount = progressData.filter(r => 
-        r.status === 'processing' && 
-        r.started_at &&
-        new Date(r.started_at).getTime() < fiveMinutesAgo
-      ).length;
-
-      // 5. Find last activity
-      const completedRecords = progressData.filter(r => r.completed_at);
-      const lastActivity = completedRecords.length > 0 
-        ? new Date(Math.max(...completedRecords.map(r => new Date(r.completed_at!).getTime())))
-        : null;
-
-      // 6. Calculate speed and ETA
-      let estimatedSpeed = 0;
-      let estimatedETA = '—';
+      const sweepId = orchData.sweepId;
+      const byStatus = orchData.byStatus || {};
       
-      if (lastActivity && completed > 0) {
-        const firstCompleted = completedRecords.reduce((min, r) => {
-          const t = new Date(r.completed_at!).getTime();
-          return t < min ? t : min;
-        }, Infinity);
-        
-        const hoursElapsed = (lastActivity.getTime() - firstCompleted) / 3600000;
-        if (hoursElapsed > 0.1) {
-          estimatedSpeed = Math.round(completed / hoursElapsed);
-          const remaining = pending + processing + failed;
-          if (estimatedSpeed > 0 && remaining > 0) {
-            const hoursRemaining = remaining / estimatedSpeed;
-            if (hoursRemaining < 1) {
-              estimatedETA = `~${Math.round(hoursRemaining * 60)} min`;
-            } else {
-              estimatedETA = `~${hoursRemaining.toFixed(1)} h`;
-            }
-          }
-        }
-      }
+      const completed = byStatus.completed || 0;
+      const pending = byStatus.pending || 0;
+      const processing = byStatus.processing || 0;
+      const failed = byStatus.failed || 0;
+      const total = orchData.totalCompanies || 0;
 
-      const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+      // 2. Get last activity from DB
+      const { data: progressData } = await supabase
+        .from('sweep_progress')
+        .select('completed_at')
+        .eq('sweep_id', sweepId)
+        .eq('status', 'completed')
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      setData({
+      const lastActivity = progressData?.completed_at ? new Date(progressData.completed_at) : null;
+      const secondsSinceActivity = lastActivity ? differenceInSeconds(new Date(), lastActivity) : 9999;
+      
+      // Detect if stuck (no activity in 2+ minutes while there are pending)
+      const isStuck = (pending > 0 || processing > 0) && secondsSinceActivity > 120;
+      const isHealthy = !isStuck && processing > 0 && secondsSinceActivity < 60;
+      
+      // Zombie detection (processing > 5 min)
+      const { data: zombieData } = await supabase
+        .from('sweep_progress')
+        .select('ticker')
+        .eq('sweep_id', sweepId)
+        .eq('status', 'processing')
+        .lt('started_at', new Date(Date.now() - 5 * 60 * 1000).toISOString());
+      
+      const zombieCount = zombieData?.length || 0;
+
+      // Track completion changes
+      prevCompletedRef.current = completed;
+
+      setStatus({
         sweepId,
-        totalCompanies: total,
         completed,
-        pending: pending + processing, // Combinamos pendientes + en proceso
+        pending,
+        processing,
         failed,
-        progress,
-        zombieCount,
+        total,
+        progress: total > 0 ? Math.round((completed / total) * 100) : 0,
         lastActivity,
-        estimatedSpeed,
-        estimatedETA,
+        secondsSinceActivity,
+        isStuck,
+        isHealthy,
+        zombieCount,
       });
 
-      // 7. Fetch quality data from watchdog report
+      // 3. Fetch quality report
       try {
-        const { data: reportData } = await supabase.functions.invoke('rix-quality-watchdog', {
+        const { data: qualityData } = await supabase.functions.invoke('rix-quality-watchdog', {
           body: { action: 'report', sweep_id: sweepId },
         });
 
-        if (reportData?.success) {
+        if (qualityData?.success) {
+          let totalValid = 0, totalInvalid = 0, totalMissing = 0;
           const byModel: Record<string, { valid: number; invalid: number; missing: number }> = {};
-          let totalValid = 0;
-          let totalInvalid = 0;
-          let totalMissing = 0;
-
-          Object.entries(reportData.byModel || {}).forEach(([model, stats]: [string, any]) => {
+          
+          Object.entries(qualityData.byModel || {}).forEach(([model, stats]: [string, any]) => {
             const valid = total - (stats.missing || 0) - (stats.invalid || 0) - (stats.failed || 0);
             byModel[model] = {
               valid: Math.max(0, valid),
@@ -166,540 +154,366 @@ export function SweepHealthDashboard() {
             totalMissing += byModel[model].missing;
           });
 
-          setQualityData({
-            totalResponses: total * 6, // 6 modelos por empresa
-            validResponses: totalValid,
-            invalidResponses: totalInvalid,
-            missingResponses: totalMissing,
-            byModel,
-          });
+          setQuality({ valid: totalValid, invalid: totalInvalid, missing: totalMissing, byModel });
         }
-      } catch (qualityError) {
-        console.warn('Could not fetch quality data:', qualityError);
+      } catch (e) {
+        console.warn('Quality fetch failed:', e);
       }
 
+      setLastRefresh(new Date());
     } catch (error) {
-      console.error('Error fetching health data:', error);
+      console.error('Fetch error:', error);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Auto-refresh every 10 seconds
+  // Auto-refresh every 5 seconds
   useEffect(() => {
-    fetchHealthData();
-    const interval = setInterval(fetchHealthData, 10000);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
-  }, [fetchHealthData]);
+  }, [fetchStatus]);
 
   // ============ ACTIONS ============
-  const handleResetZombies = async () => {
-    if (!data) return;
-    setResettingZombies(true);
-
+  const handleCleanZombies = async () => {
+    if (!status) return;
+    setCleaningZombies(true);
     try {
-      // Reset via orchestrator (uses reset_stuck action)
-      const { error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { reset_stuck: true, reset_stuck_timeout: 5 },
       });
-
-      if (error) throw error;
-
-      toast({
-        title: '🧹 Zombis limpiados',
-        description: 'Registros atascados reiniciados a pendiente',
-      });
-
-      await fetchHealthData();
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'No se pudieron limpiar los zombis',
-        variant: 'destructive',
-      });
+      toast({ title: '🧹 Zombis limpiados' });
+      await fetchStatus();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
-      setResettingZombies(false);
+      setCleaningZombies(false);
     }
   };
 
   const handleResume = async () => {
-    if (!data) return;
+    if (!status) return;
     setResuming(true);
-
     try {
-      // Use concurrent_stable mode (the new stable mode)
-      const { data: result, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { mode: 'concurrent_stable', workers: 3 },
       });
-
-      if (error) throw error;
-
-      toast({
-        title: '▶️ Barrido reanudado',
-        description: result?.message || 'Procesando empresas...',
-      });
-
-      await fetchHealthData();
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'No se pudo reanudar',
-        variant: 'destructive',
-      });
+      toast({ title: '▶️ Barrido reanudado' });
+      await fetchStatus();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setResuming(false);
     }
   };
 
   const handleResetAll = async () => {
-    if (!data) return;
-    
-    const confirmed = window.confirm(
-      `¿Reiniciar TODO el barrido ${data.sweepId}?\n\nEsto marcará todas las empresas como pendientes de nuevo.`
-    );
-    if (!confirmed) return;
-    
+    if (!status || !confirm(`¿Reiniciar TODO ${status.sweepId}?`)) return;
     setResettingAll(true);
-
     try {
-      const { error } = await supabase
-        .from('sweep_progress')
-        .update({ 
-          status: 'pending', 
-          started_at: null, 
-          completed_at: null,
-          error_message: 'Reset manual completo',
-          retry_count: 0 
-        })
-        .eq('sweep_id', data.sweepId);
-
-      if (error) throw error;
-
-      toast({
-        title: '🔄 Barrido reiniciado',
-        description: `${data.totalCompanies} empresas marcadas como pendientes`,
-      });
-
-      await fetchHealthData();
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'No se pudo reiniciar',
-        variant: 'destructive',
-      });
+      await supabase.from('sweep_progress')
+        .update({ status: 'pending', started_at: null, completed_at: null, retry_count: 0 })
+        .eq('sweep_id', status.sweepId);
+      toast({ title: '🔄 Reset completo' });
+      await fetchStatus();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setResettingAll(false);
     }
   };
 
   const handleSanitize = async () => {
-    if (!data) return;
+    if (!status) return;
     setSanitizing(true);
-
     try {
-      const { data: result, error } = await supabase.functions.invoke('rix-quality-watchdog', {
-        body: { action: 'sanitize', sweep_id: data.sweepId },
+      const { data } = await supabase.functions.invoke('rix-quality-watchdog', {
+        body: { action: 'sanitize', sweep_id: status.sweepId },
       });
-
-      if (error) throw error;
-
-      toast({
-        title: '🔍 Sanificación completada',
-        description: `Escaneadas: ${result.scanned} | Inválidas: ${result.invalidFound}`,
-      });
-
-      await fetchHealthData();
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'No se pudo sanificar',
-        variant: 'destructive',
-      });
+      toast({ title: '🔍 Sanificación', description: `${data?.invalidFound || 0} inválidas detectadas` });
+      await fetchStatus();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setSanitizing(false);
     }
   };
 
-  const handleRepairInvalid = async () => {
-    if (!data) return;
-    setRepairingInvalid(true);
-
+  const handleRepair = async () => {
+    if (!status) return;
+    setRepairing(true);
     try {
-      // Insert trigger for server-side repair (more reliable)
-      const { error } = await supabase.from('cron_triggers').insert({
+      await supabase.from('cron_triggers').insert({
         action: 'repair_invalid_responses',
-        params: { sweep_id: data.sweepId, max_repairs: 20 },
-        status: 'pending',
+        params: { sweep_id: status.sweepId, max_repairs: 20 },
       });
-
-      if (error) throw error;
-
-      toast({
-        title: '🔧 Reparación programada',
-        description: 'El sistema reparará las respuestas inválidas en segundo plano',
-      });
-
-      await fetchHealthData();
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'No se pudo programar la reparación',
-        variant: 'destructive',
-      });
+      toast({ title: '🔧 Reparación programada' });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
-      setRepairingInvalid(false);
+      setRepairing(false);
     }
   };
+
+  // ============ DETERMINE STATE ============
+  const getSystemState = (): SystemState => {
+    if (!status) return 'unknown';
+    if (status.progress === 100) return 'complete';
+    if (status.isStuck || status.zombieCount > 0) return 'stuck';
+    if (status.isHealthy) return 'running';
+    if (status.pending === 0 && status.processing === 0) return 'idle';
+    return 'idle';
+  };
+
+  const state = getSystemState();
 
   // ============ RENDER ============
   if (loading) {
     return (
       <Card className="mb-6">
-        <CardContent className="py-8">
-          <div className="flex items-center justify-center gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Cargando estado del barrido...</span>
-          </div>
+        <CardContent className="py-12 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </CardContent>
       </Card>
     );
   }
 
-  if (!data) {
+  if (!status) {
     return (
       <Card className="mb-6">
-        <CardContent className="py-8">
-          <div className="text-center text-muted-foreground">
-            No hay barrido activo esta semana
-          </div>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          No hay barrido activo
         </CardContent>
       </Card>
     );
   }
 
-  // Determine status for visual styling
-  const isComplete = data.progress === 100;
-  const hasZombies = data.zombieCount > 0;
-  const hasFailed = data.failed > 0;
-  const hasInvalidResponses = (qualityData?.invalidResponses || 0) > 0;
-
   return (
-    <div className="space-y-6 mb-6">
+    <div className="space-y-4 mb-6">
       {/* ═══════════════════════════════════════════════════════════════════
-          CARD 1: BARRIDO SEMANAL (PROGRESO)
+          ESTADO PRINCIPAL - GRAN INDICADOR VISUAL
       ═══════════════════════════════════════════════════════════════════ */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-bold">
-              BARRIDO SEMANAL
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="font-mono text-sm">
-                {data.sweepId}
-              </Badge>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={fetchHealthData}
-                className="h-8 w-8"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-6">
-          {/* SEMÁFORO: 3 NÚMEROS GRANDES */}
-          <div className="grid grid-cols-3 gap-4">
-            {/* Completados - Verde */}
-            <div className="flex flex-col items-center rounded-xl bg-green-500/10 p-6 border-2 border-green-500/30">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-6 w-6 text-green-600" />
+      <Card className={cn(
+        "border-2 transition-all duration-500",
+        state === 'running' && "border-green-500 bg-green-500/5",
+        state === 'stuck' && "border-red-500 bg-red-500/5 animate-pulse",
+        state === 'complete' && "border-green-600 bg-green-600/10",
+        state === 'idle' && "border-yellow-500 bg-yellow-500/5",
+      )}>
+        <CardContent className="py-6">
+          {/* Header con estado */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              {/* Indicador de latido */}
+              <div className={cn(
+                "relative w-12 h-12 rounded-full flex items-center justify-center",
+                state === 'running' && "bg-green-500",
+                state === 'stuck' && "bg-red-500",
+                state === 'complete' && "bg-green-600",
+                state === 'idle' && "bg-yellow-500",
+              )}>
+                {state === 'running' && (
+                  <>
+                    <Activity className="w-6 h-6 text-white" />
+                    <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75" />
+                  </>
+                )}
+                {state === 'stuck' && <Pause className="w-6 h-6 text-white" />}
+                {state === 'complete' && <CheckCircle2 className="w-6 h-6 text-white" />}
+                {state === 'idle' && <Clock className="w-6 h-6 text-white" />}
               </div>
-              <div className="text-4xl font-bold text-green-600 mt-2">
-                {data.completed}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Completados
-              </div>
-            </div>
-
-            {/* Pendientes - Amarillo */}
-            <div className="flex flex-col items-center rounded-xl bg-yellow-500/10 p-6 border-2 border-yellow-500/30">
-              <div className="flex items-center gap-2">
-                <Clock className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div className="text-4xl font-bold text-yellow-600 mt-2">
-                {data.pending}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Pendientes
-              </div>
-            </div>
-
-            {/* Fallidos - Rojo */}
-            <div className="flex flex-col items-center rounded-xl bg-red-500/10 p-6 border-2 border-red-500/30">
-              <div className="flex items-center gap-2">
-                <XCircle className="h-6 w-6 text-red-600" />
-              </div>
-              <div className="text-4xl font-bold text-red-600 mt-2">
-                {data.failed}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Fallidos
-              </div>
-            </div>
-          </div>
-
-          {/* BARRA DE PROGRESO */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">
-                {data.progress}% completado
-              </span>
-              <span className="text-muted-foreground">
-                {data.completed}/{data.totalCompanies} empresas
-              </span>
-            </div>
-            <Progress 
-              value={data.progress} 
-              className={cn(
-                "h-4",
-                isComplete && "bg-green-100 [&>div]:bg-green-500"
-              )} 
-            />
-          </div>
-
-          {/* VELOCIDAD Y ETA */}
-          <div className="flex items-center justify-center gap-8 text-sm text-muted-foreground border-t border-b py-3">
-            <div className="flex items-center gap-2">
-              <span className="font-medium">Velocidad:</span>
-              <span>~{data.estimatedSpeed} emp/hora</span>
-            </div>
-            <div className="text-muted-foreground">|</div>
-            <div className="flex items-center gap-2">
-              <span className="font-medium">Tiempo restante:</span>
-              <span>{data.estimatedETA}</span>
-            </div>
-            {data.lastActivity && (
-              <>
-                <div className="text-muted-foreground">|</div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Última actividad:</span>
-                  <span>{formatDistanceToNow(data.lastActivity, { locale: es, addSuffix: true })}</span>
+              
+              <div>
+                <div className="text-2xl font-bold">
+                  {state === 'running' && 'PROCESANDO'}
+                  {state === 'stuck' && '⚠️ ATASCADO'}
+                  {state === 'complete' && '✓ COMPLETADO'}
+                  {state === 'idle' && 'EN PAUSA'}
                 </div>
-              </>
-            )}
+                <div className="text-sm text-muted-foreground">
+                  Barrido {status.sweepId}
+                </div>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <div className="text-3xl font-bold">{status.progress}%</div>
+              <div className="text-sm text-muted-foreground">
+                {status.completed}/{status.total} empresas
+              </div>
+            </div>
           </div>
 
-          {/* ALERTAS (solo si hay problemas) */}
-          {(hasZombies || hasFailed) && (
-            <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
-              <div className="flex flex-wrap gap-2">
-                {hasZombies && (
-                  <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
-                    🧟 {data.zombieCount} proceso(s) atascado(s)
-                  </Badge>
-                )}
-                {hasFailed && (
-                  <Badge variant="outline" className="bg-red-500/10 text-red-600">
-                    ❌ {data.failed} fallido(s)
-                  </Badge>
-                )}
-              </div>
+          {/* Barra de progreso */}
+          <Progress 
+            value={status.progress} 
+            className={cn(
+              "h-4 mb-4",
+              state === 'complete' && "[&>div]:bg-green-600",
+              state === 'running' && "[&>div]:bg-green-500",
+              state === 'stuck' && "[&>div]:bg-red-500",
+            )} 
+          />
+
+          {/* Métricas en línea */}
+          <div className="grid grid-cols-4 gap-4 text-center">
+            <div className="rounded-lg bg-green-500/10 p-3">
+              <div className="text-2xl font-bold text-green-600">{status.completed}</div>
+              <div className="text-xs text-muted-foreground">Completados</div>
+            </div>
+            <div className="rounded-lg bg-blue-500/10 p-3">
+              <div className="text-2xl font-bold text-blue-600">{status.processing}</div>
+              <div className="text-xs text-muted-foreground">Procesando</div>
+            </div>
+            <div className="rounded-lg bg-yellow-500/10 p-3">
+              <div className="text-2xl font-bold text-yellow-600">{status.pending}</div>
+              <div className="text-xs text-muted-foreground">Pendientes</div>
+            </div>
+            <div className="rounded-lg bg-red-500/10 p-3">
+              <div className="text-2xl font-bold text-red-600">{status.failed}</div>
+              <div className="text-xs text-muted-foreground">Fallidos</div>
+            </div>
+          </div>
+
+          {/* Última actividad */}
+          <div className="mt-4 flex items-center justify-between text-sm border-t pt-4">
+            <div className="flex items-center gap-4">
+              <span className="text-muted-foreground">
+                Última actividad: {status.lastActivity 
+                  ? formatDistanceToNow(status.lastActivity, { locale: es, addSuffix: true })
+                  : 'Nunca'
+                }
+              </span>
+              {status.zombieCount > 0 && (
+                <Badge variant="destructive">
+                  <Skull className="w-3 h-3 mr-1" />
+                  {status.zombieCount} zombis
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <RefreshCw className="w-3 h-3" />
+              Actualizado {formatDistanceToNow(lastRefresh, { locale: es, addSuffix: true })}
+            </div>
+          </div>
+
+          {/* Mensaje de acción requerida */}
+          {state === 'stuck' && (
+            <div className="mt-4 p-3 rounded-lg bg-red-500/20 text-red-700 text-center font-medium">
+              ⚠️ El sistema está atascado. Pulsa "Limpiar Zombis" y luego "Reanudar".
+            </div>
+          )}
+          {state === 'idle' && status.pending > 0 && (
+            <div className="mt-4 p-3 rounded-lg bg-yellow-500/20 text-yellow-700 text-center font-medium">
+              El barrido está pausado. Pulsa "Reanudar" para continuar.
             </div>
           )}
 
-          {/* MENSAJE DE ESTADO */}
-          <div className={cn(
-            "rounded-lg p-3 text-center",
-            isComplete ? "bg-green-500/10 text-green-700" :
-            hasZombies ? "bg-orange-500/10 text-orange-700" :
-            data.pending > 0 ? "bg-blue-500/10 text-blue-700" :
-            "bg-muted text-muted-foreground"
-          )}>
-            {isComplete ? (
-              <span className="flex items-center justify-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Barrido completado exitosamente
-              </span>
-            ) : hasZombies ? (
-              <span>⚠️ Hay procesos atascados. Pulsa "Limpiar Zombis" para desbloquear.</span>
-            ) : data.pending > 0 ? (
-              <span>✓ Sistema funcionando normalmente</span>
-            ) : (
-              <span>Sin empresas pendientes</span>
-            )}
-          </div>
-
-          {/* BOTONES DE ACCIÓN */}
-          <div className="flex flex-wrap justify-center gap-3 pt-2">
-            {/* Limpiar Zombis */}
-            {hasZombies && (
+          {/* Botones de acción */}
+          <div className="mt-4 flex flex-wrap justify-center gap-3">
+            {status.zombieCount > 0 && (
               <Button 
                 variant="outline" 
-                onClick={handleResetZombies}
-                disabled={resettingZombies}
-                className="border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
+                onClick={handleCleanZombies}
+                disabled={cleaningZombies}
+                className="border-orange-500 text-orange-600 hover:bg-orange-500/10"
               >
-                {resettingZombies ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Skull className="mr-2 h-4 w-4" />
-                )}
+                {cleaningZombies ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Skull className="mr-2 h-4 w-4" />}
                 Limpiar Zombis
               </Button>
             )}
             
-            {/* Reanudar */}
-            {!isComplete && data.pending > 0 && (
-              <Button 
-                onClick={handleResume}
-                disabled={resuming}
-                className="bg-primary hover:bg-primary/90"
-              >
-                {resuming ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="mr-2 h-4 w-4" />
-                )}
+            {state !== 'complete' && (status.pending > 0 || state === 'stuck') && (
+              <Button onClick={handleResume} disabled={resuming}>
+                {resuming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                 Reanudar
               </Button>
             )}
 
-            {/* Reset Total */}
-            {!isComplete && (
+            {state !== 'complete' && (
               <Button 
                 variant="outline" 
                 onClick={handleResetAll}
                 disabled={resettingAll}
-                className="border-red-500/50 text-red-600 hover:bg-red-500/10"
+                className="border-red-500 text-red-600 hover:bg-red-500/10"
               >
-                {resettingAll ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                )}
+                {resettingAll ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
                 Reset Total
               </Button>
             )}
+
+            <Button variant="ghost" size="icon" onClick={fetchStatus}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
           </div>
         </CardContent>
       </Card>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          CARD 2: CALIDAD DE RESPUESTAS
+          CALIDAD DE RESPUESTAS
       ═══════════════════════════════════════════════════════════════════ */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg font-bold flex items-center gap-2">
-            CALIDAD DE RESPUESTAS
-            {hasInvalidResponses && (
+        <CardHeader className="py-4">
+          <CardTitle className="text-base flex items-center gap-2">
+            Calidad de Respuestas
+            {(quality?.invalid || 0) > 0 && (
               <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600">
                 <AlertTriangle className="h-3 w-3 mr-1" />
-                Requiere atención
+                {quality?.invalid} inválidas
               </Badge>
             )}
           </CardTitle>
         </CardHeader>
-
-        <CardContent className="space-y-4">
-          {/* SEMÁFORO DE CALIDAD */}
-          <div className="grid grid-cols-3 gap-4">
-            {/* Válidas - Verde */}
-            <div className="flex flex-col items-center rounded-xl bg-green-500/10 p-4 border-2 border-green-500/30">
-              <div className="text-3xl font-bold text-green-600">
-                {qualityData?.validResponses || 0}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Válidas
-              </div>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="text-center p-3 rounded-lg bg-green-500/10">
+              <div className="text-xl font-bold text-green-600">{quality?.valid || 0}</div>
+              <div className="text-xs text-muted-foreground">Válidas</div>
             </div>
-
-            {/* Inválidas - Amarillo */}
-            <div className="flex flex-col items-center rounded-xl bg-yellow-500/10 p-4 border-2 border-yellow-500/30">
-              <div className="text-3xl font-bold text-yellow-600">
-                {qualityData?.invalidResponses || 0}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Inválidas
-              </div>
+            <div className="text-center p-3 rounded-lg bg-yellow-500/10">
+              <div className="text-xl font-bold text-yellow-600">{quality?.invalid || 0}</div>
+              <div className="text-xs text-muted-foreground">Inválidas</div>
             </div>
-
-            {/* Sin datos - Rojo */}
-            <div className="flex flex-col items-center rounded-xl bg-red-500/10 p-4 border-2 border-red-500/30">
-              <div className="text-3xl font-bold text-red-600">
-                {qualityData?.missingResponses || 0}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Sin datos
-              </div>
+            <div className="text-center p-3 rounded-lg bg-red-500/10">
+              <div className="text-xl font-bold text-red-600">{quality?.missing || 0}</div>
+              <div className="text-xs text-muted-foreground">Sin datos</div>
             </div>
           </div>
 
-          {/* DETALLE POR MODELO */}
-          {qualityData?.byModel && Object.keys(qualityData.byModel).length > 0 && (
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-muted-foreground">Detalle por modelo:</div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {Object.entries(qualityData.byModel).map(([model, stats]) => {
-                  const hasIssues = stats.invalid > 0 || stats.missing > 0;
-                  return (
-                    <div 
-                      key={model}
-                      className={cn(
-                        "rounded-lg p-2 text-sm border",
-                        hasIssues 
-                          ? "bg-yellow-500/5 border-yellow-500/30" 
-                          : "bg-green-500/5 border-green-500/30"
-                      )}
-                    >
-                      <div className="font-medium">{model}</div>
-                      <div className="flex gap-2 text-xs text-muted-foreground">
-                        <span className="text-green-600">✓ {stats.valid}</span>
-                        {stats.invalid > 0 && (
-                          <span className="text-yellow-600">⚠ {stats.invalid}</span>
-                        )}
-                        {stats.missing > 0 && (
-                          <span className="text-red-600">✗ {stats.missing}</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          {/* Detalle por modelo */}
+          {quality?.byModel && Object.keys(quality.byModel).length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {Object.entries(quality.byModel).map(([model, s]) => (
+                <div 
+                  key={model}
+                  className={cn(
+                    "text-xs p-2 rounded border",
+                    (s.invalid > 0 || s.missing > 0) 
+                      ? "bg-yellow-500/5 border-yellow-500/30" 
+                      : "bg-green-500/5 border-green-500/30"
+                  )}
+                >
+                  <div className="font-medium truncate">{model}</div>
+                  <div className="flex gap-1 mt-1">
+                    <span className="text-green-600">✓{s.valid}</span>
+                    {s.invalid > 0 && <span className="text-yellow-600">⚠{s.invalid}</span>}
+                    {s.missing > 0 && <span className="text-red-600">✗{s.missing}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* BOTONES DE CALIDAD */}
-          <div className="flex flex-wrap justify-center gap-3 pt-2 border-t">
-            <Button 
-              variant="outline" 
-              onClick={handleSanitize}
-              disabled={sanitizing}
-            >
-              {sanitizing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="mr-2 h-4 w-4" />
-              )}
-              Sanificar Ahora
+          <div className="flex gap-3 justify-center">
+            <Button variant="outline" size="sm" onClick={handleSanitize} disabled={sanitizing}>
+              {sanitizing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Search className="mr-2 h-3 w-3" />}
+              Sanificar
             </Button>
-
-            {hasInvalidResponses && (
-              <Button 
-                onClick={handleRepairInvalid}
-                disabled={repairingInvalid}
-                className="bg-yellow-600 hover:bg-yellow-700"
-              >
-                {repairingInvalid ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Wrench className="mr-2 h-4 w-4" />
-                )}
-                Reparar Inválidas
+            {(quality?.invalid || 0) > 0 && (
+              <Button size="sm" onClick={handleRepair} disabled={repairing} className="bg-yellow-600 hover:bg-yellow-700">
+                {repairing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Wrench className="mr-2 h-3 w-3" />}
+                Reparar
               </Button>
             )}
           </div>
