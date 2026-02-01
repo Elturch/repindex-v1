@@ -230,11 +230,14 @@ export function ChatMessages({
                 )
               ) : (
                 <div className="relative">
-                  <MarkdownMessage 
+                <MarkdownMessage 
                     content={message.content} 
                     showDownload={!message.isStreaming}
                     languageCode={languageCode}
                     roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
+                    verifiedSources={message.metadata?.verifiedSources}
+                    periodFrom={message.metadata?.methodology?.periodFrom}
+                    periodTo={message.metadata?.methodology?.periodTo}
                   />
                   {/* Blinking cursor during streaming */}
                   {message.isStreaming && (

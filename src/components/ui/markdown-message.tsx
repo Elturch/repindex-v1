@@ -6,15 +6,19 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { getChatTranslations, t, type ChatUITranslations } from '@/lib/chatTranslations';
 import { technicalSheetStyles, generateTechnicalSheetHtml } from '@/lib/technicalSheetHtml';
+import { VerifiedSource, generateBibliographyHtml } from '@/lib/verifiedSourceExtractor';
 
 interface MarkdownMessageProps {
   content: string;
   showDownload?: boolean;
   languageCode?: string;
   roleName?: string; // Role name for PDF header (e.g., "CEO / Alta Dirección")
+  verifiedSources?: VerifiedSource[];
+  periodFrom?: string;
+  periodTo?: string;
 }
 
-export function MarkdownMessage({ content, showDownload = false, languageCode = 'es', roleName }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, showDownload = false, languageCode = 'es', roleName, verifiedSources, periodFrom, periodTo }: MarkdownMessageProps) {
   const { toast } = useToast();
   const tr = getChatTranslations(languageCode);
 
@@ -22,7 +26,7 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const fileName = `repindex_respuesta_${timestamp}.html`;
 
-    const htmlContent = generateExportHtml(content, tr, languageCode, roleName);
+    const htmlContent = generateExportHtml(content, tr, languageCode, roleName, verifiedSources, periodFrom, periodTo);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -229,7 +233,7 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
 }
 
 // Generate complete HTML document for export with premium RepIndex report styling
-function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string): string {
+function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string, verifiedSources?: VerifiedSource[], periodFrom?: string, periodTo?: string): string {
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
   const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
@@ -871,6 +875,8 @@ function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCo
   <main class="content">
     ${bodyContent}
   </main>
+  
+  ${generateBibliographyHtml(verifiedSources || [], periodFrom, periodTo)}
   
   <footer class="report-footer">
     <div class="footer-logo">RepIndex</div>
