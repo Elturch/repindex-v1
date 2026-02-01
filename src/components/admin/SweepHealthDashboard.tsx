@@ -360,6 +360,8 @@ export function SweepHealthDashboard() {
   const [resettingZombies, setResettingZombies] = useState(false);
   const [triggeringRepair, setTriggeringRepair] = useState(false);
   const [resumingCascade, setResumingCascade] = useState(false);
+  const [launchingParallel, setLaunchingParallel] = useState(false);
+  const [workerCount, setWorkerCount] = useState(4);
 
   const fetchHealthData = useCallback(async () => {
     try {
@@ -559,6 +561,33 @@ export function SweepHealthDashboard() {
       });
     } finally {
       setResumingCascade(false);
+    }
+  };
+
+  const handleLaunchParallel = async () => {
+    setLaunchingParallel(true);
+
+    try {
+      const { data: parallelData, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { mode: 'parallel_batch', workers: workerCount },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: `⚡ ${workerCount} Workers lanzados`,
+        description: parallelData.message || `Procesando empresas en paralelo...`,
+      });
+
+      await fetchHealthData();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudieron lanzar los workers',
+        variant: 'destructive',
+      });
+    } finally {
+      setLaunchingParallel(false);
     }
   };
 
@@ -797,6 +826,35 @@ export function SweepHealthDashboard() {
               {triggeringRepair ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
               Completar Análisis
             </Button>
+          )}
+
+          {/* Parallel Workers Button */}
+          {data.healthStatus !== 'completed' && data.pending > 0 && (
+            <div className="flex items-center gap-2">
+              <select
+                value={workerCount}
+                onChange={(e) => setWorkerCount(Number(e.target.value))}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              >
+                <option value={2}>2 workers</option>
+                <option value={4}>4 workers</option>
+                <option value={6}>6 workers</option>
+              </select>
+              <Button 
+                variant="default"
+                size="sm"
+                onClick={handleLaunchParallel}
+                disabled={launchingParallel}
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              >
+                {launchingParallel ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="mr-2 h-4 w-4" />
+                )}
+                Lanzar Workers Paralelos
+              </Button>
+            </div>
           )}
         </div>
       </CardContent>

@@ -3106,6 +3106,14 @@ export type Database = {
           sql_generado: string
         }[]
       }
+      claim_next_sweep_company: {
+        Args: { p_sweep_id: string; p_worker_id: number }
+        Returns: {
+          id: string
+          issuer_name: string
+          ticker: string
+        }[]
+      }
       execute_sql: { Args: { sql_query: string }; Returns: Json }
       expand_entity_graph: {
         Args: { p_depth?: number; p_ticker: string }
