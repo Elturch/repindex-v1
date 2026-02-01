@@ -70,6 +70,9 @@ export interface UnifiedSweepMetrics {
   triggersPending: number;
   triggersProcessing: number;
 
+  // Last observed trigger activity (fallback heartbeat when pipeline_logs is unavailable)
+  triggersLastActivityAt: Date | null;
+
   // If cron_triggers cannot be read (auth/RLS/etc), keep the UI informative
   triggerFetchError: string | null;
   
@@ -217,7 +220,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         // Get pending/processing triggers with result for progress tracking
         supabase
           .from('cron_triggers')
-          .select('action, status, result')
+          .select('action, status, result, created_at, processed_at')
           .in('status', ['pending', 'processing'])
           .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize', 'full_sweep'])
           .order('created_at', { ascending: false })
@@ -246,6 +249,19 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const failedCompaniesData = failedCompaniesResult.data || [];
 
       const triggerFetchError = pendingTriggersResult.error?.message || null;
+
+      // Fallback heartbeat from trigger activity timestamps
+      const triggersLastActivityAt: Date | null = (() => {
+        let last: Date | null = null;
+        for (const t of pendingTriggers as any[]) {
+          const ts = t.processed_at || t.created_at;
+          if (!ts) continue;
+          const d = new Date(ts);
+          if (Number.isNaN(d.getTime())) continue;
+          if (!last || d.getTime() > last.getTime()) last = d;
+        }
+        return last;
+      })();
 
       const lastPipelineLog = pipelineLogsResult.data?.[0] || null;
       const telemetry: UnifiedSweepMetrics['telemetry'] = lastPipelineLog
@@ -418,6 +434,8 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         triggersProcessing: pendingTriggers.filter(t => t.status === 'processing').length,
 
         triggerFetchError,
+
+        triggersLastActivityAt,
         
         // Active trigger progress - extract from the most recent trigger's result
         activeTrigger: (() => {
