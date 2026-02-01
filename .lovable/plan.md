@@ -1,179 +1,253 @@
 
 
-# Plan: Sistema de Sanificación de Respuestas Bilingüe
+# Plan: Sistema de Auto-Recuperación Sin Intervención Humana
 
-## Problema Identificado
+## Diagnóstico del Problema
 
-Los datos actuales muestran que **34% de las respuestas de Grok son rechazos** (39/114):
+### Estado Actual
+- 83 empresas pendientes
+- 6 fallidas
+- 1 zombie (stuck en processing)
+- El watchdog CRON existe (`rix-sweep-watchdog-15min`) pero **no está procesando empresas**
 
-| Idioma | Ejemplos de rechazos detectados |
-|--------|--------------------------------|
-| Inglés | "I'm sorry, but I can't...", "I must decline to generate...", "I cannot provide a report with fabricated..." |
-| Español | "Lo siento, no puedo generar informes ficticios...", "Eso violaría mis directrices de proporcionar información precisa..." |
+### Por Qué Falla el Sistema Actual
 
-## Solución: Acción `sanitize` Bilingüe
-
-Extender `rix-quality-watchdog` con reglas de validación en ambos idiomas.
-
-### Patrones de Rechazo (Español + Inglés)
-
-```typescript
-const REJECTION_PATTERNS = [
-  // === INGLÉS ===
-  /I('m| am) sorry/i,
-  /I must decline/i,
-  /I cannot (provide|generate|create|assist)/i,
-  /I can('t|not) (assist|generate|provide)/i,
-  /I apologize/i,
-  /decline (this|the) request/i,
-  /violates my guidelines/i,
-  /misleading (or|information)/i,
-  /fabricat(ed|ing)|fictional report/i,
-  /future (time )?period/i,
-  /beyond my knowledge/i,
-  /invented information/i,
-  /no real (data|information)/i,
-  
-  // === ESPAÑOL ===
-  /Lo siento/i,
-  /no puedo (generar|proporcionar|crear|asistir)/i,
-  /debo declinar/i,
-  /violar(ía|a) mis directrices/i,
-  /información (ficticia|inventada|engañosa)/i,
-  /informes? (ficticios?|especulativos?)/i,
-  /eventos? futuros?/i,
-  /no existe información/i,
-  /proporcionar información precisa/i,
-  /no es posible generar/i,
-];
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ PROBLEMA: El watchdog intenta ESPERAR a que termine rix-search-v2     │
+│                                                                        │
+│  1. CRON cada 15 min → llama watchdog                                 │
+│  2. Watchdog reclama empresa → marca "processing"                     │
+│  3. Watchdog llama rix-search-v2 (que tarda 2-3 min)                 │
+│  4. ⚠️ Edge function timeout (30s) → watchdog MUERE                   │
+│  5. Empresa queda en "processing" FOREVER = ZOMBIE                    │
+│  6. rix-search-v2 sigue ejecutando pero nadie recoge el resultado    │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Reglas de Validación Completas
+## Solución: Arquitectura "Fire-and-Forget" con Auto-Limpieza
 
-```typescript
-interface ValidationResult {
-  isValid: boolean;
-  errorType: 'rejection' | 'too_short' | 'no_structure' | null;
-  reason: string | null;
-  language?: 'es' | 'en' | 'unknown';
-}
+### Principio Fundamental
+El watchdog NO debe esperar. Debe:
+1. Limpiar zombies
+2. Disparar empresas (fire-and-forget)  
+3. Terminar inmediatamente
 
-function validateResponse(response: string | null): ValidationResult {
-  // Sin respuesta
-  if (!response || response.trim().length === 0) {
-    return { isValid: false, errorType: 'too_short', reason: 'Empty response' };
-  }
+La empresa se marca como "completed" por rix-search-v2 al finalizar, no por el watchdog.
 
-  // Demasiado corta (< 500 chars = casi seguro inválida)
-  if (response.length < 500) {
-    return { 
-      isValid: false, 
-      errorType: 'too_short', 
-      reason: `Only ${response.length} chars (min: 500)` 
-    };
-  }
-
-  // Detectar idioma para patrones
-  const isSpanish = /[áéíóúñ¿¡]/i.test(response) || 
-                    /\b(del|para|con|que|los|las)\b/i.test(response);
-
-  // Patrones de rechazo (bilingüe)
-  for (const pattern of REJECTION_PATTERNS) {
-    if (pattern.test(response)) {
-      return { 
-        isValid: false, 
-        errorType: 'rejection', 
-        reason: `Matched rejection pattern: ${pattern.toString().slice(0, 30)}...`,
-        language: isSpanish ? 'es' : 'en'
-      };
-    }
-  }
-
-  // Respuestas sospechosamente cortas (500-2000 chars) sin estructura
-  if (response.length < 2000) {
-    const hasStructure = /## (Resumen|Summary|Hechos|Noticias|Context)/i.test(response);
-    if (!hasStructure) {
-      return { 
-        isValid: false, 
-        errorType: 'no_structure', 
-        reason: 'Short response without expected report structure' 
-      };
-    }
-  }
-
-  return { isValid: true, errorType: null, reason: null };
-}
-```
-
-## Flujo de Sanificación
+### Arquitectura Propuesta
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ rix-quality-watchdog (action: sanitize)                                │
+│ CRON cada 5 minutos (no 15)                                            │
 │                                                                         │
-│  1. ESCANEAR: Leer todas las columnas de respuesta bruta               │
-│     - 20_res_gpt_bruto                                                  │
-│     - 21_res_perplex_bruto                                             │
-│     - 22_res_gemini_bruto                                              │
-│     - 23_res_deepseek_bruto                                            │
-│     - respuesta_bruto_grok                                             │
-│     - respuesta_bruto_qwen                                             │
+│  rix-batch-orchestrator (modo: auto_recovery)                          │
 │                                                                         │
-│  2. VALIDAR: Aplicar reglas bilingües a cada respuesta                 │
-│     - Detectar rechazos en español e inglés                            │
-│     - Detectar respuestas < 500 caracteres                             │
-│     - Detectar respuestas sin estructura de informe                    │
+│  Paso 1: LIMPIAR ZOMBIES (empresas en processing > 5 min)              │
+│          UPDATE sweep_progress SET status='pending' WHERE stuck        │
 │                                                                         │
-│  3. REGISTRAR: Insertar en data_quality_reports                        │
-│     - status = 'invalid_response'                                      │
-│     - error_type = 'rejection' | 'too_short' | 'no_structure'          │
-│     - original_error = patrón que lo detectó                           │
+│  Paso 2: VERIFICAR si hay trabajo                                      │
+│          Si pending=0 AND processing=0 → sweep completo, salir         │
 │                                                                         │
-│  4. RETORNAR: Estadísticas de sanificación                             │
-│     - scanned: total de respuestas revisadas                           │
-│     - invalidFound: total de inválidas                                 │
-│     - byModel: desglose por modelo                                     │
+│  Paso 3: RECLAMAR 1 empresa (claim atómico con RPC)                   │
+│          Si ya hay 3+ en processing → no reclamar más (evitar sobrecarga) │
+│                                                                         │
+│  Paso 4: DISPARAR rix-search-v2 SIN ESPERAR (fire-and-forget)         │
+│          fetch(...).catch(() => {}) // Ignorar respuesta               │
+│          EdgeRuntime.waitUntil() para background task                 │
+│                                                                         │
+│  Paso 5: RETORNAR INMEDIATAMENTE                                       │
+│          El CRON terminó. rix-search-v2 sigue en background.          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Resultado por hora:
+- CRON cada 5 min = 12 invocaciones/hora
+- 1 empresa por invocación = 12 empresas/hora MÍNIMO
+- Si el proceso es rápido, el siguiente CRON dispara otra
+- 178 empresas ÷ 12/hora = ~15 horas PEOR CASO
+- Con 3 paralelas: ~5 horas
+```
+
+## Cambios Técnicos
+
+### 1. Nuevo Modo `auto_recovery` en Orquestador
+
+```typescript
+// NUEVO: Modo auto_recovery (fire-and-forget)
+if (trigger === 'watchdog' || trigger === 'auto_recovery') {
+  const MAX_CONCURRENT = 3; // Máximo 3 empresas procesando simultáneamente
+  
+  // 1. SIEMPRE limpiar zombies primero (> 5 min stuck)
+  const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
+  
+  // 2. Contar estado actual
+  const { data: statusData } = await supabase
+    .from('sweep_progress')
+    .select('status')
+    .eq('sweep_id', sweepId);
+  
+  const processing = statusData?.filter(s => s.status === 'processing').length || 0;
+  const pending = statusData?.filter(s => s.status === 'pending').length || 0;
+  
+  // 3. Si ya hay MAX_CONCURRENT procesando, no disparar más
+  if (processing >= MAX_CONCURRENT) {
+    return { action: 'throttled', processing, pending, stuckReset: stuckReset.count };
+  }
+  
+  // 4. Si no hay pendientes, sweep completo
+  if (pending === 0 && processing === 0) {
+    return { action: 'complete', message: 'Sweep finished' };
+  }
+  
+  // 5. Reclamar UNA empresa (atomic claim)
+  const { data: claimed } = await supabase.rpc('claim_next_sweep_company', {
+    p_sweep_id: sweepId,
+    p_worker_id: Date.now() % 1000
+  });
+  
+  if (!claimed || claimed.length === 0) {
+    return { action: 'no_work', pending, processing };
+  }
+  
+  const company = claimed[0];
+  
+  // 6. FIRE-AND-FORGET: Disparar rix-search-v2 SIN esperar
+  EdgeRuntime.waitUntil(
+    fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ ticker: company.ticker, issuer_name: company.issuer_name }),
+    }).catch(e => console.error(`[auto_recovery] Fire error for ${company.ticker}:`, e))
+  );
+  
+  // 7. Retornar INMEDIATAMENTE
+  return {
+    action: 'fired',
+    ticker: company.ticker,
+    processing: processing + 1,
+    pending: pending - 1,
+    stuckReset: stuckReset.count,
+  };
+}
+```
+
+### 2. Modificar rix-search-v2 para Auto-Completar
+
+El problema es que `rix-search-v2` no actualiza `sweep_progress` al terminar. Necesita hacerlo:
+
+```typescript
+// Al FINAL de rix-search-v2, después de guardar resultados:
+
+// Marcar empresa como completada en sweep_progress
+const currentSweepId = getCurrentSweepId(); // Misma función que el orquestador
+
+const { error: updateError } = await supabase
+  .from('sweep_progress')
+  .update({ 
+    status: 'completed', 
+    completed_at: new Date().toISOString(),
+    models_completed: successfulModels.length
+  })
+  .eq('sweep_id', currentSweepId)
+  .eq('ticker', ticker);
+
+if (updateError) {
+  console.error(`[rix-search-v2] Failed to update sweep_progress for ${ticker}:`, updateError);
+}
+```
+
+### 3. Aumentar Frecuencia del CRON a 5 Minutos
+
+El CRON actual es cada 15 minutos. Con el nuevo modelo fire-and-forget, necesitamos más frecuencia:
+
+```sql
+-- Actualizar el CRON existente
+SELECT cron.alter_job(
+  (SELECT jobid FROM cron.job WHERE jobname = 'rix-sweep-watchdog-15min'),
+  schedule := '*/5 * * * *'  -- Cada 5 minutos, TODO EL DÍA, TODOS LOS DÍAS
+);
+
+-- Renombrar para reflejar el cambio
+UPDATE cron.job SET jobname = 'rix-auto-recovery-5min' 
+WHERE jobname = 'rix-sweep-watchdog-15min';
+```
+
+### 4. Dashboard Ultra-Simplificado con Indicador de Salud
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│ BARRIDO SEMANAL 2026-W06                                    [AUTO-ON] │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│     ████████████████████████░░░░░░░░░░░░░░░░░░  50%                   │
+│                                                                         │
+│     ✓ 88 completadas        ⏳ 83 pendientes        ✗ 6 fallidas      │
+│                                                                         │
+│     Estado: 🟢 FUNCIONANDO                                             │
+│     Última actividad: hace 2 minutos                                   │
+│     Próximo CRON: en 3 minutos                                         │
+│     Velocidad: ~12 empresas/hora                                       │
+│     Tiempo restante estimado: ~7 horas                                 │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ ACCIONES MANUALES (solo si es necesario)                               │
+│                                                                         │
+│ [ Limpiar Zombies ]  [ Forzar Procesamiento ]  [ Pausar Auto ]        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Dashboard: Nueva Sección de Calidad
-
-Añadir al `SweepHealthDashboard.tsx` una sección de calidad de respuestas:
-
-```text
-┌───────────────────────────────────────────────────────────────────────┐
-│ CALIDAD DE RESPUESTAS                                                │
-├───────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  🟢 1,650 válidas    🟡 39 inválidas    🔴 12 sin datos              │
-│                                                                       │
-│  Modelos con problemas:                                              │
-│  • Grok: 36 rechazos (rechazó analizar "período futuro")            │
-│  • DeepSeek: 3 respuestas cortas                                     │
-│                                                                       │
-│  [ 🔍 Sanificar Ahora ]   [ 🔧 Reparar Inválidas ]                   │
-└───────────────────────────────────────────────────────────────────────┘
-```
+Indicadores de estado:
+- 🟢 FUNCIONANDO: Hay actividad en los últimos 5 minutos
+- 🟡 LENTO: Última actividad hace 5-15 minutos
+- 🔴 ATASCADO: Sin actividad en 15+ minutos
 
 ## Archivos a Modificar
 
 | Archivo | Cambios |
 |---------|---------|
-| `supabase/functions/rix-quality-watchdog/index.ts` | Nueva acción `sanitize` con patrones bilingües (español + inglés) |
-| `src/components/admin/SweepHealthDashboard.tsx` | Nueva sección "Calidad de Respuestas" con botones de sanificación |
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Nuevo modo `auto_recovery` con fire-and-forget usando `EdgeRuntime.waitUntil()` |
+| `supabase/functions/rix-search-v2/index.ts` | Auto-actualizar `sweep_progress` al completar cada empresa |
+| `src/components/admin/SweepHealthDashboard.tsx` | Simplificar UI, mostrar indicador AUTO-ON, tiempo restante estimado |
+| SQL | Actualizar CRON a cada 5 minutos y renombrar |
 
 ## Resultado Esperado
 
 | Métrica | Antes | Después |
 |---------|-------|---------|
-| Rechazos detectados | 0 (pasaban desapercibidos) | 39+ de Grok |
-| Idiomas soportados | Solo inglés | Español + Inglés |
-| Respuestas cortas detectadas | No | Sí (< 500 chars) |
-| Acción de reparación | Manual | Automática vía botón |
+| Intervención manual requerida | Sí, constante | No |
+| Frecuencia de auto-recuperación | Cada 15 min (rota) | Cada 5 min (funciona) |
+| Zombies acumulados | Muchos | 0 (limpieza automática) |
+| Tiempo para completar 178 empresas | Indefinido | ~5-7 horas |
+| Visibilidad del estado | Confusa | Clara (semáforo simple) |
 
-## Flujo de Uso
+## Flujo Completo
 
-1. **Automático**: CRON ejecuta `sanitize` el lunes tras el barrido
-2. **Manual**: Admin pulsa "Sanificar Ahora" en el dashboard
-3. **Reparación**: El `repair` existente procesa las respuestas marcadas como `invalid_response`
+```text
+Domingo 01:00 CET
+     │
+     ▼
+CRON rix-sweep-phase-01 → Inicializa sweep → Procesa fase 1 (5 empresas)
+     │
+     ▼
+CRON rix-sweep-phase-02 → Procesa fase 2
+     │
+     ▼
+... (35 fases, ~3 horas)
+     │
+     ▼
+CRON auto-recovery (cada 5 min TODO EL DÍA)
+     │
+     ├── ¿Hay zombies? → Limpiar
+     ├── ¿Hay < 3 procesando? → Disparar 1 más
+     ├── ¿Sweep completo? → No hacer nada
+     │
+     ▼
+Lunes 06:00: Sweep 100% completo automáticamente
+     │
+     ▼
+CRON lunes AM: Sanificación automática de respuestas
+```
 
