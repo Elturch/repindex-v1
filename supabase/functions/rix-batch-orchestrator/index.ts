@@ -755,6 +755,29 @@ async function processCronTriggers(
   serviceKey: string
 ): Promise<Array<{ id: string; action: string; success: boolean; result?: unknown; error?: string }>> {
   const results: Array<{ id: string; action: string; success: boolean; result?: unknown; error?: string }> = [];
+
+  // --------------------------------------------------------------------------
+  // Zombie cleanup: si una ejecución se corta (timeout/shutdown) puede dejar
+  // triggers en "processing" para siempre. Los reseteamos a "pending".
+  // --------------------------------------------------------------------------
+  try {
+    const staleBefore = new Date(Date.now() - 4 * 60 * 1000).toISOString();
+    const { data: resetRows, error: resetError } = await supabase
+      .from('cron_triggers')
+      .update({ status: 'pending' })
+      .eq('status', 'processing')
+      .is('processed_at', null)
+      .lt('created_at', staleBefore)
+      .select('id');
+
+    if (resetError) {
+      console.error('[cron_triggers] Zombie cleanup failed:', resetError);
+    } else if (resetRows && resetRows.length > 0) {
+      console.warn(`[cron_triggers] Zombie cleanup: reset ${resetRows.length} triggers stuck in processing`);
+    }
+  } catch (e) {
+    console.error('[cron_triggers] Zombie cleanup exception:', e);
+  }
   
   // Obtener triggers pendientes (máximo 5 por invocación)
   const { data: triggers, error } = await supabase
@@ -873,6 +896,12 @@ async function processCronTriggers(
         
         const triggerParams = trigger.params as { sweep_id?: string; batch_size?: number } | null;
         const batchSize = triggerParams?.batch_size || 20;
+
+        // IMPORTANT: aunque batch_size sea alto, limitamos el trabajo por invocación
+        // para evitar timeouts que dejan el trigger atascado en "processing".
+        const hardTimeBudgetMs = 150_000; // <180s de límite típico
+        const startedAt = Date.now();
+        const maxPerInvocation = Math.max(1, Math.min(batchSize, 3));
         
         // Find the most recent week with data (instead of calculating dates manually)
         const { data: latestWeek } = await supabase
@@ -928,12 +957,32 @@ async function processCronTriggers(
         }
         
         console.log(`[cron_triggers] Found ${missingRecords.length} records with missing data (model-aware)`);
+
+        // Si no hay nada que reparar, completar el trigger y salir.
+        if (missingRecords.length === 0) {
+          await supabase
+            .from('cron_triggers')
+            .update({
+              status: 'completed',
+              processed_at: new Date().toISOString(),
+              result: { processed: 0, remaining: 0, results: [] }
+            })
+            .eq('id', trigger.id);
+
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: { processed: 0, remaining: 0, results: [] } });
+          console.log(`[cron_triggers] repair_search trigger ${trigger.id} completed: nothing to repair`);
+          continue;
+        }
         
         // Take batch and process
-        const recordsToProcess = missingRecords.slice(0, batchSize);
+        const recordsToProcess = missingRecords.slice(0, maxPerInvocation);
         const repairResults: Array<{ ticker: string; model: string; success: boolean; error?: string }> = [];
         
         for (const record of recordsToProcess) {
+          if (Date.now() - startedAt > hardTimeBudgetMs) {
+            console.warn(`[cron_triggers] repair_search time budget reached; pausing after ${repairResults.length} records`);
+            break;
+          }
           try {
             // Re-execute search for this specific model
             const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
@@ -947,13 +996,33 @@ async function processCronTriggers(
                 single_model: record.model,
                 repair_mode: true,
               }),
+              // Evita quedarse colgado en un modelo/API y perder el trigger por timeout
+              signal: AbortSignal.timeout(120_000),
             });
+
+            if (!response.ok) {
+              const errText = await response.text();
+              throw new Error(`HTTP ${response.status}: ${errText}`);
+            }
             
             repairResults.push({ 
               ticker: record.ticker, 
               model: record.model, 
               success: response.ok 
             });
+
+            // Persistencia incremental (por si hay timeout a mitad de lote)
+            await supabase
+              .from('cron_triggers')
+              .update({
+                result: {
+                  processed: repairResults.length,
+                  remaining_estimate: Math.max(0, missingRecords.length - repairResults.length),
+                  last: { ticker: record.ticker, model: record.model },
+                  last_batch: repairResults.slice(-5),
+                }
+              })
+              .eq('id', trigger.id);
           } catch (e: unknown) {
             repairResults.push({ 
               ticker: record.ticker, 
@@ -961,21 +1030,52 @@ async function processCronTriggers(
               success: false, 
               error: e instanceof Error ? e.message : String(e)
             });
+
+            await supabase
+              .from('cron_triggers')
+              .update({
+                result: {
+                  processed: repairResults.length,
+                  remaining_estimate: Math.max(0, missingRecords.length - repairResults.length),
+                  last: { ticker: record.ticker, model: record.model },
+                  last_error: e instanceof Error ? e.message : String(e),
+                  last_batch: repairResults.slice(-5),
+                }
+              })
+              .eq('id', trigger.id);
           }
         }
-        
-        // Mark as completed
+
+        const remainingAfter = Math.max(0, missingRecords.length - repairResults.length);
+
+        // Si queda trabajo, re-encolar el MISMO trigger (status=pending) en vez de marcarlo completed.
+        // Esto evita que el sistema "se pare" por triggers atascados en processing.
+        const nextStatus = remainingAfter > 0 ? 'pending' : 'completed';
+
         await supabase
           .from('cron_triggers')
-          .update({ 
-            status: 'completed',
-            processed_at: new Date().toISOString(),
-            result: { processed: repairResults.length, results: repairResults }
+          .update({
+            status: nextStatus,
+            processed_at: remainingAfter > 0 ? null : new Date().toISOString(),
+            result: {
+              processed: repairResults.length,
+              remaining: remainingAfter,
+              max_per_invocation: maxPerInvocation,
+              results: repairResults,
+            }
           })
           .eq('id', trigger.id);
 
-        results.push({ id: trigger.id, action: trigger.action, success: true, result: { processed: repairResults.length, results: repairResults } });
-        console.log(`[cron_triggers] repair_search trigger ${trigger.id} completed: ${repairResults.length} records processed`);
+        results.push({
+          id: trigger.id,
+          action: trigger.action,
+          success: true,
+          result: { processed: repairResults.length, remaining: remainingAfter, results: repairResults },
+        });
+
+        console.log(
+          `[cron_triggers] repair_search trigger ${trigger.id} ${nextStatus}: processed=${repairResults.length}, remaining=${remainingAfter}`
+        );
 
       } else {
         // Acción desconocida
@@ -1450,13 +1550,15 @@ const {
         // Disparar triggers EN PARALELO según lo que falte
         const triggersInserted: string[] = [];
         
-        // TRIGGER 1: Hay registros sin datos → repair_search
+          // TRIGGER 1: Hay registros sin datos → repair_search
         if (missingDataCount > 0 || failed > 0) {
           const { data: existingTrigger } = await supabase
             .from('cron_triggers')
-            .select('id')
+            .select('id, status')
             .eq('action', 'repair_search')
-            .eq('status', 'pending')
+            .in('status', ['pending', 'processing'])
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
           
           if (!existingTrigger) {
@@ -1482,13 +1584,15 @@ const {
           }
         }
         
-        // TRIGGER 2: Hay registros analizables → repair_analysis (puede correr EN PARALELO)
+          // TRIGGER 2: Hay registros analizables → repair_analysis (puede correr EN PARALELO)
         if (analyzableCount && analyzableCount > 0) {
           const { data: existingTrigger } = await supabase
             .from('cron_triggers')
-            .select('id')
+            .select('id, status')
             .eq('action', 'repair_analysis')
-            .eq('status', 'pending')
+            .in('status', ['pending', 'processing'])
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
           
           if (!existingTrigger) {
@@ -1558,6 +1662,44 @@ const {
             // No fallar la request - el CRON lo procesará después
           }
         }
+
+        // ========== CRÍTICO: Self-chaining de triggers ==========
+        // Si quedan triggers de repair_* pendientes, programar relanzamiento para que
+        // el sistema no “se pare” hasta vaciarlos.
+        const MAX_TRIGGER_RELAUNCHES = 30;
+        const { count: remainingTriggers } = await supabase
+          .from('cron_triggers')
+          .select('*', { count: 'exact', head: true })
+          .in('status', ['pending', 'processing']);
+
+        const shouldRelaunchTriggers = (remainingTriggers || 0) > 0 && relaunch_count < MAX_TRIGGER_RELAUNCHES;
+        if (shouldRelaunchTriggers) {
+          console.log(
+            `[${triggerMode}] Triggers still pending (${remainingTriggers}). Auto-relaunching process_triggers_only in 10s (#${relaunch_count + 1})`
+          );
+
+          EdgeRuntime.waitUntil(
+            (async () => {
+              await new Promise(r => setTimeout(r, 10000));
+              try {
+                const resp = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseServiceKey}`,
+                  },
+                  body: JSON.stringify({
+                    process_triggers_only: true,
+                    relaunch_count: relaunch_count + 1,
+                  }),
+                });
+                console.log(`[${triggerMode}] Trigger relaunch executed (status: ${resp.status})`);
+              } catch (e) {
+                console.error(`[${triggerMode}] Trigger relaunch failed:`, e);
+              }
+            })()
+          );
+        }
         
         return new Response(
           JSON.stringify({
@@ -1575,6 +1717,8 @@ const {
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
+            triggersRelaunchScheduled: shouldRelaunchTriggers,
+            triggersRemaining: remainingTriggers || 0,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -1808,6 +1952,38 @@ const {
       console.log('[orchestrator] Mode: process_triggers_only');
       
       const triggersProcessed = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+
+      // Si aún quedan triggers, auto-relanzar (self-chaining) para vaciar la cola.
+      const MAX_TRIGGER_RELAUNCHES = 30;
+      const { count: remainingTriggers } = await supabase
+        .from('cron_triggers')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['pending', 'processing']);
+
+      const shouldRelaunch = (remainingTriggers || 0) > 0 && relaunch_count < MAX_TRIGGER_RELAUNCHES;
+      if (shouldRelaunch) {
+        EdgeRuntime.waitUntil(
+          (async () => {
+            await new Promise(r => setTimeout(r, 8000));
+            try {
+              const resp = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify({
+                  process_triggers_only: true,
+                  relaunch_count: relaunch_count + 1,
+                }),
+              });
+              console.log(`[process_triggers_only] Auto-relaunch #${relaunch_count + 1} executed (status: ${resp.status})`);
+            } catch (e) {
+              console.error(`[process_triggers_only] Auto-relaunch #${relaunch_count + 1} failed:`, e);
+            }
+          })()
+        );
+      }
       
       return new Response(
         JSON.stringify({
@@ -1815,6 +1991,8 @@ const {
           mode: 'process_triggers_only',
           triggersProcessed: triggersProcessed.length,
           triggers: triggersProcessed,
+          remainingTriggers: remainingTriggers || 0,
+          relaunchScheduled: shouldRelaunch,
           message: triggersProcessed.length > 0 
             ? `Procesados ${triggersProcessed.length} triggers: ${triggersProcessed.map(t => t.action).join(', ')}`
             : 'No hay triggers pendientes',
