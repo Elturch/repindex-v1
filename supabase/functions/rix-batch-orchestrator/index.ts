@@ -1435,6 +1435,23 @@ const {
       
       console.log(`[${triggerMode}] Starting fire-and-forget auto-recovery...`);
       
+      // ═══════════════════════════════════════════════════════════════════
+      // 0. CRITICAL FIX: Limpiar triggers auto_continue stale (>60s en processing)
+      // Esto previene la acumulación de triggers que nunca terminan
+      // ═══════════════════════════════════════════════════════════════════
+      const staleCleanupThreshold = new Date(Date.now() - 60 * 1000).toISOString();
+      const { count: staleCount } = await supabase
+        .from('cron_triggers')
+        .delete()
+        .eq('action', 'auto_continue')
+        .eq('status', 'processing')
+        .lt('created_at', staleCleanupThreshold)
+        .select('*', { count: 'exact', head: true });
+      
+      if ((staleCount || 0) > 0) {
+        console.log(`[${triggerMode}] Cleaned up ${staleCount} stale auto_continue triggers (>60s old)`);
+      }
+      
       // 1. Verificar si hay un sweep activo para esta semana
       const { count: sweepCount } = await supabase
         .from('sweep_progress')
@@ -1859,16 +1876,15 @@ const {
         let autoContinueInserted = false;
         
         if (hasPendingWork) {
-          // Verificar si ya existe un auto_continue pendiente (evitar duplicados)
-          const { data: existingAutoContinue } = await supabase
+          // CRITICAL FIX: Verificar tanto pending como processing para evitar race conditions
+          const { count: existingAutoContinueCount } = await supabase
             .from('cron_triggers')
-            .select('id')
+            .select('*', { count: 'exact', head: true })
             .eq('action', 'auto_continue')
-            .eq('status', 'pending')
-            .limit(1)
-            .maybeSingle();
+            .in('status', ['pending', 'processing'])
+            .gte('created_at', new Date(Date.now() - 60 * 1000).toISOString()); // Últimos 60s
 
-          if (!existingAutoContinue) {
+          if ((existingAutoContinueCount || 0) === 0) {
             const { error: insertError } = await supabase.from('cron_triggers').insert({
               action: 'auto_continue',
               params: { 
@@ -1888,7 +1904,7 @@ const {
               console.log(`[${triggerMode}] Inserted auto_continue trigger for next CRON cycle`);
             }
           } else {
-            console.log(`[${triggerMode}] auto_continue already pending (id: ${existingAutoContinue.id})`);
+            console.log(`[${triggerMode}] auto_continue already exists (${existingAutoContinueCount} in last 60s)`);
           }
         }
         
@@ -1941,16 +1957,16 @@ const {
         console.log(`[${triggerMode}] Already ${processing} companies processing (max ${MAX_CONCURRENT}). Throttling.`);
         
         // AUTO-RELAUNCH VIA DB: insertar auto_continue si hay trabajo pendiente
+        // CRITICAL FIX: Check both pending AND processing, with time window
         if (pending > 0) {
-          const { data: existingAutoContinue } = await supabase
+          const { count: existingCount } = await supabase
             .from('cron_triggers')
-            .select('id')
+            .select('*', { count: 'exact', head: true })
             .eq('action', 'auto_continue')
-            .eq('status', 'pending')
-            .limit(1)
-            .maybeSingle();
+            .in('status', ['pending', 'processing'])
+            .gte('created_at', new Date(Date.now() - 60 * 1000).toISOString());
 
-          if (!existingAutoContinue) {
+          if ((existingCount || 0) === 0) {
             await supabase.from('cron_triggers').insert({
               action: 'auto_continue',
               params: { sweep_id: sweepId, phase: 'throttled', pending },
@@ -2118,15 +2134,14 @@ const {
         .in('status', ['pending', 'processing']);
 
       if ((remainingTriggers || 0) > 0) {
-        const { data: existingAutoContinue } = await supabase
+        const { count: existingCount } = await supabase
           .from('cron_triggers')
-          .select('id')
+          .select('*', { count: 'exact', head: true })
           .eq('action', 'auto_continue')
-          .eq('status', 'pending')
-          .limit(1)
-          .maybeSingle();
+          .in('status', ['pending', 'processing'])
+          .gte('created_at', new Date(Date.now() - 60 * 1000).toISOString());
 
-        if (!existingAutoContinue) {
+        if ((existingCount || 0) === 0) {
           await supabase.from('cron_triggers').insert({
             action: 'auto_continue',
             params: { sweep_id: sweepId, phase: 'process_triggers', remaining: remainingTriggers },
