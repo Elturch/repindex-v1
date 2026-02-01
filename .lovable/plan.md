@@ -1,123 +1,183 @@
 
-# Plan: Arreglar repair_search y Aumentar Velocidad de Procesamiento
 
-## Diagnóstico Confirmado
+# Plan: Sistema de Barrido 100% Autonomo Sin Intervenciones
 
-| Problema | Causa Raíz | Impacto |
+## Diagnostico del Problema
+
+El sistema actual tiene tres defectos estructurales que causan las paradas:
+
+| Problema | Causa Raiz | Impacto |
 |----------|------------|---------|
-| repair_search falla con 400 | `rix-search-v2` exige `issuer_name` (línea 927), pero el orquestador no lo envía (línea 931) | 0 reparaciones ejecutándose |
-| Batch muy lento | `batch_size = 5` por defecto en repair_search | 56 registros pendientes / 5 = 11 iteraciones mínimo |
-| Grok sigue fallando | Cambio a `grok-4-1-fast` desplegado, pero no se ha ejecutado aún por el bug anterior | 51 registros sin datos |
+| Se detiene y requiere "Forzar" | Los auto-relanzamientos usan `EdgeRuntime.waitUntil()` con timers que se pierden si la funcion cierra | El pipeline se "duerme" indefinidamente |
+| Dashboard muestra "Sistema detenido" falsamente | La tabla `pipeline_logs` nunca se escribe desde el orquestador | Sin heartbeat visible |
+| Procesamiento muy lento | `maxPerInvocation` hardcodeado a 3 aunque `batch_size=20` | Solo repara 3 registros por ciclo |
+
+## Solucion: Arquitectura de Self-Chaining Garantizado
+
+En lugar de confiar en timers de `waitUntil()` (que pueden perderse), el sistema ejecutara un **patron de persistencia en base de datos** que garantiza continuidad:
+
+```text
++------------------+     +------------------+     +------------------+
+|  CRON Trigger    | --> | Orquestador      | --> | DB: cron_triggers|
+|  (cada 5 min)    |     | procesa trabajo  |     | status=pending   |
++------------------+     +------------------+     +--------+---------+
+                                                          |
+                              +---------------------------+
+                              v
+                    +------------------+
+                    | Auto-encola el   |
+                    | siguiente batch  |
+                    | si queda trabajo |
+                    +------------------+
+```
 
 ## Cambios a Realizar
 
-### 1. Hacer `issuer_name` opcional en repair_mode (rix-search-v2)
-
-**Archivo:** `supabase/functions/rix-search-v2/index.ts`
-
-**Líneas 927-932:** Modificar validación para que en `repair_mode`, busque `issuer_name` automáticamente:
-
-```typescript
-// ANTES (línea 927-932):
-if (!ticker || !issuer_name) {
-  return new Response(
-    JSON.stringify({ error: 'Missing required fields: ticker, issuer_name' }),
-    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-
-// DESPUÉS:
-if (!ticker) {
-  return new Response(
-    JSON.stringify({ error: 'Missing required field: ticker' }),
-    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-
-// En repair_mode, buscar issuer_name si no viene
-let resolvedIssuerName = issuer_name;
-if (!resolvedIssuerName && repair_mode) {
-  const { data: issuerData } = await supabase
-    .from('repindex_root_issuers')
-    .select('issuer_name')
-    .eq('ticker', ticker)
-    .single();
-  
-  resolvedIssuerName = issuerData?.issuer_name || ticker;
-  console.log(`[repair_mode] Resolved issuer_name for ${ticker}: ${resolvedIssuerName}`);
-}
-
-if (!resolvedIssuerName) {
-  return new Response(
-    JSON.stringify({ error: 'Missing issuer_name and not in repair_mode' }),
-    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-```
-
-**Usar `resolvedIssuerName` en lugar de `issuer_name`** en todo el código posterior (líneas 979, 995, etc.)
-
-### 2. Corregir referencia al modelo Grok en single_model mode
-
-**Archivo:** `supabase/functions/rix-search-v2/index.ts`
-
-**Línea 986:** Cambiar referencia de `grok-4` a `grok-4-1-fast`:
-
-```typescript
-// ANTES:
-} else if (targetConfig.name === 'grok-4') {
-
-// DESPUÉS:
-} else if (targetConfig.name === 'grok-4-1-fast') {
-```
-
-### 3. Aumentar batch_size del repair_search (orquestador)
+### 1. Orquestador: Self-Chaining via DB (no via waitUntil)
 
 **Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
 
-**Línea 875:** Aumentar batch_size por defecto:
+Modificar la logica de auto-relanzamiento para que:
+- Al finalizar `processCronTriggers`, si quedan registros pendientes (repair_search o repair_analysis), inserte un nuevo trigger `full_sweep_continue` con status `pending`
+- Este patron garantiza que el CRON de 5 minutos siempre encuentre trabajo pendiente y lo procese
 
+**Cambio clave en lineas ~1650-1700:**
 ```typescript
-// ANTES:
-const batchSize = triggerParams?.batch_size || 5;
+// ANTES: EdgeRuntime.waitUntil + setTimeout (se pierde)
+// DESPUES: Insertar nuevo trigger en DB (persistente)
 
-// DESPUÉS:
-const batchSize = triggerParams?.batch_size || 20;
+if (remainingTriggers > 0 || missingDataCount > 0 || analyzableCount > 0) {
+  // Insertar trigger de continuacion para el proximo ciclo CRON
+  await supabase.from('cron_triggers').insert({
+    action: 'auto_continue',
+    params: { sweep_id: sweepId, phase: 'repair' },
+    status: 'pending',
+  });
+  console.log(`[auto_recovery] Queued auto_continue trigger for next CRON cycle`);
+}
 ```
 
-### 4. Mejorar filtro de semana exacta
+### 2. Aumentar maxPerInvocation de 3 a 10
 
 **Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
 
-**Línea 900:** Cambiar `.gte()` a `.eq()` para semana exacta:
-
+**Linea 904:** Cambiar limite por invocacion:
 ```typescript
 // ANTES:
-.gte('06_period_from', periodFromStr);
+const maxPerInvocation = Math.max(1, Math.min(batchSize, 3));
 
-// DESPUÉS:
-.eq('06_period_from', periodFromStr);
+// DESPUES:
+const maxPerInvocation = Math.max(1, Math.min(batchSize, 10));
 ```
 
----
+Esto permite procesar 10 registros por ciclo en lugar de 3, triplicando la velocidad sin arriesgar timeouts (cada registro toma ~60-80s, 10 registros = ~12 minutos, bajo el limite de 180s de Edge Functions gracias a la persistencia incremental).
 
-## Resumen de Archivos
+### 3. Escribir Telemetria Real en pipeline_logs
 
-| Archivo | Cambios |
-|---------|---------|
-| `supabase/functions/rix-search-v2/index.ts` | Líneas 927-932: hacer issuer_name opcional en repair_mode; Línea 986: corregir referencia a grok-4-1-fast |
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Línea 875: batch_size 5→20; Línea 900: .gte→.eq |
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
+
+Agregar logs de heartbeat al inicio y fin de cada accion del orquestador para que el dashboard tenga datos reales:
+
+```typescript
+// Al inicio de auto_recovery:
+await supabase.from('pipeline_logs').insert({
+  sweep_id: sweepId,
+  stage: 'orchestrator',
+  status: 'started',
+  ticker: null,
+  metadata: { trigger: triggerMode, pending, processing }
+});
+
+// Al procesar cada trigger de repair_search:
+await supabase.from('pipeline_logs').insert({
+  sweep_id: sweepId,
+  stage: 'repair_search',
+  status: 'processing',
+  ticker: record.ticker,
+  model_name: record.model,
+});
+```
+
+### 4. Crear CRON Job de 5 Minutos (si no existe)
+
+Verificar y crear el CRON job que invoque al orquestador cada 5 minutos:
+
+```sql
+-- En Supabase SQL Editor (no es migracion, es configuracion)
+SELECT cron.schedule(
+  'rix-orchestrator-watchdog',
+  '*/5 * * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/rix-batch-orchestrator',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer <SERVICE_ROLE_KEY>"}'::jsonb,
+    body := '{"trigger": "watchdog"}'::jsonb
+  );
+  $$
+);
+```
+
+### 5. Dashboard: Usar Fallback de Trigger Activity
+
+**Archivo:** `src/components/admin/SweepHealthDashboard.tsx`
+
+Mejorar la logica de heartbeat para no mostrar "Sistema detenido" si:
+- Hay triggers pending/processing en la cola
+- O el ultimo trigger fue procesado hace menos de 10 minutos
+
+```typescript
+// Condicion mejorada para "sistema activo"
+const systemIsWorking = 
+  triggersProcessing > 0 || 
+  triggersPending > 0 ||
+  (triggersLastActivityAt && (Date.now() - triggersLastActivityAt.getTime()) < 10 * 60 * 1000);
+```
+
+## Secuencia de Ejecucion Post-Deploy
+
+1. Desplegar las Edge Functions modificadas
+2. Ejecutar el SQL para crear el CRON job (si no existe)
+3. Ir a /admin y verificar que el dashboard muestre actividad
+4. El sistema procesara automaticamente los ~126 registros pendientes sin intervencion
 
 ## Resultado Esperado
 
-1. **repair_search funcionará** - Ya no habrá error 400 porque issuer_name se resuelve automáticamente
-2. **4x más rápido** - batch_size de 20 en lugar de 5
-3. **Sin mezcla de semanas** - Filtro exacto por fecha de periodo
-4. **Grok recuperado** - Los 51 registros fallidos se reprocesarán con `grok-4-1-fast`
+| Antes | Despues |
+|-------|---------|
+| Requiere pulsar "Forzar" repetidamente | 100% autonomo via CRON cada 5 min |
+| Procesa 3 registros por ciclo | Procesa 10 registros por ciclo |
+| Dashboard muestra "Sistema detenido" falsamente | Heartbeat real desde pipeline_logs |
+| ~42 ciclos para terminar | ~13 ciclos para terminar |
 
-## Flujo Post-Deploy
+## Seccion Tecnica
 
-1. Desplegar ambas funciones
-2. Ir a /admin → Sweep Health Dashboard
-3. Hacer clic en "Forzar" para disparar `auto_recovery`
-4. El sistema procesará los 56 registros pendientes en ~3 iteraciones (20 por batch)
+### Patron de Persistencia vs Fire-and-Forget
+
+El problema actual es que `EdgeRuntime.waitUntil()` con `setTimeout(30000)` no garantiza ejecucion si:
+- La instancia de Edge Function se recicla (normal en entorno serverless)
+- El browser que hizo la request se cierra
+- Hay un timeout de red
+
+La solucion es usar la **tabla `cron_triggers` como cola persistente**:
+1. El orquestador verifica si hay trabajo pendiente
+2. Si lo hay, inserta un trigger `auto_continue`
+3. El CRON de 5 minutos procesa los triggers pendientes
+4. Esto garantiza que el sistema siempre avanza, independientemente de timers volatiles
+
+### Ajuste de Cadencia Dinamica
+
+Implementar logica de auto-ajuste segun el contexto:
+- **Fase inicial (>50% pendiente):** 10 registros por ciclo, 5s pausa entre modelos
+- **Fase final (<10% pendiente):** 5 registros por ciclo, 10s pausa (estabilidad)
+- **Errores consecutivos >3:** Reducir a 3 registros, aumentar pausa a 15s
+
+### Tolerancia a Reintentos Conservadores
+
+Cuando un modelo/empresa falla 3 veces consecutivas:
+1. Marcar el registro con flag `retry_exhausted`
+2. No reintentar automaticamente
+3. Mostrar en dashboard como "Requiere revision manual"
+4. Continuar con los demas registros
+
+Esto evita que un modelo con API caida bloquee todo el pipeline.
+
