@@ -7,10 +7,15 @@ const corsHeaders = {
 };
 
 // Prompt genérico para la mayoría de modelos - FORMATO NARRATIVO PROFESIONAL (estilo Make.com)
-const buildSearchPrompt = (issuerName: string, ticker: string, dateFrom: string, dateTo: string): string => `
+const buildSearchPrompt = (issuerName: string, ticker: string, dateFrom: string, dateTo: string, includeTerms: string[] = []): string => {
+  const altNamesNote = includeTerms.length > 0 
+    ? `\n\n⚠️ NOMBRES ALTERNATIVOS: Busca TAMBIÉN menciones de: ${includeTerms.map(t => `"${t}"`).join(', ')}. Esta empresa puede aparecer con cualquiera de estos nombres en medios.`
+    : '';
+  
+  return `
 Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior especializado en monitoreo de marca para comités de dirección.
 
-MISIÓN: Analizar EXHAUSTIVAMENTE TODAS las menciones sobre ${issuerName} (${ticker}) durante el periodo ESPECÍFICO: ${dateFrom} a ${dateTo}.
+MISIÓN: Analizar EXHAUSTIVAMENTE TODAS las menciones sobre ${issuerName} (${ticker}) durante el periodo ESPECÍFICO: ${dateFrom} a ${dateTo}.${altNamesNote}
 
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║ ⚠️ EXTENSIÓN MÍNIMA OBLIGATORIA: 4,000 TOKENS (~16,000 caracteres)        ║
@@ -101,12 +106,17 @@ FORMATO OBLIGATORIO:
 ⚠️ RECUERDA: SIEMPRE debes entregar un informe completo de 4,000+ tokens. NUNCA "no hay información".
 
 NO devuelvas JSON. Escribe un INFORME NARRATIVO PROFESIONAL extenso.
-`;
+`;};
 
 // Prompt optimizado para Perplexity - SIEMPRE debe responder
-const buildPerplexityPrompt = (issuerName: string, ticker: string): string => `Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior.
+const buildPerplexityPrompt = (issuerName: string, ticker: string, includeTerms: string[] = []): string => {
+  const altNamesNote = includeTerms.length > 0 
+    ? `\n\n⚠️ NOMBRES ALTERNATIVOS: Busca TAMBIÉN menciones de: ${includeTerms.map(t => `"${t}"`).join(', ')}. Esta empresa puede aparecer con cualquiera de estos nombres.`
+    : '';
+  
+  return `Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior.
 
-MISIÓN: Informe EXHAUSTIVO sobre ${issuerName} (${ticker}) en España durante los ÚLTIMOS 7 DÍAS.
+MISIÓN: Informe EXHAUSTIVO sobre ${issuerName} (${ticker}) en España durante los ÚLTIMOS 7 DÍAS.${altNamesNote}
 
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║ ⚠️ EXTENSIÓN MÍNIMA OBLIGATORIA: 4,000 TOKENS (~16,000 caracteres)        ║
@@ -182,12 +192,18 @@ FORMATO:
 • Español de España
 
 ⚠️ RECUERDA: SIEMPRE informe completo de 4,000+ tokens. NUNCA "no hay información".`;
+};
 
 // Prompt para Grok - SIN FECHAS ESPECÍFICAS para evitar filtros de seguridad
 // Grok rechaza fechas que considera "futuras" diciendo que sería generar información ficticia
-const buildGrokPrompt = (issuerName: string, ticker: string): string => `Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior.
+const buildGrokPrompt = (issuerName: string, ticker: string, includeTerms: string[] = []): string => {
+  const altNamesNote = includeTerms.length > 0 
+    ? `\n\n⚠️ NOMBRES ALTERNATIVOS: Busca TAMBIÉN menciones de: ${includeTerms.map(t => `"${t}"`).join(', ')}. Esta empresa puede aparecer con cualquiera de estos nombres.`
+    : '';
+  
+  return `Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior.
 
-MISIÓN: Analiza EXHAUSTIVAMENTE las menciones RECIENTES sobre ${issuerName} (${ticker}) durante la ÚLTIMA SEMANA.
+MISIÓN: Analiza EXHAUSTIVAMENTE las menciones RECIENTES sobre ${issuerName} (${ticker}) durante la ÚLTIMA SEMANA.${altNamesNote}
 
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║ ⚠️ EXTENSIÓN MÍNIMA OBLIGATORIA: 4,000 TOKENS (~16,000 caracteres)        ║
@@ -257,6 +273,7 @@ FORMATO OBLIGATORIO:
 • Español de España
 
 ⚠️ RECUERDA: SIEMPRE informe completo de 4,000+ tokens. NUNCA "no hay información".`;
+};
 
 // 6 modelos con acceso real a Internet - ahora con display name para guardar en 02_model_name
 interface SearchModelConfig {
@@ -931,17 +948,34 @@ serve(async (req) => {
       );
     }
 
-    // In repair_mode, resolve issuer_name from database if not provided
+    // In repair_mode, resolve issuer_name AND include_terms from database
     let resolvedIssuerName = issuer_name;
-    if (!resolvedIssuerName && repair_mode) {
+    let includeTerms: string[] = [];
+    
+    if (repair_mode) {
       const { data: issuerData } = await supabase
         .from('repindex_root_issuers')
-        .select('issuer_name')
+        .select('issuer_name, include_terms')
         .eq('ticker', ticker)
         .single();
       
-      resolvedIssuerName = issuerData?.issuer_name || ticker;
-      console.log(`[repair_mode] Resolved issuer_name for ${ticker}: ${resolvedIssuerName}`);
+      if (!resolvedIssuerName) {
+        resolvedIssuerName = issuerData?.issuer_name || ticker;
+      }
+      
+      // Parse include_terms (can be array or JSON string)
+      const rawTerms = issuerData?.include_terms;
+      if (Array.isArray(rawTerms)) {
+        includeTerms = rawTerms;
+      } else if (typeof rawTerms === 'string') {
+        try {
+          includeTerms = JSON.parse(rawTerms);
+        } catch { includeTerms = [rawTerms]; }
+      } else if (rawTerms && typeof rawTerms === 'object') {
+        includeTerms = Object.values(rawTerms) as string[];
+      }
+      
+      console.log(`[repair_mode] Resolved for ${ticker}: issuer_name="${resolvedIssuerName}", include_terms=[${includeTerms.join(', ')}]`);
     }
 
     if (!resolvedIssuerName) {
@@ -995,10 +1029,10 @@ serve(async (req) => {
         );
       }
 
-      // Build prompt - select based on model requirements
-      const genericPrompt = buildSearchPrompt(resolvedIssuerName, ticker, dateFrom, dateTo);
-      const perplexityPrompt = buildPerplexityPrompt(resolvedIssuerName, ticker);
-      const grokPrompt = buildGrokPrompt(resolvedIssuerName, ticker);
+      // Build prompt - select based on model requirements (pass includeTerms for better coverage)
+      const genericPrompt = buildSearchPrompt(resolvedIssuerName, ticker, dateFrom, dateTo, includeTerms);
+      const perplexityPrompt = buildPerplexityPrompt(resolvedIssuerName, ticker, includeTerms);
+      const grokPrompt = buildGrokPrompt(resolvedIssuerName, ticker, includeTerms);
       
       let prompt: string;
       if (targetConfig.name === 'perplexity-sonar-pro') {
@@ -1131,9 +1165,9 @@ serve(async (req) => {
     // Perplexity: uses relative dates ("últimos 7 días")
     // Grok: uses relative dates to avoid "future date" rejection
     // Others: use specific dates
-    const genericPrompt = buildSearchPrompt(resolvedIssuerName, ticker, dateFrom, dateTo);
-    const perplexityPrompt = buildPerplexityPrompt(resolvedIssuerName, ticker);
-    const grokPrompt = buildGrokPrompt(resolvedIssuerName, ticker);
+    const genericPrompt = buildSearchPrompt(resolvedIssuerName, ticker, dateFrom, dateTo, includeTerms);
+    const perplexityPrompt = buildPerplexityPrompt(resolvedIssuerName, ticker, includeTerms);
+    const grokPrompt = buildGrokPrompt(resolvedIssuerName, ticker, includeTerms);
 
     // OPTIMIZATION: Tavily runs IN PARALLEL with other models, not before
     // This removes 5-15s from the critical path
