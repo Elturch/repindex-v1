@@ -50,6 +50,7 @@ export function SweepHealthDashboard() {
   // Action states
   const [forcing, setForcing] = useState(false);
   const [resettingAll, setResettingAll] = useState(false);
+  const [processingTriggers, setProcessingTriggers] = useState(false);
   
   // Pending triggers state
   const [pendingTriggers, setPendingTriggers] = useState<PendingTrigger[]>([]);
@@ -76,18 +77,61 @@ export function SweepHealthDashboard() {
     if (!metrics) return;
     setForcing(true);
     try {
-      const { data } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      // PASO 1: Disparar auto_recovery (limpia zombies, reconcilia ghosts, dispara empresas)
+      const { data: recoveryData } = await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { trigger: 'auto_recovery' },
       });
-      toast({ 
-        title: '⚡ Auto-recovery disparado', 
-        description: data?.firedCount ? `${data.firedCount} empresas en proceso` : data?.action 
+      
+      console.log('[handleForce] Recovery:', recoveryData);
+      
+      // PASO 2: Procesar triggers pendientes inmediatamente (no esperar al CRON)
+      const { data: triggersData } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { process_triggers_only: true },
       });
+      
+      console.log('[handleForce] Triggers:', triggersData);
+      
+      // Mostrar resultado combinado
+      const firedCount = recoveryData?.firedCount || 0;
+      const triggersProcessed = triggersData?.triggersProcessed || 0;
+      
+      if (firedCount > 0 || triggersProcessed > 0) {
+        toast({ 
+          title: '⚡ Procesado', 
+          description: `${firedCount} empresas + ${triggersProcessed} triggers ejecutados`
+        });
+      } else {
+        toast({ 
+          title: '✅ Sin trabajo pendiente', 
+          description: recoveryData?.action || 'El barrido está al día'
+        });
+      }
+      
       refreshAllMetrics();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setForcing(false);
+    }
+  };
+
+  const handleProcessTriggers = async () => {
+    setProcessingTriggers(true);
+    try {
+      const { data } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { process_triggers_only: true },
+      });
+      toast({ 
+        title: '🔧 Triggers procesados', 
+        description: data?.triggersProcessed 
+          ? `${data.triggersProcessed} ejecutados: ${data.triggers?.map((t: any) => t.action).join(', ')}`
+          : 'No hay triggers pendientes'
+      });
+      refreshAllMetrics();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setProcessingTriggers(false);
     }
   };
 
@@ -356,6 +400,19 @@ export function SweepHealthDashboard() {
             <Button size="sm" onClick={handleForce} disabled={forcing}>
               {forcing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Zap className="mr-1 h-3 w-3" />}
               Forzar Ahora
+            </Button>
+          )}
+
+          {/* Botón para procesar triggers pendientes manualmente */}
+          {pendingTriggers.length > 0 && (
+            <Button 
+              size="sm" 
+              variant="secondary"
+              onClick={handleProcessTriggers} 
+              disabled={processingTriggers}
+            >
+              {processingTriggers ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Timer className="mr-1 h-3 w-3" />}
+              Procesar {pendingTriggers.length} Triggers
             </Button>
           )}
 
