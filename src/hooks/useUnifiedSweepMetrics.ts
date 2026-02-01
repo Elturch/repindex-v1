@@ -66,6 +66,10 @@ export interface UnifiedSweepMetrics {
   searchProcessing: number;
   searchFailed: number;
   
+  // Ghost companies detection (completed in sweep_progress but 0 records in rix_runs_v2)
+  ghostCompanies: number;
+  ghostTickers: string[];
+  
   // System state machine
   systemState: 'SWEEP_RUNNING' | 'CHECKING_DATA' | 'REPAIRS_PENDING' | 'COMPLETE' | 'IDLE';
   
@@ -157,6 +161,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         rixRunsResult,
         sweepProgressResult,
         pendingTriggersResult,
+        ghostCompaniesResult,
       ] = await Promise.all([
         // Get all records for this week from rix_runs_v2 - include ALL response columns
         supabase
@@ -176,6 +181,14 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .select('action')
           .eq('status', 'pending')
           .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']),
+          
+        // Detect ghost companies: completed in sweep_progress with models_completed < 1
+        supabase
+          .from('sweep_progress')
+          .select('ticker, models_completed')
+          .eq('sweep_id', sweepId)
+          .eq('status', 'completed')
+          .lt('models_completed', 1),
       ]);
       
       if (rixRunsResult.error) throw rixRunsResult.error;
@@ -183,6 +196,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const records = rixRunsResult.data || [];
       const progressRecords = sweepProgressResult.data || [];
       const pendingTriggers = pendingTriggersResult.data || [];
+      const ghostCompanies = ghostCompaniesResult.data || [];
       
       // Calculate sweep_progress metrics
       const searchCompleted = progressRecords.filter(p => p.status === 'completed').length;
@@ -327,6 +341,10 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         searchPending,
         searchProcessing,
         searchFailed,
+        
+        // Ghost companies: marked completed but have 0 records
+        ghostCompanies: ghostCompanies.length,
+        ghostTickers: ghostCompanies.map(g => g.ticker),
         
         systemState,
         

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   CheckCircle2,
@@ -11,7 +12,7 @@ import {
   RefreshCw,
   RotateCcw,
   Activity,
-  
+  Ghost,
   Zap,
   Timer,
   AlertTriangle,
@@ -212,6 +213,23 @@ export function SweepHealthDashboard() {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* ALERTA CRÍTICA: Empresas fantasma detectadas */}
+        {metrics.ghostCompanies > 0 && (
+          <Alert variant="destructive" className="border-red-500/50 bg-red-500/10">
+            <Ghost className="h-4 w-4" />
+            <AlertTitle>🚨 {metrics.ghostCompanies} empresas fantasma detectadas</AlertTitle>
+            <AlertDescription>
+              Estas empresas están marcadas como "completadas" pero tienen 0 registros en la base de datos: 
+              <span className="font-mono text-xs ml-1">
+                {metrics.ghostTickers.slice(0, 5).join(', ')}
+                {metrics.ghostTickers.length > 5 && ` y ${metrics.ghostTickers.length - 5} más`}
+              </span>
+              <br />
+              <span className="text-xs opacity-80">Pulsa "Forzar Ahora" para reconciliarlas automáticamente.</span>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Triggers pendientes - mostrar si hay alguno */}
         {pendingTriggers.length > 0 && (
           <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">

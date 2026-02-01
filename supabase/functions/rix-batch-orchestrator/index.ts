@@ -1273,6 +1273,59 @@ const {
         }
       }
 
+      // ============================================================
+      // 2.7 RECONCILIACIÓN: Detectar empresas "completed" sin registros
+      // Estas son empresas fantasma marcadas como completadas tras timeouts
+      // pero que nunca tuvieron datos insertados en rix_runs_v2
+      // ============================================================
+      const { data: suspectCompanies } = await supabase
+        .from('sweep_progress')
+        .select('id, ticker, models_completed')
+        .eq('sweep_id', sweepId)
+        .eq('status', 'completed')
+        .lt('models_completed', 6);  // Menos de 6 modelos
+
+      if (suspectCompanies && suspectCompanies.length > 0) {
+        console.log(`[${triggerMode}] Checking ${suspectCompanies.length} suspect companies with <6 models`);
+        
+        // Calculate the current analysis period
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const periodFrom = new Date(now);
+        periodFrom.setDate(now.getDate() + mondayOffset - 7);
+        const reconcilePeriodFromStr = periodFrom.toISOString().split('T')[0];
+        
+        let resetCount = 0;
+        for (const company of suspectCompanies) {
+          // Verificar si realmente tiene registros
+          const { count } = await supabase
+            .from('rix_runs_v2')
+            .select('*', { count: 'exact', head: true })
+            .eq('05_ticker', company.ticker)
+            .gte('06_period_from', reconcilePeriodFromStr);
+          
+          // Si tiene 0 registros, resetear a pending
+          if ((count || 0) === 0) {
+            await supabase
+              .from('sweep_progress')
+              .update({ 
+                status: 'pending', 
+                error_message: `Reconciled: marked completed but had 0 records`,
+                models_completed: 0
+              })
+              .eq('id', company.id);
+            
+            console.log(`[${triggerMode}] Reset ghost company: ${company.ticker} (was 'completed' with 0 records)`);
+            resetCount++;
+          }
+        }
+        
+        if (resetCount > 0) {
+          console.log(`[${triggerMode}] Reconciled ${resetCount} ghost companies back to pending`);
+        }
+      }
+
       // 3. Contar empresas por estado
       const { data: statusCounts } = await supabase
         .from('sweep_progress')
