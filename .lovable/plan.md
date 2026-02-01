@@ -1,75 +1,146 @@
-# ✅ IMPLEMENTADO: Sistema de Auto-Recuperación Sin Intervención Humana
 
-## Estado: ACTIVO Y FUNCIONANDO
+# Plan: Auto-Sanitización al 100% de Completitud
 
-El sistema fire-and-forget está operativo. Las empresas se procesan automáticamente sin intervención humana.
+## Problema
+Cuando el barrido alcanza el 100% de completitud, el sistema no hace nada más. La sanitización de respuestas inválidas (rechazos de IA, respuestas cortas, etc.) requiere intervención manual.
 
-## Arquitectura Implementada
+## Solución
+Modificar el `rix-batch-orchestrator` para que **automáticamente dispare la sanitización** cuando detecta que el sweep está 100% completo.
+
+## Flujo Propuesto
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ CRON cada 5 minutos (configurar manualmente - ver abajo)              │
+│ CRON auto_recovery (cada 5 minutos)                                    │
 │                                                                         │
-│  rix-batch-orchestrator (trigger: auto_recovery)                       │
-│                                                                         │
-│  Paso 1: LIMPIAR ZOMBIES (empresas en processing > 5 min)              │
-│  Paso 2: VERIFICAR si hay trabajo pendiente                           │
-│  Paso 3: THROTTLE si ya hay 3+ procesando                             │
-│  Paso 4: RECLAMAR empresas (atomic claim con RPC)                     │
-│  Paso 5: FIRE-AND-FORGET con EdgeRuntime.waitUntil()                  │
-│  Paso 6: RETORNAR INMEDIATAMENTE (no espera respuesta)               │
-│                                                                         │
-│  rix-search-v2 → AUTO-COMPLETA sweep_progress al finalizar            │
+│  Paso 1: Limpiar zombies                                               │
+│  Paso 2: Contar estados                                                │
+│  Paso 3: ¿Sweep completo (pending=0, processing=0)?                    │
+│          │                                                             │
+│          ├── NO → Disparar más empresas (fire-and-forget)             │
+│          │                                                             │
+│          └── SÍ → NUEVO: Verificar si ya se sanitizó                  │
+│                   │                                                    │
+│                   ├── YA SANITIZADO → No hacer nada                   │
+│                   │                                                    │
+│                   └── NO SANITIZADO → Insertar trigger "sanitize"     │
+│                        en cron_triggers para que se procese           │
+│                        automáticamente                                 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Cambios Realizados
+## Cambios Técnicos
+
+### 1. Nuevo Trigger en cron_triggers: `auto_sanitize`
+
+Añadir soporte en `processCronTriggers` para el action `auto_sanitize`:
+
+```typescript
+// En processCronTriggers()
+if (trigger.action === 'auto_sanitize') {
+  console.log(`[cron_triggers] Processing auto_sanitize trigger ${trigger.id}`);
+  
+  const response = await fetch(`${supabaseUrl}/functions/v1/rix-quality-watchdog`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ 
+      action: 'sanitize',
+      auto_repair: true  // Si encuentra inválidos, dispara reparación
+    }),
+  });
+  
+  // ... resto del procesamiento
+}
+```
+
+### 2. Auto-Trigger al Detectar Sweep Completo
+
+Modificar la sección de detección de sweep completo (línea ~1077):
+
+```typescript
+// 5. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
+if (pending === 0 && processing === 0 && failed === 0) {
+  console.log(`[${triggerMode}] Sweep ${sweepId} is complete (${completed}/${total})`);
+  
+  // NUEVO: Verificar si ya se sanitizó este sweep
+  const { data: existingSanitize } = await supabase
+    .from('cron_triggers')
+    .select('id')
+    .eq('action', 'auto_sanitize')
+    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .limit(1)
+    .maybeSingle();
+  
+  if (!existingSanitize) {
+    // Insertar trigger de sanitización automática
+    console.log(`[${triggerMode}] Inserting auto_sanitize trigger for sweep ${sweepId}`);
+    await supabase.from('cron_triggers').insert({
+      action: 'auto_sanitize',
+      params: { sweep_id: sweepId },
+      status: 'pending',
+    });
+  }
+  
+  return new Response(...);
+}
+```
+
+### 3. Tabla de Estado de Sanitización (Opcional pero Recomendado)
+
+Para evitar disparar la sanitización múltiples veces, se puede usar `data_quality_reports` para verificar:
+
+```typescript
+// Verificar si ya hay reportes de calidad para este sweep
+const { count: existingReports } = await supabase
+  .from('data_quality_reports')
+  .select('*', { count: 'exact', head: true })
+  .eq('sweep_id', sweepId);
+
+if ((existingReports || 0) === 0) {
+  // No hay reportes → necesita sanitización
+  await supabase.from('cron_triggers').insert({
+    action: 'auto_sanitize',
+    params: { sweep_id: sweepId },
+    status: 'pending',
+  });
+}
+```
+
+## Archivo a Modificar
 
 | Archivo | Cambios |
 |---------|---------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Nuevo modo `auto_recovery` con fire-and-forget |
-| `supabase/functions/rix-search-v2/index.ts` | Auto-actualiza `sweep_progress` al completar |
-| `src/components/admin/SweepHealthDashboard.tsx` | UI simplificada con indicador AUTO-ON, velocidad y ETA |
-
-## SQL para CRON (Ejecutar Manualmente)
-
-⚠️ **IMPORTANTE**: Ejecutar en el SQL Editor de Supabase para activar el CRON cada 5 minutos:
-
-```sql
--- Opción 1: Crear nuevo CRON
-SELECT cron.schedule(
-  'rix-auto-recovery-5min',
-  '*/5 * * * *',
-  $$
-  SELECT net.http_post(
-    url := 'https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/rix-batch-orchestrator',
-    headers := '{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU"}'::jsonb,
-    body := '{"trigger": "auto_recovery"}'::jsonb
-  );
-  $$
-);
-
--- Opción 2: Si ya existe un watchdog, modificarlo
-SELECT cron.alter_job(
-  (SELECT jobid FROM cron.job WHERE jobname = 'rix-sweep-watchdog-15min'),
-  schedule := '*/5 * * * *'
-);
-```
-
-## Dashboard
-
-El dashboard ahora muestra:
-- 🔵 **Badge AUTO**: Indica que el sistema autónomo está activo
-- ⚡ **Botón "Forzar Ahora"**: Dispara auto_recovery manualmente
-- 📊 **Velocidad**: Empresas procesadas por hora
-- ⏱️ **ETA**: Tiempo estimado para completar
-- 🧟 **Contador de Zombis**: Con botón para limpiarlos
+| `supabase/functions/rix-batch-orchestrator/index.ts` | 1. Añadir handler para `auto_sanitize` en `processCronTriggers()`. 2. Insertar trigger automático cuando sweep está completo. |
 
 ## Resultado
 
-| Métrica | Antes | Después |
-|---------|-------|---------|
-| Intervención manual | Constante | Ninguna |
-| Zombies acumulados | Muchos | 0 (limpieza automática) |
-| Tiempo para 178 empresas | Indefinido | ~5-7 horas |
-| Visibilidad del estado | Confusa | Clara (semáforo + ETA) |
+| Escenario | Antes | Después |
+|-----------|-------|---------|
+| Sweep completa 100% | Espera intervención manual | Auto-dispara sanitización |
+| Sanitización encuentra rechazos | Espera intervención manual | Auto-dispara reparación |
+| Reparación completa | Fin | Sistema listo para la semana |
+
+## Flujo Completo Automatizado
+
+```text
+Domingo 01:00    → Comienza barrido
+     ↓
+~ 5-7 horas      → CRON auto_recovery cada 5 min
+     ↓
+Sweep 100%       → auto_recovery detecta completitud
+     ↓              Inserta trigger "auto_sanitize"
+     ↓
+Siguiente CRON   → processCronTriggers ejecuta sanitización
+     ↓
+Sanitización     → Encuentra 39 rechazos de Grok
+     ↓              Inserta trigger "repair_invalid_responses"
+     ↓
+Siguiente CRON   → processCronTriggers ejecuta reparación
+     ↓
+Lunes AM         → Sistema listo, 95%+ cobertura
+```
+
+Sin intervención humana en ningún paso.
