@@ -219,6 +219,27 @@ export function SweepHealthDashboard() {
                     {speed.label}
                   </span>
                 </div>
+                {/* Indicador de progreso del trigger activo */}
+                {metrics.activeTrigger && (metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 max-w-[200px]">
+                      <Progress 
+                        value={metrics.activeTrigger.processed + metrics.activeTrigger.remaining > 0 
+                          ? (metrics.activeTrigger.processed / (metrics.activeTrigger.processed + metrics.activeTrigger.remaining)) * 100 
+                          : 0
+                        } 
+                        className="h-1.5" 
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {metrics.activeTrigger.action === 'repair_search' ? '🔍' : '📊'}{' '}
+                      {metrics.activeTrigger.processed}/{metrics.activeTrigger.processed + metrics.activeTrigger.remaining}
+                      {metrics.activeTrigger.lastTicker && (
+                        <span className="ml-1 font-mono text-primary">{metrics.activeTrigger.lastTicker}</span>
+                      )}
+                    </span>
+                  </div>
+                )}
                 <div className="text-sm text-muted-foreground">
                   Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas completas • {metrics.recordsWithScore}/{metrics.totalRecords} registros
                 </div>
