@@ -28,13 +28,17 @@ export function SweepHealthDashboard() {
     if (!metrics) return;
     setForcing(true);
     try {
-      const { data: recoveryData } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      const { data: recoveryData, error: recoveryError } = await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { trigger: 'auto_recovery' },
       });
+
+      if (recoveryError) throw recoveryError;
       
-      const { data: triggersData } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      const { data: triggersData, error: triggersError } = await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { process_triggers_only: true },
       });
+
+      if (triggersError) throw triggersError;
 
       const firedCount =
         (typeof recoveryData?.firedCount === 'number' ? recoveryData.firedCount : undefined) ??
@@ -295,7 +299,7 @@ export function SweepHealthDashboard() {
                 )}
                 
                 {/* Si hay trabajo pendiente pero el sistema no está procesando, mostrar alerta */}
-                {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && !systemHeartbeatOk && (
+                 {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && !!metrics.telemetry?.lastHeartbeatAt && !systemHeartbeatOk && (
                   <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/20">
                     <AlertTriangle className="h-4 w-4 text-destructive" />
                     <span className="text-sm text-destructive">
