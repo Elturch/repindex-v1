@@ -666,13 +666,34 @@ async function performHealthChecks(
     }
 
     // Check 3: Análisis pendientes (registros con respuesta pero sin score)
-    const { count: pendingAnalysis } = await supabase
+    // CRITICAL FIX: Check using model-specific columns
+    const MODEL_COLS_HEALTH: Record<string, string> = {
+      'ChatGPT': '20_res_gpt_bruto',
+      'Perplexity': '21_res_perplex_bruto',
+      'Gemini': '22_res_gemini_bruto',
+      'Google Gemini': '22_res_gemini_bruto',
+      'Deepseek': '23_res_deepseek_bruto',
+      'Grok': 'respuesta_bruto_grok',
+      'Qwen': 'respuesta_bruto_qwen',
+    };
+    
+    // Get all records without score
+    const { data: noScoreRecords } = await supabase
       .from('rix_runs_v2')
-      .select('*', { count: 'exact', head: true })
-      .is('09_rix_score', null)
-      .not('20_res_gpt_bruto', 'is', null);
+      .select('02_model_name, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
+      .is('09_rix_score', null);
+    
+    // Count those that have their model-specific data
+    let pendingAnalysis = 0;
+    for (const record of (noScoreRecords || [])) {
+      const modelName = record['02_model_name'] || '';
+      const responseColumn = MODEL_COLS_HEALTH[modelName];
+      if (responseColumn && record[responseColumn as keyof typeof record] !== null) {
+        pendingAnalysis++;
+      }
+    }
 
-    if (pendingAnalysis && pendingAnalysis > 30) {
+    if (pendingAnalysis > 30) {
       checks.push({ 
         type: 'analysis_backlog', 
         status: pendingAnalysis > 50 ? 'critical' : 'warning', 
@@ -689,7 +710,7 @@ async function performHealthChecks(
           .limit(1);
 
         if (!existingTrigger || existingTrigger.length === 0) {
-          console.log(`[health_check] Auto-triggering analysis repair for ${pendingAnalysis} pending records`);
+          console.log(`[health_check] Auto-triggering analysis repair for ${pendingAnalysis} pending records (model-aware count)`);
           await supabase.from('cron_triggers').insert({
             action: 'repair_analysis',
             params: { batch_size: 5, auto_triggered: true }
@@ -846,6 +867,7 @@ async function processCronTriggers(
       } else if (trigger.action === 'repair_search') {
         // ============================================================
         // REPAIR_SEARCH: Re-ejecuta búsqueda para registros sin datos
+        // CRITICAL FIX: Usa columnas específicas por modelo
         // ============================================================
         console.log(`[cron_triggers] Processing repair_search trigger ${trigger.id}`);
         
@@ -860,17 +882,44 @@ async function processCronTriggers(
         periodFrom.setDate(now.getDate() + mondayOffset - 7);
         const periodFromStr = periodFrom.toISOString().split('T')[0];
         
-        // Get records without search data
-        const { data: missingRecords } = await supabase
-          .from('rix_runs_v2')
-          .select('05_ticker, 02_model_name')
-          .gte('06_period_from', periodFromStr)
-          .is('20_res_gpt_bruto', null)
-          .limit(batchSize);
+        // Model to column mapping
+        const MODEL_COLUMNS_REPAIR: Record<string, string> = {
+          'ChatGPT': '20_res_gpt_bruto',
+          'Perplexity': '21_res_perplex_bruto',
+          'Gemini': '22_res_gemini_bruto',
+          'Google Gemini': '22_res_gemini_bruto',
+          'Deepseek': '23_res_deepseek_bruto',
+          'Grok': 'respuesta_bruto_grok',
+          'Qwen': 'respuesta_bruto_qwen',
+        };
         
+        // Get ALL records for this period
+        const { data: allPeriodRecords } = await supabase
+          .from('rix_runs_v2')
+          .select('id, 05_ticker, 02_model_name, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
+          .gte('06_period_from', periodFromStr);
+        
+        // Filter records where MODEL-SPECIFIC column is null
+        const missingRecords: Array<{id: string, ticker: string, model: string}> = [];
+        for (const record of (allPeriodRecords || [])) {
+          const modelName = record['02_model_name'] || '';
+          const responseColumn = MODEL_COLUMNS_REPAIR[modelName];
+          if (responseColumn && record[responseColumn as keyof typeof record] === null) {
+            missingRecords.push({
+              id: record.id,
+              ticker: record['05_ticker'] || '',
+              model: modelName,
+            });
+          }
+        }
+        
+        console.log(`[cron_triggers] Found ${missingRecords.length} records with missing data (model-aware)`);
+        
+        // Take batch and process
+        const recordsToProcess = missingRecords.slice(0, batchSize);
         const repairResults: Array<{ ticker: string; model: string; success: boolean; error?: string }> = [];
         
-        for (const record of (missingRecords || [])) {
+        for (const record of recordsToProcess) {
           try {
             // Re-execute search for this specific model
             const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
@@ -880,21 +929,21 @@ async function processCronTriggers(
                 'Authorization': `Bearer ${serviceKey}`,
               },
               body: JSON.stringify({ 
-                ticker: record['05_ticker'],
-                single_model: record['02_model_name'],
+                ticker: record.ticker,
+                single_model: record.model,
                 repair_mode: true,
               }),
             });
             
             repairResults.push({ 
-              ticker: record['05_ticker'] || '', 
-              model: record['02_model_name'] || '', 
+              ticker: record.ticker, 
+              model: record.model, 
               success: response.ok 
             });
           } catch (e: unknown) {
             repairResults.push({ 
-              ticker: record['05_ticker'] || '', 
-              model: record['02_model_name'] || '', 
+              ticker: record.ticker, 
+              model: record.model, 
               success: false, 
               error: e instanceof Error ? e.message : String(e)
             });
@@ -1251,7 +1300,7 @@ const {
         
         // ============================================================
         // AUTO-ENCADENAMIENTO DE PIPELINE: Verificar estado real de datos
-        // Los triggers se disparan EN PARALELO cuando corresponde
+        // CRITICAL FIX: Usa columnas específicas por modelo para detectar datos faltantes
         // ============================================================
         
         // Calculate the current analysis period
@@ -1262,28 +1311,51 @@ const {
         periodFrom.setDate(now.getDate() + mondayOffset - 7);
         const periodFromStr = periodFrom.toISOString().split('T')[0];
         
-        // PASO 1: Verificar registros SIN DATOS de búsqueda
-        const { count: missingDataCount } = await supabase
-          .from('rix_runs_v2')
-          .select('*', { count: 'exact', head: true })
-          .gte('06_period_from', periodFromStr)
-          .is('20_res_gpt_bruto', null);
+        // Model to column mapping for correct data detection
+        const MODEL_COLUMNS: Record<string, string> = {
+          'ChatGPT': '20_res_gpt_bruto',
+          'Perplexity': '21_res_perplex_bruto',
+          'Gemini': '22_res_gemini_bruto',
+          'Google Gemini': '22_res_gemini_bruto',
+          'Deepseek': '23_res_deepseek_bruto',
+          'Grok': 'respuesta_bruto_grok',
+          'Qwen': 'respuesta_bruto_qwen',
+        };
         
-        // PASO 2: Verificar registros CON DATOS pero SIN SCORE
-        const { count: analyzableCount } = await supabase
+        // PASO 1: Get ALL records for this period with model-specific columns
+        const { data: allRecords } = await supabase
           .from('rix_runs_v2')
-          .select('*', { count: 'exact', head: true })
-          .gte('06_period_from', periodFromStr)
-          .is('09_rix_score', null)
-          .not('20_res_gpt_bruto', 'is', null);
+          .select('id, 02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
+          .gte('06_period_from', periodFromStr);
         
-        console.log(`[${triggerMode}] Data check: ${missingDataCount || 0} sin datos, ${analyzableCount || 0} analizables, ${failed} failed en sweep_progress`);
+        // Count records without data USING MODEL-SPECIFIC COLUMNS
+        let missingDataCount = 0;
+        let analyzableCount = 0;
+        const recordsWithoutData: Array<{id: string, model: string}> = [];
+        const recordsToAnalyze: Array<{id: string, model: string}> = [];
+        
+        for (const record of (allRecords || [])) {
+          const modelName = record['02_model_name'] || '';
+          const responseColumn = MODEL_COLUMNS[modelName] || '20_res_gpt_bruto';
+          const hasData = record[responseColumn as keyof typeof record] !== null;
+          const hasScore = record['09_rix_score'] !== null;
+          
+          if (!hasScore && !hasData) {
+            missingDataCount++;
+            recordsWithoutData.push({ id: record.id, model: modelName });
+          } else if (!hasScore && hasData) {
+            analyzableCount++;
+            recordsToAnalyze.push({ id: record.id, model: modelName });
+          }
+        }
+        
+        console.log(`[${triggerMode}] Data check (model-aware): ${missingDataCount} sin datos, ${analyzableCount} analizables, ${failed} failed en sweep_progress`);
         
         // Disparar triggers EN PARALELO según lo que falte
         const triggersInserted: string[] = [];
         
-        // TRIGGER 1: Hay registros sin datos → repair_search (incluye los failed)
-        if ((missingDataCount && missingDataCount > 0) || failed > 0) {
+        // TRIGGER 1: Hay registros sin datos → repair_search
+        if (missingDataCount > 0 || failed > 0) {
           const { data: existingTrigger } = await supabase
             .from('cron_triggers')
             .select('id')
@@ -1292,14 +1364,19 @@ const {
             .maybeSingle();
           
           if (!existingTrigger) {
-            const totalMissing = (missingDataCount || 0) + (failed * 6); // failed companies need all 6 models
+            const totalMissing = missingDataCount + (failed * 6);
             await supabase.from('cron_triggers').insert({
               action: 'repair_search',
-              params: { sweep_id: sweepId, count: totalMissing, batch_size: 5 },
+              params: { 
+                sweep_id: sweepId, 
+                count: totalMissing, 
+                batch_size: 5,
+                records_sample: recordsWithoutData.slice(0, 10).map(r => `${r.model}`)
+              },
               status: 'pending',
             });
             triggersInserted.push('repair_search');
-            console.log(`[${triggerMode}] Inserted repair_search trigger for ${totalMissing} records (${missingDataCount || 0} missing + ${failed} failed companies)`);
+            console.log(`[${triggerMode}] Inserted repair_search trigger for ${totalMissing} records (${missingDataCount} missing + ${failed} failed)`);
           } else {
             console.log(`[${triggerMode}] repair_search trigger already pending (id: ${existingTrigger.id})`);
           }

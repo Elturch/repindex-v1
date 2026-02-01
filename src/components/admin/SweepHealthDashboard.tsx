@@ -11,10 +11,12 @@ import {
   RefreshCw,
   RotateCcw,
   Activity,
-  Pause,
+  
   Zap,
   Timer,
-  AlertTriangle
+  AlertTriangle,
+  Database,
+  Bot
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -29,7 +31,15 @@ interface PendingTrigger {
   params: { count?: number; sweep_id?: string } | null;
 }
 
-type SystemState = 'running' | 'stuck' | 'idle' | 'complete' | 'unknown';
+// AI Model icons mapping
+const MODEL_COLORS: Record<string, string> = {
+  'ChatGPT': 'text-green-600 bg-green-500/10',
+  'Deepseek': 'text-blue-600 bg-blue-500/10',
+  'Gemini': 'text-purple-600 bg-purple-500/10',
+  'Grok': 'text-orange-600 bg-orange-500/10',
+  'Perplexity': 'text-cyan-600 bg-cyan-500/10',
+  'Qwen': 'text-pink-600 bg-pink-500/10',
+};
 
 export function SweepHealthDashboard() {
   const { toast } = useToast();
@@ -96,23 +106,25 @@ export function SweepHealthDashboard() {
     }
   };
 
-  // ============ DETERMINE STATE ============
-  const getSystemState = (): SystemState => {
-    if (!metrics) return 'unknown';
-    // Complete: all companies have 6/6 models
-    if (metrics.companyCompletionRate === 100) return 'complete';
-    // Stuck: nothing processing but work remains
-    if (metrics.searchProcessing === 0 && (metrics.searchPending > 0 || metrics.recordsPendingAnalysis > 0)) {
-      return 'stuck';
+  // ============ GET STATE LABEL ============
+  const getStateDisplay = () => {
+    if (!metrics) return { label: 'Cargando...', color: 'bg-muted-foreground' };
+    
+    switch (metrics.systemState) {
+      case 'SWEEP_RUNNING':
+        return { label: 'Procesando', color: 'bg-green-500', icon: Activity, animate: true };
+      case 'CHECKING_DATA':
+        return { label: 'Verificando datos', color: 'bg-yellow-500', icon: Database };
+      case 'REPAIRS_PENDING':
+        return { label: 'Reparaciones en cola', color: 'bg-blue-500', icon: Timer };
+      case 'COMPLETE':
+        return { label: 'Completado', color: 'bg-green-600', icon: CheckCircle2 };
+      default:
+        return { label: 'En espera', color: 'bg-muted-foreground', icon: Clock };
     }
-    // Running: actively processing
-    if (metrics.searchProcessing > 0) return 'running';
-    // Idle: nothing pending
-    if (metrics.searchPending === 0 && metrics.searchProcessing === 0) return 'idle';
-    return 'idle';
   };
 
-  const state = getSystemState();
+  const stateDisplay = getStateDisplay();
 
   // ============ RENDER ============
   if (isLoading) {
@@ -146,10 +158,11 @@ export function SweepHealthDashboard() {
   return (
     <Card className={cn(
       "mb-6 border-2 transition-all duration-300",
-      state === 'running' && "border-green-500/50 bg-green-500/5",
-      state === 'stuck' && "border-yellow-500/50 bg-yellow-500/5",
-      state === 'complete' && "border-green-600/50 bg-green-600/5",
-      state === 'idle' && "border-muted-foreground/30 bg-muted/5",
+      metrics.systemState === 'SWEEP_RUNNING' && "border-green-500/50 bg-green-500/5",
+      metrics.systemState === 'CHECKING_DATA' && "border-yellow-500/50 bg-yellow-500/5",
+      metrics.systemState === 'REPAIRS_PENDING' && "border-blue-500/50 bg-blue-500/5",
+      metrics.systemState === 'COMPLETE' && "border-green-600/50 bg-green-600/5",
+      metrics.systemState === 'IDLE' && "border-muted-foreground/30 bg-muted/5",
     )}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
@@ -157,37 +170,34 @@ export function SweepHealthDashboard() {
             {/* Estado visual */}
             <div className={cn(
               "relative w-10 h-10 rounded-full flex items-center justify-center",
-              state === 'running' && "bg-green-500",
-              state === 'stuck' && "bg-yellow-500",
-              state === 'complete' && "bg-green-600",
-              state === 'idle' && "bg-muted-foreground",
+              stateDisplay.color,
             )}>
-              {state === 'running' && (
+              {stateDisplay.icon && (
                 <>
-                  <Activity className="w-5 h-5 text-white" />
-                  <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-50" />
+                  <stateDisplay.icon className="w-5 h-5 text-white" />
+                  {stateDisplay.animate && (
+                    <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-50" />
+                  )}
                 </>
               )}
-              {state === 'stuck' && <Pause className="w-5 h-5 text-white" />}
-              {state === 'complete' && <CheckCircle2 className="w-5 h-5 text-white" />}
-              {state === 'idle' && <Clock className="w-5 h-5 text-white" />}
             </div>
             
             <div>
               <div className="flex items-center gap-2">
                 <span>Barrido {metrics.sweepId}</span>
-                {state !== 'complete' && (
+                {metrics.systemState !== 'COMPLETE' && (
                   <Badge variant="outline" className="bg-blue-500/10 text-blue-600 text-xs">
                     <Zap className="w-3 h-3 mr-1" />
-                    AUTO
+                    {stateDisplay.label}
                   </Badge>
                 )}
               </div>
               <div className="text-sm font-normal text-muted-foreground">
-                {state === 'running' && 'Procesando automáticamente'}
-                {state === 'stuck' && '⚠️ Esperando - Sin actividad'}
-                {state === 'complete' && 'Todas las empresas completadas (6/6)'}
-                {state === 'idle' && 'En espera'}
+                {metrics.systemState === 'SWEEP_RUNNING' && 'Procesando automáticamente'}
+                {metrics.systemState === 'CHECKING_DATA' && `Faltan ${metrics.recordsNoData} búsquedas, ${metrics.recordsPendingAnalysis} análisis`}
+                {metrics.systemState === 'REPAIRS_PENDING' && `${pendingTriggers.length} reparaciones en cola`}
+                {metrics.systemState === 'COMPLETE' && 'Todas las empresas completadas (6/6)'}
+                {metrics.systemState === 'IDLE' && 'En espera del próximo ciclo'}
               </div>
             </div>
           </CardTitle>
@@ -226,11 +236,46 @@ export function SweepHealthDashboard() {
           value={mainProgress} 
           className={cn(
             "h-3",
-            state === 'complete' && "[&>div]:bg-green-600",
-            state === 'running' && "[&>div]:bg-green-500",
-            state === 'stuck' && "[&>div]:bg-yellow-500",
+            metrics.systemState === 'COMPLETE' && "[&>div]:bg-green-600",
+            metrics.systemState === 'SWEEP_RUNNING' && "[&>div]:bg-green-500",
+            metrics.systemState === 'CHECKING_DATA' && "[&>div]:bg-yellow-500",
+            metrics.systemState === 'REPAIRS_PENDING' && "[&>div]:bg-blue-500",
           )} 
         />
+
+        {/* === NUEVO: Progreso por modelo === */}
+        {metrics.byModel.length > 0 && (
+          <div className="grid grid-cols-6 gap-2">
+            {metrics.byModel.map((modelMetric) => (
+              <div 
+                key={modelMetric.model} 
+                className={cn(
+                  "rounded-lg p-2 text-center border",
+                  MODEL_COLORS[modelMetric.model] || 'bg-muted'
+                )}
+              >
+                <div className="flex items-center justify-center gap-1 mb-1">
+                  <Bot className="w-3 h-3" />
+                  <span className="text-xs font-medium">{modelMetric.model}</span>
+                </div>
+                <div className="text-lg font-bold">{modelMetric.percentage}%</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {modelMetric.withScore}/{modelMetric.total}
+                </div>
+                {modelMetric.pendingNoData > 0 && (
+                  <div className="text-[10px] text-red-600 font-medium">
+                    ⚠ {modelMetric.pendingNoData} sin datos
+                  </div>
+                )}
+                {modelMetric.pendingAnalyzable > 0 && modelMetric.pendingNoData === 0 && (
+                  <div className="text-[10px] text-amber-600 font-medium">
+                    ⏳ {modelMetric.pendingAnalyzable} por analizar
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Métricas principales - UNIFICADAS desde rix_runs_v2 */}
         <div className="grid grid-cols-5 gap-2 text-center text-sm">
@@ -242,13 +287,13 @@ export function SweepHealthDashboard() {
             <div className="font-bold text-blue-600">{metrics.companiesPartial}</div>
             <div className="text-xs text-muted-foreground">Parciales (1-5)</div>
           </div>
-          <div className="rounded bg-yellow-500/10 p-2">
-            <div className="font-bold text-yellow-600">{metrics.recordsPendingAnalysis}</div>
-            <div className="text-xs text-muted-foreground">Analizables</div>
+          <div className="rounded bg-amber-500/10 p-2">
+            <div className="font-bold text-amber-600">{metrics.recordsPendingAnalysis}</div>
+            <div className="text-xs text-muted-foreground">Por analizar</div>
           </div>
           <div className="rounded bg-red-500/10 p-2">
-            <div className="font-bold text-red-600">{metrics.searchFailed}</div>
-            <div className="text-xs text-muted-foreground">Fallidos</div>
+            <div className="font-bold text-red-600">{metrics.recordsNoData}</div>
+            <div className="text-xs text-muted-foreground">Sin datos</div>
           </div>
           <div className="rounded bg-purple-500/10 p-2">
             <div className="font-bold text-purple-600">{metrics.searchProcessing}</div>
@@ -277,24 +322,26 @@ export function SweepHealthDashboard() {
           </div>
         </div>
 
-        {/* Mensaje de alerta si hay pendientes analizables */}
-        {metrics.recordsPendingAnalysis > 0 && (
+        {/* Mensaje de alerta si hay pendientes */}
+        {(metrics.recordsNoData > 0 || metrics.recordsPendingAnalysis > 0) && metrics.systemState !== 'SWEEP_RUNNING' && (
           <div className="p-3 rounded-lg bg-amber-500/15 text-amber-700 text-center text-sm font-medium flex items-center justify-center gap-2">
             <AlertTriangle className="w-4 h-4" />
-            {metrics.recordsPendingAnalysis} registros tienen datos pero faltan por analizar
+            {metrics.recordsNoData > 0 && `${metrics.recordsNoData} sin búsqueda`}
+            {metrics.recordsNoData > 0 && metrics.recordsPendingAnalysis > 0 && ' • '}
+            {metrics.recordsPendingAnalysis > 0 && `${metrics.recordsPendingAnalysis} sin analizar`}
           </div>
         )}
 
         {/* Botones de acción */}
         <div className="flex flex-wrap justify-center gap-2 pt-2">          
-          {state !== 'complete' && (metrics.searchPending > 0 || state === 'stuck' || state === 'idle') && (
+          {metrics.systemState !== 'COMPLETE' && (
             <Button size="sm" onClick={handleForce} disabled={forcing}>
               {forcing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Zap className="mr-1 h-3 w-3" />}
               Forzar Ahora
             </Button>
           )}
 
-          {state !== 'complete' && (
+          {metrics.systemState !== 'COMPLETE' && (
             <Button 
               size="sm"
               variant="outline" 
@@ -313,7 +360,7 @@ export function SweepHealthDashboard() {
         </div>
 
         {/* Info del sistema auto */}
-        {state !== 'complete' && (
+        {metrics.systemState !== 'COMPLETE' && (
           <div className="text-xs text-center text-muted-foreground border-t pt-3">
             🔄 CRON auto-recovery activo cada 5 min • Máximo 3 empresas simultáneas • Limpieza automática de zombis
           </div>
