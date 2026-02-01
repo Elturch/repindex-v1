@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { getISOWeek, getISOWeekYear } from "date-fns";
 
 /**
  * Unified Sweep Metrics Hook
@@ -200,12 +201,11 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       
       const weekStart = sortedWeeks[0]?.[0] || getWeekStartFromSweepId(getCurrentSweepId());
       
-      // Derive sweepId from the actual week we're looking at for consistency
-      const weekDate = new Date(weekStart);
-      const startOfYear = new Date(weekDate.getFullYear(), 0, 1);
-      const days = Math.floor((weekDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-      const derivedSweepId = `${weekDate.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+      // Derive sweepId using ISO 8601 week calculation (date-fns handles edge cases correctly)
+      const weekDate = new Date(weekStart + 'T00:00:00');
+      const isoWeek = getISOWeek(weekDate);
+      const isoYear = getISOWeekYear(weekDate);
+      const derivedSweepId = `${isoYear}-W${String(isoWeek).padStart(2, '0')}`;
       
       const sweepId = forcedSweepId || derivedSweepId;
       
