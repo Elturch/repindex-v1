@@ -1,290 +1,214 @@
 
+# Plan: Procesamiento Paralelo del Barrido (Multi-Worker)
 
-# Plan: Añadir Monitor Visual de Actividad e Instrucciones de Acción
+## Diagnóstico del Problema
 
-## Problema Actual
+El barrido actual procesa **1 empresa a la vez**:
+- Cada empresa tarda 30-120 segundos (6 llamadas a APIs de IA)
+- Con 174 empresas = **5-10 horas** de procesamiento secuencial
+- El objetivo es completar en **~3 horas**
 
-El `SweepHealthDashboard` muestra datos pero:
-- No hay un indicador visual claro de que el sistema está "vivo" y procesando
-- No hay instrucciones sobre qué hacer cuando hay problemas
-- El usuario no sabe qué acción tomar en cada situación
-
-## Solución
-
-### 1. Indicador de Latido (Heartbeat Monitor)
-
-Añadir un indicador visual prominente que muestre el estado de actividad en tiempo real:
-
+### Arquitectura Actual (Secuencial)
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│  [●] PROCESANDO                          ↻ Actualizado hace 5s │
-│      ⟳ Última empresa: BBVA (hace 2 min)                       │
-└─────────────────────────────────────────────────────────────────┘
+[Watchdog CRON]
+     │
+     ▼
+[Empresa 1] ─────────────────> 60s
+     │
+     ▼
+[Empresa 2] ─────────────────> 60s
+     │
+     ...
+     │
+     ▼
+[Empresa 174] ───────────────> 60s
+     
+Total: 174 x 60s = 2.9 horas (ideal)
+Pero en realidad: timeouts, reintentos, delays = 6-10 horas
 ```
 
-**Visual:**
-- **Estado `healthy`**: Círculo verde pulsante + icono de engranaje girando
-- **Estado `slow`**: Círculo amarillo pulsante lento
-- **Estado `stuck/dead`**: Círculo rojo estático sin animación
-- **Estado `completed`**: Check verde estático
+## Solución: Workers Paralelos
 
-### 2. Panel de Instrucciones Contextuales
+Lanzar **N workers simultáneos** que procesen empresas diferentes al mismo tiempo:
 
-Un panel colapsable que muestra instrucciones específicas según el estado:
+### Arquitectura Propuesta (Paralela)
+```text
+[Dashboard Admin]
+     │
+     ├── [Worker 1] ──> Empresa A ──> Empresa E ──> ...
+     ├── [Worker 2] ──> Empresa B ──> Empresa F ──> ...
+     ├── [Worker 3] ──> Empresa C ──> Empresa G ──> ...
+     └── [Worker 4] ──> Empresa D ──> Empresa H ──> ...
 
-**Si está ATASCADO (zombi detectado):**
-```
-📋 QUÉ HACER:
-1. Haz clic en "Limpiar Zombis" → Resetea los registros atascados
-2. Luego haz clic en "Reanudar Cascada" → Reinicia el procesamiento
-3. Espera 30 segundos y observa si el indicador vuelve a verde
-```
-
-**Si está MUERTO (sin actividad >10 min):**
-```
-📋 QUÉ HACER:
-1. Haz clic en "Reanudar Cascada" → Intenta reiniciar el proceso
-2. Si sigue muerto, haz clic en "Completar Análisis" → Programa reparación
-3. Si persiste, contacta soporte técnico
+Con 4 workers: 174 empresas ÷ 4 = ~44 por worker
+Tiempo teórico: ~44 x 60s = 44 minutos por worker
+Total paralelo: ~1-2 horas
 ```
 
-**Si está LENTO:**
-```
-📋 INFORMACIÓN:
-• El barrido está funcionando pero más lento de lo normal
-• Esto puede ocurrir por alta carga en las APIs de IA
-• No es necesaria acción inmediata, el sistema se recuperará
-```
+## Implementación Técnica
 
-**Si está HEALTHY:**
-```
-✅ Todo funciona correctamente. No se requiere acción.
-```
+### 1. Nuevo Endpoint: `parallel_batch` en rix-batch-orchestrator
 
-## Cambios en el Código
+El orquestador tendrá un nuevo modo que lanza múltiples invocaciones paralelas:
 
-### Archivo: `src/components/admin/SweepHealthDashboard.tsx`
-
-**1. Añadir componente de indicador de latido:**
-
-```tsx
-// Nuevo componente HeartbeatIndicator
-function HeartbeatIndicator({ 
-  status, 
-  lastActivity, 
-  processing 
-}: { 
-  status: SweepHealthStatus; 
-  lastActivity: Date | null;
-  processing: number;
-}) {
-  const isActive = status === 'healthy' || status === 'slow';
-  
-  return (
-    <div className="flex items-center gap-3 rounded-lg border p-3 bg-background">
-      {/* Círculo pulsante */}
-      <div className="relative flex h-10 w-10 items-center justify-center">
-        {isActive ? (
-          <>
-            <span className="absolute h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-            <span className="relative h-6 w-6 rounded-full bg-green-500" />
-          </>
-        ) : status === 'completed' ? (
-          <CheckCircle2 className="h-8 w-8 text-green-600" />
-        ) : (
-          <span className="h-6 w-6 rounded-full bg-red-500" />
-        )}
-      </div>
-      
-      {/* Texto de estado */}
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          {isActive && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
-          <span className="font-medium">
-            {isActive ? `Procesando ${processing} empresa(s)...` : 
-             status === 'completed' ? 'Barrido completado' :
-             'Sistema detenido'}
-          </span>
-        </div>
-        {lastActivity && (
-          <span className="text-sm text-muted-foreground">
-            Última actividad: {formatDistanceToNow(lastActivity, { locale: es, addSuffix: true })}
-          </span>
-        )}
-      </div>
-      
-      {/* Indicador de auto-refresh */}
-      <div className="text-xs text-muted-foreground">
-        ↻ Auto-refresh: 10s
-      </div>
-    </div>
+```typescript
+// Modo parallel_batch: Lanza N workers simultáneamente
+if (mode === 'parallel_batch') {
+  const workerCount = params.workers || 4;
+  const results = await Promise.allSettled(
+    Array.from({ length: workerCount }, (_, i) => 
+      runParallelWorker(supabase, supabaseUrl, serviceKey, i)
+    )
   );
+  return { success: true, workers: results.length, ... };
 }
 ```
 
-**2. Añadir panel de instrucciones:**
+### 2. Función `runParallelWorker`
 
-```tsx
-// Nuevo componente ActionGuidance
-function ActionGuidance({ status, hasZombies, hasFailed }: {
-  status: SweepHealthStatus;
-  hasZombies: boolean;
-  hasFailed: boolean;
-}) {
-  const getGuidance = () => {
-    if (status === 'completed') {
-      return {
-        icon: '✅',
-        title: 'Barrido completado',
-        steps: ['No se requiere ninguna acción'],
-        variant: 'success'
-      };
-    }
-    
-    if (status === 'healthy') {
-      return {
-        icon: '✅',
-        title: 'Sistema funcionando correctamente',
-        steps: ['El barrido avanza con normalidad', 'No se requiere intervención'],
-        variant: 'success'
-      };
-    }
-    
-    if (hasZombies || status === 'stuck') {
-      return {
-        icon: '🔧',
-        title: 'Acción requerida: Proceso atascado',
-        steps: [
-          '1. Haz clic en "Limpiar Zombis" para resetear registros atascados',
-          '2. Luego haz clic en "Reanudar Cascada" para reiniciar',
-          '3. Espera 30s y verifica que el indicador vuelva a verde'
-        ],
-        variant: 'warning'
-      };
-    }
-    
-    if (status === 'dead') {
-      return {
-        icon: '⚠️',
-        title: 'Acción requerida: Sistema detenido',
-        steps: [
-          '1. Haz clic en "Reanudar Cascada" para reiniciar el proceso',
-          '2. Si no funciona, usa "Completar Análisis" para reparación programada',
-          '3. Si persiste tras 5 minutos, revisa los logs de errores'
-        ],
-        variant: 'error'
-      };
-    }
-    
-    if (status === 'slow') {
-      return {
-        icon: 'ℹ️',
-        title: 'Sistema lento pero funcionando',
-        steps: [
-          'El barrido continúa pero más lento de lo esperado',
-          'Puede deberse a alta carga en las APIs de IA',
-          'No es necesaria acción inmediata'
-        ],
-        variant: 'info'
-      };
-    }
-    
-    if (hasFailed || status === 'error') {
-      return {
-        icon: '❌',
-        title: 'Errores detectados',
-        steps: [
-          '1. Revisa la sección de alertas para ver qué falló',
-          '2. Usa "Completar Análisis" para reprocesar los fallidos',
-          '3. Si hay muchos fallos, puede haber un problema con las APIs'
-        ],
-        variant: 'error'
-      };
-    }
-    
-    return null;
-  };
+Cada worker:
+1. Obtiene **1 empresa pendiente** (con lock optimista)
+2. La procesa
+3. Repite hasta que no haya más
+
+```typescript
+async function runParallelWorker(
+  supabase: any,
+  supabaseUrl: string,
+  serviceKey: string,
+  workerId: number
+): Promise<{ workerId: number; processed: number; errors: number }> {
+  let processed = 0;
+  let errors = 0;
   
-  const guidance = getGuidance();
-  if (!guidance) return null;
+  while (true) {
+    // Obtener empresa pendiente (lock optimista)
+    const company = await claimNextCompany(supabase, sweepId, workerId);
+    if (!company) break; // No más empresas
+    
+    const result = await processCompany(supabase, company, ...);
+    if (result.success) processed++;
+    else errors++;
+  }
   
-  const variantStyles = {
-    success: 'border-green-500/30 bg-green-500/5',
-    info: 'border-blue-500/30 bg-blue-500/5',
-    warning: 'border-yellow-500/30 bg-yellow-500/5',
-    error: 'border-red-500/30 bg-red-500/5'
-  };
-  
-  return (
-    <div className={cn("rounded-lg border p-4", variantStyles[guidance.variant])}>
-      <div className="flex items-start gap-3">
-        <span className="text-2xl">{guidance.icon}</span>
-        <div className="flex-1 space-y-2">
-          <h4 className="font-semibold">{guidance.title}</h4>
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            {guidance.steps.map((step, i) => (
-              <li key={i}>{step}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
+  return { workerId, processed, errors };
 }
 ```
 
-**3. Integrar en el componente principal:**
+### 3. Lock Optimista para Evitar Colisiones
 
-Añadir ambos componentes justo después del header:
+Usamos una actualización atómica para que dos workers no procesen la misma empresa:
 
-```tsx
-<CardContent className="space-y-4">
-  {/* NUEVO: Heartbeat Indicator */}
-  <HeartbeatIndicator 
-    status={data.healthStatus} 
-    lastActivity={data.lastActivity}
-    processing={data.processing}
-  />
-  
-  {/* NUEVO: Action Guidance */}
-  <ActionGuidance 
-    status={data.healthStatus}
-    hasZombies={data.zombies.length > 0}
-    hasFailed={data.failed > 0}
-  />
-  
-  {/* Progress Section (existente) */}
-  ...
+```sql
+-- Cada worker "reclama" una empresa de forma atómica
+UPDATE sweep_progress 
+SET status = 'processing', 
+    started_at = now(),
+    worker_id = $workerId  -- Nuevo campo para tracking
+WHERE id = (
+  SELECT id FROM sweep_progress 
+  WHERE sweep_id = $sweepId 
+  AND status = 'pending'
+  ORDER BY fase, ticker
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED  -- ¡Clave! Salta registros bloqueados
+)
+RETURNING *;
 ```
 
-## Resultado Visual Esperado
+### 4. UI: Botón "Lanzar Procesamiento Paralelo"
+
+En `SweepHealthDashboard.tsx`:
+
+```tsx
+const handleLaunchParallel = async () => {
+  setLaunchingParallel(true);
+  const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+    body: { mode: 'parallel_batch', workers: 4 }
+  });
+  // Mostrar resultado...
+};
+
+// En el UI:
+<Button onClick={handleLaunchParallel}>
+  <Zap className="mr-2 h-4 w-4" />
+  Lanzar 4 Workers Paralelos
+</Button>
+```
+
+### 5. Visualización de Workers Activos
+
+Añadir indicador de workers activos en el dashboard:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│ 🟠 BARRIDO ATASCADO                           2026-W06         │
-│ Zombi detectado                                                 │
+│ 🟢 BARRIDO ACTIVO                        2026-W06              │
 ├─────────────────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ [●] (pulsando)  Procesando 1 empresa...     ↻ Auto: 10s    │ │
-│ │                 Última actividad: hace 12 min              │ │
-│ └─────────────────────────────────────────────────────────────┘ │
+│ [●●●●] 4 Workers activos                                       │
+│ ├── Worker 1: BBVA (45s)                                       │
+│ ├── Worker 2: Santander (32s)                                  │
+│ ├── Worker 3: Telefónica (18s)                                 │
+│ └── Worker 4: Inditex (61s)                                    │
 │                                                                 │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ 🔧 Acción requerida: Proceso atascado                      │ │
-│ │    1. Haz clic en "Limpiar Zombis" para resetear...        │ │
-│ │    2. Luego haz clic en "Reanudar Cascada" para...         │ │
-│ │    3. Espera 30s y verifica que el indicador vuelva...     │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-│                                                                 │
-│ 75/174 empresas (43%)          ⏱️ 9h 12m    📊 Esperado: 100%  │
-│ [████████░░░░░░░░░░░░] 43%                                     │
-│ ...                                                             │
+│ 75/174 empresas (43%)    ⏱️ 1h 12m    📊 ETA: 45 min           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Archivos a Modificar
+## Cambios en Archivos
 
-| Archivo | Cambio |
-|---------|--------|
-| `src/components/admin/SweepHealthDashboard.tsx` | Añadir `HeartbeatIndicator` y `ActionGuidance` |
+### Archivo 1: `supabase/functions/rix-batch-orchestrator/index.ts`
 
+| Cambio | Descripción |
+|--------|-------------|
+| Añadir función `claimNextCompany()` | Lock optimista con `FOR UPDATE SKIP LOCKED` |
+| Añadir función `runParallelWorker()` | Loop de procesamiento por worker |
+| Añadir modo `parallel_batch` | Handler para lanzar N workers |
+| Modificar respuesta | Incluir estadísticas de workers |
+
+### Archivo 2: `src/components/admin/SweepHealthDashboard.tsx`
+
+| Cambio | Descripción |
+|--------|-------------|
+| Añadir botón "Lanzar Workers Paralelos" | Con selector de cantidad (2/4/6) |
+| Añadir indicador de workers activos | Mostrar cuántos están procesando |
+| Actualizar `HeartbeatIndicator` | Mostrar multi-procesamiento |
+
+### Archivo 3: Migración SQL (opcional)
+
+```sql
+-- Añadir columna worker_id para tracking
+ALTER TABLE sweep_progress 
+ADD COLUMN IF NOT EXISTS worker_id INTEGER;
+```
+
+## Consideraciones de Rate Limits
+
+Las APIs de IA tienen límites de requests/minuto:
+- **OpenAI (ChatGPT)**: 60 RPM (tier básico)
+- **Perplexity**: 20 RPM
+- **xAI (Grok)**: 60 RPM
+- **Gemini**: 60 RPM
+- **DeepSeek/Qwen**: más flexibles
+
+Con **4 workers paralelos**, cada uno haciendo 6 llamadas por empresa:
+- 4 workers × 6 modelos = 24 requests simultáneos (posiblemente)
+- Pero en realidad son secuenciales dentro de cada empresa
+
+**Recomendación**: Empezar con **4 workers** y monitorizar errores de rate limit. Si hay muchos 429, reducir a 2-3.
+
+## Resultado Esperado
+
+| Métrica | Antes (Secuencial) | Después (4 Workers) |
+|---------|-------------------|---------------------|
+| Tiempo total | 6-10 horas | 1.5-3 horas |
+| Empresas/hora | ~20 | ~60-80 |
+| Utilización CPU | Baja | Media |
+| Rate limit riesgo | Bajo | Medio (monitorizar) |
+
+## Pasos de Implementación
+
+1. **Modificar orquestador** con modo `parallel_batch`
+2. **Añadir función de lock optimista** 
+3. **Actualizar dashboard** con botón y visualización
+4. **Probar con 2 workers** primero
+5. **Escalar a 4-6** si no hay errores de rate limit
