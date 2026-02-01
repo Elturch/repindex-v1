@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -19,10 +19,19 @@ import { useUnifiedSweepMetrics, useRefreshSweepMetrics } from '@/hooks/useUnifi
 
 export function SweepHealthDashboard() {
   const { toast } = useToast();
-  const { data: metrics, isLoading, refetch } = useUnifiedSweepMetrics();
+  const { data: metrics, isLoading, refetch, dataUpdatedAt } = useUnifiedSweepMetrics();
   const refreshAllMetrics = useRefreshSweepMetrics();
   const [forcing, setForcing] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  // Force visual re-render every 2 seconds when data changes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick(t => t + 1);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleForce = async () => {
     if (!metrics) return;
@@ -357,10 +366,10 @@ export function SweepHealthDashboard() {
         </CardHeader>
         <CardContent className="space-y-3">
           {metrics.byModel.map(model => (
-            <div key={model.model} className="flex items-center gap-4">
+            <div key={`${model.model}-${dataUpdatedAt}-${tick}`} className="flex items-center gap-4">
               <span className="w-24 text-sm font-medium truncate">{model.model}</span>
               <div className="flex-1">
-                <Progress value={model.percentage} className="h-2" />
+                <Progress key={`progress-${model.model}-${model.percentage}-${tick}`} value={model.percentage} className="h-2" />
               </div>
               <span className="w-20 text-sm text-right tabular-nums">
                 {model.withScore}/{model.total}
