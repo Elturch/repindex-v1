@@ -476,11 +476,13 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         data.triggersProcessing > 0 || 
         data.triggersPending > 0 || 
         data.searchProcessing > 0 ||
-        data.recordsNoData > 10
+        data.recordsNoData > 10 ||
+        data.recordsPendingAnalysis > 0
       );
-      return hasActiveWork ? 3000 : 10000; // 3s when active, 10s when idle
+      return hasActiveWork ? 2000 : 5000; // 2s when active, 5s when idle
     },
-    staleTime: 2000,
+    staleTime: 1000,
+    refetchOnWindowFocus: true,
   });
 }
 
