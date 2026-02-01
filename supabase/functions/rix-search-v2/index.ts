@@ -939,7 +939,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { ticker, issuer_name, single_model, repair_mode } = body;
+    const { ticker, issuer_name, single_model, repair_mode, expanded_keywords } = body;
 
     if (!ticker) {
       return new Response(
@@ -948,11 +948,21 @@ serve(async (req) => {
       );
     }
 
+    // Initialize Supabase client BEFORE any DB reads (avoid TDZ / runtime ReferenceError)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    }
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false },
+    });
+
     // In repair_mode, resolve issuer_name AND include_terms from database
     let resolvedIssuerName = issuer_name;
     let includeTerms: string[] = [];
     
-    if (repair_mode) {
+    if (repair_mode || expanded_keywords) {
       const { data: issuerData } = await supabase
         .from('repindex_root_issuers')
         .select('issuer_name, include_terms')
@@ -975,7 +985,7 @@ serve(async (req) => {
         includeTerms = Object.values(rawTerms) as string[];
       }
       
-      console.log(`[repair_mode] Resolved for ${ticker}: issuer_name="${resolvedIssuerName}", include_terms=[${includeTerms.join(', ')}]`);
+      console.log(`[${repair_mode ? 'repair_mode' : 'expanded_keywords'}] Resolved for ${ticker}: issuer_name="${resolvedIssuerName}", include_terms=[${includeTerms.join(', ')}]`);
     }
 
     if (!resolvedIssuerName) {
@@ -999,10 +1009,7 @@ serve(async (req) => {
     sunday.setDate(now.getDate() - dayOfWeek);
     sunday.setHours(0, 0, 0, 0);
 
-    // Initialize Supabase client early for duplicate check
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Supabase client already initialized above
 
     // ═══════════════════════════════════════════════════════════════════
     // SINGLE MODEL MODE: For repair/watchdog - only run ONE specific model
