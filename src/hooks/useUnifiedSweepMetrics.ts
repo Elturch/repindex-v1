@@ -66,6 +66,10 @@ export interface UnifiedSweepMetrics {
   searchProcessing: number;
   searchFailed: number;
   
+  // Trigger status
+  triggersPending: number;
+  triggersProcessing: number;
+  
   // Ghost companies detection (completed in sweep_progress but 0 records in rix_runs_v2)
   ghostCompanies: number;
   ghostTickers: string[];
@@ -148,8 +152,6 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
   return useQuery({
     queryKey: ["unified-sweep-metrics", forcedSweepId],
     queryFn: async (): Promise<UnifiedSweepMetrics> => {
-      const sweepId = forcedSweepId || getCurrentSweepId();
-      
       // CRITICAL FIX: Get actual week start from the most recent data in rix_runs_v2
       // instead of calculating from sweepId (which can be off due to ISO week edge cases)
       const { data: latestPeriod } = await supabase
@@ -159,9 +161,18 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         .limit(1);
       
       // Use the actual date from DB, fallback to calculated if no data
-      const weekStart = latestPeriod?.[0]?.['06_period_from'] || getWeekStartFromSweepId(sweepId);
+      const weekStart = latestPeriod?.[0]?.['06_period_from'] || getWeekStartFromSweepId(getCurrentSweepId());
       
-      console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart} (from ${latestPeriod?.[0] ? 'DB' : 'calculated'})`);
+      // Calculate sweepId from the actual week start date
+      const weekStartDate = new Date(weekStart);
+      const year = weekStartDate.getFullYear();
+      const startOfYear = new Date(year, 0, 1);
+      const days = Math.floor((weekStartDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+      const sweepId = forcedSweepId || `${year}-W${String(weekNumber).padStart(2, '0')}`;
+      
+      console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart}, sweepId: ${sweepId}`);
+      
       
       // Parallel queries for maximum efficiency
       const [
@@ -185,9 +196,9 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         // Get pending triggers count
         supabase
           .from('cron_triggers')
-          .select('action')
-          .eq('status', 'pending')
-          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']),
+          .select('action, status')
+          .in('status', ['pending', 'processing'])
+          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize', 'full_sweep']),
           
         // Get failed companies with details
         supabase
@@ -358,6 +369,10 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         searchPending,
         searchProcessing,
         searchFailed,
+        
+        // Trigger status
+        triggersPending: pendingTriggers.filter(t => t.status === 'pending').length,
+        triggersProcessing: pendingTriggers.filter(t => t.status === 'processing').length,
         
         // Ghost companies: completed in sweep_progress but NO records in rix_runs_v2
         ghostCompanies: ghostTickersList.length,
