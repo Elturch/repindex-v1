@@ -1,110 +1,239 @@
 
 
-# Plan: Simplificar Dashboard de Barrido
+# Plan: Dashboard de Barrido con Datos Reales y Claros
 
-## Problema Actual
+## Estado Actual del Sistema (Datos Reales)
 
-El panel tiene **9 secciones diferentes** con información duplicada y cruzada:
-- Empresas completas vs registros con score → misma info, diferente granularidad
-- Alertas de ghost + alertas de pendientes + triggers → 3 alertas separadas
-- Progreso por modelo + métricas numéricas → duplicación
-- Demasiados colores y estados visuales
+| Métrica | Valor Real |
+|---------|------------|
+| Total empresas | 165 |
+| Empresas fallidas | 6 (HTTP 504) |
+| Procesos activos | 0 |
+| Triggers pendientes | 0 |
 
-## Diseño Simplificado
+### Por Modelo IA:
+| Modelo | Completados | Pendientes | % |
+|--------|-------------|------------|---|
+| Perplexity | 159 | 6 | **96%** |
+| Deepseek | 151 | 14 | 92% |
+| Gemini | 152 | 13 | 92% |
+| Qwen | 148 | 17 | 90% |
+| ChatGPT | 145 | 20 | 88% |
+| Grok | 111 | 54 | **67%** ← Problema |
 
-Una sola card con información clara y jerarquizada:
+### Empresas Fallidas (Errores Reales):
+- DOM, ROVI, AMS, MAP, LOG, IZE → HTTP 504 timeout
 
+---
+
+## Nuevo Diseño del Dashboard
+
+### Sección 1: Estado del Sistema
 ```text
-┌────────────────────────────────────────────────────────────────┐
-│  [●] Barrido 2025-W05                            87% ████████░ │
-│      174 empresas • 152 completas • 22 pendientes              │
-├────────────────────────────────────────────────────────────────┤
-│  GPT 95%  │  Gemini 92%  │  Grok 88%  │  ... (solo si < 100%)  │
-├────────────────────────────────────────────────────────────────┤
-│  [Forzar] [Refresh]                    Actualizado: hace 2 min │
-└────────────────────────────────────────────────────────────────┘
-
-Si hay problemas (ghost, triggers, errores):
-┌─ ⚠ 3 empresas sin datos • Pulsa Forzar para reparar ───────────┐
+┌─────────────────────────────────────────────────────────┐
+│ 🔴 Sin procesos activos         [Lanzar Barrido] [↻]   │
+│    Último barrido: 2025-W05 • hace 8 horas              │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Lo Que Se Elimina
+### Sección 2: Progreso por Modelo IA (Lo que pides)
+```text
+┌─────────────────────────────────────────────────────────┐
+│ PROGRESO POR MODELO                                      │
+├─────────────────────────────────────────────────────────┤
+│ Perplexity   ████████████████████░  159/165  96%        │
+│ Deepseek     █████████████████░░░░  151/165  92%        │
+│ Gemini       █████████████████░░░░  152/165  92%        │
+│ Qwen         ████████████████░░░░░  148/165  90%        │
+│ ChatGPT      ███████████████░░░░░░  145/165  88%        │
+│ Grok         ██████████░░░░░░░░░░░  111/165  67% ⚠     │
+└─────────────────────────────────────────────────────────┘
+```
 
-| Elemento | Motivo |
-|----------|--------|
-| Grid de 5 métricas (completas, parciales, por analizar, sin datos, procesando) | Redundante con el header |
-| Sección "Análisis: X/Y (Z%)" | Confuso, basta con empresas |
-| Sección "Búsqueda: X/Y (Z%)" | Confuso, nivel demasiado bajo |
-| Alerta amarilla de pendientes | Redundante con subtítulo |
-| Nota del CRON | No aporta al usuario |
-| Botón "Procesar Triggers" | Se integra en "Forzar" |
-| Botón "Reset Total" | Peligroso, mover a menú oculto |
+### Sección 3: Errores (Los 6 Reales)
+```text
+┌─────────────────────────────────────────────────────────┐
+│ ⚠ 6 EMPRESAS FALLIDAS                    [Reintentar]  │
+├─────────────────────────────────────────────────────────┤
+│ DOM   HTTP 504  hace 7h                                 │
+│ ROVI  HTTP 504  hace 7h                                 │
+│ AMS   HTTP 504  hace 8h                                 │
+│ MAP   HTTP 504  hace 8h                                 │
+│ LOG   HTTP 504  hace 8h                                 │
+│ IZE   HTTP 504  hace 9h                                 │
+└─────────────────────────────────────────────────────────┘
+```
 
-## Lo Que Se Mantiene (Simplificado)
-
-1. **Header**: Estado + ID + porcentaje grande
-2. **Subtítulo dinámico**: Una línea que dice qué falta (si algo)
-3. **Barra de progreso**: Visual limpio
-4. **Modelos**: Solo los que no están al 100%, en línea compacta
-5. **Alertas críticas**: Solo ghost companies (se colapsan si no hay)
-6. **Botones**: Solo "Forzar" + "Refresh"
+---
 
 ## Cambios Técnicos
 
-### Archivo: `src/components/admin/SweepHealthDashboard.tsx`
+### 1. Hook `useUnifiedSweepMetrics.ts`
+Añadir query para obtener empresas fallidas con detalle:
 
-**Eliminar secciones**:
-- Grid de 5 métricas (líneas 342-364)
-- Sección de record-level progress (líneas 366-385)
-- Alerta amarilla de pendientes (líneas 387-395)
-- Nota del CRON (líneas 433-436)
-- Botón "Procesar Triggers" separado (líneas 406-417)
-- Botón "Reset Total" (líneas 419-432)
-
-**Simplificar modelos**:
-- Solo mostrar modelos con porcentaje < 100%
-- Formato inline: "GPT 95% • Gemini 92% • Grok 88%"
-
-**Simplificar header**:
-- Una sola línea de subtítulo que resume el estado
-- Mover porcentaje al lado de la barra de progreso
-
-**Nueva estructura**:
-```tsx
-<Card>
-  <CardHeader>
-    {/* Icono estado + Título + Porcentaje */}
-  </CardHeader>
-  <CardContent>
-    {/* Alerta ghost solo si > 0 */}
-    
-    {/* Barra de progreso */}
-    <Progress value={mainProgress} />
-    
-    {/* Modelos pendientes (solo si alguno < 100%) */}
-    {modelsIncomplete.length > 0 && (
-      <div className="text-sm text-muted-foreground">
-        {modelsIncomplete.map(m => `${m.model} ${m.percentage}%`).join(' • ')}
-      </div>
-    )}
-    
-    {/* Botones + timestamp */}
-    <div className="flex justify-between items-center">
-      <Button onClick={handleForce}>Forzar</Button>
-      <span>Actualizado: hace X min</span>
-    </div>
-  </CardContent>
-</Card>
+```typescript
+// Añadir a las queries paralelas:
+supabase
+  .from('sweep_progress')
+  .select('ticker, status, error_message, updated_at')
+  .eq('sweep_id', sweepId)
+  .eq('status', 'failed'),
 ```
 
-## Resultado Visual
+Exponer en el return:
+```typescript
+failedCompanies: {
+  ticker: string;
+  error: string;
+  updatedAt: Date;
+}[];
+```
 
-**Antes**: 9 secciones, ~15 colores, datos redundantes
-**Después**: 4 secciones, 3 colores, información clara
+### 2. Componente `SweepHealthDashboard.tsx`
+Reescribir completamente con 3 secciones claras:
 
-El usuario ve de un vistazo:
-- Estado del barrido (icono + color)
-- Porcentaje total
-- Qué modelos están retrasados (si alguno)
-- Un botón para actuar
+**Sección 1: Estado del Sistema**
+- Indicador visual: 🟢 Activo / 🔴 Inactivo
+- Si hay procesos: mostrar cuántos y cuáles
+- Botones: Lanzar/Forzar + Refresh
+
+**Sección 2: Tabla de Modelos IA**
+- Una fila por modelo con:
+  - Nombre del modelo
+  - Barra de progreso visual
+  - Números: completados/total
+  - Porcentaje
+  - Icono warning si < 80%
+
+**Sección 3: Panel de Errores**
+- Solo si hay errores
+- Lista de empresas fallidas con:
+  - Ticker
+  - Tipo de error
+  - Tiempo desde el fallo
+- Botón "Reintentar Fallidas"
+
+---
+
+## Código Específico
+
+### Nueva estructura del dashboard:
+
+```tsx
+export function SweepHealthDashboard() {
+  // ... hooks existentes ...
+
+  return (
+    <div className="space-y-4 mb-6">
+      {/* SECCIÓN 1: Estado del Sistema */}
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* Indicador de estado */}
+              <div className={cn(
+                "w-3 h-3 rounded-full",
+                metrics.searchProcessing > 0 ? "bg-green-500 animate-pulse" : "bg-gray-400"
+              )} />
+              <div>
+                <span className="font-medium">
+                  {metrics.searchProcessing > 0 
+                    ? `${metrics.searchProcessing} procesos activos`
+                    : "Sin procesos activos"}
+                </span>
+                <div className="text-sm text-muted-foreground">
+                  Barrido {metrics.sweepId}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleForce} disabled={forcing}>
+                {forcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                <span className="ml-1">Forzar</span>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* SECCIÓN 2: Progreso por Modelo */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Progreso por Modelo IA</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {metrics.byModel.map(model => (
+            <div key={model.model} className="flex items-center gap-4">
+              <span className="w-24 text-sm font-medium">{model.model}</span>
+              <div className="flex-1">
+                <Progress value={model.percentage} className="h-2" />
+              </div>
+              <span className="w-20 text-sm text-right">
+                {model.withScore}/{model.total}
+              </span>
+              <span className={cn(
+                "w-12 text-sm font-medium text-right",
+                model.percentage < 80 ? "text-red-500" : 
+                model.percentage < 95 ? "text-amber-500" : "text-green-500"
+              )}>
+                {model.percentage}%
+              </span>
+              {model.percentage < 80 && <AlertTriangle className="h-4 w-4 text-red-500" />}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* SECCIÓN 3: Errores (solo si hay) */}
+      {metrics.companiesFailed > 0 && (
+        <Card className="border-red-200 bg-red-50/50">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base text-red-700 flex items-center gap-2">
+                <XCircle className="h-4 w-4" />
+                {metrics.companiesFailed} Empresas Fallidas
+              </CardTitle>
+              <Button size="sm" variant="destructive" onClick={handleRetryFailed}>
+                Reintentar
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              {metrics.failedCompanies?.map(f => (
+                <div key={f.ticker} className="flex items-center gap-2 text-red-700">
+                  <span className="font-mono">{f.ticker}</span>
+                  <span className="text-xs text-red-500">{f.error}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## Archivos a Modificar
+
+| Archivo | Cambios |
+|---------|---------|
+| `src/hooks/useUnifiedSweepMetrics.ts` | Añadir query de empresas fallidas con detalle |
+| `src/components/admin/SweepHealthDashboard.tsx` | Reescribir con 3 secciones claras |
+
+## Resultado Esperado
+
+1. **Estado del sistema**: Indicador claro de si hay procesos activos o no
+2. **Progreso por IA**: Tabla con 6 filas, una por modelo, con barra + números + porcentaje
+3. **Errores reales**: Las 6 empresas que realmente fallaron con HTTP 504, con opción de reintentar
+
+Los datos coincidirán con la realidad porque vienen directamente de:
+- `rix_runs_v2` para el progreso por modelo
+- `sweep_progress` con `status='failed'` para los errores
 
