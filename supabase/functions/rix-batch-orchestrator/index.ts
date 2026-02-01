@@ -916,7 +916,9 @@ async function processCronTriggers(
         for (const record of (allPeriodRecords || [])) {
           const modelName = record['02_model_name'] || '';
           const responseColumn = MODEL_COLUMNS_REPAIR[modelName];
-          if (responseColumn && record[responseColumn as keyof typeof record] === null) {
+          const raw = responseColumn ? record[responseColumn as keyof typeof record] : null;
+          const isMissing = raw === null || raw === undefined || (typeof raw === 'string' && raw.trim().length === 0);
+          if (responseColumn && isMissing) {
             missingRecords.push({
               id: record.id,
               ticker: record['05_ticker'] || '',
@@ -1245,13 +1247,23 @@ const {
         .limit(50);
 
       if (pendingCompanies && pendingCompanies.length > 0) {
-        // Calculate the analysis period (Monday to Sunday of PREVIOUS week)
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const periodFrom = new Date(now);
-        periodFrom.setDate(now.getDate() + mondayOffset - 7);
-        const periodFromStr = periodFrom.toISOString().split('T')[0];
+        // Use the most recent period_from with real data (single source of truth)
+        const { data: latestWeek } = await supabase
+          .from('rix_runs_v2')
+          .select('06_period_from')
+          .order('06_period_from', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const periodFromStr = latestWeek?.['06_period_from'] || (() => {
+          // Fallback: calculate manually if no data exists
+          const now = new Date();
+          const dayOfWeek = now.getDay();
+          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          const periodFrom = new Date(now);
+          periodFrom.setDate(now.getDate() + mondayOffset);
+          return periodFrom.toISOString().split('T')[0];
+        })();
         
         let autoCompletedCount = 0;
         
@@ -1261,7 +1273,7 @@ const {
             .from('rix_runs_v2')
             .select('*', { count: 'exact', head: true })
             .eq('05_ticker', company.ticker)
-            .gte('06_period_from', periodFromStr);
+            .eq('06_period_from', periodFromStr);
           
           if ((count || 0) >= 5) {
             // Auto-complete this duplicate
@@ -1300,13 +1312,22 @@ const {
       if (suspectCompanies && suspectCompanies.length > 0) {
         console.log(`[${triggerMode}] Checking ${suspectCompanies.length} suspect companies with <6 models`);
         
-        // Calculate the current analysis period
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const periodFrom = new Date(now);
-        periodFrom.setDate(now.getDate() + mondayOffset - 7);
-        const reconcilePeriodFromStr = periodFrom.toISOString().split('T')[0];
+        // Use the most recent period_from with real data
+        const { data: latestWeek } = await supabase
+          .from('rix_runs_v2')
+          .select('06_period_from')
+          .order('06_period_from', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const reconcilePeriodFromStr = latestWeek?.['06_period_from'] || (() => {
+          const now = new Date();
+          const dayOfWeek = now.getDay();
+          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          const periodFrom = new Date(now);
+          periodFrom.setDate(now.getDate() + mondayOffset);
+          return periodFrom.toISOString().split('T')[0];
+        })();
         
         let resetCount = 0;
         for (const company of suspectCompanies) {
@@ -1315,7 +1336,7 @@ const {
             .from('rix_runs_v2')
             .select('*', { count: 'exact', head: true })
             .eq('05_ticker', company.ticker)
-            .gte('06_period_from', reconcilePeriodFromStr);
+            .eq('06_period_from', reconcilePeriodFromStr);
           
           // Si tiene 0 registros, resetear a pending
           if ((count || 0) === 0) {
@@ -1368,13 +1389,22 @@ const {
         // CRITICAL FIX: Usa columnas específicas por modelo para detectar datos faltantes
         // ============================================================
         
-        // Calculate the current analysis period
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const periodFrom = new Date(now);
-        periodFrom.setDate(now.getDate() + mondayOffset - 7);
-        const periodFromStr = periodFrom.toISOString().split('T')[0];
+        // Use the most recent period_from with real data (avoid week mismatch / mixing)
+        const { data: latestWeek } = await supabase
+          .from('rix_runs_v2')
+          .select('06_period_from')
+          .order('06_period_from', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const periodFromStr = latestWeek?.['06_period_from'] || (() => {
+          const now = new Date();
+          const dayOfWeek = now.getDay();
+          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          const periodFrom = new Date(now);
+          periodFrom.setDate(now.getDate() + mondayOffset);
+          return periodFrom.toISOString().split('T')[0];
+        })();
         
         // Model to column mapping for correct data detection
         const MODEL_COLUMNS: Record<string, string> = {
@@ -1391,7 +1421,7 @@ const {
         const { data: allRecords } = await supabase
           .from('rix_runs_v2')
           .select('id, 02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
-          .gte('06_period_from', periodFromStr);
+          .eq('06_period_from', periodFromStr);
         
         // Count records without data USING MODEL-SPECIFIC COLUMNS
         let missingDataCount = 0;
@@ -1402,7 +1432,8 @@ const {
         for (const record of (allRecords || [])) {
           const modelName = record['02_model_name'] || '';
           const responseColumn = MODEL_COLUMNS[modelName] || '20_res_gpt_bruto';
-          const hasData = record[responseColumn as keyof typeof record] !== null;
+          const raw = record[responseColumn as keyof typeof record];
+          const hasData = raw !== null && raw !== undefined && (typeof raw !== 'string' || raw.trim().length > 0);
           const hasScore = record['09_rix_score'] !== null;
           
           if (!hasScore && !hasData) {
@@ -1430,18 +1461,22 @@ const {
           
           if (!existingTrigger) {
             const totalMissing = missingDataCount + (failed * 6);
-            await supabase.from('cron_triggers').insert({
+            const { error: insertError } = await supabase.from('cron_triggers').insert({
               action: 'repair_search',
               params: { 
                 sweep_id: sweepId, 
                 count: totalMissing, 
-                batch_size: 5,
+                batch_size: 20,
                 records_sample: recordsWithoutData.slice(0, 10).map(r => `${r.model}`)
               },
               status: 'pending',
             });
-            triggersInserted.push('repair_search');
-            console.log(`[${triggerMode}] Inserted repair_search trigger for ${totalMissing} records (${missingDataCount} missing + ${failed} failed)`);
+            if (insertError) {
+              console.error(`[${triggerMode}] Failed inserting repair_search trigger:`, insertError);
+            } else {
+              triggersInserted.push('repair_search');
+              console.log(`[${triggerMode}] Inserted repair_search trigger for ${totalMissing} records (${missingDataCount} missing + ${failed} failed)`);
+            }
           } else {
             console.log(`[${triggerMode}] repair_search trigger already pending (id: ${existingTrigger.id})`);
           }
@@ -1457,13 +1492,17 @@ const {
             .maybeSingle();
           
           if (!existingTrigger) {
-            await supabase.from('cron_triggers').insert({
+            const { error: insertError } = await supabase.from('cron_triggers').insert({
               action: 'repair_analysis',
               params: { sweep_id: sweepId, count: analyzableCount, batch_size: 5 },
               status: 'pending',
             });
-            triggersInserted.push('repair_analysis');
-            console.log(`[${triggerMode}] Inserted repair_analysis trigger for ${analyzableCount} analyzable records`);
+            if (insertError) {
+              console.error(`[${triggerMode}] Failed inserting repair_analysis trigger:`, insertError);
+            } else {
+              triggersInserted.push('repair_analysis');
+              console.log(`[${triggerMode}] Inserted repair_analysis trigger for ${analyzableCount} analyzable records`);
+            }
           } else {
             console.log(`[${triggerMode}] repair_analysis trigger already pending (id: ${existingTrigger.id})`);
           }

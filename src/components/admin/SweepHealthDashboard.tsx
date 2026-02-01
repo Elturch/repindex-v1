@@ -35,15 +35,41 @@ export function SweepHealthDashboard() {
       const { data: triggersData } = await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { process_triggers_only: true },
       });
-      
-      const firedCount = recoveryData?.firedCount || 0;
-      const triggersProcessed = triggersData?.triggersProcessed || 0;
-      
-      toast({ 
-        title: firedCount > 0 || triggersProcessed > 0 ? '⚡ Procesado' : '✅ Sin trabajo pendiente',
-        description: firedCount > 0 || triggersProcessed > 0 
-          ? `${firedCount} empresas + ${triggersProcessed} triggers`
-          : 'El barrido está al día'
+
+      const firedCount =
+        (typeof recoveryData?.firedCount === 'number' ? recoveryData.firedCount : undefined) ??
+        (Array.isArray(recoveryData?.firedCompanies) ? recoveryData.firedCompanies.length : 0);
+
+      const orchestratorTriggersProcessed =
+        typeof recoveryData?.triggersProcessed === 'number' ? recoveryData.triggersProcessed : 0;
+      const uiTriggersProcessed =
+        typeof triggersData?.triggersProcessed === 'number' ? triggersData.triggersProcessed : 0;
+      const totalTriggersProcessed = orchestratorTriggersProcessed + uiTriggersProcessed;
+
+      const dataCheck = recoveryData?.dataCheck as
+        | { missingData?: number; analyzable?: number; failedCompanies?: number }
+        | undefined;
+      const autoChain = Array.isArray(recoveryData?.autoChain) ? (recoveryData.autoChain as string[]) : [];
+      const pendingWorkDetected =
+        !!dataCheck &&
+        ((dataCheck.missingData || 0) > 0 || (dataCheck.analyzable || 0) > 0 || (dataCheck.failedCompanies || 0) > 0);
+
+      const didAnything = firedCount > 0 || totalTriggersProcessed > 0 || autoChain.length > 0 || pendingWorkDetected;
+
+      toast({
+        title: didAnything ? '🛠️ Auto-recovery ejecutado' : '✅ Sin trabajo pendiente',
+        description: didAnything
+          ? [
+              firedCount > 0 ? `${firedCount} empresas disparadas` : null,
+              totalTriggersProcessed > 0 ? `${totalTriggersProcessed} triggers procesados` : null,
+              autoChain.length > 0 ? `Triggers encolados: ${autoChain.join(', ')}` : null,
+              pendingWorkDetected
+                ? `Pendiente: ${(dataCheck?.missingData || 0)} sin datos • ${(dataCheck?.analyzable || 0)} sin analizar`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : 'El barrido está al día',
       });
       
       refreshAllMetrics();

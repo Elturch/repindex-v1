@@ -144,7 +144,10 @@ function getWeekStartFromSweepId(sweepId: string): string {
 function recordHasData(record: Record<string, unknown>): boolean {
   const modelName = record['02_model_name'] as string;
   const responseColumn = getResponseColumn(modelName);
-  return record[responseColumn] !== null && record[responseColumn] !== undefined;
+  const raw = record[responseColumn];
+  if (raw === null || raw === undefined) return false;
+  if (typeof raw === 'string' && raw.trim().length === 0) return false;
+  return true;
 }
 
 export function useUnifiedSweepMetrics(forcedSweepId?: string) {
@@ -163,13 +166,9 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       // Use the actual date from DB, fallback to calculated if no data
       const weekStart = latestPeriod?.[0]?.['06_period_from'] || getWeekStartFromSweepId(getCurrentSweepId());
       
-      // Calculate sweepId from the actual week start date
-      const weekStartDate = new Date(weekStart);
-      const year = weekStartDate.getFullYear();
-      const startOfYear = new Date(year, 0, 1);
-      const days = Math.floor((weekStartDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-      const sweepId = forcedSweepId || `${year}-W${String(weekNumber).padStart(2, '0')}`;
+      // IMPORTANT: sweep_progress uses a sweepId derived from *current date* (see orchestrator).
+      // Using weekStart-derived week numbers caused mismatches like W05 vs W06.
+      const sweepId = forcedSweepId || getCurrentSweepId();
       
       console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart}, sweepId: ${sweepId}`);
       
