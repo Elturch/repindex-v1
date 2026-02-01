@@ -1244,13 +1244,14 @@ const {
         console.log(`[${triggerMode}] Processed ${triggersProcessed.length} cron triggers`);
       }
 
-      // 5. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
-      if (pending === 0 && processing === 0 && failed === 0) {
-        console.log(`[${triggerMode}] Sweep ${sweepId} is complete (${completed}/${total})`);
+      // 5. Si no hay empresas pendientes ni en procesamiento, verificar encadenamiento
+      // CAMBIO CRÍTICO: Ya no requiere failed === 0, los failed se manejan con repair_search
+      if (pending === 0 && processing === 0) {
+        console.log(`[${triggerMode}] Sweep ${sweepId} progress complete (${completed} completed, ${failed} failed)`);
         
         // ============================================================
         // AUTO-ENCADENAMIENTO DE PIPELINE: Verificar estado real de datos
-        // Prioridad: repair_search → repair_analysis → auto_sanitize
+        // Los triggers se disparan EN PARALELO cuando corresponde
         // ============================================================
         
         // Calculate the current analysis period
@@ -1276,14 +1277,13 @@ const {
           .is('09_rix_score', null)
           .not('20_res_gpt_bruto', 'is', null);
         
-        console.log(`[${triggerMode}] Data check: ${missingDataCount || 0} sin datos, ${analyzableCount || 0} analizables`);
+        console.log(`[${triggerMode}] Data check: ${missingDataCount || 0} sin datos, ${analyzableCount || 0} analizables, ${failed} failed en sweep_progress`);
         
-        let chainAction: string | null = null;
-        let chainParams: Record<string, unknown> = {};
+        // Disparar triggers EN PARALELO según lo que falte
+        const triggersInserted: string[] = [];
         
-        // PRIORIDAD 1: Hay registros sin datos → repair_search
-        if (missingDataCount && missingDataCount > 0) {
-          // Verificar que no haya trigger pendiente
+        // TRIGGER 1: Hay registros sin datos → repair_search (incluye los failed)
+        if ((missingDataCount && missingDataCount > 0) || failed > 0) {
           const { data: existingTrigger } = await supabase
             .from('cron_triggers')
             .select('id')
@@ -1292,16 +1292,21 @@ const {
             .maybeSingle();
           
           if (!existingTrigger) {
-            chainAction = 'repair_search';
-            chainParams = { sweep_id: sweepId, count: missingDataCount, batch_size: 5 };
-            console.log(`[${triggerMode}] Inserting repair_search trigger for ${missingDataCount} records without data`);
+            const totalMissing = (missingDataCount || 0) + (failed * 6); // failed companies need all 6 models
+            await supabase.from('cron_triggers').insert({
+              action: 'repair_search',
+              params: { sweep_id: sweepId, count: totalMissing, batch_size: 5 },
+              status: 'pending',
+            });
+            triggersInserted.push('repair_search');
+            console.log(`[${triggerMode}] Inserted repair_search trigger for ${totalMissing} records (${missingDataCount || 0} missing + ${failed} failed companies)`);
           } else {
             console.log(`[${triggerMode}] repair_search trigger already pending (id: ${existingTrigger.id})`);
           }
         }
-        // PRIORIDAD 2: Hay registros analizables → repair_analysis
-        else if (analyzableCount && analyzableCount > 0) {
-          // Verificar que no haya trigger pendiente
+        
+        // TRIGGER 2: Hay registros analizables → repair_analysis (puede correr EN PARALELO)
+        if (analyzableCount && analyzableCount > 0) {
           const { data: existingTrigger } = await supabase
             .from('cron_triggers')
             .select('id')
@@ -1310,16 +1315,20 @@ const {
             .maybeSingle();
           
           if (!existingTrigger) {
-            chainAction = 'repair_analysis';
-            chainParams = { sweep_id: sweepId, count: analyzableCount, batch_size: 5 };
-            console.log(`[${triggerMode}] Inserting repair_analysis trigger for ${analyzableCount} analyzable records`);
+            await supabase.from('cron_triggers').insert({
+              action: 'repair_analysis',
+              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 5 },
+              status: 'pending',
+            });
+            triggersInserted.push('repair_analysis');
+            console.log(`[${triggerMode}] Inserted repair_analysis trigger for ${analyzableCount} analyzable records`);
           } else {
             console.log(`[${triggerMode}] repair_analysis trigger already pending (id: ${existingTrigger.id})`);
           }
         }
-        // PRIORIDAD 3: Todo listo → auto_sanitize (validar respuestas inválidas)
-        else {
-          // Buscar si ya existe un trigger auto_sanitize reciente (últimas 24 horas)
+        
+        // TRIGGER 3: Solo sanitizar si NO hay trabajo pendiente
+        if ((missingDataCount || 0) === 0 && (analyzableCount || 0) === 0 && failed === 0) {
           const { data: existingSanitize } = await supabase
             .from('cron_triggers')
             .select('id')
@@ -1329,16 +1338,19 @@ const {
             .maybeSingle();
           
           if (!existingSanitize) {
-            // Verificar también si ya hay reportes de calidad para este sweep
             const { count: existingReports } = await supabase
               .from('data_quality_reports')
               .select('*', { count: 'exact', head: true })
               .eq('sweep_id', sweepId);
             
             if ((existingReports || 0) === 0) {
-              chainAction = 'auto_sanitize';
-              chainParams = { sweep_id: sweepId, auto_repair: true };
-              console.log(`[${triggerMode}] Sweep complete! Inserting auto_sanitize trigger for ${sweepId}`);
+              await supabase.from('cron_triggers').insert({
+                action: 'auto_sanitize',
+                params: { sweep_id: sweepId, auto_repair: true },
+                status: 'pending',
+              });
+              triggersInserted.push('auto_sanitize');
+              console.log(`[${triggerMode}] Sweep complete! Inserted auto_sanitize trigger for ${sweepId}`);
             } else {
               console.log(`[${triggerMode}] Sweep ${sweepId} already has ${existingReports} quality reports, skipping auto_sanitize`);
             }
@@ -1347,22 +1359,7 @@ const {
           }
         }
         
-        // Insertar el trigger de encadenamiento si corresponde
-        let autoChainInserted = false;
-        if (chainAction) {
-          const { error: insertError } = await supabase.from('cron_triggers').insert({
-            action: chainAction,
-            params: chainParams,
-            status: 'pending',
-          });
-          
-          if (insertError) {
-            console.error(`[${triggerMode}] Failed to insert ${chainAction} trigger:`, insertError);
-          } else {
-            autoChainInserted = true;
-            console.log(`[${triggerMode}] ${chainAction} trigger inserted successfully`);
-          }
-        }
+        console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ') || 'none (all pending or no work needed)'}`);
         
         return new Response(
           JSON.stringify({
@@ -1370,13 +1367,13 @@ const {
             trigger: triggerMode,
             sweepId,
             action: 'complete',
-            reason: 'Sweep search phase completed',
+            reason: 'Sweep progress complete, checking data state',
             dataCheck: {
               missingData: missingDataCount || 0,
               analyzable: analyzableCount || 0,
+              failedCompanies: failed,
             },
-            autoChain: chainAction,
-            autoChainInserted,
+            autoChain: triggersInserted,
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
