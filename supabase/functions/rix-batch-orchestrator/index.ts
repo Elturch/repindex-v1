@@ -909,6 +909,7 @@ let requestBody: {
       process_one?: boolean;
       workers?: number;
       max_per_worker?: number;
+      relaunch_count?: number;
     } = {};
     
     try {
@@ -932,6 +933,7 @@ const {
       process_one = false,
       workers = 4,
       max_per_worker = 50,
+      relaunch_count = 0,
     } = requestBody;
 
     const sweepId = getCurrentSweepId();
@@ -1185,8 +1187,41 @@ const {
       }
 
       // 6. Si ya hay MAX_CONCURRENT procesando, no disparar más (throttle)
+      // PERO si hay trabajo pendiente, programar auto-relaunch en 30s
       if (processing >= MAX_CONCURRENT) {
         console.log(`[${triggerMode}] Already ${processing} companies processing (max ${MAX_CONCURRENT}). Throttling.`);
+        
+        // AUTO-RELAUNCH CUANDO THROTTLED: programar revisión en 30s
+        const MAX_RELAUNCHES_PER_CYCLE = 20;
+        const shouldAutoRelaunchThrottled = pending > 0 && relaunch_count < MAX_RELAUNCHES_PER_CYCLE;
+        
+        if (shouldAutoRelaunchThrottled) {
+          console.log(`[${triggerMode}] Throttled but work pending. Auto-relaunching in 30s (pending=${pending}, relaunch #${relaunch_count + 1})`);
+          
+          EdgeRuntime.waitUntil(
+            (async () => {
+              await new Promise(r => setTimeout(r, 30000)); // Esperar 30 segundos
+              
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseServiceKey}`,
+                  },
+                  body: JSON.stringify({ 
+                    trigger: 'auto_recovery',
+                    relaunch_count: relaunch_count + 1
+                  }),
+                });
+                console.log(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) executed (status: ${response.status})`);
+              } catch (e) {
+                console.error(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) failed:`, e);
+              }
+            })()
+          );
+        }
+        
         return new Response(
           JSON.stringify({
             success: true,
@@ -1197,6 +1232,12 @@ const {
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
+            autoRelaunch: shouldAutoRelaunchThrottled,
+            autoRelaunchIn: shouldAutoRelaunchThrottled ? '30s' : null,
+            relaunchCount: shouldAutoRelaunchThrottled ? relaunch_count + 1 : relaunch_count,
+            message: shouldAutoRelaunchThrottled
+              ? `Slots llenos (${processing}/${MAX_CONCURRENT}). Auto-relanzamiento en 30s (#${relaunch_count + 1}).`
+              : `Slots llenos y sin trabajo pendiente.`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -1208,15 +1249,54 @@ const {
 
       if (toFire === 0) {
         console.log(`[${triggerMode}] No slots available or no pending companies`);
+        
+        // AUTO-RELAUNCH CUANDO THROTTLED: Si hay pendientes pero slots llenos,
+        // programar auto-relaunch en 30s para cuando se libere un slot
+        const MAX_RELAUNCHES_PER_CYCLE_B = 20;
+        const shouldAutoRelaunchThrottledB = pending > 0 && processing >= MAX_CONCURRENT && relaunch_count < MAX_RELAUNCHES_PER_CYCLE_B;
+        
+        if (shouldAutoRelaunchThrottledB) {
+          console.log(`[${triggerMode}] Throttled but work pending. Auto-relaunching in 30s (pending=${pending}, processing=${processing}, relaunch #${relaunch_count + 1})`);
+          
+          EdgeRuntime.waitUntil(
+            (async () => {
+              await new Promise(r => setTimeout(r, 30000)); // Esperar 30 segundos
+              
+              try {
+                const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseServiceKey}`,
+                  },
+                  body: JSON.stringify({ 
+                    trigger: 'auto_recovery',
+                    relaunch_count: relaunch_count + 1
+                  }),
+                });
+                console.log(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) executed (status: ${response.status})`);
+              } catch (e) {
+                console.error(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) failed:`, e);
+              }
+            })()
+          );
+        }
+        
         return new Response(
           JSON.stringify({
             success: true,
             trigger: triggerMode,
             sweepId,
-            action: 'no_work',
+            action: 'throttled',
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
+            autoRelaunch: shouldAutoRelaunchThrottledB,
+            autoRelaunchIn: shouldAutoRelaunchThrottledB ? '30s' : null,
+            relaunchCount: shouldAutoRelaunchThrottledB ? relaunch_count + 1 : relaunch_count,
+            message: shouldAutoRelaunchThrottledB
+              ? `Slots llenos (${processing}/${MAX_CONCURRENT}). Auto-relanzamiento en 30s (#${relaunch_count + 1}).`
+              : `No hay trabajo pendiente o slots disponibles.`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -1262,17 +1342,16 @@ const {
 
       // 11. AUTO-RELAUNCH: Si quedan pendientes y hay slots, auto-relanzar en 30s
       // Esto evita esperar 5 min del CRON si hay trabajo disponible
-      const relaunchCount = body.relaunch_count || 0;
-      const MAX_RELAUNCHES_PER_CYCLE = 20; // Protección anti-bucle infinito
+      const MAX_RELAUNCHES_PER_CYCLE_C = 20; // Protección anti-bucle infinito
       
       const newPending = pending - firedCompanies.length;
       const newProcessing = processing + firedCompanies.length;
       const slotsAfterFire = MAX_CONCURRENT - newProcessing;
       
-      const shouldAutoRelaunch = newPending > 0 && slotsAfterFire > 0 && relaunchCount < MAX_RELAUNCHES_PER_CYCLE;
+      const shouldAutoRelaunch = newPending > 0 && slotsAfterFire > 0 && relaunch_count < MAX_RELAUNCHES_PER_CYCLE_C;
       
       if (shouldAutoRelaunch) {
-        console.log(`[${triggerMode}] Auto-relaunching in 30s (pending=${newPending}, slots=${slotsAfterFire}, relaunch #${relaunchCount + 1})`);
+        console.log(`[${triggerMode}] Auto-relaunching in 30s (pending=${newPending}, slots=${slotsAfterFire}, relaunch #${relaunch_count + 1})`);
         
         EdgeRuntime.waitUntil(
           (async () => {
@@ -1287,17 +1366,17 @@ const {
                 },
                 body: JSON.stringify({ 
                   trigger: 'auto_recovery',
-                  relaunch_count: relaunchCount + 1  // Incrementar contador
+                  relaunch_count: relaunch_count + 1  // Incrementar contador
                 }),
               });
-              console.log(`[${triggerMode}] Auto-relaunch #${relaunchCount + 1} executed (status: ${response.status})`);
+              console.log(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} executed (status: ${response.status})`);
             } catch (e) {
-              console.error(`[${triggerMode}] Auto-relaunch #${relaunchCount + 1} failed:`, e);
+              console.error(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} failed:`, e);
             }
           })()
         );
-      } else if (newPending > 0 && relaunchCount >= MAX_RELAUNCHES_PER_CYCLE) {
-        console.log(`[${triggerMode}] Max relaunches reached (${MAX_RELAUNCHES_PER_CYCLE}). Waiting for next CRON.`);
+      } else if (newPending > 0 && relaunch_count >= MAX_RELAUNCHES_PER_CYCLE_C) {
+        console.log(`[${triggerMode}] Max relaunches reached (${MAX_RELAUNCHES_PER_CYCLE_C}). Waiting for next CRON.`);
       }
       
       return new Response(
@@ -1319,9 +1398,9 @@ const {
           zombiesReset: stuckReset.count,
           autoRelaunch: shouldAutoRelaunch,
           autoRelaunchIn: shouldAutoRelaunch ? '30s' : null,
-          relaunchCount: shouldAutoRelaunch ? relaunchCount + 1 : relaunchCount,
+          relaunchCount: shouldAutoRelaunch ? relaunch_count + 1 : relaunch_count,
           message: shouldAutoRelaunch 
-            ? `Disparadas ${firedCompanies.length} empresas. Auto-relanzamiento en 30s (#${relaunchCount + 1}).`
+            ? `Disparadas ${firedCompanies.length} empresas. Auto-relanzamiento en 30s (#${relaunch_count + 1}).`
             : `Disparadas ${firedCompanies.length} empresas. El próximo CRON las recogerá.`,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
