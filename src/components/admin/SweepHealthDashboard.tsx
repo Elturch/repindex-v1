@@ -220,22 +220,35 @@ export function SweepHealthDashboard() {
                   </span>
                 </div>
                 {/* Indicador de progreso del trigger activo */}
-                {metrics.activeTrigger && (metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) && (
+                {metrics.activeTrigger && (
                   <div className="flex items-center gap-2 mt-1">
-                    <div className="flex-1 max-w-[200px]">
-                      <Progress 
-                        value={metrics.activeTrigger.processed + metrics.activeTrigger.remaining > 0 
-                          ? (metrics.activeTrigger.processed / (metrics.activeTrigger.processed + metrics.activeTrigger.remaining)) * 100 
-                          : 0
-                        } 
-                        className="h-1.5" 
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {metrics.activeTrigger.action === 'repair_search' ? '🔍' : '📊'}{' '}
-                      {metrics.activeTrigger.processed}/{metrics.activeTrigger.processed + metrics.activeTrigger.remaining}
+                    {/* Progress bar - solo si hay datos numéricos */}
+                    {(metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) && (
+                      <div className="flex-1 max-w-[200px]">
+                        <Progress 
+                          value={metrics.activeTrigger.processed + metrics.activeTrigger.remaining > 0 
+                            ? (metrics.activeTrigger.processed / (metrics.activeTrigger.processed + metrics.activeTrigger.remaining)) * 100 
+                            : 0
+                          } 
+                          className="h-1.5" 
+                        />
+                      </div>
+                    )}
+                    {/* Status text - siempre visible */}
+                    <span className="text-xs text-muted-foreground tabular-nums flex items-center gap-1">
+                      {metrics.activeTrigger.action === 'repair_search' ? '🔍' : '📊'}
+                      <span className="font-medium">
+                        {metrics.activeTrigger.action === 'repair_search' ? 'Búsqueda' : 'Análisis'}
+                      </span>
+                      {(metrics.activeTrigger.processed > 0 || metrics.activeTrigger.remaining > 0) ? (
+                        <span>
+                          {metrics.activeTrigger.processed}/{metrics.activeTrigger.processed + metrics.activeTrigger.remaining}
+                        </span>
+                      ) : (
+                        <span className="animate-pulse">en proceso...</span>
+                      )}
                       {metrics.activeTrigger.lastTicker && (
-                        <span className="ml-1 font-mono text-primary">{metrics.activeTrigger.lastTicker}</span>
+                        <span className="font-mono text-primary">{metrics.activeTrigger.lastTicker}</span>
                       )}
                     </span>
                   </div>
