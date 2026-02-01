@@ -42,6 +42,50 @@ function getCurrentSweepId(): string {
   return `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 }
 
+// ============================================================================
+// CRITICAL FIX: Obtiene el sweepId ACTIVO basado en datos REALES de rix_runs_v2
+// Esto evita que el watchdog "apunte" a la semana calendario cuando los datos
+// pertenecen a otra semana (ej. cambio de semana a medianoche).
+// ============================================================================
+async function getActiveSweepId(supabase: ReturnType<typeof createClient>): Promise<string> {
+  // 1. Buscar la semana con MÁS registros recientes (sweep activo)
+  const { data: latestWeek } = await supabase
+    .from('rix_runs_v2')
+    .select('06_period_from')
+    .order('06_period_from', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  
+  if (!latestWeek?.['06_period_from']) {
+    // No hay datos en rix_runs_v2, usar calendario
+    console.log('[getActiveSweepId] No data in rix_runs_v2, falling back to calendar');
+    return getCurrentSweepId();
+  }
+  
+  const periodFrom = latestWeek['06_period_from'] as string;
+  
+  // 2. Calcular ISO week desde esa fecha (implementación pura, sin date-fns)
+  const dateObj = new Date(periodFrom + 'T00:00:00Z');
+  
+  // ISO week calculation: find Thursday of this week
+  const dayOfWeek = dateObj.getUTCDay() || 7; // Make Sunday = 7
+  const thursday = new Date(dateObj);
+  thursday.setUTCDate(dateObj.getUTCDate() + 4 - dayOfWeek);
+  
+  const firstThursday = new Date(thursday.getUTCFullYear(), 0, 4);
+  const firstDayOfFirstWeek = new Date(firstThursday);
+  firstDayOfFirstWeek.setUTCDate(firstThursday.getUTCDate() - ((firstThursday.getUTCDay() || 7) - 1));
+  
+  const diffMs = thursday.getTime() - firstDayOfFirstWeek.getTime();
+  const weekNumber = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+  
+  const isoYear = thursday.getUTCFullYear();
+  const sweepId = `${isoYear}-W${String(weekNumber).padStart(2, '0')}`;
+  
+  console.log(`[getActiveSweepId] Derived from data: ${periodFrom} → ${sweepId}`);
+  return sweepId;
+}
+
 // Verifica si una empresa ya tiene datos para el período de análisis actual
 async function hasCompanyDataThisWeek(
   supabase: ReturnType<typeof createClient>,
@@ -813,34 +857,68 @@ async function processCronTriggers(
           },
           body: JSON.stringify({ 
             action: 'reprocess_pending', 
-            batch_size: trigger.params?.batch_size || 3 
+            batch_size: trigger.params?.batch_size || 5 
           }),
         });
 
         const responseText = await response.text();
-        let data: unknown;
+        let data: { remaining?: number; processed?: number; errors?: number; skipped?: number } = {};
         try {
           data = JSON.parse(responseText);
         } catch {
-          data = { raw: responseText };
+          data = { remaining: 0 };
         }
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${responseText}`);
         }
 
-        // Marcar como completado
-        await supabase
-          .from('cron_triggers')
-          .update({ 
-            status: 'completed',
-            processed_at: new Date().toISOString(),
-            result: data as Record<string, unknown>
-          })
-          .eq('id', trigger.id);
+        // ═══════════════════════════════════════════════════════════════════
+        // CRITICAL FIX: AUTO-REQUEUE si quedan registros por procesar
+        // Esto hace que repair_analysis se comporte igual que repair_search
+        // ═══════════════════════════════════════════════════════════════════
+        const remaining = data.remaining ?? 0;
+        
+        if (remaining > 0) {
+          // Todavía quedan registros por analizar → volver a pending para el siguiente ciclo
+          console.log(`[cron_triggers] repair_analysis: ${data.processed || 0} processed, ${remaining} remaining → re-queueing`);
+          
+          await supabase
+            .from('cron_triggers')
+            .update({ 
+              status: 'pending',  // <-- CLAVE: vuelve a pending
+              processed_at: null,
+              result: {
+                last_batch: {
+                  processed: data.processed || 0,
+                  errors: data.errors || 0,
+                  skipped: data.skipped || 0,
+                  timestamp: new Date().toISOString(),
+                },
+                remaining,
+                remaining_estimate: remaining,
+              }
+            })
+            .eq('id', trigger.id);
+          
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, requeued: true } });
+        } else {
+          // No quedan registros → marcar como completado
+          console.log(`[cron_triggers] repair_analysis: all done! (${data.processed || 0} processed, 0 remaining)`);
+          
+          await supabase
+            .from('cron_triggers')
+            .update({ 
+              status: 'completed',
+              processed_at: new Date().toISOString(),
+              result: data as Record<string, unknown>
+            })
+            .eq('id', trigger.id);
 
-        results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
-        console.log(`[cron_triggers] Trigger ${trigger.id} completed successfully`);
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
+        }
+        
+        console.log(`[cron_triggers] Trigger ${trigger.id} handled (remaining: ${remaining})`);
 
       } else if (trigger.action === 'auto_sanitize') {
         // ============================================================
@@ -1216,8 +1294,11 @@ const {
       relaunch_count = 0,
     } = requestBody;
 
-    const sweepId = getCurrentSweepId();
-    console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}`);
+    // CRITICAL FIX: Para watchdog/auto_recovery, usar sweepId ACTIVO (desde datos reales)
+    // Para otros modos, usar calendario (mantener comportamiento anterior)
+    const isWatchdogMode = trigger === 'watchdog' || trigger === 'auto_recovery';
+    const sweepId = isWatchdogMode ? await getActiveSweepId(supabase) : getCurrentSweepId();
+    console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}${isWatchdogMode ? ' (active sweep from data)' : ' (calendar)'}`);
 
     // ========== MODO CONCURRENT_STABLE: Procesa N empresas en paralelo ESPERANDO resultados ==========
     // NUEVO: Reemplaza parallel_batch - Este modo SÍ espera a que todas las empresas terminen
