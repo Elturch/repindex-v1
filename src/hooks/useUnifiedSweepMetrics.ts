@@ -70,6 +70,13 @@ export interface UnifiedSweepMetrics {
   ghostCompanies: number;
   ghostTickers: string[];
   
+  // Failed companies with details
+  failedCompanies: {
+    ticker: string;
+    error: string;
+    updatedAt: Date;
+  }[];
+  
   // System state machine
   systemState: 'SWEEP_RUNNING' | 'CHECKING_DATA' | 'REPAIRS_PENDING' | 'COMPLETE' | 'IDLE';
   
@@ -161,6 +168,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         rixRunsResult,
         sweepProgressResult,
         pendingTriggersResult,
+        failedCompaniesResult,
       ] = await Promise.all([
         // Get all records for this week from rix_runs_v2 - include ALL response columns
         supabase
@@ -180,6 +188,13 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .select('action')
           .eq('status', 'pending')
           .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']),
+          
+        // Get failed companies with details
+        supabase
+          .from('sweep_progress')
+          .select('ticker, error_message, updated_at')
+          .eq('sweep_id', sweepId)
+          .eq('status', 'failed'),
       ]);
       
       if (rixRunsResult.error) throw rixRunsResult.error;
@@ -187,6 +202,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const records = rixRunsResult.data || [];
       const progressRecords = sweepProgressResult.data || [];
       const pendingTriggers = pendingTriggersResult.data || [];
+      const failedCompaniesData = failedCompaniesResult.data || [];
       
       // Calculate ghost companies by CROSS-REFERENCING with real data
       // Ghost = marked 'completed' in sweep_progress BUT has NO records in rix_runs_v2
@@ -346,6 +362,13 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         // Ghost companies: completed in sweep_progress but NO records in rix_runs_v2
         ghostCompanies: ghostTickersList.length,
         ghostTickers: ghostTickersList,
+        
+        // Failed companies with details
+        failedCompanies: failedCompaniesData.map(f => ({
+          ticker: f.ticker,
+          error: f.error_message || 'Error desconocido',
+          updatedAt: new Date(f.updated_at),
+        })),
         
         systemState,
         
