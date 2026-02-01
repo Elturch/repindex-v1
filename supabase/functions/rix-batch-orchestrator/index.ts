@@ -874,13 +874,25 @@ async function processCronTriggers(
         const triggerParams = trigger.params as { sweep_id?: string; batch_size?: number } | null;
         const batchSize = triggerParams?.batch_size || 20;
         
-        // Calculate the current analysis period
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const periodFrom = new Date(now);
-        periodFrom.setDate(now.getDate() + mondayOffset - 7);
-        const periodFromStr = periodFrom.toISOString().split('T')[0];
+        // Find the most recent week with data (instead of calculating dates manually)
+        const { data: latestWeek } = await supabase
+          .from('rix_runs_v2')
+          .select('06_period_from')
+          .order('06_period_from', { ascending: false })
+          .limit(1)
+          .single();
+        
+        const periodFromStr = latestWeek?.['06_period_from'] || (() => {
+          // Fallback: calculate manually if no data exists
+          const now = new Date();
+          const dayOfWeek = now.getDay();
+          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          const periodFrom = new Date(now);
+          periodFrom.setDate(now.getDate() + mondayOffset);
+          return periodFrom.toISOString().split('T')[0];
+        })();
+        
+        console.log(`[cron_triggers] repair_search targeting week: ${periodFromStr}`);
         
         // Model to column mapping
         const MODEL_COLUMNS_REPAIR: Record<string, string> = {
