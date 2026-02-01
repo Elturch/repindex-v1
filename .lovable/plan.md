@@ -1,58 +1,153 @@
 
+# Plan: Añadir Bibliografía Verificada a la Exportación Individual
 
-# Plan: Crear CRON Job para Fase 35
+## Problema Identificado
 
-## Situación Actual
+El botón "Descargar como informe" en respuestas individuales (componente `MarkdownMessage`) **no incluye** la sección de fuentes verificadas, mientras que la exportación de conversación completa (`downloadAsHtml` en ChatContext) **sí las incluye**.
 
-- **174 empresas** en el sistema
-- **34 fases con CRON** (fases 01-34) → cubren 170 empresas
-- **Fase 35 sin CRON** → 4 empresas hospitalarias huérfanas:
-  - Grupo Hospitalario HLA (HLA)
-  - Ribera Salud (RS)
-  - Viamed Salud (VIA)
-  - Vithas (VIT)
+La diferencia está en que:
+- **Exportación completa**: Itera sobre todos los mensajes, extrae `verifiedSources` del metadata, y llama a `generateBibliographyHtml()` 
+- **Exportación individual**: La función `generateExportHtml()` no recibe ni usa las fuentes verificadas
 
-## Solución
+## Cambios Requeridos
 
-Crear un nuevo CRON job `rix-sweep-phase-35` que se ejecute a las **02:50 UTC (03:50 CET)**, 5 minutos después de la fase 34.
+### 1. Modificar MarkdownMessage (src/components/ui/markdown-message.tsx)
 
-## Comando SQL a Ejecutar
+**Añadir props para recibir datos de bibliografía:**
 
-El CRON debe seguir el mismo patrón que los existentes:
-
-```sql
-SELECT cron.schedule(
-  'rix-sweep-phase-35',
-  '50 2 * * 0',
-  $$
-  SELECT net.http_post(
-    url:='https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/rix-batch-orchestrator',
-    headers:='{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU"}'::jsonb,
-    body:='{"trigger": "cron", "fase": 35}'::jsonb
-  )
-  $$
-);
+```typescript
+interface MarkdownMessageProps {
+  content: string;
+  showDownload?: boolean;
+  languageCode?: string;
+  roleName?: string;
+  // NUEVAS PROPS:
+  verifiedSources?: VerifiedSource[];
+  periodFrom?: string;
+  periodTo?: string;
+}
 ```
 
-## Cambios Técnicos
+**Pasar las fuentes a generateExportHtml:**
 
-### 1. Actualizar Edge Function `update-cron-schedules`
+```typescript
+const downloadMessage = () => {
+  // ...
+  const htmlContent = generateExportHtml(
+    content, 
+    tr, 
+    languageCode, 
+    roleName,
+    verifiedSources,  // NUEVO
+    periodFrom,       // NUEVO
+    periodTo          // NUEVO
+  );
+  // ...
+};
+```
 
-Modificar para que:
-- Soporte 35 fases en lugar de 34
-- Pueda crear CRONs nuevos además de actualizarlos
+### 2. Modificar generateExportHtml (markdown-message.tsx)
 
-### 2. Ejecutar Creación del CRON
+**Actualizar la firma de la función:**
 
-Usar el SQL insert tool para crear el CRON directamente.
+```typescript
+function generateExportHtml(
+  markdown: string, 
+  tr: ChatUITranslations, 
+  languageCode: string, 
+  roleName?: string,
+  verifiedSources?: VerifiedSource[],
+  periodFrom?: string,
+  periodTo?: string
+): string
+```
 
-## Resultado Final
+**Añadir el import de generateBibliographyHtml:**
 
-| Fase | Hora UTC | Hora CET | Empresas |
-|------|----------|----------|----------|
-| 34 | 02:45 | 03:45 | 5 empresas |
-| 35 | 02:50 | 03:50 | 4 hospitales |
+```typescript
+import { VerifiedSource, generateBibliographyHtml } from '@/lib/verifiedSourceExtractor';
+```
 
-- **Total sweep**: 00:00 - 02:50 UTC (01:00 - 03:50 CET)
-- **174/174 empresas cubiertas** ✅
+**Insertar la bibliografía antes del footer:**
 
+```html
+<main class="content">
+  ${bodyContent}
+</main>
+
+${generateBibliographyHtml(verifiedSources || [], periodFrom, periodTo)}
+
+<footer class="report-footer">
+  ...
+</footer>
+```
+
+### 3. Modificar ChatMessages (src/components/chat/ChatMessages.tsx)
+
+**Pasar el metadata al MarkdownMessage:**
+
+```tsx
+<MarkdownMessage 
+  content={message.content} 
+  showDownload={!message.isStreaming}
+  languageCode={languageCode}
+  roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
+  // NUEVAS PROPS:
+  verifiedSources={message.metadata?.verifiedSources}
+  periodFrom={message.metadata?.methodology?.periodFrom}
+  periodTo={message.metadata?.methodology?.periodTo}
+/>
+```
+
+## Flujo de Datos Actualizado
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│  Edge Function (chat-intelligence)                              │
+│  ├── Extrae verifiedSources de ChatGPT y Perplexity             │
+│  └── Incluye en metadata del mensaje                            │
+└───────────────────────┬─────────────────────────────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ChatContext                                                     │
+│  ├── message.metadata.verifiedSources                           │
+│  └── message.metadata.methodology.periodFrom/periodTo           │
+└───────────────────────┬─────────────────────────────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ChatMessages.tsx                                                │
+│  └── Pasa verifiedSources + periodFrom/periodTo a MarkdownMessage│
+└───────────────────────┬─────────────────────────────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  MarkdownMessage.tsx                                             │
+│  ├── Recibe props con fuentes verificadas                       │
+│  └── downloadMessage() → generateExportHtml() con bibliografía  │
+└───────────────────────┬─────────────────────────────────────────┘
+                        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  HTML Exportado Individual                                       │
+│  ├── Header corporativo                                          │
+│  ├── Contenido del mensaje                                       │
+│  ├── 📚 Bibliografía Verificada (NUEVO)                          │
+│  │   ├── Menciones de Ventana                                   │
+│  │   └── Menciones de Refuerzo                                  │
+│  └── Footer + Technical Sheet                                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Archivos a Modificar
+
+| Archivo | Cambios |
+|---------|---------|
+| `src/components/ui/markdown-message.tsx` | Añadir props, import, y bibliografía en generateExportHtml |
+| `src/components/chat/ChatMessages.tsx` | Pasar metadata de fuentes a MarkdownMessage |
+
+## Resultado Esperado
+
+Cuando un usuario haga clic en "Descargar como informe" en cualquier respuesta individual:
+
+1. El HTML generado incluirá la sección "📚 Anexo: Referencias Citadas por las IAs"
+2. Las fuentes estarán clasificadas temporalmente (Menciones de Ventana vs Refuerzo)
+3. El diseño será idéntico al de la exportación de conversación completa
+4. Se mantendrá la política de "Cero Invención" (solo ChatGPT + Perplexity)
