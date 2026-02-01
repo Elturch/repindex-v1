@@ -788,11 +788,52 @@ serve(async (req) => {
       
       const results: any[] = [];
       const errors: any[] = [];
+      const skipped: any[] = [];
+      const analysisStartTime = new Date().toISOString();
+      const LOCK_TIMEOUT_MS = 120000; // 2 minutes - if a record is locked longer, it's stale
       
       // Process each record sequentially (to avoid rate limits)
       for (const record of pendingRecords) {
         try {
-          console.log(`[rix-analyze-v2] Processing: ${record['05_ticker']} - ${record['02_model_name']}`);
+          const recordId = record.id;
+          const ticker = record['05_ticker'];
+          const modelName = record['02_model_name'];
+          
+          // === LOCKING MECHANISM ===
+          // Check if this record is already being processed by another invocation
+          const existingLock = record['17_flags'] as any[] | null;
+          const lockInfo = existingLock?.find(f => typeof f === 'object' && f?.analysis_lock);
+          
+          if (lockInfo?.analysis_lock) {
+            const lockTime = new Date(lockInfo.analysis_lock).getTime();
+            const now = Date.now();
+            
+            // If lock is less than 2 minutes old, skip this record
+            if (now - lockTime < LOCK_TIMEOUT_MS) {
+              console.log(`[rix-analyze-v2] SKIP (locked): ${ticker} - ${modelName} (locked at ${lockInfo.analysis_lock})`);
+              skipped.push({ record_id: recordId, ticker, model: modelName, reason: 'locked' });
+              continue;
+            }
+            // Lock is stale, we'll take it over
+            console.log(`[rix-analyze-v2] Taking over stale lock for ${ticker} - ${modelName}`);
+          }
+          
+          // === ACQUIRE LOCK ===
+          const lockFlag = { analysis_lock: analysisStartTime, worker: crypto.randomUUID().slice(0, 8) };
+          const existingFlags = (existingLock || []).filter(f => !(typeof f === 'object' && f?.analysis_lock));
+          
+          const { error: lockError } = await supabase
+            .from('rix_runs_v2')
+            .update({ '17_flags': [...existingFlags, lockFlag] })
+            .eq('id', recordId)
+            .is('analysis_completed_at', null); // Only lock if still pending
+          
+          if (lockError) {
+            console.warn(`[rix-analyze-v2] Failed to lock ${recordId}:`, lockError.message);
+            continue;
+          }
+          
+          console.log(`[rix-analyze-v2] Processing: ${ticker} - ${modelName} (locked)`);
           const result = await analyzeRecord(supabase, record);
           results.push(result);
           
@@ -806,6 +847,14 @@ serve(async (req) => {
             model: record['02_model_name'],
             error: error.message,
           });
+          
+          // Release lock on error (reset the flag)
+          await supabase
+            .from('rix_runs_v2')
+            .update({ 
+              '17_flags': ((record['17_flags'] || []) as any[]).filter(f => !(typeof f === 'object' && f?.analysis_lock))
+            })
+            .eq('id', record.id);
         }
       }
       
@@ -817,16 +866,18 @@ serve(async (req) => {
         .not('search_completed_at', 'is', null)
         .eq('06_period_from', activePeriod);
 
-      console.log(`[rix-analyze-v2] Batch complete. Processed: ${results.length}, Errors: ${errors.length}, Remaining: ${remaining}`);
+      console.log(`[rix-analyze-v2] Batch complete. Processed: ${results.length}, Skipped: ${skipped.length}, Errors: ${errors.length}, Remaining: ${remaining}`);
 
       return new Response(
         JSON.stringify({
           success: true,
           mode: 'reprocess_pending',
           processed: results.length,
+          skipped: skipped.length,
           errors: errors.length,
           remaining: remaining || 0,
           results,
+          skipped_details: skipped.length > 0 ? skipped : undefined,
           error_details: errors.length > 0 ? errors : undefined,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
