@@ -1,259 +1,154 @@
 
 
-# Plan: Estabilización del Pipeline en 2 Fases
+# Plan: Corregir Detección de Empresas Sin Registros
 
-## Diagnóstico del Problema
+## Problema Raíz
 
-Tras analizar el código, identifico **3 problemas raíz** que causan las inconsistencias:
+El sistema tiene **dos fuentes de verdad no sincronizadas**:
 
-### Problema 1: Condiciones de encadenamiento no atómicas
-El orquestador intenta hacer demasiadas cosas en un solo ciclo:
-- Limpiar zombies
-- Auto-completar duplicados  
-- Contar estados
-- Procesar triggers existentes
-- Insertar nuevos triggers
-- Procesar los triggers recién insertados
+| Fuente | Cuenta | Estado |
+|--------|--------|--------|
+| `repindex_root_issuers` | 174 empresas | Censo maestro |
+| `sweep_progress` | 174 empresas | 13 marcadas "completed" con 0 modelos |
+| `rix_runs_v2` | 165 empresas únicas | **9 empresas FALTAN completamente** |
 
-Si cualquier paso falla o toma demasiado tiempo, el siguiente ciclo CRON empieza antes de terminar, causando **condiciones de carrera**.
+Las 13 empresas problemáticas:
+- MAP, IZE, EY-PRIV, KPMG-PRIV, PWC-PRIV, EME-PRIV, FEVER-PRIV, IDEALISTA-PRIV, HOS, META-PRIV, SANITAS, VIA, VIT
 
-### Problema 2: Conteos inconsistentes entre tablas
-- `sweep_progress` cuenta empresas (174)
-- `rix_runs_v2` cuenta registros (174 x 6 = 1044 esperados)
-- Los conteos de "missing data" usan `rix_runs_v2` pero el estado "failed" viene de `sweep_progress`
-- Esto causa que `repair_search` calcule mal: `(missingDataCount || 0) + (failed * 6)`
+Fueron marcadas como "completed" después de timeouts/errores 504, pero **nunca se crearon registros**.
 
-### Problema 3: Falta de estado por modelo
-El sistema actual trata a cada empresa como una unidad, pero:
-- Una empresa puede tener 5/6 modelos con datos y 1 fallido
-- No hay forma de reintentar SOLO ese modelo fallido sin tocar los demás
-- El "repair_search" intenta buscar registros sin `20_res_gpt_bruto`, pero esa columna es específica de ChatGPT, no de todos los modelos
+## Solución: Cruzar sweep_progress con rix_runs_v2
 
----
+Añadir un **paso de reconciliación** que detecte empresas en `sweep_progress` con `status='completed'` pero que NO tienen registros en `rix_runs_v2`, y las resetee a `pending`.
 
-## Fase 1: Estabilización Inmediata (Sin cambiar arquitectura)
+### Nuevo paso en auto_recovery:
 
-### Cambio 1: Unificar fuente de verdad para conteos
-Actualmente hay 2 fuentes: `sweep_progress` y `rix_runs_v2`. Esto causa discrepancias.
+```text
+ANTES del conteo de estados:
+  1. Obtener empresas con status='completed' + models_completed < 6
+  2. Verificar si realmente tienen registros en rix_runs_v2
+  3. Si NO tienen registros → resetear a 'pending'
+```
 
-**Solución**: Crear función única `getRealDataState()` que devuelva:
+## Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir reconciliación sweep_progress ↔ rix_runs_v2 |
+| `src/hooks/useUnifiedSweepMetrics.ts` | Detectar "empresas fantasma" (completed pero sin registros) |
+| `src/components/admin/SweepHealthDashboard.tsx` | Mostrar alerta cuando hay empresas sin datos |
+
+## Cambios Técnicos
+
+### Cambio 1: Reconciliación en rix-batch-orchestrator
+
+Antes del conteo de estados (línea ~1276), añadir:
+
 ```typescript
-{
-  // Por empresa
-  companiesComplete: number,     // Empresas con 6/6 modelos CON SCORE
-  companiesPartial: number,      // Empresas con 1-5 modelos
-  companiesEmpty: number,        // Empresas sin datos
+// ============================================================
+// RECONCILIACIÓN: Detectar empresas "completed" sin registros
+// ============================================================
+const { data: suspectCompanies } = await supabase
+  .from('sweep_progress')
+  .select('id, ticker, models_completed')
+  .eq('sweep_id', sweepId)
+  .eq('status', 'completed')
+  .lt('models_completed', 6);  // Menos de 6 modelos
+
+if (suspectCompanies && suspectCompanies.length > 0) {
+  console.log(`[${triggerMode}] Checking ${suspectCompanies.length} suspect companies with <6 models`);
   
-  // Por registro
-  recordsTotal: number,          // Total registros en rix_runs_v2
-  recordsWithScore: number,      // Con 09_rix_score != null
-  recordsWithDataNoScore: number,// Con respuesta bruta pero sin score
-  recordsEmpty: number,          // Sin respuesta bruta
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const periodFrom = new Date(now);
+  periodFrom.setDate(now.getDate() + mondayOffset - 7);
+  const periodFromStr = periodFrom.toISOString().split('T')[0];
   
-  // Por modelo (6 items)
-  byModel: {
-    ChatGPT: { total, withScore, withData, empty },
-    Deepseek: { ... },
-    Gemini: { ... },
-    Grok: { ... },
-    Perplexity: { ... },
-    Qwen: { ... },
+  let resetCount = 0;
+  for (const company of suspectCompanies) {
+    // Verificar si realmente tiene registros
+    const { count } = await supabase
+      .from('rix_runs_v2')
+      .select('*', { count: 'exact', head: true })
+      .eq('05_ticker', company.ticker)
+      .gte('06_period_from', periodFromStr);
+    
+    // Si tiene 0 registros, resetear a pending
+    if ((count || 0) === 0) {
+      await supabase
+        .from('sweep_progress')
+        .update({ 
+          status: 'pending', 
+          error_message: `Reconciled: marked completed but had 0 records`,
+          models_completed: 0
+        })
+        .eq('id', company.id);
+      
+      console.log(`[${triggerMode}] Reset ghost company: ${company.ticker} (was 'completed' with 0 records)`);
+      resetCount++;
+    }
+  }
+  
+  if (resetCount > 0) {
+    console.log(`[${triggerMode}] Reconciled ${resetCount} ghost companies back to pending`);
   }
 }
 ```
 
-### Cambio 2: Simplificar lógica de auto-recovery
-En lugar de múltiples condiciones anidadas, usar **máquina de estados simple**:
+### Cambio 2: Métricas unificadas mejoradas
 
-```text
-ESTADO 1: SWEEP_RUNNING
-  Condición: sweep_progress.processing > 0 OR sweep_progress.pending > 0
-  Acción: Esperar (el CRON ya está procesando)
+En `useUnifiedSweepMetrics.ts`, añadir consulta para detectar "ghost companies":
 
-ESTADO 2: SWEEP_DONE_CHECK_DATA
-  Condición: sweep_progress.processing = 0 AND sweep_progress.pending = 0
-  Acción: Consultar getRealDataState()
+```typescript
+// Detectar empresas "fantasma" (completed en sweep_progress pero sin registros en rix_runs_v2)
+const ghostCompaniesQuery = await supabase
+  .from('sweep_progress')
+  .select('ticker, models_completed')
+  .eq('sweep_id', sweepId)
+  .eq('status', 'completed')
+  .lt('models_completed', 1);
 
-  2.1 Si recordsEmpty > 0:
-      → Insertar repair_search (máx 10 modelos por batch)
-      → Transición a ESTADO 3
-      
-  2.2 Si recordsWithDataNoScore > 0:
-      → Insertar repair_analysis (máx 10 registros por batch)
-      → Transición a ESTADO 3
-      
-  2.3 Si recordsTotal = recordsWithScore:
-      → Insertar auto_sanitize
-      → Transición a ESTADO 4
-
-ESTADO 3: REPAIRS_PENDING
-  Condición: Hay triggers pending en cron_triggers
-  Acción: Procesar triggers, luego volver a ESTADO 2
-
-ESTADO 4: COMPLETE
-  Condición: Sanitización terminada sin errores
-  Acción: Nada más
+const ghostCompanies = ghostCompaniesQuery.data || [];
 ```
 
-### Cambio 3: Corregir columnas de respuesta por modelo
-El código actual busca `20_res_gpt_bruto IS NULL` para detectar "sin datos", pero cada modelo tiene su propia columna:
-
-| Modelo | Columna |
-|--------|---------|
-| ChatGPT | `20_res_gpt_bruto` |
-| Perplexity | `21_res_perplex_bruto` |
-| Gemini | `22_res_gemini_bruto` |
-| Deepseek | `23_res_deepseek_bruto` |
-| Grok | `respuesta_bruto_grok` |
-| Qwen | `respuesta_bruto_qwen` |
-
-**Solución**: En `repair_search`, cambiar la consulta para detectar registros donde LA COLUMNA ESPECÍFICA DEL MODELO esté vacía.
-
-### Cambio 4: Cadencia híbrida
-- **Inicio del barrido (0-70% completado)**: 3 empresas simultáneas, 5s entre cada una
-- **Final del barrido (>70% completado)**: 1 empresa a la vez, 10s entre cada una
-- **Reparaciones**: Siempre 1 a la vez con 15s de pausa
-
-### Cambio 5: Feedback visual mejorado
-El dashboard mostrará:
-- Estado actual del sistema (RUNNING / CHECK_DATA / REPAIRS / COMPLETE)
-- Progreso por modelo (barra individual para cada IA)
-- Histórico de últimos 10 eventos (con timestamp)
-
----
-
-## Archivos a Modificar (Fase 1)
-
-| Archivo | Cambios |
-|---------|---------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Simplificar lógica de auto-recovery con máquina de estados, cadencia híbrida |
-| `src/hooks/useUnifiedSweepMetrics.ts` | Añadir conteos por columna de modelo |
-| `src/components/admin/SweepHealthDashboard.tsx` | Mostrar estado de máquina + progreso por modelo |
-
----
-
-## Fase 2: Migración a 6 Escenarios (Opcional, si Fase 1 no es suficiente)
-
-Si después de Fase 1 siguen habiendo problemas, implementamos el modelo Make-like:
-
-### Arquitectura de 6 Workers Independientes
-
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ CRON Principal (cada 5 min)                                         │
-│   → Llama a /rix-model-worker?model=ChatGPT                        │
-│   → Llama a /rix-model-worker?model=Deepseek                       │
-│   → Llama a /rix-model-worker?model=Gemini                         │
-│   → Llama a /rix-model-worker?model=Grok                           │
-│   → Llama a /rix-model-worker?model=Perplexity                     │
-│   → Llama a /rix-model-worker?model=Qwen                           │
-└─────────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────────┐
-│ /rix-model-worker (1 instancia por modelo)                          │
-│                                                                      │
-│ BUCLE INTERNO:                                                       │
-│   1. Obtener siguiente empresa SIN datos para ESTE modelo           │
-│   2. Llamar a la API de ESTE modelo                                 │
-│   3. Guardar respuesta en la columna correcta                       │
-│   4. Llamar a rix-analyze-v2 para ese registro                      │
-│   5. Marcar como completado o mover a "slow_queue" si falla 3x      │
-│   6. Repetir hasta timeout (50s) o sin trabajo                      │
-└─────────────────────────────────────────────────────────────────────┘
+Añadir al retorno:
+```typescript
+return {
+  // ... existentes ...
+  ghostCompanies: ghostCompanies.length,  // NUEVO
+  ghostTickers: ghostCompanies.map(g => g.ticker),  // NUEVO
+};
 ```
 
-### Nueva tabla: `model_sweep_progress`
+### Cambio 3: Alerta visual en dashboard
 
-```sql
-CREATE TABLE model_sweep_progress (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  sweep_id TEXT NOT NULL,
-  ticker TEXT NOT NULL,
-  model_name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed, slow_queue
-  retry_count INT DEFAULT 0,
-  response_length INT,
-  score INT,
-  error_message TEXT,
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  UNIQUE(sweep_id, ticker, model_name)
-);
+Cuando hay `ghostCompanies > 0`:
+```tsx
+{metrics.ghostCompanies > 0 && (
+  <Alert variant="destructive">
+    <AlertTriangle className="h-4 w-4" />
+    <AlertTitle>Empresas sin datos detectadas</AlertTitle>
+    <AlertDescription>
+      {metrics.ghostCompanies} empresas marcadas como completadas pero sin registros: 
+      {metrics.ghostTickers.slice(0, 5).join(', ')}
+      {metrics.ghostTickers.length > 5 && ` y ${metrics.ghostTickers.length - 5} más`}
+    </AlertDescription>
+  </Alert>
+)}
 ```
 
-Esta tabla permite:
-- Reintentar UN modelo específico para UNA empresa
-- Ver progreso real por modelo
-- Cola lenta para modelos problemáticos (Grok típicamente)
+## Resultado Esperado
 
----
+1. **Inmediato**: Las 13 empresas "fantasma" serán detectadas y reseteadas a `pending`
+2. **En próximo CRON**: El sistema las procesará como empresas nuevas
+3. **Dashboard**: Mostrará alerta cuando haya inconsistencias
+4. **Futuro**: Este tipo de bug no volverá a ocurrir porque hay reconciliación automática
 
 ## Plan de Ejecución
 
-### Ahora (sin tocar datos del barrido actual):
-1. Aplicar Cambio 1, 2, 3 al orquestador
-2. Actualizar hook de métricas
-3. Mejorar dashboard
-
-### Resultado esperado:
-- El barrido de hoy continúa con los 866 registros existentes
-- Los 19 analizables se procesan correctamente
-- Los ~100 sin datos se reparan progresivamente
-- Feedback visual claro en el panel
-
-### Si después de 1-2 horas no hay mejora visible:
-- Evaluar Fase 2 (6 workers independientes)
-
----
-
-## Sección Técnica: Cambios Específicos
-
-### En `rix-batch-orchestrator/index.ts`
-
-```typescript
-// NUEVA FUNCIÓN: Obtener estado real unificado
-async function getRealDataState(supabase: any, periodFromStr: string) {
-  // Query que agrupa por modelo y cuenta estados
-  const { data: records } = await supabase
-    .from('rix_runs_v2')
-    .select('02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
-    .gte('06_period_from', periodFromStr);
-  
-  // Mapeo de modelo a su columna de respuesta
-  const modelColumns = {
-    'ChatGPT': '20_res_gpt_bruto',
-    'Perplexity': '21_res_perplex_bruto',
-    'Gemini': '22_res_gemini_bruto',
-    'Google Gemini': '22_res_gemini_bruto',
-    'Deepseek': '23_res_deepseek_bruto',
-    'Grok': 'respuesta_bruto_grok',
-    'Qwen': 'respuesta_bruto_qwen',
-  };
-  
-  const byModel = {};
-  // ... procesar cada registro y clasificar por modelo/estado
-  
-  return { byModel, totals };
-}
-```
-
-### En auto_recovery (simplificado)
-
-```typescript
-// REEMPLAZA la lógica compleja actual por:
-const state = await getRealDataState(supabase, periodFromStr);
-
-// Decisión simple basada en prioridad
-if (state.totals.empty > 0) {
-  await insertTriggerIfNotExists('repair_search', { 
-    records: state.getEmptyRecordIds().slice(0, 10) // máx 10 por batch
-  });
-} else if (state.totals.withDataNoScore > 0) {
-  await insertTriggerIfNotExists('repair_analysis', {
-    records: state.getAnalyzableRecordIds().slice(0, 10)
-  });
-} else if (state.totals.recordsTotal === state.totals.withScore) {
-  await insertTriggerIfNotExists('auto_sanitize', { sweep_id: sweepId });
-}
-```
+1. Aplicar los 3 cambios
+2. Desplegar edge function
+3. El próximo ciclo CRON (o "Forzar Ahora") detectará y corregirá las 13 empresas
+4. Verificar que el conteo sube de 165 a 174 en las siguientes horas
 
