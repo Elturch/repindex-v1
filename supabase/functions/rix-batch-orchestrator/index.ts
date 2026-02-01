@@ -848,7 +848,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    let requestBody: { 
+let requestBody: { 
       trigger?: string;
       fase?: number;
       test_mode?: boolean;
@@ -859,7 +859,10 @@ Deno.serve(async (req) => {
       reset_stuck?: boolean;
       reset_stuck_timeout?: number;
       mode?: string;
-      process_triggers_only?: boolean;  // NEW: Process cron triggers immediately
+      process_triggers_only?: boolean;
+      process_one?: boolean;
+      workers?: number;
+      max_per_worker?: number;
     } = {};
     
     try {
@@ -868,7 +871,7 @@ Deno.serve(async (req) => {
       // Empty body is fine
     }
 
-    const { 
+const { 
       trigger = 'manual', 
       fase,
       test_mode = false,
@@ -880,10 +883,125 @@ Deno.serve(async (req) => {
       reset_stuck_timeout = 0,
       mode,
       process_triggers_only = false,
+      process_one = false,
+      workers = 4,
+      max_per_worker = 50,
     } = requestBody;
 
     const sweepId = getCurrentSweepId();
     console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}`);
+
+    // ========== MODO PARALLEL_BATCH: Workers paralelos ==========
+    if (mode === 'parallel_batch') {
+      console.log(`[parallel] Launching ${workers} parallel workers...`);
+      
+      // Inicializar sweep si no existe
+      await initializeSweepIfNeeded(supabase, sweepId);
+      
+      // Limpiar zombies antes de empezar
+      const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
+      if (stuckReset.count > 0) {
+        console.log(`[parallel] Auto-reset ${stuckReset.count} zombies: ${stuckReset.tickers.join(', ')}`);
+      }
+      
+      // Función de worker paralelo
+      const runParallelWorker = async (workerId: number): Promise<{
+        workerId: number;
+        processed: number;
+        errors: number;
+        tickers: string[];
+      }> => {
+        let processed = 0;
+        let errors = 0;
+        const tickers: string[] = [];
+        
+        console.log(`[parallel] Worker ${workerId} starting...`);
+        
+        while (processed + errors < max_per_worker) {
+          // Usar la función SQL para claim atómico
+          const { data: claimed, error: claimError } = await supabase.rpc('claim_next_sweep_company', {
+            p_sweep_id: sweepId,
+            p_worker_id: workerId
+          });
+          
+          if (claimError) {
+            console.error(`[parallel] Worker ${workerId} claim error:`, claimError);
+            break;
+          }
+          
+          if (!claimed || claimed.length === 0) {
+            console.log(`[parallel] Worker ${workerId}: No more pending companies`);
+            break;
+          }
+          
+          const company = claimed[0];
+          tickers.push(company.ticker);
+          
+          console.log(`[parallel] Worker ${workerId} processing: ${company.ticker}`);
+          
+          const result = await processCompany(
+            supabase,
+            company.id,
+            company.ticker,
+            company.issuer_name || company.ticker,
+            supabaseUrl,
+            supabaseServiceKey
+          );
+          
+          if (result.success) processed++;
+          else errors++;
+          
+          // Pequeña pausa entre empresas (2s)
+          await sleep(2000);
+        }
+        
+        console.log(`[parallel] Worker ${workerId} finished: ${processed} processed, ${errors} errors`);
+        return { workerId, processed, errors, tickers };
+      };
+      
+      // Lanzar N workers en paralelo
+      const workerPromises = Array.from({ length: workers }, (_, i) => runParallelWorker(i));
+      const results = await Promise.allSettled(workerPromises);
+      
+      // Agregar estadísticas
+      const summary = results.map((r, i) => 
+        r.status === 'fulfilled' 
+          ? r.value 
+          : { workerId: i, processed: 0, errors: 0, tickers: [], error: String(r.reason) }
+      );
+      
+      const totalProcessed = summary.reduce((acc, w) => acc + w.processed, 0);
+      const totalErrors = summary.reduce((acc, w) => acc + w.errors, 0);
+      
+      console.log(`[parallel] All workers completed. Total: ${totalProcessed} processed, ${totalErrors} errors`);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        mode: 'parallel_batch',
+        sweepId,
+        workerCount: workers,
+        workers: summary,
+        totalProcessed,
+        totalErrors,
+        zombiesReset: stuckReset.count,
+        message: `${workers} workers procesaron ${totalProcessed} empresas (${totalErrors} errores)`,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ========== MODO process_one: Procesar exactamente 1 empresa ==========
+    if (process_one) {
+      const result = await runSingleCompany(supabase, supabaseUrl, supabaseServiceKey);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          ...result,
+          message: result.processed 
+            ? `Procesando ${result.ticker}...` 
+            : 'No hay empresas pendientes',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // ========== MODO WATCHDOG ULTRA-OPTIMIZADO: Procesa en lotes de 10 ==========
     // Rendimiento: 40 empresas/hora vs 20 anterior (optimización del 25/01/2026)
