@@ -1361,6 +1361,23 @@ const {
         
         console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ') || 'none (all pending or no work needed)'}`);
         
+        // ========== NUEVO: Procesar inmediatamente los triggers recién insertados ==========
+        // Esto evita esperar 5 minutos para el próximo CRON
+        if (triggersInserted.length > 0) {
+          console.log(`[${triggerMode}] Executing immediate trigger processing for newly inserted triggers...`);
+          try {
+            const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+            if (immediateResults.length > 0) {
+              console.log(`[${triggerMode}] Immediate processing completed: ${immediateResults.map(r => r.action).join(', ')}`);
+            } else {
+              console.log(`[${triggerMode}] No triggers processed immediately (may be in progress already)`);
+            }
+          } catch (e) {
+            console.error(`[${triggerMode}] Immediate processing error (CRON will retry):`, e);
+            // No fallar la request - el CRON lo procesará después
+          }
+        }
+        
         return new Response(
           JSON.stringify({
             success: true,
