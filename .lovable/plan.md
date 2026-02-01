@@ -1,154 +1,121 @@
 
 
-# Plan: Corregir Detección de Empresas Sin Registros
+# Plan: Corregir Detección de Ghost Companies
 
 ## Problema Raíz
 
-El sistema tiene **dos fuentes de verdad no sincronizadas**:
+La detección de "ghost companies" usa el campo `models_completed` de `sweep_progress`, pero **este campo nunca se actualiza** cuando los datos se guardan en `rix_runs_v2`.
 
-| Fuente | Cuenta | Estado |
-|--------|--------|--------|
-| `repindex_root_issuers` | 174 empresas | Censo maestro |
-| `sweep_progress` | 174 empresas | 13 marcadas "completed" con 0 modelos |
-| `rix_runs_v2` | 165 empresas únicas | **9 empresas FALTAN completamente** |
+Consultas que lo demuestran:
+- 91 empresas en `sweep_progress` con `models_completed = 0`
+- Las 91 empresas tienen datos completos en `rix_runs_v2` (6 registros cada una)
 
-Las 13 empresas problemáticas:
-- MAP, IZE, EY-PRIV, KPMG-PRIV, PWC-PRIV, EME-PRIV, FEVER-PRIV, IDEALISTA-PRIV, HOS, META-PRIV, SANITAS, VIA, VIT
+El hook actual hace:
+```typescript
+// INCORRECTO: Confía en un campo desactualizado
+supabase
+  .from('sweep_progress')
+  .select('ticker, models_completed')
+  .eq('status', 'completed')
+  .lt('models_completed', 1)  // ← Este campo está en 0 pero HAY datos
+```
 
-Fueron marcadas como "completed" después de timeouts/errores 504, pero **nunca se crearon registros**.
+## Solución: Cruzar con Datos Reales
 
-## Solución: Cruzar sweep_progress con rix_runs_v2
+Cambiar la detección de ghost companies para que **compare `sweep_progress` con `rix_runs_v2`** en lugar de confiar en `models_completed`.
 
-Añadir un **paso de reconciliación** que detecte empresas en `sweep_progress` con `status='completed'` pero que NO tienen registros en `rix_runs_v2`, y las resetee a `pending`.
+### Nueva Lógica
 
-### Nuevo paso en auto_recovery:
+```typescript
+// CORRECTO: Verificar contra datos reales
+// 1. Obtener tickers de sweep_progress marcados como completed
+const { data: completedTickers } = await supabase
+  .from('sweep_progress')
+  .select('ticker')
+  .eq('sweep_id', sweepId)
+  .eq('status', 'completed');
 
-```text
-ANTES del conteo de estados:
-  1. Obtener empresas con status='completed' + models_completed < 6
-  2. Verificar si realmente tienen registros en rix_runs_v2
-  3. Si NO tienen registros → resetear a 'pending'
+// 2. Obtener tickers que realmente tienen datos en rix_runs_v2
+const { data: realDataTickers } = await supabase
+  .from('rix_runs_v2')
+  .select('05_ticker')
+  .eq('06_period_from', weekStart);
+
+// 3. Ghost = completed en sweep_progress PERO sin registros en rix_runs_v2
+const realTickersSet = new Set(realDataTickers.map(r => r['05_ticker']));
+const ghostTickers = completedTickers
+  .map(c => c.ticker)
+  .filter(ticker => !realTickersSet.has(ticker));
 ```
 
 ## Archivos a Modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir reconciliación sweep_progress ↔ rix_runs_v2 |
-| `src/hooks/useUnifiedSweepMetrics.ts` | Detectar "empresas fantasma" (completed pero sin registros) |
-| `src/components/admin/SweepHealthDashboard.tsx` | Mostrar alerta cuando hay empresas sin datos |
+| `src/hooks/useUnifiedSweepMetrics.ts` | Cambiar detección de ghost companies para cruzar con rix_runs_v2 |
 
-## Cambios Técnicos
+## Resultado Esperado
 
-### Cambio 1: Reconciliación en rix-batch-orchestrator
+**Antes**: Dashboard muestra 91 empresas fantasma (falso positivo)
+**Después**: Dashboard muestra 0-9 empresas fantasma (solo las que realmente no tienen datos)
 
-Antes del conteo de estados (línea ~1276), añadir:
+## Cambio Técnico Específico
 
-```typescript
-// ============================================================
-// RECONCILIACIÓN: Detectar empresas "completed" sin registros
-// ============================================================
-const { data: suspectCompanies } = await supabase
-  .from('sweep_progress')
-  .select('id, ticker, models_completed')
-  .eq('sweep_id', sweepId)
-  .eq('status', 'completed')
-  .lt('models_completed', 6);  // Menos de 6 modelos
-
-if (suspectCompanies && suspectCompanies.length > 0) {
-  console.log(`[${triggerMode}] Checking ${suspectCompanies.length} suspect companies with <6 models`);
-  
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const periodFrom = new Date(now);
-  periodFrom.setDate(now.getDate() + mondayOffset - 7);
-  const periodFromStr = periodFrom.toISOString().split('T')[0];
-  
-  let resetCount = 0;
-  for (const company of suspectCompanies) {
-    // Verificar si realmente tiene registros
-    const { count } = await supabase
-      .from('rix_runs_v2')
-      .select('*', { count: 'exact', head: true })
-      .eq('05_ticker', company.ticker)
-      .gte('06_period_from', periodFromStr);
-    
-    // Si tiene 0 registros, resetear a pending
-    if ((count || 0) === 0) {
-      await supabase
-        .from('sweep_progress')
-        .update({ 
-          status: 'pending', 
-          error_message: `Reconciled: marked completed but had 0 records`,
-          models_completed: 0
-        })
-        .eq('id', company.id);
-      
-      console.log(`[${triggerMode}] Reset ghost company: ${company.ticker} (was 'completed' with 0 records)`);
-      resetCount++;
-    }
-  }
-  
-  if (resetCount > 0) {
-    console.log(`[${triggerMode}] Reconciled ${resetCount} ghost companies back to pending`);
-  }
-}
-```
-
-### Cambio 2: Métricas unificadas mejoradas
-
-En `useUnifiedSweepMetrics.ts`, añadir consulta para detectar "ghost companies":
+En `useUnifiedSweepMetrics.ts`, líneas 185-191, reemplazar la query de ghost companies:
 
 ```typescript
-// Detectar empresas "fantasma" (completed en sweep_progress pero sin registros en rix_runs_v2)
-const ghostCompaniesQuery = await supabase
+// ANTES (incorrecto - confía en models_completed que no se actualiza):
+supabase
   .from('sweep_progress')
   .select('ticker, models_completed')
   .eq('sweep_id', sweepId)
   .eq('status', 'completed')
-  .lt('models_completed', 1);
+  .lt('models_completed', 1),
 
-const ghostCompanies = ghostCompaniesQuery.data || [];
+// DESPUÉS (correcto - calcula ghost companies en JavaScript):
+// Eliminar esta query del Promise.all
+
+// Y después, calcular ghost companies comparando:
+const completedTickers = progressRecords
+  .filter(p => p.status === 'completed')
+  .map(p => p.ticker);  // Necesitamos incluir 'ticker' en el select de sweep_progress
+
+const realDataTickers = new Set(records.map(r => r['05_ticker']));
+const ghostTickers = completedTickers.filter(t => !realDataTickers.has(t));
 ```
 
-Añadir al retorno:
+### Cambios específicos:
+
+1. **Línea 173-176**: Añadir `ticker` al select de sweep_progress
 ```typescript
-return {
-  // ... existentes ...
-  ghostCompanies: ghostCompanies.length,  // NUEVO
-  ghostTickers: ghostCompanies.map(g => g.ticker),  // NUEVO
-};
+supabase
+  .from('sweep_progress')
+  .select('status, ticker')  // ← Añadir ticker
+  .eq('sweep_id', sweepId),
 ```
 
-### Cambio 3: Alerta visual en dashboard
+2. **Líneas 185-191**: Eliminar la query de ghostCompaniesResult del Promise.all
 
-Cuando hay `ghostCompanies > 0`:
-```tsx
-{metrics.ghostCompanies > 0 && (
-  <Alert variant="destructive">
-    <AlertTriangle className="h-4 w-4" />
-    <AlertTitle>Empresas sin datos detectadas</AlertTitle>
-    <AlertDescription>
-      {metrics.ghostCompanies} empresas marcadas como completadas pero sin registros: 
-      {metrics.ghostTickers.slice(0, 5).join(', ')}
-      {metrics.ghostTickers.length > 5 && ` y ${metrics.ghostTickers.length - 5} más`}
-    </AlertDescription>
-  </Alert>
-)}
+3. **Después del Promise.all** (alrededor de línea 200): Calcular ghost companies correctamente
+```typescript
+// Calcular ghost companies CRUZANDO con datos reales
+const completedTickersInProgress = (sweepProgressResult.data || [])
+  .filter(p => p.status === 'completed')
+  .map(p => p.ticker);
+
+const tickersWithRealData = new Set(records.map(r => r['05_ticker']));
+
+const ghostTickersList = completedTickersInProgress
+  .filter(ticker => ticker && !tickersWithRealData.has(ticker));
 ```
 
-## Resultado Esperado
+4. **En el return**, usar las nuevas variables:
+```typescript
+ghostCompanies: ghostTickersList.length,
+ghostTickers: ghostTickersList,
+```
 
-1. **Inmediato**: Las 13 empresas "fantasma" serán detectadas y reseteadas a `pending`
-2. **En próximo CRON**: El sistema las procesará como empresas nuevas
-3. **Dashboard**: Mostrará alerta cuando haya inconsistencias
-4. **Futuro**: Este tipo de bug no volverá a ocurrir porque hay reconciliación automática
+## Beneficio Adicional: Simplificación
 
-## Plan de Ejecución
-
-1. Aplicar los 3 cambios
-2. Desplegar edge function
-3. El próximo ciclo CRON (o "Forzar Ahora") detectará y corregirá las 13 empresas
-4. Verificar que el conteo sube de 165 a 174 en las siguientes horas
+Esta corrección también simplifica el código al eliminar una query del Promise.all, ya que usamos los datos que ya tenemos de las otras queries.
 
