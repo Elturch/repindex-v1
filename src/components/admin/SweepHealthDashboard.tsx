@@ -109,17 +109,26 @@ export function SweepHealthDashboard() {
   const pendingTriggers = metrics.triggersPending || 0;
   const totalActive = activeSearches + activeTriggers;
   const hasActiveProcesses = totalActive > 0;
-  const hasPendingWork = pendingTriggers > 0 || metrics.searchPending > 0;
+  
+  // Trabajo pendiente real: triggers + registros sin datos + registros sin score
+  const recordsNeedingWork = metrics.recordsNoData + metrics.recordsPendingAnalysis;
+  const hasPendingWork = pendingTriggers > 0 || metrics.searchPending > 0 || recordsNeedingWork > 0;
 
   // Total empresas incluyendo fantasmas
   const totalWithGhosts = metrics.totalCompanies + metrics.ghostCompanies;
   const realComplete = metrics.companiesComplete;
 
-  // Determinar velocidad del proceso
+  // Determinar velocidad del proceso basándose en actividad Y trabajo pendiente
   const getProcessSpeed = () => {
-    if (activeTriggers >= 3) return { label: 'Óptimo', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
-    if (activeTriggers >= 1 || activeSearches >= 2) return { label: 'Normal', color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-500/50' };
-    if (hasPendingWork) return { label: 'Lento', color: 'text-destructive', bgColor: 'bg-destructive/5', borderColor: 'border-destructive/30' };
+    // Si hay triggers activos, mostrar como activo
+    if (activeTriggers >= 1) return { label: 'Procesando', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
+    if (activeSearches >= 1) return { label: 'Buscando', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
+    // Si hay triggers pendientes, mostrar como en cola
+    if (pendingTriggers > 0) return { label: 'En Cola', color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-500/50' };
+    // Si hay trabajo pendiente pero no hay procesos, mostrar como necesita atención
+    if (recordsNeedingWork > 0) return { label: 'Reparar', color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-500/50' };
+    // Si no hay trabajo pendiente, está completo o inactivo
+    if (metrics.recordCompletionRate >= 99) return { label: 'Completo', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
     return { label: 'Inactivo', color: 'text-muted-foreground', bgColor: 'bg-muted/30', borderColor: 'border-border' };
   };
   
@@ -163,10 +172,16 @@ export function SweepHealthDashboard() {
                         {activeTriggers > 0 && activeSearches > 0 && <span className="text-muted-foreground"> + </span>}
                         {activeSearches > 0 && <span>{activeSearches} búsquedas</span>}
                       </>
-                    ) : hasPendingWork ? (
-                      <span className="text-muted-foreground">{pendingTriggers + metrics.searchPending} tareas en cola</span>
+                    ) : pendingTriggers > 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400">{pendingTriggers} triggers en cola</span>
+                    ) : recordsNeedingWork > 0 ? (
+                      <span className="text-muted-foreground">
+                        {metrics.recordsNoData > 0 && <>{metrics.recordsNoData} sin datos</>}
+                        {metrics.recordsNoData > 0 && metrics.recordsPendingAnalysis > 0 && ' + '}
+                        {metrics.recordsPendingAnalysis > 0 && <>{metrics.recordsPendingAnalysis} sin analizar</>}
+                      </span>
                     ) : (
-                      <span className="text-muted-foreground">Sin actividad</span>
+                      <span className="text-muted-foreground">Sin trabajo pendiente</span>
                     )}
                   </span>
                   {/* Badge de velocidad */}
@@ -179,7 +194,7 @@ export function SweepHealthDashboard() {
                   </span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas
+                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas completas • {metrics.recordsWithScore}/{metrics.totalRecords} registros
                 </div>
               </div>
             </div>
