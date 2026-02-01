@@ -105,18 +105,30 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
     queryKey: ["unified-sweep-metrics", forcedSweepId],
     queryFn: async (): Promise<UnifiedSweepMetrics> => {
       const sweepId = forcedSweepId || getCurrentSweepId();
-      const weekStart = getWeekStartFromSweepId(sweepId);
+      
+      // CRITICAL FIX: Get actual week start from the most recent data in rix_runs_v2
+      // instead of calculating from sweepId (which can be off due to ISO week edge cases)
+      const { data: latestPeriod } = await supabase
+        .from('rix_runs_v2')
+        .select('06_period_from')
+        .order('06_period_from', { ascending: false })
+        .limit(1);
+      
+      // Use the actual date from DB, fallback to calculated if no data
+      const weekStart = latestPeriod?.[0]?.['06_period_from'] || getWeekStartFromSweepId(sweepId);
+      
+      console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart} (from ${latestPeriod?.[0] ? 'DB' : 'calculated'})`);
       
       // Parallel queries for maximum efficiency
       const [
         rixRunsResult,
         sweepProgressResult,
       ] = await Promise.all([
-        // Get all records for this week from rix_runs_v2
+        // Get all records for this week from rix_runs_v2 - use exact match for the week
         supabase
           .from('rix_runs_v2')
           .select('05_ticker, 02_model_name, 09_rix_score, 20_res_gpt_bruto')
-          .gte('06_period_from', weekStart),
+          .eq('06_period_from', weekStart),
         
         // Get sweep_progress status counts
         supabase
