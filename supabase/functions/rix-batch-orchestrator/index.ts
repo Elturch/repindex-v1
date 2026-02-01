@@ -1259,6 +1259,46 @@ const {
 
       // 10. Retornar INMEDIATAMENTE (no esperamos a que terminen)
       console.log(`[${triggerMode}] Fired ${firedCompanies.length} companies: ${firedCompanies.join(', ')}`);
+
+      // 11. AUTO-RELAUNCH: Si quedan pendientes y hay slots, auto-relanzar en 30s
+      // Esto evita esperar 5 min del CRON si hay trabajo disponible
+      const relaunchCount = body.relaunch_count || 0;
+      const MAX_RELAUNCHES_PER_CYCLE = 20; // Protección anti-bucle infinito
+      
+      const newPending = pending - firedCompanies.length;
+      const newProcessing = processing + firedCompanies.length;
+      const slotsAfterFire = MAX_CONCURRENT - newProcessing;
+      
+      const shouldAutoRelaunch = newPending > 0 && slotsAfterFire > 0 && relaunchCount < MAX_RELAUNCHES_PER_CYCLE;
+      
+      if (shouldAutoRelaunch) {
+        console.log(`[${triggerMode}] Auto-relaunching in 30s (pending=${newPending}, slots=${slotsAfterFire}, relaunch #${relaunchCount + 1})`);
+        
+        EdgeRuntime.waitUntil(
+          (async () => {
+            await new Promise(r => setTimeout(r, 30000)); // Esperar 30 segundos
+            
+            try {
+              const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify({ 
+                  trigger: 'auto_recovery',
+                  relaunch_count: relaunchCount + 1  // Incrementar contador
+                }),
+              });
+              console.log(`[${triggerMode}] Auto-relaunch #${relaunchCount + 1} executed (status: ${response.status})`);
+            } catch (e) {
+              console.error(`[${triggerMode}] Auto-relaunch #${relaunchCount + 1} failed:`, e);
+            }
+          })()
+        );
+      } else if (newPending > 0 && relaunchCount >= MAX_RELAUNCHES_PER_CYCLE) {
+        console.log(`[${triggerMode}] Max relaunches reached (${MAX_RELAUNCHES_PER_CYCLE}). Waiting for next CRON.`);
+      }
       
       return new Response(
         JSON.stringify({
@@ -1269,15 +1309,20 @@ const {
           firedCompanies,
           firedCount: firedCompanies.length,
           stats: { 
-            pending: pending - firedCompanies.length, 
-            processing: processing + firedCompanies.length, 
+            pending: newPending, 
+            processing: newProcessing, 
             completed, 
             failed, 
             total 
           },
           triggersProcessed: triggersProcessed.length,
           zombiesReset: stuckReset.count,
-          message: `Disparadas ${firedCompanies.length} empresas. El próximo CRON las recogerá.`,
+          autoRelaunch: shouldAutoRelaunch,
+          autoRelaunchIn: shouldAutoRelaunch ? '30s' : null,
+          relaunchCount: shouldAutoRelaunch ? relaunchCount + 1 : relaunchCount,
+          message: shouldAutoRelaunch 
+            ? `Disparadas ${firedCompanies.length} empresas. Auto-relanzamiento en 30s (#${relaunchCount + 1}).`
+            : `Disparadas ${firedCompanies.length} empresas. El próximo CRON las recogerá.`,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
