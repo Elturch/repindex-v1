@@ -167,7 +167,15 @@ export function SweepHealthDashboard() {
   const heartbeatAgeSec = metrics.telemetry?.lastHeartbeatAt
     ? Math.round((Date.now() - metrics.telemetry.lastHeartbeatAt.getTime()) / 1000)
     : null;
-  const systemHeartbeatOk = heartbeatAgeSec !== null && heartbeatAgeSec <= 90;
+
+  const triggerActivityAgeSec = metrics.triggersLastActivityAt
+    ? Math.round((Date.now() - metrics.triggersLastActivityAt.getTime()) / 1000)
+    : null;
+
+  // Consider the system alive if we have either pipeline heartbeat OR recent trigger activity
+  const systemHeartbeatOk =
+    (heartbeatAgeSec !== null && heartbeatAgeSec <= 90) ||
+    (triggerActivityAgeSec !== null && triggerActivityAgeSec <= 90);
 
   return (
     <div className="space-y-4 mb-6">
@@ -240,7 +248,7 @@ export function SweepHealthDashboard() {
                 </div>
                 
                 {/* Indicador de actividad en tiempo real */}
-                {metrics.telemetry?.lastHeartbeatAt && (
+                 {(metrics.telemetry?.lastHeartbeatAt || metrics.triggersLastActivityAt) && (
                   <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-background/50 border border-border/50">
                     <div
                       className={cn(
@@ -249,7 +257,14 @@ export function SweepHealthDashboard() {
                       )}
                     />
                     <span className="text-sm text-muted-foreground">
-                      Heartbeat hace <span className="font-medium tabular-nums">{heartbeatAgeSec}s</span>
+                       Actividad hace{' '}
+                       <span className="font-medium tabular-nums">
+                         {heartbeatAgeSec !== null
+                           ? `${heartbeatAgeSec}s`
+                           : triggerActivityAgeSec !== null
+                             ? `${triggerActivityAgeSec}s`
+                             : '—'}
+                       </span>
                       {metrics.telemetry.stage ? ` · ${metrics.telemetry.stage}` : ''}
                       {metrics.telemetry.ticker ? ` · ${metrics.telemetry.ticker}` : ''}
                       {metrics.telemetry.model ? ` · ${metrics.telemetry.model}` : ''}
@@ -299,7 +314,7 @@ export function SweepHealthDashboard() {
                 )}
                 
                 {/* Si hay trabajo pendiente pero el sistema no está procesando, mostrar alerta */}
-                 {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && !!metrics.telemetry?.lastHeartbeatAt && !systemHeartbeatOk && (
+                 {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && (metrics.telemetry?.lastHeartbeatAt || metrics.triggersLastActivityAt) && !systemHeartbeatOk && (
                   <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/20">
                     <AlertTriangle className="h-4 w-4 text-destructive" />
                     <span className="text-sm text-destructive">
