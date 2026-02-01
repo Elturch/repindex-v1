@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,13 @@ import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useUnifiedSweepMetrics, useRefreshSweepMetrics } from '@/hooks/useUnifiedSweepMetrics';
 
+// Type for pending triggers
+interface PendingTrigger {
+  action: string;
+  created_at: string;
+  params: { count?: number; sweep_id?: string } | null;
+}
+
 type SystemState = 'running' | 'stuck' | 'idle' | 'complete' | 'unknown';
 
 export function SweepHealthDashboard() {
@@ -32,6 +39,26 @@ export function SweepHealthDashboard() {
   // Action states
   const [forcing, setForcing] = useState(false);
   const [resettingAll, setResettingAll] = useState(false);
+  
+  // Pending triggers state
+  const [pendingTriggers, setPendingTriggers] = useState<PendingTrigger[]>([]);
+  
+  // Fetch pending triggers every 10 seconds
+  useEffect(() => {
+    const fetchPendingTriggers = async () => {
+      const { data } = await supabase
+        .from('cron_triggers')
+        .select('action, created_at, params')
+        .eq('status', 'pending')
+        .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize'])
+        .order('created_at', { ascending: false });
+      setPendingTriggers((data as PendingTrigger[]) || []);
+    };
+    
+    fetchPendingTriggers();
+    const interval = setInterval(fetchPendingTriggers, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ============ ACTIONS ============
   const handleForce = async () => {
@@ -175,8 +202,27 @@ export function SweepHealthDashboard() {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Triggers pendientes - mostrar si hay alguno */}
+        {pendingTriggers.length > 0 && (
+          <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="font-medium text-sm">
+                {pendingTriggers.length} trigger{pendingTriggers.length > 1 ? 's' : ''} en cola:
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {pendingTriggers.map((t, i) => (
+                <Badge key={i} variant="outline" className="bg-background text-xs">
+                  {t.action.replace('_', ' ')} ({t.params?.count || '?'} registros)
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        
         {/* Barra de progreso - basada en empresas completadas */}
-        <Progress 
+        <Progress
           value={mainProgress} 
           className={cn(
             "h-3",
