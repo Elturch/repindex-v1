@@ -178,6 +178,180 @@ function getPhaseColor(phase: PhaseStatus) {
   return 'bg-muted text-muted-foreground';
 }
 
+// ============ COMPONENTES AUXILIARES ============
+
+function HeartbeatIndicator({ 
+  status, 
+  lastActivity, 
+  processing 
+}: { 
+  status: SweepHealthStatus; 
+  lastActivity: Date | null;
+  processing: number;
+}) {
+  const isActive = status === 'healthy';
+  const isCompleted = status === 'completed';
+  const isSlow = status === 'slow';
+  
+  return (
+    <div className="flex items-center gap-4 rounded-lg border bg-background p-4">
+      {/* Círculo pulsante / indicador visual */}
+      <div className="relative flex h-12 w-12 items-center justify-center">
+        {isActive ? (
+          <>
+            <span className="absolute h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-green-500">
+              <Loader2 className="h-5 w-5 animate-spin text-white" />
+            </span>
+          </>
+        ) : isCompleted ? (
+          <CheckCircle2 className="h-10 w-10 text-green-600" />
+        ) : isSlow ? (
+          <>
+            <span className="absolute h-full w-full animate-pulse rounded-full bg-yellow-400 opacity-50" />
+            <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-yellow-500">
+              <Clock className="h-5 w-5 text-white" />
+            </span>
+          </>
+        ) : (
+          <span className="h-8 w-8 rounded-full bg-red-500" />
+        )}
+      </div>
+      
+      {/* Texto de estado */}
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-semibold">
+            {isActive ? `Procesando ${processing} empresa${processing !== 1 ? 's' : ''}...` : 
+             isCompleted ? '✓ Barrido completado' :
+             isSlow ? 'Procesando (lento)...' :
+             '⚠ Sistema detenido'}
+          </span>
+        </div>
+        {lastActivity && (
+          <span className="text-sm text-muted-foreground">
+            Última actividad: {formatDistanceToNow(lastActivity, { locale: es, addSuffix: true })}
+          </span>
+        )}
+      </div>
+      
+      {/* Indicador de auto-refresh */}
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        <RefreshCw className="h-3 w-3" />
+        Auto-refresh: 10s
+      </div>
+    </div>
+  );
+}
+
+type GuidanceVariant = 'success' | 'info' | 'warning' | 'error';
+
+function ActionGuidance({ status, hasZombies, hasFailed }: {
+  status: SweepHealthStatus;
+  hasZombies: boolean;
+  hasFailed: boolean;
+}) {
+  const getGuidance = (): { icon: string; title: string; steps: string[]; variant: GuidanceVariant } | null => {
+    if (status === 'completed') {
+      return {
+        icon: '✅',
+        title: 'Barrido completado',
+        steps: ['No se requiere ninguna acción. El barrido ha finalizado correctamente.'],
+        variant: 'success'
+      };
+    }
+    
+    if (status === 'healthy' && !hasZombies && !hasFailed) {
+      return {
+        icon: '✅',
+        title: 'Sistema funcionando correctamente',
+        steps: ['El barrido avanza con normalidad.', 'No se requiere intervención.'],
+        variant: 'success'
+      };
+    }
+    
+    if (hasZombies || status === 'stuck') {
+      return {
+        icon: '🔧',
+        title: 'Acción requerida: Proceso atascado',
+        steps: [
+          '1. Haz clic en "Limpiar Zombis" para resetear registros atascados',
+          '2. Luego haz clic en "Reanudar Cascada" para reiniciar el procesamiento',
+          '3. Espera 30 segundos y verifica que el indicador vuelva a verde'
+        ],
+        variant: 'warning'
+      };
+    }
+    
+    if (status === 'dead') {
+      return {
+        icon: '⚠️',
+        title: 'Acción requerida: Sistema detenido',
+        steps: [
+          '1. Haz clic en "Reanudar Cascada" para reiniciar el proceso',
+          '2. Si no funciona, usa "Completar Análisis" para reparación programada',
+          '3. Si persiste tras 5 minutos, revisa los logs de errores abajo'
+        ],
+        variant: 'error'
+      };
+    }
+    
+    if (status === 'slow') {
+      return {
+        icon: 'ℹ️',
+        title: 'Sistema lento pero funcionando',
+        steps: [
+          'El barrido continúa pero más lento de lo esperado.',
+          'Puede deberse a alta carga en las APIs de IA.',
+          'No es necesaria acción inmediata, el sistema se recuperará solo.'
+        ],
+        variant: 'info'
+      };
+    }
+    
+    if (hasFailed || status === 'error') {
+      return {
+        icon: '❌',
+        title: 'Errores detectados',
+        steps: [
+          '1. Revisa la sección de alertas abajo para ver qué falló',
+          '2. Usa "Completar Análisis" para reprocesar los fallidos',
+          '3. Si hay muchos fallos, puede haber un problema con las APIs'
+        ],
+        variant: 'error'
+      };
+    }
+    
+    return null;
+  };
+  
+  const guidance = getGuidance();
+  if (!guidance) return null;
+  
+  const variantStyles: Record<GuidanceVariant, string> = {
+    success: 'border-green-500/30 bg-green-500/5',
+    info: 'border-blue-500/30 bg-blue-500/5',
+    warning: 'border-yellow-500/30 bg-yellow-500/5',
+    error: 'border-red-500/30 bg-red-500/5'
+  };
+  
+  return (
+    <div className={cn("rounded-lg border p-4", variantStyles[guidance.variant])}>
+      <div className="flex items-start gap-3">
+        <span className="text-2xl">{guidance.icon}</span>
+        <div className="flex-1 space-y-2">
+          <h4 className="font-semibold">{guidance.title}</h4>
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {guidance.steps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ COMPONENTE PRINCIPAL ============
 export function SweepHealthDashboard() {
   const { toast } = useToast();
@@ -448,6 +622,20 @@ export function SweepHealthDashboard() {
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Heartbeat Indicator - Monitor visual de actividad */}
+        <HeartbeatIndicator 
+          status={data.healthStatus} 
+          lastActivity={data.lastActivity}
+          processing={data.processing}
+        />
+        
+        {/* Action Guidance - Instrucciones contextuales */}
+        <ActionGuidance 
+          status={data.healthStatus}
+          hasZombies={data.zombies.length > 0}
+          hasFailed={data.failed > 0}
+        />
+
         {/* Progress Section */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
