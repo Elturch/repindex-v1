@@ -1,74 +1,123 @@
 
-# Plan: Actualizar Grok a grok-4-1-fast y Reparar Registros Fallidos
+# Plan: Arreglar repair_search y Aumentar Velocidad de Procesamiento
 
 ## Diagnóstico Confirmado
 
-| Aspecto | Estado Actual | Problema |
-|---------|---------------|----------|
-| Modelo Grok | `grok-4` | Demasiado lento, causa timeouts de 180s |
-| Registros fallidos | 51 empresas | Todos con "Timeout after 180s" |
-| API endpoint | `/v1/responses` | Correcto |
+| Problema | Causa Raíz | Impacto |
+|----------|------------|---------|
+| repair_search falla con 400 | `rix-search-v2` exige `issuer_name` (línea 927), pero el orquestador no lo envía (línea 931) | 0 reparaciones ejecutándose |
+| Batch muy lento | `batch_size = 5` por defecto en repair_search | 56 registros pendientes / 5 = 11 iteraciones mínimo |
+| Grok sigue fallando | Cambio a `grok-4-1-fast` desplegado, pero no se ha ejecutado aún por el bug anterior | 51 registros sin datos |
 
 ## Cambios a Realizar
 
-### 1. Actualizar modelo Grok → `grok-4-1-fast`
+### 1. Hacer `issuer_name` opcional en repair_mode (rix-search-v2)
 
 **Archivo:** `supabase/functions/rix-search-v2/index.ts`
 
-**Líneas 311 y 325:** Cambiar de `grok-4` a `grok-4-1-fast`
+**Líneas 927-932:** Modificar validación para que en `repair_mode`, busque `issuer_name` automáticamente:
 
 ```typescript
-// Antes (línea 311):
-name: 'grok-4',
+// ANTES (línea 927-932):
+if (!ticker || !issuer_name) {
+  return new Response(
+    JSON.stringify({ error: 'Missing required fields: ticker, issuer_name' }),
+    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
 
-// Después:
-name: 'grok-4-1-fast',
+// DESPUÉS:
+if (!ticker) {
+  return new Response(
+    JSON.stringify({ error: 'Missing required field: ticker' }),
+    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
 
-// Antes (línea 325):
-model: 'grok-4',
+// En repair_mode, buscar issuer_name si no viene
+let resolvedIssuerName = issuer_name;
+if (!resolvedIssuerName && repair_mode) {
+  const { data: issuerData } = await supabase
+    .from('repindex_root_issuers')
+    .select('issuer_name')
+    .eq('ticker', ticker)
+    .single();
+  
+  resolvedIssuerName = issuerData?.issuer_name || ticker;
+  console.log(`[repair_mode] Resolved issuer_name for ${ticker}: ${resolvedIssuerName}`);
+}
 
-// Después:
-model: 'grok-4-1-fast',
+if (!resolvedIssuerName) {
+  return new Response(
+    JSON.stringify({ error: 'Missing issuer_name and not in repair_mode' }),
+    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
 ```
 
-**Actualizar comentarios (líneas 305-309):**
+**Usar `resolvedIssuerName` en lugar de `issuer_name`** en todo el código posterior (líneas 979, 995, etc.)
+
+### 2. Corregir referencia al modelo Grok en single_model mode
+
+**Archivo:** `supabase/functions/rix-search-v2/index.ts`
+
+**Línea 986:** Cambiar referencia de `grok-4` a `grok-4-1-fast`:
+
 ```typescript
-// 2. Grok (xAI) - ✅ Web Search via Responses API
-// Actualizado febrero 2026: grok-4 → grok-4-1-fast (optimizado para baja latencia)
-// grok-4-1-fast: mejor para tool-calling y respuestas rápidas
-// IMPORTANTE: Grok rechaza fechas futuras como "información ficticia"
-// Usamos "últimos 7 días" en lugar de fechas específicas
+// ANTES:
+} else if (targetConfig.name === 'grok-4') {
+
+// DESPUÉS:
+} else if (targetConfig.name === 'grok-4-1-fast') {
 ```
 
-### 2. Mantener el prompt idéntico para todas las IAs
+### 3. Aumentar batch_size del repair_search (orquestador)
 
-El prompt de Grok (`buildGrokPrompt`) ya usa el mismo formato base que los demás modelos, solo adaptado para fechas relativas. No se modificará el contenido del prompt, solo el modelo.
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
 
-### 3. Lanzar reparación de los 51 registros fallidos
+**Línea 875:** Aumentar batch_size por defecto:
 
-Después de desplegar el cambio de modelo, ejecutar:
+```typescript
+// ANTES:
+const batchSize = triggerParams?.batch_size || 5;
 
-**Opción A (automática via UI):** Usar el botón "Forzar" en el dashboard, que:
-1. Llama `rix-batch-orchestrator` con `trigger: 'auto_recovery'`
-2. Detecta registros con `model_errors` LIKE `%Timeout%` y raw NULL
-3. Los reprocesa con el nuevo modelo `grok-4-1-fast`
+// DESPUÉS:
+const batchSize = triggerParams?.batch_size || 20;
+```
 
-**Opción B (trigger directo):** Insertar trigger de reparación:
-```sql
-INSERT INTO cron_triggers (action, status, metadata)
-VALUES ('repair_search', 'pending', '{"model": "grok-4-1-fast", "reason": "model_upgrade"}');
+### 4. Mejorar filtro de semana exacta
+
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
+
+**Línea 900:** Cambiar `.gte()` a `.eq()` para semana exacta:
+
+```typescript
+// ANTES:
+.gte('06_period_from', periodFromStr);
+
+// DESPUÉS:
+.eq('06_period_from', periodFromStr);
 ```
 
 ---
 
 ## Resumen de Archivos
 
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-search-v2/index.ts` | Líneas 305-325: actualizar modelo a `grok-4-1-fast` |
+| Archivo | Cambios |
+|---------|---------|
+| `supabase/functions/rix-search-v2/index.ts` | Líneas 927-932: hacer issuer_name opcional en repair_mode; Línea 986: corregir referencia a grok-4-1-fast |
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Línea 875: batch_size 5→20; Línea 900: .gte→.eq |
 
 ## Resultado Esperado
 
-1. **Velocidad:** `grok-4-1-fast` está optimizado para respuestas rápidas (ideal para tool-calling)
-2. **Timeouts:** Los 51 registros fallidos se reprocesarán con el modelo rápido
-3. **Cobertura:** Grok debería pasar de 67% → 90%+ tras la reparación
+1. **repair_search funcionará** - Ya no habrá error 400 porque issuer_name se resuelve automáticamente
+2. **4x más rápido** - batch_size de 20 en lugar de 5
+3. **Sin mezcla de semanas** - Filtro exacto por fecha de periodo
+4. **Grok recuperado** - Los 51 registros fallidos se reprocesarán con `grok-4-1-fast`
+
+## Flujo Post-Deploy
+
+1. Desplegar ambas funciones
+2. Ir a /admin → Sweep Health Dashboard
+3. Hacer clic en "Forzar" para disparar `auto_recovery`
+4. El sistema procesará los 56 registros pendientes en ~3 iteraciones (20 por batch)
