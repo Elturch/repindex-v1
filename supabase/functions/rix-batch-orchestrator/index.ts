@@ -872,7 +872,7 @@ async function processCronTriggers(
         console.log(`[cron_triggers] Processing repair_search trigger ${trigger.id}`);
         
         const triggerParams = trigger.params as { sweep_id?: string; batch_size?: number } | null;
-        const batchSize = triggerParams?.batch_size || 5;
+        const batchSize = triggerParams?.batch_size || 20;
         
         // Calculate the current analysis period
         const now = new Date();
@@ -897,7 +897,7 @@ async function processCronTriggers(
         const { data: allPeriodRecords } = await supabase
           .from('rix_runs_v2')
           .select('id, 05_ticker, 02_model_name, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
-          .gte('06_period_from', periodFromStr);
+          .eq('06_period_from', periodFromStr);
         
         // Filter records where MODEL-SPECIFIC column is null
         const missingRecords: Array<{id: string, ticker: string, model: string}> = [];
