@@ -150,15 +150,20 @@ export function SweepHealthDashboard() {
     if (activeTriggers >= 1) return { label: 'Procesando', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
     if (activeSearches >= 1) return { label: 'Buscando', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
     // Si hay triggers pendientes, mostrar como en cola
-    if (pendingTriggers > 0) return { label: 'En Cola', color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-500/50' };
+    if (pendingTriggers > 0) return { label: 'En Cola', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
     // Si hay trabajo pendiente pero no hay procesos, mostrar como necesita atención
-    if (recordsNeedingWork > 0) return { label: 'Reparar', color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-500/50' };
+    if (recordsNeedingWork > 0) return { label: 'Reparar', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
     // Si no hay trabajo pendiente, está completo o inactivo
     if (metrics.recordCompletionRate >= 99) return { label: 'Completo', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
     return { label: 'Inactivo', color: 'text-muted-foreground', bgColor: 'bg-muted/30', borderColor: 'border-border' };
   };
   
   const speed = getProcessSpeed();
+
+  const heartbeatAgeSec = metrics.telemetry?.lastHeartbeatAt
+    ? Math.round((Date.now() - metrics.telemetry.lastHeartbeatAt.getTime()) / 1000)
+    : null;
+  const systemHeartbeatOk = heartbeatAgeSec !== null && heartbeatAgeSec <= 90;
 
   return (
     <div className="space-y-4 mb-6">
@@ -231,6 +236,32 @@ export function SweepHealthDashboard() {
                 </div>
                 
                 {/* Indicador de actividad en tiempo real */}
+                {metrics.telemetry?.lastHeartbeatAt && (
+                  <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-background/50 border border-border/50">
+                    <div
+                      className={cn(
+                        "w-2 h-2 rounded-full",
+                        systemHeartbeatOk ? "bg-primary animate-pulse" : "bg-destructive"
+                      )}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      Heartbeat hace <span className="font-medium tabular-nums">{heartbeatAgeSec}s</span>
+                      {metrics.telemetry.stage ? ` · ${metrics.telemetry.stage}` : ''}
+                      {metrics.telemetry.ticker ? ` · ${metrics.telemetry.ticker}` : ''}
+                      {metrics.telemetry.model ? ` · ${metrics.telemetry.model}` : ''}
+                    </span>
+                  </div>
+                )}
+
+                {metrics.triggerFetchError && (
+                  <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/20">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    <span className="text-sm text-destructive">
+                      No puedo leer cron_triggers: {metrics.triggerFetchError}
+                    </span>
+                  </div>
+                )}
+
                 {metrics.activeTrigger && (
                   <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-background/50 border border-border/50">
                     <div className="flex items-center gap-1.5">
@@ -264,10 +295,10 @@ export function SweepHealthDashboard() {
                 )}
                 
                 {/* Si hay trabajo pendiente pero el sistema no está procesando, mostrar alerta */}
-                {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && (
-                  <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    <span className="text-sm text-amber-700 dark:text-amber-400">
+                {!hasActiveProcesses && !metrics.activeTrigger && hasPendingWork && !systemHeartbeatOk && (
+                  <div className="flex items-center gap-2 mt-1.5 p-2 rounded-md bg-destructive/5 border border-destructive/20">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    <span className="text-sm text-destructive">
                       Sistema detenido — pulsa <strong>Forzar</strong> para reanudar
                     </span>
                   </div>

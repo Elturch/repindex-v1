@@ -69,6 +69,9 @@ export interface UnifiedSweepMetrics {
   // Trigger status
   triggersPending: number;
   triggersProcessing: number;
+
+  // If cron_triggers cannot be read (auth/RLS/etc), keep the UI informative
+  triggerFetchError: string | null;
   
   // Active trigger progress (for live feedback)
   activeTrigger: {
@@ -77,6 +80,15 @@ export interface UnifiedSweepMetrics {
     remaining: number;
     lastTicker?: string;
     lastModel?: string;
+  } | null;
+
+  // Real-time telemetry from pipeline_logs (orchestrator heartbeat)
+  telemetry: {
+    lastHeartbeatAt: Date | null;
+    stage?: string;
+    status?: string;
+    ticker?: string;
+    model?: string;
   } | null;
   
   // Ghost companies detection (completed in sweep_progress but 0 records in rix_runs_v2)
@@ -188,6 +200,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         sweepProgressResult,
         pendingTriggersResult,
         failedCompaniesResult,
+        pipelineLogsResult,
       ] = await Promise.all([
         // Get all records for this week from rix_runs_v2 - include ALL response columns
         supabase
@@ -216,6 +229,13 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .select('ticker, error_message, updated_at')
           .eq('sweep_id', sweepId)
           .eq('status', 'failed'),
+
+        // Telemetry heartbeat: latest pipeline log (server-side proof of activity)
+        supabase
+          .from('pipeline_logs')
+          .select('created_at, stage, status, ticker, model_name')
+          .order('created_at', { ascending: false })
+          .limit(1),
       ]);
       
       if (rixRunsResult.error) throw rixRunsResult.error;
@@ -224,6 +244,19 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const progressRecords = sweepProgressResult.data || [];
       const pendingTriggers = pendingTriggersResult.data || [];
       const failedCompaniesData = failedCompaniesResult.data || [];
+
+      const triggerFetchError = pendingTriggersResult.error?.message || null;
+
+      const lastPipelineLog = pipelineLogsResult.data?.[0] || null;
+      const telemetry: UnifiedSweepMetrics['telemetry'] = lastPipelineLog
+        ? {
+            lastHeartbeatAt: lastPipelineLog.created_at ? new Date(lastPipelineLog.created_at) : null,
+            stage: lastPipelineLog.stage || undefined,
+            status: lastPipelineLog.status || undefined,
+            ticker: lastPipelineLog.ticker || undefined,
+            model: (lastPipelineLog as any).model_name || undefined,
+          }
+        : null;
       
       // Calculate ghost companies by CROSS-REFERENCING with real data
       // Ghost = marked 'completed' in sweep_progress BUT has NO records in rix_runs_v2
@@ -383,6 +416,8 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         // Trigger status
         triggersPending: pendingTriggers.filter(t => t.status === 'pending').length,
         triggersProcessing: pendingTriggers.filter(t => t.status === 'processing').length,
+
+        triggerFetchError,
         
         // Active trigger progress - extract from the most recent trigger's result
         activeTrigger: (() => {
@@ -397,6 +432,8 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
             lastModel: result?.last?.model,
           };
         })(),
+
+        telemetry,
         
         // Ghost companies: completed in sweep_progress but NO records in rix_runs_v2
         ghostCompanies: ghostTickersList.length,
