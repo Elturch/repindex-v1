@@ -1,165 +1,259 @@
 
 
-# Plan: Feedback Visual y Procesamiento Inmediato de Triggers
+# Plan: Estabilización del Pipeline en 2 Fases
 
-## Problema Actual
+## Diagnóstico del Problema
 
-Cuando presionas "Forzar Ahora":
-1. ✅ El sistema detecta 916 registros sin datos + 23 analizables
-2. ✅ Inserta triggers `repair_search` y `repair_analysis` en la BD
-3. ❌ **NO los procesa inmediatamente** - esperan hasta el próximo CRON (5 min)
-4. ❌ **La UI no muestra feedback** - solo dice "Auto-recovery disparado" sin detalles
+Tras analizar el código, identifico **3 problemas raíz** que causan las inconsistencias:
 
-El flujo actual en `rix-batch-orchestrator`:
-```
-processCronTriggers()  →  verificar encadenamiento  →  insertar nuevos triggers
-                                                              ↓
-                                    (triggers quedan pendientes para próximo CRON)
-```
+### Problema 1: Condiciones de encadenamiento no atómicas
+El orquestador intenta hacer demasiadas cosas en un solo ciclo:
+- Limpiar zombies
+- Auto-completar duplicados  
+- Contar estados
+- Procesar triggers existentes
+- Insertar nuevos triggers
+- Procesar los triggers recién insertados
 
-## Solución: 2 Cambios
+Si cualquier paso falla o toma demasiado tiempo, el siguiente ciclo CRON empieza antes de terminar, causando **condiciones de carrera**.
 
-### Cambio 1: Procesar Triggers Inmediatamente Después de Insertarlos
+### Problema 2: Conteos inconsistentes entre tablas
+- `sweep_progress` cuenta empresas (174)
+- `rix_runs_v2` cuenta registros (174 x 6 = 1044 esperados)
+- Los conteos de "missing data" usan `rix_runs_v2` pero el estado "failed" viene de `sweep_progress`
+- Esto causa que `repair_search` calcule mal: `(missingDataCount || 0) + (failed * 6)`
 
-Añadir una **segunda llamada** a `processCronTriggers()` después de insertar los nuevos triggers:
+### Problema 3: Falta de estado por modelo
+El sistema actual trata a cada empresa como una unidad, pero:
+- Una empresa puede tener 5/6 modelos con datos y 1 fallido
+- No hay forma de reintentar SOLO ese modelo fallido sin tocar los demás
+- El "repair_search" intenta buscar registros sin `20_res_gpt_bruto`, pero esa columna es específica de ChatGPT, no de todos los modelos
 
+---
+
+## Fase 1: Estabilización Inmediata (Sin cambiar arquitectura)
+
+### Cambio 1: Unificar fuente de verdad para conteos
+Actualmente hay 2 fuentes: `sweep_progress` y `rix_runs_v2`. Esto causa discrepancias.
+
+**Solución**: Crear función única `getRealDataState()` que devuelva:
 ```typescript
-// DESPUÉS de insertar triggers (línea ~1340):
-if (triggersInserted.length > 0) {
-  console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ')}`);
+{
+  // Por empresa
+  companiesComplete: number,     // Empresas con 6/6 modelos CON SCORE
+  companiesPartial: number,      // Empresas con 1-5 modelos
+  companiesEmpty: number,        // Empresas sin datos
   
-  // NUEVO: Procesar inmediatamente los triggers recién creados
-  console.log(`[${triggerMode}] Processing newly inserted triggers...`);
-  const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
-  console.log(`[${triggerMode}] Immediate processing: ${immediateResults.length} triggers processed`);
-}
-```
-
-### Cambio 2: Mostrar Estado de Triggers en la UI
-
-En `SweepHealthDashboard.tsx`, añadir consulta y visualización de triggers pendientes:
-
-```typescript
-// Nueva query para obtener triggers pendientes
-const { data: pendingTriggers } = await supabase
-  .from('cron_triggers')
-  .select('action, created_at, params')
-  .eq('status', 'pending')
-  .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize'])
-  .order('created_at', { ascending: false });
-
-// Mostrar en la UI:
-// 🔄 2 triggers pendientes: repair_search (952), repair_analysis (23)
-```
-
-## Archivos a Modificar
-
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir segunda llamada a `processCronTriggers()` después de insertar triggers |
-| `src/components/admin/SweepHealthDashboard.tsx` | Mostrar triggers pendientes y su estado |
-
-## Resultado Esperado
-
-### Antes (actual):
-1. Presionar "Forzar Ahora" → Toast: "Auto-recovery disparado"
-2. Esperar 5 minutos para que el CRON procese los triggers
-3. No hay visibilidad del estado
-
-### Después:
-1. Presionar "Forzar Ahora" → Toast: "Auto-recovery disparado"
-2. **Inmediatamente**: Los triggers se procesan
-3. **UI muestra**: "🔄 Procesando: repair_search (5/952), repair_analysis (0/23)"
-4. El progreso aumenta visiblemente cada 10 segundos (auto-refresh)
-
-## Flujo Corregido
-
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Presionar "Forzar Ahora"                                                │
-│                    ↓                                                    │
-│ auto_recovery:                                                          │
-│   1. processCronTriggers() - procesar existentes                       │
-│   2. Verificar datos reales                                            │
-│   3. Insertar repair_search + repair_analysis                          │
-│   4. processCronTriggers() - NUEVO: procesar los recién insertados    │
-│                    ↓                                                    │
-│ UI muestra:                                                             │
-│   "✅ Procesando 2 triggers: repair_search, repair_analysis"           │
-│   Barra de progreso actualizada                                        │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## Sección Técnica
-
-### Cambio en rix-batch-orchestrator (línea ~1345)
-
-```typescript
-// DESPUÉS del bloque de inserción de triggers:
-if (triggersInserted.length > 0) {
-  console.log(`[${triggerMode}] Auto-chain triggers inserted: ${triggersInserted.join(', ')}`);
+  // Por registro
+  recordsTotal: number,          // Total registros en rix_runs_v2
+  recordsWithScore: number,      // Con 09_rix_score != null
+  recordsWithDataNoScore: number,// Con respuesta bruta pero sin score
+  recordsEmpty: number,          // Sin respuesta bruta
   
-  // ========== NUEVO: Procesar inmediatamente ==========
-  // Esto evita esperar 5 minutos para el próximo CRON
-  console.log(`[${triggerMode}] Executing immediate trigger processing...`);
-  try {
-    const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
-    if (immediateResults.length > 0) {
-      console.log(`[${triggerMode}] Immediate processing completed: ${immediateResults.map(r => r.action).join(', ')}`);
-    }
-  } catch (e) {
-    console.error(`[${triggerMode}] Immediate processing error:`, e);
-    // No fallar la request - el CRON lo procesará después
+  // Por modelo (6 items)
+  byModel: {
+    ChatGPT: { total, withScore, withData, empty },
+    Deepseek: { ... },
+    Gemini: { ... },
+    Grok: { ... },
+    Perplexity: { ... },
+    Qwen: { ... },
   }
 }
 ```
 
-### Cambio en SweepHealthDashboard.tsx
+### Cambio 2: Simplificar lógica de auto-recovery
+En lugar de múltiples condiciones anidadas, usar **máquina de estados simple**:
 
-Añadir hook para consultar triggers pendientes:
+```text
+ESTADO 1: SWEEP_RUNNING
+  Condición: sweep_progress.processing > 0 OR sweep_progress.pending > 0
+  Acción: Esperar (el CRON ya está procesando)
 
-```typescript
-// Nueva query dentro del componente o en useUnifiedSweepMetrics
-const [pendingTriggers, setPendingTriggers] = useState<Array<{
-  action: string;
-  created_at: string;
-  params: { count?: number };
-}>>([]);
+ESTADO 2: SWEEP_DONE_CHECK_DATA
+  Condición: sweep_progress.processing = 0 AND sweep_progress.pending = 0
+  Acción: Consultar getRealDataState()
 
-useEffect(() => {
-  const fetchTriggers = async () => {
-    const { data } = await supabase
-      .from('cron_triggers')
-      .select('action, created_at, params')
-      .eq('status', 'pending')
-      .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']);
-    setPendingTriggers(data || []);
-  };
-  fetchTriggers();
-  const interval = setInterval(fetchTriggers, 10000);
-  return () => clearInterval(interval);
-}, []);
+  2.1 Si recordsEmpty > 0:
+      → Insertar repair_search (máx 10 modelos por batch)
+      → Transición a ESTADO 3
+      
+  2.2 Si recordsWithDataNoScore > 0:
+      → Insertar repair_analysis (máx 10 registros por batch)
+      → Transición a ESTADO 3
+      
+  2.3 Si recordsTotal = recordsWithScore:
+      → Insertar auto_sanitize
+      → Transición a ESTADO 4
+
+ESTADO 3: REPAIRS_PENDING
+  Condición: Hay triggers pending en cron_triggers
+  Acción: Procesar triggers, luego volver a ESTADO 2
+
+ESTADO 4: COMPLETE
+  Condición: Sanitización terminada sin errores
+  Acción: Nada más
 ```
 
-Añadir visualización:
+### Cambio 3: Corregir columnas de respuesta por modelo
+El código actual busca `20_res_gpt_bruto IS NULL` para detectar "sin datos", pero cada modelo tiene su propia columna:
 
-```tsx
-{pendingTriggers.length > 0 && (
-  <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg mb-4">
-    <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      <span className="font-medium">
-        {pendingTriggers.length} trigger{pendingTriggers.length > 1 ? 's' : ''} en cola:
-      </span>
-    </div>
-    <div className="mt-2 flex flex-wrap gap-2">
-      {pendingTriggers.map((t, i) => (
-        <Badge key={i} variant="outline" className="bg-white dark:bg-gray-800">
-          {t.action} ({(t.params as any)?.count || '?'} registros)
-        </Badge>
-      ))}
-    </div>
-  </div>
-)}
+| Modelo | Columna |
+|--------|---------|
+| ChatGPT | `20_res_gpt_bruto` |
+| Perplexity | `21_res_perplex_bruto` |
+| Gemini | `22_res_gemini_bruto` |
+| Deepseek | `23_res_deepseek_bruto` |
+| Grok | `respuesta_bruto_grok` |
+| Qwen | `respuesta_bruto_qwen` |
+
+**Solución**: En `repair_search`, cambiar la consulta para detectar registros donde LA COLUMNA ESPECÍFICA DEL MODELO esté vacía.
+
+### Cambio 4: Cadencia híbrida
+- **Inicio del barrido (0-70% completado)**: 3 empresas simultáneas, 5s entre cada una
+- **Final del barrido (>70% completado)**: 1 empresa a la vez, 10s entre cada una
+- **Reparaciones**: Siempre 1 a la vez con 15s de pausa
+
+### Cambio 5: Feedback visual mejorado
+El dashboard mostrará:
+- Estado actual del sistema (RUNNING / CHECK_DATA / REPAIRS / COMPLETE)
+- Progreso por modelo (barra individual para cada IA)
+- Histórico de últimos 10 eventos (con timestamp)
+
+---
+
+## Archivos a Modificar (Fase 1)
+
+| Archivo | Cambios |
+|---------|---------|
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Simplificar lógica de auto-recovery con máquina de estados, cadencia híbrida |
+| `src/hooks/useUnifiedSweepMetrics.ts` | Añadir conteos por columna de modelo |
+| `src/components/admin/SweepHealthDashboard.tsx` | Mostrar estado de máquina + progreso por modelo |
+
+---
+
+## Fase 2: Migración a 6 Escenarios (Opcional, si Fase 1 no es suficiente)
+
+Si después de Fase 1 siguen habiendo problemas, implementamos el modelo Make-like:
+
+### Arquitectura de 6 Workers Independientes
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│ CRON Principal (cada 5 min)                                         │
+│   → Llama a /rix-model-worker?model=ChatGPT                        │
+│   → Llama a /rix-model-worker?model=Deepseek                       │
+│   → Llama a /rix-model-worker?model=Gemini                         │
+│   → Llama a /rix-model-worker?model=Grok                           │
+│   → Llama a /rix-model-worker?model=Perplexity                     │
+│   → Llama a /rix-model-worker?model=Qwen                           │
+└─────────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ /rix-model-worker (1 instancia por modelo)                          │
+│                                                                      │
+│ BUCLE INTERNO:                                                       │
+│   1. Obtener siguiente empresa SIN datos para ESTE modelo           │
+│   2. Llamar a la API de ESTE modelo                                 │
+│   3. Guardar respuesta en la columna correcta                       │
+│   4. Llamar a rix-analyze-v2 para ese registro                      │
+│   5. Marcar como completado o mover a "slow_queue" si falla 3x      │
+│   6. Repetir hasta timeout (50s) o sin trabajo                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Nueva tabla: `model_sweep_progress`
+
+```sql
+CREATE TABLE model_sweep_progress (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sweep_id TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  model_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed, slow_queue
+  retry_count INT DEFAULT 0,
+  response_length INT,
+  score INT,
+  error_message TEXT,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  UNIQUE(sweep_id, ticker, model_name)
+);
+```
+
+Esta tabla permite:
+- Reintentar UN modelo específico para UNA empresa
+- Ver progreso real por modelo
+- Cola lenta para modelos problemáticos (Grok típicamente)
+
+---
+
+## Plan de Ejecución
+
+### Ahora (sin tocar datos del barrido actual):
+1. Aplicar Cambio 1, 2, 3 al orquestador
+2. Actualizar hook de métricas
+3. Mejorar dashboard
+
+### Resultado esperado:
+- El barrido de hoy continúa con los 866 registros existentes
+- Los 19 analizables se procesan correctamente
+- Los ~100 sin datos se reparan progresivamente
+- Feedback visual claro en el panel
+
+### Si después de 1-2 horas no hay mejora visible:
+- Evaluar Fase 2 (6 workers independientes)
+
+---
+
+## Sección Técnica: Cambios Específicos
+
+### En `rix-batch-orchestrator/index.ts`
+
+```typescript
+// NUEVA FUNCIÓN: Obtener estado real unificado
+async function getRealDataState(supabase: any, periodFromStr: string) {
+  // Query que agrupa por modelo y cuenta estados
+  const { data: records } = await supabase
+    .from('rix_runs_v2')
+    .select('02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
+    .gte('06_period_from', periodFromStr);
+  
+  // Mapeo de modelo a su columna de respuesta
+  const modelColumns = {
+    'ChatGPT': '20_res_gpt_bruto',
+    'Perplexity': '21_res_perplex_bruto',
+    'Gemini': '22_res_gemini_bruto',
+    'Google Gemini': '22_res_gemini_bruto',
+    'Deepseek': '23_res_deepseek_bruto',
+    'Grok': 'respuesta_bruto_grok',
+    'Qwen': 'respuesta_bruto_qwen',
+  };
+  
+  const byModel = {};
+  // ... procesar cada registro y clasificar por modelo/estado
+  
+  return { byModel, totals };
+}
+```
+
+### En auto_recovery (simplificado)
+
+```typescript
+// REEMPLAZA la lógica compleja actual por:
+const state = await getRealDataState(supabase, periodFromStr);
+
+// Decisión simple basada en prioridad
+if (state.totals.empty > 0) {
+  await insertTriggerIfNotExists('repair_search', { 
+    records: state.getEmptyRecordIds().slice(0, 10) // máx 10 por batch
+  });
+} else if (state.totals.withDataNoScore > 0) {
+  await insertTriggerIfNotExists('repair_analysis', {
+    records: state.getAnalyzableRecordIds().slice(0, 10)
+  });
+} else if (state.totals.recordsTotal === state.totals.withScore) {
+  await insertTriggerIfNotExists('auto_sanitize', { sweep_id: sweepId });
+}
 ```
 
