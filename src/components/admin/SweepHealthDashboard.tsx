@@ -1,0 +1,617 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { supabase } from '@/integrations/supabase/client';
+import { 
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Play,
+  RefreshCw,
+  Skull,
+  Zap,
+  XCircle,
+  Timer,
+  TrendingUp
+} from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+import { formatDistanceToNow, differenceInMinutes, differenceInHours } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+// ============ TIPOS ============
+type SweepHealthStatus = 
+  | 'healthy'      // Procesando normalmente, sin zombis
+  | 'slow'         // Procesando pero por debajo del ritmo esperado  
+  | 'stuck'        // Zombi detectado (>5 min sin cambios)
+  | 'dead'         // Sin actividad en >10 min
+  | 'completed'    // 100% completado
+  | 'error';       // Errores críticos
+
+interface SweepRecord {
+  ticker: string;
+  issuer_name: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  fase: number;
+}
+
+interface PhaseStatus {
+  fase: number;
+  total: number;
+  completed: number;
+  pending: number;
+  processing: number;
+  failed: number;
+}
+
+interface SweepHealthData {
+  sweepId: string;
+  totalCompanies: number;
+  completed: number;
+  pending: number;
+  processing: number;
+  failed: number;
+  progress: number;
+  expectedProgress: number;
+  healthStatus: SweepHealthStatus;
+  zombies: SweepRecord[];
+  lastActivity: Date | null;
+  sweepStartTime: Date | null;
+  elapsedTime: string;
+  phases: PhaseStatus[];
+}
+
+const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU';
+
+// ============ HELPERS ============
+function calculateExpectedProgress(sweepStartTime: Date | null): number {
+  if (!sweepStartTime) return 0;
+  const hoursElapsed = (Date.now() - sweepStartTime.getTime()) / 3600000;
+  // El barrido debería completarse en ~3 horas
+  return Math.min(100, Math.round((hoursElapsed / 3) * 100));
+}
+
+function detectZombies(records: SweepRecord[]): SweepRecord[] {
+  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+  return records.filter(r => 
+    r.status === 'processing' && 
+    r.started_at &&
+    new Date(r.started_at).getTime() < fiveMinutesAgo
+  );
+}
+
+function determineHealthStatus(
+  completed: number,
+  total: number,
+  zombies: SweepRecord[],
+  lastActivity: Date | null,
+  failed: number
+): SweepHealthStatus {
+  if (completed === total && total > 0) return 'completed';
+  if (zombies.length > 0) return 'stuck';
+  if (failed > total * 0.1) return 'error'; // >10% fallos
+  
+  if (lastActivity) {
+    const minutesSinceActivity = differenceInMinutes(new Date(), lastActivity);
+    if (minutesSinceActivity > 10) return 'dead';
+    if (minutesSinceActivity > 5) return 'slow';
+  }
+  
+  return 'healthy';
+}
+
+function getStatusConfig(status: SweepHealthStatus) {
+  switch (status) {
+    case 'healthy':
+      return { 
+        icon: Activity, 
+        label: 'BARRIDO ACTIVO', 
+        color: 'text-green-500', 
+        bg: 'bg-green-500/10 border-green-500/30',
+        description: 'Procesando normalmente'
+      };
+    case 'slow':
+      return { 
+        icon: Clock, 
+        label: 'BARRIDO LENTO', 
+        color: 'text-yellow-500', 
+        bg: 'bg-yellow-500/10 border-yellow-500/30',
+        description: 'Por debajo del ritmo esperado'
+      };
+    case 'stuck':
+      return { 
+        icon: AlertTriangle, 
+        label: 'BARRIDO ATASCADO', 
+        color: 'text-orange-500', 
+        bg: 'bg-orange-500/10 border-orange-500/30',
+        description: 'Zombi detectado'
+      };
+    case 'dead':
+      return { 
+        icon: Skull, 
+        label: 'BARRIDO MUERTO', 
+        color: 'text-red-500', 
+        bg: 'bg-red-500/10 border-red-500/30',
+        description: 'Sin actividad >10 min'
+      };
+    case 'completed':
+      return { 
+        icon: CheckCircle2, 
+        label: 'BARRIDO COMPLETADO', 
+        color: 'text-green-600', 
+        bg: 'bg-green-600/10 border-green-600/30',
+        description: '100% procesado'
+      };
+    case 'error':
+      return { 
+        icon: XCircle, 
+        label: 'ERRORES CRÍTICOS', 
+        color: 'text-red-600', 
+        bg: 'bg-red-600/10 border-red-600/30',
+        description: 'Alto ratio de fallos'
+      };
+  }
+}
+
+// Phase icon helper - kept for potential future use
+// function getPhaseIcon(phase: PhaseStatus) {
+//   if (phase.completed === phase.total) return '✓';
+//   if (phase.failed > 0) return '❌';
+//   if (phase.processing > 0) return '⏳';
+//   if (phase.completed > 0) return '⚠️';
+//   return '○';
+// }
+
+function getPhaseColor(phase: PhaseStatus) {
+  if (phase.completed === phase.total) return 'bg-green-500 text-white';
+  if (phase.failed > 0) return 'bg-red-500 text-white';
+  if (phase.processing > 0) return 'bg-blue-500 text-white animate-pulse';
+  if (phase.completed > 0) return 'bg-yellow-500 text-white';
+  return 'bg-muted text-muted-foreground';
+}
+
+// ============ COMPONENTE PRINCIPAL ============
+export function SweepHealthDashboard() {
+  const { toast } = useToast();
+  const [data, setData] = useState<SweepHealthData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resettingZombies, setResettingZombies] = useState(false);
+  const [triggeringRepair, setTriggeringRepair] = useState(false);
+  const [resumingCascade, setResumingCascade] = useState(false);
+
+  const fetchHealthData = useCallback(async () => {
+    try {
+      // 1. Get sweep status from orchestrator
+      const { data: statusData, error: statusError } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { get_status: true },
+      });
+
+      if (statusError) throw statusError;
+      if (!statusData?.initialized) {
+        setData(null);
+        return;
+      }
+
+      const sweepId = statusData.sweepId;
+
+      // 2. Fetch all progress records for this sweep
+      const progressRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/sweep_progress?sweep_id=eq.${sweepId}&select=ticker,issuer_name,status,started_at,completed_at,fase`,
+        { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
+      );
+      const progressData: SweepRecord[] = await progressRes.json();
+
+      if (!Array.isArray(progressData)) {
+        throw new Error('Invalid progress data');
+      }
+
+      // 3. Calculate metrics
+      const completed = progressData.filter(r => r.status === 'completed').length;
+      const pending = progressData.filter(r => r.status === 'pending').length;
+      const processing = progressData.filter(r => r.status === 'processing').length;
+      const failed = progressData.filter(r => r.status === 'failed').length;
+      const total = progressData.length;
+
+      // 4. Detect zombies
+      const zombies = detectZombies(progressData);
+
+      // 5. Find last activity
+      const completedRecords = progressData.filter(r => r.completed_at);
+      const lastActivity = completedRecords.length > 0 
+        ? new Date(Math.max(...completedRecords.map(r => new Date(r.completed_at!).getTime())))
+        : null;
+
+      // 6. Find sweep start time (earliest started_at)
+      const startedRecords = progressData.filter(r => r.started_at);
+      const sweepStartTime = startedRecords.length > 0
+        ? new Date(Math.min(...startedRecords.map(r => new Date(r.started_at!).getTime())))
+        : null;
+
+      // 7. Calculate elapsed time
+      let elapsedTime = '—';
+      if (sweepStartTime) {
+        const hours = differenceInHours(new Date(), sweepStartTime);
+        const minutes = differenceInMinutes(new Date(), sweepStartTime) % 60;
+        elapsedTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+      }
+
+      // 8. Group by phase
+      const phaseMap = new Map<number, PhaseStatus>();
+      progressData.forEach(r => {
+        const current = phaseMap.get(r.fase) || { fase: r.fase, total: 0, completed: 0, pending: 0, processing: 0, failed: 0 };
+        current.total++;
+        if (r.status === 'completed') current.completed++;
+        else if (r.status === 'pending') current.pending++;
+        else if (r.status === 'processing') current.processing++;
+        else if (r.status === 'failed') current.failed++;
+        phaseMap.set(r.fase, current);
+      });
+      const phases = Array.from(phaseMap.values()).sort((a, b) => a.fase - b.fase);
+
+      // 9. Determine health status
+      const healthStatus = determineHealthStatus(completed, total, zombies, lastActivity, failed);
+
+      // 10. Calculate expected progress
+      const expectedProgress = calculateExpectedProgress(sweepStartTime);
+      const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      setData({
+        sweepId,
+        totalCompanies: total,
+        completed,
+        pending,
+        processing,
+        failed,
+        progress,
+        expectedProgress,
+        healthStatus,
+        zombies,
+        lastActivity,
+        sweepStartTime,
+        elapsedTime,
+        phases,
+      });
+
+    } catch (error) {
+      console.error('Error fetching health data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Auto-refresh every 10 seconds
+  useEffect(() => {
+    fetchHealthData();
+    const interval = setInterval(fetchHealthData, 10000);
+    return () => clearInterval(interval);
+  }, [fetchHealthData]);
+
+  // ============ ACTIONS ============
+  const handleResetZombies = async () => {
+    if (!data?.zombies.length) return;
+    setResettingZombies(true);
+
+    try {
+      // Reset zombies to pending via direct update
+      const tickers = data.zombies.map(z => z.ticker);
+      
+      const { error } = await supabase
+        .from('sweep_progress')
+        .update({ 
+          status: 'pending', 
+          started_at: null,
+          error_message: 'Reset por zombie cleanup'
+        })
+        .eq('sweep_id', data.sweepId)
+        .in('ticker', tickers);
+
+      if (error) throw error;
+
+      toast({
+        title: '🧟 Zombis limpiados',
+        description: `${tickers.length} registros reiniciados a pendiente`,
+      });
+
+      await fetchHealthData();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudieron limpiar los zombis',
+        variant: 'destructive',
+      });
+    } finally {
+      setResettingZombies(false);
+    }
+  };
+
+  const handleTriggerRepair = async () => {
+    setTriggeringRepair(true);
+
+    try {
+      const { data: triggerData, error } = await supabase.functions.invoke('admin-cron-triggers', {
+        body: {
+          action: 'repair_analysis',
+          params: { batch_size: 5 },
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: '🔧 Reparación programada',
+        description: `Trigger creado: ${triggerData.trigger?.id?.substring(0, 8)}...`,
+      });
+
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo programar la reparación',
+        variant: 'destructive',
+      });
+    } finally {
+      setTriggeringRepair(false);
+    }
+  };
+
+  const handleResumeCascade = async () => {
+    setResumingCascade(true);
+
+    try {
+      const { data: cascadeData, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { process_one: true },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: '▶️ Cascada iniciada',
+        description: cascadeData.message || 'Procesando siguiente empresa...',
+      });
+
+      await fetchHealthData();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo reanudar la cascada',
+        variant: 'destructive',
+      });
+    } finally {
+      setResumingCascade(false);
+    }
+  };
+
+  // ============ RENDER ============
+  if (loading) {
+    return (
+      <Card className="mb-6">
+        <CardContent className="py-8">
+          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Cargando estado del barrido...</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return (
+      <Card className="mb-6">
+        <CardContent className="py-8">
+          <div className="text-center text-muted-foreground">
+            No hay barrido activo
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const statusConfig = getStatusConfig(data.healthStatus);
+  const StatusIcon = statusConfig.icon;
+
+  return (
+    <Card className={cn("mb-6 border-2", statusConfig.bg)}>
+      <CardHeader className="pb-3">
+        {/* Status Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <StatusIcon className={cn("h-6 w-6", statusConfig.color)} />
+            <div>
+              <CardTitle className={cn("text-lg font-bold", statusConfig.color)}>
+                {statusConfig.label}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">{statusConfig.description}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono">
+              {data.sweepId}
+            </Badge>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={fetchHealthData}
+              className="h-8 w-8"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Progress Section */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">
+              {data.completed}/{data.totalCompanies} empresas ({data.progress}%)
+            </span>
+            <div className="flex items-center gap-4 text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Timer className="h-4 w-4" />
+                {data.elapsedTime}
+              </span>
+              <span className="flex items-center gap-1">
+                <TrendingUp className="h-4 w-4" />
+                Esperado: {data.expectedProgress}%
+              </span>
+            </div>
+          </div>
+          
+          <div className="relative">
+            <Progress value={data.progress} className="h-3" />
+            {data.expectedProgress > 0 && data.expectedProgress < 100 && (
+              <div 
+                className="absolute top-0 h-3 w-0.5 bg-yellow-500"
+                style={{ left: `${data.expectedProgress}%` }}
+                title={`Progreso esperado: ${data.expectedProgress}%`}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Quick Stats */}
+        <div className="grid grid-cols-4 gap-3">
+          <div className="rounded-lg bg-green-500/10 p-3 text-center">
+            <div className="text-2xl font-bold text-green-600">{data.completed}</div>
+            <div className="text-xs text-muted-foreground">Completados</div>
+          </div>
+          <div className="rounded-lg bg-blue-500/10 p-3 text-center">
+            <div className="text-2xl font-bold text-blue-600">{data.processing}</div>
+            <div className="text-xs text-muted-foreground">Procesando</div>
+          </div>
+          <div className="rounded-lg bg-yellow-500/10 p-3 text-center">
+            <div className="text-2xl font-bold text-yellow-600">{data.pending}</div>
+            <div className="text-xs text-muted-foreground">Pendientes</div>
+          </div>
+          <div className="rounded-lg bg-red-500/10 p-3 text-center">
+            <div className="text-2xl font-bold text-red-600">{data.failed}</div>
+            <div className="text-xs text-muted-foreground">Fallidos</div>
+          </div>
+        </div>
+
+        {/* Alerts Section */}
+        {(data.zombies.length > 0 || data.healthStatus === 'dead' || data.failed > 0) && (
+          <div className="space-y-2 rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
+              <AlertTriangle className="h-4 w-4" />
+              Alertas Activas
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {data.zombies.length > 0 && (
+                <Badge variant="outline" className="bg-orange-500/10 text-orange-600">
+                  🧟 {data.zombies.length} zombi{data.zombies.length > 1 ? 's' : ''}: {data.zombies.map(z => z.ticker).join(', ')}
+                </Badge>
+              )}
+              {data.healthStatus === 'dead' && (
+                <Badge variant="outline" className="bg-red-500/10 text-red-600">
+                  💀 Sin actividad hace {data.lastActivity ? formatDistanceToNow(data.lastActivity, { locale: es }) : '?'}
+                </Badge>
+              )}
+              {data.failed > 0 && (
+                <Badge variant="outline" className="bg-red-500/10 text-red-600">
+                  ❌ {data.failed} fallido{data.failed > 1 ? 's' : ''}
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Phase Timeline */}
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-muted-foreground">Timeline de Fases</div>
+          <TooltipProvider>
+            <div className="flex flex-wrap gap-1">
+              {data.phases.map(phase => (
+                <Tooltip key={phase.fase}>
+                  <TooltipTrigger asChild>
+                    <div 
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded text-xs font-medium cursor-default transition-all",
+                        getPhaseColor(phase)
+                      )}
+                    >
+                      {phase.fase}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-xs">
+                      <div className="font-medium">Fase {phase.fase}</div>
+                      <div>{phase.completed}/{phase.total} completados</div>
+                      {phase.processing > 0 && <div className="text-blue-400">{phase.processing} procesando</div>}
+                      {phase.failed > 0 && <div className="text-red-400">{phase.failed} fallidos</div>}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </TooltipProvider>
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded bg-green-500" /> Completa
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded bg-yellow-500" /> Parcial
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded bg-blue-500" /> Procesando
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded bg-muted" /> Pendiente
+            </span>
+          </div>
+        </div>
+
+        {/* Contextual Actions */}
+        <div className="flex flex-wrap gap-2 border-t pt-4">
+          {data.zombies.length > 0 && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleResetZombies}
+              disabled={resettingZombies}
+              className="border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
+            >
+              {resettingZombies ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Skull className="mr-2 h-4 w-4" />}
+              Limpiar Zombis ({data.zombies.length})
+            </Button>
+          )}
+          
+          {data.pending > 0 && data.healthStatus !== 'healthy' && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleResumeCascade}
+              disabled={resumingCascade}
+              className="border-blue-500/50 text-blue-600 hover:bg-blue-500/10"
+            >
+              {resumingCascade ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+              Reanudar Cascada
+            </Button>
+          )}
+
+          {data.healthStatus !== 'completed' && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleTriggerRepair}
+              disabled={triggeringRepair}
+              className="border-purple-500/50 text-purple-600 hover:bg-purple-500/10"
+            >
+              {triggeringRepair ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+              Completar Análisis
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

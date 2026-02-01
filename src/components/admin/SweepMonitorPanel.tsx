@@ -30,6 +30,7 @@ import {
   Shield,
   Search
 } from 'lucide-react';
+import { SweepHealthDashboard } from './SweepHealthDashboard';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -1199,6 +1200,9 @@ export function SweepMonitorPanel() {
 
   return (
     <div className="space-y-4">
+      {/* Health Dashboard - Always visible at top */}
+      <SweepHealthDashboard />
+      
       {/* Header */}
       <Card>
         <CardHeader className="pb-3">
