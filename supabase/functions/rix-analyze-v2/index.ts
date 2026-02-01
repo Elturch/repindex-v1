@@ -218,6 +218,7 @@ const MODEL_RESPONSE_MAP: Record<string, string> = {
   'ChatGPT': '20_res_gpt_bruto',
   'Perplexity': '21_res_perplex_bruto',
   'Google Gemini': '22_res_gemini_bruto',
+  'Gemini': '22_res_gemini_bruto', // Alias for consistency
   'Deepseek': '23_res_deepseek_bruto',
   'Grok': 'respuesta_bruto_grok',
   'Qwen': 'respuesta_bruto_qwen',
@@ -428,8 +429,29 @@ async function analyzeRecord(supabase: any, record: any): Promise<any> {
 
   const rawResponse = record[responseColumn] as string | null;
 
+  // DEFENSIVE VALIDATION: Skip corrupt records instead of throwing (prevents infinite loops)
   if (!rawResponse || rawResponse.length < 100) {
-    throw new Error(`No valid raw response found for model ${modelName} in column ${responseColumn}`);
+    console.warn(`[rix-analyze-v2] SKIP & RESET: No data for ${modelName} in ${responseColumn} (id: ${record_id})`);
+    
+    // Reset search_completed_at so repair_search can re-fetch data
+    await supabase
+      .from('rix_runs_v2')
+      .update({ 
+        search_completed_at: null,
+        // Mark why it was reset for debugging
+        '17_flags': [...(record['17_flags'] || []), 'reset_missing_data'],
+      })
+      .eq('id', record_id);
+    
+    return {
+      success: false,
+      record_id,
+      model_name: modelName,
+      ticker: record['05_ticker'],
+      error: 'No data - reset for repair_search',
+      skipped: true,
+      column: responseColumn,
+    };
   }
 
   console.log(`[rix-analyze-v2] Analyzing ${modelName} response (${rawResponse.length} chars)`);
@@ -720,12 +742,24 @@ serve(async (req) => {
     if (action === 'reprocess_pending') {
       console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${batch_size} pending records...`);
       
-      // Find records with search completed but analysis pending
+      // CRITICAL FIX: Get the active week first (most recent period with data)
+      const { data: latestWeek } = await supabase
+        .from('rix_runs_v2')
+        .select('06_period_from')
+        .order('06_period_from', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      const activePeriod = latestWeek?.['06_period_from'];
+      console.log(`[rix-analyze-v2] Active period detected: ${activePeriod}`);
+      
+      // Find records with search completed but analysis pending - FILTERED BY ACTIVE WEEK
       const { data: pendingRecords, error: fetchError } = await supabase
         .from('rix_runs_v2')
         .select('*')
         .is('analysis_completed_at', null)
         .not('search_completed_at', 'is', null)
+        .eq('06_period_from', activePeriod) // Only process current week's records
         .order('created_at', { ascending: true })
         .limit(batch_size);
 
@@ -775,12 +809,13 @@ serve(async (req) => {
         }
       }
       
-      // Count remaining
+      // Count remaining - FILTERED BY ACTIVE WEEK (consistent with processing)
       const { count: remaining } = await supabase
         .from('rix_runs_v2')
         .select('*', { count: 'exact', head: true })
         .is('analysis_completed_at', null)
-        .not('search_completed_at', 'is', null);
+        .not('search_completed_at', 'is', null)
+        .eq('06_period_from', activePeriod);
 
       console.log(`[rix-analyze-v2] Batch complete. Processed: ${results.length}, Errors: ${errors.length}, Remaining: ${remaining}`);
 
