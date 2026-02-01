@@ -183,6 +183,81 @@ FORMATO:
 
 ⚠️ RECUERDA: SIEMPRE informe completo de 4,000+ tokens. NUNCA "no hay información".`;
 
+// Prompt para Grok - SIN FECHAS ESPECÍFICAS para evitar filtros de seguridad
+// Grok rechaza fechas que considera "futuras" diciendo que sería generar información ficticia
+const buildGrokPrompt = (issuerName: string, ticker: string): string => `Eres ANALISTA DE REPUTACIÓN CORPORATIVA senior.
+
+MISIÓN: Analiza EXHAUSTIVAMENTE las menciones RECIENTES sobre ${issuerName} (${ticker}) durante la ÚLTIMA SEMANA.
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║ ⚠️ EXTENSIÓN MÍNIMA OBLIGATORIA: 4,000 TOKENS (~16,000 caracteres)        ║
+║ ⚠️ SIEMPRE DEBES RESPONDER. NUNCA "no hay información"                    ║
+║ TEMPORALIDAD: SOLO menciones de los ÚLTIMOS 7 DÍAS                        ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════
+⚠️ REGLA CRÍTICA: SIEMPRE DEBES PROPORCIONAR UN INFORME COMPLETO
+═══════════════════════════════════════════════════════════════════════════
+
+NUNCA digas "no he encontrado información" o "no hay menciones". SIEMPRE hay algo que reportar:
+
+ESTRATEGIA OBLIGATORIA DE BÚSQUEDA (en orden de prioridad):
+1. PRIMERO: Busca menciones DIRECTAS de ${issuerName} en prensa española e internacional
+2. SI NO HAY DIRECTAS: Busca noticias del SECTOR de la empresa
+3. SI NO HAY SECTOR: Busca noticias de COMPETIDORES directos y analiza implicaciones
+4. SI NO HAY COMPETIDORES: Busca tendencias MACROECONÓMICAS de España
+5. SIEMPRE: Incluye análisis del CONTEXTO BURSÁTIL si cotiza (IBEX, bolsa española)
+
+═══════════════════════════════════════════════════════════════════════════
+FUENTES OBLIGATORIAS A RASTREAR:
+═══════════════════════════════════════════════════════════════════════════
+• Prensa económica: Expansión, Cinco Días, El Economista, El Confidencial, Reuters, Bloomberg
+• Reguladores: CNMV, BME, comunicados oficiales
+• Redes sociales: X/Twitter, LinkedIn, Instagram
+• Foros: Rankia, Forocoches, Reddit, Glassdoor
+
+═══════════════════════════════════════════════════════════════════════════
+ESTRUCTURA DEL INFORME:
+═══════════════════════════════════════════════════════════════════════════
+
+## Resumen Ejecutivo
+(4-6 frases: situación reputacional de ${issuerName} esta semana)
+
+## Hechos Corporativos y Noticias Directas
+Para CADA mención (objetivo: 12-18 menciones):
+- **[FECHA EXACTA dd/mm/yyyy]** - [Titular]
+- Fuente: [Nombre](URL)
+- **Descripción** (4-6 párrafos)
+- **IMPACTO REPUTACIONAL** (2-3 párrafos)
+
+## Contexto Sectorial de la Semana
+(OBLIGATORIO aunque no haya noticias directas)
+
+## Contexto Macroeconómico Relevante
+(Noticias de economía española que afecten al sector)
+
+## Percepción en Redes Sociales y Foros
+(Si no hay menciones: "Semana de baja actividad social" pero analizar contexto)
+
+## Alertas de Riesgo Reputacional
+(Si no hay: "Sin alertas significativas identificadas")
+
+## Señales Positivas
+(Si no hay: "Sin señales destacables identificadas")
+
+## Nota Metodológica
+
+═══════════════════════════════════════════════════════════════════════════
+FORMATO OBLIGATORIO:
+═══════════════════════════════════════════════════════════════════════════
+• Markdown: ## headers, **negritas**, [enlaces](url)
+• FECHAS EXACTAS (dd/mm/yyyy) en CADA mención
+• URLs reales
+• MÍNIMO 4,000 tokens
+• Español de España
+
+⚠️ RECUERDA: SIEMPRE informe completo de 4,000+ tokens. NUNCA "no hay información".`;
+
 // 6 modelos con acceso real a Internet - ahora con display name para guardar en 02_model_name
 interface SearchModelConfig {
   name: string;
@@ -190,6 +265,7 @@ interface SearchModelConfig {
   apiKeyEnv: string;
   endpoint: string;
   hasRealWebSearch: boolean; // Flag para indicar si el modelo tiene búsqueda web real
+  usesRelativeDates?: boolean; // Flag para modelos que rechazan fechas específicas (ej: Grok)
   buildRequest: (prompt: string, apiKey: string) => { headers: Record<string, string>; body: object };
   parseResponse: (data: any) => string;
   dbColumn: string;
@@ -229,6 +305,8 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
   // 2. Grok (xAI) - ✅ Web Search via Responses API
   // Actualizado enero 2026: grok-3 → grok-4 (requerido para web_search tools)
   // Actualizado enero 2026: web_search_preview → web_search
+  // IMPORTANTE: Grok rechaza fechas futuras como "información ficticia"
+  // Usamos "últimos 7 días" en lugar de fechas específicas para evitar filtros de seguridad
   {
     name: 'grok-4',
     displayName: 'Grok',
@@ -236,6 +314,7 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
     endpoint: 'https://api.x.ai/v1/responses',
     hasRealWebSearch: true,
     dbColumn: 'respuesta_bruto_grok',
+    usesRelativeDates: true, // Flag para usar prompt sin fechas específicas
     buildRequest: (prompt: string, apiKey: string) => ({
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -896,10 +975,19 @@ serve(async (req) => {
         );
       }
 
-      // Build prompt
+      // Build prompt - select based on model requirements
       const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
       const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
-      const prompt = targetConfig.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
+      const grokPrompt = buildGrokPrompt(issuer_name, ticker);
+      
+      let prompt: string;
+      if (targetConfig.name === 'perplexity-sonar-pro') {
+        prompt = perplexityPrompt;
+      } else if (targetConfig.name === 'grok-4') {
+        prompt = grokPrompt;
+      } else {
+        prompt = genericPrompt;
+      }
 
       // For DeepSeek, fetch Tavily context
       let context: string | undefined;
@@ -991,9 +1079,13 @@ serve(async (req) => {
     const modelConfigs = getSearchModelConfigs();
     console.log(`[rix-search-v2] Starting search for ${issuer_name} (${ticker}) with ${modelConfigs.length} models`);
 
-    // Build prompts - Perplexity uses optimized prompt, others use generic
+    // Build prompts - Different models use different prompts
+    // Perplexity: uses relative dates ("últimos 7 días")
+    // Grok: uses relative dates to avoid "future date" rejection
+    // Others: use specific dates
     const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
     const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
+    const grokPrompt = buildGrokPrompt(issuer_name, ticker);
 
     // OPTIMIZATION: Tavily runs IN PARALLEL with other models, not before
     // This removes 5-15s from the critical path
@@ -1002,7 +1094,16 @@ serve(async (req) => {
     // Call all search models in parallel - Tavily context fetched inside DeepSeek call
     const results = await Promise.allSettled(
       modelConfigs.map(async config => {
-        const prompt = config.name === 'perplexity-sonar-pro' ? perplexityPrompt : genericPrompt;
+        // Select prompt based on model requirements
+        let prompt: string;
+        if (config.name === 'perplexity-sonar-pro') {
+          prompt = perplexityPrompt;
+        } else if (config.name === 'grok-4') {
+          prompt = grokPrompt;
+        } else {
+          prompt = genericPrompt;
+        }
+        
         // Para DeepSeek, buscar Tavily en paralelo (dentro de esta Promise)
         let context: string | undefined;
         if ((config as any).usesTavilyRAG) {
