@@ -1476,16 +1476,21 @@ const {
         })();
         
         let resetCount = 0;
+        let incompleteCount = 0;  // NEW: Track companies with 1-5 models
+        const incompleteCompanies: Array<{ticker: string, actualModels: number}> = [];
+        
         for (const company of suspectCompanies) {
-          // Verificar si realmente tiene registros
+          // Verificar cuántos registros realmente tiene
           const { count } = await supabase
             .from('rix_runs_v2')
             .select('*', { count: 'exact', head: true })
             .eq('05_ticker', company.ticker)
             .eq('06_period_from', reconcilePeriodFromStr);
           
-          // Si tiene 0 registros, resetear a pending
-          if ((count || 0) === 0) {
+          const actualModels = count || 0;
+          
+          // Si tiene 0 registros, resetear a pending (ghost company)
+          if (actualModels === 0) {
             await supabase
               .from('sweep_progress')
               .update({ 
@@ -1497,11 +1502,61 @@ const {
             
             console.log(`[${triggerMode}] Reset ghost company: ${company.ticker} (was 'completed' with 0 records)`);
             resetCount++;
+          } else if (actualModels < 6) {
+            // NEW: Si tiene 1-5 modelos, marcar como incomplete para repair
+            incompleteCount++;
+            incompleteCompanies.push({ ticker: company.ticker, actualModels });
+            
+            // Actualizar models_completed con el valor real
+            await supabase
+              .from('sweep_progress')
+              .update({ 
+                models_completed: actualModels,
+                error_message: `Incomplete: only ${actualModels}/6 models`
+              })
+              .eq('id', company.id);
           }
         }
         
         if (resetCount > 0) {
           console.log(`[${triggerMode}] Reconciled ${resetCount} ghost companies back to pending`);
+        }
+        
+        // NEW: Si hay empresas incompletas, disparar repair_search inmediatamente
+        if (incompleteCount > 0) {
+          console.log(`[${triggerMode}] Found ${incompleteCount} incomplete companies (1-5 models). Triggering repair...`);
+          console.log(`[${triggerMode}] Sample: ${incompleteCompanies.slice(0, 5).map(c => `${c.ticker}(${c.actualModels})`).join(', ')}`);
+          
+          // Verificar si ya hay un repair_search pendiente
+          const { data: existingRepair } = await supabase
+            .from('cron_triggers')
+            .select('id, status')
+            .eq('action', 'repair_search')
+            .in('status', ['pending', 'processing'])
+            .limit(1)
+            .maybeSingle();
+          
+          if (!existingRepair) {
+            const { error: insertError } = await supabase.from('cron_triggers').insert({
+              action: 'repair_search',
+              params: { 
+                sweep_id: sweepId, 
+                count: incompleteCount * 6, // Estimated missing records
+                batch_size: 20,
+                reason: 'incomplete_companies',
+                sample: incompleteCompanies.slice(0, 10).map(c => `${c.ticker}(${c.actualModels}/6)`)
+              },
+              status: 'pending',
+            });
+            
+            if (insertError) {
+              console.error(`[${triggerMode}] Failed inserting repair_search for incomplete companies:`, insertError);
+            } else {
+              console.log(`[${triggerMode}] Inserted repair_search trigger for ${incompleteCount} incomplete companies`);
+            }
+          } else {
+            console.log(`[${triggerMode}] repair_search already pending/processing (id: ${existingRepair.id})`);
+          }
         }
       }
 
