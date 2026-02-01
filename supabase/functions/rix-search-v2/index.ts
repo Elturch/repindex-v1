@@ -1060,6 +1060,33 @@ serve(async (req) => {
     if (!checkError && existingRecords && existingRecords.length >= 5) {
       // Already have records for all/most models this week - skip entirely
       console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} - ${existingRecords.length} models already exist for this period, skipping API calls`);
+      
+      // ═══════════════════════════════════════════════════════════════════
+      // CRITICAL FIX: Mark as completed in sweep_progress BEFORE returning
+      // This prevents infinite retry loops for companies that are already done
+      // ═══════════════════════════════════════════════════════════════════
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+      const currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+
+      const { error: updateError } = await supabase
+        .from('sweep_progress')
+        .update({ 
+          status: 'completed', 
+          completed_at: new Date().toISOString(),
+          models_completed: existingRecords.length
+        })
+        .eq('sweep_id', currentSweepId)
+        .eq('ticker', ticker);
+
+      if (updateError) {
+        console.warn(`[DUPLICATE-SKIP-EARLY] Failed to update sweep_progress for ${ticker}: ${updateError.message}`);
+      } else {
+        console.log(`[DUPLICATE-SKIP-EARLY] ${ticker} marked as completed in sweep_progress (sweep: ${currentSweepId})`);
+      }
+      
       const totalTime = Date.now() - startTime;
       return new Response(
         JSON.stringify({
@@ -1070,6 +1097,7 @@ serve(async (req) => {
           ticker,
           issuer_name,
           total_time_ms: totalTime,
+          sweep_updated: !updateError,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
