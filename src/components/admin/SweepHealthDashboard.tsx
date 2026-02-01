@@ -40,6 +40,7 @@ interface SweepRecord {
   started_at: string | null;
   completed_at: string | null;
   fase: number;
+  worker_id?: number | null;
 }
 
 interface PhaseStatus {
@@ -49,6 +50,14 @@ interface PhaseStatus {
   pending: number;
   processing: number;
   failed: number;
+}
+
+interface WorkerStats {
+  workerId: number;
+  processing: number;
+  completed: number;
+  tickers: string[];
+  lastActivity: Date | null;
 }
 
 interface SweepHealthData {
@@ -66,6 +75,8 @@ interface SweepHealthData {
   sweepStartTime: Date | null;
   elapsedTime: string;
   phases: PhaseStatus[];
+  workers: WorkerStats[];
+  parallelActive: boolean;
 }
 
 const SUPABASE_URL = 'https://jzkjykmrwisijiqlwuua.supabase.co';
@@ -378,9 +389,9 @@ export function SweepHealthDashboard() {
 
       const sweepId = statusData.sweepId;
 
-      // 2. Fetch all progress records for this sweep
+      // 2. Fetch all progress records for this sweep (including worker_id)
       const progressRes = await fetch(
-        `${SUPABASE_URL}/rest/v1/sweep_progress?sweep_id=eq.${sweepId}&select=ticker,issuer_name,status,started_at,completed_at,fase`,
+        `${SUPABASE_URL}/rest/v1/sweep_progress?sweep_id=eq.${sweepId}&select=ticker,issuer_name,status,started_at,completed_at,fase,worker_id`,
         { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
       );
       const progressData: SweepRecord[] = await progressRes.json();
@@ -432,10 +443,40 @@ export function SweepHealthDashboard() {
       });
       const phases = Array.from(phaseMap.values()).sort((a, b) => a.fase - b.fase);
 
-      // 9. Determine health status
+      // 9. Calculate worker stats for parallel monitoring
+      const workerMap = new Map<number, WorkerStats>();
+      progressData.forEach(r => {
+        if (r.worker_id !== null && r.worker_id !== undefined) {
+          const current = workerMap.get(r.worker_id) || { 
+            workerId: r.worker_id, 
+            processing: 0, 
+            completed: 0, 
+            tickers: [],
+            lastActivity: null 
+          };
+          
+          if (r.status === 'processing') {
+            current.processing++;
+            current.tickers.push(r.ticker);
+          } else if (r.status === 'completed') {
+            current.completed++;
+            if (r.completed_at) {
+              const completedTime = new Date(r.completed_at);
+              if (!current.lastActivity || completedTime > current.lastActivity) {
+                current.lastActivity = completedTime;
+              }
+            }
+          }
+          workerMap.set(r.worker_id, current);
+        }
+      });
+      const workers = Array.from(workerMap.values()).sort((a, b) => a.workerId - b.workerId);
+      const parallelActive = workers.some(w => w.processing > 0);
+
+      // 10. Determine health status
       const healthStatus = determineHealthStatus(completed, total, zombies, lastActivity, failed);
 
-      // 10. Calculate expected progress
+      // 11. Calculate expected progress
       const expectedProgress = calculateExpectedProgress(sweepStartTime);
       const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -454,6 +495,8 @@ export function SweepHealthDashboard() {
         sweepStartTime,
         elapsedTime,
         phases,
+        workers,
+        parallelActive,
       });
 
     } catch (error) {
@@ -787,7 +830,82 @@ export function SweepHealthDashboard() {
           </div>
         </div>
 
-        {/* Contextual Actions */}
+        {/* Parallel Workers Monitor */}
+        {(data.parallelActive || data.workers.length > 0) && (
+          <div className="space-y-3 rounded-lg border border-purple-500/30 bg-purple-500/5 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className={cn("h-5 w-5", data.parallelActive ? "text-purple-500 animate-pulse" : "text-muted-foreground")} />
+                <span className="font-semibold">
+                  Workers Paralelos {data.parallelActive && <Badge className="ml-2 bg-purple-500">ACTIVO</Badge>}
+                </span>
+              </div>
+              <span className="text-sm text-muted-foreground">
+                {data.workers.filter(w => w.processing > 0).length} activos de {data.workers.length} registrados
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6">
+              {data.workers.map(worker => (
+                <TooltipProvider key={worker.workerId}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div 
+                        className={cn(
+                          "rounded-lg border p-3 text-center transition-all",
+                          worker.processing > 0 
+                            ? "border-purple-500/50 bg-purple-500/10 animate-pulse" 
+                            : "border-border bg-muted/30"
+                        )}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          {worker.processing > 0 && (
+                            <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                          )}
+                          <span className="text-lg font-bold">W{worker.workerId}</span>
+                        </div>
+                        <div className="mt-1 flex justify-center gap-2 text-xs">
+                          {worker.processing > 0 && (
+                            <span className="text-purple-500">⏳ {worker.processing}</span>
+                          )}
+                          <span className="text-green-600">✓ {worker.completed}</span>
+                        </div>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <div className="space-y-1 text-xs">
+                        <div className="font-medium">Worker {worker.workerId}</div>
+                        <div>Procesando: {worker.processing}</div>
+                        <div>Completados: {worker.completed}</div>
+                        {worker.tickers.length > 0 && (
+                          <div className="mt-1 text-purple-400">
+                            Ahora: {worker.tickers.slice(0, 3).join(', ')}{worker.tickers.length > 3 ? '...' : ''}
+                          </div>
+                        )}
+                        {worker.lastActivity && (
+                          <div className="text-muted-foreground">
+                            Último: {formatDistanceToNow(worker.lastActivity, { locale: es, addSuffix: true })}
+                          </div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+            </div>
+            
+            {data.parallelActive && (
+              <div className="flex items-center justify-center gap-2 text-sm text-purple-600">
+                <Activity className="h-4 w-4" />
+                <span>
+                  Velocidad estimada: ~{Math.max(1, data.workers.filter(w => w.processing > 0).length * 15)} empresas/hora
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+
         <div className="flex flex-wrap gap-2 border-t pt-4">
           {data.zombies.length > 0 && (
             <Button 
