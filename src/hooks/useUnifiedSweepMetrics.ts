@@ -165,14 +165,23 @@ function getWeekStartFromSweepId(sweepId: string): string {
   return weekStart.toISOString().split('T')[0];
 }
 
-// Determine if a record has data based on its MODEL-SPECIFIC column
+// Determine if a record has data based on search_completed_at (OPTIMIZED)
+// CRITICAL FIX: Usamos search_completed_at en vez de revisar columnas de texto pesado.
+// Esto evita timeouts de PostgREST (57014) y es mucho más rápido.
 function recordHasData(record: Record<string, unknown>): boolean {
-  const modelName = record['02_model_name'] as string;
-  const responseColumn = getResponseColumn(modelName);
-  const raw = record[responseColumn];
-  if (raw === null || raw === undefined) return false;
-  if (typeof raw === 'string' && raw.trim().length === 0) return false;
-  return true;
+  // Primary method: search_completed_at indica que la búsqueda terminó con éxito
+  const searchCompleted = record['search_completed_at'];
+  if (searchCompleted !== null && searchCompleted !== undefined) {
+    return true;
+  }
+  
+  // Fallback: si analysis_completed_at está set, definitivamente hay datos
+  const analysisCompleted = record['analysis_completed_at'];
+  if (analysisCompleted !== null && analysisCompleted !== undefined) {
+    return true;
+  }
+  
+  return false;
 }
 
 export function useUnifiedSweepMetrics(forcedSweepId?: string) {
@@ -220,10 +229,11 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         failedCompaniesResult,
         pipelineLogsResult,
       ] = await Promise.all([
-        // Get all records for this week from rix_runs_v2 - include ALL response columns
+        // OPTIMIZED: Solo traer metadatos ligeros, NO columnas de texto pesado (*_bruto)
+        // Esto evita timeouts de PostgREST (57014) en el dashboard
         supabase
           .from('rix_runs_v2')
-          .select('05_ticker, 02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
+          .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
           .eq('06_period_from', weekStart),
         
         // Get sweep_progress status counts (include ticker for ghost detection)

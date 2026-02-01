@@ -799,17 +799,20 @@ serve(async (req) => {
           const ticker = record['05_ticker'];
           const modelName = record['02_model_name'];
           
-          // === LOCKING MECHANISM ===
+          // === LOCKING MECHANISM (HARDENED) ===
           // Check if this record is already being processed by another invocation
-          const existingLock = record['17_flags'] as any[] | null;
-          const lockInfo = existingLock?.find(f => typeof f === 'object' && f?.analysis_lock);
+          // DEFENSIVE: Handle 17_flags as any type (array, object, or null)
+          const rawFlags = record['17_flags'];
+          const existingLock: any[] = Array.isArray(rawFlags) ? rawFlags : [];
+          
+          const lockInfo = existingLock.find(f => typeof f === 'object' && f !== null && f?.analysis_lock);
           
           if (lockInfo?.analysis_lock) {
             const lockTime = new Date(lockInfo.analysis_lock).getTime();
             const now = Date.now();
             
             // If lock is less than 2 minutes old, skip this record
-            if (now - lockTime < LOCK_TIMEOUT_MS) {
+            if (!isNaN(lockTime) && now - lockTime < LOCK_TIMEOUT_MS) {
               console.log(`[rix-analyze-v2] SKIP (locked): ${ticker} - ${modelName} (locked at ${lockInfo.analysis_lock})`);
               skipped.push({ record_id: recordId, ticker, model: modelName, reason: 'locked' });
               continue;
@@ -818,13 +821,13 @@ serve(async (req) => {
             console.log(`[rix-analyze-v2] Taking over stale lock for ${ticker} - ${modelName}`);
           }
           
-          // === ACQUIRE LOCK ===
+          // === ACQUIRE LOCK (HARDENED) ===
           const lockFlag = { analysis_lock: analysisStartTime, worker: crypto.randomUUID().slice(0, 8) };
-          const existingFlags = (existingLock || []).filter(f => !(typeof f === 'object' && f?.analysis_lock));
+          const cleanedFlags = existingLock.filter(f => !(typeof f === 'object' && f !== null && f?.analysis_lock));
           
           const { error: lockError } = await supabase
             .from('rix_runs_v2')
-            .update({ '17_flags': [...existingFlags, lockFlag] })
+            .update({ '17_flags': [...cleanedFlags, lockFlag] })
             .eq('id', recordId)
             .is('analysis_completed_at', null); // Only lock if still pending
           
@@ -848,12 +851,14 @@ serve(async (req) => {
             error: error.message,
           });
           
-          // Release lock on error (reset the flag)
+          // Release lock on error (HARDENED: re-read current flags to avoid corruption)
+          const rawFlagsNow = record['17_flags'];
+          const currentFlags: any[] = Array.isArray(rawFlagsNow) ? rawFlagsNow : [];
+          const cleanedFlagsOnError = currentFlags.filter(f => !(typeof f === 'object' && f !== null && f?.analysis_lock));
+          
           await supabase
             .from('rix_runs_v2')
-            .update({ 
-              '17_flags': ((record['17_flags'] || []) as any[]).filter(f => !(typeof f === 'object' && f?.analysis_lock))
-            })
+            .update({ '17_flags': cleanedFlagsOnError })
             .eq('id', record.id);
         }
       }
