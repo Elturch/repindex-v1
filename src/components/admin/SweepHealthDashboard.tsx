@@ -8,12 +8,13 @@ import {
   RefreshCw,
   Zap,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Ghost,
+  Activity,
+  Clock
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
-import { es } from 'date-fns/locale';
 import { useUnifiedSweepMetrics, useRefreshSweepMetrics } from '@/hooks/useUnifiedSweepMetrics';
 
 export function SweepHealthDashboard() {
@@ -57,7 +58,6 @@ export function SweepHealthDashboard() {
     if (!metrics?.failedCompanies?.length) return;
     setRetrying(true);
     try {
-      // Reset failed companies to pending status
       const { error } = await supabase
         .from('sweep_progress')
         .update({ status: 'pending', error_message: null, retry_count: 0 })
@@ -66,7 +66,6 @@ export function SweepHealthDashboard() {
       
       if (error) throw error;
       
-      // Trigger the orchestrator to process them
       await supabase.functions.invoke('rix-batch-orchestrator', {
         body: { trigger: 'auto_recovery' },
       });
@@ -104,28 +103,59 @@ export function SweepHealthDashboard() {
     );
   }
 
-  const hasActiveProcesses = metrics.searchProcessing > 0;
+  // Calcular procesos activos reales: sweep_progress + triggers
+  const activeSearches = metrics.searchProcessing || 0;
+  const activeTriggers = metrics.triggersProcessing || 0;
+  const pendingTriggers = metrics.triggersPending || 0;
+  const totalActive = activeSearches + activeTriggers;
+  const hasActiveProcesses = totalActive > 0;
+  const hasPendingWork = pendingTriggers > 0 || metrics.searchPending > 0;
+
+  // Total empresas incluyendo fantasmas
+  const totalWithGhosts = metrics.totalCompanies + metrics.ghostCompanies;
+  const realComplete = metrics.companiesComplete;
 
   return (
     <div className="space-y-4 mb-6">
-      {/* SECCIÓN 1: Estado del Sistema */}
-      <Card>
+      {/* SECCIÓN 1: Estado del Sistema - PROCESOS ACTIVOS */}
+      <Card className={cn(
+        hasActiveProcesses && "border-primary/50 bg-primary/5"
+      )}>
         <CardContent className="py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {/* Indicador de estado */}
-              <div className={cn(
-                "w-3 h-3 rounded-full",
-                hasActiveProcesses ? "bg-primary animate-pulse" : "bg-muted-foreground/40"
-              )} />
+              {/* Indicador de estado con animación */}
+              {hasActiveProcesses ? (
+                <div className="relative">
+                  <Activity className="h-5 w-5 text-primary animate-pulse" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                  </span>
+                </div>
+              ) : hasPendingWork ? (
+                <Clock className="h-5 w-5 text-muted-foreground" />
+              ) : (
+                <div className="w-3 h-3 rounded-full bg-muted-foreground/40" />
+              )}
+              
               <div>
                 <span className="font-medium">
-                  {hasActiveProcesses 
-                    ? `${metrics.searchProcessing} procesos activos`
-                    : "Sin procesos activos"}
+                  {hasActiveProcesses ? (
+                    <>
+                      {activeSearches > 0 && `${activeSearches} búsquedas`}
+                      {activeSearches > 0 && activeTriggers > 0 && ' + '}
+                      {activeTriggers > 0 && `${activeTriggers} triggers`}
+                      {' en ejecución'}
+                    </>
+                  ) : hasPendingWork ? (
+                    `${pendingTriggers + metrics.searchPending} tareas pendientes`
+                  ) : (
+                    "Sin procesos activos"
+                  )}
                 </span>
                 <div className="text-sm text-muted-foreground">
-                  Barrido {metrics.sweepId} • {formatDistanceToNow(metrics.lastUpdated, { locale: es, addSuffix: true })}
+                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas completas
                 </div>
               </div>
             </div>
@@ -145,7 +175,12 @@ export function SweepHealthDashboard() {
       {/* SECCIÓN 2: Progreso por Modelo IA */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Progreso por Modelo IA</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Progreso por Modelo IA</CardTitle>
+            <span className="text-sm text-muted-foreground">
+              {metrics.recordsWithScore}/{metrics.totalRecords} registros
+            </span>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {metrics.byModel.map(model => (
@@ -170,7 +205,38 @@ export function SweepHealthDashboard() {
         </CardContent>
       </Card>
 
-      {/* SECCIÓN 3: Errores (solo si hay) */}
+      {/* SECCIÓN 3: Ghost Companies (empresas fantasmas) */}
+      {metrics.ghostCompanies > 0 && (
+        <Card className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base text-amber-700 dark:text-amber-400 flex items-center gap-2">
+                <Ghost className="h-4 w-4" />
+                {metrics.ghostCompanies} Empresas Fantasma
+              </CardTitle>
+              <span className="text-xs text-amber-600 dark:text-amber-500">
+                Marcadas completas pero sin datos reales
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {metrics.ghostTickers.slice(0, 12).map(ticker => (
+                <span key={ticker} className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded font-mono text-xs">
+                  {ticker}
+                </span>
+              ))}
+              {metrics.ghostTickers.length > 12 && (
+                <span className="px-2 py-1 text-amber-600 dark:text-amber-500 text-xs">
+                  +{metrics.ghostTickers.length - 12} más
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* SECCIÓN 4: Errores (empresas fallidas) */}
       {metrics.failedCompanies && metrics.failedCompanies.length > 0 && (
         <Card className="border-destructive/30 bg-destructive/5">
           <CardHeader className="pb-2">
