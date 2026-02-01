@@ -843,6 +843,77 @@ async function processCronTriggers(
         results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
         console.log(`[cron_triggers] auto_sanitize trigger ${trigger.id} completed successfully`);
 
+      } else if (trigger.action === 'repair_search') {
+        // ============================================================
+        // REPAIR_SEARCH: Re-ejecuta búsqueda para registros sin datos
+        // ============================================================
+        console.log(`[cron_triggers] Processing repair_search trigger ${trigger.id}`);
+        
+        const triggerParams = trigger.params as { sweep_id?: string; batch_size?: number } | null;
+        const batchSize = triggerParams?.batch_size || 5;
+        
+        // Calculate the current analysis period
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const periodFrom = new Date(now);
+        periodFrom.setDate(now.getDate() + mondayOffset - 7);
+        const periodFromStr = periodFrom.toISOString().split('T')[0];
+        
+        // Get records without search data
+        const { data: missingRecords } = await supabase
+          .from('rix_runs_v2')
+          .select('05_ticker, 02_model_name')
+          .gte('06_period_from', periodFromStr)
+          .is('20_res_gpt_bruto', null)
+          .limit(batchSize);
+        
+        const repairResults: Array<{ ticker: string; model: string; success: boolean; error?: string }> = [];
+        
+        for (const record of (missingRecords || [])) {
+          try {
+            // Re-execute search for this specific model
+            const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify({ 
+                ticker: record['05_ticker'],
+                single_model: record['02_model_name'],
+                repair_mode: true,
+              }),
+            });
+            
+            repairResults.push({ 
+              ticker: record['05_ticker'] || '', 
+              model: record['02_model_name'] || '', 
+              success: response.ok 
+            });
+          } catch (e: unknown) {
+            repairResults.push({ 
+              ticker: record['05_ticker'] || '', 
+              model: record['02_model_name'] || '', 
+              success: false, 
+              error: e instanceof Error ? e.message : String(e)
+            });
+          }
+        }
+        
+        // Mark as completed
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: { processed: repairResults.length, results: repairResults }
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: { processed: repairResults.length, results: repairResults } });
+        console.log(`[cron_triggers] repair_search trigger ${trigger.id} completed: ${repairResults.length} records processed`);
+
       } else {
         // Acción desconocida
         await supabase
@@ -1178,48 +1249,119 @@ const {
         console.log(`[${triggerMode}] Sweep ${sweepId} is complete (${completed}/${total})`);
         
         // ============================================================
-        // AUTO-SANITIZACIÓN: Verificar si ya se sanitizó este sweep
-        // Si no, insertar trigger para que el próximo CRON lo procese
+        // AUTO-ENCADENAMIENTO DE PIPELINE: Verificar estado real de datos
+        // Prioridad: repair_search → repair_analysis → auto_sanitize
         // ============================================================
-        let autoSanitizeInserted = false;
         
-        // Buscar si ya existe un trigger auto_sanitize reciente (últimas 24 horas)
-        const { data: existingSanitize } = await supabase
-          .from('cron_triggers')
-          .select('id')
-          .eq('action', 'auto_sanitize')
-          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-          .limit(1)
-          .maybeSingle();
+        // Calculate the current analysis period
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const periodFrom = new Date(now);
+        periodFrom.setDate(now.getDate() + mondayOffset - 7);
+        const periodFromStr = periodFrom.toISOString().split('T')[0];
         
-        if (!existingSanitize) {
-          // Verificar también si ya hay reportes de calidad para este sweep
-          const { count: existingReports } = await supabase
-            .from('data_quality_reports')
-            .select('*', { count: 'exact', head: true })
-            .eq('sweep_id', sweepId);
+        // PASO 1: Verificar registros SIN DATOS de búsqueda
+        const { count: missingDataCount } = await supabase
+          .from('rix_runs_v2')
+          .select('*', { count: 'exact', head: true })
+          .gte('06_period_from', periodFromStr)
+          .is('20_res_gpt_bruto', null);
+        
+        // PASO 2: Verificar registros CON DATOS pero SIN SCORE
+        const { count: analyzableCount } = await supabase
+          .from('rix_runs_v2')
+          .select('*', { count: 'exact', head: true })
+          .gte('06_period_from', periodFromStr)
+          .is('09_rix_score', null)
+          .not('20_res_gpt_bruto', 'is', null);
+        
+        console.log(`[${triggerMode}] Data check: ${missingDataCount || 0} sin datos, ${analyzableCount || 0} analizables`);
+        
+        let chainAction: string | null = null;
+        let chainParams: Record<string, unknown> = {};
+        
+        // PRIORIDAD 1: Hay registros sin datos → repair_search
+        if (missingDataCount && missingDataCount > 0) {
+          // Verificar que no haya trigger pendiente
+          const { data: existingTrigger } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'repair_search')
+            .eq('status', 'pending')
+            .maybeSingle();
           
-          if ((existingReports || 0) === 0) {
-            // No hay sanitización previa → insertar trigger
-            console.log(`[${triggerMode}] Sweep complete! Inserting auto_sanitize trigger for ${sweepId}`);
+          if (!existingTrigger) {
+            chainAction = 'repair_search';
+            chainParams = { sweep_id: sweepId, count: missingDataCount, batch_size: 5 };
+            console.log(`[${triggerMode}] Inserting repair_search trigger for ${missingDataCount} records without data`);
+          } else {
+            console.log(`[${triggerMode}] repair_search trigger already pending (id: ${existingTrigger.id})`);
+          }
+        }
+        // PRIORIDAD 2: Hay registros analizables → repair_analysis
+        else if (analyzableCount && analyzableCount > 0) {
+          // Verificar que no haya trigger pendiente
+          const { data: existingTrigger } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'repair_analysis')
+            .eq('status', 'pending')
+            .maybeSingle();
+          
+          if (!existingTrigger) {
+            chainAction = 'repair_analysis';
+            chainParams = { sweep_id: sweepId, count: analyzableCount, batch_size: 5 };
+            console.log(`[${triggerMode}] Inserting repair_analysis trigger for ${analyzableCount} analyzable records`);
+          } else {
+            console.log(`[${triggerMode}] repair_analysis trigger already pending (id: ${existingTrigger.id})`);
+          }
+        }
+        // PRIORIDAD 3: Todo listo → auto_sanitize (validar respuestas inválidas)
+        else {
+          // Buscar si ya existe un trigger auto_sanitize reciente (últimas 24 horas)
+          const { data: existingSanitize } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'auto_sanitize')
+            .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .limit(1)
+            .maybeSingle();
+          
+          if (!existingSanitize) {
+            // Verificar también si ya hay reportes de calidad para este sweep
+            const { count: existingReports } = await supabase
+              .from('data_quality_reports')
+              .select('*', { count: 'exact', head: true })
+              .eq('sweep_id', sweepId);
             
-            const { error: insertError } = await supabase.from('cron_triggers').insert({
-              action: 'auto_sanitize',
-              params: { sweep_id: sweepId, auto_repair: true },
-              status: 'pending',
-            });
-            
-            if (insertError) {
-              console.error(`[${triggerMode}] Failed to insert auto_sanitize trigger:`, insertError);
+            if ((existingReports || 0) === 0) {
+              chainAction = 'auto_sanitize';
+              chainParams = { sweep_id: sweepId, auto_repair: true };
+              console.log(`[${triggerMode}] Sweep complete! Inserting auto_sanitize trigger for ${sweepId}`);
             } else {
-              autoSanitizeInserted = true;
-              console.log(`[${triggerMode}] auto_sanitize trigger inserted successfully`);
+              console.log(`[${triggerMode}] Sweep ${sweepId} already has ${existingReports} quality reports, skipping auto_sanitize`);
             }
           } else {
-            console.log(`[${triggerMode}] Sweep ${sweepId} already has ${existingReports} quality reports, skipping auto_sanitize`);
+            console.log(`[${triggerMode}] auto_sanitize trigger already exists (id: ${existingSanitize.id}), skipping`);
           }
-        } else {
-          console.log(`[${triggerMode}] auto_sanitize trigger already exists (id: ${existingSanitize.id}), skipping`);
+        }
+        
+        // Insertar el trigger de encadenamiento si corresponde
+        let autoChainInserted = false;
+        if (chainAction) {
+          const { error: insertError } = await supabase.from('cron_triggers').insert({
+            action: chainAction,
+            params: chainParams,
+            status: 'pending',
+          });
+          
+          if (insertError) {
+            console.error(`[${triggerMode}] Failed to insert ${chainAction} trigger:`, insertError);
+          } else {
+            autoChainInserted = true;
+            console.log(`[${triggerMode}] ${chainAction} trigger inserted successfully`);
+          }
         }
         
         return new Response(
@@ -1228,8 +1370,13 @@ const {
             trigger: triggerMode,
             sweepId,
             action: 'complete',
-            reason: 'Sweep already completed',
-            autoSanitizeInserted,
+            reason: 'Sweep search phase completed',
+            dataCheck: {
+              missingData: missingDataCount || 0,
+              analyzable: analyzableCount || 0,
+            },
+            autoChain: chainAction,
+            autoChainInserted,
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
