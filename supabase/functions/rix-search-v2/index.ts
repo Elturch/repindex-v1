@@ -303,12 +303,12 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
     },
   },
   // 2. Grok (xAI) - ✅ Web Search via Responses API
-  // Actualizado enero 2026: grok-3 → grok-4 (requerido para web_search tools)
-  // Actualizado enero 2026: web_search_preview → web_search
+  // Actualizado febrero 2026: grok-4 → grok-4-1-fast (optimizado para baja latencia)
+  // grok-4-1-fast: mejor para tool-calling y respuestas rápidas
   // IMPORTANTE: Grok rechaza fechas futuras como "información ficticia"
   // Usamos "últimos 7 días" en lugar de fechas específicas para evitar filtros de seguridad
   {
-    name: 'grok-4',
+    name: 'grok-4-1-fast',
     displayName: 'Grok',
     apiKeyEnv: 'XAI_API_KEY',
     endpoint: 'https://api.x.ai/v1/responses',
@@ -321,8 +321,8 @@ const getSearchModelConfigs = (): SearchModelConfig[] => [
         'Content-Type': 'application/json',
       },
       body: {
-        // grok-4 es requerido para server-side tools (web_search)
-        model: 'grok-4',
+        // grok-4-1-fast: optimizado para latencia baja y tool-calling
+        model: 'grok-4-1-fast',
         input: prompt,
         // web_search (antes web_search_preview, deprecated 12 ene 2026)
         tools: [{ type: 'web_search' }],
