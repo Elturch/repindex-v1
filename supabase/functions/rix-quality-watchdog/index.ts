@@ -739,27 +739,27 @@ async function repairMissingModels(
 
 // ============ GET QUALITY REPORT ============
 async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<ReportResult> {
-  // Obtener el sweep más reciente si no se especifica
+  // CRITICAL FIX: Use the CURRENT sweep ID (calculated from today's date),
+  // not the latest report's sweep_id (which may be outdated)
   let sweepId = forcedSweepId
   if (!sweepId) {
-    const { data: latestReport } = await supabase
-      .from('data_quality_reports')
-      .select('sweep_id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    sweepId = latestReport?.sweep_id
+    // Calculate current sweep ID (same logic as orchestrator)
+    const now = new Date()
+    const startOfYear = new Date(now.getFullYear(), 0, 1)
+    const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000))
+    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7)
+    sweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`
+    
+    console.log(`[report] Using current sweep ID: ${sweepId}`)
   }
 
-  if (!sweepId) {
-    return {
-      latestSweep: null,
-      weekStart: null,
-      totalReports: 0,
-      byStatus: { missing: 0, repaired: 0, failed_repair: 0, invalid_response: 0 },
-      byModel: {},
-    }
+  // Empty result if no reports exist for this sweep yet
+  const emptyResult: ReportResult = {
+    latestSweep: sweepId,
+    weekStart: null,
+    totalReports: 0,
+    byStatus: { missing: 0, repaired: 0, failed_repair: 0, invalid_response: 0 },
+    byModel: {},
   }
 
   // Obtener todos los reportes del sweep
