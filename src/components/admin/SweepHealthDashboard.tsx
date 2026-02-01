@@ -2,16 +2,13 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { 
-  CheckCircle2,
-  Clock,
   Loader2,
   RefreshCw,
-  Activity,
-  Ghost,
-  Zap
+  Zap,
+  XCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -24,6 +21,7 @@ export function SweepHealthDashboard() {
   const { data: metrics, isLoading, refetch } = useUnifiedSweepMetrics();
   const refreshAllMetrics = useRefreshSweepMetrics();
   const [forcing, setForcing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const handleForce = async () => {
     if (!metrics) return;
@@ -55,17 +53,34 @@ export function SweepHealthDashboard() {
     }
   };
 
-  // State display helper
-  const getStateDisplay = () => {
-    if (!metrics) return { icon: Clock, color: 'text-muted-foreground', bgColor: 'bg-muted' };
-    
-    switch (metrics.systemState) {
-      case 'SWEEP_RUNNING':
-        return { icon: Activity, color: 'text-green-600', bgColor: 'bg-green-500', animate: true };
-      case 'COMPLETE':
-        return { icon: CheckCircle2, color: 'text-green-600', bgColor: 'bg-green-600' };
-      default:
-        return { icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-500' };
+  const handleRetryFailed = async () => {
+    if (!metrics?.failedCompanies?.length) return;
+    setRetrying(true);
+    try {
+      // Reset failed companies to pending status
+      const { error } = await supabase
+        .from('sweep_progress')
+        .update({ status: 'pending', error_message: null, retry_count: 0 })
+        .eq('sweep_id', metrics.sweepId)
+        .eq('status', 'failed');
+      
+      if (error) throw error;
+      
+      // Trigger the orchestrator to process them
+      await supabase.functions.invoke('rix-batch-orchestrator', {
+        body: { trigger: 'auto_recovery' },
+      });
+      
+      toast({ 
+        title: '🔄 Reintentando',
+        description: `${metrics.failedCompanies.length} empresas puestas en cola`
+      });
+      
+      refreshAllMetrics();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -89,75 +104,106 @@ export function SweepHealthDashboard() {
     );
   }
 
-  const stateDisplay = getStateDisplay();
-  const modelsIncomplete = metrics.byModel.filter(m => m.percentage < 100);
-  const hasPendingWork = metrics.recordsNoData > 0 || metrics.recordsPendingAnalysis > 0;
+  const hasActiveProcesses = metrics.searchProcessing > 0;
 
   return (
-    <Card className="mb-6">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-3 text-lg">
-            <div className={cn(
-              "relative w-8 h-8 rounded-full flex items-center justify-center",
-              stateDisplay.bgColor
-            )}>
-              <stateDisplay.icon className="w-4 h-4 text-white" />
-              {stateDisplay.animate && (
-                <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-40" />
-              )}
-            </div>
-            <div>
-              <span>Barrido {metrics.sweepId}</span>
-              <div className="text-sm font-normal text-muted-foreground">
-                {metrics.totalCompanies} empresas • {metrics.companiesComplete} completas
-                {hasPendingWork && ` • ${metrics.recordsNoData + metrics.recordsPendingAnalysis} pendientes`}
+    <div className="space-y-4 mb-6">
+      {/* SECCIÓN 1: Estado del Sistema */}
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* Indicador de estado */}
+              <div className={cn(
+                "w-3 h-3 rounded-full",
+                hasActiveProcesses ? "bg-primary animate-pulse" : "bg-muted-foreground/40"
+              )} />
+              <div>
+                <span className="font-medium">
+                  {hasActiveProcesses 
+                    ? `${metrics.searchProcessing} procesos activos`
+                    : "Sin procesos activos"}
+                </span>
+                <div className="text-sm text-muted-foreground">
+                  Barrido {metrics.sweepId} • {formatDistanceToNow(metrics.lastUpdated, { locale: es, addSuffix: true })}
+                </div>
               </div>
             </div>
-          </CardTitle>
-          <div className="text-2xl font-bold">{metrics.companyCompletionRate}%</div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        {/* Ghost alert - only if needed */}
-        {metrics.ghostCompanies > 0 && (
-          <Alert variant="destructive" className="py-2">
-            <Ghost className="h-4 w-4" />
-            <AlertDescription className="ml-2">
-              {metrics.ghostCompanies} empresas fantasma detectadas. Pulsa Forzar para reparar.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Progress bar */}
-        <Progress value={metrics.companyCompletionRate} className="h-2" />
-
-        {/* Incomplete models - only show if any */}
-        {modelsIncomplete.length > 0 && (
-          <div className="text-sm text-muted-foreground">
-            {modelsIncomplete.map(m => `${m.model} ${m.percentage}%`).join(' • ')}
-          </div>
-        )}
-
-        {/* Actions + timestamp */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="flex gap-2">
-            {metrics.systemState !== 'COMPLETE' && (
+            <div className="flex gap-2">
               <Button size="sm" onClick={handleForce} disabled={forcing}>
-                {forcing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Zap className="mr-1 h-3 w-3" />}
-                Forzar
+                {forcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                <span className="ml-1">Forzar</span>
               </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-3 w-3" />
-            </Button>
+              <Button variant="ghost" size="sm" onClick={() => refetch()}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <span className="text-xs text-muted-foreground">
-            {formatDistanceToNow(metrics.lastUpdated, { locale: es, addSuffix: true })}
-          </span>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {/* SECCIÓN 2: Progreso por Modelo IA */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Progreso por Modelo IA</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {metrics.byModel.map(model => (
+            <div key={model.model} className="flex items-center gap-4">
+              <span className="w-24 text-sm font-medium truncate">{model.model}</span>
+              <div className="flex-1">
+                <Progress value={model.percentage} className="h-2" />
+              </div>
+              <span className="w-20 text-sm text-right tabular-nums">
+                {model.withScore}/{model.total}
+              </span>
+              <span className={cn(
+                "w-12 text-sm font-medium text-right tabular-nums",
+                model.percentage < 80 ? "text-destructive" : 
+                model.percentage < 95 ? "text-muted-foreground" : "text-primary"
+              )}>
+                {model.percentage}%
+              </span>
+              {model.percentage < 80 && <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0" />}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* SECCIÓN 3: Errores (solo si hay) */}
+      {metrics.failedCompanies && metrics.failedCompanies.length > 0 && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base text-destructive flex items-center gap-2">
+                <XCircle className="h-4 w-4" />
+                {metrics.failedCompanies.length} Empresas Fallidas
+              </CardTitle>
+              <Button 
+                size="sm" 
+                variant="destructive" 
+                onClick={handleRetryFailed}
+                disabled={retrying}
+              >
+                {retrying ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Reintentar
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
+              {metrics.failedCompanies.map(f => (
+                <div key={f.ticker} className="flex items-center gap-2 text-destructive">
+                  <span className="font-mono font-medium">{f.ticker}</span>
+                  <span className="text-xs text-destructive/70 truncate">
+                    {f.error || 'Error'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
