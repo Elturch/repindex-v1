@@ -899,9 +899,10 @@ async function processCronTriggers(
 
         // IMPORTANT: aunque batch_size sea alto, limitamos el trabajo por invocación
         // para evitar timeouts que dejan el trigger atascado en "processing".
+        // UPDATED: Aumentado de 3 a 10 para mayor throughput
         const hardTimeBudgetMs = 150_000; // <180s de límite típico
         const startedAt = Date.now();
-        const maxPerInvocation = Math.max(1, Math.min(batchSize, 3));
+        const maxPerInvocation = Math.max(1, Math.min(batchSize, 10));
         
         // Find the most recent week with data (instead of calculating dates manually)
         const { data: latestWeek } = await supabase
@@ -1076,6 +1077,51 @@ async function processCronTriggers(
         console.log(
           `[cron_triggers] repair_search trigger ${trigger.id} ${nextStatus}: processed=${repairResults.length}, remaining=${remainingAfter}`
         );
+
+      } else if (trigger.action === 'auto_continue') {
+        // ============================================================
+        // AUTO_CONTINUE: Re-invoca al orquestador para mantener el sistema vivo
+        // Este trigger se inserta automáticamente cuando hay trabajo pendiente
+        // y garantiza que el sistema nunca se detenga aunque la función cierre.
+        // ============================================================
+        console.log(`[cron_triggers] Processing auto_continue trigger ${trigger.id}`);
+        
+        const triggerParams = trigger.params as { sweep_id?: string; phase?: string } | null;
+        
+        // Llamar al orquestador en modo auto_recovery para procesar trabajo pendiente
+        const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            trigger: 'auto_recovery',
+            from_auto_continue: true,
+            sweep_id: triggerParams?.sweep_id
+          }),
+        });
+
+        const responseText = await response.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        // Siempre marcar como completed (el orquestador insertará otro si es necesario)
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: data as Record<string, unknown>
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: response.ok, result: data });
+        console.log(`[cron_triggers] auto_continue trigger ${trigger.id} completed (status: ${response.status})`);
 
       } else {
         // Acción desconocida
@@ -1663,42 +1709,71 @@ const {
           }
         }
 
-        // ========== CRÍTICO: Self-chaining de triggers ==========
-        // Si quedan triggers de repair_* pendientes, programar relanzamiento para que
-        // el sistema no “se pare” hasta vaciarlos.
-        const MAX_TRIGGER_RELAUNCHES = 30;
+        // ========== CRÍTICO: Self-chaining PERSISTENTE via DB (no waitUntil) ==========
+        // En lugar de usar EdgeRuntime.waitUntil() que se pierde si la función cierra,
+        // insertamos un trigger auto_continue en la tabla cron_triggers.
+        // El CRON de 5 minutos siempre lo encontrará y procesará.
         const { count: remainingTriggers } = await supabase
           .from('cron_triggers')
           .select('*', { count: 'exact', head: true })
-          .in('status', ['pending', 'processing']);
+          .in('status', ['pending', 'processing'])
+          .neq('action', 'auto_continue');
 
-        const shouldRelaunchTriggers = (remainingTriggers || 0) > 0 && relaunch_count < MAX_TRIGGER_RELAUNCHES;
-        if (shouldRelaunchTriggers) {
-          console.log(
-            `[${triggerMode}] Triggers still pending (${remainingTriggers}). Auto-relaunching process_triggers_only in 10s (#${relaunch_count + 1})`
-          );
+        const hasPendingWork = (remainingTriggers || 0) > 0 || (missingDataCount || 0) > 0 || (analyzableCount || 0) > 0;
+        let autoContinueInserted = false;
+        
+        if (hasPendingWork) {
+          // Verificar si ya existe un auto_continue pendiente (evitar duplicados)
+          const { data: existingAutoContinue } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'auto_continue')
+            .eq('status', 'pending')
+            .limit(1)
+            .maybeSingle();
 
-          EdgeRuntime.waitUntil(
-            (async () => {
-              await new Promise(r => setTimeout(r, 10000));
-              try {
-                const resp = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${supabaseServiceKey}`,
-                  },
-                  body: JSON.stringify({
-                    process_triggers_only: true,
-                    relaunch_count: relaunch_count + 1,
-                  }),
-                });
-                console.log(`[${triggerMode}] Trigger relaunch executed (status: ${resp.status})`);
-              } catch (e) {
-                console.error(`[${triggerMode}] Trigger relaunch failed:`, e);
-              }
-            })()
-          );
+          if (!existingAutoContinue) {
+            const { error: insertError } = await supabase.from('cron_triggers').insert({
+              action: 'auto_continue',
+              params: { 
+                sweep_id: sweepId, 
+                phase: 'repair',
+                remaining_triggers: remainingTriggers || 0,
+                missing_data: missingDataCount || 0,
+                analyzable: analyzableCount || 0
+              },
+              status: 'pending',
+            });
+            
+            if (insertError) {
+              console.error(`[${triggerMode}] Failed to insert auto_continue:`, insertError);
+            } else {
+              autoContinueInserted = true;
+              console.log(`[${triggerMode}] Inserted auto_continue trigger for next CRON cycle`);
+            }
+          } else {
+            console.log(`[${triggerMode}] auto_continue already pending (id: ${existingAutoContinue.id})`);
+          }
+        }
+        
+        // Escribir heartbeat de telemetría
+        try {
+          await supabase.from('pipeline_logs').insert({
+            sweep_id: sweepId,
+            stage: 'orchestrator_heartbeat',
+            status: 'completed',
+            ticker: null,
+            metadata: { 
+              trigger: triggerMode,
+              stats: { pending, processing, completed, failed, total },
+              triggers_inserted: triggersInserted,
+              remaining_triggers: remainingTriggers || 0,
+              pending_work: hasPendingWork,
+              auto_continue_inserted: autoContinueInserted
+            }
+          });
+        } catch (logErr) {
+          console.warn(`[${triggerMode}] Failed to write heartbeat:`, logErr);
         }
         
         return new Response(
@@ -1717,7 +1792,7 @@ const {
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
-            triggersRelaunchScheduled: shouldRelaunchTriggers,
+            autoContinueInserted,
             triggersRemaining: remainingTriggers || 0,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -1725,39 +1800,28 @@ const {
       }
 
       // 6. Si ya hay MAX_CONCURRENT procesando, no disparar más (throttle)
-      // PERO si hay trabajo pendiente, programar auto-relaunch en 30s
+      // PERO si hay trabajo pendiente, programar auto-relaunch via DB trigger
       if (processing >= MAX_CONCURRENT) {
         console.log(`[${triggerMode}] Already ${processing} companies processing (max ${MAX_CONCURRENT}). Throttling.`);
         
-        // AUTO-RELAUNCH CUANDO THROTTLED: programar revisión en 30s
-        const MAX_RELAUNCHES_PER_CYCLE = 20;
-        const shouldAutoRelaunchThrottled = pending > 0 && relaunch_count < MAX_RELAUNCHES_PER_CYCLE;
-        
-        if (shouldAutoRelaunchThrottled) {
-          console.log(`[${triggerMode}] Throttled but work pending. Auto-relaunching in 30s (pending=${pending}, relaunch #${relaunch_count + 1})`);
-          
-          EdgeRuntime.waitUntil(
-            (async () => {
-              await new Promise(r => setTimeout(r, 30000)); // Esperar 30 segundos
-              
-              try {
-                const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${supabaseServiceKey}`,
-                  },
-                  body: JSON.stringify({ 
-                    trigger: 'auto_recovery',
-                    relaunch_count: relaunch_count + 1
-                  }),
-                });
-                console.log(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) executed (status: ${response.status})`);
-              } catch (e) {
-                console.error(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) failed:`, e);
-              }
-            })()
-          );
+        // AUTO-RELAUNCH VIA DB: insertar auto_continue si hay trabajo pendiente
+        if (pending > 0) {
+          const { data: existingAutoContinue } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'auto_continue')
+            .eq('status', 'pending')
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingAutoContinue) {
+            await supabase.from('cron_triggers').insert({
+              action: 'auto_continue',
+              params: { sweep_id: sweepId, phase: 'throttled', pending },
+              status: 'pending',
+            });
+            console.log(`[${triggerMode}] Inserted auto_continue trigger (throttled, pending=${pending})`);
+          }
         }
         
         return new Response(
@@ -1770,12 +1834,7 @@ const {
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
-            autoRelaunch: shouldAutoRelaunchThrottled,
-            autoRelaunchIn: shouldAutoRelaunchThrottled ? '30s' : null,
-            relaunchCount: shouldAutoRelaunchThrottled ? relaunch_count + 1 : relaunch_count,
-            message: shouldAutoRelaunchThrottled
-              ? `Slots llenos (${processing}/${MAX_CONCURRENT}). Auto-relanzamiento en 30s (#${relaunch_count + 1}).`
-              : `Slots llenos y sin trabajo pendiente.`,
+            message: `Slots llenos (${processing}/${MAX_CONCURRENT}). Auto-continue encolado.`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -1788,75 +1847,56 @@ const {
       if (toFire === 0) {
         console.log(`[${triggerMode}] No slots available or no pending companies`);
         
-        // AUTO-RELAUNCH CUANDO THROTTLED: Si hay pendientes pero slots llenos,
-        // programar auto-relaunch en 30s para cuando se libere un slot
-        const MAX_RELAUNCHES_PER_CYCLE_B = 20;
-        const shouldAutoRelaunchThrottledB = pending > 0 && processing >= MAX_CONCURRENT && relaunch_count < MAX_RELAUNCHES_PER_CYCLE_B;
-        
-        if (shouldAutoRelaunchThrottledB) {
-          console.log(`[${triggerMode}] Throttled but work pending. Auto-relaunching in 30s (pending=${pending}, processing=${processing}, relaunch #${relaunch_count + 1})`);
-          
-          EdgeRuntime.waitUntil(
-            (async () => {
-              await new Promise(r => setTimeout(r, 30000)); // Esperar 30 segundos
-              
-              try {
-                const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${supabaseServiceKey}`,
-                  },
-                  body: JSON.stringify({ 
-                    trigger: 'auto_recovery',
-                    relaunch_count: relaunch_count + 1
-                  }),
-                });
-                console.log(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) executed (status: ${response.status})`);
-              } catch (e) {
-                console.error(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} (throttled) failed:`, e);
-              }
-            })()
-          );
-        }
-        
         return new Response(
           JSON.stringify({
             success: true,
             trigger: triggerMode,
             sweepId,
-            action: 'throttled',
+            action: 'no_work',
+            reason: 'No pending companies or no slots available',
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
-            autoRelaunch: shouldAutoRelaunchThrottledB,
-            autoRelaunchIn: shouldAutoRelaunchThrottledB ? '30s' : null,
-            relaunchCount: shouldAutoRelaunchThrottledB ? relaunch_count + 1 : relaunch_count,
-            message: shouldAutoRelaunchThrottledB
-              ? `Slots llenos (${processing}/${MAX_CONCURRENT}). Auto-relanzamiento en 30s (#${relaunch_count + 1}).`
-              : `No hay trabajo pendiente o slots disponibles.`,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // 8. Reclamar empresas (atomic claim)
+      // 8. Obtener las empresas a disparar (prioridad: pending, luego failed por retry_count)
+      const { data: companiesToFire, error: fetchError } = await supabase
+        .from('sweep_progress')
+        .select('id, ticker, issuer_name')
+        .eq('sweep_id', sweepId)
+        .eq('status', 'pending')
+        .order('fase', { ascending: true })
+        .order('ticker', { ascending: true })
+        .limit(toFire);
+
+      if (fetchError || !companiesToFire || companiesToFire.length === 0) {
+        console.log(`[${triggerMode}] No companies to fire (may all be processing/completed)`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            trigger: triggerMode,
+            sweepId,
+            action: 'no_companies',
+            reason: 'All pending companies are already processing or completed',
+            stats: { pending, processing, completed, failed, total },
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // 9. Marcar como processing y disparar rix-search-v2 (fire-and-forget)
       const firedCompanies: string[] = [];
-      for (let i = 0; i < toFire; i++) {
-        const { data: claimed, error: claimError } = await supabase.rpc('claim_next_sweep_company', {
-          p_sweep_id: sweepId,
-          p_worker_id: Date.now() % 1000 + i
-        });
-
-        if (claimError || !claimed || claimed.length === 0) {
-          console.log(`[${triggerMode}] No more companies to claim after ${i} claims`);
-          break;
-        }
-
-        const company = claimed[0];
-        firedCompanies.push(company.ticker);
-
-        // 9. FIRE-AND-FORGET: Disparar rix-search-v2 SIN esperar
+      
+      for (const company of companiesToFire) {
+        // Marcar como processing ANTES de disparar
+        await supabase
+          .from('sweep_progress')
+          .update({ status: 'processing', started_at: new Date().toISOString() })
+          .eq('id', company.id);
+        
         console.log(`[${triggerMode}] Firing rix-search-v2 for ${company.ticker} (fire-and-forget)`);
         
         EdgeRuntime.waitUntil(
@@ -1868,121 +1908,96 @@ const {
             },
             body: JSON.stringify({ 
               ticker: company.ticker, 
-              issuer_name: company.issuer_name,
-              sweep_id: sweepId  // Pass sweep_id for auto-completion
+              issuer_name: company.issuer_name || company.ticker 
             }),
-          }).catch(e => console.error(`[${triggerMode}] Fire error for ${company.ticker}:`, e))
+          }).catch(e => console.error(`[${triggerMode}] Fire-and-forget failed for ${company.ticker}:`, e))
         );
-      }
-
-      // 10. Retornar INMEDIATAMENTE (no esperamos a que terminen)
-      console.log(`[${triggerMode}] Fired ${firedCompanies.length} companies: ${firedCompanies.join(', ')}`);
-
-      // 11. AUTO-RELAUNCH: Si quedan pendientes y hay slots, auto-relanzar en 30s
-      // Esto evita esperar 5 min del CRON si hay trabajo disponible
-      const MAX_RELAUNCHES_PER_CYCLE_C = 20; // Protección anti-bucle infinito
-      
-      const newPending = pending - firedCompanies.length;
-      const newProcessing = processing + firedCompanies.length;
-      const slotsAfterFire = MAX_CONCURRENT - newProcessing;
-      
-      const shouldAutoRelaunch = newPending > 0 && slotsAfterFire > 0 && relaunch_count < MAX_RELAUNCHES_PER_CYCLE_C;
-      
-      if (shouldAutoRelaunch) {
-        console.log(`[${triggerMode}] Auto-relaunching in 30s (pending=${newPending}, slots=${slotsAfterFire}, relaunch #${relaunch_count + 1})`);
         
-        EdgeRuntime.waitUntil(
-          (async () => {
-            await new Promise(r => setTimeout(r, 30000)); // Esperar 30 segundos
-            
-            try {
-              const response = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${supabaseServiceKey}`,
-                },
-                body: JSON.stringify({ 
-                  trigger: 'auto_recovery',
-                  relaunch_count: relaunch_count + 1  // Incrementar contador
-                }),
-              });
-              console.log(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} executed (status: ${response.status})`);
-            } catch (e) {
-              console.error(`[${triggerMode}] Auto-relaunch #${relaunch_count + 1} failed:`, e);
-            }
-          })()
-        );
-      } else if (newPending > 0 && relaunch_count >= MAX_RELAUNCHES_PER_CYCLE_C) {
-        console.log(`[${triggerMode}] Max relaunches reached (${MAX_RELAUNCHES_PER_CYCLE_C}). Waiting for next CRON.`);
+        firedCompanies.push(company.ticker);
       }
+
+      // 10. Insertar auto_continue para el siguiente ciclo si queda trabajo
+      const { count: newPending } = await supabase
+        .from('sweep_progress')
+        .select('*', { count: 'exact', head: true })
+        .eq('sweep_id', sweepId)
+        .eq('status', 'pending');
+
+      const slotsAfterFire = MAX_CONCURRENT - (processing + firedCompanies.length);
       
+      if ((newPending || 0) > 0) {
+        const { data: existingAutoContinue } = await supabase
+          .from('cron_triggers')
+          .select('id')
+          .eq('action', 'auto_continue')
+          .eq('status', 'pending')
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingAutoContinue) {
+          await supabase.from('cron_triggers').insert({
+            action: 'auto_continue',
+            params: { sweep_id: sweepId, phase: 'firing', pending: newPending, fired: firedCompanies.length },
+            status: 'pending',
+          });
+          console.log(`[${triggerMode}] Inserted auto_continue (fired ${firedCompanies.length}, pending=${newPending})`);
+        }
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
           trigger: triggerMode,
           sweepId,
           action: 'fired',
-          firedCompanies,
           firedCount: firedCompanies.length,
+          firedCompanies,
           stats: { 
-            pending: newPending, 
-            processing: newProcessing, 
+            pending: (newPending || 0), 
+            processing: processing + firedCompanies.length, 
             completed, 
             failed, 
             total 
           },
           triggersProcessed: triggersProcessed.length,
           zombiesReset: stuckReset.count,
-          autoRelaunch: shouldAutoRelaunch,
-          autoRelaunchIn: shouldAutoRelaunch ? '30s' : null,
-          relaunchCount: shouldAutoRelaunch ? relaunch_count + 1 : relaunch_count,
-          message: shouldAutoRelaunch 
-            ? `Disparadas ${firedCompanies.length} empresas. Auto-relanzamiento en 30s (#${relaunch_count + 1}).`
-            : `Disparadas ${firedCompanies.length} empresas. El próximo CRON las recogerá.`,
+          autoContinueScheduled: (newPending || 0) > 0,
+          message: `Disparadas ${firedCompanies.length} empresas: ${firedCompanies.join(', ')}`,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // ========== NUEVO: Modo process_triggers_only ==========
-    // Procesa solo los cron_triggers pendientes, sin ejecutar barrido de empresas
+    // ========== Modo: process_triggers_only ==========
     // Útil para ejecutar triggers manualmente desde el panel sin esperar al watchdog
     if (process_triggers_only) {
       console.log('[orchestrator] Mode: process_triggers_only');
       
       const triggersProcessed = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
 
-      // Si aún quedan triggers, auto-relanzar (self-chaining) para vaciar la cola.
-      const MAX_TRIGGER_RELAUNCHES = 30;
+      // Si aún quedan triggers, insertar auto_continue en DB para continuidad
       const { count: remainingTriggers } = await supabase
         .from('cron_triggers')
         .select('*', { count: 'exact', head: true })
         .in('status', ['pending', 'processing']);
 
-      const shouldRelaunch = (remainingTriggers || 0) > 0 && relaunch_count < MAX_TRIGGER_RELAUNCHES;
-      if (shouldRelaunch) {
-        EdgeRuntime.waitUntil(
-          (async () => {
-            await new Promise(r => setTimeout(r, 8000));
-            try {
-              const resp = await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${supabaseServiceKey}`,
-                },
-                body: JSON.stringify({
-                  process_triggers_only: true,
-                  relaunch_count: relaunch_count + 1,
-                }),
-              });
-              console.log(`[process_triggers_only] Auto-relaunch #${relaunch_count + 1} executed (status: ${resp.status})`);
-            } catch (e) {
-              console.error(`[process_triggers_only] Auto-relaunch #${relaunch_count + 1} failed:`, e);
-            }
-          })()
-        );
+      if ((remainingTriggers || 0) > 0) {
+        const { data: existingAutoContinue } = await supabase
+          .from('cron_triggers')
+          .select('id')
+          .eq('action', 'auto_continue')
+          .eq('status', 'pending')
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingAutoContinue) {
+          await supabase.from('cron_triggers').insert({
+            action: 'auto_continue',
+            params: { sweep_id: sweepId, phase: 'process_triggers', remaining: remainingTriggers },
+            status: 'pending',
+          });
+          console.log(`[process_triggers_only] Inserted auto_continue (remaining=${remainingTriggers})`);
+        }
       }
       
       return new Response(
@@ -1992,7 +2007,6 @@ const {
           triggersProcessed: triggersProcessed.length,
           triggers: triggersProcessed,
           remainingTriggers: remainingTriggers || 0,
-          relaunchScheduled: shouldRelaunch,
           message: triggersProcessed.length > 0 
             ? `Procesados ${triggersProcessed.length} triggers: ${triggersProcessed.map(t => t.action).join(', ')}`
             : 'No hay triggers pendientes',
@@ -2085,24 +2099,6 @@ const {
           message: stuckResult.count > 0 
             ? `${stuckResult.count} empresas zombis reseteadas: ${stuckResult.tickers.join(', ')}`
             : 'No hay empresas atascadas',
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // ========== Modo: Test ==========
-    if (test_mode) {
-      await initializeSweepIfNeeded(supabase, sweepId);
-      const nextPhase = await getNextPendingPhase(supabase, sweepId);
-      
-      return new Response(
-        JSON.stringify({
-          success: true,
-          sweepId,
-          testMode: true,
-          message: 'Orchestrator ready for phased execution',
-          nextPendingPhase: nextPhase,
-          timestamp: new Date().toISOString(),
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
