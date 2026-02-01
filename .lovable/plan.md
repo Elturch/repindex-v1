@@ -1,146 +1,142 @@
 
-# Plan: Auto-Sanitización al 100% de Completitud
+
+# Plan: Auto-Relanzamiento Inmediato del Orquestador
 
 ## Problema
-Cuando el barrido alcanza el 100% de completitud, el sistema no hace nada más. La sanitización de respuestas inválidas (rechazos de IA, respuestas cortas, etc.) requiere intervención manual.
+Cuando el CRON dispara empresas, el ciclo termina y hay que esperar 5 minutos para el siguiente. Si hay trabajo pendiente y slots disponibles, se pierde tiempo valioso.
 
 ## Solución
-Modificar el `rix-batch-orchestrator` para que **automáticamente dispare la sanitización** cuando detecta que el sweep está 100% completo.
+Añadir **auto-relanzamiento** al final de cada ciclo `auto_recovery`: si quedan empresas pendientes y hay slots libres, el orquestador se llama a sí mismo inmediatamente usando `EdgeRuntime.waitUntil()`.
 
-## Flujo Propuesto
+## Arquitectura Propuesta
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ CRON auto_recovery (cada 5 minutos)                                    │
+│ CRON cada 5 minutos → rix-batch-orchestrator (auto_recovery)           │
 │                                                                         │
-│  Paso 1: Limpiar zombies                                               │
-│  Paso 2: Contar estados                                                │
-│  Paso 3: ¿Sweep completo (pending=0, processing=0)?                    │
-│          │                                                             │
-│          ├── NO → Disparar más empresas (fire-and-forget)             │
-│          │                                                             │
-│          └── SÍ → NUEVO: Verificar si ya se sanitizó                  │
-│                   │                                                    │
-│                   ├── YA SANITIZADO → No hacer nada                   │
-│                   │                                                    │
-│                   └── NO SANITIZADO → Insertar trigger "sanitize"     │
-│                        en cron_triggers para que se procese           │
-│                        automáticamente                                 │
+│  1. Limpiar zombies                                                    │
+│  2. Contar estados (pending, processing, completed)                    │
+│  3. ¿Sweep completo? → Insertar auto_sanitize → FIN                   │
+│  4. ¿Ya hay 3 procesando? → throttle → FIN                            │
+│  5. Disparar N empresas (hasta completar 3 slots)                      │
+│  6. ¿Quedan pendientes Y slots libres?                                 │
+│      │                                                                  │
+│      ├── NO → Esperar próximo CRON (5 min)                            │
+│      │                                                                  │
+│      └── SÍ → NUEVO: Auto-relanzar en 30 segundos                     │
+│               EdgeRuntime.waitUntil(sleep(30s) → self-invoke)          │
+│                                                                         │
+│  El CRON sigue corriendo cada 5 min como respaldo, pero si hay        │
+│  trabajo el sistema se auto-alimenta SIN esperar.                      │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Cambios Técnicos
 
-### 1. Nuevo Trigger en cron_triggers: `auto_sanitize`
+### Modificación en `rix-batch-orchestrator/index.ts`
 
-Añadir soporte en `processCronTriggers` para el action `auto_sanitize`:
+Después de disparar empresas (línea ~1260), añadir lógica de auto-relanzamiento:
 
 ```typescript
-// En processCronTriggers()
-if (trigger.action === 'auto_sanitize') {
-  console.log(`[cron_triggers] Processing auto_sanitize trigger ${trigger.id}`);
+// 10. Retornar INMEDIATAMENTE
+console.log(`[${triggerMode}] Fired ${firedCompanies.length} companies`);
+
+// 11. AUTO-RELAUNCH: Si quedan pendientes y hay slots, auto-relanzar en 30s
+const newPending = pending - firedCompanies.length;
+const newProcessing = processing + firedCompanies.length;
+const slotsAfterFire = MAX_CONCURRENT - newProcessing;
+
+if (newPending > 0 && slotsAfterFire > 0) {
+  console.log(`[${triggerMode}] Auto-relaunching in 30s (${newPending} pending, ${slotsAfterFire} slots free)`);
   
-  const response = await fetch(`${supabaseUrl}/functions/v1/rix-quality-watchdog`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceKey}`,
-    },
-    body: JSON.stringify({ 
-      action: 'sanitize',
-      auto_repair: true  // Si encuentra inválidos, dispara reparación
-    }),
-  });
-  
-  // ... resto del procesamiento
+  EdgeRuntime.waitUntil(
+    (async () => {
+      await new Promise(r => setTimeout(r, 30000)); // Esperar 30s
+      
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({ trigger: 'auto_recovery' }),
+        });
+        console.log(`[${triggerMode}] Auto-relaunch executed successfully`);
+      } catch (e) {
+        console.error(`[${triggerMode}] Auto-relaunch failed:`, e);
+      }
+    })()
+  );
+}
+
+return new Response(JSON.stringify({
+  ...existingResponse,
+  autoRelaunch: newPending > 0 && slotsAfterFire > 0,
+  autoRelaunchIn: newPending > 0 && slotsAfterFire > 0 ? '30s' : null,
+}));
+```
+
+### Por Qué 30 Segundos
+
+- **Demasiado corto (5s)**: Podría crear bucles muy rápidos si hay errores
+- **Demasiado largo (2min)**: Pierde eficiencia
+- **30 segundos**: Balance perfecto - da tiempo a que las empresas en vuelo progresen, pero no espera innecesariamente
+
+### Protección Anti-Bucle Infinito
+
+Para evitar que un error cree bucles infinitos, añadir contador de relanzamientos:
+
+```typescript
+// Añadir al body del request
+const relaunchCount = body.relaunch_count || 0;
+const MAX_RELAUNCHES_PER_CYCLE = 20; // Máximo 20 relanzamientos consecutivos
+
+// En la lógica de auto-relaunch
+if (newPending > 0 && slotsAfterFire > 0 && relaunchCount < MAX_RELAUNCHES_PER_CYCLE) {
+  EdgeRuntime.waitUntil(
+    (async () => {
+      await new Promise(r => setTimeout(r, 30000));
+      await fetch(`${supabaseUrl}/functions/v1/rix-batch-orchestrator`, {
+        method: 'POST',
+        headers: { ... },
+        body: JSON.stringify({ 
+          trigger: 'auto_recovery',
+          relaunch_count: relaunchCount + 1  // Incrementar contador
+        }),
+      });
+    })()
+  );
 }
 ```
 
-### 2. Auto-Trigger al Detectar Sweep Completo
+## Flujo Resultante
 
-Modificar la sección de detección de sweep completo (línea ~1077):
-
-```typescript
-// 5. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
-if (pending === 0 && processing === 0 && failed === 0) {
-  console.log(`[${triggerMode}] Sweep ${sweepId} is complete (${completed}/${total})`);
-  
-  // NUEVO: Verificar si ya se sanitizó este sweep
-  const { data: existingSanitize } = await supabase
-    .from('cron_triggers')
-    .select('id')
-    .eq('action', 'auto_sanitize')
-    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-    .limit(1)
-    .maybeSingle();
-  
-  if (!existingSanitize) {
-    // Insertar trigger de sanitización automática
-    console.log(`[${triggerMode}] Inserting auto_sanitize trigger for sweep ${sweepId}`);
-    await supabase.from('cron_triggers').insert({
-      action: 'auto_sanitize',
-      params: { sweep_id: sweepId },
-      status: 'pending',
-    });
-  }
-  
-  return new Response(...);
-}
+```text
+Domingo 01:00:00 - CRON dispara fase 1 (5 empresas)
+         01:00:30 - Auto-relaunch (quedan pendientes)
+         01:01:00 - Auto-relaunch (sigue habiendo)
+         ...
+         01:10:00 - Max concurrent alcanzado, espera
+         01:05:00 - CRON backup (cada 5 min)
+         ...
+Domingo ~06:00   - Sweep 100% completo
+                   Auto-sanitización disparada
+Lunes AM         - Sistema listo, 95%+ cobertura
 ```
-
-### 3. Tabla de Estado de Sanitización (Opcional pero Recomendado)
-
-Para evitar disparar la sanitización múltiples veces, se puede usar `data_quality_reports` para verificar:
-
-```typescript
-// Verificar si ya hay reportes de calidad para este sweep
-const { count: existingReports } = await supabase
-  .from('data_quality_reports')
-  .select('*', { count: 'exact', head: true })
-  .eq('sweep_id', sweepId);
-
-if ((existingReports || 0) === 0) {
-  // No hay reportes → necesita sanitización
-  await supabase.from('cron_triggers').insert({
-    action: 'auto_sanitize',
-    params: { sweep_id: sweepId },
-    status: 'pending',
-  });
-}
-```
-
-## Archivo a Modificar
-
-| Archivo | Cambios |
-|---------|---------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | 1. Añadir handler para `auto_sanitize` en `processCronTriggers()`. 2. Insertar trigger automático cuando sweep está completo. |
 
 ## Resultado
 
-| Escenario | Antes | Después |
-|-----------|-------|---------|
-| Sweep completa 100% | Espera intervención manual | Auto-dispara sanitización |
-| Sanitización encuentra rechazos | Espera intervención manual | Auto-dispara reparación |
-| Reparación completa | Fin | Sistema listo para la semana |
+| Métrica | Antes | Después |
+|---------|-------|---------|
+| Tiempo entre disparos | 5 minutos fijo | 30 segundos si hay trabajo |
+| Velocidad teórica máx | 12 empresas/hora | ~120 empresas/hora |
+| Tiempo para 174 empresas | ~15 horas | ~2-3 horas |
+| Dependencia del CRON | 100% | Respaldo (el sistema se auto-alimenta) |
 
-## Flujo Completo Automatizado
+## Archivo a Modificar
 
-```text
-Domingo 01:00    → Comienza barrido
-     ↓
-~ 5-7 horas      → CRON auto_recovery cada 5 min
-     ↓
-Sweep 100%       → auto_recovery detecta completitud
-     ↓              Inserta trigger "auto_sanitize"
-     ↓
-Siguiente CRON   → processCronTriggers ejecuta sanitización
-     ↓
-Sanitización     → Encuentra 39 rechazos de Grok
-     ↓              Inserta trigger "repair_invalid_responses"
-     ↓
-Siguiente CRON   → processCronTriggers ejecuta reparación
-     ↓
-Lunes AM         → Sistema listo, 95%+ cobertura
-```
+| Archivo | Cambio |
+|---------|--------|
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir lógica de auto-relanzamiento después del paso de fire-and-forget |
 
-Sin intervención humana en ningún paso.
