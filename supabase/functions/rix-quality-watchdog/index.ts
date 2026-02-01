@@ -188,6 +188,40 @@ interface SanitizeResult {
   details: { ticker: string; model: string; errorType: string; reason: string }[]
 }
 
+// ============ GET ACTIVE SWEEP ID FROM DATA ============
+async function getActiveSweepId(supabase: any): Promise<string> {
+  // Read the most recent 06_period_from from rix_runs_v2
+  const { data, error } = await supabase
+    .from('rix_runs_v2')
+    .select('"06_period_from"')
+    .not('"06_period_from"', 'is', null)
+    .order('"06_period_from"', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data || !data['06_period_from']) {
+    // Fallback to calendar-based calculation
+    const now = new Date()
+    const startOfYear = new Date(now.getFullYear(), 0, 1)
+    const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000))
+    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7)
+    return `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`
+  }
+
+  // Parse the date and calculate ISO week
+  const periodFrom = new Date(data['06_period_from'])
+  const year = periodFrom.getFullYear()
+  
+  // Calculate ISO week number
+  const startOfYear = new Date(year, 0, 1)
+  const days = Math.floor((periodFrom.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000))
+  const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7)
+  
+  console.log(`[getActiveSweepId] Derived from data: ${data['06_period_from']} → ${year}-W${String(weekNumber).padStart(2, '0')}`)
+  
+  return `${year}-W${String(weekNumber).padStart(2, '0')}`
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -739,18 +773,11 @@ async function repairMissingModels(
 
 // ============ GET QUALITY REPORT ============
 async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<ReportResult> {
-  // CRITICAL FIX: Use the CURRENT sweep ID (calculated from today's date),
-  // not the latest report's sweep_id (which may be outdated)
+  // Get active sweep ID from actual data, not calendar
   let sweepId = forcedSweepId
   if (!sweepId) {
-    // Calculate current sweep ID (same logic as orchestrator)
-    const now = new Date()
-    const startOfYear = new Date(now.getFullYear(), 0, 1)
-    const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000))
-    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7)
-    sweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`
-    
-    console.log(`[report] Using current sweep ID: ${sweepId}`)
+    sweepId = await getActiveSweepId(supabase)
+    console.log(`[report] Using active sweep ID from data: ${sweepId}`)
   }
 
   // Empty result if no reports exist for this sweep yet
