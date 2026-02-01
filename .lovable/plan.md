@@ -1,111 +1,290 @@
 
-# Plan: Dashboard de Monitorización en Tiempo Real del Barrido
 
-## Problema Central
+# Plan: Añadir Monitor Visual de Actividad e Instrucciones de Acción
 
-El panel actual `SweepMonitorPanel` tiene ~2200 líneas de código con múltiples secciones pero **ninguna vista unificada del estado en tiempo real**. No hay forma de ver de un vistazo:
-- Si el sistema está funcionando o muerto
-- Cuál es el progreso real vs esperado
-- Qué acciones tomar para resolver problemas
+## Problema Actual
 
-## Solución: Panel de Estado Unificado
+El `SweepHealthDashboard` muestra datos pero:
+- No hay un indicador visual claro de que el sistema está "vivo" y procesando
+- No hay instrucciones sobre qué hacer cuando hay problemas
+- El usuario no sabe qué acción tomar en cada situación
 
-Crear un nuevo componente `SweepHealthDashboard` que muestre:
+## Solución
 
-### 1. Header de Estado Global (siempre visible)
+### 1. Indicador de Latido (Heartbeat Monitor)
+
+Añadir un indicador visual prominente que muestre el estado de actividad en tiempo real:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│  🔴 BARRIDO ATASCADO                    2026-W06               │
-│  ═══════════════════════════════════════════════════════════════│
-│  75/174 empresas (43%)    ⏱️ 9h 12m    📊 Esperado: 100%       │
-│  [████████░░░░░░░░░░░░] 43%            🎯 Meta: 03:50 CET      │
-│                                                                 │
-│  🔴 BBVA atascado (10 min)  ⚠️ 101 pendientes  ❌ 1 fallida    │
+│  [●] PROCESANDO                          ↻ Actualizado hace 5s │
+│      ⟳ Última empresa: BBVA (hace 2 min)                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2. Indicadores de Salud del Sistema
+**Visual:**
+- **Estado `healthy`**: Círculo verde pulsante + icono de engranaje girando
+- **Estado `slow`**: Círculo amarillo pulsante lento
+- **Estado `stuck/dead`**: Círculo rojo estático sin animación
+- **Estado `completed`**: Check verde estático
 
-| Indicador | Estado | Descripción |
-|-----------|--------|-------------|
-| **Heartbeat** | 🔴 Muerto | Último procesamiento hace >5 min |
-| **Zombis** | ⚠️ 1 detectado | BBVA en processing >5 min |
-| **Tasa de éxito** | ⚠️ 88% | Por debajo del 95% objetivo |
-| **APIs** | ✅ OK | Sin errores de autenticación |
+### 2. Panel de Instrucciones Contextuales
 
-### 3. Timeline Visual de Fases
+Un panel colapsable que muestra instrucciones específicas según el estado:
 
-```text
-Fase:  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23...
-       ✓  ✓  ✓  ✓  ✓  ✓  ⚠️ ✓  ✓  ✓  ⚠️ ✓  ✓  ✓  ⚠️ ✓  ✓  ⚠️ ✓  ⚠️ ❌ ⚠️ ⚠️
-       │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │  │
-       ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼  ▼
-      5/5 5/5 4/6 5/5 5/5 3/5 2/5 ...                              0/5 1/6
-
-Leyenda: ✓ Completa (100%)  ⚠️ Parcial (>0%)  ❌ Sin procesar (0%)
+**Si está ATASCADO (zombi detectado):**
+```
+📋 QUÉ HACER:
+1. Haz clic en "Limpiar Zombis" → Resetea los registros atascados
+2. Luego haz clic en "Reanudar Cascada" → Reinicia el procesamiento
+3. Espera 30 segundos y observa si el indicador vuelve a verde
 ```
 
-### 4. Acciones Rápidas Contextuales
+**Si está MUERTO (sin actividad >10 min):**
+```
+📋 QUÉ HACER:
+1. Haz clic en "Reanudar Cascada" → Intenta reiniciar el proceso
+2. Si sigue muerto, haz clic en "Completar Análisis" → Programa reparación
+3. Si persiste, contacta soporte técnico
+```
 
-Botones que aparecen según el estado:
+**Si está LENTO:**
+```
+📋 INFORMACIÓN:
+• El barrido está funcionando pero más lento de lo normal
+• Esto puede ocurrir por alta carga en las APIs de IA
+• No es necesaria acción inmediata, el sistema se recuperará
+```
 
-- **Si hay zombis**: `[🧟 Limpiar Zombis]` - Reset automático de registros atascados
-- **Si hay pendientes analizables**: `[🔧 Completar Análisis]` - Trigger de reparación
-- **Si el barrido está parado**: `[▶️ Reanudar Cascada]` - Inicia procesamiento manual
-- **Si hay errores de API**: `[🔑 Verificar APIs]` - Diagnóstico de credenciales
+**Si está HEALTHY:**
+```
+✅ Todo funciona correctamente. No se requiere acción.
+```
 
-## Cambios Técnicos
+## Cambios en el Código
 
-### Archivo: `src/components/admin/SweepHealthDashboard.tsx` (NUEVO)
+### Archivo: `src/components/admin/SweepHealthDashboard.tsx`
 
-Componente dedicado de ~400 líneas que:
-1. Consulta `sweep_progress` cada 10 segundos
-2. Calcula métricas de salud en tiempo real
-3. Detecta zombis (processing > 5 min)
-4. Compara progreso real vs esperado basado en hora actual
-5. Muestra acciones contextuales según el estado
+**1. Añadir componente de indicador de latido:**
 
-### Archivo: `src/components/admin/SweepMonitorPanel.tsx` (MODIFICAR)
-
-- Integrar `SweepHealthDashboard` como primera sección del panel
-- Colapsar las secciones detalladas por defecto
-- El dashboard de salud siempre visible arriba
-
-### Lógica de Estados
-
-```typescript
-type SweepHealthStatus = 
-  | 'healthy'      // Procesando normalmente, sin zombis
-  | 'slow'         // Procesando pero por debajo del ritmo esperado  
-  | 'stuck'        // Zombi detectado (>5 min sin cambios)
-  | 'dead'         // Sin actividad en >10 min
-  | 'completed'    // 100% completado
-  | 'error';       // Errores críticos de API
-
-function calculateExpectedProgress(sweepStartTime: Date): number {
-  const hoursElapsed = (Date.now() - sweepStartTime.getTime()) / 3600000;
-  // El barrido debería completarse en ~3 horas
-  return Math.min(100, Math.round((hoursElapsed / 3) * 100));
-}
-
-function detectZombies(records: SweepRecord[]): SweepRecord[] {
-  const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
-  return records.filter(r => 
-    r.status === 'processing' && 
-    new Date(r.started_at).getTime() < fiveMinutesAgo
+```tsx
+// Nuevo componente HeartbeatIndicator
+function HeartbeatIndicator({ 
+  status, 
+  lastActivity, 
+  processing 
+}: { 
+  status: SweepHealthStatus; 
+  lastActivity: Date | null;
+  processing: number;
+}) {
+  const isActive = status === 'healthy' || status === 'slow';
+  
+  return (
+    <div className="flex items-center gap-3 rounded-lg border p-3 bg-background">
+      {/* Círculo pulsante */}
+      <div className="relative flex h-10 w-10 items-center justify-center">
+        {isActive ? (
+          <>
+            <span className="absolute h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+            <span className="relative h-6 w-6 rounded-full bg-green-500" />
+          </>
+        ) : status === 'completed' ? (
+          <CheckCircle2 className="h-8 w-8 text-green-600" />
+        ) : (
+          <span className="h-6 w-6 rounded-full bg-red-500" />
+        )}
+      </div>
+      
+      {/* Texto de estado */}
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          {isActive && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+          <span className="font-medium">
+            {isActive ? `Procesando ${processing} empresa(s)...` : 
+             status === 'completed' ? 'Barrido completado' :
+             'Sistema detenido'}
+          </span>
+        </div>
+        {lastActivity && (
+          <span className="text-sm text-muted-foreground">
+            Última actividad: {formatDistanceToNow(lastActivity, { locale: es, addSuffix: true })}
+          </span>
+        )}
+      </div>
+      
+      {/* Indicador de auto-refresh */}
+      <div className="text-xs text-muted-foreground">
+        ↻ Auto-refresh: 10s
+      </div>
+    </div>
   );
 }
 ```
 
-## Resultado Esperado
+**2. Añadir panel de instrucciones:**
 
-Al abrir `/admin` > "Barrido V2":
+```tsx
+// Nuevo componente ActionGuidance
+function ActionGuidance({ status, hasZombies, hasFailed }: {
+  status: SweepHealthStatus;
+  hasZombies: boolean;
+  hasFailed: boolean;
+}) {
+  const getGuidance = () => {
+    if (status === 'completed') {
+      return {
+        icon: '✅',
+        title: 'Barrido completado',
+        steps: ['No se requiere ninguna acción'],
+        variant: 'success'
+      };
+    }
+    
+    if (status === 'healthy') {
+      return {
+        icon: '✅',
+        title: 'Sistema funcionando correctamente',
+        steps: ['El barrido avanza con normalidad', 'No se requiere intervención'],
+        variant: 'success'
+      };
+    }
+    
+    if (hasZombies || status === 'stuck') {
+      return {
+        icon: '🔧',
+        title: 'Acción requerida: Proceso atascado',
+        steps: [
+          '1. Haz clic en "Limpiar Zombis" para resetear registros atascados',
+          '2. Luego haz clic en "Reanudar Cascada" para reiniciar',
+          '3. Espera 30s y verifica que el indicador vuelva a verde'
+        ],
+        variant: 'warning'
+      };
+    }
+    
+    if (status === 'dead') {
+      return {
+        icon: '⚠️',
+        title: 'Acción requerida: Sistema detenido',
+        steps: [
+          '1. Haz clic en "Reanudar Cascada" para reiniciar el proceso',
+          '2. Si no funciona, usa "Completar Análisis" para reparación programada',
+          '3. Si persiste tras 5 minutos, revisa los logs de errores'
+        ],
+        variant: 'error'
+      };
+    }
+    
+    if (status === 'slow') {
+      return {
+        icon: 'ℹ️',
+        title: 'Sistema lento pero funcionando',
+        steps: [
+          'El barrido continúa pero más lento de lo esperado',
+          'Puede deberse a alta carga en las APIs de IA',
+          'No es necesaria acción inmediata'
+        ],
+        variant: 'info'
+      };
+    }
+    
+    if (hasFailed || status === 'error') {
+      return {
+        icon: '❌',
+        title: 'Errores detectados',
+        steps: [
+          '1. Revisa la sección de alertas para ver qué falló',
+          '2. Usa "Completar Análisis" para reprocesar los fallidos',
+          '3. Si hay muchos fallos, puede haber un problema con las APIs'
+        ],
+        variant: 'error'
+      };
+    }
+    
+    return null;
+  };
+  
+  const guidance = getGuidance();
+  if (!guidance) return null;
+  
+  const variantStyles = {
+    success: 'border-green-500/30 bg-green-500/5',
+    info: 'border-blue-500/30 bg-blue-500/5',
+    warning: 'border-yellow-500/30 bg-yellow-500/5',
+    error: 'border-red-500/30 bg-red-500/5'
+  };
+  
+  return (
+    <div className={cn("rounded-lg border p-4", variantStyles[guidance.variant])}>
+      <div className="flex items-start gap-3">
+        <span className="text-2xl">{guidance.icon}</span>
+        <div className="flex-1 space-y-2">
+          <h4 className="font-semibold">{guidance.title}</h4>
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {guidance.steps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
 
-1. **Vista inmediata** del estado: verde/amarillo/rojo
-2. **Progreso claro**: X de 174 empresas, Y% completado
-3. **Tiempo**: Cuánto lleva, cuánto debería llevar
-4. **Problemas**: Zombis, fallos, APIs caídas
-5. **Acciones**: Botones para resolver cada problema
+**3. Integrar en el componente principal:**
 
-El administrador sabrá en 5 segundos si el barrido está funcionando y qué hacer si no.
+Añadir ambos componentes justo después del header:
+
+```tsx
+<CardContent className="space-y-4">
+  {/* NUEVO: Heartbeat Indicator */}
+  <HeartbeatIndicator 
+    status={data.healthStatus} 
+    lastActivity={data.lastActivity}
+    processing={data.processing}
+  />
+  
+  {/* NUEVO: Action Guidance */}
+  <ActionGuidance 
+    status={data.healthStatus}
+    hasZombies={data.zombies.length > 0}
+    hasFailed={data.failed > 0}
+  />
+  
+  {/* Progress Section (existente) */}
+  ...
+```
+
+## Resultado Visual Esperado
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ 🟠 BARRIDO ATASCADO                           2026-W06         │
+│ Zombi detectado                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ [●] (pulsando)  Procesando 1 empresa...     ↻ Auto: 10s    │ │
+│ │                 Última actividad: hace 12 min              │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ 🔧 Acción requerida: Proceso atascado                      │ │
+│ │    1. Haz clic en "Limpiar Zombis" para resetear...        │ │
+│ │    2. Luego haz clic en "Reanudar Cascada" para...         │ │
+│ │    3. Espera 30s y verifica que el indicador vuelva...     │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ 75/174 empresas (43%)          ⏱️ 9h 12m    📊 Esperado: 100%  │
+│ [████████░░░░░░░░░░░░] 43%                                     │
+│ ...                                                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/components/admin/SweepHealthDashboard.tsx` | Añadir `HeartbeatIndicator` y `ActionGuidance` |
+
