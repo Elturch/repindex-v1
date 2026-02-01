@@ -1267,6 +1267,35 @@ serve(async (req) => {
 
     console.log(`[rix-search-v2] Search completed: ${successCount}/${totalModels} models succeeded, ${insertedIds.length} rows created in ${totalTime}ms`);
 
+    // ========== AUTO-COMPLETION: Marcar empresa como completed en sweep_progress ==========
+    // Esto permite al sistema fire-and-forget funcionar sin que el watchdog espere
+    try {
+      // Get current sweep_id (same logic as orchestrator)
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+      const currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+
+      const { error: updateError } = await supabase
+        .from('sweep_progress')
+        .update({ 
+          status: 'completed', 
+          completed_at: new Date().toISOString(),
+          models_completed: successCount
+        })
+        .eq('sweep_id', currentSweepId)
+        .eq('ticker', ticker);
+
+      if (updateError) {
+        console.error(`[rix-search-v2] Failed to update sweep_progress for ${ticker}:`, updateError);
+      } else {
+        console.log(`[rix-search-v2] Marked ${ticker} as completed in sweep_progress (${successCount}/${totalModels} models)`);
+      }
+    } catch (sweepError) {
+      console.error(`[rix-search-v2] Error updating sweep_progress:`, sweepError);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -1296,6 +1325,8 @@ serve(async (req) => {
         ),
         // All inserted records with their IDs
         inserted_records: insertedRecords,
+        // Sweep progress update
+        sweep_auto_completed: true,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

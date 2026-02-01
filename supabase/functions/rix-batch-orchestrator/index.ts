@@ -1016,12 +1016,15 @@ const {
       );
     }
 
-    // ========== MODO WATCHDOG ULTRA-OPTIMIZADO: Procesa en lotes de 10 ==========
-    // Rendimiento: 40 empresas/hora vs 20 anterior (optimización del 25/01/2026)
-    // CAMBIO: Aumentado de 5 a 10 empresas por invocación para acelerar barrido
-    if (trigger === 'watchdog') {
-      const BATCH_SIZE = 10;  // AUMENTADO: Procesar 10 empresas por invocación
-      const DELAY_BETWEEN_COMPANIES_MS = 2000;  // REDUCIDO: 2 segundos entre empresas
+    // ========== MODO AUTO_RECOVERY: Fire-and-Forget sin esperar ==========
+    // ARQUITECTURA: El watchdog NO espera a rix-search-v2 (evita timeouts)
+    // rix-search-v2 marca la empresa como "completed" al finalizar
+    // El CRON llama cada 5 min para disparar más empresas
+    if (trigger === 'watchdog' || trigger === 'auto_recovery') {
+      const MAX_CONCURRENT = 3;  // Máximo 3 empresas procesando simultáneamente
+      const triggerMode = trigger === 'auto_recovery' ? 'auto_recovery' : 'watchdog';
+      
+      console.log(`[${triggerMode}] Starting fire-and-forget auto-recovery...`);
       
       // 1. Verificar si hay un sweep activo para esta semana
       const { count: sweepCount } = await supabase
@@ -1031,11 +1034,11 @@ const {
 
       // Si no hay sweep, no hacer nada (se iniciará el domingo)
       if (!sweepCount || sweepCount === 0) {
-        console.log(`[watchdog] No sweep found for ${sweepId}. Skipping.`);
+        console.log(`[${triggerMode}] No sweep found for ${sweepId}. Skipping.`);
         return new Response(
           JSON.stringify({
             success: true,
-            trigger: 'watchdog',
+            trigger: triggerMode,
             sweepId,
             action: 'skip',
             reason: 'No sweep initialized for this week',
@@ -1044,7 +1047,13 @@ const {
         );
       }
 
-      // 2. Contar empresas por estado
+      // 2. SIEMPRE limpiar zombies primero (> 5 min stuck)
+      const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
+      if (stuckReset.count > 0) {
+        console.log(`[${triggerMode}] Auto-reset ${stuckReset.count} zombie companies: ${stuckReset.tickers.join(', ')}`);
+      }
+
+      // 3. Contar empresas por estado
       const { data: statusCounts } = await supabase
         .from('sweep_progress')
         .select('status')
@@ -1056,91 +1065,126 @@ const {
       const failed = statusCounts?.filter(s => s.status === 'failed').length || 0;
       const total = statusCounts?.length || 0;
 
-      console.log(`[watchdog] Sweep ${sweepId}: pending=${pending}, processing=${processing}, completed=${completed}, failed=${failed}`);
+      console.log(`[${triggerMode}] Sweep ${sweepId}: pending=${pending}, processing=${processing}, completed=${completed}, failed=${failed}`);
 
-      // 3. Procesar cron_triggers pendientes (server-to-server, sin bloqueo de extensiones)
+      // 4. Procesar cron_triggers pendientes
       const triggersProcessed = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
       if (triggersProcessed.length > 0) {
-        console.log(`[watchdog] Processed ${triggersProcessed.length} cron triggers: ${triggersProcessed.map(t => t.action).join(', ')}`);
+        console.log(`[${triggerMode}] Processed ${triggersProcessed.length} cron triggers`);
       }
 
-      // 4. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
+      // 5. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
       if (pending === 0 && processing === 0 && failed === 0) {
-        console.log(`[watchdog] Sweep ${sweepId} is complete (${completed}/${total}). Nothing to resume.`);
+        console.log(`[${triggerMode}] Sweep ${sweepId} is complete (${completed}/${total})`);
         return new Response(
           JSON.stringify({
             success: true,
-            trigger: 'watchdog',
+            trigger: triggerMode,
             sweepId,
             action: 'complete',
             reason: 'Sweep already completed',
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
+            zombiesReset: stuckReset.count,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // 4. Limpiar zombis (empresas en processing >5 minutos)
-      const stuckReset = await resetStuckProcessingCompanies(supabase, sweepId, 5);
-      if (stuckReset.count > 0) {
-        console.log(`[watchdog] Auto-reset ${stuckReset.count} zombie companies: ${stuckReset.tickers.join(', ')}`);
+      // 6. Si ya hay MAX_CONCURRENT procesando, no disparar más (throttle)
+      if (processing >= MAX_CONCURRENT) {
+        console.log(`[${triggerMode}] Already ${processing} companies processing (max ${MAX_CONCURRENT}). Throttling.`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            trigger: triggerMode,
+            sweepId,
+            action: 'throttled',
+            reason: `Already ${processing} companies processing (max ${MAX_CONCURRENT})`,
+            stats: { pending, processing, completed, failed, total },
+            triggersProcessed: triggersProcessed.length,
+            zombiesReset: stuckReset.count,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      // 4.5 NUEVO: Ejecutar health checks para detectar problemas automáticamente
-      const healthChecks = await performHealthChecks(supabase, sweepId);
-      if (healthChecks.length > 0) {
-        console.log(`[watchdog] Health checks: ${healthChecks.map(c => `${c.type}:${c.status}`).join(', ')}`);
+      // 7. Calcular cuántas empresas podemos disparar
+      const slotsAvailable = MAX_CONCURRENT - processing;
+      const toFire = Math.min(slotsAvailable, pending);
+
+      if (toFire === 0) {
+        console.log(`[${triggerMode}] No slots available or no pending companies`);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            trigger: triggerMode,
+            sweepId,
+            action: 'no_work',
+            stats: { pending, processing, completed, failed, total },
+            triggersProcessed: triggersProcessed.length,
+            zombiesReset: stuckReset.count,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      // 5. NUEVO: Procesar LOTE de hasta 5 empresas (mucho más eficiente)
-      console.log(`[watchdog] Resuming sweep ${sweepId} - processing up to ${BATCH_SIZE} companies...`);
-      
-      const batchResults = [];
-      let successCount = 0;
-      let failCount = 0;
-      
-      for (let i = 0; i < BATCH_SIZE; i++) {
-        const result = await runSingleCompany(supabase, supabaseUrl, supabaseServiceKey);
-        batchResults.push(result);
-        
-        if (result.success) successCount++;
-        else failCount++;
-        
-        // Si no hay más empresas pendientes, salir del loop
-        if (!result.next_pending) {
-          console.log(`[watchdog] No more pending companies after ${i + 1} processed`);
+      // 8. Reclamar empresas (atomic claim)
+      const firedCompanies: string[] = [];
+      for (let i = 0; i < toFire; i++) {
+        const { data: claimed, error: claimError } = await supabase.rpc('claim_next_sweep_company', {
+          p_sweep_id: sweepId,
+          p_worker_id: Date.now() % 1000 + i
+        });
+
+        if (claimError || !claimed || claimed.length === 0) {
+          console.log(`[${triggerMode}] No more companies to claim after ${i} claims`);
           break;
         }
+
+        const company = claimed[0];
+        firedCompanies.push(company.ticker);
+
+        // 9. FIRE-AND-FORGET: Disparar rix-search-v2 SIN esperar
+        console.log(`[${triggerMode}] Firing rix-search-v2 for ${company.ticker} (fire-and-forget)`);
         
-        // Delay entre empresas (excepto la última)
-        if (i < BATCH_SIZE - 1 && result.next_pending) {
-          console.log(`[watchdog] Waiting ${DELAY_BETWEEN_COMPANIES_MS}ms before next company...`);
-          await sleep(DELAY_BETWEEN_COMPANIES_MS);
-        }
+        EdgeRuntime.waitUntil(
+          fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ 
+              ticker: company.ticker, 
+              issuer_name: company.issuer_name,
+              sweep_id: sweepId  // Pass sweep_id for auto-completion
+            }),
+          }).catch(e => console.error(`[${triggerMode}] Fire error for ${company.ticker}:`, e))
+        );
       }
 
-      const lastResult = batchResults[batchResults.length - 1];
-
+      // 10. Retornar INMEDIATAMENTE (no esperamos a que terminen)
+      console.log(`[${triggerMode}] Fired ${firedCompanies.length} companies: ${firedCompanies.join(', ')}`);
+      
       return new Response(
         JSON.stringify({
           success: true,
-          trigger: 'watchdog',
+          trigger: triggerMode,
           sweepId,
-          action: 'resume_batch',
-          batchSize: batchResults.length,
-          batchSuccess: successCount,
-          batchFailed: failCount,
-          tickers: batchResults.filter(r => r.ticker).map(r => r.ticker),
-          remaining: lastResult?.remaining || 0,
-          zombiesReset: stuckReset.count > 0 ? stuckReset : undefined,
-          triggersProcessed: triggersProcessed.length,
+          action: 'fired',
+          firedCompanies,
+          firedCount: firedCompanies.length,
           stats: { 
-            pendingBefore: pending + stuckReset.count, 
-            processing, 
+            pending: pending - firedCompanies.length, 
+            processing: processing + firedCompanies.length, 
             completed, 
-            failed 
+            failed, 
+            total 
           },
+          triggersProcessed: triggersProcessed.length,
+          zombiesReset: stuckReset.count,
+          message: `Disparadas ${firedCompanies.length} empresas. El próximo CRON las recogerá.`,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
