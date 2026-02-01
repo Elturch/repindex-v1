@@ -218,11 +218,12 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .eq('sweep_id', sweepId),
           
         // Get pending/processing triggers with result for progress tracking
+        // UPDATED: Include auto_continue for autonomous system visibility
         supabase
           .from('cron_triggers')
           .select('action, status, result, created_at, processed_at')
           .in('status', ['pending', 'processing'])
-          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize', 'full_sweep'])
+          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize', 'full_sweep', 'auto_continue'])
           .order('created_at', { ascending: false })
           .limit(10),
           

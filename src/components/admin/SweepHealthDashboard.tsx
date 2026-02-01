@@ -181,10 +181,19 @@ export function SweepHealthDashboard() {
     ? Math.round((Date.now() - metrics.triggersLastActivityAt.getTime()) / 1000)
     : null;
 
-  // Consider the system alive if we have either pipeline heartbeat OR recent trigger activity
-  const systemHeartbeatOk =
+  // IMPROVED: Consider the system alive based on multiple signals:
+  // 1. Pipeline heartbeat within 90s
+  // 2. Recent trigger activity within 90s
+  // 3. Pending/processing triggers exist (work is queued/running)
+  // 4. auto_continue trigger exists (autonomous self-chaining is active)
+  const hasRecentActivity = 
     (heartbeatAgeSec !== null && heartbeatAgeSec <= 90) ||
     (triggerActivityAgeSec !== null && triggerActivityAgeSec <= 90);
+  
+  const hasPendingTriggers = (metrics.triggersPending || 0) > 0 || (metrics.triggersProcessing || 0) > 0;
+  
+  // System is OK if we have either recent activity OR pending work
+  const systemHeartbeatOk = hasRecentActivity || hasPendingTriggers;
 
   return (
     <div className="space-y-4 mb-6">
