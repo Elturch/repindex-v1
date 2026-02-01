@@ -924,9 +924,29 @@ serve(async (req) => {
     const body = await req.json();
     const { ticker, issuer_name, single_model, repair_mode } = body;
 
-    if (!ticker || !issuer_name) {
+    if (!ticker) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: ticker, issuer_name' }),
+        JSON.stringify({ error: 'Missing required field: ticker' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // In repair_mode, resolve issuer_name from database if not provided
+    let resolvedIssuerName = issuer_name;
+    if (!resolvedIssuerName && repair_mode) {
+      const { data: issuerData } = await supabase
+        .from('repindex_root_issuers')
+        .select('issuer_name')
+        .eq('ticker', ticker)
+        .single();
+      
+      resolvedIssuerName = issuerData?.issuer_name || ticker;
+      console.log(`[repair_mode] Resolved issuer_name for ${ticker}: ${resolvedIssuerName}`);
+    }
+
+    if (!resolvedIssuerName) {
+      return new Response(
+        JSON.stringify({ error: 'Missing issuer_name and not in repair_mode' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -976,14 +996,14 @@ serve(async (req) => {
       }
 
       // Build prompt - select based on model requirements
-      const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
-      const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
-      const grokPrompt = buildGrokPrompt(issuer_name, ticker);
+      const genericPrompt = buildSearchPrompt(resolvedIssuerName, ticker, dateFrom, dateTo);
+      const perplexityPrompt = buildPerplexityPrompt(resolvedIssuerName, ticker);
+      const grokPrompt = buildGrokPrompt(resolvedIssuerName, ticker);
       
       let prompt: string;
       if (targetConfig.name === 'perplexity-sonar-pro') {
         prompt = perplexityPrompt;
-      } else if (targetConfig.name === 'grok-4') {
+      } else if (targetConfig.name === 'grok-4-1-fast') {
         prompt = grokPrompt;
       } else {
         prompt = genericPrompt;
@@ -992,7 +1012,7 @@ serve(async (req) => {
       // For DeepSeek, fetch Tavily context
       let context: string | undefined;
       if ((targetConfig as any).usesTavilyRAG) {
-        context = await searchWithTavilyCached(issuer_name, ticker, dateFrom, dateTo);
+        context = await searchWithTavilyCached(resolvedIssuerName, ticker, dateFrom, dateTo);
       }
 
       // Call the single model
@@ -1111,9 +1131,9 @@ serve(async (req) => {
     // Perplexity: uses relative dates ("últimos 7 días")
     // Grok: uses relative dates to avoid "future date" rejection
     // Others: use specific dates
-    const genericPrompt = buildSearchPrompt(issuer_name, ticker, dateFrom, dateTo);
-    const perplexityPrompt = buildPerplexityPrompt(issuer_name, ticker);
-    const grokPrompt = buildGrokPrompt(issuer_name, ticker);
+    const genericPrompt = buildSearchPrompt(resolvedIssuerName, ticker, dateFrom, dateTo);
+    const perplexityPrompt = buildPerplexityPrompt(resolvedIssuerName, ticker);
+    const grokPrompt = buildGrokPrompt(resolvedIssuerName, ticker);
 
     // OPTIMIZATION: Tavily runs IN PARALLEL with other models, not before
     // This removes 5-15s from the critical path
@@ -1126,7 +1146,7 @@ serve(async (req) => {
         let prompt: string;
         if (config.name === 'perplexity-sonar-pro') {
           prompt = perplexityPrompt;
-        } else if (config.name === 'grok-4') {
+        } else if (config.name === 'grok-4-1-fast') {
           prompt = grokPrompt;
         } else {
           prompt = genericPrompt;
@@ -1136,7 +1156,7 @@ serve(async (req) => {
         let context: string | undefined;
         if ((config as any).usesTavilyRAG) {
           console.log(`[rix-search-v2] Fetching Tavily for ${config.displayName} in parallel...`);
-          context = await searchWithTavilyCached(issuer_name, ticker, dateFrom, dateTo);
+          context = await searchWithTavilyCached(resolvedIssuerName, ticker, dateFrom, dateTo);
           if (context) {
             console.log(`[rix-search-v2] Tavily context for ${config.displayName}: ${context.length} chars`);
           }
