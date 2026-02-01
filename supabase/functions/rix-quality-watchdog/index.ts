@@ -30,6 +30,105 @@ const MODEL_RAW_COLUMNS: Record<string, string> = {
   'Qwen': 'respuesta_bruto_qwen',
 }
 
+// ============ PATRONES DE RECHAZO BILINGÜE ============
+const REJECTION_PATTERNS = [
+  // === INGLÉS ===
+  /I('m| am) sorry/i,
+  /I must decline/i,
+  /I cannot (provide|generate|create|assist)/i,
+  /I can('t|not) (assist|generate|provide)/i,
+  /I apologize/i,
+  /decline (this|the) request/i,
+  /violates my guidelines/i,
+  /misleading (or |information)/i,
+  /fabricat(ed|ing)|fictional report/i,
+  /future (time )?period/i,
+  /beyond my knowledge/i,
+  /invented information/i,
+  /no real (data|information)/i,
+  /unable to (generate|provide|create)/i,
+  /not (able|possible) to (generate|provide)/i,
+  
+  // === ESPAÑOL ===
+  /Lo siento/i,
+  /no puedo (generar|proporcionar|crear|asistir)/i,
+  /debo declinar/i,
+  /violar(ía|a) mis directrices/i,
+  /información (ficticia|inventada|engañosa)/i,
+  /informes? (ficticios?|especulativos?)/i,
+  /eventos? futuros?/i,
+  /no existe información/i,
+  /proporcionar información precisa/i,
+  /no es posible generar/i,
+  /no me es posible/i,
+  /datos? (inventados?|ficticios?)/i,
+  /período futuro/i,
+  /fecha futura/i,
+]
+
+// Marcadores de estructura esperados (bilingüe)
+const STRUCTURE_MARKERS = [
+  /## (Resumen|Summary)/i,
+  /## (Ejecutivo|Executive)/i,
+  /## (Hechos|Facts|Noticias|News)/i,
+  /## (Contexto|Context)/i,
+  /## (Análisis|Analysis)/i,
+]
+
+// ============ VALIDACIÓN DE RESPUESTA ============
+interface ValidationResult {
+  isValid: boolean
+  errorType: 'rejection' | 'too_short' | 'no_structure' | null
+  reason: string | null
+  language?: 'es' | 'en' | 'unknown'
+}
+
+function validateResponse(response: string | null): ValidationResult {
+  // Sin respuesta
+  if (!response || response.trim().length === 0) {
+    return { isValid: false, errorType: 'too_short', reason: 'Empty response' }
+  }
+
+  // Demasiado corta (< 500 chars = casi seguro inválida)
+  if (response.length < 500) {
+    return { 
+      isValid: false, 
+      errorType: 'too_short', 
+      reason: `Only ${response.length} chars (min: 500)` 
+    }
+  }
+
+  // Detectar idioma para info adicional
+  const isSpanish = /[áéíóúñ¿¡]/i.test(response) || 
+                    /\b(del|para|con|que|los|las|una|como|este|esta)\b/i.test(response)
+
+  // Patrones de rechazo (bilingüe)
+  for (const pattern of REJECTION_PATTERNS) {
+    if (pattern.test(response)) {
+      return { 
+        isValid: false, 
+        errorType: 'rejection', 
+        reason: `Matched rejection pattern: ${pattern.toString().slice(0, 40)}...`,
+        language: isSpanish ? 'es' : 'en'
+      }
+    }
+  }
+
+  // Respuestas sospechosamente cortas (500-2000 chars) sin estructura
+  if (response.length < 2000) {
+    const hasStructure = STRUCTURE_MARKERS.some(m => m.test(response))
+    if (!hasStructure) {
+      return { 
+        isValid: false, 
+        errorType: 'no_structure', 
+        reason: 'Short response without expected report structure' 
+      }
+    }
+  }
+
+  return { isValid: true, errorType: null, reason: null }
+}
+
 // Clasificar tipo de error basado en mensaje
 function classifyErrorType(message: string | null): string {
   if (!message) return 'no_response'
@@ -76,8 +175,17 @@ interface ReportResult {
   latestSweep: string | null
   weekStart: string | null
   totalReports: number
-  byStatus: { missing: number; repaired: number; failed_repair: number }
-  byModel: Record<string, { missing: number; repaired: number; failed: number }>
+  byStatus: { missing: number; repaired: number; failed_repair: number; invalid_response: number }
+  byModel: Record<string, { missing: number; repaired: number; failed: number; invalid: number }>
+}
+
+interface SanitizeResult {
+  sweepId: string
+  scanned: number
+  invalidFound: number
+  byModel: Record<string, { valid: number; invalid: number; byErrorType: Record<string, number> }>
+  registered: number
+  details: { ticker: string; model: string; errorType: string; reason: string }[]
 }
 
 Deno.serve(async (req) => {
@@ -96,6 +204,7 @@ Deno.serve(async (req) => {
     const action = body.action || 'analyze'
     const sweepId = body.sweep_id // Opcional: forzar un sweep específico
     const maxRepairs = body.max_repairs || 10 // Límite de reparaciones por invocación
+    const autoRepair = body.auto_repair || false // Si true, repara automáticamente después de sanitizar
 
     console.log(`[rix-quality-watchdog] Action: ${action}, sweepId: ${sweepId || 'latest'}`)
 
@@ -103,6 +212,26 @@ Deno.serve(async (req) => {
     if (action === 'analyze') {
       const result = await analyzeQuality(supabase, sweepId)
       return new Response(JSON.stringify({ success: true, action: 'analyze', ...result }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ============ ACTION: SANITIZE ============
+    if (action === 'sanitize') {
+      const result = await sanitizeResponses(supabase, sweepId)
+      
+      // Si auto_repair está activo y hay inválidos, triggear reparación
+      if (autoRepair && result.invalidFound > 0) {
+        console.log(`[sanitize] Auto-repair triggered for ${result.invalidFound} invalid responses`)
+        // Insert trigger for server-side repair
+        await supabase.from('cron_triggers').insert({
+          action: 'repair_invalid_responses',
+          params: { sweep_id: result.sweepId, max_repairs: maxRepairs },
+          status: 'pending',
+        })
+      }
+      
+      return new Response(JSON.stringify({ success: true, action: 'sanitize', ...result }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -123,7 +252,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    return new Response(JSON.stringify({ error: 'Invalid action. Use: analyze, repair, or report' }), {
+    return new Response(JSON.stringify({ error: 'Invalid action. Use: analyze, sanitize, repair, or report' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
@@ -137,6 +266,145 @@ Deno.serve(async (req) => {
     })
   }
 })
+
+// ============ SANITIZE RESPONSES ============
+async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise<SanitizeResult> {
+  console.log('[sanitize] Starting response sanitization...')
+
+  // 1. Determinar el sweep más reciente
+  const { data: latestRun, error: latestError } = await supabase
+    .from('rix_runs_v2')
+    .select('batch_execution_date, "06_period_from"')
+    .order('batch_execution_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (latestError) throw new Error(`Error fetching latest run: ${latestError.message}`)
+  if (!latestRun) {
+    return {
+      sweepId: 'none',
+      scanned: 0,
+      invalidFound: 0,
+      byModel: {},
+      registered: 0,
+      details: [],
+    }
+  }
+
+  const sweepId = forcedSweepId || latestRun.batch_execution_date
+  const weekStart = latestRun['06_period_from']
+  console.log(`[sanitize] Analyzing sweep: ${sweepId}, week: ${weekStart}`)
+
+  // 2. Obtener todos los registros de la semana con respuestas brutas
+  const { data: records, error: recordsError } = await supabase
+    .from('rix_runs_v2')
+    .select(`
+      id,
+      "05_ticker",
+      "20_res_gpt_bruto",
+      "21_res_perplex_bruto",
+      "22_res_gemini_bruto",
+      "23_res_deepseek_bruto",
+      respuesta_bruto_grok,
+      respuesta_bruto_qwen
+    `)
+    .eq('batch_execution_date', sweepId)
+
+  if (recordsError) throw new Error(`Error fetching records: ${recordsError.message}`)
+  if (!records || records.length === 0) {
+    return {
+      sweepId,
+      scanned: 0,
+      invalidFound: 0,
+      byModel: {},
+      registered: 0,
+      details: [],
+    }
+  }
+
+  console.log(`[sanitize] Found ${records.length} records to scan`)
+
+  // 3. Inicializar contadores por modelo
+  const byModel: Record<string, { valid: number; invalid: number; byErrorType: Record<string, number> }> = {}
+  ALL_MODELS.forEach(model => {
+    byModel[model] = { valid: 0, invalid: 0, byErrorType: {} }
+  })
+
+  const reportsToInsert: any[] = []
+  const details: SanitizeResult['details'] = []
+  let scanned = 0
+
+  // 4. Validar cada respuesta de cada modelo
+  for (const record of records) {
+    const ticker = record['05_ticker']
+    if (!ticker) continue
+
+    for (const [model, column] of Object.entries(MODEL_RAW_COLUMNS)) {
+      const response = record[column]
+      scanned++
+
+      const validation = validateResponse(response)
+
+      if (validation.isValid) {
+        byModel[model].valid++
+      } else {
+        byModel[model].invalid++
+        const errorType = validation.errorType || 'unknown'
+        byModel[model].byErrorType[errorType] = (byModel[model].byErrorType[errorType] || 0) + 1
+
+        details.push({
+          ticker,
+          model,
+          errorType,
+          reason: validation.reason || 'Unknown',
+        })
+
+        // Preparar reporte para insertar
+        reportsToInsert.push({
+          sweep_id: sweepId,
+          week_start: weekStart,
+          ticker,
+          model_name: model,
+          status: 'invalid_response',
+          error_type: errorType,
+          original_error: validation.reason,
+          repair_attempts: 0,
+        })
+      }
+    }
+  }
+
+  // 5. Insertar reportes de calidad (upsert para evitar duplicados)
+  let registered = 0
+  if (reportsToInsert.length > 0) {
+    console.log(`[sanitize] Registering ${reportsToInsert.length} invalid responses...`)
+    
+    const { error: insertError } = await supabase
+      .from('data_quality_reports')
+      .upsert(reportsToInsert, { 
+        onConflict: 'sweep_id,ticker,model_name',
+        ignoreDuplicates: false 
+      })
+
+    if (insertError) {
+      console.error('[sanitize] Error inserting reports:', insertError.message)
+    } else {
+      registered = reportsToInsert.length
+    }
+  }
+
+  const invalidFound = details.length
+  console.log(`[sanitize] Complete: scanned=${scanned}, invalidFound=${invalidFound}, registered=${registered}`)
+
+  return {
+    sweepId,
+    scanned,
+    invalidFound,
+    byModel,
+    registered,
+    details,
+  }
+}
 
 // ============ ANALYZE QUALITY ============
 async function analyzeQuality(supabase: any, forcedSweepId?: string): Promise<AnalyzeResult> {
@@ -327,11 +595,11 @@ async function repairMissingModels(
 ): Promise<RepairResult> {
   console.log(`[repair] Starting repair process, max=${maxRepairs}...`)
 
-  // 1. Obtener reportes pendientes de reparación
+  // 1. Obtener reportes pendientes de reparación (missing O invalid_response)
   let query = supabase
     .from('data_quality_reports')
-    .select('id, sweep_id, week_start, ticker, model_name, repair_attempts, error_type')
-    .eq('status', 'missing')
+    .select('id, sweep_id, week_start, ticker, model_name, repair_attempts, error_type, status')
+    .in('status', ['missing', 'invalid_response'])
     .lt('repair_attempts', 3) // Max 3 intentos
     .order('repair_attempts', { ascending: true }) // Priorizar los que menos intentos tienen
     .limit(maxRepairs)
@@ -383,7 +651,7 @@ async function repairMissingModels(
     // Procesar cada modelo faltante para este ticker
     for (const report of reports) {
       try {
-        console.log(`[repair] Repairing ${ticker} - ${report.model_name}...`)
+        console.log(`[repair] Repairing ${ticker} - ${report.model_name} (status: ${report.status})...`)
 
         // Incrementar contador de intentos
         await supabase
@@ -489,7 +757,7 @@ async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<
       latestSweep: null,
       weekStart: null,
       totalReports: 0,
-      byStatus: { missing: 0, repaired: 0, failed_repair: 0 },
+      byStatus: { missing: 0, repaired: 0, failed_repair: 0, invalid_response: 0 },
       byModel: {},
     }
   }
@@ -502,11 +770,11 @@ async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<
 
   if (error) throw new Error(`Error fetching reports: ${error.message}`)
 
-  const byStatus = { missing: 0, repaired: 0, failed_repair: 0 }
-  const byModel: Record<string, { missing: number; repaired: number; failed: number }> = {}
+  const byStatus = { missing: 0, repaired: 0, failed_repair: 0, invalid_response: 0 }
+  const byModel: Record<string, { missing: number; repaired: number; failed: number; invalid: number }> = {}
 
   ALL_MODELS.forEach(model => {
-    byModel[model] = { missing: 0, repaired: 0, failed: 0 }
+    byModel[model] = { missing: 0, repaired: 0, failed: 0, invalid: 0 }
   })
 
   reports?.forEach((report: any) => {
@@ -514,6 +782,7 @@ async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<
     if (report.status === 'missing') byStatus.missing++
     else if (report.status === 'repaired') byStatus.repaired++
     else if (report.status === 'failed_repair') byStatus.failed_repair++
+    else if (report.status === 'invalid_response') byStatus.invalid_response++
 
     // Por modelo (normalizar nombre para alias)
     const normalizedModel = normalizeModelName(report.model_name)
@@ -522,6 +791,7 @@ async function getQualityReport(supabase: any, forcedSweepId?: string): Promise<
       if (report.status === 'missing') modelStats.missing++
       else if (report.status === 'repaired') modelStats.repaired++
       else if (report.status === 'failed_repair') modelStats.failed++
+      else if (report.status === 'invalid_response') modelStats.invalid++
     }
   })
 
