@@ -8,6 +8,14 @@ import { supabase } from "@/integrations/supabase/client";
  * All metrics are calculated from rix_runs_v2 (the actual data table),
  * NOT from sweep_progress (which only tracks search phase completion).
  * 
+ * CRITICAL FIX: Uses model-specific columns to detect "hasData" status:
+ * - ChatGPT: 20_res_gpt_bruto
+ * - Perplexity: 21_res_perplex_bruto  
+ * - Gemini: 22_res_gemini_bruto
+ * - Deepseek: 23_res_deepseek_bruto
+ * - Grok: respuesta_bruto_grok
+ * - Qwen: respuesta_bruto_qwen
+ * 
  * This ensures consistency across:
  * - SweepHealthDashboard
  * - SweepMonitorPanel 
@@ -58,15 +66,34 @@ export interface UnifiedSweepMetrics {
   searchProcessing: number;
   searchFailed: number;
   
+  // System state machine
+  systemState: 'SWEEP_RUNNING' | 'CHECKING_DATA' | 'REPAIRS_PENDING' | 'COMPLETE' | 'IDLE';
+  
   // Timestamps
   lastUpdated: Date;
 }
+
+// Model to column mapping - CRITICAL for correct hasData detection
+const MODEL_RESPONSE_COLUMNS: Record<string, string> = {
+  'ChatGPT': '20_res_gpt_bruto',
+  'Perplexity': '21_res_perplex_bruto',
+  'Gemini': '22_res_gemini_bruto',
+  'Google Gemini': '22_res_gemini_bruto',
+  'Deepseek': '23_res_deepseek_bruto',
+  'Grok': 'respuesta_bruto_grok',
+  'Qwen': 'respuesta_bruto_qwen',
+};
 
 // Helper to normalize model names (Google Gemini → Gemini)
 function normalizeModel(name: string): string {
   if (!name) return 'Unknown';
   if (name === 'Gemini' || name === 'Google Gemini') return 'Gemini';
   return name;
+}
+
+// Get the correct response column for a model
+function getResponseColumn(modelName: string): string {
+  return MODEL_RESPONSE_COLUMNS[modelName] || MODEL_RESPONSE_COLUMNS[normalizeModel(modelName)] || '20_res_gpt_bruto';
 }
 
 // Calculate current sweep ID from date
@@ -98,8 +125,14 @@ function getWeekStartFromSweepId(sweepId: string): string {
   return weekStart.toISOString().split('T')[0];
 }
 
+// Determine if a record has data based on its MODEL-SPECIFIC column
+function recordHasData(record: Record<string, unknown>): boolean {
+  const modelName = record['02_model_name'] as string;
+  const responseColumn = getResponseColumn(modelName);
+  return record[responseColumn] !== null && record[responseColumn] !== undefined;
+}
+
 export function useUnifiedSweepMetrics(forcedSweepId?: string) {
-  const queryClient = useQueryClient();
   
   return useQuery({
     queryKey: ["unified-sweep-metrics", forcedSweepId],
@@ -123,11 +156,12 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const [
         rixRunsResult,
         sweepProgressResult,
+        pendingTriggersResult,
       ] = await Promise.all([
-        // Get all records for this week from rix_runs_v2 - use exact match for the week
+        // Get all records for this week from rix_runs_v2 - include ALL response columns
         supabase
           .from('rix_runs_v2')
-          .select('05_ticker, 02_model_name, 09_rix_score, 20_res_gpt_bruto')
+          .select('05_ticker, 02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
           .eq('06_period_from', weekStart),
         
         // Get sweep_progress status counts
@@ -135,12 +169,20 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .from('sweep_progress')
           .select('status')
           .eq('sweep_id', sweepId),
+          
+        // Get pending triggers count
+        supabase
+          .from('cron_triggers')
+          .select('action')
+          .eq('status', 'pending')
+          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize']),
       ]);
       
       if (rixRunsResult.error) throw rixRunsResult.error;
       
       const records = rixRunsResult.data || [];
       const progressRecords = sweepProgressResult.data || [];
+      const pendingTriggers = pendingTriggersResult.data || [];
       
       // Calculate sweep_progress metrics
       const searchCompleted = progressRecords.filter(p => p.status === 'completed').length;
@@ -148,7 +190,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const searchProcessing = progressRecords.filter(p => p.status === 'processing').length;
       const searchFailed = progressRecords.filter(p => p.status === 'failed').length;
       
-      // Build model metrics
+      // Build model metrics - USING CORRECT RESPONSE COLUMNS
       const modelMap = new Map<string, {
         total: number;
         withScore: number;
@@ -168,7 +210,9 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         const rawModel = record['02_model_name'] || 'Unknown';
         const model = normalizeModel(rawModel);
         const hasScore = record['09_rix_score'] !== null;
-        const hasData = record['20_res_gpt_bruto'] !== null;
+        
+        // CRITICAL: Use model-specific column to detect hasData
+        const hasData = recordHasData(record as Record<string, unknown>);
         
         // Model metrics
         const modelStats = modelMap.get(model) || {
@@ -230,16 +274,29 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       const companiesNoData = companyStats.filter(c => c.modelsWithScore === 0).length;
       const totalCompanies = companyMap.size;
       
-      // Calculate record-level metrics
+      // Calculate record-level metrics USING CORRECT hasData
       const totalRecords = records.length;
       const recordsWithScore = records.filter(r => r['09_rix_score'] !== null).length;
-      const recordsWithData = records.filter(r => r['20_res_gpt_bruto'] !== null).length;
+      const recordsWithData = records.filter(r => recordHasData(r as Record<string, unknown>)).length;
       const recordsPendingAnalysis = records.filter(r => 
-        r['09_rix_score'] === null && r['20_res_gpt_bruto'] !== null
+        r['09_rix_score'] === null && recordHasData(r as Record<string, unknown>)
       ).length;
       const recordsNoData = records.filter(r => 
-        r['09_rix_score'] === null && r['20_res_gpt_bruto'] === null
+        r['09_rix_score'] === null && !recordHasData(r as Record<string, unknown>)
       ).length;
+      
+      // Determine system state (state machine)
+      let systemState: UnifiedSweepMetrics['systemState'] = 'IDLE';
+      
+      if (searchProcessing > 0 || searchPending > 0) {
+        systemState = 'SWEEP_RUNNING';
+      } else if (pendingTriggers.length > 0) {
+        systemState = 'REPAIRS_PENDING';
+      } else if (recordsNoData > 0 || recordsPendingAnalysis > 0) {
+        systemState = 'CHECKING_DATA';
+      } else if (totalRecords > 0 && recordsWithScore === totalRecords) {
+        systemState = 'COMPLETE';
+      }
       
       return {
         sweepId,
@@ -271,6 +328,8 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         searchProcessing,
         searchFailed,
         
+        systemState,
+        
         lastUpdated: new Date(),
       };
     },
@@ -287,3 +346,6 @@ export function useRefreshSweepMetrics() {
     queryClient.invalidateQueries({ queryKey: ["unified-sweep-metrics"] });
   };
 }
+
+// Export the column mapping for use in other files
+export { MODEL_RESPONSE_COLUMNS, getResponseColumn, normalizeModel };
