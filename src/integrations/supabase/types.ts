@@ -2225,6 +2225,7 @@ export type Database = {
           sweep_id: string
           ticker: string
           updated_at: string | null
+          worker_id: number | null
         }
         Insert: {
           completed_at?: string | null
@@ -2240,6 +2241,7 @@ export type Database = {
           sweep_id: string
           ticker: string
           updated_at?: string | null
+          worker_id?: number | null
         }
         Update: {
           completed_at?: string | null
@@ -2255,6 +2257,7 @@ export type Database = {
           sweep_id?: string
           ticker?: string
           updated_at?: string | null
+          worker_id?: number | null
         }
         Relationships: []
       }
