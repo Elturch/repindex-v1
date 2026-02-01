@@ -694,14 +694,23 @@ async function callSearchModel(
 ): Promise<{ success: boolean; response?: string; error?: string; timeMs: number }> {
   const startTime = Date.now();
   
+  // ═══════════════════════════════════════════════════════════════════
+  // TIMEOUT DE 180 SEGUNDOS POR MODELO
+  // Previene bloqueos indefinidos por DeepSeek/Qwen lentos
+  // ═══════════════════════════════════════════════════════════════════
+  const TIMEOUT_MS = 180_000; // 180 segundos = 3 minutos máximo por modelo
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  
   try {
     const apiKey = Deno.env.get(config.apiKeyEnv);
     if (!apiKey) {
+      clearTimeout(timeoutId);
       console.log(`[rix-search-v2] Missing ${config.apiKeyEnv} for ${config.displayName}`);
       return { success: false, error: `Missing ${config.apiKeyEnv}`, timeMs: Date.now() - startTime };
     }
 
-    console.log(`[rix-search-v2] Calling ${config.displayName}...`);
+    console.log(`[rix-search-v2] Calling ${config.displayName} (timeout: ${TIMEOUT_MS/1000}s)...`);
 
     // Para DeepSeek con Tavily RAG, pasamos el contexto de búsqueda
     const { headers, body } = config.usesTavilyRAG && tavilyContext
@@ -712,7 +721,10 @@ async function callSearchModel(
       method: 'POST',
       headers,
       body: JSON.stringify(body),
+      signal: controller.signal,  // ← AbortSignal para timeout
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -731,7 +743,19 @@ async function callSearchModel(
     console.log(`[rix-search-v2] ${config.displayName} returned ${content.length} chars in ${Date.now() - startTime}ms`);
     return { success: true, response: content, timeMs: Date.now() - startTime };
 
-  } catch (error) {
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    
+    // Detectar timeout específicamente
+    if (error.name === 'AbortError') {
+      console.log(`[rix-search-v2] ${config.displayName} TIMEOUT after ${TIMEOUT_MS/1000}s`);
+      return { 
+        success: false, 
+        error: `Timeout after ${TIMEOUT_MS/1000}s`, 
+        timeMs: Date.now() - startTime 
+      };
+    }
+    
     console.error(`[rix-search-v2] ${config.displayName} exception:`, error);
     return { success: false, error: error.message, timeMs: Date.now() - startTime };
   }
