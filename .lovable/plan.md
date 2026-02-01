@@ -1,214 +1,213 @@
 
-# Plan: Procesamiento Paralelo del Barrido (Multi-Worker)
 
-## Diagnóstico del Problema
+# Plan: Implementar Procesamiento Paralelo del Barrido
 
-El barrido actual procesa **1 empresa a la vez**:
-- Cada empresa tarda 30-120 segundos (6 llamadas a APIs de IA)
-- Con 174 empresas = **5-10 horas** de procesamiento secuencial
-- El objetivo es completar en **~3 horas**
+## Estado Actual
 
-### Arquitectura Actual (Secuencial)
-```text
-[Watchdog CRON]
-     │
-     ▼
-[Empresa 1] ─────────────────> 60s
-     │
-     ▼
-[Empresa 2] ─────────────────> 60s
-     │
-     ...
-     │
-     ▼
-[Empresa 174] ───────────────> 60s
-     
-Total: 174 x 60s = 2.9 horas (ideal)
-Pero en realidad: timeouts, reintentos, delays = 6-10 horas
-```
+El plan fue aprobado pero **no se implementó todavía**. El sistema sigue procesando **1 empresa a la vez** (máximo 10 en el modo watchdog, pero secuencialmente con delays).
 
-## Solución: Workers Paralelos
+## Cambios a Implementar
 
-Lanzar **N workers simultáneos** que procesen empresas diferentes al mismo tiempo:
+### 1. Nuevo Modo `parallel_batch` en el Orquestador
 
-### Arquitectura Propuesta (Paralela)
-```text
-[Dashboard Admin]
-     │
-     ├── [Worker 1] ──> Empresa A ──> Empresa E ──> ...
-     ├── [Worker 2] ──> Empresa B ──> Empresa F ──> ...
-     ├── [Worker 3] ──> Empresa C ──> Empresa G ──> ...
-     └── [Worker 4] ──> Empresa D ──> Empresa H ──> ...
+Añadir al archivo `supabase/functions/rix-batch-orchestrator/index.ts`:
 
-Con 4 workers: 174 empresas ÷ 4 = ~44 por worker
-Tiempo teórico: ~44 x 60s = 44 minutos por worker
-Total paralelo: ~1-2 horas
-```
-
-## Implementación Técnica
-
-### 1. Nuevo Endpoint: `parallel_batch` en rix-batch-orchestrator
-
-El orquestador tendrá un nuevo modo que lanza múltiples invocaciones paralelas:
-
+**Nueva función para reclamar empresa con lock optimista:**
 ```typescript
-// Modo parallel_batch: Lanza N workers simultáneamente
-if (mode === 'parallel_batch') {
-  const workerCount = params.workers || 4;
-  const results = await Promise.allSettled(
-    Array.from({ length: workerCount }, (_, i) => 
-      runParallelWorker(supabase, supabaseUrl, serviceKey, i)
-    )
-  );
-  return { success: true, workers: results.length, ... };
+async function claimNextPendingCompany(
+  supabase: ReturnType<typeof createClient>,
+  sweepId: string,
+  workerId: number
+): Promise<{ id: string; ticker: string; issuer_name: string } | null> {
+  // Usar transacción atómica: SELECT + UPDATE en una sola operación
+  // Esto evita que 2 workers procesen la misma empresa
+  
+  const { data, error } = await supabase.rpc('claim_next_sweep_company', {
+    p_sweep_id: sweepId,
+    p_worker_id: workerId
+  });
+  
+  if (error || !data || data.length === 0) return null;
+  return data[0];
 }
 ```
 
-### 2. Función `runParallelWorker`
-
-Cada worker:
-1. Obtiene **1 empresa pendiente** (con lock optimista)
-2. La procesa
-3. Repite hasta que no haya más
-
+**Nueva función de worker paralelo:**
 ```typescript
 async function runParallelWorker(
-  supabase: any,
+  supabase: ReturnType<typeof createClient>,
   supabaseUrl: string,
   serviceKey: string,
-  workerId: number
-): Promise<{ workerId: number; processed: number; errors: number }> {
+  sweepId: string,
+  workerId: number,
+  maxCompanies: number = 50
+): Promise<{ workerId: number; processed: number; errors: number; tickers: string[] }> {
   let processed = 0;
   let errors = 0;
+  const tickers: string[] = [];
   
-  while (true) {
-    // Obtener empresa pendiente (lock optimista)
-    const company = await claimNextCompany(supabase, sweepId, workerId);
-    if (!company) break; // No más empresas
+  while (processed + errors < maxCompanies) {
+    const company = await claimNextPendingCompany(supabase, sweepId, workerId);
+    if (!company) break; // No más empresas pendientes
     
-    const result = await processCompany(supabase, company, ...);
+    tickers.push(company.ticker);
+    const result = await processCompany(
+      supabase, company.id, company.ticker, company.issuer_name || company.ticker,
+      supabaseUrl, serviceKey
+    );
+    
     if (result.success) processed++;
     else errors++;
+    
+    // Pequeña pausa entre empresas (2s)
+    await sleep(2000);
   }
   
-  return { workerId, processed, errors };
+  return { workerId, processed, errors, tickers };
 }
 ```
 
-### 3. Lock Optimista para Evitar Colisiones
-
-Usamos una actualización atómica para que dos workers no procesen la misma empresa:
-
-```sql
--- Cada worker "reclama" una empresa de forma atómica
-UPDATE sweep_progress 
-SET status = 'processing', 
-    started_at = now(),
-    worker_id = $workerId  -- Nuevo campo para tracking
-WHERE id = (
-  SELECT id FROM sweep_progress 
-  WHERE sweep_id = $sweepId 
-  AND status = 'pending'
-  ORDER BY fase, ticker
-  LIMIT 1
-  FOR UPDATE SKIP LOCKED  -- ¡Clave! Salta registros bloqueados
-)
-RETURNING *;
+**Nuevo handler de modo parallel_batch:**
+```typescript
+// En el handler principal, añadir:
+if (mode === 'parallel_batch') {
+  const workerCount = requestBody.workers || 4;
+  const maxPerWorker = requestBody.max_per_worker || 50;
+  
+  console.log(`[parallel] Launching ${workerCount} parallel workers...`);
+  
+  // Lanzar N workers en paralelo
+  const workerPromises = Array.from({ length: workerCount }, (_, i) =>
+    runParallelWorker(supabase, supabaseUrl, supabaseServiceKey, sweepId, i, maxPerWorker)
+  );
+  
+  const results = await Promise.allSettled(workerPromises);
+  
+  // Agregar estadísticas
+  const summary = results.map((r, i) => 
+    r.status === 'fulfilled' ? r.value : { workerId: i, processed: 0, errors: 0, tickers: [], error: r.reason }
+  );
+  
+  return new Response(JSON.stringify({
+    success: true,
+    mode: 'parallel_batch',
+    workerCount,
+    workers: summary,
+    totalProcessed: summary.reduce((acc, w) => acc + w.processed, 0),
+    totalErrors: summary.reduce((acc, w) => acc + w.errors, 0),
+  }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
 ```
 
-### 4. UI: Botón "Lanzar Procesamiento Paralelo"
+### 2. Función SQL para Lock Optimista
 
-En `SweepHealthDashboard.tsx`:
+Crear función PostgreSQL que reclame una empresa atómicamente:
 
-```tsx
+```sql
+CREATE OR REPLACE FUNCTION claim_next_sweep_company(
+  p_sweep_id TEXT,
+  p_worker_id INTEGER
+) 
+RETURNS TABLE(id UUID, ticker TEXT, issuer_name TEXT) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  WITH claimed AS (
+    SELECT sp.id 
+    FROM sweep_progress sp
+    WHERE sp.sweep_id = p_sweep_id 
+      AND sp.status = 'pending'
+    ORDER BY sp.fase, sp.ticker
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED  -- Clave: salta registros bloqueados por otros workers
+  )
+  UPDATE sweep_progress sp
+  SET 
+    status = 'processing',
+    started_at = NOW(),
+    worker_id = p_worker_id
+  FROM claimed
+  WHERE sp.id = claimed.id
+  RETURNING sp.id, sp.ticker, sp.issuer_name;
+END;
+$$;
+```
+
+### 3. Columna worker_id (Migración SQL)
+
+```sql
+ALTER TABLE sweep_progress 
+ADD COLUMN IF NOT EXISTS worker_id INTEGER;
+
+CREATE INDEX IF NOT EXISTS idx_sweep_progress_worker_id 
+ON sweep_progress(sweep_id, worker_id) WHERE worker_id IS NOT NULL;
+```
+
+### 4. UI: Botón para Lanzar Workers Paralelos
+
+Añadir al `SweepHealthDashboard.tsx`:
+
+**Estado y handler:**
+```typescript
+const [launchingParallel, setLaunchingParallel] = useState(false);
+const [workerCount, setWorkerCount] = useState(4);
+
 const handleLaunchParallel = async () => {
   setLaunchingParallel(true);
-  const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
-    body: { mode: 'parallel_batch', workers: 4 }
-  });
-  // Mostrar resultado...
+  try {
+    const { data, error } = await supabase.functions.invoke('rix-batch-orchestrator', {
+      body: { mode: 'parallel_batch', workers: workerCount }
+    });
+    
+    if (error) throw error;
+    
+    toast({
+      title: `⚡ ${workerCount} Workers lanzados`,
+      description: `Procesando: ${data.totalProcessed} empresas en paralelo`,
+    });
+    
+    await fetchHealthData();
+  } catch (error: any) {
+    toast({ title: 'Error', description: error.message, variant: 'destructive' });
+  } finally {
+    setLaunchingParallel(false);
+  }
 };
+```
 
-// En el UI:
-<Button onClick={handleLaunchParallel}>
-  <Zap className="mr-2 h-4 w-4" />
-  Lanzar 4 Workers Paralelos
+**Botón en el UI:**
+```tsx
+<Button 
+  variant="default"
+  onClick={handleLaunchParallel}
+  disabled={launchingParallel || data.healthStatus === 'completed'}
+  className="bg-gradient-to-r from-purple-600 to-blue-600"
+>
+  {launchingParallel ? (
+    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+  ) : (
+    <Zap className="mr-2 h-4 w-4" />
+  )}
+  Lanzar {workerCount} Workers Paralelos
 </Button>
 ```
 
-### 5. Visualización de Workers Activos
+## Archivos a Modificar
 
-Añadir indicador de workers activos en el dashboard:
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│ 🟢 BARRIDO ACTIVO                        2026-W06              │
-├─────────────────────────────────────────────────────────────────┤
-│ [●●●●] 4 Workers activos                                       │
-│ ├── Worker 1: BBVA (45s)                                       │
-│ ├── Worker 2: Santander (32s)                                  │
-│ ├── Worker 3: Telefónica (18s)                                 │
-│ └── Worker 4: Inditex (61s)                                    │
-│                                                                 │
-│ 75/174 empresas (43%)    ⏱️ 1h 12m    📊 ETA: 45 min           │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Cambios en Archivos
-
-### Archivo 1: `supabase/functions/rix-batch-orchestrator/index.ts`
-
-| Cambio | Descripción |
-|--------|-------------|
-| Añadir función `claimNextCompany()` | Lock optimista con `FOR UPDATE SKIP LOCKED` |
-| Añadir función `runParallelWorker()` | Loop de procesamiento por worker |
-| Añadir modo `parallel_batch` | Handler para lanzar N workers |
-| Modificar respuesta | Incluir estadísticas de workers |
-
-### Archivo 2: `src/components/admin/SweepHealthDashboard.tsx`
-
-| Cambio | Descripción |
-|--------|-------------|
-| Añadir botón "Lanzar Workers Paralelos" | Con selector de cantidad (2/4/6) |
-| Añadir indicador de workers activos | Mostrar cuántos están procesando |
-| Actualizar `HeartbeatIndicator` | Mostrar multi-procesamiento |
-
-### Archivo 3: Migración SQL (opcional)
-
-```sql
--- Añadir columna worker_id para tracking
-ALTER TABLE sweep_progress 
-ADD COLUMN IF NOT EXISTS worker_id INTEGER;
-```
-
-## Consideraciones de Rate Limits
-
-Las APIs de IA tienen límites de requests/minuto:
-- **OpenAI (ChatGPT)**: 60 RPM (tier básico)
-- **Perplexity**: 20 RPM
-- **xAI (Grok)**: 60 RPM
-- **Gemini**: 60 RPM
-- **DeepSeek/Qwen**: más flexibles
-
-Con **4 workers paralelos**, cada uno haciendo 6 llamadas por empresa:
-- 4 workers × 6 modelos = 24 requests simultáneos (posiblemente)
-- Pero en realidad son secuenciales dentro de cada empresa
-
-**Recomendación**: Empezar con **4 workers** y monitorizar errores de rate limit. Si hay muchos 429, reducir a 2-3.
+| Archivo | Cambios |
+|---------|---------|
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir `claimNextPendingCompany()`, `runParallelWorker()`, handler `parallel_batch` |
+| `src/components/admin/SweepHealthDashboard.tsx` | Añadir botón "Lanzar Workers Paralelos" con selector de cantidad |
+| **Migración SQL** | Añadir columna `worker_id` y función `claim_next_sweep_company()` |
 
 ## Resultado Esperado
 
-| Métrica | Antes (Secuencial) | Después (4 Workers) |
-|---------|-------------------|---------------------|
-| Tiempo total | 6-10 horas | 1.5-3 horas |
-| Empresas/hora | ~20 | ~60-80 |
-| Utilización CPU | Baja | Media |
-| Rate limit riesgo | Bajo | Medio (monitorizar) |
+- **Antes**: 1 empresa a la vez → 6-10 horas para 174 empresas
+- **Después**: 4 empresas en paralelo → 1.5-3 horas
 
-## Pasos de Implementación
+El botón aparecerá junto a los otros botones de acción en el dashboard:
+```text
+[🧟 Limpiar Zombis] [▶️ Reanudar Cascada] [⚡ Lanzar 4 Workers Paralelos]
+```
 
-1. **Modificar orquestador** con modo `parallel_batch`
-2. **Añadir función de lock optimista** 
-3. **Actualizar dashboard** con botón y visualización
-4. **Probar con 2 workers** primero
-5. **Escalar a 4-6** si no hay errores de rate limit
