@@ -115,50 +115,75 @@ export function SweepHealthDashboard() {
   const totalWithGhosts = metrics.totalCompanies + metrics.ghostCompanies;
   const realComplete = metrics.companiesComplete;
 
+  // Determinar velocidad del proceso
+  const getProcessSpeed = () => {
+    if (activeTriggers >= 3) return { label: 'Óptimo', color: 'text-primary', bgColor: 'bg-primary/10', borderColor: 'border-primary/50' };
+    if (activeTriggers >= 1 || activeSearches >= 2) return { label: 'Normal', color: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-500/50' };
+    if (hasPendingWork) return { label: 'Lento', color: 'text-destructive', bgColor: 'bg-destructive/5', borderColor: 'border-destructive/30' };
+    return { label: 'Inactivo', color: 'text-muted-foreground', bgColor: 'bg-muted/30', borderColor: 'border-border' };
+  };
+  
+  const speed = getProcessSpeed();
+
   return (
     <div className="space-y-4 mb-6">
-      {/* SECCIÓN 1: Estado del Sistema - PROCESOS ACTIVOS */}
-      <Card className={cn(
-        hasActiveProcesses && "border-primary/50 bg-primary/5"
-      )}>
-        <CardContent className="py-4">
+      {/* SECCIÓN 0: BARRA DE TRIGGERS - MUY VISIBLE */}
+      <Card className={cn("border-2", speed.borderColor, speed.bgColor)}>
+        <CardContent className="py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {/* Indicador de estado con animación */}
-              {hasActiveProcesses ? (
-                <div className="relative">
-                  <Activity className="h-5 w-5 text-primary animate-pulse" />
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+            <div className="flex items-center gap-4">
+              {/* Indicador visual grande */}
+              <div className="relative">
+                {hasActiveProcesses ? (
+                  <>
+                    <Activity className={cn("h-8 w-8 animate-pulse", speed.color)} />
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-4 w-4 bg-primary text-[10px] text-primary-foreground font-bold flex items-center justify-center">
+                        {totalActive}
+                      </span>
+                    </span>
+                  </>
+                ) : hasPendingWork ? (
+                  <Clock className="h-8 w-8 text-muted-foreground" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-muted-foreground/20 flex items-center justify-center">
+                    <span className="text-xs text-muted-foreground">—</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Info de procesos */}
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg font-semibold">
+                    {hasActiveProcesses ? (
+                      <>
+                        {activeTriggers > 0 && <span className="text-primary">{activeTriggers} triggers</span>}
+                        {activeTriggers > 0 && activeSearches > 0 && <span className="text-muted-foreground"> + </span>}
+                        {activeSearches > 0 && <span>{activeSearches} búsquedas</span>}
+                      </>
+                    ) : hasPendingWork ? (
+                      <span className="text-muted-foreground">{pendingTriggers + metrics.searchPending} tareas en cola</span>
+                    ) : (
+                      <span className="text-muted-foreground">Sin actividad</span>
+                    )}
+                  </span>
+                  {/* Badge de velocidad */}
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide",
+                    speed.color,
+                    speed.bgColor === 'bg-muted/30' ? 'bg-muted' : speed.bgColor
+                  )}>
+                    {speed.label}
                   </span>
                 </div>
-              ) : hasPendingWork ? (
-                <Clock className="h-5 w-5 text-muted-foreground" />
-              ) : (
-                <div className="w-3 h-3 rounded-full bg-muted-foreground/40" />
-              )}
-              
-              <div>
-                <span className="font-medium">
-                  {hasActiveProcesses ? (
-                    <>
-                      {activeSearches > 0 && `${activeSearches} búsquedas`}
-                      {activeSearches > 0 && activeTriggers > 0 && ' + '}
-                      {activeTriggers > 0 && `${activeTriggers} triggers`}
-                      {' en ejecución'}
-                    </>
-                  ) : hasPendingWork ? (
-                    `${pendingTriggers + metrics.searchPending} tareas pendientes`
-                  ) : (
-                    "Sin procesos activos"
-                  )}
-                </span>
                 <div className="text-sm text-muted-foreground">
-                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas completas
+                  Barrido {metrics.sweepId} • {realComplete}/{totalWithGhosts} empresas
                 </div>
               </div>
             </div>
+            
             <div className="flex gap-2">
               <Button size="sm" onClick={handleForce} disabled={forcing}>
                 {forcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
