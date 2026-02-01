@@ -797,6 +797,52 @@ async function processCronTriggers(
 
         results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
         console.log(`[cron_triggers] Trigger ${trigger.id} completed successfully`);
+
+      } else if (trigger.action === 'auto_sanitize') {
+        // ============================================================
+        // AUTO-SANITIZE: Ejecuta sanitización cuando sweep está 100% completo
+        // ============================================================
+        console.log(`[cron_triggers] Processing auto_sanitize trigger ${trigger.id}`);
+        
+        const triggerParams = trigger.params as { sweep_id?: string; auto_repair?: boolean } | null;
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/rix-quality-watchdog`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            action: 'sanitize',
+            auto_repair: triggerParams?.auto_repair ?? true  // Auto-repair por defecto
+          }),
+        });
+
+        const responseText = await response.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        // Marcar como completado
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: data as Record<string, unknown>
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
+        console.log(`[cron_triggers] auto_sanitize trigger ${trigger.id} completed successfully`);
+
       } else {
         // Acción desconocida
         await supabase
@@ -1076,6 +1122,52 @@ const {
       // 5. Si no hay empresas pendientes ni en procesamiento, el sweep está completo
       if (pending === 0 && processing === 0 && failed === 0) {
         console.log(`[${triggerMode}] Sweep ${sweepId} is complete (${completed}/${total})`);
+        
+        // ============================================================
+        // AUTO-SANITIZACIÓN: Verificar si ya se sanitizó este sweep
+        // Si no, insertar trigger para que el próximo CRON lo procese
+        // ============================================================
+        let autoSanitizeInserted = false;
+        
+        // Buscar si ya existe un trigger auto_sanitize reciente (últimas 24 horas)
+        const { data: existingSanitize } = await supabase
+          .from('cron_triggers')
+          .select('id')
+          .eq('action', 'auto_sanitize')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .limit(1)
+          .maybeSingle();
+        
+        if (!existingSanitize) {
+          // Verificar también si ya hay reportes de calidad para este sweep
+          const { count: existingReports } = await supabase
+            .from('data_quality_reports')
+            .select('*', { count: 'exact', head: true })
+            .eq('sweep_id', sweepId);
+          
+          if ((existingReports || 0) === 0) {
+            // No hay sanitización previa → insertar trigger
+            console.log(`[${triggerMode}] Sweep complete! Inserting auto_sanitize trigger for ${sweepId}`);
+            
+            const { error: insertError } = await supabase.from('cron_triggers').insert({
+              action: 'auto_sanitize',
+              params: { sweep_id: sweepId, auto_repair: true },
+              status: 'pending',
+            });
+            
+            if (insertError) {
+              console.error(`[${triggerMode}] Failed to insert auto_sanitize trigger:`, insertError);
+            } else {
+              autoSanitizeInserted = true;
+              console.log(`[${triggerMode}] auto_sanitize trigger inserted successfully`);
+            }
+          } else {
+            console.log(`[${triggerMode}] Sweep ${sweepId} already has ${existingReports} quality reports, skipping auto_sanitize`);
+          }
+        } else {
+          console.log(`[${triggerMode}] auto_sanitize trigger already exists (id: ${existingSanitize.id}), skipping`);
+        }
+        
         return new Response(
           JSON.stringify({
             success: true,
@@ -1083,6 +1175,7 @@ const {
             sweepId,
             action: 'complete',
             reason: 'Sweep already completed',
+            autoSanitizeInserted,
             stats: { pending, processing, completed, failed, total },
             triggersProcessed: triggersProcessed.length,
             zombiesReset: stuckReset.count,
