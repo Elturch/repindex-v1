@@ -70,6 +70,15 @@ export interface UnifiedSweepMetrics {
   triggersPending: number;
   triggersProcessing: number;
   
+  // Active trigger progress (for live feedback)
+  activeTrigger: {
+    action: string;
+    processed: number;
+    remaining: number;
+    lastTicker?: string;
+    lastModel?: string;
+  } | null;
+  
   // Ghost companies detection (completed in sweep_progress but 0 records in rix_runs_v2)
   ghostCompanies: number;
   ghostTickers: string[];
@@ -192,12 +201,14 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .select('status, ticker')
           .eq('sweep_id', sweepId),
           
-        // Get pending triggers count
+        // Get pending/processing triggers with result for progress tracking
         supabase
           .from('cron_triggers')
-          .select('action, status')
+          .select('action, status, result')
           .in('status', ['pending', 'processing'])
-          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize', 'full_sweep']),
+          .in('action', ['repair_search', 'repair_analysis', 'auto_sanitize', 'full_sweep'])
+          .order('created_at', { ascending: false })
+          .limit(10),
           
         // Get failed companies with details
         supabase
@@ -373,6 +384,20 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         triggersPending: pendingTriggers.filter(t => t.status === 'pending').length,
         triggersProcessing: pendingTriggers.filter(t => t.status === 'processing').length,
         
+        // Active trigger progress - extract from the most recent trigger's result
+        activeTrigger: (() => {
+          const active = pendingTriggers.find(t => t.status === 'processing' || t.status === 'pending');
+          if (!active) return null;
+          const result = active.result as { processed?: number; remaining?: number; remaining_estimate?: number; last?: { ticker?: string; model?: string } } | null;
+          return {
+            action: active.action,
+            processed: result?.processed || 0,
+            remaining: result?.remaining ?? result?.remaining_estimate ?? 0,
+            lastTicker: result?.last?.ticker,
+            lastModel: result?.last?.model,
+          };
+        })(),
+        
         // Ghost companies: completed in sweep_progress but NO records in rix_runs_v2
         ghostCompanies: ghostTickersList.length,
         ghostTickers: ghostTickersList,
@@ -389,8 +414,18 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         lastUpdated: new Date(),
       };
     },
-    refetchInterval: 10000, // Auto-refresh every 10 seconds
-    staleTime: 5000,
+    // Dynamic refetch: faster when there's active work, slower when idle
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const hasActiveWork = data && (
+        data.triggersProcessing > 0 || 
+        data.triggersPending > 0 || 
+        data.searchProcessing > 0 ||
+        data.recordsNoData > 10
+      );
+      return hasActiveWork ? 3000 : 10000; // 3s when active, 10s when idle
+    },
+    staleTime: 2000,
   });
 }
 
