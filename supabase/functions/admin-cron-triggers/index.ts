@@ -53,9 +53,9 @@ function isAllowedOrigin(req: Request): boolean {
   return false
 }
 
-type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'get_latest'
+type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'get_latest'
 
-const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'get_latest']
+const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'get_latest']
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {

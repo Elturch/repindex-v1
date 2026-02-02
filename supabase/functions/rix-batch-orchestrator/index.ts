@@ -1007,6 +1007,81 @@ async function processCronTriggers(
           results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, remaining_total: 0 } });
         }
 
+      } else if (trigger.action === 'vector_store_continue') {
+        // ============================================================
+        // VECTOR_STORE_CONTINUE: Auto-continuation for vector store indexing
+        // Triggered by populate-vector-store when work remains.
+        // Ensures indexing completes even when browser is closed.
+        // ============================================================
+        console.log(`[cron_triggers] Processing vector_store_continue trigger ${trigger.id}`);
+
+        const triggerParams = trigger.params as {
+          sourceFilter?: 'all' | 'rix_v1' | 'rix_v2' | 'news';
+          includeRawResponses?: boolean;
+          remaining?: number;
+          batch_number?: number;
+        } | null;
+
+        const sourceFilter = triggerParams?.sourceFilter || 'all';
+        const includeRawResponses = triggerParams?.includeRawResponses ?? true;
+        const batchNumber = triggerParams?.batch_number || 0;
+
+        console.log(`[vector_store_continue] Batch #${batchNumber}, filter: ${sourceFilter}, remaining: ${triggerParams?.remaining}`);
+
+        const response = await fetch(`${supabaseUrl}/functions/v1/populate-vector-store`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            includeRawResponses, 
+            sourceFilter,
+            mode: 'continuation',
+            batch_number: batchNumber
+          }),
+        });
+
+        const responseText = await response.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        const remainingRix = Number(data?.remaining ?? 0);
+        const remainingNews = Number(data?.remaining_news ?? 0);
+        const remainingTotal = Math.max(0, remainingRix + remainingNews);
+
+        // Mark this trigger as completed - the populate-vector-store function
+        // will insert a new trigger if more work remains
+        await supabase
+          .from('cron_triggers')
+          .update({
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: {
+              ...data,
+              batch_number: batchNumber,
+              remaining_total: remainingTotal,
+            },
+          })
+          .eq('id', trigger.id);
+
+        results.push({ 
+          id: trigger.id, 
+          action: trigger.action, 
+          success: true, 
+          result: { ...data, batch_number: batchNumber, remaining_total: remainingTotal } 
+        });
+
+        console.log(`[vector_store_continue] Batch #${batchNumber} completed. Remaining: ${remainingTotal}. New trigger will be created by populate-vector-store if needed.`);
+
       } else if (trigger.action === 'auto_sanitize') {
         // ============================================================
         // AUTO-SANITIZE: Ejecuta sanitización cuando sweep está 100% completo
