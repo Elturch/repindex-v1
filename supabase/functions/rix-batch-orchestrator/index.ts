@@ -840,19 +840,42 @@ async function processCronTriggers(
     console.error('[cron_triggers] Zombie cleanup exception:', e);
   }
   
-  // Obtener triggers pendientes (máximo 5 por invocación)
-  const { data: triggers, error } = await supabase
+  // Obtener triggers pendientes
+  // CRITICAL FIX: evitar starvation (vector store re-queue infinito)
+  // Trayendo un pequeño pool y priorizando en memoria.
+  const { data: triggerPool, error } = await supabase
     .from('cron_triggers')
     .select('*')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
-    .limit(5);
+    .limit(15);
 
-  if (error || !triggers || triggers.length === 0) {
+  if (error || !triggerPool || triggerPool.length === 0) {
     return results;
   }
 
-  console.log(`[cron_triggers] Found ${triggers.length} pending triggers`);
+  const PRIORITY: Record<string, number> = {
+    // Analysis pipeline first
+    repair_search: 10,
+    repair_analysis: 20,
+    auto_sanitize: 30,
+
+    // Vector store (background)
+    vector_store_continue: 40,
+    auto_populate_vectors: 50,
+
+    // Self-chaining last (it calls the orchestrator again)
+    auto_continue: 90,
+  };
+
+  const triggers = [...(triggerPool as CronTrigger[])].sort((a, b) => {
+    const pa = PRIORITY[a.action] ?? 999;
+    const pb = PRIORITY[b.action] ?? 999;
+    if (pa !== pb) return pa - pb;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  }).slice(0, 5);
+
+  console.log(`[cron_triggers] Found ${triggerPool.length} pending triggers; processing ${triggers.length} (prioritized)`);
 
   for (const trigger of triggers as CronTrigger[]) {
     // Marcar como processing
@@ -876,6 +899,9 @@ async function processCronTriggers(
             action: 'reprocess_pending', 
             batch_size: (trigger.params as any)?.batch_size || 5 
           }),
+          // Evita dejar el trigger en "processing" por timeout de la plataforma
+          // (si el análisis GPT-5 se alarga demasiado).
+          signal: AbortSignal.timeout(120_000),
         });
 
         const responseText = await response.text();
@@ -1379,17 +1405,42 @@ async function processCronTriggers(
     } catch (e: unknown) {
       const errorMsg = e instanceof Error ? e.message : String(e);
       console.error(`[cron_triggers] Error processing trigger ${trigger.id}:`, errorMsg);
-      
-      await supabase
-        .from('cron_triggers')
-        .update({ 
-          status: 'failed',
-          processed_at: new Date().toISOString(),
-          result: { error: errorMsg }
-        })
-        .eq('id', trigger.id);
 
-      results.push({ id: trigger.id, action: trigger.action, success: false, error: errorMsg });
+      // CRITICAL FIX: si se aborta por timeout, re-encolar en vez de marcar failed
+      // (evita bloqueos largos por "stuck_in_processing").
+      const looksLikeTimeout =
+        errorMsg.toLowerCase().includes('abort') ||
+        errorMsg.toLowerCase().includes('timeout') ||
+        errorMsg.toLowerCase().includes('timed out') ||
+        errorMsg.toLowerCase().includes('deadline');
+
+      if (trigger.action === 'repair_analysis' && looksLikeTimeout) {
+        await supabase
+          .from('cron_triggers')
+          .update({
+            status: 'pending',
+            processed_at: null,
+            result: {
+              error: errorMsg,
+              reset_reason: 'timeout_requeued',
+              last_error_at: new Date().toISOString(),
+            },
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: { requeued: true, reason: 'timeout' } });
+      } else {
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'failed',
+            processed_at: new Date().toISOString(),
+            result: { error: errorMsg }
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: false, error: errorMsg });
+      }
     }
   }
 
@@ -1858,9 +1909,25 @@ const {
       console.log(`[${triggerMode}] Sweep ${sweepId}: pending=${pending}, processing=${processing}, completed=${completed}, failed=${failed}`);
 
       // 4. Procesar cron_triggers pendientes
-      const triggersProcessed = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
-      if (triggersProcessed.length > 0) {
-        console.log(`[${triggerMode}] Processed ${triggersProcessed.length} cron triggers`);
+      // CRITICAL FIX: procesar en bucle con time budget para evitar depender del CRON cada 5 min.
+      const cronLoopBudgetMs = 150_000; // <180s de timeout típico
+      const cronLoopStart = Date.now();
+      let cronBatches = 0;
+      let cronTotalProcessed = 0;
+
+      while (Date.now() - cronLoopStart < cronLoopBudgetMs) {
+        const batch = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+        cronBatches++;
+        cronTotalProcessed += batch.length;
+
+        if (batch.length === 0) break;
+
+        // Pequeña pausa para reducir contención
+        await sleep(1500);
+      }
+
+      if (cronTotalProcessed > 0) {
+        console.log(`[${triggerMode}] Cron trigger loop: processed=${cronTotalProcessed} in ${cronBatches} batches`);
       }
 
       // 5. Si no hay empresas pendientes ni en procesamiento, verificar encadenamiento
@@ -2035,9 +2102,19 @@ const {
         if (triggersInserted.length > 0) {
           console.log(`[${triggerMode}] Executing immediate trigger processing for newly inserted triggers...`);
           try {
-            const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
-            if (immediateResults.length > 0) {
-              console.log(`[${triggerMode}] Immediate processing completed: ${immediateResults.map(r => r.action).join(', ')}`);
+            const immediateBudgetMs = 60_000;
+            const immediateStart = Date.now();
+            let immediateProcessed = 0;
+
+            while (Date.now() - immediateStart < immediateBudgetMs) {
+              const immediateResults = await processCronTriggers(supabase, supabaseUrl, supabaseServiceKey);
+              immediateProcessed += immediateResults.length;
+              if (immediateResults.length === 0) break;
+              await sleep(1000);
+            }
+
+            if (immediateProcessed > 0) {
+              console.log(`[${triggerMode}] Immediate processing loop processed ${immediateProcessed} triggers`);
             } else {
               console.log(`[${triggerMode}] No triggers processed immediately (may be in progress already)`);
             }
