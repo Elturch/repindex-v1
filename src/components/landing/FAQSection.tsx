@@ -26,7 +26,7 @@ const getfaqs = (issuerCount: string) => [
   },
   {
     question: "¿Cuáles son las 8 métricas del RIX?",
-    answer: "El RIX se compone de 8 métricas: NVM (Narrativa y Visibilidad Mediática), DRM (Desempeño y Resultados), SIM (Sostenibilidad e Impacto), RMM (Reputación de Marca), CEM (Comportamiento Ético), GAM (Gestión del Talento), DCM (Digital e Innovación) y CXM (Experiencia del Cliente)."
+    answer: "El RIX se compone de 8 métricas: NVM (Calidad de la Narrativa, 15%), DRM (Fortaleza de Evidencia, 15%), SIM (Autoridad de Fuentes, 12%), RMM (Actualidad y Empuje, 12%), CEM (Gestión de Controversias, 12%), GAM (Percepción de Gobernanza, 12%), DCM (Coherencia Informativa, 12%) y CXM (Ejecución Corporativa, 10% — solo cotizadas)."
   },
   {
     question: "¿Por qué es importante la reputación en las IAs?",
