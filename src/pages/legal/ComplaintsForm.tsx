@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { motion } from "framer-motion";
-import { ArrowLeft, CheckCircle2, MessageSquareWarning } from "lucide-react";
+import { ArrowLeft, CheckCircle2, MessageSquareWarning, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { LegalLanguageSwitcher } from "@/components/legal/LegalLanguageSwitcher";
 import { COMPLAINTS_FORM_CONTENT, type LegalLanguage } from "@/lib/legalContent";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function ComplaintsForm() {
   const [lang, setLang] = useState<LegalLanguage>('pt');
@@ -43,12 +44,34 @@ export default function ComplaintsForm() {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setIsSubmitting(false);
-    setIsSubmitted(true);
-    toast.success(content.success);
+    try {
+      const { error } = await supabase.functions.invoke('send-legal-form', {
+        body: {
+          formType: 'complaints',
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          phone: formData.phone || undefined,
+          details: formData.details,
+          language: lang,
+        },
+      });
+
+      if (error) {
+        console.error('Error submitting complaints form:', error);
+        toast.error(lang === 'pt' ? 'Erro ao enviar. Tente novamente.' : lang === 'es' ? 'Error al enviar. Inténtalo de nuevo.' : 'Error sending. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      setIsSubmitted(true);
+      toast.success(content.success);
+    } catch (err) {
+      console.error('Error submitting complaints form:', err);
+      toast.error(lang === 'pt' ? 'Erro ao enviar. Tente novamente.' : lang === 'es' ? 'Error al enviar. Inténtalo de nuevo.' : 'Error sending. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isSubmitted) {
@@ -208,7 +231,12 @@ export default function ComplaintsForm() {
               className="w-full"
               disabled={isSubmitting || !formData.acceptTerms}
             >
-              {isSubmitting ? "..." : content.submit}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {lang === 'pt' ? 'Enviando...' : lang === 'es' ? 'Enviando...' : 'Sending...'}
+                </>
+              ) : content.submit}
             </Button>
           </motion.form>
           

@@ -255,10 +255,11 @@ const handler = async (req: Request): Promise<Response> => {
             user.full_name || undefined
           );
 
-          // Send email via Resend
+          // Send email via Resend (add BCC to info@repindex.ai for internal tracking)
           const { error: emailError } = await resend.emails.send({
             from: "RepIndex <no-reply@repindex.ai>",
             to: [user.email],
+            bcc: ["info@repindex.ai"],
             subject: `📰 ${data.weekLabel} | ${data.mainHeadline.substring(0, 40)}...`,
             html,
           });
