@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AIModelOption } from "@/contexts/LandingAIModelContext";
+import { getLatestRixTrendWeeks } from "@/lib/getLatestRixTrendWeeks";
 
 interface TopCompany {
   empresa: string;
@@ -20,20 +21,15 @@ export function useLandingTopFives(selectedModel: AIModelOption = "ChatGPT") {
   return useQuery({
     queryKey: ["landing-top-fives", selectedModel],
     queryFn: async () => {
-      // Get latest and previous batch weeks (DISTINCT to avoid duplicates)
-      const { data: allWeeks } = await supabase
-        .from("rix_trends")
-        .select("batch_week")
-        .order("batch_week", { ascending: false });
-      
-      // Extract unique weeks
-      const uniqueWeeks = [...new Set(allWeeks?.map(w => w.batch_week) || [])];
-      const latestBatches = uniqueWeeks.slice(0, 2).map(w => ({ batch_week: w }));
+      // Get latest weeks.
+      // IMPORTANT: rix_trends has ~1000+ rows per week, so a naive select() will hit
+      // PostgREST's default limit (1000) and may only return ONE week.
+      const latestWeeks = await getLatestRixTrendWeeks({ desired: 2 });
 
-      if (!latestBatches || latestBatches.length === 0) throw new Error("No data available");
+      if (!latestWeeks || latestWeeks.length === 0) throw new Error("No data available");
 
-      const latestWeek = latestBatches[0].batch_week;
-      const previousWeek = latestBatches.length > 1 ? latestBatches[1].batch_week : null;
+      const latestWeek = latestWeeks[0];
+      const previousWeek = latestWeeks.length > 1 ? latestWeeks[1] : null;
 
       // Top 5 by each AI model (kept for backwards compatibility)
       const topByAI: TopByAI = {
