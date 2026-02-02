@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.update-cron-schedules]
 verify_jwt = false
+
+[functions.send-legal-form]
+verify_jwt = false

@@ -320,10 +320,10 @@ const handler = async (req: Request): Promise<Response> => {
     // Generate confirmation email HTML for user
     const confirmationHtml = generateConfirmationEmailHtml(name);
 
-    // Send internal notification email
+    // Send internal notification email to both addresses
     const { data: internalEmailData, error: internalEmailError } = await resend.emails.send({
       from: "RepIndex <no-reply@repindex.ai>",
-      to: ["informes@hablamosde.com"],
+      to: ["informes@hablamosde.com", "info@repindex.ai"],
       replyTo: [email],
       subject: `[Contacto Web] ${name}${company ? ` - ${company}` : ''}`,
       html: internalHtml,
