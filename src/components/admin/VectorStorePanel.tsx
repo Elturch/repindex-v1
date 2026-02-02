@@ -134,87 +134,65 @@ export const VectorStorePanel: React.FC = () => {
     autoRunningRef.current = true;
     setResult(null);
     setLogs([]);
-    
+
     const label = getSourceLabel(source);
-    addLog(`🚀 Iniciando sincronización: ${label}...`);
-    
-    let continueProcessing = true;
-    let batchNumber = 0;
-    
-    while (continueProcessing && autoRunningRef.current) {
-      batchNumber++;
-      addLog(`📦 Batch ${batchNumber}: procesando ${label}...`);
-      
-      try {
-        const { data, error } = await supabase.functions.invoke('populate-vector-store', {
-          body: { 
-            includeRawResponses: true,
-            sourceFilter: source,
+    addLog(`📅 Programando sincronización server-side: ${label}...`);
+
+    try {
+      // Programar trigger via Edge Function (service role + allowlist de preview)
+      const { data: scheduleData, error: scheduleError } = await supabase.functions.invoke('admin-cron-triggers', {
+        body: {
+          action: 'auto_populate_vectors',
+          params: {
+            source_filter: source,
+            include_raw: true,
           },
+        },
+      });
+      if (scheduleError) throw scheduleError;
+
+      const triggerId = scheduleData?.trigger?.id;
+      addLog(`✅ Trigger creado: ${triggerId ? triggerId.slice(0, 8) + '...' : '(sin id)'}`);
+
+      // Procesar ahora (sin esperar al cron) para que arranque inmediatamente
+      try {
+        addLog('⚡ Procesando triggers ahora...');
+        const { data: processData, error: processError } = await supabase.functions.invoke('rix-batch-orchestrator', {
+          body: { process_triggers_only: true },
         });
-        
-        if (error) throw error;
-        
-        if (data) {
-          // Refresh status after each batch
-          await refresh();
-          
-          const processed = source === 'news' 
-            ? data.processed_news || 0
-            : source === 'rix_v2'
-              ? data.processed_v2 || 0
-              : data.processed || 0;
-          
-          const remaining = source === 'news'
-            ? data.remaining_news || 0
-            : source === 'rix_v2'
-              ? data.remaining_v2 || data.remaining || 0
-              : data.remaining || 0;
-          
-          addLog(`✓ Batch ${batchNumber}: ${processed} creados, ${data.errored || 0} errores, ${remaining} pendientes (${data.elapsed_seconds}s)`);
-          
-          if (data.complete || remaining === 0) {
-            continueProcessing = false;
-            addLog(`✅ ¡${label} completado!`);
-            setResult({ success: true, complete: true, message: `${label} sincronizado` });
-            toast({
-              title: `${label} completado`,
-              description: 'Sincronización finalizada correctamente',
-            });
-          } else {
-            // Brief pause before next batch
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-      } catch (error: any) {
-        console.error('Error in batch:', error);
-        addLog(`❌ Error en batch ${batchNumber}: ${error.message}`);
-        
-        // Retry after longer pause
-        if (batchNumber < 20) {
-          addLog('⏳ Reintentando en 5 segundos...');
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        } else {
-          continueProcessing = false;
-          setResult({ success: false, error: error.message });
-          toast({
-            title: 'Error',
-            description: 'Proceso detenido tras múltiples errores',
-            variant: 'destructive',
-          });
-        }
+        if (processError) throw processError;
+        addLog(`✓ Triggers procesados: ${processData?.triggersProcessed ?? 0}`);
+      } catch (e: any) {
+        addLog(`⚠️ No se pudo procesar ahora (el cron lo hará): ${e?.message || e}`);
       }
+
+      await refresh();
+
+      setResult({ success: true, complete: false, message: `${label} programado (server-side)` });
+      toast({
+        title: 'Programado',
+        description: `${label} se sincronizará en segundo plano`,
+      });
+    } catch (error: any) {
+      console.error('Error scheduling vector sync:', error);
+      addLog(`❌ Error programando ${label}: ${error.message}`);
+      setResult({ success: false, error: error.message });
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo programar la sincronización',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRunning(false);
+      setActiveSource(null);
+      autoRunningRef.current = false;
     }
-    
-    setIsRunning(false);
-    setActiveSource(null);
-    autoRunningRef.current = false;
   };
 
   const handleStop = () => {
     autoRunningRef.current = false;
-    addLog('⏸️ Proceso pausado por usuario');
-    toast({ title: 'Pausado', description: 'El proceso se detendrá tras el batch actual' });
+    addLog('⏸️ Pausado (solo aplica a bucles locales; ahora es server-side)');
+    toast({ title: 'Nota', description: 'La sincronización ya está programada server-side' });
   };
 
   return (

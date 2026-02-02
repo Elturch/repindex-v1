@@ -788,7 +788,7 @@ async function performHealthChecks(
 interface CronTrigger {
   id: string;
   action: string;
-  params: { batch_size?: number } | null;
+  params: Record<string, unknown> | null;
   status: string;
   created_at: string;
 }
@@ -808,10 +808,11 @@ async function processCronTriggers(
     const staleBefore = new Date(Date.now() - 4 * 60 * 1000).toISOString();
     const { data: resetRows, error: resetError } = await supabase
       .from('cron_triggers')
-      .update({ status: 'pending' })
+      // IMPORTANTE: Algunos triggers quedan con processed_at seteado aunque sigan en "processing".
+      // Por eso NO filtramos processed_at IS NULL.
+      .update({ status: 'pending', processed_at: null })
       .eq('status', 'processing')
-      .is('processed_at', null)
-      .lt('created_at', staleBefore)
+      .or(`created_at.lt.${staleBefore},processed_at.lt.${staleBefore}`)
       .select('id');
 
     if (resetError) {
@@ -857,7 +858,7 @@ async function processCronTriggers(
           },
           body: JSON.stringify({ 
             action: 'reprocess_pending', 
-            batch_size: trigger.params?.batch_size || 5 
+            batch_size: (trigger.params as any)?.batch_size || 5 
           }),
         });
 
@@ -919,6 +920,76 @@ async function processCronTriggers(
         }
         
         console.log(`[cron_triggers] Trigger ${trigger.id} handled (remaining: ${remaining})`);
+
+      } else if (trigger.action === 'auto_populate_vectors') {
+        // ============================================================
+        // AUTO-POPULATE VECTOR STORE (server-to-server)
+        // Evita bloqueos por extensiones o timeouts del navegador.
+        // ============================================================
+        console.log(`[cron_triggers] Processing auto_populate_vectors trigger ${trigger.id}`);
+
+        const triggerParams = trigger.params as {
+          source_filter?: 'all' | 'rix_v1' | 'rix_v2' | 'news';
+          include_raw?: boolean;
+        } | null;
+
+        const sourceFilter = triggerParams?.source_filter || 'all';
+        const includeRawResponses = triggerParams?.include_raw ?? true;
+
+        const response = await fetch(`${supabaseUrl}/functions/v1/populate-vector-store`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ includeRawResponses, sourceFilter }),
+        });
+
+        const responseText = await response.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        const remainingRix = Number(data?.remaining ?? 0);
+        const remainingNews = Number(data?.remaining_news ?? 0);
+        const remainingTotal = Math.max(0, remainingRix + remainingNews);
+
+        if (remainingTotal > 0) {
+          console.log(`[cron_triggers] auto_populate_vectors: remaining_total=${remainingTotal} → re-queueing`);
+          await supabase
+            .from('cron_triggers')
+            .update({
+              status: 'pending',
+              processed_at: null,
+              result: {
+                ...data,
+                remaining_total: remainingTotal,
+                last_batch_at: new Date().toISOString(),
+              },
+            })
+            .eq('id', trigger.id);
+
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, requeued: true, remaining_total: remainingTotal } });
+        } else {
+          console.log('[cron_triggers] auto_populate_vectors: all done (0 remaining_total)');
+          await supabase
+            .from('cron_triggers')
+            .update({
+              status: 'completed',
+              processed_at: new Date().toISOString(),
+              result: { ...data, remaining_total: 0 },
+            })
+            .eq('id', trigger.id);
+
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, remaining_total: 0 } });
+        }
 
       } else if (trigger.action === 'auto_sanitize') {
         // ============================================================
