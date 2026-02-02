@@ -53,53 +53,55 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     // Server-side counts (fast) + per-item existence checks (avoids loading 10k+ rows)
     console.log('Counting existing documents (server-side)...');
 
-    const rixIndexedCache = new Map<string, boolean>();
-    const newsIndexedCache = new Map<string, boolean>();
-
-    const isRixDocIndexed = async (runId: string): Promise<boolean> => {
-      if (!runId) return false;
-      const cached = rixIndexedCache.get(runId);
-      if (cached !== undefined) return cached;
+    // --------------------------------------------------------------------------
+    // PERF: bulk existence checks.
+    // Previous version performed 1 query per candidate row (very slow with 10k+).
+    // This version checks existence in 1 query per scan page.
+    // --------------------------------------------------------------------------
+    const getIndexedRixRunIds = async (runIds: string[]): Promise<Set<string>> => {
+      const ids = Array.from(new Set(runIds.filter(Boolean)));
+      if (ids.length === 0) return new Set();
 
       const { data, error } = await supabaseClient
         .from('documents')
-        .select('id')
-        .eq('metadata->>rix_run_id', runId)
-        .limit(1);
+        .select('metadata->>rix_run_id')
+        .in('metadata->>rix_run_id', ids);
 
       if (error) {
-        console.error('Error checking existing RIX doc:', error);
-        // Fail open: treat as not indexed to avoid blocking sync
-        rixIndexedCache.set(runId, false);
-        return false;
+        console.error('Error bulk-checking existing RIX docs:', error);
+        // Fail open: treat as none indexed to avoid blocking sync
+        return new Set();
       }
 
-      const exists = !!(data && data.length > 0);
-      rixIndexedCache.set(runId, exists);
-      return exists;
+      const out = new Set<string>();
+      for (const row of (data || []) as any[]) {
+        const id = row?.rix_run_id;
+        if (id) out.add(id);
+      }
+      return out;
     };
 
-    const isNewsDocIndexed = async (articleUrl: string): Promise<boolean> => {
-      if (!articleUrl) return false;
-      const cached = newsIndexedCache.get(articleUrl);
-      if (cached !== undefined) return cached;
+    const getIndexedNewsUrls = async (urls: string[]): Promise<Set<string>> => {
+      const u = Array.from(new Set(urls.filter(Boolean)));
+      if (u.length === 0) return new Set();
 
       const { data, error } = await supabaseClient
         .from('documents')
-        .select('id')
+        .select('metadata->>article_url')
         .eq('metadata->>type', 'corporate_news')
-        .eq('metadata->>article_url', articleUrl)
-        .limit(1);
+        .in('metadata->>article_url', u);
 
       if (error) {
-        console.error('Error checking existing news doc:', error);
-        newsIndexedCache.set(articleUrl, false);
-        return false;
+        console.error('Error bulk-checking existing corporate news docs:', error);
+        return new Set();
       }
 
-      const exists = !!(data && data.length > 0);
-      newsIndexedCache.set(articleUrl, exists);
-      return exists;
+      const out = new Set<string>();
+      for (const row of (data || []) as any[]) {
+        const url = row?.article_url;
+        if (url) out.add(url);
+      }
+      return out;
     };
 
     const [totalRixDocsResult, rixV2DocsResult] = await Promise.all([
@@ -172,9 +174,10 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
 
         v1Scanned += rixBatch.length;
 
+        const indexedIds = await getIndexedRixRunIds(rixBatch.map((r: any) => r.id));
+
         for (const r of rixBatch) {
-          const alreadyIndexed = await isRixDocIndexed(r.id);
-          if (!alreadyIndexed) {
+          if (!indexedIds.has(r.id)) {
             pendingFoundV1++;
             if (rixBatchToProcess.length < BATCH_SIZE) {
               rixBatchToProcess.push({ ...r, _source_table: 'rix_runs' });
@@ -229,9 +232,10 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
 
         v2Scanned += v2Batch.length;
 
+        const indexedIds = await getIndexedRixRunIds(v2Batch.map((r: any) => r.id));
+
         for (const r of v2Batch) {
-          const alreadyIndexed = await isRixDocIndexed(r.id);
-          if (!alreadyIndexed) {
+          if (!indexedIds.has(r.id)) {
             pendingFoundV2++;
             if (rixBatchToProcess.length < BATCH_SIZE) {
               rixBatchToProcess.push({ ...r, _source_table: 'rix_runs_v2' });
@@ -555,32 +559,6 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     
     if (sourceFilter === 'all' || sourceFilter === 'news') {
       console.log('Starting corporate_news indexation...');
-      
-      // Get existing news URLs (optimized select) for fast in-memory checks
-      const existingNewsUrls = new Set<string>();
-      let newsDocOffset = 0;
-      const existingNewsBatchSize = 2000;
-
-      while (true) {
-        const { data: existingNewsDocs } = await supabaseClient
-          .from('documents')
-          .select('metadata->>article_url')
-          .eq('metadata->>type', 'corporate_news')
-          .order('id', { ascending: true })
-          .range(newsDocOffset, newsDocOffset + existingNewsBatchSize - 1);
-
-        if (!existingNewsDocs || existingNewsDocs.length === 0) break;
-
-        existingNewsDocs.forEach((d: any) => {
-          const url = d.article_url;
-          if (url) existingNewsUrls.add(url);
-        });
-
-        if (existingNewsDocs.length < existingNewsBatchSize) break;
-        newsDocOffset += existingNewsBatchSize;
-      }
-
-      console.log(`Found ${existingNewsUrls.size} existing corporate news documents`);
 
       // Fetch corporate news paginated but only build pending batch to process
       const newsBatchToProcess: any[] = [];
@@ -603,8 +581,10 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
         if (!newsData || newsData.length === 0) break;
         newsTotalCount += newsData.length;
 
+        const indexedUrls = await getIndexedNewsUrls(newsData.map((n: any) => n.article_url));
+
         for (const n of newsData) {
-          if (!existingNewsUrls.has(n.article_url)) {
+          if (!indexedUrls.has(n.article_url)) {
             pendingNewsFound++;
             if (newsBatchToProcess.length < NEWS_BATCH_SIZE) {
               newsBatchToProcess.push(n);
@@ -734,13 +714,14 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     const remainingRixV2 = Math.max(0, v2PendingEstimate - v2DocsCreated);
     const remainingRixAll = remainingRixV1 + remainingRixV2;
 
+    // Remaining is used by AUTO-CONTINUE. It must include NEWS for news-only and all.
     const remaining = sourceFilter === 'rix_v1'
       ? remainingRixV1
       : sourceFilter === 'rix_v2'
         ? remainingRixV2
         : sourceFilter === 'news'
-          ? 0
-          : remainingRixAll;
+          ? newsRemaining
+          : (remainingRixAll + newsRemaining);
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     
     console.log(`BATCH COMPLETED: ${documentsCreated} rix docs (V1: ${v1DocsCreated}, V2: ${v2DocsCreated}), ${newsDocsCreated} news docs, ${documentsErrored + newsDocsErrored} errors, ${elapsed}s`);
