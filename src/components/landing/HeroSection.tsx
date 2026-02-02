@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { FaRobot, FaChartLine } from "react-icons/fa";
+import { FaChartLine } from "react-icons/fa";
 import { useIssuerCount, formatIssuerCount } from "@/hooks/useIssuerCount";
 import { ChatGPTIcon } from "@/components/ui/chatgpt-icon";
 import { PerplexityIcon } from "@/components/ui/perplexity-icon";
@@ -122,11 +122,10 @@ export function HeroSection() {
             <Button 
               size="lg" 
               variant="outline" 
-              onClick={() => navigate("/chat")} 
+              onClick={() => document.getElementById('contact-section')?.scrollIntoView({ behavior: 'smooth' })} 
               className="w-full sm:w-auto group"
             >
-              <FaRobot className="mr-2 group-hover:scale-110 transition-transform" />
-              Agente Rix
+              Solicita una demo
             </Button>
           </motion.div>
 
