@@ -112,8 +112,8 @@ export function ContactSection() {
 
   return (
     <section
-      id="contacto"
-      className="py-16 sm:py-24 px-4 bg-gradient-to-b from-primary/5 to-transparent"
+      id="contact-section"
+      className="py-16 sm:py-24 px-4 bg-gradient-to-b from-primary/5 to-transparent scroll-mt-20"
     >
       <div className="container mx-auto max-w-2xl">
         <motion.div
