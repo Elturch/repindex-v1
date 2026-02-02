@@ -176,12 +176,12 @@ export function useLandingTopFives(selectedModel: AIModelOption = "ChatGPT") {
             })
             .filter(Boolean) as (TopCompany & { ibex_family_code: string | null; change: number })[];
 
-          // Separate IBEX and non-IBEX
+          // Separate IBEX and non-IBEX (null/undefined counts as non-IBEX)
           const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX-35");
           ibexMoversUp = [...ibexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
           ibexMoversDown = [...ibexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
 
-          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35");
+          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35" || !c.ibex_family_code);
           topMoversUp = [...nonIbexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
           topMoversDown = [...nonIbexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
         }
