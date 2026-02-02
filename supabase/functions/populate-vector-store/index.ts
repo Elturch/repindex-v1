@@ -793,11 +793,52 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const includeRawResponses = body.includeRawResponses !== false;
     const sourceFilter: SourceFilter = body.sourceFilter || 'all';
+    const isCronTrigger = body.trigger === 'cron' || body.mode === 'continuation';
 
-    console.log(`Starting incremental vector store population (includeRawResponses: ${includeRawResponses}, sourceFilter: ${sourceFilter})`);
+    console.log(`Starting incremental vector store population (includeRawResponses: ${includeRawResponses}, sourceFilter: ${sourceFilter}, cron: ${isCronTrigger})`);
 
-    // Process synchronously to return result (auto-continuation needs result)
+    // Process synchronously to return result
     const result = await processVectorStore(includeRawResponses, sourceFilter);
+
+    // AUTO-CONTINUATION: If work remains and this was triggered by cron/admin, schedule next batch
+    if (result.success && !result.complete && result.remaining && result.remaining > 0) {
+      const supabaseClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      // Check for existing pending vector_store_continue trigger
+      const { data: existingTrigger } = await supabaseClient
+        .from('cron_triggers')
+        .select('id')
+        .eq('action', 'vector_store_continue')
+        .in('status', ['pending', 'processing'])
+        .limit(1);
+      
+      if (!existingTrigger || existingTrigger.length === 0) {
+        // Insert auto-continue trigger for watchdog to pick up
+        const { error: triggerError } = await supabaseClient
+          .from('cron_triggers')
+          .insert({
+            action: 'vector_store_continue',
+            status: 'pending',
+            params: { 
+              sourceFilter, 
+              includeRawResponses,
+              remaining: result.remaining,
+              batch_number: (body.batch_number || 0) + 1
+            }
+          });
+        
+        if (triggerError) {
+          console.error('Failed to insert vector_store_continue trigger:', triggerError);
+        } else {
+          console.log(`[AUTO-CONTINUE] Queued next batch for ${result.remaining} remaining documents`);
+        }
+      } else {
+        console.log('[AUTO-CONTINUE] Trigger already pending, skipping');
+      }
+    }
 
     return new Response(
       JSON.stringify(result),

@@ -189,32 +189,42 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
   return useQuery({
     queryKey: ["unified-sweep-metrics", forcedSweepId],
     queryFn: async (): Promise<UnifiedSweepMetrics> => {
-      // CRITICAL FIX: Get actual week start from the most recent data in rix_runs_v2
-      // Instead of sampling, get DISTINCT weeks and their counts using a more efficient query
-      const { data: recentWeeks, error: weekError } = await supabase
+      // CRITICAL FIX: Use EXACT counts instead of sampling to avoid 1000-row limit
+      // Step 1: Get total records per week using count queries
+      const { count: totalV2Count, error: countError } = await supabase
+        .from('rix_runs_v2')
+        .select('*', { count: 'exact', head: true });
+      
+      if (countError) {
+        console.error('[useUnifiedSweepMetrics] Error counting records:', countError);
+      }
+      
+      // Step 2: Get the most recent week start (single value, very fast)
+      const { data: latestRecord, error: latestError } = await supabase
         .from('rix_runs_v2')
         .select('06_period_from')
         .not('06_period_from', 'is', null)
         .order('06_period_from', { ascending: false })
-        .limit(2000); // Suficiente para capturar 2 semanas completas (177 empresas * 6 modelos * 2 = 2124)
+        .limit(1)
+        .single();
       
-      if (weekError) {
-        console.error('[useUnifiedSweepMetrics] Error fetching weeks:', weekError);
+      if (latestError && latestError.code !== 'PGRST116') {
+        console.error('[useUnifiedSweepMetrics] Error fetching latest week:', latestError);
       }
       
-      // Count records per week and find the most populated recent week
-      const weekCountMap = new Map<string, number>();
-      (recentWeeks || []).forEach(r => {
-        const week = r['06_period_from'];
-        if (week) weekCountMap.set(week, (weekCountMap.get(week) || 0) + 1);
-      });
+      const weekStart = latestRecord?.['06_period_from'] || getWeekStartFromSweepId(getCurrentSweepId());
       
-      // Sort by count descending and pick the most populated recent week
-      const sortedWeeks = Array.from(weekCountMap.entries())
-        .sort((a, b) => b[1] - a[1]);
+      // Step 3: Get EXACT count for the active week
+      const { count: weekRecordCount, error: weekCountError } = await supabase
+        .from('rix_runs_v2')
+        .select('*', { count: 'exact', head: true })
+        .eq('06_period_from', weekStart);
       
-      const weekStart = sortedWeeks[0]?.[0] || getWeekStartFromSweepId(getCurrentSweepId());
-      const recordCount = sortedWeeks[0]?.[1] || 0;
+      if (weekCountError) {
+        console.error('[useUnifiedSweepMetrics] Error counting week records:', weekCountError);
+      }
+      
+      const recordCount = weekRecordCount || 0;
       
       // Derive sweepId using ISO 8601 week calculation (date-fns handles edge cases correctly)
       const weekDate = new Date(weekStart + 'T00:00:00');
@@ -224,7 +234,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       
       const sweepId = forcedSweepId || derivedSweepId;
       
-      console.log(`[useUnifiedSweepMetrics] Active week: ${weekStart} (${recordCount} records sampled), sweepId: ${sweepId}`);
+      console.log(`[useUnifiedSweepMetrics] Active week: ${weekStart} (${recordCount} records EXACT count), sweepId: ${sweepId}, total V2: ${totalV2Count}`);
       
       
       // Parallel queries for maximum efficiency
