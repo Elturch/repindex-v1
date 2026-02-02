@@ -803,22 +803,38 @@ async function processCronTriggers(
   // --------------------------------------------------------------------------
   // Zombie cleanup: si una ejecución se corta (timeout/shutdown) puede dejar
   // triggers en "processing" para siempre. Los reseteamos a "pending".
+  // CRITICAL FIX: Uso correcto de PostgREST filter en lugar de .or() con interpolación
   // --------------------------------------------------------------------------
   try {
     const staleBefore = new Date(Date.now() - 4 * 60 * 1000).toISOString();
-    const { data: resetRows, error: resetError } = await supabase
+    
+    // PASO 1: Limpiar por created_at
+    const { data: resetByCreated, error: err1 } = await supabase
       .from('cron_triggers')
-      // IMPORTANTE: Algunos triggers quedan con processed_at seteado aunque sigan en "processing".
-      // Por eso NO filtramos processed_at IS NULL.
       .update({ status: 'pending', processed_at: null })
       .eq('status', 'processing')
-      .or(`created_at.lt.${staleBefore},processed_at.lt.${staleBefore}`)
-      .select('id');
+      .lt('created_at', staleBefore)
+      .select('id, action');
 
-    if (resetError) {
-      console.error('[cron_triggers] Zombie cleanup failed:', resetError);
-    } else if (resetRows && resetRows.length > 0) {
-      console.warn(`[cron_triggers] Zombie cleanup: reset ${resetRows.length} triggers stuck in processing`);
+    // PASO 2: Limpiar por processed_at 
+    const { data: resetByProcessed, error: err2 } = await supabase
+      .from('cron_triggers')
+      .update({ status: 'pending', processed_at: null })
+      .eq('status', 'processing')
+      .lt('processed_at', staleBefore)
+      .select('id, action');
+
+    const resetRows = [
+      ...(resetByCreated || []),
+      ...(resetByProcessed || [])
+    ].filter((r, i, a) => a.findIndex(x => x.id === r.id) === i); // Dedupe
+
+    if (err1 || err2) {
+      console.error('[cron_triggers] Zombie cleanup partial error:', { err1, err2 });
+    }
+    
+    if (resetRows.length > 0) {
+      console.warn(`[cron_triggers] Zombie cleanup: reset ${resetRows.length} triggers stuck in processing: ${resetRows.map(r => r.action).join(', ')}`);
     }
   } catch (e) {
     console.error('[cron_triggers] Zombie cleanup exception:', e);
@@ -1507,11 +1523,15 @@ const {
       console.log(`[${triggerMode}] Starting fire-and-forget auto-recovery...`);
       
       // ═══════════════════════════════════════════════════════════════════
-      // 0. CRITICAL FIX: Limpiar triggers auto_continue stale (>60s en processing)
-      // Esto previene la acumulación de triggers que nunca terminan
+      // 0. CRITICAL FIX: Limpiar triggers stale en processing
+      // - auto_continue: >60s → borrar (son desechables)
+      // - repair_analysis/repair_search: >10min → resetear a pending (importante re-ejecutar)
       // ═══════════════════════════════════════════════════════════════════
       const staleCleanupThreshold = new Date(Date.now() - 60 * 1000).toISOString();
-      const { count: staleCount } = await supabase
+      const repairStaleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 minutos
+      
+      // Limpiar auto_continue stale (borrar)
+      const { count: staleAutoContinue } = await supabase
         .from('cron_triggers')
         .delete()
         .eq('action', 'auto_continue')
@@ -1519,8 +1539,27 @@ const {
         .lt('created_at', staleCleanupThreshold)
         .select('*', { count: 'exact', head: true });
       
-      if ((staleCount || 0) > 0) {
-        console.log(`[${triggerMode}] Cleaned up ${staleCount} stale auto_continue triggers (>60s old)`);
+      // NUEVO: Resetear repair_analysis stuck (no borrar, resetear a pending)
+      const { data: stuckRepairAnalysis } = await supabase
+        .from('cron_triggers')
+        .update({ status: 'pending', processed_at: null, result: { reset_reason: 'stuck_in_processing_10min' } })
+        .eq('action', 'repair_analysis')
+        .eq('status', 'processing')
+        .lt('created_at', repairStaleThreshold)
+        .select('id');
+      
+      // NUEVO: Resetear repair_search stuck 
+      const { data: stuckRepairSearch } = await supabase
+        .from('cron_triggers')
+        .update({ status: 'pending', processed_at: null, result: { reset_reason: 'stuck_in_processing_10min' } })
+        .eq('action', 'repair_search')
+        .eq('status', 'processing')
+        .lt('created_at', repairStaleThreshold)
+        .select('id');
+      
+      const totalStaleCleanup = (staleAutoContinue || 0) + (stuckRepairAnalysis?.length || 0) + (stuckRepairSearch?.length || 0);
+      if (totalStaleCleanup > 0) {
+        console.log(`[${triggerMode}] Cleaned up stale triggers: ${staleAutoContinue || 0} auto_continue (deleted), ${stuckRepairAnalysis?.length || 0} repair_analysis (reset), ${stuckRepairSearch?.length || 0} repair_search (reset)`);
       }
       
       // 1. Verificar si hay un sweep activo para esta semana

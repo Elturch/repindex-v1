@@ -190,16 +190,21 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
     queryKey: ["unified-sweep-metrics", forcedSweepId],
     queryFn: async (): Promise<UnifiedSweepMetrics> => {
       // CRITICAL FIX: Get actual week start from the most recent data in rix_runs_v2
-      // Instead of looking at any single record, find the week with the MOST records (active sweep)
-      const { data: weekCounts } = await supabase
+      // Instead of sampling, get DISTINCT weeks and their counts using a more efficient query
+      const { data: recentWeeks, error: weekError } = await supabase
         .from('rix_runs_v2')
         .select('06_period_from')
+        .not('06_period_from', 'is', null)
         .order('06_period_from', { ascending: false })
-        .limit(500);
+        .limit(2000); // Suficiente para capturar 2 semanas completas (177 empresas * 6 modelos * 2 = 2124)
+      
+      if (weekError) {
+        console.error('[useUnifiedSweepMetrics] Error fetching weeks:', weekError);
+      }
       
       // Count records per week and find the most populated recent week
       const weekCountMap = new Map<string, number>();
-      (weekCounts || []).forEach(r => {
+      (recentWeeks || []).forEach(r => {
         const week = r['06_period_from'];
         if (week) weekCountMap.set(week, (weekCountMap.get(week) || 0) + 1);
       });
@@ -209,6 +214,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         .sort((a, b) => b[1] - a[1]);
       
       const weekStart = sortedWeeks[0]?.[0] || getWeekStartFromSweepId(getCurrentSweepId());
+      const recordCount = sortedWeeks[0]?.[1] || 0;
       
       // Derive sweepId using ISO 8601 week calculation (date-fns handles edge cases correctly)
       const weekDate = new Date(weekStart + 'T00:00:00');
@@ -218,7 +224,7 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       
       const sweepId = forcedSweepId || derivedSweepId;
       
-      console.log(`[useUnifiedSweepMetrics] Using weekStart: ${weekStart} (${weekCountMap.get(weekStart)} records), sweepId: ${sweepId}`);
+      console.log(`[useUnifiedSweepMetrics] Active week: ${weekStart} (${recordCount} records sampled), sweepId: ${sweepId}`);
       
       
       // Parallel queries for maximum efficiency
