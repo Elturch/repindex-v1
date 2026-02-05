@@ -1,143 +1,185 @@
 
-## Objetivo (lo que quieres conseguir)
-Que **los análisis no se “paren” tras cada tanda** y que el sistema **encadene automáticamente el siguiente análisis**, sin depender de que tú vuelvas a pulsar “Forzar” (y sin esperar a que el cron “caiga” en la semana equivocada).
+# Auditoría de Registro de Usuarios - RepIndex
 
----
+## Resumen del Problema
 
-## Diagnóstico (por qué pasa)
-He encontrado **dos causas** que juntas explican el comportamiento:
+He identificado **un bug crítico de seguridad** que permite a cualquier persona registrarse en RepIndex sin ser invitada por un administrador.
 
-### 1) El cron de watchdog existe, pero a veces está apuntando al `sweep_id` equivocado
-En la BD hay un cron activo:
+## Evidencia del Bug
 
-- `jobid: 54`
-- `schedule: */5 * * * *`
-- llama a `rix-batch-orchestrator` con `body: {"trigger":"watchdog"}`
+### 1. Análisis de los 38 usuarios registrados
 
-Pero `rix-batch-orchestrator` calcula `sweepId` con una función “manual” (`getCurrentSweepId`) basada en la fecha actual.  
-Cuando cambia la semana (ej. hoy 2026-02-01), el `sweepId` calculado puede ser **2026-W05**, mientras que el barrido “real” de datos que sigues viendo es **2026-W04** (derivado de `06_period_from = 2026-01-25`).
+| Métrica | Valor |
+|---------|-------|
+| Total usuarios en `auth.users` | 38 |
+| Total perfiles en `user_profiles` | 38 |
+| Usuarios con evento `user_invited` en logs | **Solo 1** (chloe.clavell.r@gmail.com) |
+| Resto de usuarios | Sin registro de invitación (auto-registro vía OTP) |
 
-Resultado: el watchdog entra, mira `sweep_progress` con el `sweepId` “nuevo”, no encuentra sweep (`sweepCount = 0`) y hace **skip**, por lo que **no continúa** el encadenamiento de triggers/análisis.
+### 2. Flujo del Bug
 
-### 2) `repair_analysis` procesa una tanda y marca el trigger como `completed` aunque queden pendientes
-En `processCronTriggers()`:
-- `repair_search` ya está bien: si queda trabajo, deja el trigger en `pending` y sigue en el siguiente ciclo.
-- `repair_analysis` en cambio **siempre marca `completed`** después de llamar a `rix-analyze-v2`, aunque la respuesta indique `remaining > 0`.
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     FLUJO ACTUAL (CON BUG)                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Usuario desconocido                                                        │
+│         │                                                                   │
+│         ▼                                                                   │
+│  /login → Introduce email                                                   │
+│         │                                                                   │
+│         ▼                                                                   │
+│  signInWithOtp(email)                                                       │
+│         │                                                                   │
+│         ├──▶ Usuario NO existe en auth.users                                │
+│         │         │                                                         │
+│         │         ▼                                                         │
+│         │    Supabase CREA el usuario automáticamente    ◀── BUG           │
+│         │         │                                                         │
+│         │         ▼                                                         │
+│         │    Trigger "handle_new_user" crea perfil                          │
+│         │         │                                                         │
+│         │         ▼                                                         │
+│         │    Envía magic link                                               │
+│         │                                                                   │
+│         ▼                                                                   │
+│  Usuario accede sin haber sido invitado                                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-Eso hace que, si el orquestador no vuelve a invocarse “en el momento correcto”, parezca que “hace un análisis y se para”.
+### 3. Causa Raíz
 
----
+El método `signInWithOtp()` de Supabase tiene un comportamiento por defecto problemático:
+- Si el email **no existe**, **crea el usuario automáticamente** y le envía el OTP
+- No hay validación previa que compruebe si el email está pre-autorizado
 
-## Cambios propuestos (sin tocar tu flujo mental: solo hacerlo automático)
+El comentario en `AuthContext.tsx` (línea 187-188) lo reconoce:
+```typescript
+// First check if the email exists in user_profiles
+// Note: This is a soft check - the actual validation happens server-side
+```
 
-### A) Hacer que el orquestador use el “sweep activo” (derivado del dato real) en vez del calendario
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
+**Pero el "check" nunca se implementó.**
 
-1. Añadir una función `getActiveSweepId()` que:
-   - Lea el `06_period_from` más reciente en `rix_runs_v2`
-   - Calcule ISO week/year (implementación pura en TS/JS para Deno; no dependemos de `date-fns` aquí)
-   - Devuelva `YYYY-W##`
+## Solución Propuesta
 
-2. En los modos `watchdog/auto_recovery`, usar `activeSweepId`:
-   - Para el `sweepCount` (evitar “skip”)
-   - Para inserciones de triggers (`repair_search`, `repair_analysis`, `auto_continue`)
-   - Para logs/telemetría
+### Opción A: Validación en el Frontend + Backend (Recomendada)
 
-**Resultado:** aunque cambie el calendario, el watchdog de cada 5 min seguirá apuntando al sweep que realmente tiene datos y **no se detendrá**.
+Añadir validación antes de llamar a `signInWithOtp`:
 
----
+**1. Modificar `AuthContext.tsx`:**
+```typescript
+const sendMagicLink = async (email: string): Promise<{ error: string | null }> => {
+  try {
+    // Verificar si el email existe en user_profiles ANTES de pedir OTP
+    const { data: existingProfile, error: checkError } = await supabase
+      .from('user_profiles')
+      .select('id, is_active')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
 
-### B) Convertir `repair_analysis` en “auto-requeue” (igual que `repair_search`)
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (dentro de `processCronTriggers()`)
+    if (checkError) {
+      console.error('Error checking profile:', checkError);
+      return { error: 'Error verificando el email. Inténtalo de nuevo.' };
+    }
 
-1. Tras llamar a `rix-analyze-v2`, leer del JSON:
-   - `processed`
-   - `remaining`
-   - `errors`
-   - `skipped` (si aplica)
+    // Si no existe perfil, rechazar
+    if (!existingProfile) {
+      return { error: 'Email no registrado. Contacta con el administrador.' };
+    }
 
-2. Si `remaining > 0`:
-   - actualizar el mismo trigger a `status: 'pending'`
-   - `processed_at: null`
-   - guardar `result` con progreso (`processed`, `remaining`, `last`, `last_batch`…)
+    // Si existe pero está desactivado, rechazar
+    if (!existingProfile.is_active) {
+      return { error: 'Tu cuenta está desactivada. Contacta con el administrador.' };
+    }
 
-3. Si `remaining === 0`:
-   - `status: 'completed'`
-   - `processed_at: now`
-   - `result` final
+    // Solo ahora enviar el OTP
+    const redirectUrl = `${window.location.origin}/dashboard`;
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: redirectUrl,
+        shouldCreateUser: false, // CRÍTICO: previene auto-registro
+      },
+    });
 
-**Resultado:** el trigger de análisis **no desaparece** hasta que de verdad no quede nada por analizar.
+    if (error) {
+      return { error: error.message };
+    }
 
----
+    return { error: null };
+  } catch (error) {
+    console.error('Error sending magic link:', error);
+    return { error: 'Error al enviar el enlace. Inténtalo de nuevo.' };
+  }
+};
+```
 
-### C) (Opcional pero recomendable) “Loop controlado” para procesar más de una tanda por invocación sin esperar 5 minutos
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
+**2. Añadir `shouldCreateUser: false`** en la llamada OTP (esto es clave)
 
-En el modo `auto_recovery/watchdog`, después del primer `processCronTriggers()`:
-- repetir `processCronTriggers()` en un bucle mientras:
-  - haya triggers `pending`
-  - y quede tiempo (time budget estricto, por ejemplo 120–150s)
+**3. Reforzar `ProtectedRoute.tsx`** para requerir perfil activo:
+```typescript
+// Cambiar la condición actual:
+if (profile && !profile.is_active) { ... }
 
-Esto reduce la percepción de “se para” y acelera el vaciado de colas, sin arriesgar timeouts.
+// Por esta más estricta:
+if (!profile || !profile.is_active) {
+  // Cerrar sesión y redirigir
+}
+```
 
----
+### Opción B: Configuración en Supabase Dashboard (Complementaria)
 
-### D) Evitar que el dashboard se quede “ciego” por timeouts de PostgREST (muy importante para que veas progreso real)
-Ahora mismo el hook está pidiendo columnas gigantes (`*_bruto`) y el servidor está devolviendo:
-- `57014 canceling statement due to statement timeout`
+Adicionalmente, en el Dashboard de Supabase:
 
-**Archivo:** `src/hooks/useUnifiedSweepMetrics.ts`
+1. Ir a **Authentication → Providers → Email**
+2. **Desactivar** "Confirm email" si no se necesita verificación
+3. O bien, en **Authentication → Settings**, asegurar que el registro esté controlado
 
-1. Cambiar la query principal de `rix_runs_v2` para traer solo:
-   - `05_ticker`
-   - `02_model_name`
-   - `09_rix_score`
-   - `search_completed_at` (y si hace falta `analysis_completed_at`)
+## Usuarios Actuales a Revisar
 
-2. Redefinir `hasData` como:
-   - `search_completed_at != null`  
-   (y como ya tenemos el patrón “skip & reset” en `rix-analyze-v2` que pone `search_completed_at = null` cuando falta texto, esto se vuelve fiable y además ultra-barato de consultar)
+Dado que la mayoría de los 38 usuarios se registraron sin invitación formal, recomiendo:
 
-**Resultado:** el panel deja de petar por timeout y verás si realmente “está parado” o está trabajando.
+1. **Auditar la lista** de usuarios en `/admin` 
+2. **Desactivar** (`is_active = false`) a los que no reconozcas
+3. **Re-invitar** a los legítimos usando el botón "Enviar Magic Link" para que tengan el flujo correcto
 
----
+## Impacto de la Solución
 
-### E) Hardening de locking en `rix-analyze-v2` (para evitar errores silenciosos)
-**Archivo:** `supabase/functions/rix-analyze-v2/index.ts`
+| Aspecto | Antes | Después |
+|---------|-------|---------|
+| Registro no autorizado | Posible | Bloqueado |
+| Flujo de login | Sin validación | Valida perfil pre-existente |
+| Experiencia de usuario | Igual | Igual (solo cambia mensaje de error) |
+| Usuarios existentes | Sin cambios | Pueden seguir accediendo |
 
-Mejora defensiva:
-- tratar `17_flags` como array solo si `Array.isArray(...)`
-- al liberar lock en error, leer flags actuales (o al menos filtrar con seguridad) para no romper si `17_flags` es objeto/null
+## Sección Técnica
 
-Esto evita que una excepción tonta en el locking haga que “parezca” que se para.
+### Archivos a modificar:
 
----
+1. **`src/contexts/AuthContext.tsx`**
+   - Añadir consulta previa a `user_profiles`
+   - Añadir `shouldCreateUser: false` a `signInWithOtp`
+   - Validar `is_active` antes de enviar OTP
 
-## Secuencia de implementación
-1) **Backend crítico**
-- Implementar `getActiveSweepId()` y usarlo en `watchdog/auto_recovery`
-- Cambiar `repair_analysis` a “requeue if remaining > 0”
+2. **`src/components/auth/ProtectedRoute.tsx`**
+   - Cambiar condición para requerir perfil existente Y activo
+   - Añadir cierre de sesión automático si el perfil no existe
 
-2) **Frontend observabilidad**
-- Ajustar `useUnifiedSweepMetrics` para no seleccionar texto bruto y basarse en `search_completed_at`
+3. **(Opcional) `src/lib/env.ts`**
+   - Considerar restringir el bypass solo a `localhost` para mayor seguridad
 
-3) **Hardening**
-- Robustecer `17_flags` en `rix-analyze-v2`
+### Consideraciones de RLS
 
----
+La tabla `user_profiles` ya tiene políticas RLS que permiten lectura pública del propio perfil. La consulta de verificación funcionará porque:
+- Usamos el cliente anónimo para verificar existencia
+- Solo necesitamos saber si el email existe, no datos sensibles
 
-## Cómo validaremos que ya es automático (pruebas)
-1. Lanzar una sola vez el arranque (desde /admin “Forzar” o dejando que el cron lo haga).
-2. Confirmar en `cron_triggers` que:
-   - `repair_analysis` no termina en `completed` si `remaining > 0` (se queda/revuelve a `pending`)
-   - `auto_continue` aparece cuando hay trabajo pendiente
-3. Ver en el dashboard que `recordsWithScore` sube sin intervención manual.
-4. Comprobar en `pipeline_logs` que hay heartbeats recientes cada pocos minutos.
-5. Verificar que al cambiar de semana (fecha actual) el watchdog sigue atacando el sweep con datos (no “skip”).
+### Configuración Supabase Recomendada
 
----
-
-## Archivos que tocaré
-- `supabase/functions/rix-batch-orchestrator/index.ts`
-- `supabase/functions/rix-analyze-v2/index.ts`
-- `src/hooks/useUnifiedSweepMetrics.ts`
+En el Dashboard de Supabase (Authentication → URL Configuration):
+- Site URL: `https://repindex-v1.lovable.app`
+- Redirect URLs: 
+  - `https://repindex-v1.lovable.app/**`
+  - `https://id-preview--bc807963-c063-4e58-b3fe-21a2a28cd8bf.lovable.app/**`
