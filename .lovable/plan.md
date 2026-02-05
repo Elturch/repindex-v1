@@ -1,148 +1,187 @@
 
 
-# Plan: Diseño PPTX Profesional con Identidad Visual RepIndex
+# Plan: Sistema de Guardado para Agente Comercial
 
-## Elementos de Marca Identificados
+## Contexto Actual
 
-| Elemento | Descripción | Uso en PPTX |
-|----------|-------------|-------------|
-| **Logotipo** | "RepIndex.ai" - "Rep" bold + "Index.ai" light | Header de todas las slides |
-| **Isotipo** | Asterisco geométrico con triángulos radiantes (símbolo de "radar") | Elemento decorativo, slides de impacto |
-| **Paleta** | Negro #000000 / Blanco #FFFFFF (alta contraste) | Fondos alternados B/W, sin púrpura |
-| **Tipografía** | Sans-serif geométrica (Inter o similar) | Toda la presentación |
+| Componente | Estado Actual |
+|------------|---------------|
+| `user_conversations` | Solo para chat público (Agente Rix usuario) |
+| `SalesIntelligencePanel` | Sin persistencia - todo en memoria local |
+| PPTXs generados | Se descargan pero no se registran |
 
-## Arquitectura de Diseño
+## Arquitectura Propuesta
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    SISTEMA DE DISEÑO PPTX REPINDEX                      │
+│                    PERSISTENCIA AGENTE COMERCIAL                        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  SLIDE MASTERS                        ELEMENTOS GRÁFICOS                │
-│  ──────────────                       ─────────────────                 │
-│  ┌─────────────────┐                  ┌─────────────────┐              │
-│  │ HERO_BLACK      │                  │ Isotipo blanco  │              │
-│  │ Fondo negro     │                  │ grande (corner) │              │
-│  │ Logo blanco     │                  └─────────────────┘              │
-│  └─────────────────┘                  ┌─────────────────┐              │
-│  ┌─────────────────┐                  │ Barras verticales│              │
-│  │ CONTENT_WHITE   │                  │ negras (accent)  │              │
-│  │ Fondo blanco    │                  └─────────────────┘              │
-│  │ Logo negro      │                  ┌─────────────────┐              │
-│  └─────────────────┘                  │ Líneas finas    │              │
-│  ┌─────────────────┐                  │ de separación   │              │
-│  │ SPLIT_BW        │                  └─────────────────┘              │
-│  │ Mitad negro,    │                                                   │
-│  │ mitad blanco    │                                                   │
-│  └─────────────────┘                                                   │
+│  ┌──────────────────────┐       ┌──────────────────────┐               │
+│  │ sales_conversations  │       │ sales_pptx_exports   │               │
+│  ├──────────────────────┤       ├──────────────────────┤               │
+│  │ id                   │──────►│ id                   │               │
+│  │ admin_user_id        │       │ conversation_id      │               │
+│  │ company_name         │       │ admin_user_id        │               │
+│  │ ticker               │       │ company_name         │               │
+│  │ target_profile       │       │ slides_count         │               │
+│  │ messages (jsonb)     │       │ slide_designs (jsonb)│               │
+│  │ ratings (jsonb)      │       │ file_name            │               │
+│  │ rix_questions (arr)  │       │ created_at           │               │
+│  │ metadata (jsonb)     │       └──────────────────────┘               │
+│  │ custom_context       │                                               │
+│  │ is_starred           │                                               │
+│  │ created_at           │                                               │
+│  │ updated_at           │                                               │
+│  └──────────────────────┘                                               │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Tipos de Slide Rediseñados para B/W
+---
 
-### 1. HERO (Portada)
-- Fondo: **Negro 100%**
-- Logo RepIndex.ai en blanco (esquina superior)
-- Isotipo grande semitransparente como marca de agua
-- Headline blanco, grande, centrado
-- Subheadline gris claro
+## Nuevas Tablas de Base de Datos
 
-### 2. CONTENT (Contenido general)
-- Fondo: **Blanco**
-- Barra vertical negra en lateral izquierdo (accent)
-- Logo negro en esquina superior derecha
-- Texto negro sobre blanco
-- Bullets con puntos negros sólidos
+### 1. `sales_conversations` - Conversaciones del Agente Comercial
 
-### 3. METRICS (KPIs)
-- Fondo: **Blanco**
-- Cajas de métricas con borde negro grueso
-- Números grandes en negro
-- Tendencias: ↑ verde / ↓ rojo (único color permitido)
+```sql
+CREATE TABLE sales_conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  admin_user_id UUID NOT NULL REFERENCES auth.users(id),
+  company_name TEXT NOT NULL,
+  ticker TEXT,
+  target_profile TEXT NOT NULL DEFAULT 'ceo',
+  custom_context TEXT,
+  messages JSONB NOT NULL DEFAULT '[]',
+  message_ratings JSONB NOT NULL DEFAULT '{}',
+  rix_questions TEXT[] DEFAULT '{}',
+  metadata JSONB,
+  is_starred BOOLEAN DEFAULT false,
+  is_archived BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
 
-### 4. COMPARISON (Empresa vs Competidor)
-- Fondo: **Mitad negro, mitad blanco** (split vertical)
-- Empresa analizada en lado negro (texto blanco)
-- Competidor en lado blanco (texto negro)
-- Crear contraste visual dramático
+-- Políticas RLS: Solo admins pueden acceder
+ALTER TABLE sales_conversations ENABLE ROW LEVEL SECURITY;
 
-### 5. QUOTE (Cita impactante)
-- Fondo: **Negro**
-- Comillas gigantes en gris oscuro (watermark)
-- Texto de cita en blanco
-- Atribución en gris claro
+CREATE POLICY "Admins can manage sales conversations"
+  ON sales_conversations FOR ALL
+  USING (has_role(auth.uid(), 'admin'));
+```
 
-### 6. QUESTIONS (Preguntas Rix)
-- Fondo: **Blanco**
-- Isotipo pequeño decorativo
-- Preguntas numeradas con tipografía elegante
-- "Por qué importa" en gris
+### 2. `sales_pptx_exports` - Registro de PPTXs Generados
 
-### 7. CTA (Cierre)
-- Fondo: **Negro**
-- Isotipo grande centrado
-- "www.repindex.ai" prominente
-- Mensaje de acción
+```sql
+CREATE TABLE sales_pptx_exports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID REFERENCES sales_conversations(id) ON DELETE SET NULL,
+  admin_user_id UUID NOT NULL REFERENCES auth.users(id),
+  company_name TEXT NOT NULL,
+  target_profile TEXT NOT NULL,
+  slides_count INTEGER NOT NULL DEFAULT 0,
+  slide_designs JSONB NOT NULL DEFAULT '[]',
+  high_rated_content TEXT[] DEFAULT '{}',
+  file_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Políticas RLS: Solo admins
+ALTER TABLE sales_pptx_exports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins can manage pptx exports"
+  ON sales_pptx_exports FOR ALL
+  USING (has_role(auth.uid(), 'admin'));
+```
+
+---
+
+## Cambios en UI - SalesIntelligencePanel
+
+### Funcionalidades Nuevas
+
+1. **Autoguardado de conversación**
+   - Se crea un registro al iniciar análisis
+   - Se actualiza automáticamente con cada mensaje nuevo
+
+2. **Lista de conversaciones guardadas**
+   - Dropdown o sidebar con historial
+   - Filtro por empresa, fecha, destacadas
+
+3. **Cargar conversación existente**
+   - Restaurar mensajes, ratings, y contexto
+
+4. **Marcar como destacada**
+   - Botón de estrella en el header
+
+5. **Historial de PPTXs**
+   - Lista de presentaciones generadas
+   - Posibilidad de regenerar con los mismos diseños
+
+---
+
+## Flujo de Guardado
+
+```text
+1. Usuario selecciona empresa → Se crea sales_conversation (status: draft)
+2. Cada respuesta del agente → UPDATE messages JSONB
+3. Usuario valora respuesta → UPDATE message_ratings JSONB
+4. Usuario genera PPTX → INSERT sales_pptx_exports + UPDATE conversation
+5. Usuario cierra → Conversación persistida automáticamente
+```
+
+---
 
 ## Archivos a Crear/Modificar
 
 | Archivo | Acción | Descripción |
 |---------|--------|-------------|
-| `supabase/functions/design-pptx-slides/index.ts` | **CREAR** | Agente IA diseñador que transforma contenido en JSON estructurado |
-| `src/lib/pptxDesigner.ts` | **CREAR** | Motor de renderizado con diseño B/W RepIndex |
-| `src/lib/pptxTypes.ts` | **CREAR** | Tipos TypeScript para slides |
-| `public/pptx/repindex-logo-white.png` | **COPIAR** | Logo blanco para fondos negros |
-| `public/pptx/repindex-logo-black.png` | **COPIAR** | Logo negro para fondos blancos |
-| `public/pptx/repindex-isotipo-white.png` | **COPIAR** | Isotipo blanco |
-| `public/pptx/repindex-isotipo-black.png` | **COPIAR** | Isotipo negro |
-| `src/components/admin/SalesIntelligencePanel.tsx` | **MODIFICAR** | Integrar nuevo generador PPTX |
+| `migrations/` | **CREAR** | SQL para nuevas tablas `sales_conversations` y `sales_pptx_exports` |
+| `src/hooks/useSalesConversations.ts` | **CREAR** | Hook para CRUD de conversaciones comerciales |
+| `src/components/admin/SalesConversationsList.tsx` | **CREAR** | Componente de lista de conversaciones guardadas |
+| `src/components/admin/SalesIntelligencePanel.tsx` | **MODIFICAR** | Integrar autoguardado y selector de conversaciones |
 
-## Paleta de Colores Exacta
+---
+
+## Detalles de Implementación
+
+### Hook `useSalesConversations`
 
 ```typescript
-const REPINDEX_COLORS = {
-  black: '000000',      // Fondo hero, textos principales
-  white: 'FFFFFF',      // Fondos content, textos sobre negro
-  grayDark: '1F2937',   // Textos secundarios sobre blanco
-  grayMid: '6B7280',    // Atribuciones, labels
-  grayLight: 'E5E7EB',  // Líneas, bordes sutiles
-  grayBg: 'F9FAFB',     // Fondos de cajas en slides blancas
-  green: '10B981',      // Solo para tendencias ↑
-  red: 'EF4444',        // Solo para tendencias ↓
+// src/hooks/useSalesConversations.ts
+export const useSalesConversations = () => {
+  // Lista de conversaciones
+  const { data: conversations, refetch } = useQuery({...});
+  
+  // Crear nueva conversación
+  const createConversation = async (company: string, profile: string) => {...};
+  
+  // Actualizar mensajes
+  const updateMessages = async (id: string, messages: Message[], ratings: Record<number, number>) => {...};
+  
+  // Cargar conversación existente
+  const loadConversation = async (id: string) => {...};
+  
+  // Registrar exportación PPTX
+  const logPPTXExport = async (conversationId: string, slideDesigns: SlideDesign[], fileName: string) => {...};
+  
+  return { conversations, createConversation, updateMessages, loadConversation, logPPTXExport };
 };
 ```
 
-## Flujo de Generación
+### Selector de Conversaciones en Panel
 
-```text
-1. Usuario hace clic en "Descargar PPTX"
-2. Se recopila contenido valorado 4-5⭐
-3. Se llama a edge function design-pptx-slides
-4. El agente Gemini analiza contenido y decide layout
-5. Devuelve JSON con estructura de slides
-6. pptxDesigner.ts renderiza cada slide con diseño B/W
-7. Se insertan logos/isotipos como imágenes base64
-8. Se descarga archivo .pptx
-```
+- Añadir dropdown en el header del panel
+- Opción "Nueva conversación" + lista de recientes
+- Badge con conteo de PPTXs generados por conversación
 
-## Detalles Técnicos
+---
 
-### Conversión de Logos a Base64
-Los logos se incrustarán directamente en el código para evitar problemas de carga:
+## Beneficios
 
-```typescript
-// En pptxDesigner.ts
-const LOGO_WHITE_BASE64 = 'data:image/png;base64,...'; // Logo blanco
-const LOGO_BLACK_BASE64 = 'data:image/png;base64,...'; // Logo negro
-const ISOTIPO_WHITE_BASE64 = 'data:image/png;base64,...';
-const ISOTIPO_BLACK_BASE64 = 'data:image/png;base64,...';
-```
-
-### Tipografía
-- pptxgenjs no puede cargar fuentes custom, pero Inter está disponible como fallback a Arial/Helvetica
-- Se usará `fontFace: 'Inter'` que fallback a sans-serif del sistema
-
-## Resultado Visual Esperado
-
-Presentación ejecutiva con estética minimalista B/W tipo McKinsey/Bain, pero con el distintivo visual del isotipo de radar RepIndex como elemento diferenciador. Alta legibilidad, contraste máximo, diseño premium.
+1. **Continuidad**: Retomar conversaciones comerciales donde se dejaron
+2. **Historial**: Ver qué empresas se han analizado y con qué resultados
+3. **Métricas**: Saber cuántos PPTXs se han generado por empresa
+4. **Reutilización**: Regenerar presentaciones con diseños guardados
+5. **Auditoría**: Registro completo de la actividad comercial del agente
 
