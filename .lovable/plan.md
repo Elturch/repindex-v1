@@ -1,187 +1,134 @@
 
+# Plan: Mejora del Agente Diseñador de Presentaciones PPTX
 
-# Plan: Sistema de Guardado para Agente Comercial
+## Resumen Ejecutivo
 
-## Contexto Actual
+El sistema actual de generación de PPTX tiene tres problemas principales:
+1. **Parser JSON** - Falla al extraer el JSON del bloque markdown, cayendo a un fallback con solo 3 slides genéricas
+2. **Nombre de empresa ausente** - El Hero slide no muestra prominentemente la empresa analizada
+3. **Prompt de diseño insuficiente** - No hay instrucciones para construir una narrativa comercial coherente basada en las respuestas valoradas
 
-| Componente | Estado Actual |
-|------------|---------------|
-| `user_conversations` | Solo para chat público (Agente Rix usuario) |
-| `SalesIntelligencePanel` | Sin persistencia - todo en memoria local |
-| PPTXs generados | Se descargan pero no se registran |
+## Cambios Técnicos
 
-## Arquitectura Propuesta
+### 1. Corregir el Parser JSON en `design-pptx-slides`
 
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    PERSISTENCIA AGENTE COMERCIAL                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────────────┐       ┌──────────────────────┐               │
-│  │ sales_conversations  │       │ sales_pptx_exports   │               │
-│  ├──────────────────────┤       ├──────────────────────┤               │
-│  │ id                   │──────►│ id                   │               │
-│  │ admin_user_id        │       │ conversation_id      │               │
-│  │ company_name         │       │ admin_user_id        │               │
-│  │ ticker               │       │ company_name         │               │
-│  │ target_profile       │       │ slides_count         │               │
-│  │ messages (jsonb)     │       │ slide_designs (jsonb)│               │
-│  │ ratings (jsonb)      │       │ file_name            │               │
-│  │ rix_questions (arr)  │       │ created_at           │               │
-│  │ metadata (jsonb)     │       └──────────────────────┘               │
-│  │ custom_context       │                                               │
-│  │ is_starred           │                                               │
-│  │ created_at           │                                               │
-│  │ updated_at           │                                               │
-│  └──────────────────────┘                                               │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
 
----
-
-## Nuevas Tablas de Base de Datos
-
-### 1. `sales_conversations` - Conversaciones del Agente Comercial
-
-```sql
-CREATE TABLE sales_conversations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  admin_user_id UUID NOT NULL REFERENCES auth.users(id),
-  company_name TEXT NOT NULL,
-  ticker TEXT,
-  target_profile TEXT NOT NULL DEFAULT 'ceo',
-  custom_context TEXT,
-  messages JSONB NOT NULL DEFAULT '[]',
-  message_ratings JSONB NOT NULL DEFAULT '{}',
-  rix_questions TEXT[] DEFAULT '{}',
-  metadata JSONB,
-  is_starred BOOLEAN DEFAULT false,
-  is_archived BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Políticas RLS: Solo admins pueden acceder
-ALTER TABLE sales_conversations ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Admins can manage sales conversations"
-  ON sales_conversations FOR ALL
-  USING (has_role(auth.uid(), 'admin'));
-```
-
-### 2. `sales_pptx_exports` - Registro de PPTXs Generados
-
-```sql
-CREATE TABLE sales_pptx_exports (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id UUID REFERENCES sales_conversations(id) ON DELETE SET NULL,
-  admin_user_id UUID NOT NULL REFERENCES auth.users(id),
-  company_name TEXT NOT NULL,
-  target_profile TEXT NOT NULL,
-  slides_count INTEGER NOT NULL DEFAULT 0,
-  slide_designs JSONB NOT NULL DEFAULT '[]',
-  high_rated_content TEXT[] DEFAULT '{}',
-  file_name TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Políticas RLS: Solo admins
-ALTER TABLE sales_pptx_exports ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Admins can manage pptx exports"
-  ON sales_pptx_exports FOR ALL
-  USING (has_role(auth.uid(), 'admin'));
-```
-
----
-
-## Cambios en UI - SalesIntelligencePanel
-
-### Funcionalidades Nuevas
-
-1. **Autoguardado de conversación**
-   - Se crea un registro al iniciar análisis
-   - Se actualiza automáticamente con cada mensaje nuevo
-
-2. **Lista de conversaciones guardadas**
-   - Dropdown o sidebar con historial
-   - Filtro por empresa, fecha, destacadas
-
-3. **Cargar conversación existente**
-   - Restaurar mensajes, ratings, y contexto
-
-4. **Marcar como destacada**
-   - Botón de estrella en el header
-
-5. **Historial de PPTXs**
-   - Lista de presentaciones generadas
-   - Posibilidad de regenerar con los mismos diseños
-
----
-
-## Flujo de Guardado
-
-```text
-1. Usuario selecciona empresa → Se crea sales_conversation (status: draft)
-2. Cada respuesta del agente → UPDATE messages JSONB
-3. Usuario valora respuesta → UPDATE message_ratings JSONB
-4. Usuario genera PPTX → INSERT sales_pptx_exports + UPDATE conversation
-5. Usuario cierra → Conversación persistida automáticamente
-```
-
----
-
-## Archivos a Crear/Modificar
-
-| Archivo | Acción | Descripción |
-|---------|--------|-------------|
-| `migrations/` | **CREAR** | SQL para nuevas tablas `sales_conversations` y `sales_pptx_exports` |
-| `src/hooks/useSalesConversations.ts` | **CREAR** | Hook para CRUD de conversaciones comerciales |
-| `src/components/admin/SalesConversationsList.tsx` | **CREAR** | Componente de lista de conversaciones guardadas |
-| `src/components/admin/SalesIntelligencePanel.tsx` | **MODIFICAR** | Integrar autoguardado y selector de conversaciones |
-
----
-
-## Detalles de Implementación
-
-### Hook `useSalesConversations`
+Problema: El regex actual puede fallar con ciertos formatos de bloques de código.
 
 ```typescript
-// src/hooks/useSalesConversations.ts
-export const useSalesConversations = () => {
-  // Lista de conversaciones
-  const { data: conversations, refetch } = useQuery({...});
-  
-  // Crear nueva conversación
-  const createConversation = async (company: string, profile: string) => {...};
-  
-  // Actualizar mensajes
-  const updateMessages = async (id: string, messages: Message[], ratings: Record<number, number>) => {...};
-  
-  // Cargar conversación existente
-  const loadConversation = async (id: string) => {...};
-  
-  // Registrar exportación PPTX
-  const logPPTXExport = async (conversationId: string, slideDesigns: SlideDesign[], fileName: string) => {...};
-  
-  return { conversations, createConversation, updateMessages, loadConversation, logPPTXExport };
-};
+// ANTES (problemático):
+const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+const jsonStr = jsonMatch ? jsonMatch[1].trim() : rawContent.trim();
+
+// DESPUÉS (robusto):
+// Múltiples estrategias de extracción
+let jsonStr = rawContent.trim();
+
+// Estrategia 1: Buscar bloque markdown JSON
+const codeBlockMatch = rawContent.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
+if (codeBlockMatch) {
+  jsonStr = codeBlockMatch[1].trim();
+}
+// Estrategia 2: Buscar directamente el array JSON
+else if (rawContent.includes('[')) {
+  const start = rawContent.indexOf('[');
+  const end = rawContent.lastIndexOf(']');
+  if (start !== -1 && end > start) {
+    jsonStr = rawContent.substring(start, end + 1);
+  }
+}
 ```
-
-### Selector de Conversaciones en Panel
-
-- Añadir dropdown en el header del panel
-- Opción "Nueva conversación" + lista de recientes
-- Badge con conteo de PPTXs generados por conversación
 
 ---
 
-## Beneficios
+### 2. Inyectar `company_name` en el Hero Slide
 
-1. **Continuidad**: Retomar conversaciones comerciales donde se dejaron
-2. **Historial**: Ver qué empresas se han analizado y con qué resultados
-3. **Métricas**: Saber cuántos PPTXs se han generado por empresa
-4. **Reutilización**: Regenerar presentaciones con diseños guardados
-5. **Auditoría**: Registro completo de la actividad comercial del agente
+**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
 
+Después de parsear las slides, añadir post-procesado para asegurar que el Hero tenga el nombre de la empresa:
+
+```typescript
+// Post-procesar: Asegurar que el Hero slide tenga company_name
+slides = slides.map((slide: any) => {
+  if (slide.slideType === 'hero') {
+    return { ...slide, company_name: company_name };
+  }
+  return slide;
+});
+```
+
+---
+
+### 3. Mejorar el System Prompt del Diseñador
+
+**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
+
+Añadir sección de instrucciones para construir narrativa comercial:
+
+```text
+## FILOSOFÍA DE DISEÑO NARRATIVO
+
+Tu objetivo NO es resumir contenido. Tu objetivo es CONSTRUIR UN ARGUMENTO DE VENTA 
+visual que convenza al destinatario de que NECESITA RepIndex.
+
+### FLUJO NARRATIVO OBLIGATORIO:
+
+1. **APERTURA (hero)**: Frase gancho que cree TENSIÓN. El nombre de la empresa 
+   debe aparecer en headline o subheadline. Ejemplo: "IBERDROLA: La brecha entre 
+   tu realidad y tu percepción algorítmica"
+
+2. **EL PROBLEMA (metrics o split)**: Datos concretos que demuestren que hay 
+   un problema que el cliente NO PUEDE VER sin RepIndex
+
+3. **LA EVIDENCIA (content o comparison)**: Extractos textuales de lo que las 
+   IAs dicen sobre la empresa - citas específicas del contenido valorado
+
+4. **LA OPORTUNIDAD (three_columns o split)**: Qué puede ganar si actúa ahora
+
+5. **LAS PREGUNTAS IMPOSIBLES (questions)**: Preguntas que solo RepIndex puede 
+   responder - demuestran el valor único de la herramienta
+
+6. **CIERRE (cta)**: Llamada a acción clara con urgencia
+
+### REGLAS DE EXTRACCIÓN DEL CONTENIDO VALORADO:
+
+- Lee CADA respuesta valorada buscando: cifras, comparativas, citas textuales, 
+  tendencias, alertas, oportunidades
+- Si hay una comparativa con competidores → usa slide "comparison"
+- Si hay métricas numéricas específicas → usa slide "metrics"  
+- Si hay citas de lo que dicen las IAs → usa slide "quote"
+- Si hay preguntas para Rix → usa slide "questions"
+```
+
+---
+
+### 4. Añadir Logging Mejorado para Debug
+
+**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
+
+Añadir más información de debug para futuras incidencias:
+
+```typescript
+console.log(`[design-pptx-slides] Slide types generated:`, 
+  slides.map((s: any) => s.slideType).join(', '));
+console.log(`[design-pptx-slides] Hero has company_name:`, 
+  slides[0]?.company_name || 'NOT SET');
+```
+
+---
+
+## Resumen de Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `supabase/functions/design-pptx-slides/index.ts` | Parser JSON robusto, inyección company_name, prompt mejorado, logging |
+
+## Validación
+
+Después de implementar:
+1. Generar una presentación para cualquier empresa con al menos 2 respuestas valoradas con 4-5 estrellas
+2. Verificar que:
+   - Se generan 6-10 slides (no 3 genéricas)
+   - El Hero slide muestra el nombre de la empresa prominentemente
+   - La narrativa sigue el flujo: problema → evidencia → oportunidad → CTA
