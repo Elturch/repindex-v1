@@ -224,7 +224,7 @@ export default function GdprForm() {
           {/* Footer */}
           <div className="mt-12 pt-8 border-t border-border">
             <p className="text-sm text-muted-foreground text-center">
-              © 2025 Reputation Index, Lda. (NIF 519 229 185)
+              © 2025 Reputation Index, Lda. (CIF 519 229 185)
             </p>
           </div>
         </div>
