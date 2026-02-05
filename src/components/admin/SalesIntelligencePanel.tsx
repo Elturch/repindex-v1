@@ -26,6 +26,8 @@ import { useCompanies } from '@/hooks/useCompanies';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownMessage } from '@/components/ui/markdown-message';
 import { generateProfessionalPPTX } from '@/lib/pptxDesigner';
+import { useSalesConversations, type SalesConversation } from '@/hooks/useSalesConversations';
+import { SalesConversationsList } from './SalesConversationsList';
 import type { SlideDesign } from '@/lib/pptxTypes';
 
 interface Message {
@@ -110,6 +112,20 @@ const extractRixQuestions = (content: string): string[] => {
 export const SalesIntelligencePanel: React.FC = () => {
   const { toast } = useToast();
   const { data: companies } = useCompanies();
+  const {
+    conversations,
+    isLoadingConversations: _isLoadingConversations,
+    createConversation,
+    updateConversation,
+    toggleStarred,
+    archiveConversation,
+    deleteConversation,
+    logPPTXExport,
+  } = useSalesConversations();
+  
+  // Current conversation state
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   
   const [companyInput, setCompanyInput] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<TargetProfile>('ceo');
@@ -167,12 +183,71 @@ export const SalesIntelligencePanel: React.FC = () => {
     }
   }, [messages]);
 
+  // Auto-save conversation when messages or ratings change
+  useEffect(() => {
+    if (currentConversationId && messages.length > 0) {
+      const timeoutId = setTimeout(() => {
+        updateConversation({
+          id: currentConversationId,
+          messages,
+          message_ratings: messageRatings,
+          rix_questions: rixQuestions,
+          metadata: metadata ? { ...metadata } : undefined,
+        }).catch(console.error);
+      }, 1000); // Debounce 1 second
+      return () => clearTimeout(timeoutId);
+    }
+  }, [messages, messageRatings, rixQuestions, currentConversationId, metadata, updateConversation]);
+
+  // Load conversation handler
+  const handleLoadConversation = (conv: SalesConversation | null) => {
+    if (conv) {
+      setCurrentConversationId(conv.id);
+      setCompanyInput(conv.company_name);
+      setSelectedProfile(conv.target_profile as TargetProfile);
+      setCustomContext(conv.custom_context || '');
+      setMessages(conv.messages);
+      setMessageRatings(conv.message_ratings);
+      setRixQuestions(conv.rix_questions);
+      setMetadata(conv.metadata ? {
+        company: (conv.metadata.company as string) || conv.company_name,
+        ticker: (conv.metadata.ticker as string) || null,
+        vectorDocsUsed: (conv.metadata.vectorDocsUsed as number) || 0,
+        rixRecordsUsed: (conv.metadata.rixRecordsUsed as number) || 0,
+        competitorsFound: (conv.metadata.competitorsFound as string[]) || [],
+        sectorCategory: (conv.metadata.sectorCategory as string) || null,
+      } : null);
+      setShowHistory(false);
+    } else {
+      // Start new conversation
+      resetConversation();
+    }
+  };
+
   const handleSubmit = async (followUpMessage?: string) => {
     const messageContent = followUpMessage || `Analiza ${companyInput} para preparar una propuesta comercial dirigida a ${PROFILE_CONFIG[selectedProfile].label}`;
     
     if (!companyInput && !followUpMessage) {
       toast({ title: 'Error', description: 'Introduce el nombre de una empresa', variant: 'destructive' });
       return;
+    }
+
+    // Create conversation if it doesn't exist
+    let conversationId = currentConversationId;
+    if (!conversationId && companyInput) {
+      try {
+        const selectedCompany = companies?.find(c => c.issuer_name === companyInput);
+        const newConv = await createConversation({
+          company_name: companyInput,
+          ticker: selectedCompany?.ticker || null,
+          target_profile: selectedProfile,
+          custom_context: customContext,
+        });
+        conversationId = newConv.id;
+        setCurrentConversationId(newConv.id);
+      } catch (err) {
+        console.error('[SalesIntelligence] Error creating conversation:', err);
+      }
     }
 
     const userMessage: Message = { role: 'user', content: messageContent };
@@ -327,6 +402,21 @@ export const SalesIntelligencePanel: React.FC = () => {
       // Download
       const fileName = `RepIndex_${metadata?.company || companyInput}_${new Date().toISOString().slice(0,10)}.pptx`;
       await pres.writeFile({ fileName });
+
+      // Log the PPTX export to database
+      try {
+        await logPPTXExport({
+          conversation_id: currentConversationId,
+          company_name: metadata?.company || companyInput,
+          target_profile: PROFILE_CONFIG[selectedProfile].label,
+          slides_count: slideDesigns.length,
+          slide_designs: slideDesigns,
+          high_rated_content: highRatedContent,
+          file_name: fileName,
+        });
+      } catch (logErr) {
+        console.error('[PPTX] Error logging export:', logErr);
+      }
       
       toast({ 
         title: '✅ Presentación profesional generada', 
@@ -584,6 +674,36 @@ ${lastAssistant.content
                 disabled={isLoading}
               />
             </div>
+
+            {/* Saved Conversations */}
+            {conversations.length > 0 && (
+              <div className="pt-4 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <MessageSquare className="h-3 w-3" />
+                    Conversaciones guardadas ({conversations.length})
+                  </Label>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 text-xs"
+                    onClick={() => setShowHistory(!showHistory)}
+                  >
+                    {showHistory ? 'Ocultar' : 'Ver'}
+                  </Button>
+                </div>
+                {showHistory && (
+                  <SalesConversationsList
+                    conversations={conversations}
+                    currentConversationId={currentConversationId}
+                    onSelectConversation={handleLoadConversation}
+                    onToggleStarred={(id, isStarred) => toggleStarred({ id, is_starred: isStarred })}
+                    onArchive={(id, isArchived) => archiveConversation({ id, is_archived: isArchived })}
+                    onDelete={deleteConversation}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-2">
