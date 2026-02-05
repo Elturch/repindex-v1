@@ -196,7 +196,7 @@ export const SalesIntelligencePanel: React.FC = () => {
             company_name: companyInput,
             target_profile: selectedProfile,
             custom_context: customContext,
-            conversation_history: messages,
+            conversation_history: [...messages, userMessage], // Include the new user message
             high_rated_content: isPresentationRequest ? getHighRatedContent() : [],
           }),
         }

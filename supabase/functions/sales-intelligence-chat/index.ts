@@ -389,7 +389,7 @@ serve(async (req) => {
       { role: 'user', content: `CONTEXTO DE DATOS:\n\n${contextBlocks}` },
     ];
 
-    // Add conversation history OR initial prompt (not both)
+    // Add conversation history AND ensure there's always a user message to respond to
     if (conversation_history.length === 0) {
       messages.push({ 
         role: 'user', 
@@ -402,8 +402,17 @@ RECUERDA:
 - El objetivo es que el lector piense: "Necesito esto, mis competidores pueden estar viéndolo y yo no".`
       });
     } else {
-      // Add full conversation history (already includes the latest user message)
+      // Add conversation history - it MUST end with a user message
       messages.push(...conversation_history);
+      
+      // Safety check: if last message is not from user, add a continuation prompt
+      const lastMessage = conversation_history[conversation_history.length - 1];
+      if (lastMessage?.role !== 'user') {
+        messages.push({
+          role: 'user',
+          content: 'Continúa con la reflexión estratégica, mantén el tono de venta y recuerda incluir las preguntas "imposibles" al final.'
+        });
+      }
     }
 
     // 9. Stream response from Gemini via Lovable AI Gateway with temperature for quality
