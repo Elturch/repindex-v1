@@ -55,7 +55,8 @@ import { VectorStorePanel } from '@/components/admin/VectorStorePanel';
 import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
-import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon } from 'lucide-react';
+import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
+import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -848,6 +849,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="pipeline-alerts" className="flex items-center gap-1.5 px-3 text-xs">
               <AlertTriangleIcon className="h-3.5 w-3.5" />
               Alertas
+            </TabsTrigger>
+            <TabsTrigger value="sales-agent" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-purple-500/10 to-amber-500/10">
+              <TargetIcon className="h-3.5 w-3.5 text-purple-500" />
+              Agente Comercial
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -2734,6 +2739,11 @@ const Admin: React.FC = () => {
           {/* ==================== INTERESTED LEADS ==================== */}
           <TabsContent value="leads">
             <InterestedLeadsPanel />
+          </TabsContent>
+
+          {/* ==================== SALES INTELLIGENCE AGENT ==================== */}
+          <TabsContent value="sales-agent">
+            <SalesIntelligencePanel />
           </TabsContent>
         </Tabs>
       </div>
