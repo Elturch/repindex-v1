@@ -20,6 +20,8 @@ import {
   Star,
   MessageSquare,
   Download,
+  Save,
+  Check,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompanies } from '@/hooks/useCompanies';
@@ -139,6 +141,8 @@ export const SalesIntelligencePanel: React.FC = () => {
   const [rixQuestions, setRixQuestions] = useState<string[]>([]);
   const [followUpInput, setFollowUpInput] = useState('');
   const [isGeneratingPPTX, setIsGeneratingPPTX] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -557,6 +561,63 @@ ${lastAssistant.content
     setCustomContext('');
     setMessageRatings({});
     setRixQuestions([]);
+    setCurrentConversationId(null);
+    setLastSaved(null);
+  };
+
+  // Manual save function
+  const handleManualSave = async () => {
+    if (!companyInput) {
+      toast({ 
+        title: 'Error', 
+        description: 'Selecciona una empresa antes de guardar', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      let conversationId = currentConversationId;
+      
+      // Create conversation if it doesn't exist
+      if (!conversationId) {
+        const selectedCompany = companies?.find(c => c.issuer_name === companyInput);
+        const newConv = await createConversation({
+          company_name: companyInput,
+          ticker: selectedCompany?.ticker || null,
+          target_profile: selectedProfile,
+          custom_context: customContext,
+        });
+        conversationId = newConv.id;
+        setCurrentConversationId(newConv.id);
+      }
+
+      // Update conversation
+      await updateConversation({
+        id: conversationId,
+        messages,
+        message_ratings: messageRatings,
+        rix_questions: rixQuestions,
+        metadata: metadata ? { ...metadata } : undefined,
+        custom_context: customContext,
+      });
+
+      setLastSaved(new Date());
+      toast({ 
+        title: '✓ Guardado', 
+        description: 'Conversación guardada correctamente' 
+      });
+    } catch (err) {
+      console.error('[SalesIntelligence] Error saving:', err);
+      toast({ 
+        title: 'Error', 
+        description: 'No se pudo guardar la conversación', 
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -575,6 +636,26 @@ ${lastAssistant.content
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {lastSaved && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Check className="h-3 w-3 text-green-500" />
+              Guardado {lastSaved.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleManualSave}
+            disabled={isSaving || !companyInput}
+            className="gap-1.5"
+          >
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Guardar
+          </Button>
           {highRatedCount > 0 && (
             <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">
               {highRatedCount} respuestas valoradas
