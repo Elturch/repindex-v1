@@ -184,50 +184,65 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const sendMagicLink = async (email: string): Promise<{ error: string | null; notRegistered?: boolean }> => {
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+      console.log('[Auth] Checking profile for:', normalizedEmail);
+      
       // Verificar si el email existe en user_profiles ANTES de pedir OTP
       const { data: existingProfile, error: checkError } = await supabase
         .from('user_profiles')
         .select('id, is_active')
-        .eq('email', email.toLowerCase())
+        .eq('email', normalizedEmail)
         .maybeSingle();
 
       if (checkError) {
-        console.error('Error checking profile:', checkError);
+        console.error('[Auth] Error checking profile:', checkError);
         return { error: 'Error verificando el email. Inténtalo de nuevo.' };
       }
 
       // Si no existe perfil, rechazar
       if (!existingProfile) {
+        console.log('[Auth] Profile not found for:', normalizedEmail);
         return { error: 'Email no registrado.', notRegistered: true };
       }
 
       // Si existe pero está desactivado, rechazar
       if (!existingProfile.is_active) {
+        console.log('[Auth] Profile inactive for:', normalizedEmail);
         return { error: 'Tu cuenta está desactivada. Contacta con el administrador.' };
       }
 
+      console.log('[Auth] Profile found and active, sending OTP...');
+      
       // Solo ahora enviar el OTP
       const redirectUrl = `${window.location.origin}/dashboard`;
       
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
+      const { data, error } = await supabase.auth.signInWithOtp({
+        email: normalizedEmail,
         options: {
           emailRedirectTo: redirectUrl,
           shouldCreateUser: false, // CRÍTICO: previene auto-registro
         },
       });
 
+      console.log('[Auth] OTP response:', { data, error });
+
       if (error) {
+        console.error('[Auth] OTP error:', error);
         // Handle specific Supabase error for non-existent user
         if (error.message.includes('Signups not allowed') || error.message.includes('User not found')) {
           return { error: 'Email no registrado. Contacta con el administrador.' };
         }
+        // Si hay rate limiting
+        if (error.message.includes('rate') || error.message.includes('limit')) {
+          return { error: 'Demasiados intentos. Espera unos minutos antes de intentarlo de nuevo.' };
+        }
         return { error: error.message };
       }
 
+      console.log('[Auth] Magic link sent successfully to:', normalizedEmail);
       return { error: null };
     } catch (error) {
-      console.error('Error sending magic link:', error);
+      console.error('[Auth] Error sending magic link:', error);
       return { error: 'Error al enviar el enlace. Inténtalo de nuevo.' };
     }
   };
