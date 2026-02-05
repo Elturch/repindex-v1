@@ -155,7 +155,7 @@ const Login: React.FC = () => {
           <CardHeader className="text-center pb-4">
             <CardTitle className="text-xl">Acceder a tu cuenta</CardTitle>
             <CardDescription>
-              Introduce tu email para recibir un enlace de acceso
+              Introduce tu email para recibir un enlace de acceso o para que te mandemos una invitación
             </CardDescription>
           </CardHeader>
           <CardContent>
