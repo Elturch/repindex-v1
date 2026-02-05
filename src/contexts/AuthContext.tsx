@@ -37,7 +37,7 @@ interface AuthContextType {
   company: ClientCompany | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  sendMagicLink: (email: string) => Promise<{ error: string | null }>;
+  sendMagicLink: (email: string) => Promise<{ error: string | null; notRegistered?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -182,7 +182,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const sendMagicLink = async (email: string): Promise<{ error: string | null }> => {
+  const sendMagicLink = async (email: string): Promise<{ error: string | null; notRegistered?: boolean }> => {
     try {
       // Verificar si el email existe en user_profiles ANTES de pedir OTP
       const { data: existingProfile, error: checkError } = await supabase
@@ -198,7 +198,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Si no existe perfil, rechazar
       if (!existingProfile) {
-        return { error: 'Email no registrado. Contacta con el administrador.' };
+        return { error: 'Email no registrado.', notRegistered: true };
       }
 
       // Si existe pero está desactivado, rechazar

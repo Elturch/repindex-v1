@@ -1,19 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Mail, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Mail, Loader2, CheckCircle, AlertCircle, ArrowLeft, UserPlus, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { isDevOrPreview } from '@/lib/env';
+import { supabase } from '@/integrations/supabase/client';
+import { Checkbox } from '@/components/ui/checkbox';
 
-type LoginState = 'idle' | 'sending' | 'sent' | 'error';
+type LoginState = 'idle' | 'sending' | 'sent' | 'error' | 'not_registered';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [loginState, setLoginState] = useState<LoginState>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [savingLead, setSavingLead] = useState(false);
+  const [leadSaved, setLeadSaved] = useState<'consent' | 'no_consent' | null>(null);
   const { sendMagicLink, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -53,15 +58,45 @@ const Login: React.FC = () => {
     setLoginState('sending');
     setErrorMessage('');
 
-    const { error } = await sendMagicLink(email.trim().toLowerCase());
+    const result = await sendMagicLink(email.trim().toLowerCase());
 
-    if (error) {
-      setErrorMessage(error);
+    if (result.notRegistered) {
+      // Email no está registrado - mostrar opción de consentimiento
+      setLoginState('not_registered');
+    } else if (result.error) {
+      setErrorMessage(result.error);
       setLoginState('error');
     } else {
       setLoginState('sent');
     }
   };
+
+  const saveLead = useCallback(async (withConsent: boolean) => {
+    setSavingLead(true);
+    try {
+      const { error } = await supabase
+        .from('interested_leads')
+        .upsert({
+          email: email.trim().toLowerCase(),
+          contact_consent: withConsent,
+          consent_date: new Date().toISOString(),
+          user_agent: navigator.userAgent,
+          source: 'login_attempt',
+          status: 'pending',
+        }, { onConflict: 'email' });
+
+      if (error) {
+        console.error('Error saving lead:', error);
+      }
+      
+      setLeadSaved(withConsent ? 'consent' : 'no_consent');
+    } catch (err) {
+      console.error('Error saving lead:', err);
+      setLeadSaved(withConsent ? 'consent' : 'no_consent');
+    } finally {
+      setSavingLead(false);
+    }
+  }, [email]);
 
   if (isLoading) {
     return (
@@ -108,7 +143,100 @@ const Login: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {loginState === 'sent' ? (
+            {leadSaved ? (
+              <div className="text-center py-6">
+                <div className={`mx-auto w-12 h-12 ${leadSaved === 'consent' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'} rounded-full flex items-center justify-center mb-4`}>
+                  {leadSaved === 'consent' ? (
+                    <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                  ) : (
+                    <X className="h-6 w-6 text-muted-foreground" />
+                  )}
+                </div>
+                {leadSaved === 'consent' ? (
+                  <>
+                    <h3 className="font-semibold text-lg mb-2">¡Gracias por tu interés!</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
+                      Hemos registrado tu solicitud. Te contactaremos pronto para darte acceso a RepIndex.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="font-semibold text-lg mb-2">Entendido</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
+                      Si cambias de opinión, puedes volver a intentarlo o contactar con tu administrador.
+                    </p>
+                  </>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setLeadSaved(null);
+                    setLoginState('idle');
+                    setEmail('');
+                    setConsentGiven(false);
+                  }}
+                >
+                  Volver al inicio
+                </Button>
+              </div>
+            ) : loginState === 'not_registered' ? (
+              <div className="text-center py-6">
+                <div className="mx-auto w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-4">
+                  <UserPlus className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">Email no registrado</h3>
+                <p className="text-muted-foreground text-sm mb-4">
+                  Tu correo <span className="font-medium text-foreground">{email}</span> no está en la base de datos de RepIndex.
+                </p>
+                <div className="bg-muted/50 rounded-lg p-4 mb-4 text-left">
+                  <p className="text-sm font-medium mb-3">
+                    ¿Nos autorizas a contactar contigo para darte acceso?
+                  </p>
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      id="consent"
+                      checked={consentGiven}
+                      onCheckedChange={(checked) => setConsentGiven(checked === true)}
+                      className="mt-0.5"
+                    />
+                    <label htmlFor="consent" className="text-xs text-muted-foreground cursor-pointer">
+                      Autorizo a RepIndex a contactarme por email para informarme sobre el acceso a la plataforma y sus servicios.
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-center">
+                  <Button
+                    onClick={() => saveLead(true)}
+                    disabled={!consentGiven || savingLead}
+                    className="flex-1"
+                  >
+                    {savingLead ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                    )}
+                    Sí, contactadme
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => saveLead(false)}
+                    disabled={savingLead}
+                    className="flex-1"
+                  >
+                    No, gracias
+                  </Button>
+                </div>
+                <button
+                  onClick={() => {
+                    setLoginState('idle');
+                    setConsentGiven(false);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground mt-4 underline"
+                >
+                  Probar con otro email
+                </button>
+              </div>
+            ) : loginState === 'sent' ? (
               <div className="text-center py-6">
                 <div className="mx-auto w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">
                   <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />

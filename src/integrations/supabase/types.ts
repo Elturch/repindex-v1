@@ -934,6 +934,51 @@ export type Database = {
           },
         ]
       }
+      interested_leads: {
+        Row: {
+          admin_notes: string | null
+          consent_date: string
+          contact_consent: boolean
+          contacted_at: string | null
+          converted_at: string | null
+          created_at: string
+          email: string
+          id: string
+          ip_address: string | null
+          source: string
+          status: string
+          user_agent: string | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          consent_date?: string
+          contact_consent?: boolean
+          contacted_at?: string | null
+          converted_at?: string | null
+          created_at?: string
+          email: string
+          id?: string
+          ip_address?: string | null
+          source?: string
+          status?: string
+          user_agent?: string | null
+        }
+        Update: {
+          admin_notes?: string | null
+          consent_date?: string
+          contact_consent?: boolean
+          contacted_at?: string | null
+          converted_at?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          ip_address?: string | null
+          source?: string
+          status?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       invoices: {
         Row: {
           company_id: string
