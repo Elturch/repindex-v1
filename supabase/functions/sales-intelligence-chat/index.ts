@@ -408,7 +408,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'openai/gpt-5',
         messages,
-        max_tokens: 6000,
+        max_completion_tokens: 6000,
         temperature: 0.3, // LOW temperature for anti-hallucination
         stream: true,
       }),
