@@ -18,7 +18,10 @@ const Login: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
   const [savingLead, setSavingLead] = useState(false);
-  const [leadSaved, setLeadSaved] = useState<'consent' | 'no_consent' | null>(null);
+  const [leadSaveResult, setLeadSaveResult] = useState<{
+    type: 'consent' | 'no_consent';
+    isCorporateEmail?: boolean;
+  } | null>(null);
   const { sendMagicLink, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,8 +101,11 @@ const Login: React.FC = () => {
         return;
       }
       
-      console.log('Lead saved successfully:', data.leadId);
-      setLeadSaved(withConsent ? 'consent' : 'no_consent');
+      console.log('Lead saved successfully:', data.leadId, 'Corporate:', data.isCorporateEmail);
+      setLeadSaveResult({
+        type: withConsent ? 'consent' : 'no_consent',
+        isCorporateEmail: data.isCorporateEmail
+      });
     } catch (err) {
       console.error('Error saving lead:', err);
       setErrorMessage('Error de conexión. Por favor, inténtalo de nuevo.');
@@ -153,22 +159,37 @@ const Login: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {leadSaved ? (
+            {leadSaveResult ? (
               <div className="text-center py-6">
-                <div className={`mx-auto w-12 h-12 ${leadSaved === 'consent' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'} rounded-full flex items-center justify-center mb-4`}>
-                  {leadSaved === 'consent' ? (
+                <div className={`mx-auto w-12 h-12 ${leadSaveResult.type === 'consent' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'} rounded-full flex items-center justify-center mb-4`}>
+                  {leadSaveResult.type === 'consent' ? (
                     <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
                   ) : (
                     <X className="h-6 w-6 text-muted-foreground" />
                   )}
                 </div>
-                {leadSaved === 'consent' ? (
-                  <>
-                    <h3 className="font-semibold text-lg mb-2">¡Gracias por tu interés!</h3>
-                    <p className="text-muted-foreground text-sm mb-4">
-                      Hemos registrado tu solicitud. Te contactaremos pronto para darte acceso a RepIndex.
-                    </p>
-                  </>
+                {leadSaveResult.type === 'consent' ? (
+                  leadSaveResult.isCorporateEmail ? (
+                    <>
+                      <h3 className="font-semibold text-lg mb-2">¡Gracias por tu interés!</h3>
+                      <p className="text-muted-foreground text-sm mb-4">
+                        Te hemos enviado un email con un breve formulario para personalizar tu acceso a RepIndex.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Revisa tu bandeja de entrada (y spam) en <span className="font-medium">{email}</span>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="font-semibold text-lg mb-2">Gracias por tu interés</h3>
+                      <p className="text-muted-foreground text-sm mb-4">
+                        Te hemos enviado un email con información sobre cómo acceder a RepIndex desde tu email corporativo.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Para ofrecerte informes personalizados, necesitamos que accedas desde el email de tu empresa.
+                      </p>
+                    </>
+                  )
                 ) : (
                   <>
                     <h3 className="font-semibold text-lg mb-2">Entendido</h3>
@@ -180,7 +201,7 @@ const Login: React.FC = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setLeadSaved(null);
+                    setLeadSaveResult(null);
                     setLoginState('idle');
                     setEmail('');
                     setConsentGiven(false);
