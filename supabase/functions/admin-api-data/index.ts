@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
 
 // Check if request comes from Preview/development environment
@@ -673,6 +673,89 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ data: { by_depth: byDepth, by_user: byUser, summary } }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ==================== ACTION ROUTES (invoke) ====================
+    // Allows calling admin-api-data via `supabase.functions.invoke('admin-api-data', { body: { action, data } })`
+    // Path will be '' when invoked.
+    if (req.method === 'POST' && (path === '' || path === '/')) {
+      const body = await req.json().catch(() => ({}))
+      const action = body?.action
+      const data = body?.data ?? {}
+
+      // ---- Interested leads ----
+      if (action === 'list_interested_leads') {
+        const { data: leads, error } = await supabaseAdmin
+          .from('interested_leads')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) throw error
+
+        return new Response(
+          JSON.stringify({ leads: leads || [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (action === 'update_interested_lead') {
+        const id = data?.id
+        const updates = data?.updates
+
+        if (!id || typeof id !== 'string') {
+          return new Response(
+            JSON.stringify({ error: 'Missing id' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        if (!updates || typeof updates !== 'object') {
+          return new Response(
+            JSON.stringify({ error: 'Missing updates' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const { data: lead, error } = await supabaseAdmin
+          .from('interested_leads')
+          .update(updates)
+          .eq('id', id)
+          .select('*')
+          .single()
+
+        if (error) throw error
+
+        return new Response(
+          JSON.stringify({ lead }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (action === 'delete_interested_lead') {
+        const id = data?.id
+        if (!id || typeof id !== 'string') {
+          return new Response(
+            JSON.stringify({ error: 'Missing id' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const { error } = await supabaseAdmin
+          .from('interested_leads')
+          .delete()
+          .eq('id', id)
+
+        if (error) throw error
+
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      return new Response(
+        JSON.stringify({ error: `Unknown action: ${action}` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 

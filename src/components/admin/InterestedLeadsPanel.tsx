@@ -79,17 +79,20 @@
    const [noteText, setNoteText] = useState('');
    const [actionLoading, setActionLoading] = useState<string | null>(null);
  
-   const fetchLeads = async () => {
+  const callAdminApiData = async (action: string, data?: any) => {
+    const { data: response, error } = await supabase.functions.invoke('admin-api-data', {
+      body: { action, data },
+    });
+    if (error) throw error;
+    if (response?.error) throw new Error(response.error);
+    return response;
+  };
+
+  const fetchLeads = async () => {
      setLoading(true);
      try {
-       const { data, error } = await supabase
-         .from('interested_leads')
-         .select('*')
-         .order('created_at', { ascending: false });
- 
-       if (error) throw error;
- 
-       const leadsData = (data || []) as Lead[];
+      const { leads } = await callAdminApiData('list_interested_leads');
+      const leadsData = (leads || []) as Lead[];
        setLeads(leadsData);
  
        // Calculate stats
@@ -127,12 +130,7 @@
          updates.converted_at = new Date().toISOString();
        }
  
-       const { error } = await supabase
-         .from('interested_leads')
-         .update(updates)
-         .eq('id', leadId);
- 
-       if (error) throw error;
+      await callAdminApiData('update_interested_lead', { id: leadId, updates });
  
        toast({ title: 'Actualizado', description: `Lead marcado como ${status}` });
        fetchLeads();
@@ -148,12 +146,10 @@
      if (!selectedLead) return;
      setActionLoading(selectedLead.id);
      try {
-       const { error } = await supabase
-         .from('interested_leads')
-         .update({ admin_notes: noteText })
-         .eq('id', selectedLead.id);
- 
-       if (error) throw error;
+      await callAdminApiData('update_interested_lead', {
+        id: selectedLead.id,
+        updates: { admin_notes: noteText },
+      });
  
        toast({ title: 'Nota guardada' });
        setSelectedLead(null);
@@ -171,12 +167,7 @@
      if (!confirm('¿Eliminar este lead permanentemente?')) return;
      setActionLoading(leadId);
      try {
-       const { error } = await supabase
-         .from('interested_leads')
-         .delete()
-         .eq('id', leadId);
- 
-       if (error) throw error;
+      await callAdminApiData('delete_interested_lead', { id: leadId });
  
        toast({ title: 'Lead eliminado' });
        fetchLeads();
