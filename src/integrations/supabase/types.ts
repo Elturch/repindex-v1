@@ -2281,6 +2281,104 @@ export type Database = {
         }
         Relationships: []
       }
+      sales_conversations: {
+        Row: {
+          admin_user_id: string
+          company_name: string
+          created_at: string | null
+          custom_context: string | null
+          id: string
+          is_archived: boolean | null
+          is_starred: boolean | null
+          message_ratings: Json
+          messages: Json
+          metadata: Json | null
+          rix_questions: string[] | null
+          target_profile: string
+          ticker: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          admin_user_id: string
+          company_name: string
+          created_at?: string | null
+          custom_context?: string | null
+          id?: string
+          is_archived?: boolean | null
+          is_starred?: boolean | null
+          message_ratings?: Json
+          messages?: Json
+          metadata?: Json | null
+          rix_questions?: string[] | null
+          target_profile?: string
+          ticker?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          admin_user_id?: string
+          company_name?: string
+          created_at?: string | null
+          custom_context?: string | null
+          id?: string
+          is_archived?: boolean | null
+          is_starred?: boolean | null
+          message_ratings?: Json
+          messages?: Json
+          metadata?: Json | null
+          rix_questions?: string[] | null
+          target_profile?: string
+          ticker?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      sales_pptx_exports: {
+        Row: {
+          admin_user_id: string
+          company_name: string
+          conversation_id: string | null
+          created_at: string | null
+          file_name: string
+          high_rated_content: string[] | null
+          id: string
+          slide_designs: Json
+          slides_count: number
+          target_profile: string
+        }
+        Insert: {
+          admin_user_id: string
+          company_name: string
+          conversation_id?: string | null
+          created_at?: string | null
+          file_name: string
+          high_rated_content?: string[] | null
+          id?: string
+          slide_designs?: Json
+          slides_count?: number
+          target_profile: string
+        }
+        Update: {
+          admin_user_id?: string
+          company_name?: string
+          conversation_id?: string | null
+          created_at?: string | null
+          file_name?: string
+          high_rated_content?: string[] | null
+          id?: string
+          slide_designs?: Json
+          slides_count?: number
+          target_profile?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_pptx_exports_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "sales_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       source_models: {
         Row: {
           evaluation_id: string
