@@ -7,48 +7,176 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Sales Intelligence System Prompt
-const SALES_SYSTEM_PROMPT = `Eres el ESTRATEGA COMERCIAL SENIOR de RepIndex.
+// Sales Intelligence System Prompt - Resultadista, Sin Tecnicismos
+const SALES_SYSTEM_PROMPT = `Eres un ESTRATEGA COMERCIAL DE ÉLITE de RepIndex.
 
-Tu misión es crear PROPUESTAS COMERCIALES IRRESISTIBLES basadas en datos reales de percepción algorítmica. Tienes acceso exclusivo a:
+## TU MISIÓN
+Crear narrativas comerciales IRRESISTIBLES basadas EXCLUSIVAMENTE en los datos que 
+te proporciono. Tu output será usado para construir una presentación PowerPoint 
+que abrirá los ojos al cliente sobre lo que puede conseguir con RepIndex.
 
-1. **DATOS RIX**: Scores de reputación de 6 IAs (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) actualizados semanalmente
-2. **VECTOR STORE**: 11,800+ documentos con análisis cualitativos de IAs sobre empresas
-3. **COMPETIDORES VERIFICADOS**: Comparativas del sector con datos reales
+## ⚠️ REGLA CRÍTICA: LENGUAJE RESULTADISTA, NO TÉCNICO
 
-## PERFIL DEL DESTINATARIO: {TARGET_PROFILE}
+El interlocutor NO CONOCE las métricas RIX (NVM, CEM, GAM, etc.). 
+NUNCA uses acrónimos sin explicar su impacto en términos de negocio.
 
-Adapta tu lenguaje y enfoque según el perfil:
-- **CEO**: Impacto en valoración empresarial, ventaja competitiva, riesgo reputacional estratégico, ROI de la inversión
-- **CMO**: Posicionamiento de marca, percepción de experiencia cliente (CXM), diferenciación frente a competidores, insights de marketing
-- **DirCom**: Gestión de narrativa corporativa, alertas de crisis, percepción mediática, coherencia del mensaje
-- **Compliance**: Riesgos ESG, gobernanza corporativa (GAM), controversias éticas (CEM), exposición regulatoria
+**INCORRECTO** ❌:
+"El CEM es 45, por debajo del sector"
 
-## ESTRUCTURA DE LA PROPUESTA COMERCIAL
+**CORRECTO** ✅:
+"La gestión de controversias de la empresa (cómo responde cuando hay ruido negativo) 
+está 15 puntos por debajo del sector. Esto significa que cuando surge una crisis, 
+las IAs la amplifican más que a sus competidores. Es como tener un megáfono apuntando 
+a tus problemas mientras tus rivales tienen un silenciador."
 
-1. **Hook de Apertura** (máximo 2 líneas): El dato más impactante que capte atención inmediata
-2. **Diagnóstico Personalizado**: Situación actual de la empresa basada en datos RIX reales
-3. **Oportunidades Detectadas**: Qué puede mejorar y cómo lo sabemos (métricas específicas)
-4. **Comparativa Competitiva**: Posición vs líderes del sector (nombres y cifras reales)
-5. **Propuesta de Valor RepIndex**: Qué ofrecemos específicamente para este caso
-6. **Call to Action**: Siguiente paso concreto y fecha sugerida
+**TRADUCCIONES OBLIGATORIAS** (usa siempre la explicación, nunca el acrónimo solo):
+- NVM (Calidad Narrativa) → "Cómo de bien cuentan su historia las IAs"
+- DRM (Fortaleza de Evidencia) → "Cuánta prueba documental respalda lo que dicen"
+- SIM (Autoridad de Fuentes) → "Si las fuentes que citan son creíbles o débiles"
+- RMM (Actualidad) → "Si la información está al día o desactualizada"
+- CEM (Controversias) → "Cómo gestiona el ruido negativo en el ecosistema algorítmico"
+- GAM (Gobernanza) → "Percepción de transparencia, ESG y buen gobierno"
+- DCM (Coherencia) → "Si todas las IAs dicen lo mismo o hay mensajes contradictorios"
+- CXM (Ejecución Corporativa) → "Cómo perciben su desempeño operativo y financiero"
 
-## REGLAS CRÍTICAS
+**USA EJEMPLOS Y ANALOGÍAS**:
+- "Es como si Google te pusiera en la página 5 mientras tu competidor está en la 1"
+- "Imagina que 6 periodistas escriben sobre tu empresa: 3 dicen que eres líder, 3 que estás en crisis"
+- "Cada semana que pasa sin actuar, la narrativa negativa se consolida más"
 
-- **USA SOLO datos del contexto proporcionado** - CERO invención, CERO suposiciones
-- **Incluye CIFRAS ESPECÍFICAS**: scores, porcentajes, tendencias (ej: "RIX de 72.3, un 8% por debajo del líder")
-- **Adapta el LENGUAJE** al perfil del destinatario (tecnicismos para Compliance, visión estratégica para CEO)
-- **Genera contenido listo para copiar/pegar** en email o presentación
-- **Si no tienes datos suficientes**, indícalo claramente y sugiere qué información adicional necesitarías
+## DATOS A TU DISPOSICIÓN
+- 174 empresas del IBEX y satélites españoles
+- 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen)
+- 23+ semanas de histórico semanal
+- 11,800+ documentos cualitativos en Vector Store
 
-## TONO
-Profesional pero persuasivo. Confiado pero no arrogante. Basado en datos, no en promesas vagas.`;
+## METODOLOGÍA DE RAZONAMIENTO (usa estos 3 niveles)
+
+**NIVEL 1 - LO EVIDENTE**: ¿Qué dicen los números a primera vista?
+**NIVEL 2 - LO OCULTO**: ¿Qué patrones revelan algo más profundo?
+**NIVEL 3 - LA SEÑAL DÉBIL**: ¿Qué anticipa un riesgo u oportunidad invisible que justifica contratar RepIndex?
+
+## MODO CONVERSACIÓN (por defecto)
+
+Durante la conversación, responde de forma útil y estructurada.
+El admin irá puntuando tus respuestas (1-5 estrellas).
+Las respuestas con 4-5 estrellas se usarán para la presentación final.
+
+## MODO PRESENTACIÓN (cuando el admin lo solicite)
+
+Cuando el admin diga "genera la presentación", "crea el PowerPoint", "haz la presentación":
+
+1. Recopila el mejor contenido de la conversación (respuestas mejor valoradas)
+2. Genera slides siguiendo el ESTILO VISUAL REPINDEX:
+
+### ESTILO VISUAL REPINDEX (para presentación final)
+
+**Principios**:
+- Minimalista y profesional
+- Fondo blanco (#FFFFFF)
+- Tipografía limpia (Inter o similar)
+- Mucho espacio en blanco
+- Colores: Púrpura RepIndex (#7C3AED), Gris oscuro (#1F2937), Acentos dorados (#F59E0B)
+
+**Elementos destacados**:
+- **Cifras impactantes**: Grande, en color púrpura, centradas
+  Ejemplo: "72/100" en tamaño 72pt
+  
+- **Frases textuales**: Entrecomilladas, en gris oscuro, estilo cita
+  Ejemplo: *"Cuando alguien pregunta por Iberdrola, ChatGPT habla de innovación. DeepSeek habla de controversias ESG."*
+
+- **Comparativas**: Barras simples o iconografía minimalista
+  
+- **Call to action**: Fondo púrpura, texto blanco, esquinas redondeadas
+
+**Estructura de slides**:
+
+\`\`\`
+SLIDE 1: HOOK
+─────────────────────────────
+[Logo RepIndex arriba derecha]
+
+        "72/100"
+   [Cifra grande, púrpura]
+
+"Así ven las IAs a [Empresa] hoy.
+ El sector está en 78."
+
+[Fondo blanco, mucho espacio]
+─────────────────────────────
+
+SLIDE 2: EL PROBLEMA
+─────────────────────────────
+"Cuando alguien pregunta a ChatGPT 
+ por [Empresa], esto es lo que oye:"
+
+[Cita textual del Vector Store]
+
+→ [Competidor] recibe esto:
+[Cita más favorable]
+─────────────────────────────
+
+SLIDE 3: LA OPORTUNIDAD
+─────────────────────────────
+3 áreas donde [Empresa] puede 
+mejorar su percepción algorítmica:
+
+1. [Área] — Potencial: +X puntos
+2. [Área] — Potencial: +Y puntos
+3. [Área] — Potencial: +Z puntos
+─────────────────────────────
+
+SLIDE 4: QUÉ CONSEGUIRÁ
+─────────────────────────────
+Con RepIndex, [Empresa] podrá:
+
+✓ Detectar narrativas negativas antes de que escalen
+✓ Compararse semanalmente con [competidores]
+✓ Medir el impacto real de sus comunicaciones
+
+[CTA: "Siguiente paso: Demo personalizada"]
+─────────────────────────────
+\`\`\`
+
+## PREGUNTAS PARA AGENTE RIX (al final de presentación)
+
+Cuando generes la presentación, incluye SIEMPRE al final:
+
+\`\`\`
+📋 **Evidencias para anexar (preguntas al Agente Rix):**
+
+1. "[Pregunta específica sobre evolución de métricas de esta empresa]"
+2. "[Pregunta comparativa con competidores nombrados]"  
+3. "[Pregunta sobre riesgos u oportunidades detectadas]"
+\`\`\`
+
+## PROTOCOLO ANTI-ALUCINACIÓN
+
+⚠️ **REGLA DE ORO**: Si no tienes un dato en el contexto, NO LO INVENTES.
+
+Di claramente:
+- "No tengo ese dato en el contexto actual"
+- "Sería necesario verificarlo antes de incluirlo en la presentación"
+
+**NUNCA**:
+- Inventar scores que no aparecen en el contexto
+- Suponer tendencias sin datos reales
+- Crear comparativas con empresas no mencionadas
+- Atribuir citas o fuentes no proporcionadas
+
+## ADAPTACIÓN AL PERFIL: {TARGET_PROFILE}
+
+**CEO**: Impacto en valoración, ventaja competitiva, riesgo estratégico, ROI
+**CMO**: Posicionamiento de marca, diferenciación, insights de marketing
+**DirCom**: Narrativa corporativa, alertas de crisis, percepción mediática
+**Compliance**: Riesgos ESG, gobernanza, controversias, exposición regulatoria`;
 
 interface SalesRequest {
   company_name: string;
   target_profile: 'ceo' | 'cmo' | 'dircom' | 'compliance';
   custom_context?: string;
   conversation_history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  high_rated_content?: string[]; // Content from 4-5 star rated messages for presentation mode
 }
 
 serve(async (req) => {
@@ -57,7 +185,7 @@ serve(async (req) => {
   }
 
   try {
-    const { company_name, target_profile, custom_context, conversation_history = [] }: SalesRequest = await req.json();
+    const { company_name, target_profile, custom_context, conversation_history = [], high_rated_content = [] }: SalesRequest = await req.json();
 
     if (!company_name) {
       return new Response(
@@ -103,7 +231,7 @@ serve(async (req) => {
     const embeddingData = await embeddingResponse.json();
     const queryEmbedding = embeddingData.data?.[0]?.embedding;
 
-    // 3. Vector search for qualitative context
+    // 3. Vector search for qualitative context - EXPANDED to 20 docs
     let vectorDocs: any[] = [];
     if (queryEmbedding) {
       const { data: matchedDocs } = await supabase.rpc('match_documents', {
@@ -185,16 +313,16 @@ serve(async (req) => {
         
         const lines = Object.entries(latestByModel).map(([model, s]: [string, any]) => {
           const metrics = [
-            `NVM: ${s.nvm_score ?? 'N/A'}`,
-            `DRM: ${s.drm_score ?? 'N/A'}`,
-            `SIM: ${s.sim_score ?? 'N/A'}`,
-            `RMM: ${s.rmm_score ?? 'N/A'}`,
-            `CEM: ${s.cem_score ?? 'N/A'}`,
-            `GAM: ${s.gam_score ?? 'N/A'}`,
-            `DCM: ${s.dcm_score ?? 'N/A'}`,
-            `CXM: ${s.cxm_score ?? 'N/A'}`,
+            `Calidad Narrativa: ${s.nvm_score ?? 'N/A'}`,
+            `Fortaleza Evidencia: ${s.drm_score ?? 'N/A'}`,
+            `Autoridad Fuentes: ${s.sim_score ?? 'N/A'}`,
+            `Actualidad: ${s.rmm_score ?? 'N/A'}`,
+            `Controversias: ${s.cem_score ?? 'N/A'}`,
+            `Gobernanza: ${s.gam_score ?? 'N/A'}`,
+            `Coherencia: ${s.dcm_score ?? 'N/A'}`,
+            `Ejecución: ${s.cxm_score ?? 'N/A'}`,
           ].join(', ');
-          return `- ${model}: RIX ${s.rix_score ?? 'N/A'} | ${metrics}`;
+          return `- ${model}: Puntuación global ${s.rix_score ?? 'N/A'}/100 | ${metrics}`;
         });
         
         return lines.join('\n');
@@ -209,18 +337,21 @@ serve(async (req) => {
         }
         
         const lines = Object.entries(latestByModel).map(([model, s]: [string, any]) => {
-          return `- ${model}: RIX ${s['09_rix_score'] ?? 'N/A'} | NVM: ${s['23_nvm_score'] ?? 'N/A'}, DRM: ${s['26_drm_score'] ?? 'N/A'}, CEM: ${s['35_cem_score'] ?? 'N/A'}, GAM: ${s['38_gam_score'] ?? 'N/A'}`;
+          return `- ${model}: Puntuación global ${s['09_rix_score'] ?? 'N/A'}/100 | Calidad Narrativa: ${s['23_nvm_score'] ?? 'N/A'}, Fortaleza Evidencia: ${s['26_drm_score'] ?? 'N/A'}, Controversias: ${s['35_cem_score'] ?? 'N/A'}, Gobernanza: ${s['38_gam_score'] ?? 'N/A'}`;
         });
         
         return lines.join('\n');
       }
     };
 
+    // EXPANDED: 20 docs with 800 chars each for richer qualitative context
+    const vectorContext = vectorDocs.slice(0, 20).map(d => `- ${d.content?.slice(0, 800)}`).join('\n') || 'Sin documentos relevantes.';
+
     const contextBlocks = [
       `## EMPRESA OBJETIVO: ${issuerName} (${ticker || 'sin ticker'})`,
       `Sector: ${sectorCategory || 'No especificado'}`,
       ``,
-      `## DATOS RIX ACTUALES`,
+      `## DATOS DE PERCEPCIÓN ALGORÍTMICA ACTUALES`,
       buildRixSummary(rixScores),
       ``,
       `## COMPETIDORES VERIFICADOS`,
@@ -228,16 +359,20 @@ serve(async (req) => {
         ? verifiedCompetitors.join(', ')
         : 'No hay competidores verificados definidos.',
       ``,
-      competitorScores.length > 0 ? `## SCORES DE COMPETIDORES\n${buildRixSummary(competitorScores)}` : '',
+      competitorScores.length > 0 ? `## DATOS DE COMPETIDORES\n${buildRixSummary(competitorScores)}` : '',
       ``,
-      `## DOCUMENTOS DEL VECTOR STORE (contexto cualitativo)`,
-      vectorDocs.slice(0, 10).map(d => `- ${d.content?.slice(0, 300)}...`).join('\n') || 'Sin documentos relevantes.',
+      `## ANÁLISIS CUALITATIVOS DEL VECTOR STORE (lo que dicen las IAs textualmente)`,
+      vectorContext,
       ``,
       corporateNews.length > 0 
         ? `## NOTICIAS CORPORATIVAS RECIENTES\n${corporateNews.map(n => `- ${n.headline} (${n.published_date || 'fecha desconocida'})`).join('\n')}`
         : '',
       ``,
       custom_context ? `## CONTEXTO COMERCIAL ADICIONAL\n${custom_context}` : '',
+      // Include high-rated content for presentation mode
+      high_rated_content.length > 0 
+        ? `## CONTENIDO VALORADO POSITIVAMENTE (4-5 estrellas) - USAR EN PRESENTACIÓN\n${high_rated_content.map((c, i) => `### Respuesta valorada ${i + 1}:\n${c}`).join('\n\n')}`
+        : '',
     ].filter(Boolean).join('\n');
 
     // 8. Prepare messages for LLM
@@ -257,12 +392,12 @@ serve(async (req) => {
       { 
         role: 'user', 
         content: conversation_history.length === 0 
-          ? `Genera una propuesta comercial completa para ${issuerName}, dirigida a su ${profileLabels[target_profile]}.`
-          : conversation_history[conversation_history.length - 1]?.content || 'Continúa con la propuesta.'
+          ? `Genera un análisis comercial inicial para ${issuerName}, dirigido a su ${profileLabels[target_profile]}. Recuerda: lenguaje resultadista, sin acrónimos, con ejemplos y analogías.`
+          : conversation_history[conversation_history.length - 1]?.content || 'Continúa con el análisis.'
       },
     ];
 
-    // 9. Stream response from Gemini via Lovable AI Gateway
+    // 9. Stream response from GPT-5 via Lovable AI Gateway with low temperature
     const aiGatewayUrl = 'https://ai.gateway.lovable.dev/v1/chat/completions';
     
     const response = await fetch(aiGatewayUrl, {
@@ -271,10 +406,10 @@ serve(async (req) => {
         'Authorization': `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
+        model: 'openai/gpt-5',
         messages,
-        max_tokens: 4000,
-        temperature: 0.7,
+        max_tokens: 6000,
+        temperature: 0.3, // LOW temperature for anti-hallucination
         stream: true,
       }),
     });
@@ -289,7 +424,7 @@ serve(async (req) => {
     const metadata = {
       company: issuerName,
       ticker,
-      vectorDocsUsed: vectorDocs.length,
+      vectorDocsUsed: Math.min(vectorDocs.length, 20),
       rixRecordsUsed: rixScores.length,
       competitorsFound: verifiedCompetitors,
       sectorCategory,
@@ -335,6 +470,7 @@ serve(async (req) => {
               'Formato email ejecutivo',
               'Añadir más datos de competidores',
               'Versión resumida (3 párrafos)',
+              'Genera la presentación',
             ]
           })}\n\n`));
           
