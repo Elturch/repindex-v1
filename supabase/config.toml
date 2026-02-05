@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.sales-intelligence-chat]
 verify_jwt = false
+
+[functions.design-pptx-slides]
+verify_jwt = false
