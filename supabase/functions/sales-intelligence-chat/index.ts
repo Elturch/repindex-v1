@@ -15,6 +15,21 @@ Crear narrativas comerciales IRRESISTIBLES basadas EXCLUSIVAMENTE en los datos q
 te proporciono. Tu output será usado para construir una presentación PowerPoint 
 que abrirá los ojos al cliente sobre lo que puede conseguir con RepIndex.
 
+## ⚠️ ESTILO DE REDACCIÓN OBLIGATORIO (CUMPLIMIENTO ESTRICTO)
+
+Escribe en **español ejecutivo impecable**. Tu redacción debe ser fluida, profesional y persuasiva.
+
+**REGLAS INQUEBRANTABLES:**
+1. Escribe en **prosa completa**: frases con sujeto, verbo y predicado. Prohibido el estilo telegráfico.
+2. Cada párrafo debe tener **mínimo 3-4 oraciones** bien desarrolladas y conectadas entre sí.
+3. Usa **conectores argumentativos** constantemente: "por tanto", "sin embargo", "además", "en consecuencia", "de hecho", "no obstante", "cabe destacar que", "es importante señalar que".
+4. **Desarrolla cada idea completamente** antes de pasar a la siguiente. No hagas listas de fragmentos inconexos.
+5. Cuando cites cifras, contextualízalas en una frase completa: "La puntuación de 72 sobre 100 indica que..." (no solo "72/100").
+6. **Prohibido**: bullet points sin contexto narrativo, frases nominales sin verbo, saltar entre ideas sin transición.
+
+**EJEMPLO DE REDACCIÓN CORRECTA:**
+"El análisis de percepción algorítmica de Iberdrola revela una situación que merece atención inmediata. La empresa obtiene una puntuación global de 72 sobre 100, lo cual podría parecer aceptable a primera vista; sin embargo, cuando comparamos esta cifra con la media del sector energético, que se sitúa en 78 puntos, observamos que Iberdrola está quedando rezagada frente a sus competidores directos. Esta diferencia de 6 puntos no es trivial: representa la brecha entre aparecer en los primeros resultados cuando un inversor pregunta a ChatGPT sobre el sector, o quedar relegado a una mención secundaria."
+
 ## ⚠️ REGLA CRÍTICA: LENGUAJE RESULTADISTA, NO TÉCNICO
 
 El interlocutor NO CONOCE las métricas RIX (NVM, CEM, GAM, etc.). 
@@ -385,30 +400,41 @@ serve(async (req) => {
 
     const systemPrompt = SALES_SYSTEM_PROMPT.replace('{TARGET_PROFILE}', profileLabels[target_profile] || target_profile);
 
-    const messages = [
+    // Build messages array - avoiding duplication
+    const messages: Array<{ role: string; content: string }> = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `CONTEXTO DE DATOS:\n\n${contextBlocks}` },
-      ...conversation_history,
-      { 
-        role: 'user', 
-        content: conversation_history.length === 0 
-          ? `Genera un análisis comercial inicial para ${issuerName}, dirigido a su ${profileLabels[target_profile]}. Recuerda: lenguaje resultadista, sin acrónimos, con ejemplos y analogías.`
-          : conversation_history[conversation_history.length - 1]?.content || 'Continúa con el análisis.'
-      },
     ];
 
-    // 9. Stream response from GPT-5 via Lovable AI Gateway with low temperature
+    // Add conversation history OR initial prompt (not both)
+    if (conversation_history.length === 0) {
+      messages.push({ 
+        role: 'user', 
+        content: `Genera un análisis comercial inicial para ${issuerName}, dirigido a su ${profileLabels[target_profile]}. 
+
+IMPORTANTE: Redacta en prosa ejecutiva con frases completas, párrafos desarrollados de 3-4 oraciones, y conectores argumentativos. Evita el estilo telegráfico. Cada idea debe estar completamente desarrollada antes de pasar a la siguiente.
+
+Recuerda: lenguaje resultadista, sin acrónimos técnicos, con ejemplos y analogías que un ejecutivo pueda entender inmediatamente.`
+      });
+    } else {
+      // Add full conversation history (already includes the latest user message)
+      messages.push(...conversation_history);
+    }
+
+    // 9. Stream response from Gemini via Lovable AI Gateway with temperature for quality
     const aiGatewayUrl = 'https://ai.gateway.lovable.dev/v1/chat/completions';
     
     const response = await fetch(aiGatewayUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-5',
+        model: 'google/gemini-2.5-pro',
         messages,
-        max_completion_tokens: 6000,
+        max_tokens: 6000,
+        temperature: 0.4,
         stream: true,
       }),
     });

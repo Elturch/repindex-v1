@@ -117,6 +117,7 @@ export const SalesIntelligencePanel: React.FC = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [messageRatings, setMessageRatings] = useState<Record<number, number>>({});
   const [rixQuestions, setRixQuestions] = useState<string[]>([]);
+  const [followUpInput, setFollowUpInput] = useState('');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -679,39 +680,71 @@ ${lastAssistant.content
               <div ref={messagesEndRef} />
             </ScrollArea>
 
-            {/* Quick Actions */}
+            {/* Follow-up Input and Quick Actions */}
             {messages.some(m => m.role === 'assistant') && !isLoading && (
-              <div className="mt-4 pt-4 border-t">
-                <Label className="text-xs text-muted-foreground mb-2 block">Acciones rápidas</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handleFollowUp('Hazlo más agresivo comercialmente, con más urgencia')}
-                  >
-                    🎯 Más agresivo
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handleFollowUp('Reformatea esto como un email ejecutivo de 3 párrafos')}
-                  >
-                    ✉️ Formato email
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handleFollowUp('Añade más datos comparativos con los competidores')}
-                  >
-                    📊 Más competidores
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handleFollowUp('Resume en 3 bullet points clave')}
-                  >
-                    📝 Resumir
-                  </Button>
+              <div className="mt-4 pt-4 border-t space-y-4">
+                {/* Free-text follow-up input */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Escribe tu pregunta o indicación</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={followUpInput}
+                      onChange={(e) => setFollowUpInput(e.target.value)}
+                      placeholder="Ej: Profundiza en el tema de controversias ESG..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && followUpInput.trim()) {
+                          handleFollowUp(followUpInput);
+                          setFollowUpInput('');
+                        }
+                      }}
+                    />
+                    <Button 
+                      onClick={() => {
+                        if (followUpInput.trim()) {
+                          handleFollowUp(followUpInput);
+                          setFollowUpInput('');
+                        }
+                      }}
+                      disabled={!followUpInput.trim()}
+                    >
+                      Enviar
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">O elige una acción rápida</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleFollowUp('Hazlo más agresivo comercialmente, con más urgencia')}
+                    >
+                      🎯 Más agresivo
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleFollowUp('Reformatea esto como un email ejecutivo de 3 párrafos')}
+                    >
+                      ✉️ Formato email
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleFollowUp('Añade más datos comparativos con los competidores')}
+                    >
+                      📊 Más competidores
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => handleFollowUp('Resume en 3 bullet points clave')}
+                    >
+                      📝 Resumir
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
