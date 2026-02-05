@@ -1,185 +1,184 @@
 
-# Auditoría de Registro de Usuarios - RepIndex
+# Plan: Sistema de Captura de Leads con Consentimiento GDPR
 
-## Resumen del Problema
+## Objetivo
+Cuando alguien intenta acceder con un email no registrado, en lugar de solo rechazarlos, les ofrecemos la opción de dar su consentimiento para ser contactados. Esto crea un funnel de captación de usuarios interesados con consentimiento explícito (GDPR compliant).
 
-He identificado **un bug crítico de seguridad** que permite a cualquier persona registrarse en RepIndex sin ser invitada por un administrador.
-
-## Evidencia del Bug
-
-### 1. Análisis de los 38 usuarios registrados
-
-| Métrica | Valor |
-|---------|-------|
-| Total usuarios en `auth.users` | 38 |
-| Total perfiles en `user_profiles` | 38 |
-| Usuarios con evento `user_invited` en logs | **Solo 1** (chloe.clavell.r@gmail.com) |
-| Resto de usuarios | Sin registro de invitación (auto-registro vía OTP) |
-
-### 2. Flujo del Bug
+## Flujo de Usuario Propuesto
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     FLUJO ACTUAL (CON BUG)                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  Usuario desconocido                                                        │
-│         │                                                                   │
-│         ▼                                                                   │
-│  /login → Introduce email                                                   │
-│         │                                                                   │
-│         ▼                                                                   │
-│  signInWithOtp(email)                                                       │
-│         │                                                                   │
-│         ├──▶ Usuario NO existe en auth.users                                │
-│         │         │                                                         │
-│         │         ▼                                                         │
-│         │    Supabase CREA el usuario automáticamente    ◀── BUG           │
-│         │         │                                                         │
-│         │         ▼                                                         │
-│         │    Trigger "handle_new_user" crea perfil                          │
-│         │         │                                                         │
-│         │         ▼                                                         │
-│         │    Envía magic link                                               │
-│         │                                                                   │
-│         ▼                                                                   │
-│  Usuario accede sin haber sido invitado                                     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+Usuario no registrado intenta login
+         │
+         ▼
+  Email no está en user_profiles
+         │
+         ▼
+  ┌──────────────────────────────────────┐
+  │  "Tu correo no está en la base de    │
+  │   datos de RepIndex.                 │
+  │                                      │
+  │   ¿Nos autorizas a contactar         │
+  │   contigo para darte acceso?"        │
+  │                                      │
+  │   [Sí, contactadme]  [No, gracias]   │
+  └──────────────────────────────────────┘
+         │
+    ┌────┴────┐
+    │         │
+  "Sí"      "No"
+    │         │
+    ▼         ▼
+  Guarda    Guarda email
+  con       SIN consentimiento
+  consent   (solo para stats)
+    │         │
+    ▼         ▼
+  "¡Gracias!   "Entendido.
+   Te          Contacta con
+   contactaremos tu administrador."
+   pronto."
 ```
 
-### 3. Causa Raíz
+## Componentes a Crear/Modificar
 
-El método `signInWithOtp()` de Supabase tiene un comportamiento por defecto problemático:
-- Si el email **no existe**, **crea el usuario automáticamente** y le envía el OTP
-- No hay validación previa que compruebe si el email está pre-autorizado
+### 1. Nueva Tabla: `interested_leads`
 
-El comentario en `AuthContext.tsx` (línea 187-188) lo reconoce:
+Campos:
+- `id` (uuid, PK)
+- `email` (text, único)
+- `contact_consent` (boolean) - Si autorizó contacto
+- `consent_date` (timestamp) - Cuándo dio/negó consentimiento
+- `ip_address` (text, nullable) - Para auditoría GDPR
+- `user_agent` (text, nullable) - Para analytics
+- `source` (text) - "login_attempt"
+- `status` (text) - "pending", "contacted", "converted", "rejected"
+- `admin_notes` (text, nullable)
+- `contacted_at` (timestamp, nullable)
+- `converted_at` (timestamp, nullable) - Si se convirtió en user_profile
+- `created_at` (timestamp)
+
+### 2. Modificar Login.tsx
+
+Añadir un nuevo estado `notRegistered` que muestre:
+- Mensaje explicativo amigable
+- Checkbox de consentimiento de contacto
+- Botones de "Sí" / "No"
+- Mensaje de confirmación tras la acción
+
+### 3. Modificar AuthContext.tsx
+
+La función `sendMagicLink` ahora retornará un objeto más rico:
 ```typescript
-// First check if the email exists in user_profiles
-// Note: This is a soft check - the actual validation happens server-side
-```
-
-**Pero el "check" nunca se implementó.**
-
-## Solución Propuesta
-
-### Opción A: Validación en el Frontend + Backend (Recomendada)
-
-Añadir validación antes de llamar a `signInWithOtp`:
-
-**1. Modificar `AuthContext.tsx`:**
-```typescript
-const sendMagicLink = async (email: string): Promise<{ error: string | null }> => {
-  try {
-    // Verificar si el email existe en user_profiles ANTES de pedir OTP
-    const { data: existingProfile, error: checkError } = await supabase
-      .from('user_profiles')
-      .select('id, is_active')
-      .eq('email', email.toLowerCase())
-      .maybeSingle();
-
-    if (checkError) {
-      console.error('Error checking profile:', checkError);
-      return { error: 'Error verificando el email. Inténtalo de nuevo.' };
-    }
-
-    // Si no existe perfil, rechazar
-    if (!existingProfile) {
-      return { error: 'Email no registrado. Contacta con el administrador.' };
-    }
-
-    // Si existe pero está desactivado, rechazar
-    if (!existingProfile.is_active) {
-      return { error: 'Tu cuenta está desactivada. Contacta con el administrador.' };
-    }
-
-    // Solo ahora enviar el OTP
-    const redirectUrl = `${window.location.origin}/dashboard`;
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: redirectUrl,
-        shouldCreateUser: false, // CRÍTICO: previene auto-registro
-      },
-    });
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    return { error: null };
-  } catch (error) {
-    console.error('Error sending magic link:', error);
-    return { error: 'Error al enviar el enlace. Inténtalo de nuevo.' };
-  }
-};
-```
-
-**2. Añadir `shouldCreateUser: false`** en la llamada OTP (esto es clave)
-
-**3. Reforzar `ProtectedRoute.tsx`** para requerir perfil activo:
-```typescript
-// Cambiar la condición actual:
-if (profile && !profile.is_active) { ... }
-
-// Por esta más estricta:
-if (!profile || !profile.is_active) {
-  // Cerrar sesión y redirigir
+type MagicLinkResult = {
+  error: string | null;
+  notRegistered?: boolean; // Email no existe
+  email?: string; // Para pasar al modal de consentimiento
 }
 ```
 
-### Opción B: Configuración en Supabase Dashboard (Complementaria)
+### 4. Nuevo Panel en Admin: `InterestedLeadsPanel.tsx`
 
-Adicionalmente, en el Dashboard de Supabase:
+Mostrar tabla con:
+- Email del lead
+- Fecha de intento
+- ¿Dio consentimiento? (Sí/No con badge de color)
+- Estado (Pendiente, Contactado, Convertido, Rechazado)
+- Acciones:
+  - "Invitar" → Crea user_profile + envía magic link
+  - "Marcar como contactado"
+  - "Rechazar"
+  - "Añadir nota"
 
-1. Ir a **Authentication → Providers → Email**
-2. **Desactivar** "Confirm email" si no se necesita verificación
-3. O bien, en **Authentication → Settings**, asegurar que el registro esté controlado
+Métricas:
+- Total de intentos de login fallidos
+- % con consentimiento vs sin consentimiento
+- Tasa de conversión (leads → usuarios)
 
-## Usuarios Actuales a Revisar
+### 5. RLS Policies
 
-Dado que la mayoría de los 38 usuarios se registraron sin invitación formal, recomiendo:
+- SELECT: Solo admins
+- INSERT: Público (desde login)
+- UPDATE/DELETE: Solo admins
 
-1. **Auditar la lista** de usuarios en `/admin` 
-2. **Desactivar** (`is_active = false`) a los que no reconozcas
-3. **Re-invitar** a los legítimos usando el botón "Enviar Magic Link" para que tengan el flujo correcto
+## Sección Tecnica
 
-## Impacto de la Solución
+### Migración SQL
 
-| Aspecto | Antes | Después |
-|---------|-------|---------|
-| Registro no autorizado | Posible | Bloqueado |
-| Flujo de login | Sin validación | Valida perfil pre-existente |
-| Experiencia de usuario | Igual | Igual (solo cambia mensaje de error) |
-| Usuarios existentes | Sin cambios | Pueden seguir accediendo |
+```sql
+CREATE TABLE public.interested_leads (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text NOT NULL,
+  contact_consent boolean NOT NULL DEFAULT false,
+  consent_date timestamptz NOT NULL DEFAULT now(),
+  ip_address text,
+  user_agent text,
+  source text NOT NULL DEFAULT 'login_attempt',
+  status text NOT NULL DEFAULT 'pending',
+  admin_notes text,
+  contacted_at timestamptz,
+  converted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT interested_leads_email_key UNIQUE (email)
+);
 
-## Sección Técnica
+-- RLS
+ALTER TABLE public.interested_leads ENABLE ROW LEVEL SECURITY;
 
-### Archivos a modificar:
+-- Anyone can insert (from login page)
+CREATE POLICY "Public can insert leads" ON public.interested_leads
+  FOR INSERT WITH CHECK (true);
 
-1. **`src/contexts/AuthContext.tsx`**
-   - Añadir consulta previa a `user_profiles`
-   - Añadir `shouldCreateUser: false` a `signInWithOtp`
-   - Validar `is_active` antes de enviar OTP
+-- Only admins can read
+CREATE POLICY "Admins can view leads" ON public.interested_leads
+  FOR SELECT USING (has_role(auth.uid(), 'admin'::app_role));
 
-2. **`src/components/auth/ProtectedRoute.tsx`**
-   - Cambiar condición para requerir perfil existente Y activo
-   - Añadir cierre de sesión automático si el perfil no existe
+-- Only admins can update
+CREATE POLICY "Admins can update leads" ON public.interested_leads
+  FOR UPDATE USING (has_role(auth.uid(), 'admin'::app_role));
 
-3. **(Opcional) `src/lib/env.ts`**
-   - Considerar restringir el bypass solo a `localhost` para mayor seguridad
+-- Only admins can delete
+CREATE POLICY "Admins can delete leads" ON public.interested_leads
+  FOR DELETE USING (has_role(auth.uid(), 'admin'::app_role));
 
-### Consideraciones de RLS
+-- Index for quick lookups
+CREATE INDEX idx_interested_leads_email ON public.interested_leads(email);
+CREATE INDEX idx_interested_leads_status ON public.interested_leads(status);
+```
 
-La tabla `user_profiles` ya tiene políticas RLS que permiten lectura pública del propio perfil. La consulta de verificación funcionará porque:
-- Usamos el cliente anónimo para verificar existencia
-- Solo necesitamos saber si el email existe, no datos sensibles
+### Archivos a Modificar
 
-### Configuración Supabase Recomendada
+1. **`src/pages/Login.tsx`**
+   - Añadir estados: `showConsentModal`, `consentGiven`, `leadSaved`
+   - Nuevo componente inline o modal para solicitar consentimiento
+   - Función para guardar lead en Supabase
 
-En el Dashboard de Supabase (Authentication → URL Configuration):
-- Site URL: `https://repindex-v1.lovable.app`
-- Redirect URLs: 
-  - `https://repindex-v1.lovable.app/**`
-  - `https://id-preview--bc807963-c063-4e58-b3fe-21a2a28cd8bf.lovable.app/**`
+2. **`src/contexts/AuthContext.tsx`**
+   - Modificar retorno de `sendMagicLink` para incluir `notRegistered: true`
+   - No guardar el lead aquí (eso lo hace Login.tsx tras la respuesta del usuario)
+
+3. **`src/components/admin/InterestedLeadsPanel.tsx`** (NUEVO)
+   - Tabla con leads
+   - Filtros por estado y consentimiento
+   - Acciones de admin
+   - Métricas de conversión
+
+4. **`src/pages/Admin.tsx`**
+   - Importar y añadir tab "Leads" con `InterestedLeadsPanel`
+
+5. **`supabase/functions/admin-api/index.ts`**
+   - Añadir acciones: `list_leads`, `update_lead`, `convert_lead_to_user`
+
+### Flujo de Conversión Lead → Usuario
+
+Cuando el admin hace click en "Invitar":
+1. Crea registro en `user_profiles` con los datos del lead
+2. Envía magic link al email
+3. Actualiza `interested_leads.status = 'converted'`
+4. Actualiza `interested_leads.converted_at = now()`
+
+### Consideraciones GDPR
+
+- Guardamos fecha exacta del consentimiento
+- Diferenciamos claramente entre quienes consintieron y quienes no
+- Los que NO consintieron se guardan solo para estadísticas internas (sin contacto)
+- Botón para eliminar lead por completo si lo solicitan
