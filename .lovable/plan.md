@@ -1,225 +1,123 @@
 
-# Plan: Sistema de Cualificación de Leads con Formulario por Email
 
-## Resumen Ejecutivo
+# Plan: Envío Automático del Formulario de Cualificación al Consentir
 
-Transformar la conversión de leads en un proceso de cualificación en dos pasos:
-1. El lead recibe un **formulario de cualificación por email** (no se convierte directamente)
-2. Solo se convierte a usuario cuando rellena el formulario **desde un email corporativo**
+## Resumen
+
+Cuando un lead no registrado da su consentimiento en la página de login, el sistema enviará automáticamente el formulario de cualificación por email, sin intervención del administrador.
 
 ---
 
-## Flujo Completo
+## Flujo Propuesto
 
 ```text
-Lead en panel Admin (status: pending)
+Usuario intenta login → Email no registrado
          │
          ▼
-Admin hace clic en "Enviar Formulario de Cualificación"
-         │
-         ▼
-┌──────────────────────────────────────────────────────┐
-│  Email al lead con enlace a formulario               │
-│  (válido 7 días, con token único)                    │
-└──────────────────────────────────────────────────────┘
-         │
-         ▼
-Lead abre el enlace → Página de formulario público
+  Pantalla de consentimiento
          │
     ┌────┴────────────────────────────┐
     │                                  │
-Email corporativo?              Gmail/Hotmail/Yahoo?
+"Sí, contactadme"              "No, gracias"
     │                                  │
     ▼                                  ▼
-Formulario completo:           Email de rechazo amable:
-- Empresas de interés          "Por favor, contacta desde
-- Perfil/Rol                    un email corporativo"
-- Sectores
+save-interested-lead              Solo guardar lead
+  + send-qualification-form       status: pending
     │
     ▼
-Envío → Datos guardados + Email a info@repindex.ai
-         │
-         ▼
-Admin ve respuesta en panel → Puede convertir a usuario
+Email corporativo?
+    │
+┌───┴───────────────────────┐
+│                           │
+SÍ                          NO
+│                           │
+▼                           ▼
+Recibe formulario      Recibe email de rechazo
+de cualificación       amable (usa email corporativo)
 ```
 
 ---
 
-## Nuevos Componentes
+## Cambios Técnicos
 
-### 1. Base de Datos
+### 1. Modificar `save-interested-lead/index.ts`
 
-**Nueva tabla: `lead_qualification_responses`**
+Cuando `contact_consent = true`:
+1. Guardar el lead como siempre
+2. Llamar internamente a la lógica de `send-qualification-form`
+3. Enviar el email correspondiente (formulario o rechazo)
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| id | uuid | Primary key |
-| lead_id | uuid | FK a interested_leads |
-| token | text | Token único para el formulario (expira en 7 días) |
-| token_expires_at | timestamp | Fecha de expiración |
-| companies_interested | text[] | Array de tickers seleccionados |
-| sectors_interested | text[] | Array de sectores |
-| role_type | text | Perfil seleccionado (CEO, CFO, DirCom, etc.) |
-| additional_notes | text | Comentarios libres |
-| email_domain | text | Dominio del email (para matching) |
-| is_corporate_email | boolean | true si no es gmail/hotmail/etc |
-| contactability_score | integer | Puntuación 0-100 |
-| submitted_at | timestamp | Cuándo rellenó el formulario |
-| form_sent_at | timestamp | Cuándo se envió el email con el formulario |
+**Ventajas de integrar la lógica en un solo Edge Function:**
+- Una sola llamada desde el frontend
+- Transacción atómica (guardar + enviar)
+- Menos latencia para el usuario
 
-**Añadir columnas a `interested_leads`**
+### 2. Actualizar el mensaje de confirmación en Login.tsx
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| qualification_status | text | 'pending', 'form_sent', 'form_completed', 'rejected_email' |
-| qualification_score | integer | Score calculado de contactabilidad |
+Cuando el lead da consentimiento y es email corporativo:
+- "¡Gracias! Te hemos enviado un email con un formulario para personalizar tu experiencia."
 
----
+Cuando es email no corporativo:
+- "Gracias por tu interés. Te hemos enviado un email con más información."
 
-### 2. Edge Functions
+### 3. Respuesta mejorada del Edge Function
 
-**A) `send-qualification-form`**
-- Genera token único + enlace al formulario
-- Valida si el email es corporativo
-  - Si es gmail/hotmail/yahoo: envía email de rechazo amable
-  - Si es corporativo: envía email con enlace al formulario
-- Guarda registro en `lead_qualification_responses`
-
-**B) `submit-qualification-form`**
-- Recibe datos del formulario público
-- Valida token (no expirado, no usado)
-- Calcula `contactability_score`:
-  - +30 puntos si el dominio del email coincide con alguna empresa de interés
-  - +20 puntos por cada sector coincidente con empresas de interés
-  - +10 puntos por perfil directivo (CEO, CFO, DirCom)
-  - +20 puntos si es email corporativo
-- Guarda respuesta y actualiza `interested_leads.qualification_status`
-- Envía email a `info@repindex.ai` con todos los datos
-
----
-
-### 3. Página de Formulario Público
-
-**Nueva página: `/qualification/:token`**
-
-Formulario con:
-- **Empresas de interés** (multiselect con búsqueda, datos de `repindex_root_issuers`)
-- **Sectores de interés** (checkboxes con los 21 sectores disponibles)
-- **Tipo de perfil** (select con los roles de `chatRoles.ts`: CEO, CFO, DirCom, Marketing, etc.)
-- **Comentarios adicionales** (textarea opcional)
-- Botón de envío
-
-Si el token es inválido o expirado: mensaje de "Enlace expirado, contacta con info@repindex.ai"
-
----
-
-### 4. Panel Admin Actualizado
-
-**Nuevas acciones en InterestedLeadsPanel:**
-- Botón **"Enviar Formulario"** (en lugar de conversión directa)
-- Nuevo estado visual **"Formulario Enviado"** (azul)
-- Nuevo estado visual **"Cualificado"** (verde con score)
-- Nuevo estado visual **"Email Rechazado"** (naranja)
-- Al hacer clic en un lead cualificado: ver respuestas del formulario
-- Solo permitir "Convertir a Usuario" si `qualification_status = 'form_completed'`
-
----
-
-### 5. Templates de Email
-
-**A) Email con Formulario de Cualificación**
-
-Asunto: "Tu acceso a RepIndex - Un paso más"
-
-Contenido:
-- Saludo personalizado
-- Explicación breve de RepIndex
-- Enlace al formulario
-- Nota de expiración (7 días)
-
-**B) Email de Rechazo Amable (email no corporativo)**
-
-Asunto: "Sobre tu interés en RepIndex"
-
-Contenido:
-- Saludo
-- "Hemos recibido tu solicitud desde [email]"
-- "Para poder ofrecerte el mejor servicio, necesitamos que nos contactes desde tu email corporativo"
-- "Esto nos permite personalizar los informes para tu empresa"
-- CTA: "Contactar desde email corporativo" → mailto:info@repindex.ai
-
-**C) Email de Notificación al Admin**
-
-Asunto: "[Cualificación Completada] {email} - Score: {score}"
-
-Contenido:
-- Datos del lead
-- Respuestas del formulario
-- Score de contactabilidad con explicación
-- Enlace al panel admin
-
----
-
-## Dominios de Email No Corporativos
-
-Lista de dominios a rechazar:
-```text
-gmail.com, googlemail.com, hotmail.com, hotmail.es, outlook.com, 
-outlook.es, yahoo.com, yahoo.es, live.com, icloud.com, me.com,
-protonmail.com, proton.me, aol.com, mail.com, gmx.com, gmx.es,
-yandex.com, zoho.com, tutanota.com
+La función devolverá información sobre el resultado:
+```json
+{
+  "ok": true,
+  "leadId": "uuid",
+  "qualificationSent": true,
+  "isCorporateEmail": true,
+  "message": "Formulario enviado"
+}
 ```
 
 ---
 
-## Cálculo del Score de Contactabilidad
+## Archivos a Modificar
+
+| Archivo | Cambios |
+|---------|---------|
+| `supabase/functions/save-interested-lead/index.ts` | Integrar lógica de envío de email cuando `contact_consent = true` |
+| `src/pages/Login.tsx` | Actualizar mensajes de confirmación basados en respuesta del backend |
+
+---
+
+## Detalles Técnicos
+
+### `save-interested-lead/index.ts` - Nueva Lógica
 
 ```text
-Base: 0 puntos
-
-+30 si email.domain coincide con alguna empresa de interés (ej: bbva.com → BBVA)
-+20 por cada sector elegido que coincida con empresas de interés
-+10 si perfil es directivo (CEO, CFO, DirCom, etc.)
-+20 si es email corporativo
-+10 si rellena comentarios adicionales
-
-Máximo: 100 puntos
+1. Validar payload
+2. Guardar lead con upsert
+3. SI contact_consent === true:
+   a. Verificar si email es corporativo
+   b. Generar token único (7 días expiración)
+   c. Crear registro en lead_qualification_responses
+   d. SI corporativo → enviar email con formulario
+   e. SI no corporativo → enviar email de rechazo amable
+   f. Actualizar qualification_status del lead
+4. Devolver resultado con información del envío
 ```
 
-**Umbrales:**
-- 70+: Alta prioridad (contactar pronto)
-- 40-69: Media prioridad
-- <40: Baja prioridad
+### Login.tsx - Mensajes Actualizados
+
+```text
+SI leadSaved === 'consent' && data.isCorporateEmail:
+  "¡Gracias! Revisa tu correo para completar un breve formulario 
+   y personalizar tu acceso a RepIndex."
+
+SI leadSaved === 'consent' && !data.isCorporateEmail:
+  "Gracias por tu interés. Te hemos enviado información sobre 
+   cómo acceder desde tu email corporativo."
+```
 
 ---
 
-## Archivos a Crear/Modificar
+## Resultado Esperado
 
-| Archivo | Acción |
-|---------|--------|
-| `supabase/migrations/xxx_lead_qualification.sql` | Nueva tabla + columnas |
-| `supabase/functions/send-qualification-form/index.ts` | Envío del email con formulario |
-| `supabase/functions/submit-qualification-form/index.ts` | Procesamiento del formulario |
-| `src/pages/Qualification.tsx` | Formulario público |
-| `src/components/admin/InterestedLeadsPanel.tsx` | Nuevos estados y acciones |
-| `src/App.tsx` | Nueva ruta `/qualification/:token` |
-| `src/lib/corporateEmailDomains.ts` | Lista de dominios no corporativos |
+1. Usuario da consentimiento → Recibe email inmediatamente (sin esperar a admin)
+2. Admin ve el lead ya con estado "form_sent" o "rejected_email"
+3. Solo cuando el lead complete el formulario, admin puede convertirlo a usuario
 
----
-
-## Seguridad
-
-- Los tokens del formulario expiran en 7 días
-- El formulario solo acepta un envío por token
-- RLS en la nueva tabla para que solo service_role pueda escribir
-- Validación de entrada en el formulario (máx caracteres, etc.)
-- Rate limiting en el endpoint de submit
-
----
-
-## Preguntas Resueltas
-
-**¿Se puede hacer con Resend?** ✅ Sí
-- Resend envía los emails (formulario, rechazo, notificación)
-- El formulario es una página en la app (no necesita Resend)
-- Al enviar el formulario, se notifica vía Resend a info@repindex.ai
