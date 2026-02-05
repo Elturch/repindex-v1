@@ -18,13 +18,14 @@ import {
   Database,
   Users,
   Star,
-  Presentation,
   MessageSquare,
+  Download,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownMessage } from '@/components/ui/markdown-message';
+import pptxgen from 'pptxgenjs';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -83,10 +84,12 @@ const StarRating = ({
   );
 };
 
-// Extract Rix Questions from response
+// Extract Rix Questions from response - updated patterns for "Preguntas imposibles"
 const extractRixQuestions = (content: string): string[] => {
-  // Look for the evidence questions section
+  // Look for the evidence questions section with new format
   const patterns = [
+    /📊\s*\*\*Preguntas que solo puedes hacer con RepIndex:\*\*[\s\S]*?((?:\d\.\s*"[^"]+"\s*→[^"]*)+)/i,
+    /Preguntas.*RepIndex[\s\S]*?((?:\d\.\s*"[^"]+"\s*)+)/i,
     /Evidencias para anexar[\s\S]*?((?:\d\.\s*"[^"]+"\s*)+)/i,
     /Preguntas.*Agente Rix[\s\S]*?((?:\d\.\s*"[^"]+"\s*)+)/i,
     /📋[\s\S]*?((?:\d\.\s*"[^"]+"\s*)+)/i,
@@ -269,7 +272,8 @@ export const SalesIntelligencePanel: React.FC = () => {
     handleSubmit(action);
   };
 
-  const handleGeneratePresentation = () => {
+  // Generate real PPTX using pptxgenjs
+  const generatePPTX = async () => {
     if (highRatedCount === 0) {
       toast({ 
         title: 'Sin contenido valorado', 
@@ -278,8 +282,144 @@ export const SalesIntelligencePanel: React.FC = () => {
       });
       return;
     }
-    handleSubmit(`Genera la presentación PowerPoint usando las ${highRatedCount} respuestas mejor valoradas de nuestra conversación. Incluye las preguntas para el Agente Rix al final.`);
+
+    try {
+      const pres = new pptxgen();
+      
+      // Configure RepIndex theme
+      pres.layout = 'LAYOUT_WIDE';
+      pres.author = 'RepIndex';
+      pres.title = `Propuesta Comercial - ${metadata?.company || 'Empresa'}`;
+      pres.subject = 'Análisis de Percepción Algorítmica';
+      pres.company = 'RepIndex';
+      
+      // Colors
+      const PURPLE = '7C3AED';
+      const DARK_GRAY = '1F2937';
+      const LIGHT_GRAY = '6B7280';
+      // Slide 1: Cover
+      const slide1 = pres.addSlide();
+      slide1.addText('RepIndex', { 
+        x: 8.5, y: 0.3, w: 1.5, h: 0.5, 
+        fontSize: 14, fontFace: 'Inter', color: PURPLE, bold: true 
+      });
+      slide1.addText(metadata?.company || 'Empresa', { 
+        x: 0.5, y: 2, w: 9, h: 1.5, 
+        fontSize: 44, fontFace: 'Inter', color: PURPLE, bold: true 
+      });
+      slide1.addText('Análisis de Percepción Algorítmica', { 
+        x: 0.5, y: 3.5, w: 9, h: 0.8, 
+        fontSize: 24, fontFace: 'Inter', color: DARK_GRAY 
+      });
+      slide1.addText(`Dirigido a: ${PROFILE_CONFIG[selectedProfile].label}`, { 
+        x: 0.5, y: 4.3, w: 9, h: 0.5, 
+        fontSize: 16, fontFace: 'Inter', color: LIGHT_GRAY, italic: true 
+      });
+      slide1.addText(`${metadata?.sectorCategory || 'Sector'}`, { 
+        x: 0.5, y: 4.9, w: 9, h: 0.4, 
+        fontSize: 14, fontFace: 'Inter', color: LIGHT_GRAY 
+      });
+      
+      // Get high-rated messages
+      const highRatedMessages = messages
+        .map((msg, idx) => ({ msg, idx }))
+        .filter(({ msg, idx }) => msg.role === 'assistant' && messageRatings[idx] >= 4);
+      
+      // Add content slides
+      highRatedMessages.forEach(({ msg }, i) => {
+        const slide = pres.addSlide();
+        
+        // Header
+        slide.addText(`Insight ${i + 1}`, { 
+          x: 0.5, y: 0.3, w: 2, h: 0.4, 
+          fontSize: 12, fontFace: 'Inter', color: PURPLE, bold: true 
+        });
+        slide.addShape('rect', { 
+          x: 0.5, y: 0.7, w: 9, h: 0.02, 
+          fill: { color: PURPLE } 
+        });
+        
+        // Content - clean markdown for slides
+        const cleanContent = msg.content
+          .replace(/#{1,3}\s*/g, '')
+          .replace(/\*\*/g, '')
+          .replace(/\*/g, '')
+          .replace(/📊.*$/gm, '')
+          .replace(/→.*$/gm, '')
+          .slice(0, 1500);
+        
+        slide.addText(cleanContent, {
+          x: 0.5, y: 1, w: 9, h: 4.5,
+          fontSize: 13, fontFace: 'Inter', color: DARK_GRAY,
+          valign: 'top', breakLine: true
+        });
+        
+        // Footer
+        slide.addText('RepIndex | Radar Reputacional', { 
+          x: 0.5, y: 5.2, w: 4, h: 0.3, 
+          fontSize: 9, fontFace: 'Inter', color: LIGHT_GRAY 
+        });
+      });
+      
+      // Add Rix Questions slide if we have questions
+      if (rixQuestions.length > 0) {
+        const questionsSlide = pres.addSlide();
+        questionsSlide.addText('Preguntas para el Agente Rix', { 
+          x: 0.5, y: 0.3, w: 9, h: 0.6, 
+          fontSize: 24, fontFace: 'Inter', color: PURPLE, bold: true 
+        });
+        questionsSlide.addText('Evidencias para anexar a la propuesta', { 
+          x: 0.5, y: 0.9, w: 9, h: 0.4, 
+          fontSize: 14, fontFace: 'Inter', color: LIGHT_GRAY, italic: true 
+        });
+        
+        rixQuestions.forEach((q, i) => {
+          questionsSlide.addText(`${i + 1}. "${q}"`, { 
+            x: 0.5, y: 1.5 + (i * 0.9), w: 9, h: 0.8, 
+            fontSize: 14, fontFace: 'Inter', color: DARK_GRAY,
+            bullet: false
+          });
+        });
+      }
+      
+      // CTA Slide
+      const ctaSlide = pres.addSlide();
+      ctaSlide.addShape('rect', { 
+        x: 1.5, y: 2, w: 7, h: 2, 
+        fill: { color: PURPLE },
+        rectRadius: 0.2
+      });
+      ctaSlide.addText('Siguiente paso', { 
+        x: 1.5, y: 2.2, w: 7, h: 0.6, 
+        fontSize: 18, fontFace: 'Inter', color: 'FFFFFF', align: 'center' 
+      });
+      ctaSlide.addText('Demo personalizada', { 
+        x: 1.5, y: 2.8, w: 7, h: 0.8, 
+        fontSize: 28, fontFace: 'Inter', color: 'FFFFFF', align: 'center', bold: true 
+      });
+      ctaSlide.addText('www.repindex.ai', { 
+        x: 1.5, y: 4.5, w: 7, h: 0.5, 
+        fontSize: 16, fontFace: 'Inter', color: PURPLE, align: 'center' 
+      });
+      
+      // Download
+      await pres.writeFile({ fileName: `RepIndex_${metadata?.company || 'Propuesta'}_${new Date().toISOString().slice(0,10)}.pptx` });
+      
+      toast({ 
+        title: '✅ PPTX generado', 
+        description: `Presentación con ${highRatedMessages.length} slides descargada` 
+      });
+      
+    } catch (error) {
+      console.error('[PPTX Generation] Error:', error);
+      toast({ 
+        title: 'Error', 
+        description: 'No se pudo generar el archivo PPTX', 
+        variant: 'destructive' 
+      });
+    }
   };
+
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -539,15 +679,14 @@ ${lastAssistant.content
                 )}
               </Button>
 
-              {/* Generate Presentation Button - Only when there are high-rated responses */}
+              {/* Download PPTX Button - Only when there are high-rated responses */}
               {highRatedCount > 0 && !isLoading && (
                 <Button 
-                  onClick={handleGeneratePresentation}
-                  variant="outline"
-                  className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
+                  onClick={generatePPTX}
+                  className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900"
                 >
-                  <Presentation className="h-4 w-4 mr-2" />
-                  Crear Presentación ({highRatedCount} ⭐)
+                  <Download className="h-4 w-4 mr-2" />
+                  Descargar PPTX ({highRatedCount} slides)
                 </Button>
               )}
               
