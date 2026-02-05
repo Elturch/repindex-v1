@@ -4,6 +4,7 @@ export interface HeroSlideData {
   slideType: 'hero';
   headline: string;
   subheadline?: string;
+  company_name?: string; // Company being analyzed - displayed prominently
 }
 
 export interface ContentSlideData {

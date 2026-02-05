@@ -1,4 +1,5 @@
-// RepIndex PPTX Designer - B/W Professional Design System
+// RepIndex PPTX Designer - B/W Professional Design System v2.0
+// Improved framing, proportions, and visual harmony
 import pptxgen from 'pptxgenjs';
 import type {
   SlideDesign,
@@ -13,11 +14,15 @@ import type {
   CTASlideData,
 } from './pptxTypes';
 
+// ============================================
+// DESIGN SYSTEM CONSTANTS - Golden Ratio Based
+// ============================================
+
 // RepIndex B/W Color Palette
 const COLORS = {
   black: '000000',
   white: 'FFFFFF',
-  grayDark: '1F2937',
+  grayDark: '1A1A1A',
   grayMid: '6B7280',
   grayLight: 'E5E7EB',
   grayBg: 'F9FAFB',
@@ -25,7 +30,48 @@ const COLORS = {
   red: 'EF4444',
 };
 
-// Base64 encoded logos (will be loaded from public folder)
+// Slide dimensions (16:9 LAYOUT_WIDE = 13.33" x 7.5")
+const SLIDE = {
+  width: 13.33,
+  height: 7.5,
+};
+
+// Golden ratio-based spacing system
+const SPACING = {
+  xs: 0.2,
+  sm: 0.35,
+  md: 0.5,
+  lg: 0.75,
+  xl: 1.0,
+  xxl: 1.5,
+};
+
+// Content margins and safe areas
+const LAYOUT = {
+  marginX: 0.6,
+  marginY: 0.5,
+  contentWidth: SLIDE.width - 1.2, // 12.13"
+  contentHeight: SLIDE.height - 1.0, // 6.5"
+  accentBarWidth: 0.15,
+  logoWidth: 2.0,
+  logoHeight: 0.55,
+  isotipoSize: 1.2,
+  footerY: SLIDE.height - 0.6,
+};
+
+// Typography scale
+const TYPOGRAPHY = {
+  hero: { size: 44, lineSpacing: 1.1 },
+  h1: { size: 32, lineSpacing: 1.15 },
+  h2: { size: 24, lineSpacing: 1.2 },
+  h3: { size: 18, lineSpacing: 1.25 },
+  body: { size: 14, lineSpacing: 1.4 },
+  small: { size: 12, lineSpacing: 1.3 },
+  caption: { size: 10, lineSpacing: 1.2 },
+  footer: { size: 9, lineSpacing: 1 },
+};
+
+// Logo paths
 const LOGO_PATHS = {
   logoBlack: '/pptx/repindex-logo-black.png',
   logoWhite: '/pptx/repindex-logo-white.png',
@@ -33,7 +79,10 @@ const LOGO_PATHS = {
   isotipoWhite: '/pptx/repindex-isotipo-white.png',
 };
 
-// Helper to convert image path to base64
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
 async function imageToBase64(path: string): Promise<string> {
   try {
     const response = await fetch(path);
@@ -50,72 +99,130 @@ async function imageToBase64(path: string): Promise<string> {
   }
 }
 
-// Define Slide Masters
+// Add common elements (logo, footer, accent)
+const addLogoTopRight = (slide: pptxgen.Slide, logo: string | undefined, isWhite: boolean) => {
+  if (logo) {
+    slide.addImage({
+      data: logo,
+      x: SLIDE.width - LAYOUT.logoWidth - LAYOUT.marginX,
+      y: LAYOUT.marginY,
+      w: LAYOUT.logoWidth,
+      h: LAYOUT.logoHeight,
+    });
+  } else {
+    slide.addText('RepIndex.ai', {
+      x: SLIDE.width - LAYOUT.logoWidth - LAYOUT.marginX,
+      y: LAYOUT.marginY,
+      w: LAYOUT.logoWidth,
+      h: LAYOUT.logoHeight,
+      fontSize: 14,
+      fontFace: 'Inter',
+      color: isWhite ? COLORS.white : COLORS.black,
+      bold: true,
+      align: 'right',
+    });
+  }
+};
+
+const addFooter = (slide: pptxgen.Slide, color: string = COLORS.grayMid) => {
+  slide.addText('www.repindex.ai', {
+    x: LAYOUT.marginX,
+    y: LAYOUT.footerY,
+    w: 3,
+    h: 0.3,
+    fontSize: TYPOGRAPHY.footer.size,
+    fontFace: 'Inter',
+    color,
+  });
+};
+
+const addAccentBar = (slide: pptxgen.Slide) => {
+  slide.addShape('rect', {
+    x: 0,
+    y: 0,
+    w: LAYOUT.accentBarWidth,
+    h: SLIDE.height,
+    fill: { color: COLORS.black },
+  });
+};
+
+// ============================================
+// SLIDE MASTERS
+// ============================================
+
 export const defineRepIndexMasters = (pres: pptxgen) => {
-  // Master: HERO_BLACK - Black background for impact slides
   pres.defineSlideMaster({
     title: 'HERO_BLACK',
     background: { color: COLORS.black },
   });
 
-  // Master: CONTENT_WHITE - White background for content slides  
   pres.defineSlideMaster({
     title: 'CONTENT_WHITE',
     background: { color: COLORS.white },
   });
 
-  // Master: DARK - Dark gray background for quotes
   pres.defineSlideMaster({
     title: 'DARK',
     background: { color: COLORS.grayDark },
   });
 };
 
-// Render HERO slide (black background, white text)
-export const renderHeroSlide = async (pres: pptxgen, data: HeroSlideData, logoBase64?: string, isotipoBase64?: string) => {
-  const slide = pres.addSlide({ masterName: 'HERO_BLACK' });
+// ============================================
+// SLIDE RENDERERS
+// ============================================
 
-  // Add isotipo as watermark in bottom right (large, subtle)
+// HERO SLIDE - Black background, company name prominent
+export const renderHeroSlide = async (
+  pres: pptxgen, 
+  data: HeroSlideData, 
+  logoBase64?: string, 
+  isotipoBase64?: string,
+  companyName?: string
+) => {
+  const slide = pres.addSlide({ masterName: 'HERO_BLACK' });
+  
+  // Use company_name from data or passed parameter
+  const company = data.company_name || companyName;
+
+  // Decorative isotipo - bottom right, large, very subtle
   if (isotipoBase64) {
+    const isoSize = 4;
     slide.addImage({
       data: isotipoBase64,
-      x: 6.5,
-      y: 2.5,
-      w: 3.5,
-      h: 3.5,
-      transparency: 85,
+      x: SLIDE.width - isoSize - SPACING.lg,
+      y: SLIDE.height - isoSize - SPACING.md,
+      w: isoSize,
+      h: isoSize,
+      transparency: 90,
     });
   }
 
-  // Logo in top right
-  if (logoBase64) {
-    slide.addImage({
-      data: logoBase64,
-      x: 8,
-      y: 0.3,
-      w: 1.8,
-      h: 0.5,
-    });
-  } else {
-    slide.addText('RepIndex.ai', {
-      x: 8,
-      y: 0.3,
-      w: 1.8,
-      h: 0.5,
+  // Logo top right
+  addLogoTopRight(slide, logoBase64, true);
+
+  // Company name - TOP, large, prominent (letter-spaced label style)
+  if (company) {
+    // Split characters for letter-spacing effect
+    const spacedName = company.toUpperCase().split('').join('  ');
+    slide.addText(spacedName, {
+      x: LAYOUT.marginX,
+      y: 1.8,
+      w: LAYOUT.contentWidth,
+      h: 0.8,
       fontSize: 14,
       fontFace: 'Inter',
-      color: COLORS.white,
-      bold: true,
+      color: COLORS.grayMid,
+      align: 'center',
     });
   }
 
   // Main headline - centered, large, white
   slide.addText(data.headline, {
-    x: 0.5,
-    y: 2,
-    w: 9,
-    h: 1.5,
-    fontSize: 40,
+    x: LAYOUT.marginX,
+    y: company ? 2.6 : 2.4,
+    w: LAYOUT.contentWidth,
+    h: 1.8,
+    fontSize: TYPOGRAPHY.hero.size,
     fontFace: 'Inter',
     color: COLORS.white,
     bold: true,
@@ -123,72 +230,56 @@ export const renderHeroSlide = async (pres: pptxgen, data: HeroSlideData, logoBa
     valign: 'middle',
   });
 
-  // Subheadline - smaller, gray
+  // Subheadline
   if (data.subheadline) {
     slide.addText(data.subheadline, {
-      x: 1,
-      y: 3.7,
-      w: 8,
+      x: 1.5,
+      y: 4.6,
+      w: SLIDE.width - 3,
       h: 0.8,
-      fontSize: 20,
+      fontSize: TYPOGRAPHY.h3.size,
       fontFace: 'Inter',
       color: COLORS.grayMid,
       align: 'center',
     });
   }
 
-  // Bottom line separator
+  // Elegant bottom line
   slide.addShape('line', {
-    x: 2,
-    y: 4.8,
-    w: 6,
+    x: (SLIDE.width - 4) / 2,
+    y: 5.8,
+    w: 4,
     h: 0,
     line: { color: COLORS.grayMid, width: 0.5 },
   });
+
+  // Footer
+  slide.addText('Análisis de Percepción Algorítmica', {
+    x: LAYOUT.marginX,
+    y: LAYOUT.footerY,
+    w: LAYOUT.contentWidth,
+    h: 0.3,
+    fontSize: TYPOGRAPHY.footer.size,
+    fontFace: 'Inter',
+    color: COLORS.grayMid,
+    align: 'center',
+  });
 };
 
-// Render CONTENT slide (white background, black accent bar)
+// CONTENT SLIDE - White background, left accent bar
 export const renderContentSlide = async (pres: pptxgen, data: ContentSlideData, logoBase64?: string) => {
   const slide = pres.addSlide({ masterName: 'CONTENT_WHITE' });
 
-  // Black accent bar on left
-  slide.addShape('rect', {
-    x: 0,
-    y: 0,
-    w: 0.12,
-    h: 5.63,
-    fill: { color: COLORS.black },
-  });
+  addAccentBar(slide);
+  addLogoTopRight(slide, logoBase64, false);
 
-  // Logo in top right (black version)
-  if (logoBase64) {
-    slide.addImage({
-      data: logoBase64,
-      x: 8,
-      y: 0.3,
-      w: 1.8,
-      h: 0.5,
-    });
-  } else {
-    slide.addText('RepIndex.ai', {
-      x: 8,
-      y: 0.3,
-      w: 1.8,
-      h: 0.5,
-      fontSize: 14,
-      fontFace: 'Inter',
-      color: COLORS.black,
-      bold: true,
-    });
-  }
-
-  // Title
+  // Title with proper spacing
   slide.addText(data.title, {
-    x: 0.5,
-    y: 0.4,
-    w: 7,
-    h: 0.6,
-    fontSize: 24,
+    x: LAYOUT.marginX + LAYOUT.accentBarWidth,
+    y: LAYOUT.marginY,
+    w: LAYOUT.contentWidth - LAYOUT.accentBarWidth,
+    h: 0.8,
+    fontSize: TYPOGRAPHY.h2.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
@@ -196,198 +287,167 @@ export const renderContentSlide = async (pres: pptxgen, data: ContentSlideData, 
 
   // Separator line
   slide.addShape('line', {
-    x: 0.5,
-    y: 1.1,
-    w: 9,
+    x: LAYOUT.marginX + LAYOUT.accentBarWidth,
+    y: 1.4,
+    w: LAYOUT.contentWidth - LAYOUT.accentBarWidth - 2,
     h: 0,
     line: { color: COLORS.grayLight, width: 1 },
   });
 
-  // Bullets
-  data.bullets.forEach((bullet, i) => {
-    slide.addText(`• ${bullet}`, {
-      x: 0.5,
-      y: 1.4 + i * 0.7,
-      w: 9,
-      h: 0.6,
-      fontSize: 14,
+  // Bullets with consistent spacing
+  const bulletStartY = 1.8;
+  const bulletSpacing = 0.85;
+  
+  data.bullets.slice(0, 5).forEach((bullet, i) => {
+    slide.addText(`•  ${bullet}`, {
+      x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.sm,
+      y: bulletStartY + i * bulletSpacing,
+      w: LAYOUT.contentWidth - LAYOUT.accentBarWidth - 1,
+      h: 0.75,
+      fontSize: TYPOGRAPHY.body.size,
       fontFace: 'Inter',
       color: COLORS.grayDark,
+      valign: 'top',
     });
   });
 
-  // Footer
-  slide.addText('www.repindex.ai', {
-    x: 0.5,
-    y: 5.2,
-    w: 3,
-    h: 0.3,
-    fontSize: 9,
-    fontFace: 'Inter',
-    color: COLORS.grayMid,
-  });
+  addFooter(slide);
 };
 
-// Render SPLIT slide (text left, stat right)
+// SPLIT SLIDE - Text left, stat right with proper proportions
 export const renderSplitSlide = async (pres: pptxgen, data: SplitSlideData, logoBase64?: string) => {
   const slide = pres.addSlide({ masterName: 'CONTENT_WHITE' });
 
-  // Black accent bar
-  slide.addShape('rect', {
-    x: 0,
-    y: 0,
-    w: 0.12,
-    h: 5.63,
-    fill: { color: COLORS.black },
-  });
+  addAccentBar(slide);
+  addLogoTopRight(slide, logoBase64, false);
 
-  // Logo
-  if (logoBase64) {
-    slide.addImage({
-      data: logoBase64,
-      x: 8,
-      y: 0.3,
-      w: 1.8,
-      h: 0.5,
-    });
-  }
+  // Left section (60% width)
+  const leftWidth = (LAYOUT.contentWidth - LAYOUT.accentBarWidth) * 0.55;
+  const rightWidth = (LAYOUT.contentWidth - LAYOUT.accentBarWidth) * 0.4;
+  const rightX = SLIDE.width - rightWidth - LAYOUT.marginX;
 
   // Title
   slide.addText(data.title, {
-    x: 0.5,
-    y: 0.4,
-    w: 4.5,
-    h: 0.6,
-    fontSize: 24,
+    x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.sm,
+    y: LAYOUT.marginY,
+    w: leftWidth,
+    h: 0.8,
+    fontSize: TYPOGRAPHY.h2.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
   });
 
-  // Bullets on left side
-  data.bullets.forEach((bullet, i) => {
-    slide.addText(`• ${bullet}`, {
-      x: 0.5,
-      y: 1.3 + i * 0.7,
-      w: 4.5,
-      h: 0.6,
-      fontSize: 14,
+  // Bullets on left
+  const bulletStartY = 1.6;
+  data.bullets.slice(0, 4).forEach((bullet, i) => {
+    slide.addText(`•  ${bullet}`, {
+      x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.sm,
+      y: bulletStartY + i * 0.9,
+      w: leftWidth - SPACING.md,
+      h: 0.8,
+      fontSize: TYPOGRAPHY.body.size,
       fontFace: 'Inter',
       color: COLORS.grayDark,
+      valign: 'top',
     });
   });
 
-  // Highlight stat box on right
+  // Highlight stat box on right - better proportions
   if (data.highlight_stat) {
-    // Gray background box
+    const boxHeight = 4;
+    const boxY = (SLIDE.height - boxHeight) / 2;
+
+    // Box with elegant border
     slide.addShape('roundRect', {
-      x: 5.5,
-      y: 1,
-      w: 4,
-      h: 3.5,
+      x: rightX,
+      y: boxY,
+      w: rightWidth,
+      h: boxHeight,
       fill: { color: COLORS.grayBg },
-      line: { color: COLORS.black, width: 2 },
+      line: { color: COLORS.black, width: 2.5 },
       rectRadius: 0.15,
     });
 
-    // Big number
+    // Big number - centered vertically in upper portion
     slide.addText(data.highlight_stat.value, {
-      x: 5.5,
-      y: 1.6,
-      w: 4,
-      h: 1.4,
-      fontSize: 56,
+      x: rightX,
+      y: boxY + 0.8,
+      w: rightWidth,
+      h: 1.6,
+      fontSize: 52,
       fontFace: 'Inter',
       color: COLORS.black,
       bold: true,
       align: 'center',
+      valign: 'middle',
     });
 
-    // Label
+    // Label - centered in lower portion
     slide.addText(data.highlight_stat.label, {
-      x: 5.5,
-      y: 3.2,
-      w: 4,
-      h: 0.8,
-      fontSize: 14,
+      x: rightX + SPACING.sm,
+      y: boxY + 2.6,
+      w: rightWidth - SPACING.md,
+      h: 1,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: COLORS.grayDark,
       align: 'center',
+      valign: 'top',
     });
   }
 
-  // Footer
-  slide.addText('www.repindex.ai', {
-    x: 0.5,
-    y: 5.2,
-    w: 3,
-    h: 0.3,
-    fontSize: 9,
-    fontFace: 'Inter',
-    color: COLORS.grayMid,
-  });
+  addFooter(slide);
 };
 
-// Render METRICS slide (2-4 KPI boxes)
+// METRICS SLIDE - KPI boxes with balanced layout
 export const renderMetricsSlide = async (pres: pptxgen, data: MetricsSlideData, logoBase64?: string) => {
   const slide = pres.addSlide({ masterName: 'CONTENT_WHITE' });
 
-  // Accent bar
-  slide.addShape('rect', {
-    x: 0,
-    y: 0,
-    w: 0.12,
-    h: 5.63,
-    fill: { color: COLORS.black },
-  });
-
-  // Logo
-  if (logoBase64) {
-    slide.addImage({
-      data: logoBase64,
-      x: 8,
-      y: 0.3,
-      w: 1.8,
-      h: 0.5,
-    });
-  }
+  addAccentBar(slide);
+  addLogoTopRight(slide, logoBase64, false);
 
   // Title
   slide.addText(data.title, {
-    x: 0.5,
-    y: 0.4,
-    w: 7,
-    h: 0.6,
-    fontSize: 22,
+    x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.sm,
+    y: LAYOUT.marginY,
+    w: LAYOUT.contentWidth - LAYOUT.accentBarWidth - 3,
+    h: 0.8,
+    fontSize: TYPOGRAPHY.h2.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
   });
 
-  const numMetrics = data.metrics.length;
-  const boxWidth = (9 - 0.4 * (numMetrics - 1)) / numMetrics;
+  const numMetrics = Math.min(data.metrics.length, 4);
+  const totalGap = SPACING.md * (numMetrics - 1);
+  const availableWidth = LAYOUT.contentWidth - LAYOUT.accentBarWidth - SPACING.md;
+  const boxWidth = (availableWidth - totalGap) / numMetrics;
+  const boxHeight = 4.2;
+  const boxY = 1.6;
+  const startX = LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.md;
 
-  data.metrics.forEach((metric, i) => {
-    const x = 0.5 + i * (boxWidth + 0.4);
+  data.metrics.slice(0, 4).forEach((metric, i) => {
+    const x = startX + i * (boxWidth + SPACING.md);
 
-    // Metric box with thick black border
+    // Metric box
     slide.addShape('roundRect', {
       x,
-      y: 1.3,
+      y: boxY,
       w: boxWidth,
-      h: 3.2,
+      h: boxHeight,
       fill: { color: COLORS.grayBg },
-      line: { color: COLORS.black, width: 2.5 },
-      rectRadius: 0.1,
+      line: { color: COLORS.black, width: 2 },
+      rectRadius: 0.12,
     });
 
-    // Value (big number)
+    // Value
     slide.addText(metric.value, {
       x,
-      y: 1.6,
+      y: boxY + 0.6,
       w: boxWidth,
-      h: 1.2,
-      fontSize: 40,
+      h: 1.4,
+      fontSize: 36,
       fontFace: 'Inter',
       color: COLORS.black,
       bold: true,
@@ -399,10 +459,10 @@ export const renderMetricsSlide = async (pres: pptxgen, data: MetricsSlideData, 
     const trendColor = metric.trend === 'up' ? COLORS.green : metric.trend === 'down' ? COLORS.red : COLORS.grayMid;
     slide.addText(trendIcon, {
       x,
-      y: 2.8,
+      y: boxY + 2,
       w: boxWidth,
-      h: 0.6,
-      fontSize: 28,
+      h: 0.7,
+      fontSize: 24,
       color: trendColor,
       align: 'center',
       bold: true,
@@ -410,11 +470,11 @@ export const renderMetricsSlide = async (pres: pptxgen, data: MetricsSlideData, 
 
     // Label
     slide.addText(metric.label, {
-      x,
-      y: 3.5,
-      w: boxWidth,
-      h: 0.8,
-      fontSize: 11,
+      x: x + SPACING.xs,
+      y: boxY + 2.8,
+      w: boxWidth - SPACING.sm,
+      h: 1.2,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: COLORS.grayDark,
       align: 'center',
@@ -422,53 +482,60 @@ export const renderMetricsSlide = async (pres: pptxgen, data: MetricsSlideData, 
     });
   });
 
-  // Footer
-  slide.addText('www.repindex.ai', {
-    x: 0.5,
-    y: 5.2,
-    w: 3,
-    h: 0.3,
-    fontSize: 9,
-    fontFace: 'Inter',
-    color: COLORS.grayMid,
-  });
+  addFooter(slide);
 };
 
-// Render COMPARISON slide (split B/W vertical)
-export const renderComparisonSlide = async (pres: pptxgen, data: ComparisonSlideData, logoWhite?: string, logoBlack?: string) => {
+// COMPARISON SLIDE - Split B/W with balanced columns
+export const renderComparisonSlide = async (
+  pres: pptxgen, 
+  data: ComparisonSlideData, 
+  logoWhite?: string, 
+  logoBlack?: string
+) => {
   const slide = pres.addSlide({ masterName: 'CONTENT_WHITE' });
+
+  const splitX = SLIDE.width / 2;
 
   // Left side - BLACK
   slide.addShape('rect', {
     x: 0,
     y: 0,
-    w: 5,
-    h: 5.63,
+    w: splitX,
+    h: SLIDE.height,
     fill: { color: COLORS.black },
   });
 
-  // Right side stays white (from master)
-
-  // Title spanning both sides
+  // Title spanning both (on gray bar)
+  slide.addShape('rect', {
+    x: 0,
+    y: 0,
+    w: SLIDE.width,
+    h: 0.9,
+    fill: { color: COLORS.grayDark },
+  });
+  
   slide.addText(data.title, {
-    x: 0.5,
-    y: 0.3,
-    w: 9,
+    x: LAYOUT.marginX,
+    y: 0.2,
+    w: LAYOUT.contentWidth,
     h: 0.5,
-    fontSize: 18,
+    fontSize: TYPOGRAPHY.h3.size,
     fontFace: 'Inter',
-    color: COLORS.grayMid,
+    color: COLORS.white,
     align: 'center',
   });
 
-  // Left column label (white text on black)
+  const columnWidth = splitX - SPACING.lg * 2;
   const leftHighlight = data.winner === 'left';
+  const rightHighlight = data.winner === 'right';
+
+  // Left column label
   slide.addText(data.left.label, {
-    x: 0.3,
-    y: 1,
-    w: 4.4,
-    h: 0.6,
-    fontSize: 18,
+    x: SPACING.lg,
+    y: 1.3,
+    w: columnWidth,
+    h: 0.7,
+    fontSize: TYPOGRAPHY.h3.size,
     fontFace: 'Inter',
     color: COLORS.white,
     bold: true,
@@ -476,26 +543,25 @@ export const renderComparisonSlide = async (pres: pptxgen, data: ComparisonSlide
   });
 
   // Left points
-  data.left.points.forEach((point, i) => {
+  data.left.points.slice(0, 5).forEach((point, i) => {
     slide.addText(`• ${point}`, {
-      x: 0.4,
-      y: 1.8 + i * 0.65,
-      w: 4.2,
-      h: 0.6,
-      fontSize: 12,
+      x: SPACING.lg,
+      y: 2.2 + i * 0.75,
+      w: columnWidth,
+      h: 0.65,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: leftHighlight ? COLORS.white : COLORS.grayMid,
     });
   });
 
-  // Right column label (black text on white)
-  const rightHighlight = data.winner === 'right';
+  // Right column label
   slide.addText(data.right.label, {
-    x: 5.3,
-    y: 1,
-    w: 4.4,
-    h: 0.6,
-    fontSize: 18,
+    x: splitX + SPACING.lg,
+    y: 1.3,
+    w: columnWidth,
+    h: 0.7,
+    fontSize: TYPOGRAPHY.h3.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
@@ -503,32 +569,33 @@ export const renderComparisonSlide = async (pres: pptxgen, data: ComparisonSlide
   });
 
   // Right points
-  data.right.points.forEach((point, i) => {
+  data.right.points.slice(0, 5).forEach((point, i) => {
     slide.addText(`• ${point}`, {
-      x: 5.4,
-      y: 1.8 + i * 0.65,
-      w: 4.2,
-      h: 0.6,
-      fontSize: 12,
+      x: splitX + SPACING.lg,
+      y: 2.2 + i * 0.75,
+      w: columnWidth,
+      h: 0.65,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: rightHighlight ? COLORS.black : COLORS.grayMid,
     });
   });
 
-  // VS divider
+  // VS circle - centered on split
+  const vsSize = 1;
   slide.addShape('ellipse', {
-    x: 4.5,
-    y: 2.5,
-    w: 1,
-    h: 1,
+    x: splitX - vsSize / 2,
+    y: SLIDE.height / 2 - vsSize / 2,
+    w: vsSize,
+    h: vsSize,
     fill: { color: COLORS.grayDark },
     line: { color: COLORS.white, width: 2 },
   });
   slide.addText('VS', {
-    x: 4.5,
-    y: 2.7,
-    w: 1,
-    h: 0.6,
+    x: splitX - vsSize / 2,
+    y: SLIDE.height / 2 - 0.25,
+    w: vsSize,
+    h: 0.5,
     fontSize: 14,
     fontFace: 'Inter',
     color: COLORS.white,
@@ -536,79 +603,85 @@ export const renderComparisonSlide = async (pres: pptxgen, data: ComparisonSlide
     align: 'center',
   });
 
-  // Logos
+  // Logos at bottom
   if (logoWhite) {
-    slide.addImage({ data: logoWhite, x: 0.3, y: 5, w: 1.5, h: 0.4 });
+    slide.addImage({ 
+      data: logoWhite, 
+      x: SPACING.lg, 
+      y: LAYOUT.footerY - 0.1, 
+      w: 1.6, 
+      h: 0.45 
+    });
   }
   if (logoBlack) {
-    slide.addImage({ data: logoBlack, x: 8, y: 5, w: 1.5, h: 0.4 });
+    slide.addImage({ 
+      data: logoBlack, 
+      x: SLIDE.width - 1.6 - SPACING.lg, 
+      y: LAYOUT.footerY - 0.1, 
+      w: 1.6, 
+      h: 0.45 
+    });
   }
 };
 
-// Render THREE_COLUMNS slide
+// THREE COLUMNS SLIDE - Balanced 3-column layout
 export const renderThreeColumnsSlide = async (pres: pptxgen, data: ThreeColumnsSlideData, logoBase64?: string) => {
   const slide = pres.addSlide({ masterName: 'CONTENT_WHITE' });
 
-  // Accent bar
-  slide.addShape('rect', {
-    x: 0,
-    y: 0,
-    w: 0.12,
-    h: 5.63,
-    fill: { color: COLORS.black },
-  });
-
-  // Logo
-  if (logoBase64) {
-    slide.addImage({ data: logoBase64, x: 8, y: 0.3, w: 1.8, h: 0.5 });
-  }
+  addAccentBar(slide);
+  addLogoTopRight(slide, logoBase64, false);
 
   // Title
   slide.addText(data.title, {
-    x: 0.5,
-    y: 0.4,
-    w: 7,
-    h: 0.6,
-    fontSize: 22,
+    x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.sm,
+    y: LAYOUT.marginY,
+    w: LAYOUT.contentWidth - LAYOUT.accentBarWidth - 3,
+    h: 0.8,
+    fontSize: TYPOGRAPHY.h2.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
   });
 
-  const colWidth = 2.8;
-  const startX = 0.5;
+  const numCols = Math.min(data.columns.length, 3);
+  const totalGap = SPACING.md * (numCols - 1);
+  const availableWidth = LAYOUT.contentWidth - LAYOUT.accentBarWidth - SPACING.md;
+  const colWidth = (availableWidth - totalGap) / numCols;
+  const colHeight = 4.8;
+  const colY = 1.4;
+  const startX = LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.md;
 
-  data.columns.forEach((col, i) => {
-    const x = startX + i * (colWidth + 0.35);
+  data.columns.slice(0, 3).forEach((col, i) => {
+    const x = startX + i * (colWidth + SPACING.md);
 
     // Column box
     slide.addShape('roundRect', {
       x,
-      y: 1.2,
+      y: colY,
       w: colWidth,
-      h: 3.8,
+      h: colHeight,
       fill: { color: COLORS.grayBg },
       line: { color: COLORS.grayLight, width: 1 },
-      rectRadius: 0.1,
+      rectRadius: 0.12,
     });
 
     // Icon
     slide.addText(col.icon, {
       x,
-      y: 1.4,
+      y: colY + 0.4,
       w: colWidth,
-      h: 0.8,
+      h: 0.9,
       fontSize: 32,
       align: 'center',
     });
 
     // Column title
     slide.addText(col.title, {
-      x,
-      y: 2.3,
-      w: colWidth,
-      h: 0.6,
-      fontSize: 14,
+      x: x + SPACING.xs,
+      y: colY + 1.5,
+      w: colWidth - SPACING.sm,
+      h: 0.7,
+      fontSize: TYPOGRAPHY.body.size,
       fontFace: 'Inter',
       color: COLORS.black,
       bold: true,
@@ -617,11 +690,11 @@ export const renderThreeColumnsSlide = async (pres: pptxgen, data: ThreeColumnsS
 
     // Column text
     slide.addText(col.text, {
-      x: x + 0.2,
-      y: 3,
-      w: colWidth - 0.4,
-      h: 1.8,
-      fontSize: 11,
+      x: x + SPACING.sm,
+      y: colY + 2.3,
+      w: colWidth - SPACING.md,
+      h: 2.2,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: COLORS.grayDark,
       align: 'center',
@@ -629,46 +702,34 @@ export const renderThreeColumnsSlide = async (pres: pptxgen, data: ThreeColumnsS
     });
   });
 
-  // Footer
-  slide.addText('www.repindex.ai', {
-    x: 0.5,
-    y: 5.2,
-    w: 3,
-    h: 0.3,
-    fontSize: 9,
-    fontFace: 'Inter',
-    color: COLORS.grayMid,
-  });
+  addFooter(slide);
 };
 
-// Render QUOTE slide (black background, large quote)
+// QUOTE SLIDE - Elegant black background with quote
 export const renderQuoteSlide = async (pres: pptxgen, data: QuoteSlideData, logoBase64?: string) => {
   const slide = pres.addSlide({ masterName: 'HERO_BLACK' });
 
-  // Giant quotation marks as watermark
+  // Large opening quote mark as decorative element
   slide.addText('"', {
-    x: 0.5,
-    y: 0.5,
+    x: LAYOUT.marginX,
+    y: 0.3,
     w: 2,
-    h: 2,
-    fontSize: 200,
+    h: 2.5,
+    fontSize: 180,
     color: COLORS.grayDark,
     fontFace: 'Georgia',
-    transparency: 70,
+    transparency: 60,
   });
 
-  // Logo
-  if (logoBase64) {
-    slide.addImage({ data: logoBase64, x: 8, y: 0.3, w: 1.8, h: 0.5 });
-  }
+  addLogoTopRight(slide, logoBase64, true);
 
-  // Quote text
+  // Quote text - centered with good padding
   slide.addText(data.quote, {
-    x: 1,
-    y: 1.5,
-    w: 8,
-    h: 2,
-    fontSize: 24,
+    x: 1.5,
+    y: 2,
+    w: SLIDE.width - 3,
+    h: 2.5,
+    fontSize: TYPOGRAPHY.h2.size,
     fontFace: 'Inter',
     color: COLORS.white,
     italic: true,
@@ -679,11 +740,11 @@ export const renderQuoteSlide = async (pres: pptxgen, data: QuoteSlideData, logo
   // Attribution
   if (data.attribution) {
     slide.addText(`— ${data.attribution}`, {
-      x: 1,
-      y: 3.8,
-      w: 8,
+      x: 1.5,
+      y: 4.8,
+      w: SLIDE.width - 3,
       h: 0.5,
-      fontSize: 14,
+      fontSize: TYPOGRAPHY.body.size,
       fontFace: 'Inter',
       color: COLORS.grayMid,
       align: 'center',
@@ -693,11 +754,11 @@ export const renderQuoteSlide = async (pres: pptxgen, data: QuoteSlideData, logo
   // Context
   if (data.context) {
     slide.addText(data.context, {
-      x: 1,
-      y: 4.4,
-      w: 8,
+      x: 1.5,
+      y: 5.4,
+      w: SLIDE.width - 3,
       h: 0.5,
-      fontSize: 12,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: COLORS.grayMid,
       align: 'center',
@@ -705,120 +766,126 @@ export const renderQuoteSlide = async (pres: pptxgen, data: QuoteSlideData, logo
   }
 };
 
-// Render QUESTIONS slide (Rix questions)
-export const renderQuestionsSlide = async (pres: pptxgen, data: QuestionsSlideData, logoBase64?: string, isotipoBase64?: string) => {
+// QUESTIONS SLIDE - Rix questions with visual hierarchy
+export const renderQuestionsSlide = async (
+  pres: pptxgen, 
+  data: QuestionsSlideData, 
+  logoBase64?: string, 
+  isotipoBase64?: string
+) => {
   const slide = pres.addSlide({ masterName: 'CONTENT_WHITE' });
 
-  // Accent bar
-  slide.addShape('rect', {
-    x: 0,
-    y: 0,
-    w: 0.12,
-    h: 5.63,
-    fill: { color: COLORS.black },
-  });
-
-  // Small isotipo decorative in corner
+  addAccentBar(slide);
+  
+  // Decorative isotipo - bottom right, subtle
   if (isotipoBase64) {
     slide.addImage({
       data: isotipoBase64,
-      x: 8.5,
-      y: 4.5,
-      w: 1,
-      h: 1,
-      transparency: 60,
+      x: SLIDE.width - LAYOUT.isotipoSize - SPACING.md,
+      y: SLIDE.height - LAYOUT.isotipoSize - SPACING.md,
+      w: LAYOUT.isotipoSize,
+      h: LAYOUT.isotipoSize,
+      transparency: 70,
     });
   }
 
-  // Logo
-  if (logoBase64) {
-    slide.addImage({ data: logoBase64, x: 8, y: 0.3, w: 1.8, h: 0.5 });
-  }
+  addLogoTopRight(slide, logoBase64, false);
 
   // Title
   slide.addText(data.title, {
-    x: 0.5,
-    y: 0.4,
-    w: 7,
-    h: 0.6,
-    fontSize: 20,
+    x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.sm,
+    y: LAYOUT.marginY,
+    w: LAYOUT.contentWidth - LAYOUT.accentBarWidth - 3,
+    h: 0.8,
+    fontSize: TYPOGRAPHY.h3.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
   });
 
-  // Questions
-  data.questions.forEach((q, i) => {
-    // Question number
-    slide.addText(`${i + 1}.`, {
-      x: 0.5,
-      y: 1.2 + i * 1,
-      w: 0.4,
-      h: 0.5,
-      fontSize: 16,
+  // Questions with better spacing
+  const startY = 1.5;
+  const questionSpacing = 1.3;
+
+  data.questions.slice(0, 4).forEach((q, i) => {
+    const y = startY + i * questionSpacing;
+
+    // Question number circle
+    slide.addShape('ellipse', {
+      x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.md,
+      y: y + 0.05,
+      w: 0.45,
+      h: 0.45,
+      fill: { color: COLORS.black },
+    });
+    slide.addText(`${i + 1}`, {
+      x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.md,
+      y: y + 0.05,
+      w: 0.45,
+      h: 0.45,
+      fontSize: 12,
       fontFace: 'Inter',
-      color: COLORS.black,
+      color: COLORS.white,
       bold: true,
+      align: 'center',
+      valign: 'middle',
     });
 
     // Question text
     slide.addText(`"${q.question}"`, {
-      x: 1,
-      y: 1.2 + i * 1,
-      w: 8.5,
-      h: 0.5,
-      fontSize: 14,
+      x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.md + 0.6,
+      y,
+      w: LAYOUT.contentWidth - 3,
+      h: 0.55,
+      fontSize: TYPOGRAPHY.body.size,
       fontFace: 'Inter',
       color: COLORS.black,
     });
 
     // Why it matters
     slide.addText(`→ ${q.why_it_matters}`, {
-      x: 1,
-      y: 1.65 + i * 1,
-      w: 8.5,
-      h: 0.35,
-      fontSize: 11,
+      x: LAYOUT.marginX + LAYOUT.accentBarWidth + SPACING.md + 0.6,
+      y: y + 0.55,
+      w: LAYOUT.contentWidth - 3,
+      h: 0.5,
+      fontSize: TYPOGRAPHY.small.size,
       fontFace: 'Inter',
       color: COLORS.grayMid,
       italic: true,
     });
   });
 
-  // Footer
-  slide.addText('www.repindex.ai', {
-    x: 0.5,
-    y: 5.2,
-    w: 3,
-    h: 0.3,
-    fontSize: 9,
-    fontFace: 'Inter',
-    color: COLORS.grayMid,
-  });
+  addFooter(slide);
 };
 
-// Render CTA slide (black background, action-oriented)
-export const renderCTASlide = async (pres: pptxgen, data: CTASlideData, logoBase64?: string, isotipoBase64?: string) => {
+// CTA SLIDE - Strong call to action with prominent branding
+export const renderCTASlide = async (
+  pres: pptxgen, 
+  data: CTASlideData, 
+  logoBase64?: string, 
+  isotipoBase64?: string
+) => {
   const slide = pres.addSlide({ masterName: 'HERO_BLACK' });
 
-  // Large isotipo centered
+  // Large centered isotipo
   if (isotipoBase64) {
+    const isoSize = 3;
     slide.addImage({
       data: isotipoBase64,
-      x: 3.75,
-      y: 0.5,
-      w: 2.5,
-      h: 2.5,
+      x: (SLIDE.width - isoSize) / 2,
+      y: 0.8,
+      w: isoSize,
+      h: isoSize,
     });
   }
 
   // Headline
   slide.addText(data.headline, {
-    x: 0.5,
-    y: 3.2,
-    w: 9,
-    h: 0.8,
-    fontSize: 32,
+    x: LAYOUT.marginX,
+    y: 4.2,
+    w: LAYOUT.contentWidth,
+    h: 1,
+    fontSize: TYPOGRAPHY.h1.size,
     fontFace: 'Inter',
     color: COLORS.white,
     bold: true,
@@ -828,32 +895,34 @@ export const renderCTASlide = async (pres: pptxgen, data: CTASlideData, logoBase
   // Subtext
   if (data.subtext) {
     slide.addText(data.subtext, {
-      x: 1,
-      y: 4,
-      w: 8,
+      x: 1.5,
+      y: 5.2,
+      w: SLIDE.width - 3,
       h: 0.5,
-      fontSize: 16,
+      fontSize: TYPOGRAPHY.h3.size,
       fontFace: 'Inter',
       color: COLORS.grayMid,
       align: 'center',
     });
   }
 
-  // Button/URL
+  // CTA button
+  const buttonWidth = 4.5;
+  const buttonX = (SLIDE.width - buttonWidth) / 2;
   slide.addShape('roundRect', {
-    x: 3,
-    y: 4.6,
-    w: 4,
-    h: 0.6,
+    x: buttonX,
+    y: 6,
+    w: buttonWidth,
+    h: 0.7,
     fill: { color: COLORS.white },
-    rectRadius: 0.3,
+    rectRadius: 0.35,
   });
   slide.addText(data.button_text, {
-    x: 3,
-    y: 4.6,
-    w: 4,
-    h: 0.6,
-    fontSize: 14,
+    x: buttonX,
+    y: 6,
+    w: buttonWidth,
+    h: 0.7,
+    fontSize: TYPOGRAPHY.body.size,
     fontFace: 'Inter',
     color: COLORS.black,
     bold: true,
@@ -862,7 +931,10 @@ export const renderCTASlide = async (pres: pptxgen, data: CTASlideData, logoBase
   });
 };
 
-// Main rendering function
+// ============================================
+// MAIN RENDER FUNCTION
+// ============================================
+
 export const renderSlideFromDesign = async (
   pres: pptxgen,
   slideDesign: SlideDesign,
@@ -871,11 +943,12 @@ export const renderSlideFromDesign = async (
     logoWhite?: string;
     isotipoBlack?: string;
     isotipoWhite?: string;
-  }
+  },
+  companyName?: string
 ) => {
   switch (slideDesign.slideType) {
     case 'hero':
-      await renderHeroSlide(pres, slideDesign, assets.logoWhite, assets.isotipoWhite);
+      await renderHeroSlide(pres, slideDesign, assets.logoWhite, assets.isotipoWhite, companyName);
       break;
     case 'content':
       await renderContentSlide(pres, slideDesign, assets.logoBlack);
@@ -926,7 +999,7 @@ export const generateProfessionalPPTX = async (
 ): Promise<pptxgen> => {
   const pres = new pptxgen();
 
-  // Configure presentation
+  // Configure presentation - 16:9 wide format
   pres.layout = 'LAYOUT_WIDE';
   pres.author = 'RepIndex';
   pres.title = `Propuesta Comercial - ${metadata.company}`;
@@ -939,9 +1012,9 @@ export const generateProfessionalPPTX = async (
   // Load brand assets
   const assets = await loadBrandAssets();
 
-  // Render each slide
+  // Render each slide, passing company name for hero
   for (const slide of slides) {
-    await renderSlideFromDesign(pres, slide, assets);
+    await renderSlideFromDesign(pres, slide, assets, metadata.company);
   }
 
   return pres;
