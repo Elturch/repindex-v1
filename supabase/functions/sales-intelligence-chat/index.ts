@@ -263,13 +263,12 @@ serve(async (req) => {
     ];
 
     // 9. Stream response from Gemini via Lovable AI Gateway
-    const aiGatewayUrl = Deno.env.get('AI_GATEWAY_URL') || 'https://ai.lovable.dev/v1/chat/completions';
+    const aiGatewayUrl = 'https://ai.gateway.lovable.dev/v1/chat/completions';
     
     const response = await fetch(aiGatewayUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${Deno.env.get('AI_GATEWAY_API_KEY') || Deno.env.get('OPENAI_API_KEY')}`,
+        'Authorization': `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-pro-preview-06-05',
