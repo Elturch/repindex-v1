@@ -51,6 +51,7 @@ interface UpdateConversationParams {
   message_ratings: Record<number, number>;
   rix_questions?: string[];
   metadata?: Record<string, unknown>;
+  custom_context?: string;
 }
 
 interface LogPPTXExportParams {
@@ -154,14 +155,20 @@ export const useSalesConversations = () => {
   // Update conversation messages and ratings
   const updateConversationMutation = useMutation({
     mutationFn: async (params: UpdateConversationParams) => {
+      const updateData: Record<string, unknown> = {
+        messages: JSON.parse(JSON.stringify(params.messages)),
+        message_ratings: JSON.parse(JSON.stringify(params.message_ratings)),
+        rix_questions: params.rix_questions || [],
+        metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : null,
+      };
+
+      if (params.custom_context !== undefined) {
+        updateData.custom_context = params.custom_context;
+      }
+
       const { data, error } = await supabase
         .from('sales_conversations')
-        .update({
-          messages: JSON.parse(JSON.stringify(params.messages)),
-          message_ratings: JSON.parse(JSON.stringify(params.message_ratings)),
-          rix_questions: params.rix_questions || [],
-          metadata: params.metadata ? JSON.parse(JSON.stringify(params.metadata)) : null,
-        })
+        .update(updateData)
         .eq('id', params.id)
         .select()
         .single();
