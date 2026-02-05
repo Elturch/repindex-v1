@@ -15,11 +15,45 @@ Tu trabajo es transformar texto de análisis comercial en instrucciones JSON est
 - Tipografía: Inter (sans-serif geométrica)
 - Estilo: Alto contraste, minimalista, ejecutivo
 
+## FILOSOFÍA DE DISEÑO NARRATIVO
+
+Tu objetivo NO es resumir contenido. Tu objetivo es CONSTRUIR UN ARGUMENTO DE VENTA 
+visual que convenza al destinatario de que NECESITA RepIndex.
+
+### FLUJO NARRATIVO OBLIGATORIO:
+
+1. **APERTURA (hero)**: Frase gancho que cree TENSIÓN. El nombre de la empresa 
+   debe aparecer en headline o subheadline. Ejemplo: "IBERDROLA: La brecha entre 
+   tu realidad y tu percepción algorítmica"
+
+2. **EL PROBLEMA (metrics o split)**: Datos concretos que demuestren que hay 
+   un problema que el cliente NO PUEDE VER sin RepIndex
+
+3. **LA EVIDENCIA (content o comparison)**: Extractos textuales de lo que las 
+   IAs dicen sobre la empresa - citas específicas del contenido valorado
+
+4. **LA OPORTUNIDAD (three_columns o split)**: Qué puede ganar si actúa ahora
+
+5. **LAS PREGUNTAS IMPOSIBLES (questions)**: Preguntas que solo RepIndex puede 
+   responder - demuestran el valor único de la herramienta
+
+6. **CIERRE (cta)**: Llamada a acción clara con urgencia
+
+### REGLAS DE EXTRACCIÓN DEL CONTENIDO VALORADO:
+
+- Lee CADA respuesta valorada buscando: cifras, comparativas, citas textuales, 
+  tendencias, alertas, oportunidades
+- Si hay una comparativa con competidores → usa slide "comparison"
+- Si hay métricas numéricas específicas → usa slide "metrics"  
+- Si hay citas de lo que dicen las IAs → usa slide "quote"
+- Si hay preguntas para Rix → usa slide "questions"
+
 ## TIPOS DE SLIDE DISPONIBLES
 
 1. **hero** - Slide de apertura con frase de impacto
    - headline (máx 12 palabras, impactante, sin punto final)
    - subheadline (opcional, máx 20 palabras)
+   - company_name (OBLIGATORIO: nombre de la empresa analizada)
    FONDO: Negro, texto blanco
 
 2. **content** - Contenido con bullets
@@ -75,30 +109,59 @@ Tu trabajo es transformar texto de análisis comercial en instrucciones JSON est
 4. Usa datos numéricos siempre que los tengas
 5. Divide contenido largo en múltiples slides
 6. Alterna tipos de slide para variedad visual
-7. Empieza SIEMPRE con hero, termina SIEMPRE con cta
+7. Empieza SIEMPRE con hero (con company_name), termina SIEMPRE con cta
 8. Si hay datos comparativos, usa comparison
 9. Si hay preguntas para Rix, usa questions
-10. Máximo 8-10 slides en total
-
-## ESTRUCTURA RECOMENDADA
-
-1. hero: Apertura con frase gancho
-2. metrics o split: Los datos clave
-3. content o three_columns: El problema/oportunidad
-4. comparison: Empresa vs competencia (si aplica)
-5. quote: Insight o cita impactante (opcional)
-6. questions: Preguntas para Rix
-7. cta: Cierre con llamada a acción
+10. Genera entre 6-10 slides en total para una narrativa completa
 
 ## OUTPUT
 
 Devuelve SOLO un JSON array con la estructura de cada slide. Sin explicaciones adicionales.
+El primer slide DEBE ser hero con company_name incluido.
 
 [
-  { "slideType": "hero", "headline": "...", "subheadline": "..." },
+  { "slideType": "hero", "headline": "...", "subheadline": "...", "company_name": "EMPRESA" },
   { "slideType": "metrics", "title": "...", "metrics": [...] },
   ...
 ]`;
+
+/**
+ * Robust JSON extraction from AI response
+ * Handles multiple formats: markdown code blocks, raw JSON, mixed content
+ */
+function extractJsonFromResponse(rawContent: string): string {
+  const trimmed = rawContent.trim();
+  
+  // Strategy 1: Extract from markdown code block (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (codeBlockMatch) {
+    console.log("[design-pptx-slides] JSON extracted via markdown code block");
+    return codeBlockMatch[1].trim();
+  }
+  
+  // Strategy 2: Find JSON array directly in content
+  if (trimmed.includes('[')) {
+    const start = trimmed.indexOf('[');
+    const end = trimmed.lastIndexOf(']');
+    if (start !== -1 && end > start) {
+      const extracted = trimmed.substring(start, end + 1);
+      // Validate it looks like JSON
+      if (extracted.includes('"slideType"')) {
+        console.log("[design-pptx-slides] JSON extracted via array boundaries");
+        return extracted;
+      }
+    }
+  }
+  
+  // Strategy 3: Content might already be pure JSON
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    console.log("[design-pptx-slides] Content is already JSON array");
+    return trimmed;
+  }
+  
+  console.log("[design-pptx-slides] No JSON structure found, returning raw content");
+  return trimmed;
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -126,19 +189,25 @@ serve(async (req) => {
       ? `\n\n### Preguntas para Rix (incluir en slide "questions"):\n${rix_questions.map((q: string, i: number) => `${i + 1}. "${q}"`).join("\n")}`
       : "";
 
-    const userPrompt = `Diseña una presentación ejecutiva para:
+    const userPrompt = `Diseña una presentación ejecutiva comercial para:
 
-**Empresa:** ${company_name}
+**Empresa objetivo:** ${company_name}
 **Destinatario:** ${target_profile}
 
-### Contenido valorado por el admin (4-5 estrellas):
+### Contenido valorado por el admin (respuestas 4-5 estrellas del Agente Comercial):
 
 ${contentText}
 ${questionsText}
 
-Genera el JSON de slides siguiendo las reglas de diseño B/W.`;
+IMPORTANTE: 
+- El Hero slide DEBE incluir "${company_name}" de forma prominente
+- Construye una NARRATIVA DE VENTA, no un resumen
+- Extrae datos específicos, citas y métricas del contenido valorado
+- Genera entre 6-10 slides siguiendo el flujo narrativo obligatorio
 
-    console.log(`[design-pptx-slides] Designing for ${company_name}, ${content.length} content blocks`);
+Genera el JSON de slides ahora:`;
+
+    console.log(`[design-pptx-slides] Designing for "${company_name}", target: "${target_profile}", ${content.length} content blocks`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -181,24 +250,25 @@ Genera el JSON de slides siguiendo las reglas de diseño B/W.`;
     const rawContent = aiResponse.choices?.[0]?.message?.content || "";
 
     console.log("[design-pptx-slides] Raw AI response length:", rawContent.length);
+    console.log("[design-pptx-slides] Raw content preview:", rawContent.substring(0, 200));
 
-    // Parse JSON from response (handle markdown code blocks)
+    // Parse JSON from response using robust extraction
     let slides;
     try {
-      // Try to extract JSON from markdown code block
-      const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-      const jsonStr = jsonMatch ? jsonMatch[1].trim() : rawContent.trim();
+      const jsonStr = extractJsonFromResponse(rawContent);
       slides = JSON.parse(jsonStr);
+      console.log("[design-pptx-slides] Successfully parsed JSON with", slides.length, "slides");
     } catch (parseError) {
       console.error("[design-pptx-slides] JSON parse error:", parseError);
-      console.error("[design-pptx-slides] Raw content:", rawContent.substring(0, 500));
+      console.error("[design-pptx-slides] Attempted to parse:", rawContent.substring(0, 500));
       
-      // Return a fallback structure
+      // Return a fallback structure with company name
       slides = [
         {
           slideType: "hero",
           headline: `${company_name}: Oportunidad Estratégica`,
           subheadline: "Análisis de Percepción Algorítmica",
+          company_name: company_name,
         },
         {
           slideType: "content",
@@ -212,6 +282,7 @@ Genera el JSON de slides siguiendo las reglas de diseño B/W.`;
           button_text: "www.repindex.ai",
         },
       ];
+      console.log("[design-pptx-slides] Using fallback slides due to parse error");
     }
 
     // Validate slides structure
@@ -219,14 +290,25 @@ Genera el JSON de slides siguiendo las reglas de diseño B/W.`;
       slides = [slides];
     }
 
-    console.log(`[design-pptx-slides] Generated ${slides.length} slides`);
+    // Post-process: Ensure Hero slide has company_name
+    slides = slides.map((slide: any) => {
+      if (slide.slideType === 'hero') {
+        return { ...slide, company_name: company_name };
+      }
+      return slide;
+    });
+
+    // Enhanced logging for debugging
+    const slideTypes = slides.map((s: any) => s.slideType).join(', ');
+    console.log(`[design-pptx-slides] Generated ${slides.length} slides: ${slideTypes}`);
+    console.log(`[design-pptx-slides] Hero has company_name:`, slides[0]?.company_name || 'NOT SET');
 
     return new Response(
       JSON.stringify({
         slides,
         metadata: {
           total_slides: slides.length,
-          design_version: "2.0-bw",
+          design_version: "2.1-narrative",
           company: company_name,
           target: target_profile,
         },
