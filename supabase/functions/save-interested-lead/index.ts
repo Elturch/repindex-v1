@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
         }
 
         // Send qualification form email
-        const formUrl = `https://repindex-v1.lovable.app/qualification/${token}`;
+        const formUrl = `https://repindex-v1.lovable.app/cualificacion/${token}`;
         
         try {
           await resend.emails.send({
