@@ -271,7 +271,7 @@ serve(async (req) => {
         'Authorization': `Bearer ${Deno.env.get('LOVABLE_API_KEY')}`,
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro-preview-06-05',
+        model: 'google/gemini-3-flash-preview',
         messages,
         max_tokens: 4000,
         temperature: 0.7,
