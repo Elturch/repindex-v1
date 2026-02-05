@@ -75,29 +75,34 @@ const Login: React.FC = () => {
     setSavingLead(true);
     setErrorMessage('');
     try {
-      const { error } = await supabase
-        .from('interested_leads')
-        .upsert({
+      // Use Edge Function with Service Role to bypass any RLS/permission issues
+      const { data, error } = await supabase.functions.invoke('save-interested-lead', {
+        body: {
           email: email.trim().toLowerCase(),
           contact_consent: withConsent,
-          consent_date: new Date().toISOString(),
-          user_agent: navigator.userAgent,
           source: 'login_attempt',
-          status: 'pending',
-        }, { onConflict: 'email' });
+          user_agent: navigator.userAgent,
+        }
+      });
 
       if (error) {
-        console.error('Error saving lead:', error);
+        console.error('Error invoking save-interested-lead:', error);
         setErrorMessage('No se pudo guardar tu solicitud. Por favor, inténtalo de nuevo.');
-        setLoginState('not_registered');
+        return;
+      }
+
+      // Check response from edge function
+      if (!data?.ok) {
+        console.error('Edge function returned error:', data?.error);
+        setErrorMessage(data?.error || 'No se pudo guardar tu solicitud. Por favor, inténtalo de nuevo.');
         return;
       }
       
+      console.log('Lead saved successfully:', data.leadId);
       setLeadSaved(withConsent ? 'consent' : 'no_consent');
     } catch (err) {
       console.error('Error saving lead:', err);
       setErrorMessage('Error de conexión. Por favor, inténtalo de nuevo.');
-      setLoginState('not_registered');
     } finally {
       setSavingLead(false);
     }
@@ -231,10 +236,17 @@ const Login: React.FC = () => {
                     No, gracias
                   </Button>
                 </div>
+                {errorMessage && (
+                  <div className="flex items-center gap-2 text-destructive text-sm mt-3 bg-destructive/10 p-2 rounded">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     setLoginState('idle');
                     setConsentGiven(false);
+                    setErrorMessage('');
                   }}
                   className="text-xs text-muted-foreground hover:text-foreground mt-4 underline"
                 >
