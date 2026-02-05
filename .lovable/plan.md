@@ -1,57 +1,121 @@
 
-# Plan: Corregir RLS para Guardar Leads
 
-## Problema Identificado
+# Plan: Corregir el Guardado de Leads en Login
 
-La política RLS de INSERT en la tabla `interested_leads` no incluye explícitamente el rol `anon`, lo que impide que usuarios no autenticados (que intentan login) puedan insertar sus datos.
+## Diagnóstico Completo
 
-La política actual:
-```sql
-CREATE POLICY "Public can insert leads" ON public.interested_leads
-  FOR INSERT WITH CHECK (true);
+Después de investigar los logs de PostgreSQL, he identificado dos problemas que se combinaron para causar este fallo:
+
+### Problema 1: Error de RLS (YA RESUELTO)
+Los logs de PostgreSQL muestran un error histórico:
+```
+ERROR: new row violates row-level security policy for table "interested_leads"
+```
+Este error ocurrió durante tus pruebas porque la migración que corrige los permisos para usuarios anónimos se aplicó **después** de tus pruebas.
+
+La migración `20260205084928` ya está aplicada y la política RLS ahora permite correctamente inserciones desde usuarios anónimos.
+
+### Problema 2: El Código Silencia Errores (PENDIENTE)
+El código actual en `src/pages/Login.tsx` tiene un bug crítico:
+
+```typescript
+// Código actual (PROBLEMÁTICO)
+const saveLead = useCallback(async (withConsent: boolean) => {
+  setSavingLead(true);
+  try {
+    const { error } = await supabase
+      .from('interested_leads')
+      .upsert({ ... });
+
+    if (error) {
+      console.error('Error saving lead:', error);  // Solo log en consola
+    }
+    
+    setLeadSaved(withConsent ? 'consent' : 'no_consent');  // ⚠️ SIEMPRE muestra éxito
+  } catch (err) {
+    console.error('Error saving lead:', err);
+    setLeadSaved(withConsent ? 'consent' : 'no_consent');  // ⚠️ SIEMPRE muestra éxito
+  }
+}, [email]);
 ```
 
-Debería incluir explícitamente:
-```sql
-CREATE POLICY "Public can insert leads" ON public.interested_leads
-  AS PERMISSIVE
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (true);
+El problema: Si la inserción falla (por cualquier razón), el usuario ve la pantalla de confirmación como si hubiera funcionado.
+
+## Cambio Requerido
+
+Modificar `src/pages/Login.tsx` para que muestre un error real cuando la inserción falle:
+
+```typescript
+const saveLead = useCallback(async (withConsent: boolean) => {
+  setSavingLead(true);
+  setErrorMessage('');  // Limpiar errores previos
+  
+  try {
+    const { error } = await supabase
+      .from('interested_leads')
+      .upsert({
+        email: email.trim().toLowerCase(),
+        contact_consent: withConsent,
+        consent_date: new Date().toISOString(),
+        user_agent: navigator.userAgent,
+        source: 'login_attempt',
+        status: 'pending',
+      }, { onConflict: 'email' });
+
+    if (error) {
+      console.error('Error saving lead:', error);
+      setErrorMessage('No se pudo guardar tu solicitud. Por favor, inténtalo de nuevo.');
+      setLoginState('not_registered');  // Mantener en el mismo estado para reintentar
+      return;  // IMPORTANTE: No continuar
+    }
+    
+    // Solo mostrar éxito si realmente funcionó
+    setLeadSaved(withConsent ? 'consent' : 'no_consent');
+  } catch (err) {
+    console.error('Error saving lead:', err);
+    setErrorMessage('Error de conexión. Por favor, inténtalo de nuevo.');
+    setLoginState('not_registered');
+  } finally {
+    setSavingLead(false);
+  }
+}, [email]);
 ```
 
-## Cambio Necesario
+## Resumen de Cambios
 
-### Migración SQL
+| Archivo | Cambio |
+|---------|--------|
+| `src/pages/Login.tsx` | Corregir `saveLead()` para mostrar errores reales en lugar de silenciarlos |
 
-Crear una nueva migración que:
-1. Elimine la política actual de INSERT
-2. Cree la nueva política con `TO anon, authenticated`
+## Flujo Después de la Corrección
 
-```sql
--- Drop existing INSERT policy
-DROP POLICY IF EXISTS "Public can insert leads" ON public.interested_leads;
-
--- Recreate with explicit anon and authenticated roles
-CREATE POLICY "Public can insert leads" ON public.interested_leads
-  AS PERMISSIVE
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (true);
+```text
+Usuario introduce email no registrado
+         │
+         ▼
+Aparece modal de consentimiento
+         │
+         ▼
+Usuario hace clic en "Sí, contactadme"
+         │
+         ▼
+┌────────────────────────────────────────┐
+│ supabase.upsert() a interested_leads   │
+└────────────────────────────────────────┘
+         │
+    ┌────┴────┐
+    │         │
+   OK       ERROR
+    │         │
+    ▼         ▼
+Pantalla   Mensaje de error visible
+de éxito   "No se pudo guardar..."
+            (usuario puede reintentar)
 ```
 
-## Nota Importante
+## Pasos Post-Implementación
 
-Además, debo mencionar que **el flujo de login no puede probarse desde el entorno de Preview** porque el código tiene un bypass que redirige automáticamente al dashboard en entornos de desarrollo. Las pruebas deben hacerse desde `https://repindex-v1.lovable.app/login` (producción).
+1. **Publicar los cambios** a producción
+2. **Probar desde** `https://repindex.ai/login` (o `repindex-v1.lovable.app/login`)
+3. **Verificar** que los leads aparecen en `/admin` > Leads
 
-## Impacto
-
-| Aspecto | Antes | Después |
-|---------|-------|---------|
-| Inserción desde anon | Bloqueada por RLS | Permitida |
-| Login no registrado | No guarda lead | Guarda lead correctamente |
-| Seguridad | Sin cambios | Igual (solo INSERT público) |
-
-## Archivos a modificar
-
-1. **Nueva migración SQL** - Corregir política RLS con `TO anon, authenticated`
