@@ -73,6 +73,7 @@ const Login: React.FC = () => {
 
   const saveLead = useCallback(async (withConsent: boolean) => {
     setSavingLead(true);
+    setErrorMessage('');
     try {
       const { error } = await supabase
         .from('interested_leads')
@@ -87,12 +88,16 @@ const Login: React.FC = () => {
 
       if (error) {
         console.error('Error saving lead:', error);
+        setErrorMessage('No se pudo guardar tu solicitud. Por favor, inténtalo de nuevo.');
+        setLoginState('not_registered');
+        return;
       }
       
       setLeadSaved(withConsent ? 'consent' : 'no_consent');
     } catch (err) {
       console.error('Error saving lead:', err);
-      setLeadSaved(withConsent ? 'consent' : 'no_consent');
+      setErrorMessage('Error de conexión. Por favor, inténtalo de nuevo.');
+      setLoginState('not_registered');
     } finally {
       setSavingLead(false);
     }
