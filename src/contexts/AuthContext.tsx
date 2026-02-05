@@ -184,19 +184,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const sendMagicLink = async (email: string): Promise<{ error: string | null }> => {
     try {
-      // First check if the email exists in user_profiles
-      // Note: This is a soft check - the actual validation happens server-side
+      // Verificar si el email existe en user_profiles ANTES de pedir OTP
+      const { data: existingProfile, error: checkError } = await supabase
+        .from('user_profiles')
+        .select('id, is_active')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking profile:', checkError);
+        return { error: 'Error verificando el email. Inténtalo de nuevo.' };
+      }
+
+      // Si no existe perfil, rechazar
+      if (!existingProfile) {
+        return { error: 'Email no registrado. Contacta con el administrador.' };
+      }
+
+      // Si existe pero está desactivado, rechazar
+      if (!existingProfile.is_active) {
+        return { error: 'Tu cuenta está desactivada. Contacta con el administrador.' };
+      }
+
+      // Solo ahora enviar el OTP
       const redirectUrl = `${window.location.origin}/dashboard`;
       
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo: redirectUrl,
+          shouldCreateUser: false, // CRÍTICO: previene auto-registro
         },
       });
 
       if (error) {
-        if (error.message.includes('Email not confirmed') || error.message.includes('Invalid login credentials')) {
+        // Handle specific Supabase error for non-existent user
+        if (error.message.includes('Signups not allowed') || error.message.includes('User not found')) {
           return { error: 'Email no registrado. Contacta con el administrador.' };
         }
         return { error: error.message };
