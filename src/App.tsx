@@ -31,6 +31,7 @@ import CookiePolicy from "./pages/legal/CookiePolicy";
 import PrivacyPolicy from "./pages/legal/PrivacyPolicy";
 import GdprForm from "./pages/legal/GdprForm";
 import ComplaintsForm from "./pages/legal/ComplaintsForm";
+import Qualification from "./pages/Qualification";
 import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
@@ -58,6 +59,7 @@ const App = () => (
                 <Route path="/privacidade" element={<PrivacyPolicy />} />
                 <Route path="/rgpd" element={<GdprForm />} />
                 <Route path="/reclamacoes" element={<ComplaintsForm />} />
+                <Route path="/cualificacion/:token" element={<Qualification />} />
                 <Route path="/login" element={<Login />} />
                 
                 {/* Protected routes */}
