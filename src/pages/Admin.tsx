@@ -36,7 +36,8 @@ import {
   Megaphone,
   Activity,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  UserPlus
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -53,6 +54,7 @@ import { CorporateScrapePanel } from '@/components/admin/CorporateScrapePanel';
 import { VectorStorePanel } from '@/components/admin/VectorStorePanel';
 import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
+import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon } from 'lucide-react';
 
 interface Company {
@@ -786,6 +788,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="users" className="flex items-center gap-1.5 px-3 text-xs">
               <Users className="h-3.5 w-3.5" />
               Usuarios
+            </TabsTrigger>
+            <TabsTrigger value="leads" className="flex items-center gap-1.5 px-3 text-xs">
+              <UserPlus className="h-3.5 w-3.5" />
+              Leads
             </TabsTrigger>
             <TabsTrigger value="conversations" className="flex items-center gap-1.5 px-3 text-xs">
               <MessageSquare className="h-3.5 w-3.5" />
@@ -2723,6 +2729,11 @@ const Admin: React.FC = () => {
           {/* ==================== PIPELINE ALERTS ==================== */}
           <TabsContent value="pipeline-alerts">
             <PipelineAlertsPanel />
+          </TabsContent>
+
+          {/* ==================== INTERESTED LEADS ==================== */}
+          <TabsContent value="leads">
+            <InterestedLeadsPanel />
           </TabsContent>
         </Tabs>
       </div>
