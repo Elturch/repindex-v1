@@ -432,6 +432,61 @@ serve(async (req) => {
         });
       }
 
+      // ==================== LEAD CONVERSION ====================
+      case "invite_user": {
+        // Create user from interested lead
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+          data.email,
+          {
+            data: {
+              full_name: data.full_name || "",
+            },
+            redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
+          }
+        );
+        
+        if (authError) {
+          if (authError.code === "email_exists") {
+            return new Response(
+              JSON.stringify({ error: "Este email ya está registrado como usuario." }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          throw authError;
+        }
+        
+        // Update the auto-created profile
+        if (data.company_id) {
+          await supabaseAdmin
+            .from("user_profiles")
+            .update({
+              company_id: data.company_id,
+              full_name: data.full_name || "",
+              is_individual: data.is_individual || false,
+            })
+            .eq("id", authData.user.id);
+        }
+        
+        // Mark lead as converted
+        if (data.lead_id) {
+          await supabaseAdmin
+            .from("interested_leads")
+            .update({
+              status: "converted",
+              converted_at: new Date().toISOString(),
+            })
+            .eq("id", data.lead_id);
+        }
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          user: authData.user,
+          message: "Usuario creado e invitación enviada" 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
