@@ -945,6 +945,8 @@ export type Database = {
           email: string
           id: string
           ip_address: string | null
+          qualification_score: number | null
+          qualification_status: string | null
           source: string
           status: string
           user_agent: string | null
@@ -959,6 +961,8 @@ export type Database = {
           email: string
           id?: string
           ip_address?: string | null
+          qualification_score?: number | null
+          qualification_status?: string | null
           source?: string
           status?: string
           user_agent?: string | null
@@ -973,6 +977,8 @@ export type Database = {
           email?: string
           id?: string
           ip_address?: string | null
+          qualification_score?: number | null
+          qualification_status?: string | null
           source?: string
           status?: string
           user_agent?: string | null
@@ -1040,6 +1046,65 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "client_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_qualification_responses: {
+        Row: {
+          additional_notes: string | null
+          companies_interested: string[] | null
+          contactability_score: number | null
+          created_at: string | null
+          email_domain: string | null
+          form_sent_at: string | null
+          id: string
+          is_corporate_email: boolean | null
+          lead_id: string
+          role_type: string | null
+          sectors_interested: string[] | null
+          submitted_at: string | null
+          token: string
+          token_expires_at: string
+        }
+        Insert: {
+          additional_notes?: string | null
+          companies_interested?: string[] | null
+          contactability_score?: number | null
+          created_at?: string | null
+          email_domain?: string | null
+          form_sent_at?: string | null
+          id?: string
+          is_corporate_email?: boolean | null
+          lead_id: string
+          role_type?: string | null
+          sectors_interested?: string[] | null
+          submitted_at?: string | null
+          token: string
+          token_expires_at: string
+        }
+        Update: {
+          additional_notes?: string | null
+          companies_interested?: string[] | null
+          contactability_score?: number | null
+          created_at?: string | null
+          email_domain?: string | null
+          form_sent_at?: string | null
+          id?: string
+          is_corporate_email?: boolean | null
+          lead_id?: string
+          role_type?: string | null
+          sectors_interested?: string[] | null
+          submitted_at?: string | null
+          token?: string
+          token_expires_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_qualification_responses_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "interested_leads"
             referencedColumns: ["id"]
           },
         ]

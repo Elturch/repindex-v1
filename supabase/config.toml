@@ -86,3 +86,9 @@ verify_jwt = false
 
 [functions.send-legal-form]
 verify_jwt = false
+
+[functions.send-qualification-form]
+verify_jwt = false
+
+[functions.submit-qualification-form]
+verify_jwt = false
