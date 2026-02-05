@@ -15,7 +15,7 @@ export const FOOTER_TRANSLATIONS: Record<FooterLanguage, {
   es: {
     dataUpdate: 'Actualización de Datos',
     dataUpdateText: 'Los análisis RIX se ejecutan automáticamente cada domingo, garantizando información actualizada semanalmente y asegurando la solidez y confiabilidad de los datos reputacionales.',
-    copyright: '© 2025 Reputation Index, Lda. (NIF 519 229 185)',
+    copyright: '© 2025 Reputation Index, Lda.',
     terms: 'Términos y Condiciones',
     privacy: 'Privacidad',
     cookies: 'Cookies',
@@ -26,7 +26,7 @@ export const FOOTER_TRANSLATIONS: Record<FooterLanguage, {
   pt: {
     dataUpdate: 'Atualização de Dados',
     dataUpdateText: 'As análises RIX são executadas automaticamente todos os domingos, garantindo informação atualizada semanalmente e assegurando a solidez e fiabilidade dos dados reputacionais.',
-    copyright: '© 2025 Reputation Index, Lda. (NIF 519 229 185)',
+    copyright: '© 2025 Reputation Index, Lda.',
     terms: 'Termos e Condições',
     privacy: 'Privacidade',
     cookies: 'Cookies',
@@ -37,7 +37,7 @@ export const FOOTER_TRANSLATIONS: Record<FooterLanguage, {
   en: {
     dataUpdate: 'Data Update',
     dataUpdateText: 'RIX analyses run automatically every Sunday, ensuring weekly updated information and guaranteeing the reliability and robustness of reputational data.',
-    copyright: '© 2025 Reputation Index, Lda. (VAT 519 229 185)',
+    copyright: '© 2025 Reputation Index, Lda.',
     terms: 'Terms & Conditions',
     privacy: 'Privacy',
     cookies: 'Cookies',
