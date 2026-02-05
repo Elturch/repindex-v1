@@ -25,7 +25,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownMessage } from '@/components/ui/markdown-message';
-import pptxgen from 'pptxgenjs';
+import { generateProfessionalPPTX } from '@/lib/pptxDesigner';
+import type { SlideDesign } from '@/lib/pptxTypes';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -121,6 +122,7 @@ export const SalesIntelligencePanel: React.FC = () => {
   const [messageRatings, setMessageRatings] = useState<Record<number, number>>({});
   const [rixQuestions, setRixQuestions] = useState<string[]>([]);
   const [followUpInput, setFollowUpInput] = useState('');
+  const [isGeneratingPPTX, setIsGeneratingPPTX] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -272,7 +274,7 @@ export const SalesIntelligencePanel: React.FC = () => {
     handleSubmit(action);
   };
 
-  // Generate real PPTX using pptxgenjs
+  // Generate professional PPTX using the design agent
   const generatePPTX = async () => {
     if (highRatedCount === 0) {
       toast({ 
@@ -283,140 +285,64 @@ export const SalesIntelligencePanel: React.FC = () => {
       return;
     }
 
+    setIsGeneratingPPTX(true);
+
     try {
-      const pres = new pptxgen();
-      
-      // Configure RepIndex theme
-      pres.layout = 'LAYOUT_WIDE';
-      pres.author = 'RepIndex';
-      pres.title = `Propuesta Comercial - ${metadata?.company || 'Empresa'}`;
-      pres.subject = 'Análisis de Percepción Algorítmica';
-      pres.company = 'RepIndex';
-      
-      // Colors
-      const PURPLE = '7C3AED';
-      const DARK_GRAY = '1F2937';
-      const LIGHT_GRAY = '6B7280';
-      // Slide 1: Cover
-      const slide1 = pres.addSlide();
-      slide1.addText('RepIndex', { 
-        x: 8.5, y: 0.3, w: 1.5, h: 0.5, 
-        fontSize: 14, fontFace: 'Inter', color: PURPLE, bold: true 
+      // Get high-rated content
+      const highRatedContent = getHighRatedContent();
+
+      toast({ 
+        title: '🎨 Diseñando presentación', 
+        description: 'El agente de diseño está maquetando las slides...' 
       });
-      slide1.addText(metadata?.company || 'Empresa', { 
-        x: 0.5, y: 2, w: 9, h: 1.5, 
-        fontSize: 44, fontFace: 'Inter', color: PURPLE, bold: true 
+
+      // Call the design agent
+      const { data, error } = await supabase.functions.invoke('design-pptx-slides', {
+        body: {
+          company_name: metadata?.company || companyInput,
+          target_profile: PROFILE_CONFIG[selectedProfile].label,
+          content: highRatedContent,
+          rix_questions: rixQuestions,
+        }
       });
-      slide1.addText('Análisis de Percepción Algorítmica', { 
-        x: 0.5, y: 3.5, w: 9, h: 0.8, 
-        fontSize: 24, fontFace: 'Inter', color: DARK_GRAY 
-      });
-      slide1.addText(`Dirigido a: ${PROFILE_CONFIG[selectedProfile].label}`, { 
-        x: 0.5, y: 4.3, w: 9, h: 0.5, 
-        fontSize: 16, fontFace: 'Inter', color: LIGHT_GRAY, italic: true 
-      });
-      slide1.addText(`${metadata?.sectorCategory || 'Sector'}`, { 
-        x: 0.5, y: 4.9, w: 9, h: 0.4, 
-        fontSize: 14, fontFace: 'Inter', color: LIGHT_GRAY 
-      });
-      
-      // Get high-rated messages
-      const highRatedMessages = messages
-        .map((msg, idx) => ({ msg, idx }))
-        .filter(({ msg, idx }) => msg.role === 'assistant' && messageRatings[idx] >= 4);
-      
-      // Add content slides
-      highRatedMessages.forEach(({ msg }, i) => {
-        const slide = pres.addSlide();
-        
-        // Header
-        slide.addText(`Insight ${i + 1}`, { 
-          x: 0.5, y: 0.3, w: 2, h: 0.4, 
-          fontSize: 12, fontFace: 'Inter', color: PURPLE, bold: true 
-        });
-        slide.addShape('rect', { 
-          x: 0.5, y: 0.7, w: 9, h: 0.02, 
-          fill: { color: PURPLE } 
-        });
-        
-        // Content - clean markdown for slides
-        const cleanContent = msg.content
-          .replace(/#{1,3}\s*/g, '')
-          .replace(/\*\*/g, '')
-          .replace(/\*/g, '')
-          .replace(/📊.*$/gm, '')
-          .replace(/→.*$/gm, '')
-          .slice(0, 1500);
-        
-        slide.addText(cleanContent, {
-          x: 0.5, y: 1, w: 9, h: 4.5,
-          fontSize: 13, fontFace: 'Inter', color: DARK_GRAY,
-          valign: 'top', breakLine: true
-        });
-        
-        // Footer
-        slide.addText('RepIndex | Radar Reputacional', { 
-          x: 0.5, y: 5.2, w: 4, h: 0.3, 
-          fontSize: 9, fontFace: 'Inter', color: LIGHT_GRAY 
-        });
-      });
-      
-      // Add Rix Questions slide if we have questions
-      if (rixQuestions.length > 0) {
-        const questionsSlide = pres.addSlide();
-        questionsSlide.addText('Preguntas para el Agente Rix', { 
-          x: 0.5, y: 0.3, w: 9, h: 0.6, 
-          fontSize: 24, fontFace: 'Inter', color: PURPLE, bold: true 
-        });
-        questionsSlide.addText('Evidencias para anexar a la propuesta', { 
-          x: 0.5, y: 0.9, w: 9, h: 0.4, 
-          fontSize: 14, fontFace: 'Inter', color: LIGHT_GRAY, italic: true 
-        });
-        
-        rixQuestions.forEach((q, i) => {
-          questionsSlide.addText(`${i + 1}. "${q}"`, { 
-            x: 0.5, y: 1.5 + (i * 0.9), w: 9, h: 0.8, 
-            fontSize: 14, fontFace: 'Inter', color: DARK_GRAY,
-            bullet: false
-          });
-        });
+
+      if (error) {
+        console.error('[PPTX] Design agent error:', error);
+        throw new Error(error.message || 'Error calling design agent');
       }
-      
-      // CTA Slide
-      const ctaSlide = pres.addSlide();
-      ctaSlide.addShape('rect', { 
-        x: 1.5, y: 2, w: 7, h: 2, 
-        fill: { color: PURPLE },
-        rectRadius: 0.2
+
+      if (!data?.slides || data.slides.length === 0) {
+        throw new Error('No slides returned from design agent');
+      }
+
+      const slideDesigns: SlideDesign[] = data.slides;
+      console.log(`[PPTX] Received ${slideDesigns.length} slide designs`);
+
+      // Generate the professional PPTX
+      const pres = await generateProfessionalPPTX(slideDesigns, {
+        company: metadata?.company || companyInput,
+        targetProfile: PROFILE_CONFIG[selectedProfile].label,
       });
-      ctaSlide.addText('Siguiente paso', { 
-        x: 1.5, y: 2.2, w: 7, h: 0.6, 
-        fontSize: 18, fontFace: 'Inter', color: 'FFFFFF', align: 'center' 
-      });
-      ctaSlide.addText('Demo personalizada', { 
-        x: 1.5, y: 2.8, w: 7, h: 0.8, 
-        fontSize: 28, fontFace: 'Inter', color: 'FFFFFF', align: 'center', bold: true 
-      });
-      ctaSlide.addText('www.repindex.ai', { 
-        x: 1.5, y: 4.5, w: 7, h: 0.5, 
-        fontSize: 16, fontFace: 'Inter', color: PURPLE, align: 'center' 
-      });
-      
+
       // Download
-      await pres.writeFile({ fileName: `RepIndex_${metadata?.company || 'Propuesta'}_${new Date().toISOString().slice(0,10)}.pptx` });
+      const fileName = `RepIndex_${metadata?.company || companyInput}_${new Date().toISOString().slice(0,10)}.pptx`;
+      await pres.writeFile({ fileName });
       
       toast({ 
-        title: '✅ PPTX generado', 
-        description: `Presentación con ${highRatedMessages.length} slides descargada` 
+        title: '✅ Presentación profesional generada', 
+        description: `${slideDesigns.length} slides con diseño B/W RepIndex descargadas` 
       });
       
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('[PPTX Generation] Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'No se pudo generar el archivo PPTX';
       toast({ 
         title: 'Error', 
-        description: 'No se pudo generar el archivo PPTX', 
+        description: errorMessage, 
         variant: 'destructive' 
       });
+    } finally {
+      setIsGeneratingPPTX(false);
     }
   };
 
@@ -683,10 +609,20 @@ ${lastAssistant.content
               {highRatedCount > 0 && !isLoading && (
                 <Button 
                   onClick={generatePPTX}
-                  className="w-full bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900"
+                  disabled={isGeneratingPPTX}
+                  className="w-full bg-gradient-to-r from-gray-900 to-black hover:from-black hover:to-gray-800 text-white"
                 >
-                  <Download className="h-4 w-4 mr-2" />
-                  Descargar PPTX ({highRatedCount} slides)
+                  {isGeneratingPPTX ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Diseñando slides...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Generar PPTX Pro ({highRatedCount} insights)
+                    </>
+                  )}
                 </Button>
               )}
               
