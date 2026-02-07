@@ -1,134 +1,170 @@
 
-# Plan: Mejora del Agente Diseñador de Presentaciones PPTX
+# Auditoría del Sistema de Barrido RIX - Preparación Domingo 9 Febrero 2026
 
-## Resumen Ejecutivo
+## Estado Actual del Sistema
 
-El sistema actual de generación de PPTX tiene tres problemas principales:
-1. **Parser JSON** - Falla al extraer el JSON del bloque markdown, cayendo a un fallback con solo 3 slides genéricas
-2. **Nombre de empresa ausente** - El Hero slide no muestra prominentemente la empresa analizada
-3. **Prompt de diseño insuficiente** - No hay instrucciones para construir una narrativa comercial coherente basada en las respuestas valoradas
+### Resumen Ejecutivo
 
-## Cambios Técnicos
+| Aspecto | Estado | Acción Requerida |
+|---------|--------|-----------------|
+| **CRONs de Fase** | 35 fases activas | OK |
+| **Watchdog** | Activo (cada 5 min) | **BUG CRÍTICO** |
+| **Empresas Activas** | 174 | OK |
+| **Distribución Fases** | 5 por fase (fase 35: 4) | OK |
+| **Semana Activa** | 2026-W07 (próximo domingo) | OK |
 
-### 1. Corregir el Parser JSON en `design-pptx-slides`
+---
 
-**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
+## BUG CRÍTICO DETECTADO
 
-Problema: El regex actual puede fallar con ciertos formatos de bloques de código.
+### Error: `triggersProcessed is not defined`
+
+**Ubicación:** `rix-batch-orchestrator/index.ts` línea ~2207
+
+**Impacto:** El orquestador falla silenciosamente cuando el sweep está "completo" (pending=0, processing=0). El watchdog de 5 minutos intenta verificar el estado pero crashea antes de poder encadenar las tareas de reparación.
+
+**Causa:** En el bloque del watchdog que maneja "sweep complete", se usa `triggersProcessed.length` en varias respuestas JSON, pero esa variable nunca se declara en ese contexto. Solo se declara cuando se llama a `processCronTriggers()`.
+
+**Corrección Necesaria:**
+```typescript
+// Línea ~2002 (antes de la sección "Sweep complete")
+const triggersProcessed: any[] = [];  // Inicializar array vacío
+
+// O mejor: usar cronTotalProcessed que sí existe
+triggersProcessed: cronTotalProcessed,  // En las respuestas JSON
+```
+
+**Evidencia de los logs:**
+```
+[orchestrator] Fatal error: ReferenceError: triggersProcessed is not defined
+    at Object.handler (file:///var/tmp/sb-compile-edge-runtime/rix-batch-orchestrator/index.ts:1790:30)
+```
+
+---
+
+## Configuración de CRONs Verificada
+
+### Horarios del Barrido (hora Madrid = UTC+1)
+
+| Fase | Inicio CET | Empresas |
+|------|-----------|----------|
+| 01 | 01:00 | 5 |
+| 02-12 | 01:05-01:55 | 55 |
+| 13-24 | 02:00-02:55 | 60 |
+| 25-34 | 03:00-03:45 | 50 |
+| 35 | 03:50 | 4 |
+
+**Total:** 174 empresas en 35 fases escalonadas
+
+### Watchdogs Activos
+- `rix-orchestrator-watchdog`: cada 5 minutos (procesa triggers y auto-recovery)
+- `rix-sweep-watchdog-15min`: respaldo cada 5 minutos
+
+---
+
+## Estimación de Tiempos Basada en W05
+
+### Datos Históricos de 2026-W05 (25-26 enero)
+
+| Métrica | Valor |
+|---------|-------|
+| Inicio | 04:05 UTC (25/01) |
+| Fin | 02:15 UTC (26/01) |
+| **Duración Total** | ~22 horas |
+| Fases más lentas | 9, 14, 26 (~20h cada una) |
+| Reintentos | 7 empresas con HTTP 504 |
+| Empresas completadas | 174/174 (100%) |
+
+### Por qué tardó 22 horas (y no 3)
+
+1. **Timeouts HTTP 504:** 7 empresas necesitaron reintentos automáticos
+2. **Fases 9, 14, 26:** Acumularon retrasos por dependencias de API
+3. **Procesamiento secuencial:** 10 segundos entre cada empresa por fase
+4. **Auto-recovery:** El watchdog de 5 min eventualmente completó todo
+
+---
+
+## Estimación para 2026-W07 (9 febrero)
+
+### Escenario Optimista (sin 504s)
+- **Inicio:** 01:00 CET domingo
+- **Fin búsquedas:** ~08:00 CET domingo
+- **Fin análisis:** ~12:00 CET domingo
+- **Total:** ~11 horas
+
+### Escenario Realista (con algunos 504s)
+- **Inicio:** 01:00 CET domingo
+- **Fin búsquedas:** ~14:00 CET domingo
+- **Fin análisis:** ~18:00 CET domingo
+- **Total:** ~17 horas
+
+### Escenario Pesimista (similar a W05)
+- **Total:** ~22 horas
+- **Fin:** lunes ~00:00 CET
+
+---
+
+## Lista de Verificación Pre-Barrido
+
+### Correcciones Urgentes
+
+- **FIX CRÍTICO:** Corregir error `triggersProcessed is not defined` en rix-batch-orchestrator
+- Desplegar el orquestador corregido antes del domingo
+
+### Verificaciones Manuales
+
+- [ ] Confirmar que todos los CRONs de fase están activos (35/35)
+- [ ] Verificar que las claves API (OpenAI, Perplexity, etc.) no han expirado
+- [ ] Comprobar que no hay triggers pendientes antiguos que puedan interferir
+
+### Monitorización Durante el Barrido
+
+1. **Panel de Administración:** Verificar progreso en tiempo real
+2. **Logs del Orquestador:** Buscar errores 504 o rate limits
+3. **sweep_progress:** Consultar status de empresas
+4. **pipeline_logs:** Telemetría de heartbeats
+
+---
+
+## Resumen de Cambios Técnicos Necesarios
+
+| Archivo | Cambio | Prioridad |
+|---------|--------|-----------|
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Declarar `triggersProcessed` antes de usarla (o usar `cronTotalProcessed`) | **CRÍTICO** |
+
+### Código a Corregir
+
+Ubicación aproximada: línea ~1935-2000
 
 ```typescript
 // ANTES (problemático):
-const jsonMatch = rawContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-const jsonStr = jsonMatch ? jsonMatch[1].trim() : rawContent.trim();
-
-// DESPUÉS (robusto):
-// Múltiples estrategias de extracción
-let jsonStr = rawContent.trim();
-
-// Estrategia 1: Buscar bloque markdown JSON
-const codeBlockMatch = rawContent.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
-if (codeBlockMatch) {
-  jsonStr = codeBlockMatch[1].trim();
+if (pending === 0 && processing === 0) {
+  // ... código de auto-encadenamiento ...
+  return new Response(JSON.stringify({
+    triggersProcessed: triggersProcessed.length,  // ERROR: no definida
+  }));
 }
-// Estrategia 2: Buscar directamente el array JSON
-else if (rawContent.includes('[')) {
-  const start = rawContent.indexOf('[');
-  const end = rawContent.lastIndexOf(']');
-  if (start !== -1 && end > start) {
-    jsonStr = rawContent.substring(start, end + 1);
-  }
+
+// DESPUÉS (corregido):
+if (pending === 0 && processing === 0) {
+  // Al inicio del bloque, antes del return
+  const triggersProcessed: Array<{action: string}> = [];
+  
+  // O usar la variable que SÍ existe:
+  return new Response(JSON.stringify({
+    triggersProcessed: cronTotalProcessed,  // Esta sí está definida
+  }));
 }
 ```
 
 ---
 
-### 2. Inyectar `company_name` en el Hero Slide
+## Resumen Final
 
-**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
+El sistema está **casi listo** pero tiene un **bug crítico** que debe corregirse antes del domingo. Los CRONs y la distribución de fases están correctamente configurados. Basándose en la experiencia de W05:
 
-Después de parsear las slides, añadir post-procesado para asegurar que el Hero tenga el nombre de la empresa:
+- **Caso base:** 17 horas de duración
+- **Riesgo principal:** Timeouts HTTP 504 en algunas APIs
+- **Mitigación:** El watchdog de 5 min eventualmente completa todo
 
-```typescript
-// Post-procesar: Asegurar que el Hero slide tenga company_name
-slides = slides.map((slide: any) => {
-  if (slide.slideType === 'hero') {
-    return { ...slide, company_name: company_name };
-  }
-  return slide;
-});
-```
-
----
-
-### 3. Mejorar el System Prompt del Diseñador
-
-**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
-
-Añadir sección de instrucciones para construir narrativa comercial:
-
-```text
-## FILOSOFÍA DE DISEÑO NARRATIVO
-
-Tu objetivo NO es resumir contenido. Tu objetivo es CONSTRUIR UN ARGUMENTO DE VENTA 
-visual que convenza al destinatario de que NECESITA RepIndex.
-
-### FLUJO NARRATIVO OBLIGATORIO:
-
-1. **APERTURA (hero)**: Frase gancho que cree TENSIÓN. El nombre de la empresa 
-   debe aparecer en headline o subheadline. Ejemplo: "IBERDROLA: La brecha entre 
-   tu realidad y tu percepción algorítmica"
-
-2. **EL PROBLEMA (metrics o split)**: Datos concretos que demuestren que hay 
-   un problema que el cliente NO PUEDE VER sin RepIndex
-
-3. **LA EVIDENCIA (content o comparison)**: Extractos textuales de lo que las 
-   IAs dicen sobre la empresa - citas específicas del contenido valorado
-
-4. **LA OPORTUNIDAD (three_columns o split)**: Qué puede ganar si actúa ahora
-
-5. **LAS PREGUNTAS IMPOSIBLES (questions)**: Preguntas que solo RepIndex puede 
-   responder - demuestran el valor único de la herramienta
-
-6. **CIERRE (cta)**: Llamada a acción clara con urgencia
-
-### REGLAS DE EXTRACCIÓN DEL CONTENIDO VALORADO:
-
-- Lee CADA respuesta valorada buscando: cifras, comparativas, citas textuales, 
-  tendencias, alertas, oportunidades
-- Si hay una comparativa con competidores → usa slide "comparison"
-- Si hay métricas numéricas específicas → usa slide "metrics"  
-- Si hay citas de lo que dicen las IAs → usa slide "quote"
-- Si hay preguntas para Rix → usa slide "questions"
-```
-
----
-
-### 4. Añadir Logging Mejorado para Debug
-
-**Archivo:** `supabase/functions/design-pptx-slides/index.ts`
-
-Añadir más información de debug para futuras incidencias:
-
-```typescript
-console.log(`[design-pptx-slides] Slide types generated:`, 
-  slides.map((s: any) => s.slideType).join(', '));
-console.log(`[design-pptx-slides] Hero has company_name:`, 
-  slides[0]?.company_name || 'NOT SET');
-```
-
----
-
-## Resumen de Archivos a Modificar
-
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/design-pptx-slides/index.ts` | Parser JSON robusto, inyección company_name, prompt mejorado, logging |
-
-## Validación
-
-Después de implementar:
-1. Generar una presentación para cualquier empresa con al menos 2 respuestas valoradas con 4-5 estrellas
-2. Verificar que:
-   - Se generan 6-10 slides (no 3 genéricas)
-   - El Hero slide muestra el nombre de la empresa prominentemente
-   - La narrativa sigue el flujo: problema → evidencia → oportunidad → CTA
+**Acción inmediata requerida:** Corregir el error de `triggersProcessed` y redesplegar el orquestador.
