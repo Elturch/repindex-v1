@@ -1152,6 +1152,44 @@ async function processCronTriggers(
         results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
         console.log(`[cron_triggers] auto_sanitize trigger ${trigger.id} completed successfully`);
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // ENCADENAMIENTO AUTOMÁTICO: Disparar auto_populate_vectors si el sweep está limpio
+        // Esto actualiza el Vector Store inmediatamente tras completar el análisis,
+        // sin esperar al CRON de las 23:00 UTC (que actúa como red de seguridad).
+        // ═══════════════════════════════════════════════════════════════════════
+        const sanitizeResult = data as { missing?: number; invalid?: number; repaired?: number } | null;
+        const sweepIsClean = 
+          (sanitizeResult?.missing ?? 0) === 0 && 
+          (sanitizeResult?.invalid ?? 0) === 0;
+
+        if (sweepIsClean) {
+          // Verificar que no existe ya un trigger pendiente/processing para evitar duplicados
+          const { data: existingVectorTrigger } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'auto_populate_vectors')
+            .in('status', ['pending', 'processing'])
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingVectorTrigger) {
+            await supabase.from('cron_triggers').insert({
+              action: 'auto_populate_vectors',
+              params: { 
+                sweep_id: triggerParams?.sweep_id, 
+                triggered_by: 'auto_sanitize_chain',
+                auto_chain: true
+              },
+              status: 'pending',
+            });
+            console.log(`[auto_sanitize] Sweep clean (0 missing, 0 invalid)! Inserted auto_populate_vectors trigger for immediate Vector Store update.`);
+          } else {
+            console.log(`[auto_sanitize] Sweep clean but auto_populate_vectors already pending (${existingVectorTrigger.id}), skipping insertion.`);
+          }
+        } else {
+          console.log(`[auto_sanitize] Sweep not fully clean (missing: ${sanitizeResult?.missing ?? '?'}, invalid: ${sanitizeResult?.invalid ?? '?'}), not chaining vector store update.`);
+        }
+
       } else if (trigger.action === 'repair_search') {
         // ============================================================
         // REPAIR_SEARCH: Re-ejecuta búsqueda para registros sin datos
