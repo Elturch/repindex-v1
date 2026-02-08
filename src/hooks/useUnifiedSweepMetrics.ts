@@ -237,32 +237,53 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       console.log(`[useUnifiedSweepMetrics] Active week: ${weekStart} (${recordCount} records EXACT count), sweepId: ${sweepId}, total V2: ${totalV2Count}`);
       
 
-      // PAGINACIÓN PARALELA: PostgREST limita a 1000 filas por request
-      // Hacemos 2 requests paralelos para obtener hasta 1500 registros
-      const rixRunsPage1Promise = supabase
-        .from('rix_runs_v2')
-        .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
-        .eq('06_period_from', weekStart)
-        .range(0, 999);
-      
-      const rixRunsPage2Promise = supabase
-        .from('rix_runs_v2')
-        .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
-        .eq('06_period_from', weekStart)
-        .range(1000, 1499);
+      // PAGINACIÓN DINÁMICA: PostgREST limita a 1000 filas por request.
+      // NO usamos límites "a ojo" (1500, 2000, etc.).
+      // 1) Si tenemos recordCount (count exact), calculamos cuántas páginas hacen falta y las pedimos en paralelo.
+      // 2) Si el count falla, hacemos fallback secuencial hasta que una página venga corta.
+      const PAGE_SIZE = 1000;
+
+      const buildRixRunsPage = (offset: number) =>
+        supabase
+          .from('rix_runs_v2')
+          .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
+          .eq('06_period_from', weekStart)
+          .range(offset, offset + PAGE_SIZE - 1);
+
+      const fetchAllRixRunsForWeek = async (): Promise<any[]> => {
+        // Count-based (paralelo): ideal cuando recordCount está disponible
+        if (recordCount > 0) {
+          const pages = Math.ceil(recordCount / PAGE_SIZE);
+          const pagePromises = Array.from({ length: pages }, (_, i) => buildRixRunsPage(i * PAGE_SIZE));
+          const pageResults = await Promise.all(pagePromises);
+          for (const r of pageResults) {
+            if (r.error) throw r.error;
+          }
+          return pageResults.flatMap(r => r.data || []);
+        }
+
+        // Fallback (secuencial): evita depender de un count fiable y no "capamos" el dataset.
+        const all: any[] = [];
+        for (let offset = 0, guard = 0; guard < 50; guard += 1, offset += PAGE_SIZE) {
+          const res = await buildRixRunsPage(offset);
+          if (res.error) throw res.error;
+          const page = res.data || [];
+          all.push(...page);
+          if (page.length < PAGE_SIZE) break;
+        }
+        return all;
+      };
 
       // Parallel queries for maximum efficiency
       const [
-        rixRunsPage1Result,
-        rixRunsPage2Result,
+        rixRunsCombined,
         sweepProgressResult,
         pendingTriggersResult,
         failedCompaniesResult,
         pipelineLogsResult,
       ] = await Promise.all([
-        rixRunsPage1Promise,
-        rixRunsPage2Promise,
-        
+        fetchAllRixRunsForWeek(),
+
         // Get sweep_progress status counts (include ticker for ghost detection)
         supabase
           .from('sweep_progress')
@@ -294,16 +315,14 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .limit(1),
       ]);
       
-      // Combinar resultados de ambas páginas
-      if (rixRunsPage1Result.error) throw rixRunsPage1Result.error;
-      const rixRunsCombined = [
-        ...(rixRunsPage1Result.data || []),
-        ...(rixRunsPage2Result.data || [])
-      ];
-      
-      console.log(`[useUnifiedSweepMetrics] Paginación: página1=${rixRunsPage1Result.data?.length || 0}, página2=${rixRunsPage2Result.data?.length || 0}, total=${rixRunsCombined.length}`);
-      
       const records = rixRunsCombined;
+      
+      if (recordCount > 0) {
+        console.log(`[useUnifiedSweepMetrics] Paginación dinámica: recordCount=${recordCount}, totalFetched=${records.length}`);
+      } else {
+        console.log(`[useUnifiedSweepMetrics] Paginación dinámica (fallback): totalFetched=${records.length}`);
+      }
+
       const progressRecords = sweepProgressResult.data || [];
       const pendingTriggers = pendingTriggersResult.data || [];
       const failedCompaniesData = failedCompaniesResult.data || [];
