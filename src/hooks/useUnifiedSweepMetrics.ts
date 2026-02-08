@@ -250,7 +250,8 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
         supabase
           .from('rix_runs_v2')
           .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
-          .eq('06_period_from', weekStart),
+          .eq('06_period_from', weekStart)
+          .range(0, 1499),  // Superar límite default de 1000 (178 × 6 = 1068 registros actuales)
         
         // Get sweep_progress status counts (include ticker for ghost detection)
         supabase
