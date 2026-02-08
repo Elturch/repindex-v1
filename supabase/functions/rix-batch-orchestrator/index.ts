@@ -863,6 +863,10 @@ async function processCronTriggers(
     vector_store_continue: 40,
     auto_populate_vectors: 50,
 
+    // Corporate scraping (lower priority, runs after RIX sweep)
+    corporate_scrape_continue: 60,
+    corporate_scrape_retry: 61,
+
     // Self-chaining last (it calls the orchestrator again)
     auto_continue: 90,
   };
@@ -1380,6 +1384,131 @@ async function processCronTriggers(
         console.log(
           `[cron_triggers] repair_search trigger ${trigger.id} ${nextStatus}: processed=${repairResults.length}, remaining=${remainingAfter}`
         );
+
+      } else if (trigger.action === 'corporate_scrape_continue') {
+        // ============================================================
+        // CORPORATE_SCRAPE_CONTINUE: Procesa N empresas del barrido corporativo
+        // Se encadena automáticamente para completar el scraping semanal
+        // ============================================================
+        console.log(`[cron_triggers] Processing corporate_scrape_continue trigger ${trigger.id}`);
+        
+        const triggerParams = trigger.params as { sweep_id?: string; pending?: number } | null;
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/corporate-scrape-orchestrator`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            mode: 'continue_cascade',
+            sweep_id: triggerParams?.sweep_id,
+            batch_size: 5,  // Procesar 5 empresas por invocación
+            trigger: 'cron_triggers'
+          }),
+          signal: AbortSignal.timeout(120_000),
+        });
+
+        const responseText = await response.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        // El corporate-scrape-orchestrator ya inserta el siguiente trigger si es necesario
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: data as Record<string, unknown>
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
+        console.log(`[cron_triggers] corporate_scrape_continue completed`);
+
+      } else if (trigger.action === 'corporate_scrape_retry') {
+        // ============================================================
+        // CORPORATE_SCRAPE_RETRY: Reintenta errores temporales del scraping
+        // Resetea failed_retryable a pending e invoca el orquestador
+        // ============================================================
+        console.log(`[cron_triggers] Processing corporate_scrape_retry trigger ${trigger.id}`);
+        
+        const triggerParams = trigger.params as { sweep_id?: string; retryable_count?: number } | null;
+        const sweepId = triggerParams?.sweep_id || (() => {
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          return `corp-${year}-${month}`;
+        })();
+        
+        const RETRYABLE_TYPES = ['error_timeout', 'error_rate_limit', 'error_website_down', 'error_parsing'];
+        
+        // Resetear errores reintentables a pending (incrementando retry_count via RPC no disponible, lo hacemos manualmente)
+        const { data: failedRecords } = await supabase
+          .from('corporate_scrape_progress')
+          .select('id, retry_count')
+          .eq('sweep_id', sweepId)
+          .eq('status', 'failed')
+          .in('result_type', RETRYABLE_TYPES)
+          .lt('retry_count', 3);
+        
+        if (failedRecords && failedRecords.length > 0) {
+          for (const record of failedRecords) {
+            await supabase
+              .from('corporate_scrape_progress')
+              .update({ 
+                status: 'pending', 
+                retry_count: (record.retry_count || 0) + 1,
+                error_message: null
+              })
+              .eq('id', record.id);
+          }
+          console.log(`[corporate_scrape_retry] Reset ${failedRecords.length} retryable errors to pending`);
+        }
+
+        // Procesar el batch
+        const response = await fetch(`${supabaseUrl}/functions/v1/corporate-scrape-orchestrator`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            mode: 'continue_cascade',
+            sweep_id: sweepId,
+            batch_size: 3,  // Batch más pequeño para reintentos
+            trigger: 'retry'
+          }),
+          signal: AbortSignal.timeout(120_000),
+        });
+
+        const responseText = await response.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        await supabase
+          .from('cron_triggers')
+          .update({ 
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: { reset_count: failedRecords?.length || 0, ...(data as Record<string, unknown>) }
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: response.ok, result: data });
+        console.log(`[cron_triggers] corporate_scrape_retry completed (reset ${failedRecords?.length || 0} records)`);
 
       } else if (trigger.action === 'auto_continue') {
         // ============================================================
