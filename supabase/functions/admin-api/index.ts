@@ -487,6 +487,77 @@ serve(async (req) => {
         });
       }
 
+      // ==================== ISSUER MANAGEMENT ====================
+      case "create_issuer": {
+        const { data: issuer, error } = await supabaseAdmin
+          .from("repindex_root_issuers")
+          .insert({
+            issuer_id: data.issuer_id,
+            issuer_name: data.issuer_name,
+            ticker: data.ticker,
+            include_terms: data.include_terms,
+            exclude_terms: data.exclude_terms || '[]',
+            sample_query: data.sample_query,
+            status: data.status || 'active',
+            ibex_status: data.ibex_status,
+            languages: data.languages || ['es', 'en'],
+            geography: data.geography || ['ES'],
+            cotiza_en_bolsa: data.cotiza_en_bolsa ?? false,
+            ibex_family_code: data.ibex_family_code || null,
+            ibex_family_category: data.ibex_family_category || null,
+            sector_category: data.sector_category || null,
+            fase: data.fase || null,
+            website: data.website || null,
+            notes: data.notes || null,
+            verified_competitors: data.verified_competitors || '[]',
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        return new Response(JSON.stringify({ issuer }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "create_sweep_progress": {
+        const { data: progress, error } = await supabaseAdmin
+          .from("sweep_progress")
+          .insert({
+            sweep_id: data.sweep_id,
+            fase: data.fase,
+            ticker: data.ticker,
+            issuer_name: data.issuer_name,
+            status: data.status || 'pending',
+            models_completed: data.models_completed || 0,
+            retry_count: data.retry_count || 0,
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        return new Response(JSON.stringify({ progress }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "create_cron_trigger": {
+        const { data: trigger, error } = await supabaseAdmin
+          .from("cron_triggers")
+          .insert({
+            action: data.action,
+            params: data.params || {},
+            status: data.status || 'pending',
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        return new Response(JSON.stringify({ trigger }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
