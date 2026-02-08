@@ -1,207 +1,72 @@
 
 
-# Añadir Grupo Azvi e Incluir en Barrido W07
+# Añadir Grupo Azvi al Proceso de Noticias Corporativas
 
-## Resumen Ejecutivo
-Añadir **Grupo Azvi** al sistema de issuers y generar su análisis completo RIX para incluirlo en el barrido actual (W07), pasando de 178 a **179 empresas**.
+## Situación Actual
 
-## Datos de la Empresa
+| Elemento | Estado |
+|----------|--------|
+| AZVI en `repindex_root_issuers` | ✅ Registrado (status: active) |
+| Website configurado | ✅ https://www.grupoazvi.com/ |
+| AZVI en `corporate_scrape_progress` | ❌ No existe |
+| Barrido corporativo actual | `corp-2026-02` (174 empresas) |
 
-| Campo | Valor |
-|-------|-------|
-| Nombre | Grupo Azvi |
-| Sector | Construcción e Infraestructuras |
-| Cotiza | NO (empresa privada, grupo familiar sevillano) |
-| ibex_family_code | NO-COTIZA |
-| Ticker | AZVI (formato para no cotizadas) |
-| Website | https://www.grupoazvi.com/ |
-| Descripción | Grupo empresarial centenario (100+ años) especializado en construcción, infraestructuras y servicios, con presencia en Europa, Latinoamérica y EEUU |
+## Acciones a Ejecutar
 
-## Cambios Técnicos
+### Paso 1: Sincronizar Empresas Nuevas
 
-### Paso 1: Insertar en `repindex_root_issuers`
+Llamar al orquestador con `mode: sync_new` para detectar y añadir AZVI al barrido actual:
 
-```sql
-INSERT INTO repindex_root_issuers (
-  issuer_id,
-  issuer_name,
-  ticker,
-  include_terms,
-  exclude_terms,
-  sample_query,
-  status,
-  ibex_status,
-  languages,
-  geography,
-  cotiza_en_bolsa,
-  ibex_family_code,
-  ibex_family_category,
-  sector_category,
-  fase,
-  website,
-  notes,
-  verified_competitors
-) VALUES (
-  'grupo-azvi',
-  'Grupo Azvi',
-  'AZVI',
-  '["Grupo Azvi", "Azvi", "Azvi S.A."]',
-  '[]',
-  '("Grupo Azvi" OR "Azvi")',
-  'active',
-  'no_cotiza',
-  ARRAY['es', 'en'],
-  ARRAY['ES'],
-  false,
-  'NO-COTIZA',
-  'No cotiza en bolsa',
-  'Construcción e Infraestructuras',
-  35,  -- Fase 35 tiene solo 4 empresas (cap 5)
-  'https://www.grupoazvi.com/',
-  'Grupo constructor centenario sevillano. Ingresado manualmente 2026-02-08.',
-  '[]'
-);
+```typescript
+await supabase.functions.invoke('corporate-scrape-orchestrator', {
+  body: { mode: 'sync_new', sweep_id: 'corp-2026-02' }
+});
 ```
 
-### Paso 2: Insertar en `sweep_progress` para W07
+Esto creará automáticamente un registro en `corporate_scrape_progress`:
+- ticker: AZVI
+- issuer_name: Grupo Azvi
+- website: https://www.grupoazvi.com/
+- status: pending
+
+### Paso 2: Lanzar Scraping Inmediato
+
+Insertar un trigger `corporate_scrape_continue` para que el orquestador procese las empresas pendientes (incluyendo AZVI):
 
 ```sql
-INSERT INTO sweep_progress (
-  sweep_id,
-  fase,
-  ticker,
-  issuer_name,
-  status,
-  models_completed,
-  retry_count
-) VALUES (
-  '2026-W07',
-  35,
-  'AZVI',
-  'Grupo Azvi',
-  'pending',
-  0,
-  0
-);
-```
-
-### Paso 3: Disparar Análisis RIX Completo
-
-Insertar un trigger que invoque el análisis para esta empresa específica:
-
-```sql
-INSERT INTO cron_triggers (
-  action,
-  params,
-  status
-) VALUES (
-  'process_single_company',
-  '{"ticker": "AZVI", "issuer_name": "Grupo Azvi", "sweep_id": "2026-W07"}',
+INSERT INTO cron_triggers (action, params, status)
+VALUES (
+  'corporate_scrape_continue',
+  '{"sweep_id": "corp-2026-02", "triggered_by": "manual_azvi_add"}',
   'pending'
 );
 ```
 
-### Paso 4: Handler en el Orquestador
+### Alternativa Directa
 
-Añadir un nuevo case en `rix-batch-orchestrator/index.ts` para procesar `process_single_company`:
-
-```typescript
-} else if (trigger.action === 'process_single_company') {
-  const params = trigger.params as { ticker: string; issuer_name: string; sweep_id?: string };
-  console.log(`[cron_triggers] Processing single company: ${params.ticker}`);
-  
-  // Llamar directamente a rix-search-v2 con el ticker
-  const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceKey}`,
-    },
-    body: JSON.stringify({ 
-      ticker: params.ticker, 
-      issuer_name: params.issuer_name 
-    }),
-  });
-
-  const responseText = await response.text();
-  let data: any = {};
-  try { data = JSON.parse(responseText); } catch { data = { raw: responseText }; }
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${responseText}`);
-  }
-
-  // Actualizar sweep_progress si existe
-  if (params.sweep_id) {
-    await supabase
-      .from('sweep_progress')
-      .update({ 
-        status: 'completed', 
-        completed_at: new Date().toISOString(),
-        models_completed: data.results?.length || 6
-      })
-      .eq('sweep_id', params.sweep_id)
-      .eq('ticker', params.ticker);
-  }
-
-  await supabase
-    .from('cron_triggers')
-    .update({
-      status: 'completed',
-      processed_at: new Date().toISOString(),
-      result: data,
-    })
-    .eq('id', trigger.id);
-
-  results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
-  console.log(`[process_single_company] ${params.ticker} processed successfully`);
-}
-```
-
-También añadir a la lista de prioridades:
+También puedo llamar directamente al proceso single para AZVI una vez sincronizado:
 
 ```typescript
-const PRIORITY: Record<string, number> = {
-  // ...existing priorities...
-  process_single_company: 5,  // Máxima prioridad para empresas individuales
-  // ...
-};
+await supabase.functions.invoke('corporate-scrape-orchestrator', {
+  body: { mode: 'process_single', sweep_id: 'corp-2026-02' }
+});
 ```
 
-## Flujo de Ejecución
-
-```text
-1. INSERT en repindex_root_issuers → Empresa registrada
-2. INSERT en sweep_progress (W07) → Añadida al barrido actual
-3. INSERT en cron_triggers → Trigger creado
-4. Watchdog (cada 5 min) → Detecta trigger pendiente
-5. Orquestador → Procesa process_single_company
-6. rix-search-v2 → Ejecuta búsqueda en 6 modelos
-7. rix-analyze-v2 → Analiza y genera RIX Score
-8. sweep_progress → Marcado como completed
-```
+Pero AZVI irá al final de la cola (ordenado por `created_at`), así que mejor usar el trigger.
 
 ## Resultado Esperado
 
 | Métrica | Antes | Después |
 |---------|-------|---------|
-| Total empresas | 178 | 179 |
-| Empresas W07 | 178 | 179 |
-| ChatGPT | 178/178 | 179/179 |
-| (todos los modelos) | 178/178 | 179/179 |
+| Empresas en barrido | 174 | 175 |
+| AZVI corporate_snapshot | ❌ | ✅ |
+| AZVI corporate_news | ❌ | ✅ (si hay noticias) |
 
-## Archivos a Modificar
+## Ejecución
 
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir handler para `process_single_company` |
-| Base de datos | 3 INSERTs: issuer, sweep_progress, cron_trigger |
+No requiere cambios de código. Solo dos llamadas API:
+1. `corporate-scrape-orchestrator` con `sync_new`
+2. Insertar trigger para procesar pendientes
 
-## Consideraciones
-
-| Aspecto | Detalle |
-|---------|---------|
-| Tiempo estimado | 2-3 minutos para búsqueda + análisis |
-| Automatización | El trigger se procesa en la próxima ejecución del watchdog |
-| Reutilizable | El handler `process_single_company` sirve para futuras adiciones ad-hoc |
+El watchdog procesará el trigger en los próximos 5 minutos.
 
