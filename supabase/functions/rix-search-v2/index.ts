@@ -939,7 +939,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { ticker, issuer_name, single_model, repair_mode, expanded_keywords } = body;
+    const { ticker, issuer_name, single_model, repair_mode, expanded_keywords, sweep_id: requestSweepId } = body;
 
     if (!ticker) {
       return new Response(
@@ -1125,12 +1125,19 @@ serve(async (req) => {
       // ═══════════════════════════════════════════════════════════════════
       // CRITICAL FIX: Mark as completed in sweep_progress BEFORE returning
       // This prevents infinite retry loops for companies that are already done
+      // HOTFIX: Use requestSweepId if provided, otherwise calculate from calendar
       // ═══════════════════════════════════════════════════════════════════
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-      const currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+      let currentSweepId: string;
+      if (requestSweepId) {
+        currentSweepId = requestSweepId;
+        console.log(`[DUPLICATE-SKIP-EARLY] Using sweep_id from request: ${currentSweepId}`);
+      } else {
+        const now = new Date();
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+        const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+        currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+      }
 
       const { error: updateError } = await supabase
         .from('sweep_progress')
@@ -1358,13 +1365,20 @@ serve(async (req) => {
 
     // ========== AUTO-COMPLETION: Marcar empresa como completed en sweep_progress ==========
     // Esto permite al sistema fire-and-forget funcionar sin que el watchdog espere
+    // HOTFIX: Use requestSweepId if provided, otherwise calculate from calendar
     try {
-      // Get current sweep_id (same logic as orchestrator)
-      const now = new Date();
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
-      const currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+      let currentSweepId: string;
+      if (requestSweepId) {
+        currentSweepId = requestSweepId;
+        console.log(`[rix-search-v2] Using sweep_id from request: ${currentSweepId}`);
+      } else {
+        // Get current sweep_id (same logic as orchestrator)
+        const now = new Date();
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+        const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+        currentSweepId = `${now.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+      }
 
       const { error: updateError } = await supabase
         .from('sweep_progress')
@@ -1379,7 +1393,7 @@ serve(async (req) => {
       if (updateError) {
         console.error(`[rix-search-v2] Failed to update sweep_progress for ${ticker}:`, updateError);
       } else {
-        console.log(`[rix-search-v2] Marked ${ticker} as completed in sweep_progress (${successCount}/${totalModels} models)`);
+        console.log(`[rix-search-v2] Marked ${ticker} as completed in sweep_progress ${currentSweepId} (${successCount}/${totalModels} models)`);
       }
     } catch (sweepError) {
       console.error(`[rix-search-v2] Error updating sweep_progress:`, sweepError);
