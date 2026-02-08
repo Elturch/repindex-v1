@@ -90,8 +90,8 @@ UPDATE repindex_root_issuers SET verified_competitors = '["MAP", "LDA", "MUTUA-P
 -- CBAV - Clínica Baviera
 UPDATE repindex_root_issuers SET verified_competitors = '["ATR"]' WHERE ticker = 'CBAV';
 
--- CEPSA-PRIV
-UPDATE repindex_root_issuers SET verified_competitors = '["REP"]' WHERE ticker = 'CEPSA-PRIV';
+-- MOE.MC (Moeve, antes Cepsa)
+UPDATE repindex_root_issuers SET verified_competitors = '["REP"]' WHERE ticker = 'MOE.MC';
 
 -- CIE - CIE Automotive
 UPDATE repindex_root_issuers SET verified_competitors = '["ANTOLIN-PRIV", "GEST"]' WHERE ticker = 'CIE';
@@ -301,7 +301,7 @@ UPDATE repindex_root_issuers SET verified_competitors = '["ENG"]' WHERE ticker =
 UPDATE repindex_root_issuers SET verified_competitors = '["IAG"]' WHERE ticker = 'RENFE-PRIV';
 
 -- REP - Repsol
-UPDATE repindex_root_issuers SET verified_competitors = '["CEPSA-PRIV", "NTGY"]' WHERE ticker = 'REP';
+UPDATE repindex_root_issuers SET verified_competitors = '["MOE.MC", "NTGY"]' WHERE ticker = 'REP';
 
 -- RS - Ribera Salud
 UPDATE repindex_root_issuers SET verified_competitors = '["QS"]' WHERE ticker = 'RS';

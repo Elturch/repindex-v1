@@ -1552,7 +1552,7 @@ Los titulares deben ser:
 - **Con gancho emocional**: "La caída silenciosa de BBVA: tres semanas de declive que las IAs no perdonan"
 - **Preguntas retóricas**: "¿Está Iberdrola perdiendo su corona energética?"
 - **Metáforas periodísticas**: "La guerra de percepciones en el sector bancario", "La montaña rusa reputacional de Inditex"
-- **Datos concretos en el titular**: "Repsol cae 8 puntos en RIX mientras Cepsa escala posiciones"
+- **Datos concretos en el titular**: "Repsol cae 8 puntos en RIX mientras Moeve escala posiciones"
 - **Contrastes dramáticos**: "Mientras Mercadona brilla, Carrefour lucha por recuperar terreno"
 
 ## EJEMPLOS DE TITULARES POR CATEGORÍA:
