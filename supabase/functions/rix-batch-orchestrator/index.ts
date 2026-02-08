@@ -43,47 +43,44 @@ function getCurrentSweepId(): string {
 }
 
 // ============================================================================
-// CRITICAL FIX: Obtiene el sweepId ACTIVO basado en datos REALES de rix_runs_v2
-// Esto evita que el watchdog "apunte" a la semana calendario cuando los datos
-// pertenecen a otra semana (ej. cambio de semana a medianoche).
+// CRITICAL FIX: Obtiene el sweepId ACTIVO basado en SWEEP_PROGRESS (estado operativo)
+// NO desde rix_runs_v2.06_period_from (que es rolling y puede crear desalineaciones).
+// El sweep activo es aquel con registros pending/processing/failed en sweep_progress.
 // ============================================================================
-async function getActiveSweepId(supabase: ReturnType<typeof createClient>): Promise<string> {
-  // 1. Buscar la semana con MÁS registros recientes (sweep activo)
-  const { data: latestWeek } = await supabase
-    .from('rix_runs_v2')
-    .select('06_period_from')
-    .order('06_period_from', { ascending: false })
+async function getActiveSweepId(
+  supabase: ReturnType<typeof createClient>,
+  forceSweeepId?: string
+): Promise<string> {
+  // 0. Si viene un sweep_id forzado en el request, usarlo directamente
+  if (forceSweeepId) {
+    console.log(`[getActiveSweepId] Using forced sweep_id from request: ${forceSweeepId}`);
+    return forceSweeepId;
+  }
+
+  // 1. Buscar sweep con trabajo pendiente en sweep_progress
+  //    El formato YYYY-WNN permite orden lexicográfico correcto (descendente = más reciente)
+  const { data: activeSweep, error } = await supabase
+    .from('sweep_progress')
+    .select('sweep_id')
+    .in('status', ['pending', 'processing', 'failed'])
+    .order('sweep_id', { ascending: false })
     .limit(1)
     .maybeSingle();
-  
-  if (!latestWeek?.['06_period_from']) {
-    // No hay datos en rix_runs_v2, usar calendario
-    console.log('[getActiveSweepId] No data in rix_runs_v2, falling back to calendar');
+
+  if (error) {
+    console.error('[getActiveSweepId] Error querying sweep_progress:', error);
     return getCurrentSweepId();
   }
-  
-  const periodFrom = latestWeek['06_period_from'] as string;
-  
-  // 2. Calcular ISO week desde esa fecha (implementación pura, sin date-fns)
-  const dateObj = new Date(periodFrom + 'T00:00:00Z');
-  
-  // ISO week calculation: find Thursday of this week
-  const dayOfWeek = dateObj.getUTCDay() || 7; // Make Sunday = 7
-  const thursday = new Date(dateObj);
-  thursday.setUTCDate(dateObj.getUTCDate() + 4 - dayOfWeek);
-  
-  const firstThursday = new Date(thursday.getUTCFullYear(), 0, 4);
-  const firstDayOfFirstWeek = new Date(firstThursday);
-  firstDayOfFirstWeek.setUTCDate(firstThursday.getUTCDate() - ((firstThursday.getUTCDay() || 7) - 1));
-  
-  const diffMs = thursday.getTime() - firstDayOfFirstWeek.getTime();
-  const weekNumber = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
-  
-  const isoYear = thursday.getUTCFullYear();
-  const sweepId = `${isoYear}-W${String(weekNumber).padStart(2, '0')}`;
-  
-  console.log(`[getActiveSweepId] Derived from data: ${periodFrom} → ${sweepId}`);
-  return sweepId;
+
+  if (activeSweep?.sweep_id) {
+    console.log(`[getActiveSweepId] Found active sweep from sweep_progress: ${activeSweep.sweep_id}`);
+    return activeSweep.sweep_id;
+  }
+
+  // 2. No hay trabajo pendiente, usar calendario como fallback
+  const calendarSweep = getCurrentSweepId();
+  console.log(`[getActiveSweepId] No pending work in sweep_progress, fallback to calendar: ${calendarSweep}`);
+  return calendarSweep;
 }
 
 // Verifica si una empresa ya tiene datos para el período de análisis actual
@@ -299,7 +296,7 @@ async function processCompany(
   }
 
   try {
-    // Llamar a rix-search-v2
+    // Llamar a rix-search-v2 - HOTFIX: pasar sweep_id para consistencia
     console.log(`[phase] Processing ${ticker} (${issuerName})`);
     const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
       method: 'POST',
@@ -308,6 +305,8 @@ async function processCompany(
         'Authorization': `Bearer ${serviceKey}`,
       },
       body: JSON.stringify({ ticker, issuer_name: issuerName }),
+      // NOTE: sweep_id no se pasa aquí porque runSinglePhase usa getCurrentSweepId()
+      // El fix principal está en el modo fire-and-forget del watchdog
     });
 
     if (!response.ok) {
@@ -1481,6 +1480,7 @@ let requestBody: {
       workers?: number;
       max_per_worker?: number;
       relaunch_count?: number;
+      sweep_id?: string; // HOTFIX: Allow explicit sweep_id from request
     } = {};
     
     try {
@@ -1505,13 +1505,18 @@ const {
       workers = 4,
       max_per_worker = 50,
       relaunch_count = 0,
+      sweep_id: explicitSweepId,
     } = requestBody;
 
-    // CRITICAL FIX: Para watchdog/auto_recovery, usar sweepId ACTIVO (desde datos reales)
-    // Para otros modos, usar calendario (mantener comportamiento anterior)
+    // CRITICAL FIX: Determinar sweepId con nueva prioridad:
+    // 1. sweep_id explícito en request (forzar sweep específico)
+    // 2. sweep_progress con trabajo pendiente (realidad operativa)
+    // 3. calendario (solo si no hay trabajo pendiente)
     const isWatchdogMode = trigger === 'watchdog' || trigger === 'auto_recovery';
-    const sweepId = isWatchdogMode ? await getActiveSweepId(supabase) : getCurrentSweepId();
-    console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}${isWatchdogMode ? ' (active sweep from data)' : ' (calendar)'}`);
+    const sweepId = isWatchdogMode || explicitSweepId
+      ? await getActiveSweepId(supabase, explicitSweepId)
+      : getCurrentSweepId();
+    console.log(`[orchestrator] Invoked - trigger: ${trigger}, fase: ${fase || 'auto'}, sweepId: ${sweepId}, mode: ${mode || 'default'}${explicitSweepId ? ' (FORCED)' : isWatchdogMode ? ' (from sweep_progress)' : ' (calendar)'}`);
 
     // ========== MODO CONCURRENT_STABLE: Procesa N empresas en paralelo ESPERANDO resultados ==========
     // NUEVO: Reemplaza parallel_batch - Este modo SÍ espera a que todas las empresas terminen
@@ -2302,6 +2307,7 @@ const {
       }
 
       // 9. Marcar como processing y disparar rix-search-v2 (fire-and-forget)
+      // HOTFIX: Pasar sweep_id para que rix-search-v2 actualice el sweep correcto
       const firedCompanies: string[] = [];
       
       for (const company of companiesToFire) {
@@ -2311,7 +2317,7 @@ const {
           .update({ status: 'processing', started_at: new Date().toISOString() })
           .eq('id', company.id);
         
-        console.log(`[${triggerMode}] Firing rix-search-v2 for ${company.ticker} (fire-and-forget)`);
+        console.log(`[${triggerMode}] Firing rix-search-v2 for ${company.ticker} with sweep_id=${sweepId} (fire-and-forget)`);
         
         EdgeRuntime.waitUntil(
           fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
@@ -2322,7 +2328,8 @@ const {
             },
             body: JSON.stringify({ 
               ticker: company.ticker, 
-              issuer_name: company.issuer_name || company.ticker 
+              issuer_name: company.issuer_name || company.ticker,
+              sweep_id: sweepId, // CRITICAL: Pasar sweep_id para consistencia
             }),
           }).catch(e => console.error(`[${triggerMode}] Fire-and-forget failed for ${company.ticker}:`, e))
         );
