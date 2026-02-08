@@ -863,6 +863,9 @@ async function processCronTriggers(
     vector_store_continue: 40,
     auto_populate_vectors: 50,
 
+    // Newsroom generation (after vector store complete)
+    auto_generate_newsroom: 55,
+
     // Corporate scraping (lower priority, runs after RIX sweep)
     corporate_scrape_continue: 60,
     corporate_scrape_retry: 61,
@@ -1034,6 +1037,33 @@ async function processCronTriggers(
             .eq('id', trigger.id);
 
           results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, remaining_total: 0 } });
+
+          // ═══════════════════════════════════════════════════════════════════════
+          // ENCADENAMIENTO AUTOMÁTICO: Disparar auto_generate_newsroom
+          // Cuando el Vector Store está 100% indexado, generamos el Newsroom automáticamente.
+          // ═══════════════════════════════════════════════════════════════════════
+          const { data: existingNewsroomTrigger } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'auto_generate_newsroom')
+            .in('status', ['pending', 'processing'])
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingNewsroomTrigger) {
+            await supabase.from('cron_triggers').insert({
+              action: 'auto_generate_newsroom',
+              params: { 
+                triggered_by: 'auto_populate_vectors_chain',
+                auto_chain: true,
+                source_filter: sourceFilter
+              },
+              status: 'pending',
+            });
+            console.log('[auto_populate_vectors] Vector Store complete! Inserted auto_generate_newsroom trigger for automatic newsroom generation.');
+          } else {
+            console.log(`[auto_populate_vectors] Vector Store complete but auto_generate_newsroom already pending (${existingNewsroomTrigger.id}), skipping insertion.`);
+          }
         }
 
       } else if (trigger.action === 'vector_store_continue') {
@@ -1193,6 +1223,55 @@ async function processCronTriggers(
         } else {
           console.log(`[auto_sanitize] Sweep not fully clean (missing: ${sanitizeResult?.missing ?? '?'}, invalid: ${sanitizeResult?.invalid ?? '?'}), not chaining vector store update.`);
         }
+
+      } else if (trigger.action === 'auto_generate_newsroom') {
+        // ============================================================
+        // AUTO_GENERATE_NEWSROOM: Genera el newsroom automáticamente
+        // Se dispara después de que el Vector Store esté 100% indexado.
+        // Usa Gemini 3 Pro para generar contenido periodístico premium.
+        // ============================================================
+        console.log(`[cron_triggers] Processing auto_generate_newsroom trigger ${trigger.id}`);
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/generate-news-story`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            trigger: 'cron',
+            saveToDb: true 
+          }),
+        });
+
+        const responseText = await response.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        await supabase
+          .from('cron_triggers')
+          .update({
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: data,
+          })
+          .eq('id', trigger.id);
+
+        results.push({ 
+          id: trigger.id, 
+          action: trigger.action, 
+          success: true, 
+          result: data 
+        });
+        console.log('[auto_generate_newsroom] Newsroom generation completed successfully');
 
       } else if (trigger.action === 'repair_search') {
         // ============================================================
