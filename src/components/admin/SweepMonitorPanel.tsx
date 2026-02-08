@@ -280,156 +280,47 @@ export function SweepMonitorPanel() {
   const cascadeRunIdRef = useRef(0);
   const resumeStateRef = useRef<Partial<CascadeState> | null>(null);
 
-  // ============ FETCH ESTADO DE ANÁLISIS V2 ============
+  // ============ ESTADO DE ANÁLISIS V2 (UNIFICADO, SIN LÍMITES) ============
+  // Antes: este panel hacía queries directas a rix_runs_v2 con .limit(2000) y/o sin paginar,
+  // lo que PostgREST truncaba a 1000 filas.
+  // Ahora: derivamos TODO del hook useUnifiedSweepMetrics (source of truth), que ya pagina completo.
   const fetchAnalysisStatus = useCallback(async () => {
     setLoadingAnalysis(true);
     try {
-      // Obtener la semana más reciente y contar por modelo
-      // IMPORTANTE: Incluir 20_res_gpt_bruto para distinguir "analizables" vs "sin datos"
-      const { data, error } = await supabase
-        .from('rix_runs_v2')
-        .select('02_model_name, 09_rix_score, 06_period_from, 20_res_gpt_bruto')
-        .order('06_period_from', { ascending: false })
-        .limit(2000); // Últimas ~2 semanas
-
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        setAnalysisStatus(null);
-        return;
-      }
-
-      // Determinar la semana más reciente
-      const latestWeek = data[0]['06_period_from'];
-      const weekRecords = data.filter(r => r['06_period_from'] === latestWeek);
-
-      // Agrupar por modelo con métricas adicionales
-      // Normalizar alias: 'Gemini' y 'Google Gemini' se tratan como uno solo
-      const normalizeModel = (name: string): string => {
-        if (!name) return 'Unknown';
-        if (name === 'Gemini' || name === 'Google Gemini') return 'Gemini';
-        return name;
-      };
-      
-      const modelMap = new Map<string, { 
-        total: number; 
-        withScore: number; 
-        pendingAnalyzable: number; 
-        pendingNoData: number; 
-      }>();
-      
-      weekRecords.forEach(record => {
-        const rawModel = record['02_model_name'] || 'Unknown';
-        const model = normalizeModel(rawModel);
-        const current = modelMap.get(model) || { total: 0, withScore: 0, pendingAnalyzable: 0, pendingNoData: 0 };
-        current.total++;
-        
-        if (record['09_rix_score'] !== null) {
-          current.withScore++;
-        } else if (record['20_res_gpt_bruto'] !== null) {
-          // Tiene respuesta pero no score → analizable
-          current.pendingAnalyzable++;
-        } else {
-          // Sin respuesta ni score → no analizable aún
-          current.pendingNoData++;
-        }
-        
-        modelMap.set(model, current);
-      });
-
-      // Convertir a array ordenado (UI usa 'Gemini' pero internamente ambos alias están unificados)
-      const byModel: AnalysisModelStatus[] = [];
-      const modelOrder = ['ChatGPT', 'Deepseek', 'Gemini', 'Grok', 'Perplexity', 'Qwen'];
-      
-      modelOrder.forEach(modelName => {
-        const stats = modelMap.get(modelName);
-        if (stats) {
-          byModel.push({
-            model: modelName,
-            total: stats.total,
-            withScore: stats.withScore,
-            pending: stats.total - stats.withScore,
-            pendingAnalyzable: stats.pendingAnalyzable,
-            pendingNoData: stats.pendingNoData,
-            percentage: stats.total > 0 ? Math.round((stats.withScore / stats.total) * 100) : 0
-          });
-        }
-      });
-
-      // Añadir modelos no esperados
-      modelMap.forEach((stats, model) => {
-        if (!modelOrder.includes(model)) {
-          byModel.push({
-            model,
-            total: stats.total,
-            withScore: stats.withScore,
-            pending: stats.total - stats.withScore,
-            pendingAnalyzable: stats.pendingAnalyzable,
-            pendingNoData: stats.pendingNoData,
-            percentage: stats.total > 0 ? Math.round((stats.withScore / stats.total) * 100) : 0
-          });
-        }
-      });
-
-      // Totales por registro
-      const totalRecords = weekRecords.length;
-      const withScore = weekRecords.filter(r => r['09_rix_score'] !== null).length;
-      const pendingAnalyzable = weekRecords.filter(r => r['09_rix_score'] === null && r['20_res_gpt_bruto'] !== null).length;
-      const pendingNoData = weekRecords.filter(r => r['09_rix_score'] === null && r['20_res_gpt_bruto'] === null).length;
-
-      // NUEVO: Cálculo por empresa (ticker) para métricas correctas de "Completados"
-      // Necesitamos obtener también el ticker para agrupar
-      const { data: weekRecordsWithTicker, error: tickerError } = await supabase
-        .from('rix_runs_v2')
-        .select('05_ticker, 09_rix_score')
-        .eq('06_period_from', latestWeek);
-
-      let uniqueCompaniesWithScore = 0;
-      let uniqueCompaniesComplete = 0;
-      let totalUniqueCompanies = 0;
-
-      if (!tickerError && weekRecordsWithTicker) {
-        // Agrupar por ticker
-        const tickerMap = new Map<string, { modelsWithScore: number; totalModels: number }>();
-        
-        weekRecordsWithTicker.forEach(record => {
-          const ticker = record['05_ticker'];
-          if (!ticker) return;
-          
-          const current = tickerMap.get(ticker) || { modelsWithScore: 0, totalModels: 0 };
-          current.totalModels++;
-          if (record['09_rix_score'] !== null) {
-            current.modelsWithScore++;
-          }
-          tickerMap.set(ticker, current);
-        });
-
-        // Calcular métricas por empresa
-        totalUniqueCompanies = tickerMap.size;
-        uniqueCompaniesWithScore = [...tickerMap.values()].filter(c => c.modelsWithScore > 0).length;
-        uniqueCompaniesComplete = [...tickerMap.values()].filter(c => c.modelsWithScore === 6).length;
-      }
-
-      setAnalysisStatus({
-        totalRecords,
-        withScore,
-        pendingAnalysis: totalRecords - withScore,
-        pendingAnalyzable,
-        pendingNoData,
-        percentage: totalRecords > 0 ? Math.round((withScore / totalRecords) * 100) : 0,
-        byModel,
-        sweepWeek: latestWeek || 'N/A',
-        uniqueCompaniesWithScore,
-        uniqueCompaniesComplete,
-        totalUniqueCompanies,
-      });
-
+      await refetchUnifiedMetrics();
     } catch (error) {
-      console.error('Error fetching analysis status:', error);
+      console.error('Error refreshing unified analysis status:', error);
     } finally {
       setLoadingAnalysis(false);
     }
-  }, []);
+  }, [refetchUnifiedMetrics]);
+
+  useEffect(() => {
+    if (!unifiedMetrics) return;
+
+    setAnalysisStatus({
+      totalRecords: unifiedMetrics.totalRecords,
+      withScore: unifiedMetrics.recordsWithScore,
+      pendingAnalysis: unifiedMetrics.totalRecords - unifiedMetrics.recordsWithScore,
+      pendingAnalyzable: unifiedMetrics.recordsPendingAnalysis,
+      pendingNoData: unifiedMetrics.recordsNoData,
+      percentage: unifiedMetrics.recordCompletionRate,
+      byModel: unifiedMetrics.byModel.map((m) => ({
+        model: m.model,
+        total: m.total,
+        withScore: m.withScore,
+        pending: m.pending,
+        pendingAnalyzable: m.pendingAnalyzable,
+        pendingNoData: m.pendingNoData,
+        percentage: m.percentage,
+      })),
+      // Mantener compatibilidad con la UI existente
+      sweepWeek: unifiedMetrics.weekStart,
+      uniqueCompaniesWithScore: unifiedMetrics.companiesComplete + unifiedMetrics.companiesPartial,
+      uniqueCompaniesComplete: unifiedMetrics.companiesComplete,
+      totalUniqueCompanies: unifiedMetrics.totalCompanies,
+    });
+  }, [unifiedMetrics]);
 
   // ============ FETCH ÚLTIMO TRIGGER DE REPARACIÓN ============
   const fetchLatestRepairTrigger = useCallback(async () => {
