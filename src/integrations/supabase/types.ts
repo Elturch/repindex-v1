@@ -605,6 +605,9 @@ export type Database = {
           error_message: string | null
           id: string
           issuer_name: string | null
+          latest_news_date: string | null
+          news_found_count: number | null
+          result_type: string | null
           retry_count: number | null
           started_at: string | null
           status: string | null
@@ -619,6 +622,9 @@ export type Database = {
           error_message?: string | null
           id?: string
           issuer_name?: string | null
+          latest_news_date?: string | null
+          news_found_count?: number | null
+          result_type?: string | null
           retry_count?: number | null
           started_at?: string | null
           status?: string | null
@@ -633,6 +639,9 @@ export type Database = {
           error_message?: string | null
           id?: string
           issuer_name?: string | null
+          latest_news_date?: string | null
+          news_found_count?: number | null
+          result_type?: string | null
           retry_count?: number | null
           started_at?: string | null
           status?: string | null

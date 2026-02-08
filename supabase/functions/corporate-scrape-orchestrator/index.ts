@@ -191,7 +191,7 @@ async function processCompany(
   supabaseUrl: string,
   serviceKey: string,
   newsOnly: boolean = false
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; result_type?: string }> {
   const modeLabel = newsOnly ? 'NEWS ONLY' : 'FULL';
   console.log(`[Orchestrator] Processing ${company.ticker} (${company.issuer_name}) - ${modeLabel}`);
 
@@ -213,39 +213,124 @@ async function processCompany(
         ticker: company.ticker,
         website: company.website,
         issuer_name: company.issuer_name,
-        news_only: newsOnly, // NEW: Pass news_only flag
+        news_only: newsOnly,
       }),
     });
 
     const result = await response.json();
+    
+    // Extract semantic result_type from the scrape response
+    const resultType = result.result_type || (result.success ? 'success_no_news' : 'error_parsing');
+    const newsFoundCount = result.news_found_count || 0;
+    const latestNewsDate = result.latest_news_date || null;
 
-    // Update status based on result
+    // Update status with semantic classification
     await supabase
       .from('corporate_scrape_progress')
       .update({
         status: result.success ? 'completed' : 'failed',
         completed_at: new Date().toISOString(),
         error_message: result.error || null,
+        result_type: resultType,
+        news_found_count: newsFoundCount,
+        latest_news_date: latestNewsDate,
       })
       .eq('id', company.id);
 
-    console.log(`[Orchestrator] ${company.ticker}: ${result.success ? 'completed' : 'failed'} (${modeLabel})`);
-    return { success: result.success, error: result.error };
+    console.log(`[Orchestrator] ${company.ticker}: ${result.success ? 'completed' : 'failed'} (${modeLabel}) - result_type: ${resultType}`);
+    return { success: result.success, error: result.error, result_type: resultType };
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    const isTimeout = errorMsg.toLowerCase().includes('timeout');
+    const resultType = isTimeout ? 'error_timeout' : 'error_parsing';
+    
     await supabase
       .from('corporate_scrape_progress')
       .update({
         status: 'failed',
         completed_at: new Date().toISOString(),
         error_message: errorMsg,
+        result_type: resultType,
+        news_found_count: 0,
+        latest_news_date: null,
       })
       .eq('id', company.id);
     
-    console.error(`[Orchestrator] ${company.ticker} exception:`, err);
-    return { success: false, error: errorMsg };
+    console.error(`[Orchestrator] ${company.ticker} exception (${resultType}):`, err);
+    return { success: false, error: errorMsg, result_type: resultType };
   }
+}
+
+// ============================================================================
+// AUTO-CONTINUATION TRIGGER INSERTION
+// Inserta triggers en cron_triggers para encadenamiento automático
+// ============================================================================
+
+const RETRYABLE_RESULT_TYPES = ['error_timeout', 'error_rate_limit', 'error_website_down', 'error_parsing'];
+
+async function maybeInsertContinueTrigger(
+  supabase: ReturnType<typeof createClient>,
+  sweepId: string,
+  status: { pending: number; processing: number; failed: number }
+): Promise<{ action: string | null; reason: string }> {
+  // Si no hay más trabajo pendiente, verificar errores reintentables
+  if (status.pending === 0 && status.processing === 0) {
+    // Verificar si hay failed_retryable que deban reintentarse (max 3 retries)
+    const { count: retryableCount } = await supabase
+      .from('corporate_scrape_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('sweep_id', sweepId)
+      .eq('status', 'failed')
+      .in('result_type', RETRYABLE_RESULT_TYPES)
+      .lt('retry_count', 3);
+    
+    if ((retryableCount || 0) > 0) {
+      // Hay errores reintentables - verificar que no existe ya un trigger
+      const { data: existingTrigger } = await supabase
+        .from('cron_triggers')
+        .select('id')
+        .eq('action', 'corporate_scrape_retry')
+        .in('status', ['pending', 'processing'])
+        .limit(1)
+        .maybeSingle();
+      
+      if (!existingTrigger) {
+        await supabase.from('cron_triggers').insert({
+          action: 'corporate_scrape_retry',
+          params: { sweep_id: sweepId, retryable_count: retryableCount },
+          status: 'pending'
+        });
+        console.log(`[Orchestrator] Inserted corporate_scrape_retry trigger (${retryableCount} retryable errors)`);
+        return { action: 'corporate_scrape_retry', reason: `${retryableCount} retryable errors pending` };
+      }
+      return { action: null, reason: 'corporate_scrape_retry already pending' };
+    }
+    
+    console.log(`[Orchestrator] Corporate scrape complete! No more work.`);
+    return { action: null, reason: 'sweep complete' };
+  }
+
+  // Hay trabajo pendiente - insertar trigger de continuación
+  const { data: existingTrigger } = await supabase
+    .from('cron_triggers')
+    .select('id')
+    .eq('action', 'corporate_scrape_continue')
+    .in('status', ['pending', 'processing'])
+    .limit(1)
+    .maybeSingle();
+
+  if (!existingTrigger) {
+    await supabase.from('cron_triggers').insert({
+      action: 'corporate_scrape_continue',
+      params: { sweep_id: sweepId, pending: status.pending },
+      status: 'pending'
+    });
+    console.log(`[Orchestrator] Inserted corporate_scrape_continue trigger (${status.pending} pending)`);
+    return { action: 'corporate_scrape_continue', reason: `${status.pending} companies pending` };
+  }
+  
+  return { action: null, reason: 'corporate_scrape_continue already pending' };
 }
 
 // ============================================================================
@@ -641,6 +726,9 @@ Deno.serve(async (req) => {
       // 4. Get updated status
       const status = await getSweepStatus(supabase, sweepId);
       
+      // 5. AUTO-CHAINING: Insert continuation trigger if work remains
+      const chainResult = await maybeInsertContinueTrigger(supabase, sweepId, status);
+      
       return new Response(
         JSON.stringify({
           success: true,
@@ -650,7 +738,9 @@ Deno.serve(async (req) => {
           processed_count: processed.length,
           processed,
           zombies_reset: zombieReset.count,
-          complete: status.pending === 0 && status.processing === 0,
+          complete: status.pending === 0 && status.processing === 0 && !chainResult.action,
+          next_trigger: chainResult.action,
+          next_trigger_reason: chainResult.reason,
           status
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

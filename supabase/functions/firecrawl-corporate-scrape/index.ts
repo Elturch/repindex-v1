@@ -41,6 +41,91 @@ interface NewsArticle {
   raw_markdown: string;
 }
 
+// ============================================================================
+// RESULT CLASSIFICATION: Distingue éxitos, fallos temporales y permanentes
+// ============================================================================
+interface ScrapeResult {
+  success: boolean;
+  result_type: string;
+  news_found_count: number;
+  latest_news_date: string | null;
+  error?: string;
+  httpStatus?: number | null;
+}
+
+const RETRYABLE_RESULT_TYPES = ['error_timeout', 'error_rate_limit', 'error_website_down', 'error_parsing'];
+const PERMANENT_RESULT_TYPES = ['error_blocked', 'error_no_website'];
+
+function classifyResult(
+  httpOk: boolean,
+  httpStatus: number | null,
+  corporateDataFound: boolean,
+  newsArticles: NewsArticle[],
+  errorMessage?: string
+): ScrapeResult {
+  // Error de conexión/HTTP
+  if (!httpOk) {
+    if (httpStatus === 429) {
+      return { success: false, result_type: 'error_rate_limit', news_found_count: 0, latest_news_date: null, error: errorMessage, httpStatus };
+    }
+    if (httpStatus === 403 || httpStatus === 401) {
+      return { success: false, result_type: 'error_blocked', news_found_count: 0, latest_news_date: null, error: errorMessage, httpStatus };
+    }
+    if (httpStatus === 404) {
+      return { success: false, result_type: 'error_website_down', news_found_count: 0, latest_news_date: null, error: errorMessage, httpStatus };
+    }
+    if (httpStatus && httpStatus >= 500) {
+      return { success: false, result_type: 'error_website_down', news_found_count: 0, latest_news_date: null, error: errorMessage, httpStatus };
+    }
+    if (errorMessage?.toLowerCase().includes('timeout')) {
+      return { success: false, result_type: 'error_timeout', news_found_count: 0, latest_news_date: null, error: errorMessage, httpStatus };
+    }
+    return { success: false, result_type: 'error_parsing', news_found_count: 0, latest_news_date: null, error: errorMessage, httpStatus };
+  }
+
+  // HTTP OK - evaluar contenido
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  const recentNews = newsArticles.filter(n => {
+    if (!n.published_date) return false;
+    return new Date(n.published_date) >= thirtyDaysAgo;
+  });
+
+  if (recentNews.length > 0) {
+    const latestDate = recentNews
+      .map(n => n.published_date)
+      .filter(Boolean)
+      .sort()
+      .reverse()[0];
+    return { 
+      success: true, 
+      result_type: 'success_with_news', 
+      news_found_count: recentNews.length,
+      latest_news_date: latestDate || null,
+      httpStatus
+    };
+  }
+
+  if (corporateDataFound) {
+    return { 
+      success: true, 
+      result_type: newsArticles.length > 0 ? 'success_no_news' : 'success_corporate_only',
+      news_found_count: 0,
+      latest_news_date: null,
+      httpStatus
+    };
+  }
+
+  return { 
+    success: true, 
+    result_type: 'success_no_news',
+    news_found_count: 0,
+    latest_news_date: null,
+    httpStatus
+  };
+}
+
 // Páginas típicas donde encontrar información corporativa
 const CORPORATE_PAGE_PATTERNS = [
   '/quienes-somos',
@@ -675,7 +760,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[Corporate Scrape] Successfully completed ${news_only ? 'NEWS ONLY' : 'FULL'} scrape for ${ticker}`);
+    // Step 7: Classify the result for semantic tracking
+    const corporateDataFound = Boolean(
+      extractedData.ceo_name || 
+      extractedData.president_name || 
+      extractedData.company_description
+    );
+    const classification = classifyResult(true, 200, corporateDataFound, newsArticles);
+
+    console.log(`[Corporate Scrape] Successfully completed ${news_only ? 'NEWS ONLY' : 'FULL'} scrape for ${ticker} - result_type: ${classification.result_type}`);
 
     return new Response(
       JSON.stringify({
@@ -684,6 +777,9 @@ Deno.serve(async (req) => {
         mode: news_only ? 'news_only' : 'full',
         pages_scraped: scrapedUrls.length,
         news_articles: newsArticles.length,
+        result_type: classification.result_type,
+        news_found_count: classification.news_found_count,
+        latest_news_date: classification.latest_news_date,
         data_extracted: news_only ? null : {
           ceo_name: extractedData.ceo_name,
           president_name: extractedData.president_name,
@@ -697,9 +793,21 @@ Deno.serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[Corporate Scrape] Exception:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Corporate Scrape] Exception:', errorMsg);
+    
+    // Classify the error for semantic tracking
+    const isTimeout = errorMsg.toLowerCase().includes('timeout');
+    const result_type = isTimeout ? 'error_timeout' : 'error_parsing';
+    
     return new Response(
-      JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
+      JSON.stringify({ 
+        success: false, 
+        error: errorMsg,
+        result_type,
+        news_found_count: 0,
+        latest_news_date: null
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
