@@ -1,360 +1,197 @@
 
 
-# Plan: Sistema de Magic Link Robusto para Usuarios Activos
+# Plan: Migración de Identidad Corporativa CEPSA → MOEVE
 
-## El Problema de Negocio
+## Resumen del Cambio
 
-**Situación crítica**: Usuarios activos (como `maturci@gmail.com` con 1134 logins) no reciben el magic link. Esto:
-- Bloquea el acceso a clientes de pago
-- Genera quejas y pérdida de confianza
-- Impacta directamente en la retención y el negocio
+CEPSA ha completado su transformación de marca a **MOEVE**, reflejando su evolución hacia energía sostenible y movilidad. Este cambio requiere actualizar múltiples sistemas para que la plataforma RepIndex refleje correctamente la nueva identidad.
 
-## Causa Raíz Técnica
+## Estado Actual Detectado
 
-```text
-FLUJO ACTUAL (falla silenciosamente):
-
-Usuario activo → /login → AuthContext.sendMagicLink()
-                              │
-                              ▼
-                 supabase.auth.signInWithOtp()  ← SDK de cliente
-                              │
-                              ▼
-                 Supabase Auth Service (caja negra)
-                              │
-                              ▼
-                 Email de Supabase (template genérico)
-                              │
-                              ▼
-                 ❌ A veces no llega (sin error reportado)
-```
-
-**Problema**: `signInWithOtp()` del SDK de cliente depende del sistema de emails de Supabase que:
-1. A veces falla sin reportar errores claros
-2. Usa templates genéricos (no brandados)
-3. No ofrece visibilidad sobre entregas
-
-**Solución existente que SÍ funciona**: El panel de admin (líneas 244-307 de `admin-api`) usa:
-- `auth.admin.generateLink()` con service role (siempre genera el link)
-- Resend para enviar emails (fiable, brandado, con logs)
+| Aspecto | Estado Actual | Observación |
+|---------|--------------|-------------|
+| `repindex_root_issuers` | issuer_name: "Cepsa", include_terms: ["Cepsa"] | ❌ Nombre antiguo |
+| `issuer_id` | CEPSA-PRIV | ⚠️ Mantener para compatibilidad histórica |
+| `ticker` | CEP.MC (cotiza desde 2025) | ✅ Cambiar a MOE.MC |
+| `website` | https://www.moeveglobal.com/es/ | ✅ Ya actualizado |
+| `rix_runs` | 64 registros con target_name "Cepsa" | ⚠️ Datos históricos |
+| `rix_runs_v2` | 36 registros con target_name "Cepsa" | ⚠️ Datos históricos |
+| `corporate_snapshots` | Ya refleja "Moeve" en contenido | ✅ OK |
+| `verified_competitors` | CEPSA-PRIV en Repsol, Repsol en CEPSA-PRIV | ✅ Mantener |
+| `news_articles` | 3 artículos mencionan "Cepsa" | ⚠️ Contenido editorial histórico |
+| `documents` (vector store) | ~260 documentos con "Cepsa" | ⚠️ Datos históricos |
 
 ---
 
-## Solución Propuesta
+## Estrategia de Migración
 
-### Crear Edge Function pública `send-user-magic-link`
+### Decisiones Clave
 
-Replicar la lógica probada del admin para uso público en el login:
+1. **Mantener `issuer_id` original** (`CEPSA-PRIV` → cambiar a `moeve`): El issuer_id es la clave primaria semántica. Cambiarla afectaría joins históricos. **DECISIÓN: Cambiar a `moeve` ya que el sistema debe reflejar la identidad actual.**
 
-```text
-NUEVO FLUJO (robusto y fiable):
+2. **Actualizar ticker**: De `CEP.MC` a `MOE.MC` (o el ticker real de Moeve en bolsa).
 
-Usuario activo → /login → AuthContext.sendMagicLink()
-                              │
-                              ▼
-                 supabase.functions.invoke('send-user-magic-link')
-                              │
-                              ▼
-                 Edge Function con service role:
-                 1. Verifica user_profiles.is_active = true
-                 2. auth.admin.generateLink() ← SIEMPRE funciona
-                 3. Envía via Resend ← Fiable, con logs
-                              │
-                              ▼
-                 ✅ Email brandado de RepIndex entregado
-```
+3. **Histórico de datos**: Los registros en `rix_runs` y `rix_runs_v2` mantendrán `target_name: "Cepsa"` para la era pre-rebrand, pero los nuevos análisis usarán "Moeve".
+
+4. **Vector store**: Los documentos históricos se mantienen (son contexto válido sobre la transición), pero se regenerarán con el próximo ciclo.
 
 ---
 
-## Cambios Técnicos
+## Cambios Requeridos
 
-### 1. Crear `supabase/functions/send-user-magic-link/index.ts`
+### 1. Actualizar `repindex_root_issuers` (Migración SQL)
+
+```sql
+UPDATE repindex_root_issuers
+SET 
+  issuer_id = 'moeve',
+  issuer_name = 'Moeve',
+  ticker = 'MOE.MC',
+  include_terms = '["Moeve", "Moeve Global", "ex-Cepsa"]'::jsonb,
+  exclude_terms = '[]'::jsonb,
+  sample_query = 'Moeve energía movilidad sostenible transición',
+  notes = COALESCE(notes, '') || E'\n[2026-02-08] Rebrand: Cepsa → Moeve. Nueva identidad reflejando transición energética.',
+  website = 'https://www.moeveglobal.com/es/'
+WHERE issuer_id = 'CEPSA-PRIV';
+```
+
+### 2. Actualizar `rix_runs` y `rix_runs_v2` (Datos Futuros)
+
+Los nuevos análisis ya captarán "Moeve" porque:
+- Los include_terms se actualizan a ["Moeve"]
+- El sample_query guiará a las IAs a buscar "Moeve"
+
+**Para datos históricos**: Opcionalmente crear un mapeo de alias para el dashboard:
+
+```sql
+-- Opcional: Actualizar target_name histórico para consistencia en dashboard
+-- UPDATE rix_runs SET "03_target_name" = 'Moeve' WHERE "05_ticker" = 'MOE.MC';
+-- UPDATE rix_runs_v2 SET "03_target_name" = 'Moeve' WHERE "05_ticker" = 'MOE.MC';
+```
+
+### 3. Actualizar `verified_competitors` (Scripts)
+
+**Archivo: `supabase/functions/import-verified-competitors/index.ts`**
 
 ```typescript
-// Recibe: { email: string, redirect_to?: string }
-// NO requiere autenticación (es para el login)
+// Línea 37: Cambiar clave de CEPSA-PRIV a moeve
+'moeve': ['REP'],  // Antes: 'CEPSA-PRIV': ['REP']
 
-// Flujo:
-// 1. Normalizar email (trim + lowercase)
-// 2. Verificar que existe en user_profiles
-// 3. Verificar que is_active = true
-// 4. Generar magic link con auth.admin.generateLink()
-// 5. Enviar via Resend con template branded
-// 6. Retornar { success: true } o { error: string }
-
-// Seguridad:
-// - NO exponer si el email existe (mensaje genérico en errores)
-// - Logs para auditoría
-// - Reutiliza el template HTML de admin-api
+// Línea 107: Actualizar referencia en Repsol
+'REP': ['moeve', 'NTGY'],  // Antes: ['CEPSA-PRIV', 'NTGY']
 ```
 
-### 2. Modificar `src/contexts/AuthContext.tsx`
+**Archivo: `scripts/import-verified-competitors.sql`**
 
-Cambiar la función `sendMagicLink()` (líneas 185-248):
+```sql
+-- Línea 93-94: Actualizar comentario y ticker
+-- moeve (antes Cepsa)
+UPDATE repindex_root_issuers SET verified_competitors = '["REP"]' WHERE ticker = 'MOE.MC';
 
+-- Línea 303-304: Actualizar Repsol
+UPDATE repindex_root_issuers SET verified_competitors = '["moeve", "NTGY"]' WHERE ticker = 'REP';
+```
+
+### 4. Actualizar `corporate_scrape_progress`
+
+```sql
+UPDATE corporate_scrape_progress
+SET ticker = 'MOE.MC'
+WHERE ticker = 'CEPSA-PRIV';
+```
+
+### 5. Actualizar `corporate_snapshots`
+
+```sql
+UPDATE corporate_snapshots
+SET ticker = 'MOE.MC'
+WHERE ticker = 'CEPSA-PRIV';
+```
+
+### 6. Actualizar Referencias en Código (Edge Functions)
+
+**Archivo: `supabase/functions/chat-intelligence/index.ts`** (línea ~1555)
+
+El ejemplo en el prompt usa "Cepsa" ilustrativamente. Actualizar a:
 ```typescript
-// ANTES (líneas 219-225):
-const { data, error } = await supabase.auth.signInWithOtp({
-  email: normalizedEmail,
-  options: {
-    emailRedirectTo: redirectUrl,
-    shouldCreateUser: false,
-  },
-});
+// Antes:
+"Repsol cae 8 puntos en RIX mientras Cepsa escala posiciones"
 
-// DESPUÉS:
-const { data, error } = await supabase.functions.invoke('send-user-magic-link', {
-  body: { 
-    email: normalizedEmail, 
-    redirect_to: redirectUrl 
-  }
-});
-
-if (error || !data?.success) {
-  // Manejar error
-  return { error: data?.error || 'Error al enviar el enlace' };
-}
-
-return { error: null };
+// Después:
+"Repsol cae 8 puntos en RIX mientras Moeve escala posiciones"
 ```
 
-### 3. Actualizar `supabase/config.toml`
+### 7. Actualizar `verified_competitors` en la tabla
 
-Añadir la nueva función (auto-descubierta, pero asegurar):
-
-```toml
-[functions.send-user-magic-link]
-verify_jwt = false  # No requiere auth (es para login)
+```sql
+-- Actualizar competidores de Repsol para referenciar nuevo ticker
+UPDATE repindex_root_issuers
+SET verified_competitors = jsonb_set(
+  verified_competitors, 
+  '{0}', 
+  '"MOE.MC"'
+)
+WHERE ticker = 'REP' AND verified_competitors ? 'CEPSA-PRIV';
 ```
 
 ---
 
-## Diagrama del Nuevo Sistema
+## Flujo Visual del Cambio
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                        PÁGINA DE LOGIN                          │
-│                                                                 │
-│  ┌──────────────────┐    ┌────────────────────────────────┐    │
-│  │ Usuario ingresa  │───▶│ AuthContext.sendMagicLink()    │    │
-│  │ email            │    │                                │    │
-│  └──────────────────┘    │ 1. Verifica user_profiles     │    │
-│                          │ 2. Invoca Edge Function        │    │
-│                          └────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│              EDGE FUNCTION: send-user-magic-link                │
-│              (con SUPABASE_SERVICE_ROLE_KEY)                    │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ 1. Verificar email en user_profiles                       │  │
-│  │    ├── ❌ No existe → { error: "Email no registrado" }    │  │
-│  │    ├── ❌ is_active=false → { error: "Cuenta desactivada"}│  │
-│  │    └── ✅ Activo → Continuar                              │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                    │                            │
-│                                    ▼                            │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ 2. Generar magic link con Admin API                       │  │
-│  │    auth.admin.generateLink({ type: "magiclink", email })  │  │
-│  │    ✅ SIEMPRE funciona (no depende de confirmación email) │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                    │                            │
-│                                    ▼                            │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ 3. Enviar via Resend con template branded                 │  │
-│  │    - From: "RepIndex <no-reply@repindex.ai>"              │  │
-│  │    - Subject: "Tu acceso a RepIndex"                      │  │
-│  │    - HTML: Template con logo, botón, fallback link        │  │
-│  │    ✅ Logs de entrega disponibles en Resend Dashboard     │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                    │                            │
-│                                    ▼                            │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │ 4. Retornar resultado                                     │  │
-│  │    ✅ { success: true }                                   │  │
-│  │    ❌ { success: false, error: "mensaje" }                │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      EMAIL EN BANDEJA                           │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │     [LOGO REPINDEX]                                       │  │
-│  │                                                           │  │
-│  │     Accede a tu cuenta                                    │  │
-│  │                                                           │  │
-│  │     Hola [Nombre],                                        │  │
-│  │                                                           │  │
-│  │     Haz clic en el botón para acceder a RepIndex.         │  │
-│  │     Este enlace es válido durante 24 horas.               │  │
-│  │                                                           │  │
-│  │     [ ACCEDER A REPINDEX ]  ← Botón azul branded          │  │
-│  │                                                           │  │
-│  │     Si el botón no funciona, copia este enlace:           │  │
-│  │     https://repindex-v1.lovable.app/...                   │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+ANTES (legacy):                          DESPUÉS (actualizado):
+─────────────────────────────────────────────────────────────────
+repindex_root_issuers:                   repindex_root_issuers:
+├── issuer_id: CEPSA-PRIV         →      ├── issuer_id: moeve
+├── issuer_name: Cepsa            →      ├── issuer_name: Moeve
+├── ticker: CEP.MC                →      ├── ticker: MOE.MC
+├── include_terms: ["Cepsa"]      →      ├── include_terms: ["Moeve", "Moeve Global"]
+└── website: moeveglobal.com      →      └── website: moeveglobal.com ✓
+
+verified_competitors:                    verified_competitors:
+├── CEPSA-PRIV → [REP]            →      ├── moeve → [REP]
+└── REP → [CEPSA-PRIV, NTGY]      →      └── REP → [moeve, NTGY]
+
+rix_runs (histórico):                    rix_runs (futuro):
+├── target_name: Cepsa                   ├── target_name: Moeve
+└── ticker: CEPSA-PRIV                   └── ticker: MOE.MC
 ```
 
 ---
 
-## Comparativa: Antes vs Después
+## Archivos a Modificar
 
-| Aspecto | Antes (signInWithOtp) | Después (Edge Function + Resend) |
-|---------|----------------------|----------------------------------|
-| **Fiabilidad** | ❌ Falla silenciosamente | ✅ Admin API siempre funciona |
-| **Usuarios sin confirmar** | ❌ No reciben email | ✅ Reciben email |
-| **Emails de marca** | ❌ Template genérico Supabase | ✅ Template branded RepIndex |
-| **Observabilidad** | ❌ Sin logs de entrega | ✅ Logs en Resend Dashboard |
-| **Rate limiting** | ⚠️ Supabase default | ✅ Controlable |
-| **Debugging** | ❌ Caja negra | ✅ Logs en Edge Function |
-
----
-
-## Archivos a Crear/Modificar
-
-| Archivo | Acción | Descripción |
-|---------|--------|-------------|
-| `supabase/functions/send-user-magic-link/index.ts` | **CREAR** | Nueva Edge Function pública |
-| `src/contexts/AuthContext.tsx` | **MODIFICAR** | Usar Edge Function en vez de signInWithOtp |
-| `supabase/config.toml` | **MODIFICAR** | Añadir configuración de la función |
+| Archivo | Tipo | Cambio |
+|---------|------|--------|
+| **Migración SQL** | Crear | Actualizar `repindex_root_issuers` |
+| **Migración SQL** | Crear | Actualizar `corporate_scrape_progress` |
+| **Migración SQL** | Crear | Actualizar `corporate_snapshots` |
+| **Migración SQL** | Crear | Actualizar referencias en `verified_competitors` de Repsol |
+| `supabase/functions/import-verified-competitors/index.ts` | Modificar | Cambiar claves CEPSA-PRIV → moeve |
+| `scripts/import-verified-competitors.sql` | Modificar | Cambiar ticker CEPSA-PRIV → MOE.MC |
+| `supabase/functions/chat-intelligence/index.ts` | Modificar | Actualizar ejemplo en prompt |
 
 ---
 
-## Código de la Edge Function
+## Consideraciones
 
-```typescript
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Resend } from "npm:resend@4.0.0";
+1. **Ticker Real**: He asumido `MOE.MC` como nuevo ticker. Si el ticker oficial de Moeve en bolsa es diferente, ajustar antes de implementar.
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+2. **Datos Históricos**: Los registros de `rix_runs` con `target_name: "Cepsa"` son históricos válidos (era la identidad en ese momento). El dashboard debería mostrarlos correctamente porque el filtro es por ticker, no por nombre.
 
-// Template HTML idéntico al de admin-api
-const generateMagicLinkEmail = (userName: string, magicLink: string) => `...`;
+3. **Vector Store**: Los documentos existentes en `documents` que mencionan "Cepsa" son contexto válido para la IA (explican la transición). Se regenerarán naturalmente en el próximo ciclo de `populate-vector-store`.
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const { email, redirect_to } = await req.json();
-    
-    if (!email) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Email requerido" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const resendApiKey = Deno.env.get("RESEND_API_KEY")!;
-
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    });
-
-    // 1. Verificar que el usuario existe y está activo
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id, email, full_name, is_active")
-      .eq("email", normalizedEmail)
-      .maybeSingle();
-
-    if (profileError) {
-      console.error("[send-user-magic-link] DB error:", profileError);
-      return new Response(
-        JSON.stringify({ success: false, error: "Error interno. Inténtalo de nuevo." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (!profile) {
-      console.log("[send-user-magic-link] Email not found:", normalizedEmail);
-      return new Response(
-        JSON.stringify({ success: false, error: "Email no registrado", notRegistered: true }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (!profile.is_active) {
-      console.log("[send-user-magic-link] User inactive:", normalizedEmail);
-      return new Response(
-        JSON.stringify({ success: false, error: "Tu cuenta está desactivada. Contacta con el administrador." }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // 2. Generar magic link con Admin API
-    const redirectUrl = redirect_to || "https://repindex-v1.lovable.app/dashboard";
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: "magiclink",
-      email: normalizedEmail,
-      options: { redirectTo: redirectUrl }
-    });
-
-    if (linkError || !linkData?.properties?.action_link) {
-      console.error("[send-user-magic-link] Link generation error:", linkError);
-      return new Response(
-        JSON.stringify({ success: false, error: "Error generando enlace. Inténtalo de nuevo." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // 3. Enviar via Resend
-    const resend = new Resend(resendApiKey);
-    const userName = profile.full_name || normalizedEmail.split('@')[0];
-    
-    const { data: emailData, error: emailError } = await resend.emails.send({
-      from: "RepIndex <no-reply@repindex.ai>",
-      to: [normalizedEmail],
-      subject: "Tu acceso a RepIndex",
-      html: generateMagicLinkEmail(userName, linkData.properties.action_link),
-    });
-
-    if (emailError) {
-      console.error("[send-user-magic-link] Resend error:", emailError);
-      return new Response(
-        JSON.stringify({ success: false, error: "Error enviando email. Inténtalo de nuevo." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`[send-user-magic-link] Magic link sent to ${normalizedEmail}, Resend ID: ${emailData?.id}`);
-    
-    return new Response(
-      JSON.stringify({ success: true }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-
-  } catch (error) {
-    console.error("[send-user-magic-link] Unexpected error:", error);
-    return new Response(
-      JSON.stringify({ success: false, error: "Error interno. Inténtalo de nuevo." }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-});
-```
+4. **Artículos de Noticias**: Los 3 artículos que mencionan "Cepsa" son contenido editorial histórico y no deben modificarse (reflejan el momento en que fueron escritos).
 
 ---
 
 ## Resultado Esperado
 
-1. **100% de usuarios activos reciben el magic link** - La API Admin siempre genera el enlace
-2. **Emails brandados** - Template profesional con logo de RepIndex
-3. **Observabilidad** - Logs en Edge Function + Resend Dashboard
-4. **Sin dependencias de confirmación** - Funciona incluso para usuarios que nunca confirmaron su email inicial
-5. **Consistencia** - El mismo sistema que ya funciona en el panel admin, ahora disponible para el login público
+Tras la implementación:
+
+1. ✅ Dashboard mostrará "Moeve" como nombre de empresa
+2. ✅ Nuevos análisis RIX usarán "Moeve" en los prompts
+3. ✅ Scraping corporativo seguirá funcionando (website ya actualizado)
+4. ✅ Competidores verificados referenciaran correctamente a Moeve
+5. ✅ Histórico de datos mantiene consistencia (ticker como enlace)
 
