@@ -98,3 +98,6 @@ verify_jwt = false
 
 [functions.design-pptx-slides]
 verify_jwt = false
+
+[functions.send-user-magic-link]
+verify_jwt = false
