@@ -236,22 +236,32 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
       
       console.log(`[useUnifiedSweepMetrics] Active week: ${weekStart} (${recordCount} records EXACT count), sweepId: ${sweepId}, total V2: ${totalV2Count}`);
       
+
+      // PAGINACIÓN PARALELA: PostgREST limita a 1000 filas por request
+      // Hacemos 2 requests paralelos para obtener hasta 1500 registros
+      const rixRunsPage1Promise = supabase
+        .from('rix_runs_v2')
+        .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
+        .eq('06_period_from', weekStart)
+        .range(0, 999);
       
+      const rixRunsPage2Promise = supabase
+        .from('rix_runs_v2')
+        .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
+        .eq('06_period_from', weekStart)
+        .range(1000, 1499);
+
       // Parallel queries for maximum efficiency
       const [
-        rixRunsResult,
+        rixRunsPage1Result,
+        rixRunsPage2Result,
         sweepProgressResult,
         pendingTriggersResult,
         failedCompaniesResult,
         pipelineLogsResult,
       ] = await Promise.all([
-        // OPTIMIZED: Solo traer metadatos ligeros, NO columnas de texto pesado (*_bruto)
-        // Esto evita timeouts de PostgREST (57014) en el dashboard
-        supabase
-          .from('rix_runs_v2')
-          .select('05_ticker, 02_model_name, 09_rix_score, search_completed_at, analysis_completed_at')
-          .eq('06_period_from', weekStart)
-          .range(0, 1499),  // Superar límite default de 1000 (178 × 6 = 1068 registros actuales)
+        rixRunsPage1Promise,
+        rixRunsPage2Promise,
         
         // Get sweep_progress status counts (include ticker for ghost detection)
         supabase
@@ -284,9 +294,16 @@ export function useUnifiedSweepMetrics(forcedSweepId?: string) {
           .limit(1),
       ]);
       
-      if (rixRunsResult.error) throw rixRunsResult.error;
+      // Combinar resultados de ambas páginas
+      if (rixRunsPage1Result.error) throw rixRunsPage1Result.error;
+      const rixRunsCombined = [
+        ...(rixRunsPage1Result.data || []),
+        ...(rixRunsPage2Result.data || [])
+      ];
       
-      const records = rixRunsResult.data || [];
+      console.log(`[useUnifiedSweepMetrics] Paginación: página1=${rixRunsPage1Result.data?.length || 0}, página2=${rixRunsPage2Result.data?.length || 0}, total=${rixRunsCombined.length}`);
+      
+      const records = rixRunsCombined;
       const progressRecords = sweepProgressResult.data || [];
       const pendingTriggers = pendingTriggersResult.data || [];
       const failedCompaniesData = failedCompaniesResult.data || [];
