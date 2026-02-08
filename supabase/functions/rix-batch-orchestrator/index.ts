@@ -854,6 +854,9 @@ async function processCronTriggers(
   }
 
   const PRIORITY: Record<string, number> = {
+    // Highest priority: single company processing (ad-hoc additions)
+    process_single_company: 5,
+
     // Analysis pipeline first
     repair_search: 10,
     repair_analysis: 20,
@@ -1272,6 +1275,71 @@ async function processCronTriggers(
           result: data 
         });
         console.log('[auto_generate_newsroom] Newsroom generation completed successfully');
+
+      } else if (trigger.action === 'process_single_company') {
+        // ============================================================
+        // PROCESS_SINGLE_COMPANY: Procesa una empresa individual ad-hoc
+        // Usado para añadir nuevas empresas al barrido sin esperar al ciclo completo.
+        // Máxima prioridad (5) para respuesta inmediata.
+        // ============================================================
+        const params = trigger.params as { ticker: string; issuer_name: string; sweep_id?: string } | null;
+        
+        if (!params?.ticker || !params?.issuer_name) {
+          throw new Error('process_single_company requires ticker and issuer_name in params');
+        }
+        
+        console.log(`[cron_triggers] Processing single company: ${params.ticker} (${params.issuer_name})`);
+        
+        // Llamar directamente a rix-search-v2 con el ticker
+        const response = await fetch(`${supabaseUrl}/functions/v1/rix-search-v2`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            ticker: params.ticker, 
+            issuer_name: params.issuer_name 
+          }),
+          signal: AbortSignal.timeout(180_000), // 3 min timeout para una empresa completa
+        });
+
+        const responseText = await response.text();
+        let data: any = {};
+        try { 
+          data = JSON.parse(responseText); 
+        } catch { 
+          data = { raw: responseText }; 
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        // Actualizar sweep_progress si existe
+        if (params.sweep_id) {
+          await supabase
+            .from('sweep_progress')
+            .update({ 
+              status: 'completed', 
+              completed_at: new Date().toISOString(),
+              models_completed: data.results?.length || 6
+            })
+            .eq('sweep_id', params.sweep_id)
+            .eq('ticker', params.ticker);
+        }
+
+        await supabase
+          .from('cron_triggers')
+          .update({
+            status: 'completed',
+            processed_at: new Date().toISOString(),
+            result: data,
+          })
+          .eq('id', trigger.id);
+
+        results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
+        console.log(`[process_single_company] ${params.ticker} processed successfully with ${data.results?.length || 0} models`);
 
       } else if (trigger.action === 'repair_search') {
         // ============================================================
