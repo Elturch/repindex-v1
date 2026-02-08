@@ -1,148 +1,313 @@
 
-# Plan: Disparo Automático del Vector Store tras 100% de Sweep
+# Plan: Sistema Robusto de Scraping Corporativo con Detección Inteligente de Estados
 
-## Contexto
+## Diagnóstico del Problema Actual
 
-Actualmente el flujo de un barrido domingo es:
-1. **Fases CRON (00:00-03:00)** → `rix-search-v2` para cada empresa
-2. **Watchdog (cada 5 min)** → detecta pendientes y dispara `repair_search`, `repair_analysis`
-3. **TRIGGER 3: `auto_sanitize`** → se dispara cuando 0 pendientes / 0 analizables / 0 failed
-4. **CRON 23:00** → `populate-vector-store` (independiente del estado del sweep)
+### Estado Actual del Barrido corp-2026-02
+| Estado | Cantidad | Última Actualización |
+|--------|----------|----------------------|
+| completed | 67 | 2026-02-01 17:38 |
+| pending | 107 | 2026-02-08 10:55 (reset reciente) |
 
-**Problema**: Si el sweep termina a las 5:00, el Vector Store no se actualiza hasta las 23:00 (18 horas de retraso).
+### Problemas Identificados
 
-**Solución**: Añadir un **TRIGGER 4: `auto_populate_vectors`** que se dispare automáticamente cuando `auto_sanitize` complete con éxito, **sin eliminar** el CRON de las 23:00 que actúa como red de seguridad.
-
----
-
-## Cambios Propuestos
-
-### 1. Modificar el handler de `auto_sanitize` (líneas ~1142-1153)
-
-Después de que `auto_sanitize` complete exitosamente, insertar un nuevo trigger `auto_populate_vectors`:
-
-```text
-Lógica a añadir tras línea 1152:
-- Verificar que el resultado de sanitize indica "sweep limpio" (0 missing, 0 invalid)
-- Verificar que no existe ya un trigger `auto_populate_vectors` pendiente (evitar duplicados)
-- Insertar trigger `auto_populate_vectors` con params del sweep_id
-```
-
-### 2. Añadir prioridad al action map (línea ~860)
-
-```text
-auto_populate_vectors: 40  // Después de auto_sanitize (30)
-```
-
-### 3. Handler de `auto_populate_vectors` ya existe (líneas 1054-1108)
-
-El sistema ya tiene un handler para `vector_store_continue` que llama a `populate-vector-store`. Reutilizamos esa lógica o añadimos un case específico para `auto_populate_vectors`.
+1. **Sin auto-continuación**: El watchdog procesa 1 empresa cada 15 min. 107 pendientes = ~27 horas
+2. **Estados binarios insuficientes**: Solo existe `pending`, `processing`, `completed`, `failed`, `skipped`
+3. **No distingue tipos de resultado**:
+   - Empresa scrapeada pero sin noticias nuevas esta semana
+   - Fallo temporal de conexión (reintentable)
+   - Fallo permanente (website no existe, bloqueado, etc.)
+4. **Sin integración con `cron_triggers`**: No aprovecha la arquitectura probada del RIX orchestrator
 
 ---
 
-## Diagrama de Flujo Actualizado
+## Solución Propuesta
+
+### 1. Nuevos Estados Semánticos
 
 ```text
-Sweep 100% completado
-        │
-        ▼
-┌──────────────────────┐
-│ TRIGGER 3:           │
-│ auto_sanitize        │◄── Watchdog detecta sweep completo
-└──────────────────────┘
-        │
-        ▼ (éxito: 0 missing, 0 invalid)
-        │
-┌──────────────────────┐
-│ TRIGGER 4:           │
-│ auto_populate_vectors│◄── NUEVO: Encadenamiento automático
-└──────────────────────┘
-        │
-        ▼
-┌──────────────────────┐
-│ populate-vector-store│
-│ (indexa documentos)  │
-└──────────────────────┘
-
-        ⋮
-
-┌──────────────────────┐
-│ CRON 23:00 UTC       │◄── RED DE SEGURIDAD (sin cambios)
-│ populate-vector-store│    Captura cualquier registro que
-└──────────────────────┘    haya quedado sin indexar
+Estados actuales:          Estados propuestos:
+─────────────────          ───────────────────
+pending                    pending
+processing                 processing
+completed                  completed (con datos corporativos Y/O noticias)
+failed                     completed_no_news (scrape OK pero sin noticias nuevas)
+skipped                    failed_retryable (timeout, rate limit - reintentar)
+                           failed_permanent (website no existe, bloqueado)
+                           skipped (sin website configurado)
 ```
+
+### 2. Integración con cron_triggers (Auto-Continuación)
+
+Añadir el scraping corporativo al `rix-batch-orchestrator`:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    rix-batch-orchestrator                   │
+├─────────────────────────────────────────────────────────────┤
+│ Acciones actuales:                                          │
+│ • sweep_fase_X, repair_search, repair_analysis              │
+│ • auto_sanitize, auto_populate_vectors                      │
+│                                                             │
+│ Acciones NUEVAS:                                            │
+│ • corporate_scrape_batch  → Procesa N empresas              │
+│ • corporate_scrape_repair → Reintenta failed_retryable      │
+│ • corporate_scrape_report → Genera resumen de estados       │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼
+    ┌─────────────┐
+    │ cron_triggers│  ← Encadenamiento automático
+    └─────────────┘
+```
+
+### 3. Lógica de Clasificación de Resultados
+
+En `firecrawl-corporate-scrape`, tras procesar una empresa:
+
+```text
+┌──────────────────────────┐
+│  Resultado del Scrape    │
+└──────────────────────────┘
+           │
+           ▼
+    ┌──────────────┐
+    │ ¿HTTP OK?    │
+    └──────────────┘
+       │No         │Sí
+       ▼           ▼
+┌──────────────┐  ┌────────────────────┐
+│ Analizar     │  │ ¿Encontró páginas  │
+│ código HTTP  │  │ corporativas/news? │
+└──────────────┘  └────────────────────┘
+       │                  │No        │Sí
+       ▼                  ▼          ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
+│ 429 Rate     │  │ completed    │  │ ¿Noticias nuevas │
+│ Limit?       │  │ _no_news     │  │ (< 30 días)?     │
+│ → retryable  │  │              │  └──────────────────┘
+│              │  │              │       │No        │Sí
+│ 404/403/5xx? │  │              │       ▼          ▼
+│ → permanent  │  │              │  ┌──────────┐ ┌──────────┐
+└──────────────┘  └──────────────┘  │completed │ │completed │
+                                    │_no_news  │ │          │
+                                    └──────────┘ └──────────┘
+```
+
+### 4. Auto-Continuación Inteligente
+
+El `corporate-scrape-orchestrator` insertará triggers en `cron_triggers` cuando:
+
+1. **Quedan empresas pendientes**: `corporate_scrape_continue`
+2. **Hay fallos reintentables**: `corporate_scrape_retry` (con backoff)
+3. **Scrape completo**: `corporate_scrape_report` (genera resumen)
 
 ---
 
 ## Sección Técnica
 
-### Archivo: `supabase/functions/rix-batch-orchestrator/index.ts`
+### Archivo 1: Modificar `corporate_scrape_progress` (Migración SQL)
 
-#### Cambio 1: Action priority map (~línea 860)
-```typescript
-// Antes:
-auto_sanitize: 30,
+Añadir columna `result_type` para distinguir tipos de finalización:
 
-// Después:
-auto_sanitize: 30,
-auto_populate_vectors: 40,  // NUEVO: Poblado automático de Vector Store
+```sql
+-- Nueva columna para clasificar el resultado
+ALTER TABLE corporate_scrape_progress
+ADD COLUMN IF NOT EXISTS result_type TEXT DEFAULT NULL;
+
+-- Valores posibles:
+-- 'success_with_news' - Encontró y guardó noticias nuevas
+-- 'success_no_news' - Scrape OK pero sin noticias nuevas (< 30 días)
+-- 'success_corporate_only' - Solo datos corporativos, sin sección de noticias
+-- 'error_timeout' - Timeout de Firecrawl (reintentable)
+-- 'error_rate_limit' - Rate limit (reintentable)
+-- 'error_website_down' - Website caído temporalmente (reintentable)
+-- 'error_blocked' - Website bloqueó el scraper (permanente)
+-- 'error_no_website' - No tiene website configurado (permanente)
+-- 'error_parsing' - Error parseando la respuesta (reintentable)
+
+-- Añadir columna para última fecha de noticias encontradas
+ALTER TABLE corporate_scrape_progress
+ADD COLUMN IF NOT EXISTS latest_news_date DATE DEFAULT NULL;
+
+-- Añadir columna para conteo de noticias encontradas en este scrape
+ALTER TABLE corporate_scrape_progress
+ADD COLUMN IF NOT EXISTS news_found_count INTEGER DEFAULT 0;
 ```
 
-#### Cambio 2: Handler de `auto_sanitize` (~líneas 1142-1153)
+### Archivo 2: Modificar `firecrawl-corporate-scrape/index.ts`
+
+Después de procesar noticias, clasificar el resultado:
+
 ```typescript
-// Después de marcar auto_sanitize como completed...
+// Después de extraer noticias (~línea 600)
+interface ScrapeResult {
+  success: boolean;
+  result_type: string;
+  news_found_count: number;
+  latest_news_date: string | null;
+  error?: string;
+}
 
-// NUEVO: Disparar auto_populate_vectors si el sweep está limpio
-const sanitizeResult = data as { missing?: number; invalid?: number; repaired?: number } | null;
-const sweepIsClean = 
-  (sanitizeResult?.missing ?? 0) === 0 && 
-  (sanitizeResult?.invalid ?? 0) === 0;
+function classifyResult(
+  httpOk: boolean,
+  httpStatus: number | null,
+  corporateDataFound: boolean,
+  newsArticles: NewsArticle[],
+  errorMessage?: string
+): ScrapeResult {
+  // Error de conexión/HTTP
+  if (!httpOk) {
+    if (httpStatus === 429) {
+      return { success: false, result_type: 'error_rate_limit', news_found_count: 0, latest_news_date: null, error: errorMessage };
+    }
+    if (httpStatus === 403 || httpStatus === 401) {
+      return { success: false, result_type: 'error_blocked', news_found_count: 0, latest_news_date: null, error: errorMessage };
+    }
+    if (httpStatus === 404) {
+      return { success: false, result_type: 'error_website_down', news_found_count: 0, latest_news_date: null, error: errorMessage };
+    }
+    if (errorMessage?.includes('timeout') || errorMessage?.includes('Timeout')) {
+      return { success: false, result_type: 'error_timeout', news_found_count: 0, latest_news_date: null, error: errorMessage };
+    }
+    return { success: false, result_type: 'error_parsing', news_found_count: 0, latest_news_date: null, error: errorMessage };
+  }
 
-if (sweepIsClean) {
-  // Verificar que no existe ya un trigger pendiente
-  const { data: existingVectorTrigger } = await supabase
+  // HTTP OK - evaluar contenido
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  const recentNews = newsArticles.filter(n => {
+    if (!n.published_date) return false;
+    return new Date(n.published_date) >= thirtyDaysAgo;
+  });
+
+  if (recentNews.length > 0) {
+    const latestDate = recentNews
+      .map(n => n.published_date)
+      .filter(Boolean)
+      .sort()
+      .reverse()[0];
+    return { 
+      success: true, 
+      result_type: 'success_with_news', 
+      news_found_count: recentNews.length,
+      latest_news_date: latestDate || null
+    };
+  }
+
+  if (corporateDataFound) {
+    return { 
+      success: true, 
+      result_type: newsArticles.length > 0 ? 'success_no_news' : 'success_corporate_only',
+      news_found_count: 0,
+      latest_news_date: null
+    };
+  }
+
+  return { 
+    success: true, 
+    result_type: 'success_no_news',
+    news_found_count: 0,
+    latest_news_date: null
+  };
+}
+```
+
+### Archivo 3: Modificar `corporate-scrape-orchestrator/index.ts`
+
+Añadir integración con `cron_triggers`:
+
+```typescript
+// Después de procesar una empresa (~línea 233)
+// Insertar trigger de continuación si quedan pendientes
+
+async function maybeInsertContinueTrigger(
+  supabase: ReturnType<typeof createClient>,
+  sweepId: string,
+  status: { pending: number; processing: number; failed: number }
+): Promise<void> {
+  // Si no hay más trabajo, no insertar trigger
+  if (status.pending === 0 && status.processing === 0) {
+    // Verificar si hay failed_retryable que deban reintentarse
+    const { count: retryableCount } = await supabase
+      .from('corporate_scrape_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('sweep_id', sweepId)
+      .eq('status', 'failed')
+      .in('result_type', ['error_timeout', 'error_rate_limit', 'error_website_down', 'error_parsing'])
+      .lt('retry_count', 3);
+    
+    if ((retryableCount || 0) > 0) {
+      // Hay errores reintentables - insertar trigger con delay
+      const { data: existingTrigger } = await supabase
+        .from('cron_triggers')
+        .select('id')
+        .eq('action', 'corporate_scrape_retry')
+        .in('status', ['pending', 'processing'])
+        .limit(1)
+        .maybeSingle();
+      
+      if (!existingTrigger) {
+        await supabase.from('cron_triggers').insert({
+          action: 'corporate_scrape_retry',
+          params: { sweep_id: sweepId, retryable_count: retryableCount },
+          status: 'pending'
+        });
+        console.log(`[Orchestrator] Inserted corporate_scrape_retry trigger (${retryableCount} retryable)`);
+      }
+    } else {
+      console.log(`[Orchestrator] Corporate scrape complete! No more work.`);
+    }
+    return;
+  }
+
+  // Hay trabajo pendiente - insertar trigger de continuación
+  const { data: existingTrigger } = await supabase
     .from('cron_triggers')
     .select('id')
-    .eq('action', 'auto_populate_vectors')
+    .eq('action', 'corporate_scrape_continue')
     .in('status', ['pending', 'processing'])
     .limit(1)
     .maybeSingle();
 
-  if (!existingVectorTrigger) {
+  if (!existingTrigger) {
     await supabase.from('cron_triggers').insert({
-      action: 'auto_populate_vectors',
-      params: { 
-        sweep_id: triggerParams?.sweep_id, 
-        triggered_by: 'auto_sanitize_chain',
-        auto_chain: true
-      },
-      status: 'pending',
+      action: 'corporate_scrape_continue',
+      params: { sweep_id: sweepId, pending: status.pending },
+      status: 'pending'
     });
-    console.log(`[auto_sanitize] Sweep clean! Inserted auto_populate_vectors trigger`);
+    console.log(`[Orchestrator] Inserted corporate_scrape_continue trigger (${status.pending} pending)`);
   }
 }
 ```
 
-#### Cambio 3: Handler de `auto_populate_vectors` (~después de línea 1108)
+### Archivo 4: Modificar `rix-batch-orchestrator/index.ts`
+
+Añadir handlers para las nuevas acciones de corporate scrape:
+
 ```typescript
-} else if (trigger.action === 'auto_populate_vectors') {
-  // ============================================================
-  // AUTO_POPULATE_VECTORS: Dispara indexación del Vector Store
-  // Se encadena automáticamente tras auto_sanitize exitoso
-  // ============================================================
-  console.log(`[cron_triggers] Processing auto_populate_vectors trigger ${trigger.id}`);
+// En el action priority map (~línea 860)
+corporate_scrape_continue: 50,  // Después de vector store
+corporate_scrape_retry: 51,
+
+// Handler para corporate_scrape_continue (~después de auto_populate_vectors)
+} else if (trigger.action === 'corporate_scrape_continue') {
+  console.log(`[cron_triggers] Processing corporate_scrape_continue trigger ${trigger.id}`);
   
-  const triggerParams = trigger.params as { sweep_id?: string } | null;
+  const triggerParams = trigger.params as { sweep_id?: string; pending?: number } | null;
   
-  const response = await fetch(`${supabaseUrl}/functions/v1/populate-vector-store`, {
+  const response = await fetch(`${supabaseUrl}/functions/v1/corporate-scrape-orchestrator`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${serviceKey}`,
     },
     body: JSON.stringify({ 
-      source: 'auto_chain',
-      sweep_id: triggerParams?.sweep_id
+      mode: 'continue_cascade',
+      sweep_id: triggerParams?.sweep_id,
+      batch_size: 5,  // Procesar 5 empresas por invocación
+      trigger: 'cron_triggers'
     }),
   });
 
@@ -168,25 +333,130 @@ if (sweepIsClean) {
     .eq('id', trigger.id);
 
   results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
-  console.log(`[cron_triggers] auto_populate_vectors trigger ${trigger.id} completed`);
+  console.log(`[cron_triggers] corporate_scrape_continue completed`);
 
-  // NOTA: Si populate-vector-store necesita más batches, 
-  // él mismo insertará un trigger vector_store_continue
+} else if (trigger.action === 'corporate_scrape_retry') {
+  console.log(`[cron_triggers] Processing corporate_scrape_retry trigger ${trigger.id}`);
+  
+  const triggerParams = trigger.params as { sweep_id?: string } | null;
+  
+  // Primero resetear los errores reintentables a pending
+  const sweepId = triggerParams?.sweep_id || getCurrentCorpSweepId();
+  
+  const { data: resetData } = await supabase
+    .from('corporate_scrape_progress')
+    .update({ status: 'pending', retry_count: supabase.sql`retry_count + 1` })
+    .eq('sweep_id', sweepId)
+    .eq('status', 'failed')
+    .in('result_type', ['error_timeout', 'error_rate_limit', 'error_website_down', 'error_parsing'])
+    .lt('retry_count', 3)
+    .select();
+
+  const resetCount = resetData?.length || 0;
+  console.log(`[corporate_scrape_retry] Reset ${resetCount} retryable errors to pending`);
+
+  // Luego procesar el batch
+  const response = await fetch(`${supabaseUrl}/functions/v1/corporate-scrape-orchestrator`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({ 
+      mode: 'continue_cascade',
+      sweep_id: sweepId,
+      batch_size: 3,
+      trigger: 'retry'
+    }),
+  });
+
+  // ... (mismo patrón de manejo de respuesta)
+}
+```
+
+---
+
+## Flujo Visual del Nuevo Sistema
+
+```text
+               DOMINGO 01:00 UTC
+                     │
+                     ▼
+        ┌─────────────────────────┐
+        │ pg_cron: corporate-     │
+        │ scrape-weekly           │
+        └─────────────────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────┐
+        │ corporate-scrape-       │
+        │ orchestrator            │
+        │ mode: init + process    │
+        └─────────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+        ▼                         ▼
+   Procesa 5               Inserta trigger
+   empresas               corporate_scrape_continue
+        │                         │
+        └────────────┬────────────┘
+                     │
+                     ▼
+        ┌─────────────────────────┐
+        │ rix-batch-orchestrator  │◄── pg_cron cada 5 min
+        │ (watchdog)              │
+        └─────────────────────────┘
+                     │
+          ┌──────────┴──────────┐
+          │                     │
+          ▼                     ▼
+    Procesa trigger      Procesa trigger
+    RIX (alta prio)      corporate_scrape
+                         (prio 50-51)
+                               │
+                               ▼
+        ┌─────────────────────────┐
+        │ Resultado por empresa:  │
+        ├─────────────────────────┤
+        │ ✓ success_with_news     │
+        │ ✓ success_no_news       │
+        │ ✓ success_corporate_only│
+        │ ⟳ error_timeout (retry) │
+        │ ⟳ error_rate_limit      │
+        │ ✗ error_blocked (perm)  │
+        └─────────────────────────┘
+                     │
+                     ▼
+         ¿Quedan pendientes?
+           │Sí            │No
+           ▼              ▼
+    Insertar          ¿Hay retryable
+    continue          con retry<3?
+    trigger              │Sí    │No
+                         ▼      ▼
+                   Insertar   DONE!
+                   retry
+                   trigger
 ```
 
 ---
 
 ## Resumen de Archivos a Modificar
 
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Añadir prioridad, handler y encadenamiento para `auto_populate_vectors` |
+| Archivo | Cambios |
+|---------|---------|
+| **Migración SQL** | Añadir columnas `result_type`, `latest_news_date`, `news_found_count` |
+| `firecrawl-corporate-scrape/index.ts` | Función `classifyResult()` para determinar tipo de resultado |
+| `corporate-scrape-orchestrator/index.ts` | Función `maybeInsertContinueTrigger()` para auto-encadenamiento |
+| `rix-batch-orchestrator/index.ts` | Handlers para `corporate_scrape_continue` y `corporate_scrape_retry` |
 
 ---
 
 ## Resultado Esperado
 
-1. **Inmediatez**: El Vector Store se actualiza minutos después de que el sweep termine (no 18 horas)
-2. **Red de seguridad**: El CRON de las 23:00 sigue activo para capturar cualquier hueco
-3. **Idempotencia**: La verificación de triggers existentes evita duplicados
-4. **Telemetría**: Los logs mostrarán `[auto_sanitize] Sweep clean! Inserted auto_populate_vectors trigger`
+1. **Velocidad**: Procesamiento continuo en batches de 5, no 1 cada 15 min
+2. **Claridad**: Estados semánticos que distinguen "sin noticias" de "falló"
+3. **Resiliencia**: Reintentos automáticos con backoff para errores temporales
+4. **Observabilidad**: Dashboard puede mostrar desglose de resultados
+5. **Autonomía**: El sistema se auto-recupera sin intervención humana
