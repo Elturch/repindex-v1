@@ -103,7 +103,7 @@ export interface MethodologyMetadata {
 }
 
 export interface MessageMetadata {
-  type?: 'standard' | 'bulletin' | 'enriched';
+  type?: 'standard' | 'bulletin' | 'enriched' | 'press';
   companyName?: string;
   documentsFound?: number;
   structuredDataFound?: number;
@@ -141,7 +141,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean; pressMode?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -167,6 +167,10 @@ interface ChatContextType {
   sessionRoleId: string;
   isSessionConfigured: boolean;
   configureSession: (roleId: string) => Promise<void>;
+  // Rix Press
+  hasRixPressAccess: boolean;
+  isRixPressMode: boolean;
+  toggleRixPressMode: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -203,6 +207,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [sessionRoleId, setSessionRoleId] = useState<string>('general');
   const [isSessionConfigured, setIsSessionConfigured] = useState(false);
   
+  // Rix Press state
+  const [hasRixPressAccess, setHasRixPressAccess] = useState(false);
+  const [isRixPressMode, setIsRixPressMode] = useState(false);
+  
   // Use auth context for user ID - this syncs properly with AuthProvider
   const { user, isAuthenticated } = useAuth();
   const currentUserId = user?.id || null;
@@ -215,6 +223,28 @@ export function ChatProvider({ children }: ChatProviderProps) {
       sessionId 
     });
   }, [isAuthenticated, currentUserId, sessionId]);
+
+  // Check if user has 'press' role
+  useEffect(() => {
+    if (!currentUserId) {
+      setHasRixPressAccess(false);
+      return;
+    }
+    const checkPressRole = async () => {
+      try {
+        const { data } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', currentUserId)
+          .eq('role', 'press')
+          .maybeSingle();
+        setHasRixPressAccess(!!data);
+      } catch {
+        setHasRixPressAccess(false);
+      }
+    };
+    checkPressRole();
+  }, [currentUserId]);
 
   // Create or update user_conversations record when user is authenticated
   const ensureConversationRecord = useCallback(async (title?: string, depthLevel?: DepthLevel, roleId?: string) => {
@@ -349,7 +379,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
+  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean; pressMode?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -452,6 +482,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               roleName: role ? `${role.emoji} ${role.name}` : undefined,
               rolePrompt: role?.prompt,
               streamMode: true, // Enable streaming in edge function
+              pressMode: options?.pressMode || false,
             }),
           }
         );
@@ -1382,6 +1413,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         sessionRoleId,
         isSessionConfigured,
         configureSession,
+        // Rix Press
+        hasRixPressAccess,
+        isRixPressMode,
+        toggleRixPressMode: () => setIsRixPressMode(prev => !prev),
       }}
     >
       {children}

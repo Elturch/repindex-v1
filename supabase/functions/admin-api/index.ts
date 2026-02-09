@@ -558,6 +558,46 @@ serve(async (req) => {
         });
       }
 
+      // ==================== RIX PRESS ROLE ====================
+      case "list_press_users": {
+        const { data: pressRoles, error } = await supabaseAdmin
+          .from("user_roles")
+          .select("user_id")
+          .eq("role", "press");
+        
+        if (error) throw error;
+        return new Response(JSON.stringify({ 
+          pressUserIds: (pressRoles || []).map((r: any) => r.user_id) 
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "toggle_press_role": {
+        const { userId, enabled } = data;
+        if (!userId) throw new Error("userId is required");
+
+        if (enabled) {
+          // Insert press role (ignore conflict)
+          const { error } = await supabaseAdmin
+            .from("user_roles")
+            .upsert({ user_id: userId, role: "press" }, { onConflict: "user_id,role" });
+          if (error) throw error;
+        } else {
+          // Remove press role
+          const { error } = await supabaseAdmin
+            .from("user_roles")
+            .delete()
+            .eq("user_id", userId)
+            .eq("role", "press");
+          if (error) throw error;
+        }
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }

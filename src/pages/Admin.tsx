@@ -56,7 +56,8 @@ import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
-import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon } from 'lucide-react';
+import { RixPressUsersPanel } from '@/components/admin/RixPressUsersPanel';
+import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, Newspaper } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -849,6 +850,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="pipeline-alerts" className="flex items-center gap-1.5 px-3 text-xs">
               <AlertTriangleIcon className="h-3.5 w-3.5" />
               Alertas
+            </TabsTrigger>
+            <TabsTrigger value="rix-press" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-blue-500/10 to-indigo-500/10">
+              <Newspaper className="h-3.5 w-3.5 text-blue-600" />
+              Rix Press
             </TabsTrigger>
             <TabsTrigger value="sales-agent" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-purple-500/10 to-amber-500/10">
               <TargetIcon className="h-3.5 w-3.5 text-purple-500" />
@@ -2739,6 +2744,11 @@ const Admin: React.FC = () => {
           {/* ==================== INTERESTED LEADS ==================== */}
           <TabsContent value="leads">
             <InterestedLeadsPanel />
+          </TabsContent>
+
+          {/* ==================== RIX PRESS ==================== */}
+          <TabsContent value="rix-press">
+            <RixPressUsersPanel />
           </TabsContent>
 
           {/* ==================== SALES INTELLIGENCE AGENT ==================== */}

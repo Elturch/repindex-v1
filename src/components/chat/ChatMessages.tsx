@@ -11,7 +11,7 @@ import { MethodologyFooter } from "./MethodologyFooter";
 import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight } from "lucide-react";
+import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight, Newspaper } from "lucide-react";
 import { Message, useChatContext } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
@@ -201,6 +201,16 @@ export function ChatMessages({
                       const role = getRoleById(message.metadata.enrichedFromRole);
                       return role ? `${role.emoji} ${role.name}` : 'Rol adaptado';
                     })()}
+                  </Badge>
+                </div>
+              )}
+              
+              {/* Rix Press badge */}
+              {message.metadata?.type === 'press' && (
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-blue-500/30">
+                  <Newspaper className="h-3.5 w-3.5 text-blue-600" />
+                  <Badge className="text-[10px] bg-blue-600 text-white">
+                    Rix Press
                   </Badge>
                 </div>
               )}
