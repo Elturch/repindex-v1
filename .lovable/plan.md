@@ -1,72 +1,109 @@
 
 
-# Añadir Grupo Azvi al Proceso de Noticias Corporativas
+# Actualizar Boletín Ejecutivo: 6 IAs + Bibliografía Verificada
 
-## Situación Actual
+## Diagnóstico del Problema
 
-| Elemento | Estado |
-|----------|--------|
-| AZVI en `repindex_root_issuers` | ✅ Registrado (status: active) |
-| Website configurado | ✅ https://www.grupoazvi.com/ |
-| AZVI en `corporate_scrape_progress` | ❌ No existe |
-| Barrido corporativo actual | `corp-2026-02` (174 empresas) |
+El boletín ejecutivo generado desde el botón del Agente Rix tiene dos deficiencias críticas:
 
-## Acciones a Ejecutar
+| Problema | Estado Actual | Estado Esperado |
+|----------|--------------|-----------------|
+| Modelos de IA mencionados | Solo 4 (ChatGPT, Perplexity, Gemini, DeepSeek) | 6 modelos (+ Grok, + Qwen) |
+| Bibliografía verificada | No se incluye (0 fuentes extraídas) | Anexo con fuentes de ChatGPT y Perplexity |
 
-### Paso 1: Sincronizar Empresas Nuevas
+## Causa Raíz Técnica
 
-Llamar al orquestador con `mode: sync_new` para detectar y añadir AZVI al barrido actual:
+### 1. Query de Datos Incompleta
 
-```typescript
-await supabase.functions.invoke('corporate-scrape-orchestrator', {
-  body: { mode: 'sync_new', sweep_id: 'corp-2026-02' }
-});
-```
+La consulta que obtiene los datos RIX para el boletín **no incluye** los campos de respuesta bruta necesarios para extraer las fuentes verificadas:
 
-Esto creará automáticamente un registro en `corporate_scrape_progress`:
-- ticker: AZVI
-- issuer_name: Grupo Azvi
-- website: https://www.grupoazvi.com/
-- status: pending
+**Campos faltantes en la query** (líneas 2607-2636 de `chat-intelligence/index.ts`):
+- `20_res_gpt_bruto` (respuesta bruta de ChatGPT con URLs utm_source=openai)
+- `21_res_perplex_bruto` (respuesta bruta de Perplexity con citaciones)
 
-### Paso 2: Lanzar Scraping Inmediato
+Sin estos campos, `extractSourcesFromRixData(rixData)` siempre devuelve un array vacío.
 
-Insertar un trigger `corporate_scrape_continue` para que el orquestador procese las empresas pendientes (incluyendo AZVI):
+### 2. Prompt del Sistema Desactualizado
 
-```sql
-INSERT INTO cron_triggers (action, params, status)
-VALUES (
-  'corporate_scrape_continue',
-  '{"sweep_id": "corp-2026-02", "triggered_by": "manual_azvi_add"}',
-  'pending'
-);
-```
+El `BULLETIN_SYSTEM_PROMPT` (líneas 1544-1812) solo referencia 4 IAs:
+- Sección 3: "EL JUICIO DE LAS 4 INTELIGENCIAS"
+- Tabla de evolución: solo columnas ChatGPT, Perplexity, Gemini, DeepSeek
+- Sin menciones a Grok ni Qwen
 
-### Alternativa Directa
+### 3. Visor del Boletín sin Fuentes
 
-También puedo llamar directamente al proceso single para AZVI una vez sincronizado:
+El componente `CompanyBulletinViewer` no recibe ni renderiza las fuentes verificadas, mientras que el `MarkdownMessage` sí lo hace para respuestas normales.
+
+---
+
+## Plan de Implementación
+
+### Paso 1: Añadir Campos de Fuentes a la Query del Boletín
+
+Modificar la consulta de datos RIX en `fetchUnifiedRixData` para incluir las respuestas brutas:
 
 ```typescript
-await supabase.functions.invoke('corporate-scrape-orchestrator', {
-  body: { mode: 'process_single', sweep_id: 'corp-2026-02' }
-});
+// Añadir a la lista de columns:
+"20_res_gpt_bruto",
+"21_res_perplex_bruto",
 ```
 
-Pero AZVI irá al final de la cola (ordenado por `created_at`), así que mejor usar el trigger.
+Esto permitirá que `extractSourcesFromRixData()` extraiga las URLs verificadas de ChatGPT (utm_source=openai) y las citaciones de Perplexity.
+
+### Paso 2: Actualizar el Prompt del Boletín a 6 IAs
+
+Modificar `BULLETIN_SYSTEM_PROMPT` para reflejar los 6 modelos:
+
+1. **Sección 3**: Cambiar "EL JUICIO DE LAS 4 INTELIGENCIAS" → "EL JUICIO DE LAS 6 INTELIGENCIAS"
+2. **Añadir secciones para Grok y Qwen**:
+   - `#### Grok evalúa: RIX [XX] — "[Frase]"`
+   - `#### Qwen considera: RIX [XX] — "[Frase]"`
+3. **Actualizar tablas de evolución**: Añadir columnas Grok y Qwen
+4. **Actualizar glosario de modelos** en la sección de metodología
+
+### Paso 3: Pasar Fuentes al Visor del Boletín
+
+Modificar `CompanyBulletinViewer` para:
+1. Recibir props adicionales: `verifiedSources`, `periodFrom`, `periodTo`
+2. Incluir la bibliografía verificada en el HTML de exportación usando `generateBibliographyHtml()`
+3. Renderizar las fuentes al final del boletín en pantalla
+
+### Paso 4: Actualizar ChatMessages para Pasar Metadata
+
+Modificar el componente `ChatMessages` para pasar las fuentes verificadas al `CompanyBulletinViewer`:
+
+```tsx
+<CompanyBulletinViewer 
+  content={message.content}
+  companyName={message.metadata?.companyName}
+  verifiedSources={message.metadata?.verifiedSources}
+  periodFrom={message.metadata?.methodology?.periodFrom}
+  periodTo={message.metadata?.methodology?.periodTo}
+/>
+```
+
+---
+
+## Archivos a Modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `supabase/functions/chat-intelligence/index.ts` | Añadir campos de fuentes a query (líneas 2607-2636) y actualizar prompt (líneas 1544-1812) |
+| `src/components/chat/CompanyBulletinViewer.tsx` | Añadir props de fuentes, incluir bibliografía en HTML de exportación |
+| `src/components/chat/ChatMessages.tsx` | Pasar metadata de fuentes al visor |
+
+---
 
 ## Resultado Esperado
 
-| Métrica | Antes | Después |
+Tras la implementación:
+
+| Aspecto | Antes | Después |
 |---------|-------|---------|
-| Empresas en barrido | 174 | 175 |
-| AZVI corporate_snapshot | ❌ | ✅ |
-| AZVI corporate_news | ❌ | ✅ (si hay noticias) |
+| Modelos en boletín | 4 | 6 (+ Grok, Qwen) |
+| Fuentes extraídas | 0 | 10-50 (según empresa) |
+| Bibliografía en PDF | No | Sí (Anexo: Referencias Citadas) |
+| Coherencia con chat | Parcial | Total |
 
-## Ejecución
-
-No requiere cambios de código. Solo dos llamadas API:
-1. `corporate-scrape-orchestrator` con `sync_new`
-2. Insertar trigger para procesar pendientes
-
-El watchdog procesará el trigger en los próximos 5 minutos.
+El boletín ejecutivo mostrará los 6 modelos de IA y el PDF/HTML de descarga incluirá automáticamente el "Anexo: Referencias Citadas por las IAs" con las fuentes verificadas clasificadas temporalmente.
 
