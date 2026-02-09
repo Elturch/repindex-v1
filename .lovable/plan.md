@@ -1,133 +1,104 @@
 
 
-# Repoblacion Vector Store + Guardrail IBEX 35 Semanal
+# Sugerencias Inteligentes con Vector Store - "Preguntas que demuestran poder"
 
-## Parte 1: Repoblar el Vector Store con datos IBEX corregidos
+## Problema actual
 
-### Problema
-Los documentos existentes en el Vector Store contienen `ibex_family_code` incorrecto en sus metadatos para Acciona Energia y Catalana Occidente (y potencialmente en el texto embebido). Dado que el Vector Store es incremental (nunca borra), los documentos antiguos con datos erroneos siguen ahi.
+El hook `useSmartSuggestions` usa un pool de ~20 plantillas fijas con inyeccion basica de datos live (top/bottom company, divergencia). Las preguntas son genericas y repetitivas: "Cuales son las 5 mejores empresas", "Compara el sector bancario vs energetico". No demuestran lo que el Agente Rix realmente puede hacer.
 
-### Solucion
-No es necesario regenerar embeddings. Los metadatos del Vector Store (`metadata.ibex_family_code`) se usan para filtrado, no para contenido semantico. Se corregiran directamente via SQL:
+## Solucion: Edge Function `fetch-smart-suggestions`
 
-```sql
--- Corregir metadatos en documentos del Vector Store
-UPDATE documents 
-SET metadata = jsonb_set(metadata, '{ibex_family_code}', '"IBEX-35"')
-WHERE metadata->>'ticker' IN ('ANE', 'ANE.MC')
-  AND metadata->>'ibex_family_code' != 'IBEX-35';
+En lugar de generar preguntas desde el frontend con plantillas, se creara una Edge Function que **mina directamente los metadatos del Vector Store** para descubrir patrones interesantes y generar preguntas contextuales y sorprendentes.
 
-UPDATE documents 
-SET metadata = jsonb_set(metadata, '{ibex_family_code}', '"IBEX-MC"')
-WHERE metadata->>'ticker' IN ('CAT', 'GCO.MC')
-  AND metadata->>'ibex_family_code' != 'IBEX-MC';
-```
+### Fuentes de datos (sin embeddings, solo SQL sobre metadata)
 
-Esto corrige los metadatos sin necesidad de re-generar embeddings (que es costoso y lento). El campo `ibex_family_code` en el contenido de texto no afecta a la busqueda semantica de forma significativa.
+La Edge Function consultara los metadatos JSONB de la tabla `documents` para extraer:
 
----
+1. **Anomalias por dimension**: Empresas con scores extremos en dimensiones especificas (ej: CEM de 100 pero SIM de 10)
+2. **Flags interesantes**: Documentos con flags como `inconsistencias`, `datos_antiguos`, `cutoff_disclaimer`
+3. **Divergencias entre modelos**: Misma empresa evaluada por diferentes IAs con scores muy distintos
+4. **Movimientos semanales**: Comparar scores entre semanas consecutivas
+5. **Patrones sectoriales**: Sectores donde todas las empresas bajan o suben
 
-## Parte 2: Nuevo Guardrail - Verificacion IBEX 35 Semanal
+### Tipos de preguntas generadas
+
+| Tipo | Ejemplo | Fuente |
+|------|---------|--------|
+| Anomalia dimensional | "Renta 4 tiene CEM de 100 pero SIM de 10 -- por que las IAs la ven tan bien en gobernanza pero tan mal en sostenibilidad?" | metadata.scores |
+| Divergencia entre IAs | "ChatGPT da 82 a Iberdrola pero Deepseek solo 54 -- quien tiene razon y por que?" | Misma empresa, distinto ai_model |
+| Flag de alerta | "3 empresas del IBEX-35 tienen flag de 'inconsistencias' esta semana -- que esta pasando?" | metadata.flags |
+| Movimiento brusco | "Logista ha caido de 72 a 45 en una semana -- es un problema real o un fallo de datos?" | Comparacion temporal |
+| Patron sectorial | "Todas las empresas de Banca subieron esta semana excepto una -- cual y por que?" | Agrupacion por sector |
+| Descubrimiento oculto | "Solo 2 empresas small cap superan a las del IBEX-35 en reputacion -- cuales son?" | ibex_family_code + scores |
 
 ### Arquitectura
 
-Se creara una nueva Edge Function `verify-ibex-composition` que:
-
-1. Consulta la API de EODHD para obtener la composicion actual del IBEX 35: `https://eodhd.com/api/fundamentals/IBEX.INDX?api_token=KEY&fmt=json`
-2. Compara con los registros `ibex_family_code = 'IBEX-35'` en `repindex_root_issuers`
-3. Si hay discrepancias (entradas/salidas):
-   - Actualiza `repindex_root_issuers` automaticamente
-   - Sincroniza `rix_trends` con los nuevos valores
-   - Actualiza metadatos del Vector Store
-   - Registra el cambio en `pipeline_health_checks` como alerta
-
-### Programacion
-
-CRON: Viernes a las 18:30 UTC (20:30 CET, tras cierre de la Bolsa de Madrid a 17:30 CET con margen de 1 hora para liquidacion)
-
-### Flujo del Guardrail
-
 ```
-EODHD Fundamentals API (IBEX.INDX)
-        |
-        v
-  Obtener lista oficial de componentes
-        |
-        v
-  Comparar con repindex_root_issuers
-  (WHERE ibex_family_code = 'IBEX-35')
-        |
-    Discrepancias?
-   /           \
-  No            Si
-  |              |
-  Log OK     Actualizar:
-             1. repindex_root_issuers
-             2. rix_trends (historico)
-             3. documents (vector store metadata)
-             4. pipeline_health_checks (alerta)
+Frontend (useSmartSuggestions)
+    |
+    |-- GET /fetch-smart-suggestions?lang=es&count=4
+    |
+    v
+Edge Function (fetch-smart-suggestions)
+    |
+    |-- SQL queries sobre metadata JSONB de documents
+    |-- SQL queries sobre rix_runs_v2 (ultima semana)
+    |-- Aleatoriza y prioriza hallazgos
+    |
+    v
+Respuesta JSON: [{ text, type, icon, source }]
 ```
 
-### Edge Function: `verify-ibex-composition`
+### Ventaja clave: Sin coste de embeddings
 
-La funcion:
-- Usa `EODHD_API_KEY` (ya configurada en secrets)
-- Llama a `https://eodhd.com/api/fundamentals/IBEX.INDX?api_token=KEY&fmt=json`
-- La respuesta contiene un objeto `Components` con los tickers del indice
-- Mapea los tickers EODHD (formato `XXX`) al formato interno (`XXX.MC`)
-- Compara con la tabla `repindex_root_issuers`
-- Detecta:
-  - **Entradas**: empresas en EODHD que no estan como IBEX-35 en la DB
-  - **Salidas**: empresas como IBEX-35 en la DB que no aparecen en EODHD
-- Para cada cambio detectado:
-  - Actualiza `ibex_family_code` y `ibex_family_category` en `repindex_root_issuers`
-  - Actualiza registros historicos en `rix_trends`
-  - Actualiza metadatos en `documents` (Vector Store)
-- Registra todo en `pipeline_health_checks` con `check_type: 'ibex_composition'`
+No se generan embeddings ni se llama a OpenAI. Todo se resuelve con consultas SQL sobre los campos JSONB de metadata ya indexados. Coste: cero. Latencia: <500ms.
 
-### CRON Job
+## Detalles tecnicos
 
-Se programara via SQL (no migracion) un pg_cron job:
+### 1. Nueva Edge Function: `supabase/functions/fetch-smart-suggestions/index.ts`
 
-```sql
-SELECT cron.schedule(
-  'verify-ibex-composition-weekly',
-  '30 18 * * 5',  -- Viernes 18:30 UTC
-  $$
-  SELECT net.http_post(
-    url:='https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/verify-ibex-composition',
-    headers:='{"Content-Type":"application/json","Authorization":"Bearer ANON_KEY"}'::jsonb,
-    body:='{"trigger":"cron"}'::jsonb
-  ) as request_id;
-  $$
-);
-```
+La funcion ejecutara 5-6 queries SQL en paralelo sobre `documents` y `rix_runs_v2`:
 
-### Configuracion
+- **Query 1 - Anomalias dimensionales**: Buscar documentos recientes donde la diferencia entre el score maximo y minimo de las 8 dimensiones supere 50 puntos
+- **Query 2 - Divergencias entre IAs**: Agrupar por ticker+semana, calcular max-min de rix_score entre modelos
+- **Query 3 - Flags sospechosos**: Contar empresas con flags criticos esta semana
+- **Query 4 - Movimientos semanales**: Comparar rix_score promedio de la semana actual vs anterior por empresa
+- **Query 5 - Patrones sectoriales**: Agrupar por sector y detectar unanimidad alcista/bajista
+- **Query 6 - Descubrimientos cross-index**: Comparar small caps vs IBEX-35
 
-Se anadira al `supabase/config.toml`:
+Cada query produce 1-3 "hallazgos" que se convierten en preguntas usando plantillas parametrizadas con los datos reales encontrados.
 
-```toml
-[functions.verify-ibex-composition]
-verify_jwt = false
-```
+La funcion devolvera un array de sugerencias aleatorizado, priorizando hallazgos mas "sorprendentes" (mayor delta, flags mas criticos).
 
----
+### 2. Modificar: `src/hooks/useSmartSuggestions.ts`
+
+- Anadir un `useEffect` que llame a la Edge Function `fetch-smart-suggestions`
+- Usar las sugerencias del Vector Store como tipo `'vector_insight'` con prioridad maxima (0)
+- Mantener el sistema actual como fallback si la Edge Function falla
+- Cachear resultados durante 5 minutos para evitar llamadas repetidas
+
+### 3. Modificar: `src/components/chat/ChatMessages.tsx`
+
+- Anadir badge visual `"Insight en vivo"` para sugerencias tipo `vector_insight`
+- Estilo diferenciado: borde con gradiente sutil para destacar las preguntas basadas en datos reales
+
+### 4. Configuracion: `supabase/config.toml`
+
+- Anadir entrada para la nueva funcion con `verify_jwt = false`
 
 ## Archivos a crear/modificar
 
 | Archivo | Accion |
 |---------|--------|
-| `supabase/functions/verify-ibex-composition/index.ts` | **Crear** - Nueva Edge Function |
-| `supabase/config.toml` | **Modificar** - Anadir config de la nueva funcion |
+| `supabase/functions/fetch-smart-suggestions/index.ts` | Crear |
+| `src/hooks/useSmartSuggestions.ts` | Modificar - integrar Edge Function |
+| `src/components/chat/ChatMessages.tsx` | Modificar - badge visual para insights |
+| `supabase/config.toml` | Modificar - anadir config |
 
-Ademas, se ejecutaran:
-- 1 migracion SQL para corregir metadatos del Vector Store (Parte 1)
-- 1 sentencia SQL (no migracion) para crear el CRON job semanal
+## Resultado esperado
 
-## Resultado Esperado
-
-- Vector Store corregido con datos IBEX consistentes (~200 documentos actualizados)
-- Guardrail automatico semanal que detecta cambios en la composicion del IBEX 35
-- Alertas visibles en `pipeline_health_checks` cuando hay movimientos
-- Cero intervencion manual para futuros cambios de indice
+- Cada vez que se abre un hilo nuevo, las 4 sugerencias seran unicas, basadas en datos reales del Vector Store
+- Las preguntas demostraran capacidades avanzadas: analisis cruzado, deteccion de anomalias, comparacion entre IAs
+- El boton "Refrescar" generara preguntas distintas cada vez (aleatorizacion server-side)
+- Coste cero en API de IA (solo queries SQL)
+- Fallback al sistema actual si la Edge Function falla
