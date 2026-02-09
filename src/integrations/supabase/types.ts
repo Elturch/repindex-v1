@@ -1609,6 +1609,48 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_composite_scores: {
+        Row: {
+          company_name: string
+          consensus_level: string
+          created_at: string
+          ic_score: number
+          id: string
+          individual_scores: Json
+          models_count: number
+          rixc_score: number
+          sigma_intermodelo: number
+          ticker: string
+          week_start: string
+        }
+        Insert: {
+          company_name: string
+          consensus_level: string
+          created_at?: string
+          ic_score: number
+          id?: string
+          individual_scores?: Json
+          models_count: number
+          rixc_score: number
+          sigma_intermodelo: number
+          ticker: string
+          week_start: string
+        }
+        Update: {
+          company_name?: string
+          consensus_level?: string
+          created_at?: string
+          ic_score?: number
+          id?: string
+          individual_scores?: Json
+          models_count?: number
+          rixc_score?: number
+          sigma_intermodelo?: number
+          ticker?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       rix_runs: {
         Row: {
           "01_run_id": string

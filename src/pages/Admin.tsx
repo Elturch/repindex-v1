@@ -58,7 +58,8 @@ import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
 import { RixPressUsersPanel } from '@/components/admin/RixPressUsersPanel';
 import { PlatformSnapshotsPanel } from '@/components/admin/PlatformSnapshotsPanel';
-import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, Newspaper, BookOpen } from 'lucide-react';
+import { RixcMonitorPanel } from '@/components/admin/RixcMonitorPanel';
+import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, Newspaper, BookOpen, Calculator } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -792,6 +793,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="sales-agent" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-purple-500/10 to-amber-500/10">
               <TargetIcon className="h-3.5 w-3.5 text-purple-500" />
               Agente Comercial
+            </TabsTrigger>
+            <TabsTrigger value="rixc" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-cyan-500/10 to-blue-500/10">
+              <Calculator className="h-3.5 w-3.5 text-cyan-600" />
+              RIXc
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -2663,6 +2668,11 @@ const Admin: React.FC = () => {
           {/* ==================== SALES INTELLIGENCE AGENT ==================== */}
           <TabsContent value="sales-agent">
             <SalesIntelligencePanel />
+          </TabsContent>
+
+          {/* ==================== RIXC COMPOSITE ==================== */}
+          <TabsContent value="rixc">
+            <RixcMonitorPanel />
           </TabsContent>
         </Tabs>
       </div>
