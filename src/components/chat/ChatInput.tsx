@@ -2,7 +2,7 @@ import { useState, KeyboardEvent, useEffect, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Send, FileText, Mic, MicOff } from "lucide-react";
+import { Send, FileText, Mic, MicOff, Newspaper } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "./LanguageSelector";
 import { SessionConfigPanel } from "./SessionConfigPanel";
@@ -13,7 +13,7 @@ import { useChatContext } from "@/contexts/ChatContext";
 export type DepthLevel = 'quick' | 'complete' | 'exhaustive';
 
 interface ChatInputProps {
-  onSend: (message: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string }) => void;
+  onSend: (message: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; pressMode?: boolean }) => void;
   isLoading: boolean;
   placeholder?: string;
   compact?: boolean;
@@ -82,7 +82,7 @@ export function ChatInput({
   const tr = getChatTranslations(language.code);
 
   // Get session configuration from context
-  const { sessionDepthLevel, sessionRoleId, isSessionConfigured } = useChatContext();
+  const { sessionDepthLevel, sessionRoleId, isSessionConfigured, hasRixPressAccess, isRixPressMode, toggleRixPressMode } = useChatContext();
 
   // Auto-resize textarea as user types
   const adjustTextareaHeight = () => {
@@ -170,7 +170,8 @@ export function ChatInput({
       onSend(value.trim(), { 
         bulletinMode: bulletinModeActive, 
         depthLevel: sessionDepthLevel,
-        roleId: sessionRoleId !== 'general' ? sessionRoleId : undefined
+        roleId: sessionRoleId !== 'general' ? sessionRoleId : undefined,
+        pressMode: isRixPressMode,
       });
       setValue("");
       setBulletinModeActive(false);
@@ -235,6 +236,30 @@ export function ChatInput({
           </Tooltip>
         </TooltipProvider>
 
+        {hasRixPressAccess && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={isRixPressMode ? "default" : "outline"}
+                  size={compact ? "sm" : "default"}
+                  onClick={toggleRixPressMode}
+                  disabled={isLoading}
+                  className={cn(
+                    "shrink-0 transition-all",
+                    isRixPressMode && "bg-blue-700 hover:bg-blue-800 text-white"
+                  )}
+                >
+                  <Newspaper className={compact ? "h-4 w-4" : "h-5 w-5"} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">{isRixPressMode ? 'Desactivar modo Rix Press' : 'Activar Rix Press — Genera notas de prensa'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+
         {speechSupported && (
           <TooltipProvider>
             <Tooltip>
@@ -269,7 +294,7 @@ export function ChatInput({
           onChange={(e) => setValue(e.target.value)}
           onInput={adjustTextareaHeight}
           onKeyDown={handleKeyDown}
-          placeholder={bulletinModeActive ? tr.inputPlaceholderBulletin : (isListening ? tr.inputListening : (placeholder || tr.inputPlaceholder))}
+          placeholder={bulletinModeActive ? tr.inputPlaceholderBulletin : (isRixPressMode ? 'Escribe el tema para tu nota de prensa...' : (isListening ? tr.inputListening : (placeholder || tr.inputPlaceholder)))}
           disabled={isLoading}
           className={cn(
             "flex-1 min-w-0 resize-none overflow-hidden !min-h-[44px] max-h-[220px]",

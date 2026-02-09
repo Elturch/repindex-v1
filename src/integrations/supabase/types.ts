@@ -3372,7 +3372,7 @@ export type Database = {
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
     }
     Enums: {
-      app_role: "admin" | "manager" | "user"
+      app_role: "admin" | "manager" | "user" | "press"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3500,7 +3500,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "manager", "user"],
+      app_role: ["admin", "manager", "user", "press"],
     },
   },
 } as const
