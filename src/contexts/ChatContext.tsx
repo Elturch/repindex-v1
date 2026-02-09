@@ -465,16 +465,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         };
         setMessages(prev => [...prev, streamingMessage]);
 
-        const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/chat-intelligence`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-              'apikey': SUPABASE_ANON_KEY,
-            },
-            body: JSON.stringify({
+        // Route to rix-press-agent when in press mode, otherwise chat-intelligence
+        const edgeFunctionName = options?.pressMode ? 'rix-press-agent' : 'chat-intelligence';
+        const requestBody = options?.pressMode
+          ? {
+              question,
+              conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+              sessionId,
+              conversationId: convId,
+              language: language.code,
+              languageName: language.nativeName,
+            }
+          : {
               question,
               conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
               sessionId,
@@ -487,9 +489,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
               roleId: role?.id,
               roleName: role ? `${role.emoji} ${role.name}` : undefined,
               rolePrompt: role?.prompt,
-              streamMode: true, // Enable streaming in edge function
-              pressMode: options?.pressMode || false,
-            }),
+              streamMode: true,
+            };
+
+        console.log('[ChatContext] Routing to:', edgeFunctionName, options?.pressMode ? '(PRESS MODE)' : '');
+
+        const response = await fetch(
+          `${SUPABASE_URL}/functions/v1/${edgeFunctionName}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify(requestBody),
           }
         );
 
