@@ -1,109 +1,78 @@
 
 
-# Actualizar Boletín Ejecutivo: 6 IAs + Bibliografía Verificada
+# Corrección IBEX 35: Acciona Energía y Catalana Occidente
 
-## Diagnóstico del Problema
+## Resumen del Cotejo
 
-El boletín ejecutivo generado desde el botón del Agente Rix tiene dos deficiencias críticas:
+Se han comparado las 35 empresas de la imagen oficial con las 35 empresas marcadas como IBEX-35 en la base de datos. **33 de 35 coinciden perfectamente**. Los 2 errores detectados son:
 
-| Problema | Estado Actual | Estado Esperado |
-|----------|--------------|-----------------|
-| Modelos de IA mencionados | Solo 4 (ChatGPT, Perplexity, Gemini, DeepSeek) | 6 modelos (+ Grok, + Qwen) |
-| Bibliografía verificada | No se incluye (0 fuentes extraídas) | Anexo con fuentes de ChatGPT y Perplexity |
+| Empresa | Ticker | Estado actual en DB | Estado correcto (imagen) |
+|---------|--------|--------------------|-----------------------|
+| Acciona Energía | ANE.MC | IBEX-MC | IBEX-35 |
+| Catalana Occidente | GCO.MC | IBEX-35 | IBEX-MC |
 
-## Causa Raíz Técnica
+## Registros afectados
 
-### 1. Query de Datos Incompleta
+| Tabla | Ticker | ibex_family_code actual | Corrección | Filas |
+|-------|--------|------------------------|------------|-------|
+| `repindex_root_issuers` | ANE.MC | IBEX-MC | IBEX-35 | 1 |
+| `repindex_root_issuers` | GCO.MC | IBEX-35 | IBEX-MC | 1 |
+| `rix_trends` | ANE.MC | IBEX-MC | IBEX-35 | 12 |
+| `rix_trends` | ANE | IBEX-35 | Ya correcto | 57 (sin cambio) |
+| `rix_trends` | GCO.MC | IBEX-35 | IBEX-MC | 12 |
+| `rix_trends` | CAT | MC-OTHER | IBEX-MC | 64 |
 
-La consulta que obtiene los datos RIX para el boletín **no incluye** los campos de respuesta bruta necesarios para extraer las fuentes verificadas:
+## SQL a ejecutar
 
-**Campos faltantes en la query** (líneas 2607-2636 de `chat-intelligence/index.ts`):
-- `20_res_gpt_bruto` (respuesta bruta de ChatGPT con URLs utm_source=openai)
-- `21_res_perplex_bruto` (respuesta bruta de Perplexity con citaciones)
+### Paso 1: Tabla maestra
 
-Sin estos campos, `extractSourcesFromRixData(rixData)` siempre devuelve un array vacío.
+```sql
+-- Acciona Energía: IBEX-MC → IBEX-35
+UPDATE repindex_root_issuers 
+SET ibex_family_code = 'IBEX-35',
+    ibex_family_category = 'IBEX 35',
+    ibex_status = 'active_now'
+WHERE ticker = 'ANE.MC';
 
-### 2. Prompt del Sistema Desactualizado
-
-El `BULLETIN_SYSTEM_PROMPT` (líneas 1544-1812) solo referencia 4 IAs:
-- Sección 3: "EL JUICIO DE LAS 4 INTELIGENCIAS"
-- Tabla de evolución: solo columnas ChatGPT, Perplexity, Gemini, DeepSeek
-- Sin menciones a Grok ni Qwen
-
-### 3. Visor del Boletín sin Fuentes
-
-El componente `CompanyBulletinViewer` no recibe ni renderiza las fuentes verificadas, mientras que el `MarkdownMessage` sí lo hace para respuestas normales.
-
----
-
-## Plan de Implementación
-
-### Paso 1: Añadir Campos de Fuentes a la Query del Boletín
-
-Modificar la consulta de datos RIX en `fetchUnifiedRixData` para incluir las respuestas brutas:
-
-```typescript
-// Añadir a la lista de columns:
-"20_res_gpt_bruto",
-"21_res_perplex_bruto",
+-- Catalana Occidente: IBEX-35 → IBEX-MC
+UPDATE repindex_root_issuers 
+SET ibex_family_code = 'IBEX-MC',
+    ibex_family_category = 'IBEX Medium Cap'
+WHERE ticker = 'GCO.MC';
 ```
 
-Esto permitirá que `extractSourcesFromRixData()` extraiga las URLs verificadas de ChatGPT (utm_source=openai) y las citaciones de Perplexity.
+### Paso 2: Datos historicos en rix_trends
 
-### Paso 2: Actualizar el Prompt del Boletín a 6 IAs
+```sql
+-- Acciona Energía (ticker ANE.MC)
+UPDATE rix_trends 
+SET ibex_family_code = 'IBEX-35'
+WHERE ticker = 'ANE.MC';
 
-Modificar `BULLETIN_SYSTEM_PROMPT` para reflejar los 6 modelos:
-
-1. **Sección 3**: Cambiar "EL JUICIO DE LAS 4 INTELIGENCIAS" → "EL JUICIO DE LAS 6 INTELIGENCIAS"
-2. **Añadir secciones para Grok y Qwen**:
-   - `#### Grok evalúa: RIX [XX] — "[Frase]"`
-   - `#### Qwen considera: RIX [XX] — "[Frase]"`
-3. **Actualizar tablas de evolución**: Añadir columnas Grok y Qwen
-4. **Actualizar glosario de modelos** en la sección de metodología
-
-### Paso 3: Pasar Fuentes al Visor del Boletín
-
-Modificar `CompanyBulletinViewer` para:
-1. Recibir props adicionales: `verifiedSources`, `periodFrom`, `periodTo`
-2. Incluir la bibliografía verificada en el HTML de exportación usando `generateBibliographyHtml()`
-3. Renderizar las fuentes al final del boletín en pantalla
-
-### Paso 4: Actualizar ChatMessages para Pasar Metadata
-
-Modificar el componente `ChatMessages` para pasar las fuentes verificadas al `CompanyBulletinViewer`:
-
-```tsx
-<CompanyBulletinViewer 
-  content={message.content}
-  companyName={message.metadata?.companyName}
-  verifiedSources={message.metadata?.verifiedSources}
-  periodFrom={message.metadata?.methodology?.periodFrom}
-  periodTo={message.metadata?.methodology?.periodTo}
-/>
+-- Catalana Occidente (ambos tickers historicos)
+UPDATE rix_trends 
+SET ibex_family_code = 'IBEX-MC'
+WHERE ticker IN ('GCO.MC', 'CAT');
 ```
 
----
+### Paso 3: Verificacion
 
-## Archivos a Modificar
+```sql
+SELECT COUNT(DISTINCT ticker) as ibex35_count 
+FROM repindex_root_issuers 
+WHERE ibex_family_code = 'IBEX-35';
+-- Esperado: 35
+```
 
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/chat-intelligence/index.ts` | Añadir campos de fuentes a query (líneas 2607-2636) y actualizar prompt (líneas 1544-1812) |
-| `src/components/chat/CompanyBulletinViewer.tsx` | Añadir props de fuentes, incluir bibliografía en HTML de exportación |
-| `src/components/chat/ChatMessages.tsx` | Pasar metadata de fuentes al visor |
+## Archivos a modificar
 
----
+Ninguno. Correcciones puramente de datos via SQL.
 
-## Resultado Esperado
+## Resultado esperado
 
-Tras la implementación:
-
-| Aspecto | Antes | Después |
-|---------|-------|---------|
-| Modelos en boletín | 4 | 6 (+ Grok, Qwen) |
-| Fuentes extraídas | 0 | 10-50 (según empresa) |
-| Bibliografía en PDF | No | Sí (Anexo: Referencias Citadas) |
-| Coherencia con chat | Parcial | Total |
-
-El boletín ejecutivo mostrará los 6 modelos de IA y el PDF/HTML de descarga incluirá automáticamente el "Anexo: Referencias Citadas por las IAs" con las fuentes verificadas clasificadas temporalmente.
+- IBEX-35 tendra exactamente 35 empresas correctas segun la lista oficial
+- Acciona Energia aparecera en rankings y filtros IBEX-35
+- Catalana Occidente se mostrara como IBEX Medium Cap
+- Datos historicos en rix_trends quedaran corregidos retroactivamente
+- Total de filas modificadas: ~90
 
