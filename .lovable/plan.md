@@ -1,104 +1,166 @@
 
 
-# Sugerencias Inteligentes con Vector Store - "Preguntas que demuestran poder"
+# Rix Press: Sistema de Redaccion Periodistica con IA
 
-## Problema actual
+## Resumen
 
-El hook `useSmartSuggestions` usa un pool de ~20 plantillas fijas con inyeccion basica de datos live (top/bottom company, divergencia). Las preguntas son genericas y repetitivas: "Cuales son las 5 mejores empresas", "Compara el sector bancario vs energetico". No demuestran lo que el Agente Rix realmente puede hacer.
+Crear un modo "Rix Press" dentro del Agente Rix que permite a usuarios autorizados generar notas de prensa profesionales basadas en los datos e investigaciones de RepIndex. Solo usuarios con el rol `press` podran activar este modo. Se usa Gemini 3 Pro (via Lovable AI Gateway) para redaccion de alta calidad humanizada.
 
-## Solucion: Edge Function `fetch-smart-suggestions`
+---
 
-En lugar de generar preguntas desde el frontend con plantillas, se creara una Edge Function que **mina directamente los metadatos del Vector Store** para descubrir patrones interesantes y generar preguntas contextuales y sorprendentes.
+## Parte 1: Nuevo rol `press` en la base de datos
 
-### Fuentes de datos (sin embeddings, solo SQL sobre metadata)
+### Problema
+El enum `app_role` actual solo tiene `admin`, `manager`, `user`. Necesitamos un rol `press` para controlar acceso a Rix Press.
 
-La Edge Function consultara los metadatos JSONB de la tabla `documents` para extraer:
+### Solucion
+- Ampliar el enum `app_role` con el valor `press`
+- No se crea tabla nueva: se reutiliza `user_roles` (un usuario puede tener multiples roles)
 
-1. **Anomalias por dimension**: Empresas con scores extremos en dimensiones especificas (ej: CEM de 100 pero SIM de 10)
-2. **Flags interesantes**: Documentos con flags como `inconsistencias`, `datos_antiguos`, `cutoff_disclaimer`
-3. **Divergencias entre modelos**: Misma empresa evaluada por diferentes IAs con scores muy distintos
-4. **Movimientos semanales**: Comparar scores entre semanas consecutivas
-5. **Patrones sectoriales**: Sectores donde todas las empresas bajan o suben
-
-### Tipos de preguntas generadas
-
-| Tipo | Ejemplo | Fuente |
-|------|---------|--------|
-| Anomalia dimensional | "Renta 4 tiene CEM de 100 pero SIM de 10 -- por que las IAs la ven tan bien en gobernanza pero tan mal en sostenibilidad?" | metadata.scores |
-| Divergencia entre IAs | "ChatGPT da 82 a Iberdrola pero Deepseek solo 54 -- quien tiene razon y por que?" | Misma empresa, distinto ai_model |
-| Flag de alerta | "3 empresas del IBEX-35 tienen flag de 'inconsistencias' esta semana -- que esta pasando?" | metadata.flags |
-| Movimiento brusco | "Logista ha caido de 72 a 45 en una semana -- es un problema real o un fallo de datos?" | Comparacion temporal |
-| Patron sectorial | "Todas las empresas de Banca subieron esta semana excepto una -- cual y por que?" | Agrupacion por sector |
-| Descubrimiento oculto | "Solo 2 empresas small cap superan a las del IBEX-35 en reputacion -- cuales son?" | ibex_family_code + scores |
-
-### Arquitectura
-
-```
-Frontend (useSmartSuggestions)
-    |
-    |-- GET /fetch-smart-suggestions?lang=es&count=4
-    |
-    v
-Edge Function (fetch-smart-suggestions)
-    |
-    |-- SQL queries sobre metadata JSONB de documents
-    |-- SQL queries sobre rix_runs_v2 (ultima semana)
-    |-- Aleatoriza y prioriza hallazgos
-    |
-    v
-Respuesta JSON: [{ text, type, icon, source }]
+```sql
+ALTER TYPE app_role ADD VALUE 'press';
 ```
 
-### Ventaja clave: Sin coste de embeddings
+---
 
-No se generan embeddings ni se llama a OpenAI. Todo se resuelve con consultas SQL sobre los campos JSONB de metadata ya indexados. Coste: cero. Latencia: <500ms.
+## Parte 2: Panel Admin para asignar rol Press
 
-## Detalles tecnicos
+### Archivo: `src/pages/Admin.tsx`
 
-### 1. Nueva Edge Function: `supabase/functions/fetch-smart-suggestions/index.ts`
+Anadir una seccion en el panel de admin (en la tab de Users o como nueva tab "Rix Press") que:
+- Lista todos los usuarios de `user_profiles`
+- Muestra un toggle/switch para activar/desactivar el rol `press` por usuario
+- Usa la Edge Function `admin-api` existente (patron security proxy) para insertar/eliminar en `user_roles`
 
-La funcion ejecutara 5-6 queries SQL en paralelo sobre `documents` y `rix_runs_v2`:
+### Archivo: `src/components/admin/RixPressUsersPanel.tsx` (NUEVO)
 
-- **Query 1 - Anomalias dimensionales**: Buscar documentos recientes donde la diferencia entre el score maximo y minimo de las 8 dimensiones supere 50 puntos
-- **Query 2 - Divergencias entre IAs**: Agrupar por ticker+semana, calcular max-min de rix_score entre modelos
-- **Query 3 - Flags sospechosos**: Contar empresas con flags criticos esta semana
-- **Query 4 - Movimientos semanales**: Comparar rix_score promedio de la semana actual vs anterior por empresa
-- **Query 5 - Patrones sectoriales**: Agrupar por sector y detectar unanimidad alcista/bajista
-- **Query 6 - Descubrimientos cross-index**: Comparar small caps vs IBEX-35
+Componente dedicado que:
+- Consulta `user_profiles` + `user_roles` para mostrar estado actual
+- Toggle por usuario que llama a `admin-api` con accion `toggle_press_role`
+- Muestra badge "Press" junto a usuarios habilitados
 
-Cada query produce 1-3 "hallazgos" que se convierten en preguntas usando plantillas parametrizadas con los datos reales encontrados.
+---
 
-La funcion devolvera un array de sugerencias aleatorizado, priorizando hallazgos mas "sorprendentes" (mayor delta, flags mas criticos).
+## Parte 3: Deteccion del permiso en el frontend
 
-### 2. Modificar: `src/hooks/useSmartSuggestions.ts`
+### Archivo: `src/contexts/ChatContext.tsx`
 
-- Anadir un `useEffect` que llame a la Edge Function `fetch-smart-suggestions`
-- Usar las sugerencias del Vector Store como tipo `'vector_insight'` con prioridad maxima (0)
-- Mantener el sistema actual como fallback si la Edge Function falla
-- Cachear resultados durante 5 minutos para evitar llamadas repetidas
+- Anadir estado `hasRixPressAccess: boolean` al contexto
+- Al montar (cuando el usuario esta autenticado), consultar `user_roles` para verificar si tiene rol `press`
+- Exponer `hasRixPressAccess` y `isRixPressMode` en el contexto
+- Anadir `toggleRixPressMode()` para activar/desactivar el modo
 
-### 3. Modificar: `src/components/chat/ChatMessages.tsx`
+### Archivo: `src/components/chat/ChatInput.tsx`
 
-- Anadir badge visual `"Insight en vivo"` para sugerencias tipo `vector_insight`
-- Estilo diferenciado: borde con gradiente sutil para destacar las preguntas basadas en datos reales
+- Si `hasRixPressAccess` es true, mostrar un boton "Rix Press" (icono Newspaper) junto al boton de Boletin
+- Al activarlo, se pone `pressMode: true` en las opciones de envio
+- Visual: boton con estilo diferenciado (gradiente azul oscuro, icono de periodico)
+- El placeholder del textarea cambia a algo como "Escribe el tema o pregunta para tu nota de prensa..."
 
-### 4. Configuracion: `supabase/config.toml`
+### Archivo: `src/components/chat/SessionConfigPanel.tsx`
 
-- Anadir entrada para la nueva funcion con `verify_jwt = false`
+- Si `hasRixPressAccess`, mostrar indicador "Modo Rix Press activo" cuando esta activado
+
+---
+
+## Parte 4: Edge Function - Modo Press en chat-intelligence
+
+### Archivo: `supabase/functions/chat-intelligence/index.ts`
+
+Cuando `pressMode: true` en el request body:
+
+1. **Validacion server-side**: Verificar que el `user_id` tiene rol `press` en `user_roles` (no confiar en el frontend)
+2. **Prompt especializado**: Usar un system prompt de periodismo profesional:
+   - Tono: nota de prensa formal pero accesible
+   - Estructura: titular, subtitular, lead, cuerpo, datos de apoyo, cierre con metodologia
+   - Fuente: "segun datos del Radar Reputacional RepIndex"
+   - Citar scores especificos, dimensiones, modelos de IA
+   - Incluir contexto sectorial y comparativo
+   - Humanizado: evitar jerga excesiva, hacer accesible al lector generalista
+3. **Modelo**: Usar `google/gemini-3-pro-preview` via Lovable AI Gateway (`https://ai.gateway.lovable.dev/v1/chat/completions`) en lugar de las APIs directas
+4. **RAG completo**: Igual que el modo normal, buscar en Vector Store + rix_runs_v2 para fundamentar con datos reales
+5. **Streaming**: Mantener el mismo sistema SSE del chat normal
+6. **Metadata**: Marcar respuesta con `type: 'press'` para renderizado especial
+
+---
+
+## Parte 5: Renderizado especial de notas de prensa
+
+### Archivo: `src/components/chat/ChatMessages.tsx`
+
+Cuando `message.metadata?.type === 'press'`:
+- Renderizar con estilo periodistico: fondo ligeramente diferente, tipografia serif para el contenido
+- Badge "Rix Press" con icono de periodico
+- Boton de exportar como HTML formateado (reutilizar patron de boletin)
+
+---
+
+## Parte 6: Admin API - Toggle press role
+
+### Archivo: `supabase/functions/admin-api/index.ts`
+
+Anadir handler para la accion `toggle_press_role`:
+- Recibe `userId` y `enabled` (boolean)
+- Si `enabled`: INSERT en `user_roles` con rol `press`
+- Si `!enabled`: DELETE de `user_roles` donde rol = `press`
+- Validacion: solo ejecutable desde dominios autorizados (patron proxy existente)
+
+---
 
 ## Archivos a crear/modificar
 
 | Archivo | Accion |
 |---------|--------|
-| `supabase/functions/fetch-smart-suggestions/index.ts` | Crear |
-| `src/hooks/useSmartSuggestions.ts` | Modificar - integrar Edge Function |
-| `src/components/chat/ChatMessages.tsx` | Modificar - badge visual para insights |
-| `supabase/config.toml` | Modificar - anadir config |
+| Migracion SQL | Crear - Anadir `press` al enum `app_role` |
+| `src/components/admin/RixPressUsersPanel.tsx` | Crear - Panel admin para gestionar usuarios press |
+| `src/pages/Admin.tsx` | Modificar - Anadir tab/seccion Rix Press |
+| `src/contexts/ChatContext.tsx` | Modificar - Anadir `hasRixPressAccess`, `isRixPressMode`, `toggleRixPressMode` |
+| `src/components/chat/ChatInput.tsx` | Modificar - Boton Rix Press condicional |
+| `src/components/chat/ChatMessages.tsx` | Modificar - Renderizado tipo press |
+| `supabase/functions/chat-intelligence/index.ts` | Modificar - Prompt periodistico + validacion rol + Gemini 3 Pro via Lovable AI Gateway |
+| `supabase/functions/admin-api/index.ts` | Modificar - Handler toggle_press_role |
+
+---
+
+## Flujo completo
+
+```text
+Admin Panel (/admin)
+    |
+    |-- Toggle "Press" role para usuario X
+    |-- admin-api -> INSERT/DELETE user_roles
+    |
+    v
+Usuario X abre /chat
+    |
+    |-- ChatContext detecta rol 'press' en user_roles
+    |-- Muestra boton "Rix Press" en ChatInput
+    |
+    v
+Usuario activa modo Rix Press + escribe pregunta
+    |
+    |-- pressMode: true en el request
+    |
+    v
+chat-intelligence Edge Function
+    |
+    |-- Verifica rol 'press' server-side
+    |-- RAG: Vector Store + rix_runs_v2
+    |-- Prompt periodistico especializado
+    |-- Modelo: Gemini 3 Pro (Lovable AI Gateway)
+    |-- Streaming SSE
+    |
+    v
+Nota de prensa renderizada con estilo periodistico
+    |-- Badge "Rix Press"
+    |-- Exportable como HTML
+```
 
 ## Resultado esperado
 
-- Cada vez que se abre un hilo nuevo, las 4 sugerencias seran unicas, basadas en datos reales del Vector Store
-- Las preguntas demostraran capacidades avanzadas: analisis cruzado, deteccion de anomalias, comparacion entre IAs
-- El boton "Refrescar" generara preguntas distintas cada vez (aleatorizacion server-side)
-- Coste cero en API de IA (solo queries SQL)
-- Fallback al sistema actual si la Edge Function falla
+- Solo usuarios con rol `press` ven el boton en el chat
+- Las notas de prensa son de calidad periodistica profesional
+- Fundamentadas al 100% en datos reales de RepIndex (Vector Store + RIX scores)
+- Administradores pueden gestionar accesos desde /admin
+- Validacion doble: frontend (ocultar boton) + backend (verificar rol)
+
