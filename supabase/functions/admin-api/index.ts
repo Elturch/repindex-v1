@@ -558,6 +558,72 @@ serve(async (req) => {
         });
       }
 
+      // ==================== PLATFORM SNAPSHOTS ====================
+      case "list_snapshots": {
+        const { data: snapshots, error } = await supabaseAdmin
+          .from("platform_snapshots")
+          .select("*")
+          .order("snapshot_date", { ascending: false });
+        if (error) throw error;
+        return new Response(JSON.stringify({ snapshots }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "create_snapshot": {
+        const { data: snapshot, error } = await supabaseAdmin
+          .from("platform_snapshots")
+          .insert({
+            version: data.version,
+            title: data.title,
+            summary: data.summary,
+            detailed_description: data.detailed_description,
+            snapshot_type: data.snapshot_type || "feature",
+            tags: data.tags || [],
+            changes: data.changes || [],
+            metrics_at_snapshot: data.metrics_at_snapshot || {},
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return new Response(JSON.stringify({ snapshot }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "update_snapshot": {
+        const { data: snapshot, error } = await supabaseAdmin
+          .from("platform_snapshots")
+          .update({
+            version: data.version,
+            title: data.title,
+            summary: data.summary,
+            detailed_description: data.detailed_description,
+            snapshot_type: data.snapshot_type,
+            tags: data.tags,
+            changes: data.changes,
+            metrics_at_snapshot: data.metrics_at_snapshot,
+          })
+          .eq("id", data.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return new Response(JSON.stringify({ snapshot }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "delete_snapshot": {
+        const { error } = await supabaseAdmin
+          .from("platform_snapshots")
+          .delete()
+          .eq("id", data.id);
+        if (error) throw error;
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // ==================== RIX PRESS ROLE ====================
       case "list_press_users": {
         const { data: pressRoles, error } = await supabaseAdmin

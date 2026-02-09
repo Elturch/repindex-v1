@@ -1420,6 +1420,48 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_snapshots: {
+        Row: {
+          changes: Json
+          created_at: string
+          detailed_description: string
+          id: string
+          metrics_at_snapshot: Json | null
+          snapshot_date: string
+          snapshot_type: string
+          summary: string
+          tags: string[] | null
+          title: string
+          version: string
+        }
+        Insert: {
+          changes?: Json
+          created_at?: string
+          detailed_description: string
+          id?: string
+          metrics_at_snapshot?: Json | null
+          snapshot_date?: string
+          snapshot_type?: string
+          summary: string
+          tags?: string[] | null
+          title: string
+          version: string
+        }
+        Update: {
+          changes?: Json
+          created_at?: string
+          detailed_description?: string
+          id?: string
+          metrics_at_snapshot?: Json | null
+          snapshot_date?: string
+          snapshot_type?: string
+          summary?: string
+          tags?: string[] | null
+          title?: string
+          version?: string
+        }
+        Relationships: []
+      }
       profile_analysis_batches: {
         Row: {
           ai_provider: string | null
