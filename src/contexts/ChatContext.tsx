@@ -8,6 +8,7 @@ import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml"
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
+import { isDevOrPreview } from "@/lib/env";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -226,6 +227,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
   // Check if user has 'press' role
   useEffect(() => {
+    // In preview/dev, grant press access for testing
+    if (isDevOrPreview()) {
+      setHasRixPressAccess(true);
+      return;
+    }
     if (!currentUserId) {
       setHasRixPressAccess(false);
       return;
