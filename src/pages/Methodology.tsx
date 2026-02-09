@@ -564,6 +564,64 @@ export default function Methodology() {
           </div>
         </section>
 
+        {/* RIXc - RIX Compuesto */}
+        <section className="py-12 px-4 bg-accent/5">
+          <div className="container mx-auto max-w-4xl">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+            >
+              <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                <BarChart3 className="h-6 w-6 text-primary" />
+                RIXc: El Índice Compuesto
+                <Badge variant="outline" className="ml-2 text-xs">En validación</Badge>
+              </h2>
+              <div className="prose prose-lg dark:prose-invert max-w-none mb-8">
+                <p>
+                  El <strong>RIXc (RIX Compuesto)</strong> es una evolución del RIX individual por modelo. 
+                  En lugar de promediar los 6 scores, utiliza la <strong>mediana robusta</strong>, que descarta 
+                  automáticamente valores extremos (outliers y hallucinations de los modelos).
+                </p>
+                <p>
+                  Junto al RIXc se calcula el <strong>IC (Indicador de Confiabilidad)</strong>, que mide 
+                  cuánto coinciden los 6 modelos. Un IC alto indica consenso entre las IAs; un IC bajo 
+                  señala que la realidad informativa de esa empresa está fragmentada.
+                </p>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4 mb-6">
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold mb-3">📐 Fórmulas</h3>
+                    <ul className="text-sm text-muted-foreground space-y-2">
+                      <li><strong>RIXc</strong> = mediana(RIX₁, RIX₂, ..., RIX₆)</li>
+                      <li><strong>σ</strong> = desviación estándar inter-modelo</li>
+                      <li><strong>IC</strong> = max(0, 100 − σ × 100 / 12.5)</li>
+                    </ul>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <h3 className="font-semibold mb-3">🎯 Niveles de Consenso</h3>
+                    <ul className="text-sm text-muted-foreground space-y-1">
+                      <li>σ &lt; 3 → <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 ml-1">Hecho Consolidado</Badge></li>
+                      <li>σ &lt; 5 → <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 ml-1">Señal Fuerte</Badge></li>
+                      <li>σ &lt; 8 → <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 ml-1">Divergencia Moderada</Badge></li>
+                      <li>σ &lt; 12 → <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 ml-1">Narrativa Fragmentada</Badge></li>
+                      <li>σ ≥ 12 → <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 ml-1">Dato Inestable</Badge></li>
+                    </ul>
+                  </CardContent>
+                </Card>
+              </div>
+              <p className="text-xs text-muted-foreground/70 italic text-center">
+                El RIXc se encuentra actualmente en fase de validación silenciosa. 
+                Se publicará como score principal cuando se confirme estabilidad estadística (4+ semanas, IC medio &gt; 75).
+              </p>
+            </motion.div>
+          </div>
+        </section>
+
         {/* Footer */}
         <footer className="py-8 px-4 border-t border-border/50 bg-background">
           <div className="container mx-auto max-w-4xl text-center">
