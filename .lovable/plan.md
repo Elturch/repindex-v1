@@ -1,117 +1,107 @@
 
 
-# Pestaña "Snapshots" en Admin — Registro historico de evoluciones de la plataforma
+# RIXc Lite — Mediana + Sigma + IC simple (fase silenciosa)
 
-## Contexto
+## Objetivo
 
-Actualmente existe un `systemChangelog` hardcodeado en `Admin.tsx` (lineas 236-306) con 6 entradas estaticas. El usuario quiere un sistema persistente en base de datos donde cada avance quede registrado con fecha, version, descripcion detallada, y se pueda abrir un modal con todos los detalles tecnicos del snapshot.
+Calcular y almacenar el RIXc (RIX Compuesto) como la **mediana robusta** de los 6 modelos, junto con sigma inter-modelo e IC (Indicador de Confiabilidad), sin modificar el pipeline de automatizacion. Solo visible en Admin.
 
 ## Cambios
 
-### 1. Nueva tabla: `platform_snapshots`
-
-Tabla en Supabase para almacenar cada hito de la plataforma:
+### 1. Nueva tabla: `rix_composite_scores`
 
 ```sql
-CREATE TABLE public.platform_snapshots (
+CREATE TABLE public.rix_composite_scores (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  version text NOT NULL,
-  title text NOT NULL,
-  summary text NOT NULL,
-  detailed_description text NOT NULL,
-  changes jsonb NOT NULL DEFAULT '[]'::jsonb,
-  snapshot_type text NOT NULL DEFAULT 'feature',
-  tags text[] DEFAULT '{}'::text[],
-  metrics_at_snapshot jsonb DEFAULT '{}'::jsonb,
+  ticker text NOT NULL,
+  company_name text NOT NULL,
+  week_start date NOT NULL,
+  rixc_score numeric NOT NULL,
+  sigma_intermodelo numeric NOT NULL,
+  ic_score numeric NOT NULL,
+  consensus_level text NOT NULL,
+  models_count integer NOT NULL,
+  individual_scores jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  snapshot_date date NOT NULL DEFAULT CURRENT_DATE
+  UNIQUE(ticker, week_start)
 );
-
-ALTER TABLE public.platform_snapshots ENABLE ROW LEVEL SECURITY;
-
--- Lectura publica (visible desde admin preview)
-CREATE POLICY "Snapshots are publicly readable"
-  ON public.platform_snapshots FOR SELECT
-  USING (true);
-
--- Solo service_role puede insertar/actualizar/eliminar
-CREATE POLICY "Service role can manage snapshots"
-  ON public.platform_snapshots FOR ALL
-  USING (true)
-  WITH CHECK (true);
 ```
 
-Campos clave:
-- `version`: Semver (3.1.0, 3.2.0...)
-- `title`: Titulo corto del hito
-- `summary`: Resumen en 1-2 frases
-- `detailed_description`: Texto largo en Markdown con toda la explicacion tecnica, decisiones de arquitectura, metricas antes/despues, etc.
-- `changes`: Array JSON de strings con los cambios puntuales (como el changelog actual)
-- `snapshot_type`: `feature`, `improvement`, `fix`, `architecture`, `methodology`, `milestone`
-- `tags`: Etiquetas libres para filtrar (ej: `['RIX', 'pipeline', 'V2']`)
-- `metrics_at_snapshot`: JSON con metricas del momento (total empresas, total registros, modelos activos, etc.)
+- RLS: lectura publica (admin preview), escritura via service_role
+- Indice en `(week_start DESC, ticker)`
 
-### 2. Semilla de datos iniciales
+### 2. Accion en `admin-api` Edge Function
 
-Migrar el `systemChangelog` existente y anadir todos los hitos relevantes desde el inicio del proyecto. Se insertaran ~15-20 snapshots iniciales cubriendo desde la creacion del indice RIX hasta el rix-press-agent de hoy.
+Anadir dos acciones al proxy admin existente:
 
-### 3. Nuevo componente: `src/components/admin/PlatformSnapshotsPanel.tsx`
+- **`compute_rixc`**: Calcula el RIXc para una semana dada (o la mas reciente):
+  1. Consulta `rix_runs_v2` agrupando por ticker para la semana objetivo
+  2. Para cada empresa con 3+ modelos, calcula:
+     - `rixc_score = mediana(RIX_1..RIX_n)`
+     - `sigma = desviacion estandar de los scores`
+     - `ic = max(0, 100 - (sigma * 100 / 12.5))` (12.5 = sigma max historico observado)
+     - `consensus_level` segun umbrales: sigma < 3 "Hecho Consolidado", < 5 "Senal Fuerte", < 8 "Divergencia Moderada", < 12 "Narrativa Fragmentada", >= 12 "Dato Inestable"
+  3. Upsert en `rix_composite_scores`
+  4. Devuelve resumen con totales por nivel de consenso
 
-Componente independiente (patron identico a `PipelineAlertsPanel`, `CronMonitorPanel`, etc.):
+- **`list_rixc_scores`**: SELECT de la tabla con filtros opcionales (semana, consenso)
 
-- **Vista principal**: Tabla/timeline con todas las snapshots ordenadas por fecha descendente
-  - Columnas: Fecha, Version, Tipo (badge coloreado), Titulo, Resumen
-  - Boton "Abrir Snapshot" en cada fila
-- **Modal de detalle** (Dialog): Al pulsar "Abrir Snapshot" se abre un dialog con:
-  - Header: version + fecha + tipo badge
-  - Descripcion detallada renderizada como Markdown
-  - Lista de cambios puntuales
-  - Tags como badges
-  - Metricas del momento (si las hay) en tarjetas
-- **Formulario de nuevo snapshot**: Boton "Nuevo Snapshot" que abre formulario inline para registrar un nuevo hito directamente desde el admin
-  - Campos: version, titulo, resumen, descripcion detallada, tipo, tags, cambios
-  - Guarda via `admin-api` (usa service_role)
-- **Filtros**: Por tipo de snapshot y busqueda por texto
+### 3. Nuevo componente: `RixcMonitorPanel.tsx`
 
-### 4. Actualizar `admin-api` Edge Function
+Panel de Admin con:
 
-Anadir acciones al proxy admin existente:
+- **Boton "Calcular RIXc"** que dispara `compute_rixc` via admin-api
+- **Tabla de resultados**: Ticker, Empresa, RIXc, sigma, IC, Consenso (badge coloreado), Modelos
+- **Filtros**: por nivel de consenso, busqueda por empresa
+- **Resumen en tarjetas**: total empresas calculadas, IC medio, distribucion de consenso
+- **Selector de semana** para ver historicos
 
-- `list_snapshots`: SELECT * FROM platform_snapshots ORDER BY snapshot_date DESC
-- `create_snapshot`: INSERT INTO platform_snapshots
-- `update_snapshot`: UPDATE platform_snapshots WHERE id = ...
-- `delete_snapshot`: DELETE FROM platform_snapshots WHERE id = ...
+### 4. Actualizaciones menores
 
-### 5. Integrar en `src/pages/Admin.tsx`
-
-- Importar `PlatformSnapshotsPanel`
-- Anadir nuevo `TabsTrigger` con icono `BookOpen` y texto "Snapshots"
-- Anadir `TabsContent` correspondiente
-- Eliminar el array `systemChangelog` hardcodeado (ya no se necesita)
+- **`Admin.tsx`**: Anadir tab "RIXc" con icono `Combine` o `Calculator`
+- **`rixMetricsGlossary.ts`**: Anadir constante `RIXC_DEFINITION` con nombre, formula, umbrales de consenso (marcado como "en validacion")
+- **`Methodology.tsx`**: Anadir seccion breve sobre RIXc al final, con badge "En validacion"
+- **`supabase/config.toml`**: No necesita cambios (usa admin-api existente)
 
 ## Archivos
 
 | Archivo | Accion |
-|---------|--------|
-| Migracion SQL | CREAR — tabla `platform_snapshots` + RLS + datos semilla |
-| `src/components/admin/PlatformSnapshotsPanel.tsx` | CREAR — componente completo con tabla, modal detalle y formulario |
-| `src/pages/Admin.tsx` | EDITAR — anadir tab "Snapshots", importar panel, eliminar `systemChangelog` |
-| `supabase/functions/admin-api/index.ts` | EDITAR — anadir acciones CRUD para snapshots |
+|---|---|
+| Migracion SQL | CREAR -- tabla `rix_composite_scores` + RLS + indice |
+| `supabase/functions/admin-api/index.ts` | EDITAR -- anadir `compute_rixc` y `list_rixc_scores` |
+| `src/components/admin/RixcMonitorPanel.tsx` | CREAR -- panel de monitoreo |
+| `src/pages/Admin.tsx` | EDITAR -- anadir tab "RIXc" |
+| `src/lib/rixMetricsGlossary.ts` | EDITAR -- anadir `RIXC_DEFINITION` |
+| `src/pages/Methodology.tsx` | EDITAR -- seccion RIXc en validacion |
 
-## Datos semilla (resumen de los ~15-20 snapshots iniciales)
+## Detalles tecnicos
 
-Incluira entradas desde el inicio del proyecto hasta hoy, por ejemplo:
-- Creacion del indice RIX y metodologia de 50 metricas
-- Primer barrido con 2 modelos (ChatGPT + Perplexity)
-- Expansion a 4 modelos (+ Gemini + DeepSeek)
-- Vector Store y chat inteligente
-- Pipeline V2 con 6 modelos (+ Grok + Qwen)
-- Sistema de barrido automatizado con orquestador
-- Corporate scraping con Firecrawl
-- Sistema de perfiles de usuario con IA
-- Marketing inbound automatizado
-- Rix Press Agent independiente (hoy)
-- Y todos los hitos del `systemChangelog` actual
+### Formula del calculo
 
-Cada snapshot tendra su `detailed_description` en Markdown con arquitectura, decisiones, metricas y contexto tecnico completo.
+```text
+Para cada empresa E en la semana W:
+  scores[] = [RIX de cada modelo con datos para E en W]
+  if len(scores) < 3: skip (insuficiente cobertura)
+  
+  RIXc = median(scores)
+  sigma = stdev(scores)
+  IC = max(0, 100 - (sigma * 100 / 12.5))
+  
+  consensus = 
+    sigma < 3   -> "Hecho Consolidado"
+    sigma < 5   -> "Senal Fuerte"  
+    sigma < 8   -> "Divergencia Moderada"
+    sigma < 12  -> "Narrativa Fragmentada"
+    else        -> "Dato Inestable"
+```
+
+### Diferencia con el plan completo de 4 fases
+
+Este plan lite omite intencionalmente:
+- Normalizacion z-score (fase 1) -- se implementara cuando haya 8+ semanas de datos V2
+- Pesos de evidencia DRM x SIM (fase 2) -- requiere validacion empirica
+- Pesos de actualidad RMM (fase 3) -- idem
+- Encadenamiento automatico en el pipeline -- se dispara manualmente desde Admin
+
+Esto permite recoger datos reales y comparar RIXc-lite vs RIX-promedio antes de comprometerse con la formula completa.
 
