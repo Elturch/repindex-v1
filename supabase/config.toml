@@ -101,3 +101,6 @@ verify_jwt = false
 
 [functions.send-user-magic-link]
 verify_jwt = false
+
+[functions.verify-ibex-composition]
+verify_jwt = false
