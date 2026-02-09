@@ -5,14 +5,25 @@ import { Button } from "@/components/ui/button";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { convertMarkdownToHtml } from "@/lib/markdownToHtml";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
+import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
 
 interface CompanyBulletinViewerProps {
   content: string;
   companyName?: string;
   generatedAt?: string;
+  verifiedSources?: VerifiedSource[];
+  periodFrom?: string | null;
+  periodTo?: string | null;
 }
 
-export function CompanyBulletinViewer({ content, companyName, generatedAt }: CompanyBulletinViewerProps) {
+export function CompanyBulletinViewer({ 
+  content, 
+  companyName, 
+  generatedAt,
+  verifiedSources,
+  periodFrom,
+  periodTo
+}: CompanyBulletinViewerProps) {
   const formattedDate = generatedAt 
     ? format(new Date(generatedAt), "d 'de' MMMM 'de' yyyy, HH:mm", { locale: es })
     : format(new Date(), "d 'de' MMMM 'de' yyyy, HH:mm", { locale: es });
@@ -22,7 +33,7 @@ export function CompanyBulletinViewer({ content, companyName, generatedAt }: Com
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const htmlContent = generatePrintHtml(content, companyName, formattedDate);
+    const htmlContent = generatePrintHtml(content, companyName, formattedDate, verifiedSources, periodFrom, periodTo);
     printWindow.document.write(htmlContent);
     printWindow.document.close();
     
@@ -34,7 +45,7 @@ export function CompanyBulletinViewer({ content, companyName, generatedAt }: Com
   };
 
   const handleDownload = () => {
-    const htmlContent = generatePrintHtml(content, companyName, formattedDate);
+    const htmlContent = generatePrintHtml(content, companyName, formattedDate, verifiedSources, periodFrom, periodTo);
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -107,12 +118,24 @@ export function CompanyBulletinViewer({ content, companyName, generatedAt }: Com
   );
 }
 
-function generatePrintHtml(content: string, companyName?: string, formattedDate?: string): string {
+function generatePrintHtml(
+  content: string, 
+  companyName?: string, 
+  formattedDate?: string,
+  verifiedSources?: VerifiedSource[],
+  periodFrom?: string | null,
+  periodTo?: string | null
+): string {
   // Convert markdown to HTML using the shared premium converter
   const htmlContent = convertMarkdownToHtml(content);
   
   // Extract sections for table of contents
   const sections = extractSections(content);
+  
+  // Generate bibliography from verified sources
+  const bibliographyHtml = verifiedSources && verifiedSources.length > 0
+    ? generateBibliographyHtml(verifiedSources, periodFrom, periodTo)
+    : '';
 
   return `
 <!DOCTYPE html>
@@ -603,7 +626,7 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
     <p class="cover-date">${formattedDate}</p>
     
     <p class="cover-footer">
-      Análisis basado en ChatGPT • Perplexity • Gemini • DeepSeek
+      Análisis basado en ChatGPT • Perplexity • Gemini • DeepSeek • Grok • Qwen
     </p>
   </div>
   
@@ -624,9 +647,10 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       <h3 style="margin-bottom: 10px; font-size: 1rem;">Sobre este informe</h3>
       <p style="font-size: 0.9rem; line-height: 1.5; text-align: left;">
         Este boletín ejecutivo presenta un análisis exhaustivo de la reputación corporativa 
-        de <strong>${companyName || 'la empresa'}</strong> según la percepción de cuatro 
-        modelos de inteligencia artificial líderes. Los datos se actualizan semanalmente 
-        y reflejan cómo las IAs construyen y comunican la narrativa de las principales corporaciones.
+        de <strong>${companyName || 'la empresa'}</strong> según la percepción de seis 
+        modelos de inteligencia artificial líderes: ChatGPT, Perplexity, Gemini, DeepSeek, 
+        Grok y Qwen. Los datos se actualizan semanalmente y reflejan cómo las IAs construyen 
+        y comunican la narrativa de las principales corporaciones.
       </p>
     </div>
   </div>
@@ -649,10 +673,13 @@ function generatePrintHtml(content: string, companyName?: string, formattedDate?
       ${htmlContent}
     </main>
     
+    <!-- Bibliography Section -->
+    ${bibliographyHtml}
+    
     <!-- Footer -->
     <footer class="bulletin-footer">
       <p><strong>RepIndex Bulletin</strong> — Edición Premium</p>
-      <p>Análisis basado en ChatGPT, Perplexity, Gemini y DeepSeek</p>
+      <p>Análisis basado en ChatGPT, Perplexity, Gemini, DeepSeek, Grok y Qwen</p>
       <p>© ${new Date().getFullYear()} RepIndex — repindex.ai</p>
     </footer>
     

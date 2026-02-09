@@ -1649,9 +1649,9 @@ Los titulares deben ser:
 
 ---
 
-## 🤖 3. EXCLUSIVA: EL JUICIO DE LAS 4 INTELIGENCIAS
+## 🤖 3. EXCLUSIVA: EL JUICIO DE LAS 6 INTELIGENCIAS
 
-### [TITULAR]: ChatGPT, Perplexity, Gemini y DeepSeek emiten su veredicto sobre [Empresa]
+### [TITULAR]: ChatGPT, Perplexity, Gemini, DeepSeek, Grok y Qwen emiten su veredicto sobre [Empresa]
 
 [Entradilla sobre cómo cada IA procesa información diferente y por qué sus opiniones importan]
 
@@ -1670,6 +1670,14 @@ Los titulares deben ser:
 #### DeepSeek considera: RIX [XX] — "[Frase que resume su visión]"
 **Titular**: "DeepSeek, la IA china, [sorprende/confirma]: [hallazgo]"
 [3-4 párrafos]
+
+#### Grok evalúa: RIX [XX] — "[Frase que resume su visión]"
+**Titular**: "Grok de xAI [identifica/señala]: [hallazgo principal]"
+[3-4 párrafos analizando la perspectiva de Grok, caracterizada por su enfoque conversacional y acceso a datos de X/Twitter en tiempo real]
+
+#### Qwen considera: RIX [XX] — "[Frase que resume su visión]"
+**Titular**: "Qwen de Alibaba [revela/detecta]: [hallazgo principal]"
+[3-4 párrafos analizando la perspectiva de Qwen, el modelo líder chino con fuerte presencia en mercados asiáticos]
 
 | Modelo | RIX | Veredicto | Fortaleza | Debilidad |
 |--------|-----|-----------|-----------|-----------|
@@ -1694,8 +1702,8 @@ Los titulares deben ser:
 
 [Crónica periodística semana a semana: 4-5 párrafos narrando la evolución como una historia]
 
-| Semana | RIX Promedio | ChatGPT | Perplexity | Gemini | DeepSeek | Evento Clave |
-|--------|--------------|---------|------------|--------|----------|--------------|
+| Semana | RIX Promedio | ChatGPT | Perplexity | Gemini | DeepSeek | Grok | Qwen | Evento Clave |
+|--------|--------------|---------|------------|--------|----------|------|------|--------------|
 
 ---
 
@@ -1790,7 +1798,16 @@ Los titulares deben ser:
 - **DCM (Data Consistency Metric → Coherencia Informativa)**: Consistencia de información entre diferentes modelos de IA
 - **CXM (Corporate Execution Metric → Ejecución Corporativa)**: Percepción de ejecución en mercado y cotización (solo cotizadas)
 
+### Glosario de Modelos de IA
+- **ChatGPT (OpenAI)**: Modelo conversacional líder, fuerte en razonamiento general y síntesis narrativa. Sus fuentes verificadas incluyen URLs con utm_source=openai.
+- **Perplexity**: Motor de búsqueda conversacional con citaciones explícitas. Excelente para fuentes recientes y verificables.
+- **Gemini (Google)**: Modelo multimodal de Google, fuerte integración con datos de búsqueda y actualidad.
+- **DeepSeek**: Modelo chino open-source, perspectiva alternativa con fuerte capacidad de razonamiento técnico.
+- **Grok (xAI)**: Modelo de Elon Musk con acceso a datos de X/Twitter en tiempo real, enfoque conversacional y directo.
+- **Qwen (Alibaba)**: Modelo líder chino, fuerte en mercados asiáticos y análisis multilingüe.
+
 ⚠️ NOTA METODOLÓGICA: SIM mide jerarquía de fuentes, NO sostenibilidad. DRM mide calidad de evidencia, NO desempeño financiero. DCM mide coherencia entre IAs, NO innovación digital.
+⚠️ NOTA BIBLIOGRAFÍA: Solo ChatGPT y Perplexity proveen fuentes verificables documentalmente. Las fuentes de otros modelos no se incluyen en la bibliografía por no ser verificables.
 
 ---
 
@@ -2614,6 +2631,8 @@ async function handleBulletinRequest(
       "51_rix_score_adjusted",
       "10_resumen",
       "11_puntos_clave",
+      "20_res_gpt_bruto",
+      "21_res_perplex_bruto",
       "22_explicacion",
       "23_nvm_score",
       "25_nvm_categoria",

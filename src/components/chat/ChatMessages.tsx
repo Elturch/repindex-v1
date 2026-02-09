@@ -222,10 +222,13 @@ export function ChatMessages({
                     </Button>
                   </div>
                 ) : (
-                  // Full mode: show complete bulletin viewer
+                  // Full mode: show complete bulletin viewer with bibliography
                   <CompanyBulletinViewer 
                     content={message.content}
                     companyName={message.metadata?.companyName}
+                    verifiedSources={message.metadata?.verifiedSources}
+                    periodFrom={message.metadata?.methodology?.periodFrom}
+                    periodTo={message.metadata?.methodology?.periodTo}
                   />
                 )
               ) : (
