@@ -1422,7 +1422,15 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // Rix Press
         hasRixPressAccess,
         isRixPressMode,
-        toggleRixPressMode: () => setIsRixPressMode(prev => !prev),
+        toggleRixPressMode: () => {
+          setIsRixPressMode(prev => {
+            const next = !prev;
+            if (next && !isSessionConfigured) {
+              configureSession('journalist');
+            }
+            return next;
+          });
+        },
       }}
     >
       {children}

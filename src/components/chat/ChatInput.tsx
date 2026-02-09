@@ -158,7 +158,7 @@ export function ChatInput({
   };
 
   // Can send only if text is present AND session is configured
-  const canSend = value.trim() && !isLoading && isSessionConfigured;
+  const canSend = value.trim() && !isLoading && (isSessionConfigured || isRixPressMode);
 
   const handleSend = () => {
     if (canSend) {
