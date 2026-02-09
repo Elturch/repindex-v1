@@ -142,7 +142,11 @@ export function ChatMessages({
                   <Button
                     key={idx}
                     variant="outline"
-                    className={`justify-start text-left h-auto whitespace-normal ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in`}
+                    className={`justify-start text-left h-auto whitespace-normal ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
+                      suggestion.type === 'vector_insight' 
+                        ? 'border-primary/30 bg-primary/5 hover:bg-primary/10' 
+                        : ''
+                    }`}
                     style={{ animationDelay: `${idx * 0.05}s` }}
                     onClick={() => onStarterPrompt(suggestion.text)}
                   >
@@ -150,6 +154,11 @@ export function ChatMessages({
                     <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1`}>
                       {suggestion.text}
                     </span>
+                    {suggestion.type === 'vector_insight' && !compact && (
+                      <Badge variant="default" className="ml-2 text-[9px] shrink-0 bg-primary/20 text-primary border-0">
+                        ✨ Live
+                      </Badge>
+                    )}
                     {suggestion.type === 'personalized' && !compact && (
                       <Badge variant="outline" className="ml-2 text-[9px] opacity-60 shrink-0">
                         {tr.historyLabel}
