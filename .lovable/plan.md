@@ -1,119 +1,72 @@
 
 
-# Fix: Datos en blanco en Chat Intelligence (ultimo barrido)
+# Correccion de la composicion IBEX-35 en toda la base de datos
 
-## Diagnostico confirmado con datos reales
+## Problema detectado
 
-La tabla `rix_runs` (legacy) termina el **25 de enero 2026**. El barrido actual (1-8 Feb) solo existe en `rix_runs_v2`. El dashboard funciona porque usa scores numericos. El chat falla por 3 bugs especificos:
+La base de datos tiene **5 empresas mal clasificadas** en su campo `ibex_family_code`, lo que provoca que el dashboard y el chat muestren datos incorrectos al filtrar por IBEX-35:
 
-### Bug 1: Busqueda full-text solo consulta tabla legacy
-- **Linea 3654**: `supabaseClient.from('rix_runs')` — ignora completamente `rix_runs_v2`
-- **Impacto**: Cuando el usuario pregunta por el ultimo barrido, las keywords no encuentran nada reciente. Los 2013 resultados que muestra el log provienen de semanas antiguas
+| Empresa | Ticker | Estado actual (DB) | Estado real | Accion |
+|---|---|---|---|---|
+| Catalana Occidente | GCO.MC | IBEX-35 | IBEX Medium Cap | Degradar a IBEX-MC |
+| Solaria Energia | SLR | IBEX-35 | IBEX Medium Cap | Degradar a IBEX-MC |
+| Acciona Energia | ANE.MC / ANE | IBEX-MC | IBEX 35 | Promover a IBEX-35 |
+| CIE Automotive | CIE | IBEX-MC | IBEX 35 | Promover a IBEX-35 |
+| Melia Hotels | MEL | IBEX-MC | IBEX 35 | Promover a IBEX-35 |
 
-### Bug 2: Columnas Grok/Qwen ausentes en fullDataColumns
-- **Lineas 3719-3751**: Solicita `20_res_gpt_bruto`, `21_res_perplex_bruto`, `22_res_gemini_bruto`, `23_res_deepseek_bruto` pero NO `respuesta_bruto_grok` ni `respuesta_bruto_qwen`
-- **Dato real**: En V2, Grok tiene 179 registros con `respuesta_bruto_grok` y Qwen 179 con `respuesta_bruto_qwen` — pero no se solicitan
-- **Impacto**: 2 de 6 modelos aparecen sin texto en el informe
-
-### Bug 3: `25_explicaciones_detalladas` siempre NULL en V2
-- **Dato real**: 0 registros con este campo en V2 (confirmado en las 6 IAs)
-- Solo `22_explicacion` tiene datos (179 por modelo)
-- **Impacto**: Las secciones de explicacion detallada salen vacias
+Esto afecta a **3 tablas**:
+- `repindex_root_issuers` (tabla maestra, 5 registros)
+- `rix_trends` (datos historicos, ~282 registros)
+- Potencialmente el Vector Store (metadata de documentos)
 
 ## Solucion
 
-### Cambio 1: Busqueda full-text dual (PASO 2)
+Ejecutar 6 sentencias SQL (via herramienta de datos) para corregir las 3 tablas de forma atomica:
 
-Duplicar la busqueda para que consulte ambas tablas en paralelo y combine resultados:
+### 1. Corregir `repindex_root_issuers` (tabla maestra)
 
-```text
-Antes:
-  supabaseClient.from('rix_runs').select(...).or(ilike filters)
+```sql
+-- Degradar GCO.MC y SLR de IBEX-35 a IBEX-MC
+UPDATE repindex_root_issuers 
+SET ibex_family_code = 'IBEX-MC', ibex_family_category = 'IBEX Medium Cap'
+WHERE ticker IN ('GCO.MC', 'SLR');
 
-Despues:
-  Promise.all([
-    supabaseClient.from('rix_runs').select(...).or(ilike filters).limit(5000),
-    supabaseClient.from('rix_runs_v2').select(...columns + grok/qwen)
-      .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
-      .or(ilike filters).limit(5000)
-  ])
-  // Fusionar, deduplicar (V2 prioridad)
+-- Promover ANE.MC, CIE, MEL a IBEX-35
+UPDATE repindex_root_issuers 
+SET ibex_family_code = 'IBEX-35', ibex_family_category = 'IBEX 35'
+WHERE ticker IN ('ANE.MC', 'CIE', 'MEL');
 ```
 
-**Nota**: La query de V2 en PASO 2 necesita incluir tambien `respuesta_bruto_grok` y `respuesta_bruto_qwen` en las columnas y en los filtros ilike.
+### 2. Corregir `rix_trends` (datos historicos)
 
-### Cambio 2: Anadir columnas Grok/Qwen a fullDataColumns (PASO 3)
+```sql
+-- Degradar GCO.MC y SLR
+UPDATE rix_trends 
+SET ibex_family_code = 'IBEX-MC'
+WHERE ticker IN ('GCO.MC', 'SLR') AND ibex_family_code = 'IBEX-35';
 
-```text
-Antes (linea 3719):
-  "23_res_deepseek_bruto",
-  "22_explicacion",
-
-Despues:
-  "23_res_deepseek_bruto",
-  "respuesta_bruto_grok",
-  "respuesta_bruto_qwen",
-  "22_explicacion",
+-- Promover ANE, ANE.MC, CIE, MEL (ANE aparece sin .MC en trends)
+UPDATE rix_trends 
+SET ibex_family_code = 'IBEX-35'
+WHERE ticker IN ('ANE', 'ANE.MC', 'CIE', 'MEL') AND ibex_family_code = 'IBEX-MC';
 ```
 
-Como estas columnas existen en `rix_runs_v2` pero NO en `rix_runs`, hay dos opciones:
-- **Opcion A**: Modificar `fetchUnifiedRixData` para aceptar columnas extra solo para V2
-- **Opcion B** (mas simple): Anadir las columnas a `rix_runs` como columnas vacias (sin datos) para que la query no falle
+### 3. Corregir bug en chat-intelligence
 
-Se recomienda **Opcion A** ya que no requiere migracion de la tabla legacy.
+El codigo del chat tiene referencias a `'IBEX35'` (sin guion) en lugar de `'IBEX-35'` en las lineas ~1086 y ~2025, lo que hace que los fallbacks de IBEX-35 nunca funcionen. Corregir esas 2 referencias.
 
-### Cambio 3: Fallback de explicaciones detalladas
+### 4. Verificar el resultado
 
-En la construccion del contexto (PASO 6), usar `22_explicacion` cuando `25_explicaciones_detalladas` sea null:
+Tras la correccion, la tabla maestra deberia tener exactamente **35 empresas** con `ibex_family_code = 'IBEX-35'` (sale 2 y entran 3, pasando de 35 a 36 -- pero debemos verificar que el total final es correcto segun la composicion real).
 
-```text
-const detailedExplanation = r["25_explicaciones_detalladas"] || 
-  (r["22_explicacion"] ? { general: r["22_explicacion"] } : null);
-```
+## Nota importante
+
+La composicion real puede incluir 36 o 37 miembros dependiendo de la fuente (Markets Insider muestra tambien Mediaset Espana que no esta en nuestro censo). Se verificara el conteo final post-correccion.
 
 ## Archivos a modificar
 
 | Archivo | Cambio |
 |---|---|
-| `supabase/functions/chat-intelligence/index.ts` | PASO 2: busqueda dual; PASO 3: columnas extra; fetchUnifiedRixData: soporte v2ExtraColumns; PASO 6: fallback explicaciones |
-
-## Detalles tecnicos
-
-### Modificacion de fetchUnifiedRixData
-
-Anadir parametro opcional `v2ExtraColumns`:
-
-```text
-interface FetchUnifiedRixOptions {
-  supabaseClient: any;
-  columns: string;
-  v2ExtraColumns?: string;   // <-- NUEVO
-  tickerFilter?: string | string[];
-  limit?: number;
-  logPrefix?: string;
-}
-
-// En la funcion:
-const v2Columns = options.v2ExtraColumns 
-  ? `${columns}, ${options.v2ExtraColumns}` 
-  : columns;
-
-// Usar v2Columns solo para la query de rix_runs_v2
-let queryV2 = supabaseClient.from('rix_runs_v2').select(v2Columns)...
-```
-
-### PASO 2: Query dual con columnas V2
-
-La busqueda full-text en V2 incluira filtros adicionales para las columnas de Grok/Qwen:
-
-```text
-.or(`"10_resumen".ilike.${sp},"20_res_gpt_bruto".ilike.${sp},...,"respuesta_bruto_grok".ilike.${sp},"respuesta_bruto_qwen".ilike.${sp},"22_explicacion".ilike.${sp}`)
-```
-
-### Impacto esperado
-
-- Las tablas del chat mostraran datos de TODAS las semanas incluyendo la actual
-- Los 6 modelos tendran texto bruto disponible para el LLM
-- Las explicaciones detalladas usaran `22_explicacion` como fuente
-- Sin impacto en el pipeline de barrido ni en el dashboard
+| Base de datos (via SQL) | UPDATE en `repindex_root_issuers` y `rix_trends` |
+| `supabase/functions/chat-intelligence/index.ts` | Corregir `'IBEX35'` a `'IBEX-35'` en lineas ~1086 y ~2025 |
 
