@@ -80,11 +80,12 @@ interface FetchUnifiedRixOptions {
   v2ExtraColumns?: string;   // Extra columns only available in rix_runs_v2 (e.g. respuesta_bruto_grok, respuesta_bruto_qwen)
   tickerFilter?: string | string[];
   limit?: number;
+  offset?: number;
   logPrefix?: string;
 }
 
 async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any[]> {
-  const { supabaseClient, columns, v2ExtraColumns, tickerFilter, limit = 1000, logPrefix = '[Unified-RIX]' } = options;
+  const { supabaseClient, columns, v2ExtraColumns, tickerFilter, limit = 1000, offset = 0, logPrefix = '[Unified-RIX]' } = options;
   
   // V2 may have extra columns not present in legacy table
   const v2Columns = v2ExtraColumns ? `${columns}, ${v2ExtraColumns}` : columns;
@@ -111,9 +112,11 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
     }
   }
   
-  // Apply limits
-  queryRix = queryRix.limit(limit);
-  queryV2 = queryV2.limit(limit);
+  // Apply range-based pagination (PostgREST caps at 1000 rows per request)
+  const rangeFrom = offset;
+  const rangeTo = offset + limit - 1;
+  queryRix = queryRix.range(rangeFrom, rangeTo);
+  queryV2 = queryV2.range(rangeFrom, rangeTo);
   
   // Execute in parallel
   const [rixResult, v2Result] = await Promise.all([queryRix, queryV2]);
@@ -3890,7 +3893,7 @@ async function handleStandardChat(
   // Use pagination for large requests
   let allRixData: any[] = [];
   let rixOffset = 0;
-  const rixBatchSize = 2000;
+  const rixBatchSize = 1000;
   const maxRixRecords = depthLevel === 'exhaustive' ? 10000 : 5000;
   
   while (rixOffset < maxRixRecords) {
@@ -3918,6 +3921,7 @@ async function handleStandardChat(
         batch_execution_date
       `,
       limit: rixBatchSize,
+      offset: rixOffset,
       logPrefix
     });
     
