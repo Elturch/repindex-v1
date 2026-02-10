@@ -4320,20 +4320,29 @@ async function handleStandardChat(
     const periodFrom = rankedRecords[0]?.periodFrom;
     const periodTo = rankedRecords[0]?.periodTo;
     
-    context += `\n📊 RANKING INDIVIDUAL SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
-    context += `Este es el ranking tal como aparece en el dashboard principal.\n`;
-    context += `Cada fila es una evaluación individual: Empresa + Modelo IA + RIX Score.\n`;
+    context += `\n📊 RANKINGS INDIVIDUALES POR MODELO DE IA — SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
+    context += `Cada modelo de IA evalúa de forma independiente. A continuación se muestra el ranking completo de cada modelo.\n`;
     context += `Total de evaluaciones esta semana: ${rankedRecords.length}\n\n`;
-    context += `| # | Empresa | Ticker | RIX | Modelo IA |\n`;
-    context += `|---|---------|--------|-----|----------|\n`;
-    
-    // Increased from 50 to 150 records shown
-    rankedRecords.slice(0, 150).forEach((record, idx) => {
-      context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} | ${record.model} |\n`;
+
+    // Group by AI model so every model's full ranking is visible to the LLM
+    const recordsByModel = new Map<string, typeof rankedRecords>();
+    rankedRecords.forEach(record => {
+      if (!recordsByModel.has(record.model)) {
+        recordsByModel.set(record.model, []);
+      }
+      recordsByModel.get(record.model)!.push(record);
     });
 
-    if (rankedRecords.length > 150) {
-      context += `\n... y ${rankedRecords.length - 150} evaluaciones más.\n`;
+    for (const [model, records] of recordsByModel) {
+      context += `\n📊 RANKING ${model.toUpperCase()} (${records.length} empresas evaluadas):\n`;
+      context += `| # | Empresa | Ticker | RIX |\n`;
+      context += `|---|---------|--------|-----|\n`;
+      records.slice(0, 40).forEach((record, idx) => {
+        context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} |\n`;
+      });
+      if (records.length > 40) {
+        context += `| ... | ${records.length - 40} empresas más | | |\n`;
+      }
     }
 
     context += `\n`;
