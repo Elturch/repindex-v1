@@ -108,5 +108,3 @@ verify_jwt = false
 [functions.fetch-smart-suggestions]
 verify_jwt = false
 
-[functions.rix-press-agent]
-verify_jwt = false

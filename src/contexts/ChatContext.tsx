@@ -465,32 +465,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
         };
         setMessages(prev => [...prev, streamingMessage]);
 
-        // Route to rix-press-agent when in press mode, otherwise chat-intelligence
-        const edgeFunctionName = options?.pressMode ? 'rix-press-agent' : 'chat-intelligence';
-        const requestBody = options?.pressMode
-          ? {
-              question,
-              conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
-              sessionId,
-              conversationId: convId,
-              language: language.code,
-              languageName: language.nativeName,
-            }
-          : {
-              question,
-              conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
-              sessionId,
-              conversationId: convId,
-              bulletinMode: options?.bulletinMode || false,
-              bulletinCompanyName,
-              language: language.code,
-              languageName: language.nativeName,
-              depthLevel: options?.depthLevel || 'complete',
-              roleId: role?.id,
-              roleName: role ? `${role.emoji} ${role.name}` : undefined,
-              rolePrompt: role?.prompt,
-              streamMode: true,
-            };
+        // Always route through the standard chat-intelligence engine
+        const edgeFunctionName = 'chat-intelligence';
+        const requestBody = {
+          question,
+          conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+          sessionId,
+          conversationId: convId,
+          bulletinMode: options?.bulletinMode || false,
+          bulletinCompanyName,
+          language: language.code,
+          languageName: language.nativeName,
+          depthLevel: options?.pressMode ? 'exhaustive' : (options?.depthLevel || 'complete'),
+          roleId: options?.pressMode ? 'periodista' : role?.id,
+          roleName: options?.pressMode ? '📰 Periodista Económico' : (role ? `${role.emoji} ${role.name}` : undefined),
+          rolePrompt: options?.pressMode ? undefined : role?.prompt,
+          streamMode: true,
+        };
 
         console.log('[ChatContext] Routing to:', edgeFunctionName, options?.pressMode ? '(PRESS MODE)' : '');
 
