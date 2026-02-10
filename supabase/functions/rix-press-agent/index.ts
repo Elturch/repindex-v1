@@ -145,14 +145,13 @@ serve(async (req) => {
     let userId: string | null = null;
     if (authHeader?.startsWith("Bearer ")) {
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const token = authHeader.replace("Bearer ", "");
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader } },
       });
-      const { data: claims } = await userClient.auth.getClaims(
-        authHeader.replace("Bearer ", "")
-      );
-      if (claims?.claims?.sub) {
-        userId = claims.claims.sub as string;
+      const { data: { user: authUser }, error: authError } = await userClient.auth.getUser(token);
+      if (!authError && authUser?.id) {
+        userId = authUser.id;
         // Check press role in production
         const { data: roleData } = await supabase
           .from("user_roles")
