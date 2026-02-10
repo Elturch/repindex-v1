@@ -1,124 +1,102 @@
 
 
-# Plan: Enriquecer el contexto del ranking con metricas completas y codigo IBEX
+# Plan: Eliminar truncamiento del ranking — mostrar TODAS las empresas por modelo
 
-## Que esta pasando exactamente
+## Diagnostico
 
-El informe muestra solo 9 empresas del IBEX-35, dice "No dispongo de ese dato" para las 8 submetricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM), incluye Solaria como IBEX-35 incorrectamente, y muestra scores inventados (Aena RIX 61 cuando el real es 54).
+El problema de fondo no es el IBEX-35 especificamente, es que el sistema trunca al 22% de los datos disponibles:
 
-Antes del cambio de Rix Press, esto no pasaba porque el sistema anterior (aunque con otros problemas) tenia un flujo diferente. Los cambios recientes corrigieron la contaminacion por sales_memento y la agrupacion por modelo, pero dejaron un hueco critico: **la tabla de ranking que ve el LLM solo tiene 4 columnas** (posicion, empresa, ticker, RIX global), sin submetricas ni codigo de familia IBEX.
+| Metrica | Valor actual | Problema |
+|---------|-------------|----------|
+| Empresas por modelo | 179 | Solo se muestran 40 (22%) |
+| Modelos | 6 | OK, todos se muestran |
+| Ranking promedio | 179 empresas | Solo se muestran 50 (28%) |
+| Registros totales descartados | ~834 de 1,074 | 78% del contexto tirado |
 
-### Causa raiz unica (lineas 4260-4267 y 4337-4345)
+### Por que el top-40 no sirve
 
-El mapeo de `rankedRecords` solo extrae 5 campos:
+Cualquier pregunta que implique empresas fuera del top 40 de un modelo fallara: ranking IBEX-35 completo, consultas sobre empresas con RIX bajo, comparativas sectoriales donde alguna empresa esta en la posicion 60+, etc. Es un recorte arbitrario que no tiene justificacion dado el espacio disponible.
 
-```text
-company, ticker, model, rixScore, rmmScore
-```
-
-Y la tabla inyectada al LLM solo muestra 4:
-
-```text
-| # | Empresa | Ticker | RIX |
-```
-
-Faltan:
-- Las 7 submetricas (NVM, DRM, SIM, CEM, GAM, DCM, CXM) — por eso dice "no dispongo de ese dato" 8 veces
-- El `ibex_family_code` — por eso no puede filtrar las 35 empresas del IBEX y solo muestra 9
-- Sin ibex_family_code, el LLM "adivina" que empresas son IBEX-35, incluyendo Solaria por error
-
-Seccion 6.1 (linea 4152) SI incluye todas las metricas, pero solo se activa cuando se detecta una empresa especifica en la pregunta. Una pregunta generica como "ranking IBEX-35 ChatGPT" no detecta empresas, asi que la seccion 6.1 queda vacia y el LLM solo dispone del ranking empobrecido.
-
-## Solucion en 2 pasos
-
-### Paso 1: Corregir composicion IBEX-35 en base de datos
-
-Segun MarketScreener (verificado hoy), la DB tiene 36 empresas como IBEX-35. Hay que ajustar a 35:
-
-| Empresa | Estado actual | Estado real | Accion |
-|---------|--------------|-------------|--------|
-| CIE Automotive (CIE) | IBEX-35 | NO pertenece | Degradar a IBEX-MC |
-| Melia Hotels (MEL) | IBEX-35 | NO pertenece | Degradar a IBEX-MC |
-| Solaria (SLR) | IBEX-MC | SI pertenece | Promover a IBEX-35 |
-
-Resultado: 36 - 2 + 1 = 35 empresas. Correcto.
-
-Migracion SQL a ejecutar:
-
-```sql
-UPDATE repindex_root_issuers 
-SET ibex_family_code = 'IBEX-MC', ibex_family_category = 'IBEX Medium Cap'
-WHERE ticker IN ('CIE', 'MEL');
-
-UPDATE repindex_root_issuers 
-SET ibex_family_code = 'IBEX-35', ibex_family_category = 'IBEX 35'
-WHERE ticker = 'SLR';
-
-UPDATE rix_trends SET ibex_family_code = 'IBEX-MC' WHERE ticker IN ('CIE', 'MEL');
-UPDATE rix_trends SET ibex_family_code = 'IBEX-35' WHERE ticker IN ('SLR', 'SOLR');
-```
-
-### Paso 2: Enriquecer el ranking con submetricas e ibex_family_code
-
-En `supabase/functions/chat-intelligence/index.ts`:
-
-**Cambio A — Mapeo de datos (linea 4260-4267):**
-
-Anadir las 8 submetricas y cruzar con `companiesCache` para obtener ibex_family_code:
+### Capacidad del modelo o3
 
 ```text
-.map(run => {
-  const companyInfo = companiesCache?.find(
-    c => c.ticker === run["05_ticker"]
-  );
-  return {
-    company: run["03_target_name"],
-    ticker: run["05_ticker"],
-    model: run["02_model_name"],
-    rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
-    nvm: run["23_nvm_score"],
-    drm: run["26_drm_score"],
-    sim: run["29_sim_score"],
-    rmm: run["32_rmm_score"],
-    cem: run["35_cem_score"],
-    gam: run["38_gam_score"],
-    dcm: run["41_dcm_score"],
-    cxm: run["44_cxm_score"],
-    ibexFamily: companyInfo?.ibex_family_code || 'Otro',
-    periodFrom: run["06_period_from"],
-    periodTo: run["07_period_to"]
-  };
-})
+Contexto maximo de o3:      200,000 tokens (~800,000 chars)
+Contexto actual:            ~218,000 chars (~55,000 tokens)
+Espacio usado:              27%
+Espacio libre:              73% (~580,000 chars)
 ```
 
-**Cambio B — Tabla del ranking por modelo (lineas 4337-4345):**
+Mostrar las 179 empresas por modelo (en vez de 40) anade ~70,000 chars (~17,000 tokens), llegando a ~72,000 tokens. Aun queda el 64% del contexto libre.
 
-Ampliar la tabla con todas las columnas:
+## Cambios concretos
+
+### Archivo: `supabase/functions/chat-intelligence/index.ts`
+
+**Cambio 1 — Eliminar `slice(0, 40)` del ranking por modelo (linea 4351)**
+
+Antes:
+```text
+records.slice(0, 40).forEach((record, idx) => { ... });
+if (records.length > 40) {
+  context += `| ... | ${records.length - 40} empresas más | ...`;
+}
+```
+
+Despues:
+```text
+records.forEach((record, idx) => { ... });
+// Sin truncamiento — se muestran TODAS las empresas evaluadas
+```
+
+Esto pasa de mostrar 40 a mostrar las 179 empresas para cada uno de los 6 modelos.
+
+**Cambio 2 — Eliminar `slice(0, 50)` del ranking promedio (linea 4368)**
+
+Antes:
+```text
+rankedByAverage.slice(0, 50).forEach((company, idx) => { ... });
+if (rankedByAverage.length > 50) {
+  context += `... y ${rankedByAverage.length - 50} empresas más.`;
+}
+```
+
+Despues:
+```text
+rankedByAverage.forEach((company, idx) => { ... });
+// Sin truncamiento — se muestran TODAS las empresas
+```
+
+### Impacto en el contexto
 
 ```text
-| # | Empresa | Ticker | IBEX | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |
+ANTES (truncado):
+  Ranking por modelo:  6 modelos x 40 empresas x ~100 chars  = ~24,000 chars
+  Ranking promedio:    50 empresas x ~80 chars                = ~4,000 chars
+  Total seccion:       ~28,000 chars
+
+DESPUES (completo):
+  Ranking por modelo:  6 modelos x 179 empresas x ~100 chars = ~107,400 chars
+  Ranking promedio:    179 empresas x ~80 chars               = ~14,320 chars
+  Total seccion:       ~121,720 chars
+
+Incremento:            +93,720 chars (~23,400 tokens)
+Contexto total:        ~312,000 chars (~78,000 tokens)
+Uso del contexto o3:   39% (antes 27%)
 ```
 
-Con esto el LLM podra:
-- Filtrar correctamente por IBEX-35 (sin adivinar)
-- Citar cada submetrica con su valor exacto
-- Mostrar las 35 empresas completas
-
-### Impacto en tamano del contexto
-
-- Antes: 240 filas x ~40 chars = ~9.600 chars
-- Despues: 240 filas x ~100 chars = ~24.000 chars (+14.400 chars)
-- Incremento total: ~7% del contexto. Aceptable.
-
-## Archivos a modificar
-
-| Archivo | Cambio |
-|---------|--------|
-| Migracion SQL | Corregir composicion: CIE y MEL a IBEX-MC, SLR a IBEX-35 |
-| `supabase/functions/chat-intelligence/index.ts` | Enriquecer rankedRecords con 8 submetricas + ibexFamily; ampliar tabla del ranking por modelo con 12 columnas |
+Sigue holgado. El limite de o3 es 200K tokens, estariamos al 39%.
 
 ## Resultado esperado
 
-Cuando alguien pregunte "ranking IBEX-35 ChatGPT ultima semana":
-- Antes: 9 empresas, sin metricas, Solaria incluida por error, Aena con score inventado
-- Despues: 35 empresas correctamente identificadas como IBEX-35, con las 8 metricas exactas del dashboard, sin datos inventados
+- Cualquier pregunta sobre cualquier empresa tendra datos reales en el contexto
+- Rankings IBEX-35, IBEX-MC, sectoriales, comparativos — todos completos
+- No mas "No dispongo de ese dato" por truncamiento
+- No mas scores inventados por falta de datos reales
+- Funciona para preguntas que aun no conocemos, no solo para el caso IBEX-35
+
+## Archivo a modificar
+
+| Archivo | Cambio |
+|---------|--------|
+| `supabase/functions/chat-intelligence/index.ts` | Eliminar `slice(0, 40)` en linea 4351 y bloque `if > 40` en lineas 4354-4356; eliminar `slice(0, 50)` en linea 4368 y bloque `if > 50` en lineas 4377-4379 |
+
