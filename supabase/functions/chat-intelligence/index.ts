@@ -3886,57 +3886,94 @@ async function handleStandardChat(
   }
 
   // =============================================================================
-  // PASO 5: CARGAR DATOS ESTRUCTURADOS (con paginación inteligente)
+  // PASO 5: CARGA DIRECTA POR PERIODO (sin paginación cruzada de tablas)
   // =============================================================================
-  console.log(`${logPrefix} Loading structured RIX data for rankings - ALL 6 AI MODELS...`);
+  // ARQUITECTURA: Consultamos SOLO rix_runs_v2 (fuente autoritativa) con filtro
+  // por periodo. Esto elimina la causa raíz de la pérdida de empresas como
+  // Endesa, Santander, Iberdrola que se perdían en la paginación cruzada.
+  // =============================================================================
+  console.log(`${logPrefix} Loading structured RIX data — DIRECT PERIOD LOADING from rix_runs_v2...`);
   
-  // Use pagination for large requests
+  const rixColumns = `
+    "01_run_id",
+    "02_model_name",
+    "03_target_name",
+    "05_ticker",
+    "06_period_from",
+    "07_period_to",
+    "09_rix_score",
+    "51_rix_score_adjusted",
+    "23_nvm_score",
+    "26_drm_score",
+    "29_sim_score",
+    "32_rmm_score",
+    "35_cem_score",
+    "38_gam_score",
+    "41_dcm_score",
+    "44_cxm_score",
+    "10_resumen",
+    "11_puntos_clave",
+    batch_execution_date
+  `;
+
+  // Step 1: Discover the 2 most recent periods in rix_runs_v2
+  const { data: recentPeriodRows } = await supabaseClient
+    .from('rix_runs_v2')
+    .select('"06_period_from", "07_period_to"')
+    .not('"09_rix_score"', 'is', null)
+    .order('batch_execution_date', { ascending: false })
+    .limit(1000);
+
+  const periodSet = new Map<string, { from: string; to: string }>();
+  (recentPeriodRows || []).forEach((r: any) => {
+    const key = `${r["06_period_from"]}|${r["07_period_to"]}`;
+    if (!periodSet.has(key)) {
+      periodSet.set(key, { from: r["06_period_from"], to: r["07_period_to"] });
+    }
+  });
+
+  const sortedPeriods = Array.from(periodSet.values())
+    .filter(p => p.from && p.to)
+    .sort((a, b) => b.to.localeCompare(a.to));
+
+  const periodsToLoad = depthLevel === 'quick' ? sortedPeriods.slice(0, 1) : sortedPeriods.slice(0, 2);
+  console.log(`${logPrefix} Discovered ${sortedPeriods.length} periods. Loading ${periodsToLoad.length}: ${periodsToLoad.map(p => `${p.from}→${p.to}`).join(', ')}`);
+
+  // Step 2: For each period, paginate with .range() to get ALL records
   let allRixData: any[] = [];
-  let rixOffset = 0;
-  const rixBatchSize = 1000;
-  const maxRixRecords = depthLevel === 'exhaustive' ? 10000 : 5000;
-  
-  while (rixOffset < maxRixRecords) {
-    const batch = await fetchUnifiedRixData({
-      supabaseClient,
-      columns: `
-        "01_run_id",
-        "02_model_name",
-        "03_target_name",
-        "05_ticker",
-        "06_period_from",
-        "07_period_to",
-        "09_rix_score",
-        "51_rix_score_adjusted",
-        "23_nvm_score",
-        "26_drm_score",
-        "29_sim_score",
-        "32_rmm_score",
-        "35_cem_score",
-        "38_gam_score",
-        "41_dcm_score",
-        "44_cxm_score",
-        "10_resumen",
-        "11_puntos_clave",
-        batch_execution_date
-      `,
-      limit: rixBatchSize,
-      offset: rixOffset,
-      logPrefix
-    });
-    
-    if (!batch || batch.length === 0) break;
-    
-    allRixData.push(...batch);
-    rixOffset += batch.length;
-    
-    if (batch.length < rixBatchSize) break;
-    
-    // For quick depth, stop after first batch
-    if (depthLevel === 'quick') break;
+
+  for (const period of periodsToLoad) {
+    let periodData: any[] = [];
+    let offset = 0;
+    const PAGE_SIZE = 1000;
+
+    while (true) {
+      const { data, error } = await supabaseClient
+        .from('rix_runs_v2')
+        .select(rixColumns)
+        .eq('"06_period_from"', period.from)
+        .eq('"07_period_to"', period.to)
+        .not('"09_rix_score"', 'is', null)
+        .order('batch_execution_date', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error(`${logPrefix} Error loading period ${period.from}: ${error.message}`);
+        break;
+      }
+      if (!data || data.length === 0) break;
+
+      periodData.push(...data);
+      offset += data.length;
+
+      if (data.length < PAGE_SIZE) break; // Last page
+    }
+
+    console.log(`${logPrefix} Period ${period.from}→${period.to}: loaded ${periodData.length} records (${offset === periodData.length ? 'complete' : 'paginated'})`);
+    allRixData.push(...periodData);
   }
 
-  console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0} (depth: ${depthLevel})`);
+  console.log(`${logPrefix} Total RIX records loaded (direct period): ${allRixData.length} (depth: ${depthLevel})`);
 
   // =============================================================================
   // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
@@ -4238,6 +4275,31 @@ async function handleStandardChat(
     context += '\n';
   }
 
+  // 6.2-B COMPOSICIÓN OFICIAL IBEX-35 (inyectada desde repindex_root_issuers)
+  // Esto garantiza que el LLM sepa EXACTAMENTE qué empresas forman el IBEX-35
+  if (companiesCache && companiesCache.length > 0) {
+    const ibex35Companies = companiesCache.filter((c: any) => 
+      c.ibex_family_code === 'IBEX-35' || c.ibex_status === 'active_now'
+    );
+    
+    if (ibex35Companies.length > 0) {
+      context += `\n🏛️ ======================================================================\n`;
+      context += `🏛️ COMPOSICIÓN OFICIAL DEL IBEX-35 (${ibex35Companies.length} empresas)\n`;
+      context += `🏛️ Fuente: repindex_root_issuers (tabla maestra verificada)\n`;
+      context += `🏛️ REGLA: Cuando el usuario pida ranking IBEX-35, usa EXACTAMENTE estas empresas.\n`;
+      context += `🏛️ ======================================================================\n\n`;
+      context += `| # | Empresa | Ticker | Sector |\n`;
+      context += `|---|---------|--------|--------|\n`;
+      ibex35Companies
+        .sort((a: any, b: any) => (a.issuer_name || '').localeCompare(b.issuer_name || ''))
+        .forEach((c: any, idx: number) => {
+          context += `| ${idx + 1} | ${c.issuer_name} | ${c.ticker} | ${c.sector_category || 'N/A'} |\n`;
+        });
+      context += `\n⚠️ Si alguna de estas ${ibex35Companies.length} empresas NO aparece en los datos de la semana,\n`;
+      context += `indica explícitamente que no hay datos disponibles para ella — NO la omitas del ranking.\n\n`;
+    }
+  }
+
   // 6.3 Construir ranking general de la semana actual
   if (allRixData && allRixData.length > 0) {
     const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
@@ -4269,7 +4331,13 @@ async function handleStandardChat(
     const rankedRecords = currentWeekData
       // ELIMINADO EL FILTRO DESTRUCTIVO: .filter(run => run["32_rmm_score"] !== 0)
       .map(run => {
-        const companyInfo = companiesCache?.find(c => c.ticker === run["05_ticker"]);
+        // Ticker matching: rix_runs_v2 may use 'SAN' while repindex_root_issuers uses 'SAN.MC'
+        const runTicker = run["05_ticker"] || '';
+        const companyInfo = companiesCache?.find(c => 
+          c.ticker === runTicker || 
+          c.ticker === `${runTicker}.MC` || 
+          c.ticker.replace('.MC', '') === runTicker
+        );
         return {
           company: run["03_target_name"],
           ticker: run["05_ticker"],
