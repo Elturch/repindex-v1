@@ -2040,47 +2040,7 @@ serve(async (req) => {
       );
     }
 
-    // =============================================================================
-    // RIX PRESS MODE — Journalistic note generation with Gemini 3 Pro
-    // =============================================================================
-    if (pressMode === true) {
-      console.log(`${logPrefix} RIX PRESS MODE ACTIVATED`);
-      
-      // Server-side validation: check user has 'press' role
-      if (userId) {
-        // Production: verify press role in DB
-        const { data: pressRole } = await supabaseClient
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId)
-          .eq('role', 'press')
-          .maybeSingle();
-        
-        if (!pressRole) {
-          return new Response(
-            JSON.stringify({ error: 'No tienes acceso a Rix Press' }),
-            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        console.log(`${logPrefix} Press role verified for user: ${userId}`);
-      } else {
-        // Preview/dev: allow access without auth
-        console.log(`${logPrefix} Press mode allowed without auth (preview/dev)`);
-      }
-      
-      return await handlePressMode(
-        question,
-        conversationHistory,
-        supabaseClient,
-        sessionId,
-        logPrefix,
-        userId,
-        language,
-        languageName,
-        conversationId,
-        streamMode
-      );
-    }
+    // RIX PRESS MODE removed — press queries now use standard pipeline with 'periodista' role
 
     // =============================================================================
     // BULLETIN MODE - ONLY TRIGGERED BY EXPLICIT BUTTON CLICK
@@ -4253,10 +4213,13 @@ async function handleStandardChat(
     }
   }
 
-  // 6.2 Documentos vectoriales (contexto adicional)
-  if (vectorDocs && vectorDocs.length > 0) {
-    context += `📚 CONTEXTO ADICIONAL DEL VECTOR STORE (${vectorDocs.length} documentos):\n\n`;
-    vectorDocs.forEach((doc: any, idx: number) => {
+  // 6.2 Documentos vectoriales (contexto adicional) — filtrados sin sales_memento
+  const cleanVectorDocs = (vectorDocs || []).filter(
+    (doc: any) => !doc.metadata?.source_type || doc.metadata.source_type !== 'sales_memento'
+  );
+  if (cleanVectorDocs.length > 0) {
+    context += `📚 CONTEXTO ADICIONAL DEL VECTOR STORE (${cleanVectorDocs.length} documentos, filtrados):\n\n`;
+    cleanVectorDocs.forEach((doc: any, idx: number) => {
       const metadata = doc.metadata || {};
       context += `[${idx + 1}] ${metadata.company_name || 'Sin empresa'} - ${metadata.week || 'Sin fecha'}\n`;
       context += `${doc.content?.substring(0, 600) || 'Sin contenido'}...\n\n`;
@@ -4470,6 +4433,22 @@ async function handleStandardChat(
   
   const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName} (${language})]
 Responde SIEMPRE en ${languageName}. Sin excepciones.
+
+═══════════════════════════════════════════════════════════════════════════════
+              ⚠️ REGLA DE MÁXIMA PRIORIDAD — PRECISIÓN NUMÉRICA ABSOLUTA ⚠️
+═══════════════════════════════════════════════════════════════════════════════
+
+- Cada score RIX, porcentaje o cifra que cites DEBE existir LITERALMENTE 
+  en los datos proporcionados en el contexto.
+- Si no encuentras el dato exacto, escribe: "No dispongo de ese dato 
+  en el contexto actual."
+- PROHIBIDO redondear, estimar o inferir cifras. Si el dato dice 47.3, 
+  cita 47.3 — no 47 ni "cerca de 50".
+- Cuando cites un score, INDICA SIEMPRE el modelo de IA y el periodo. 
+  Ejemplo: "RIX 64 (ChatGPT, 3-8 Feb 2026)".
+- Si no hay datos suficientes para una respuesta precisa, dilo 
+  explícitamente en vez de construir una respuesta con datos parciales.
+- NUNCA inventes datos, scores o tendencias que no estén en el contexto.
 
 ═══════════════════════════════════════════════════════════════════════════════
                     AGENTE RIX – ANALISTA REPUTACIONAL CORPORATIVO
@@ -5740,271 +5719,4 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
   }
 }
 
-// =============================================================================
-// RIX PRESS MODE HANDLER — Professional journalism powered by Gemini 3 Pro
-// =============================================================================
-const PRESS_SYSTEM_PROMPT = `Eres un PERIODISTA ECONÓMICO DE ÉLITE al servicio de RepIndex, el Radar Reputacional en la Era Algorítmica.
-
-Tu misión es redactar NOTAS DE PRENSA profesionales, humanizadas y accesibles, basadas EXCLUSIVAMENTE en datos e investigaciones de RepIndex.
-
-## ESTRUCTURA OBLIGATORIA DE LA NOTA DE PRENSA
-
-# [TITULAR IMPACTANTE Y ESPECÍFICO]
-
-## [Subtitular que contextualiza el hallazgo]
-
-**[Ciudad], [Fecha]** — [Lead: 2-3 frases que resumen el hallazgo principal, por qué importa y a quién afecta. Debe poder funcionar como noticia independiente.]
-
-### Hallazgo Principal
-
-[3-4 párrafos narrativos que desarrollan la noticia principal con datos concretos del análisis RepIndex. Cada párrafo debe incluir al menos un dato numérico (score RIX, porcentaje, variación). Tono periodístico accesible para el lector generalista.]
-
-### Contexto Sectorial
-
-[2-3 párrafos que sitúan el hallazgo en contexto: comparación con competidores, posición en el sector, tendencia temporal. Usa tablas comparativas cuando sea relevante.]
-
-### Lo que dicen los datos
-
-[2-3 párrafos con análisis de las 8 dimensiones RIX relevantes, citando scores específicos. Explica cada métrica de forma accesible: "La Calidad Narrativa (NVM), que mide la coherencia del discurso corporativo según las IAs, alcanza un 75/100..."]
-
-### Perspectiva de las Inteligencias Artificiales
-
-[2-3 párrafos analizando las visiones de los 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen). Destacar divergencias cuando existan. Incluir tabla comparativa de scores por modelo.]
-
-### Implicaciones y Recomendaciones
-
-[2-3 párrafos con análisis prospectivo y recomendaciones concretas, accesibles para un C-level.]
-
----
-
-*Según datos del Radar Reputacional RepIndex. Metodología: análisis algorítmico de 6 modelos de IA generativa sobre percepción corporativa.*
-
-## REGLAS CRÍTICAS
-
-1. **HUMANIZADO**: Escribe para lectores generalistas, no técnicos. Explica la jerga.
-2. **BASADO EN DATOS**: Cada afirmación debe estar respaldada por datos del contexto proporcionado.
-3. **NUNCA INVENTES**: Usa SOLO los datos del contexto. Si no hay datos suficientes, dilo explícitamente.
-4. **EXTENSIÓN**: Mínimo 1500 palabras, máximo 3000 palabras.
-5. **FUENTE**: Siempre cita "según datos del Radar Reputacional RepIndex" o "según el análisis de RepIndex".
-6. **TONO**: Periodístico profesional pero accesible. Como El País o Financial Times, no como un informe técnico.
-7. **ESTRUCTURA**: Respeta la estructura de nota de prensa con titular, subtitular, lead y cuerpo.
-`;
-
-async function handlePressMode(
-  question: string,
-  conversationHistory: { role: string; content: string }[],
-  supabaseClient: any,
-  sessionId: string,
-  logPrefix: string,
-  userId: string,
-  language: string,
-  languageName: string,
-  conversationId: string | null,
-  streamMode: boolean
-): Promise<Response> {
-  console.log(`${logPrefix} [PRESS] Starting Rix Press mode...`);
-  
-  const now = Date.now();
-  if (!companiesCache || (now - cacheTimestamp) > CACHE_TTL) {
-    const { data: companies } = await supabaseClient
-      .from('repindex_root_issuers')
-      .select('issuer_name, ticker, sector_category, ibex_family_code, subsector, verified_competitors');
-    if (companies) { companiesCache = companies; cacheTimestamp = now; }
-  }
-
-  let vectorContext = '';
-  try {
-    const { data: textDocs } = await supabaseClient
-      .from('documents')
-      .select('content, metadata')
-      .textSearch('content', question.split(' ').slice(0, 5).join(' & '), { type: 'plain' })
-      .limit(20);
-    const docs = textDocs || [];
-    if (docs.length > 0) {
-      vectorContext = docs
-        .filter((d: any) => d.content && d.metadata?.source_type !== 'sales_memento')
-        .slice(0, 15)
-        .map((d: any) => d.content?.substring(0, 500))
-        .join('\n---\n');
-      console.log(`${logPrefix} [PRESS] Vector context: ${docs.length} documents found`);
-    }
-  } catch (e) {
-    console.warn(`${logPrefix} [PRESS] Vector search failed, continuing without:`, e);
-  }
-
-  const allRixData = await fetchUnifiedRixData({
-    supabaseClient,
-    columns: '"05_ticker", "02_model_name", "03_target_name", "09_rix_score", "06_period_from", "07_period_to", "10_resumen", "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score", "25_nvm_categoria", "28_drm_categoria", "31_sim_categoria", "34_rmm_categoria", "37_cem_categoria", "40_gam_categoria", "43_dcm_categoria", "46_cxm_categoria", batch_execution_date',
-    limit: 500,
-    logPrefix: `${logPrefix} [PRESS]`,
-  });
-
-  const rixContext = allRixData
-    .filter((r: any) => r['09_rix_score'] != null)
-    .slice(0, 100)
-    .map((r: any) => `${r['03_target_name']} (${r['05_ticker']}) - Modelo: ${r['02_model_name']} - RIX: ${r['09_rix_score']} - Período: ${r['06_period_from']} a ${r['07_period_to']} - NVM:${r['23_nvm_score']} DRM:${r['26_drm_score']} SIM:${r['29_sim_score']} RMM:${r['32_rmm_score']} CEM:${r['35_cem_score']} GAM:${r['38_gam_score']} DCM:${r['41_dcm_score']} CXM:${r['44_cxm_score']}`)
-    .join('\n');
-
-  console.log(`${logPrefix} [PRESS] Structured context: ${allRixData.length} RIX records`);
-
-  const pressMessages = [
-    { role: 'system', content: PRESS_SYSTEM_PROMPT },
-    { role: 'user', content: `CONTEXTO ESTRUCTURADO (DATOS REALES DE REPINDEX):
-    
-=== DATOS RIX (Scores por empresa, modelo e IA) ===
-${rixContext || 'No hay datos RIX disponibles para este período.'}
-
-=== CONTEXTO CUALITATIVO (Vector Store) ===
-${vectorContext || 'No hay contexto cualitativo adicional disponible.'}
-
-=== PREGUNTA/TEMA DEL PERIODISTA ===
-${question}
-
-IDIOMA DE REDACCIÓN: ${languageName}
-
-Redacta la nota de prensa profesional basada EXCLUSIVAMENTE en los datos anteriores.` }
-  ];
-
-  if (streamMode) {
-    const encode = createSSEEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          controller.enqueue(encode({ type: 'start' }));
-          
-          const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-          if (!geminiApiKey) {
-            controller.enqueue(encode({ type: 'error', error: 'GOOGLE_GEMINI_API_KEY not configured' }));
-            controller.close();
-            return;
-          }
-
-          // Convert messages to Gemini format
-          const geminiContents = pressMessages
-            .filter((m: any) => m.role !== 'system')
-            .map((m: any) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-          const systemText = pressMessages.find((m: any) => m.role === 'system')?.content;
-
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=${geminiApiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: geminiContents,
-                systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
-                generationConfig: { maxOutputTokens: 8000 },
-              }),
-            }
-          );
-
-          if (!response.ok) {
-            const errText = await response.text();
-            console.error(`${logPrefix} [PRESS] Gemini API error: ${response.status}`, errText);
-            controller.enqueue(encode({ type: 'error', error: `Gemini API error: ${response.status}` }));
-            controller.close();
-            return;
-          }
-
-          const reader = response.body?.getReader();
-          if (!reader) {
-            controller.enqueue(encode({ type: 'error', error: 'No response body' }));
-            controller.close();
-            return;
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let fullContent = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const jsonStr = line.slice(6).trim();
-                if (jsonStr === '[DONE]') continue;
-                try {
-                  const parsed = JSON.parse(jsonStr);
-                  const content = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-                  if (content) {
-                    fullContent += content;
-                    controller.enqueue(encode({ type: 'chunk', text: content }));
-                  }
-                } catch { /* ignore partial JSON */ }
-              }
-            }
-          }
-
-          if (sessionId) {
-            await supabaseClient.from('chat_intelligence_sessions').insert([
-              { session_id: sessionId, role: 'user', content: question, user_id: userId, conversation_id: conversationId, depth_level: 'exhaustive' },
-              { session_id: sessionId, role: 'assistant', content: fullContent, user_id: userId, conversation_id: conversationId, depth_level: 'exhaustive' }
-            ]);
-          }
-
-          await logApiUsage({
-            supabaseClient, edgeFunction: 'chat-intelligence', provider: 'google',
-            model: 'gemini-3-pro-preview', actionType: 'press_generation',
-            inputTokens: 0, outputTokens: 0, userId, sessionId,
-            metadata: { pressMode: true },
-          });
-
-          controller.enqueue(encode({ 
-            type: 'done', 
-            metadata: { type: 'press', documentsFound: 0, structuredDataFound: allRixData.length },
-            suggestedQuestions: [], drumrollQuestion: null,
-          }));
-          controller.close();
-        } catch (error) {
-          console.error(`${logPrefix} [PRESS] Stream error:`, error);
-          controller.enqueue(encode({ type: 'error', error: error.message || 'Press stream error' }));
-          controller.close();
-        }
-      }
-    });
-
-    return new Response(stream, {
-      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
-    });
-  } else {
-    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-    if (!geminiApiKey) throw new Error('GOOGLE_GEMINI_API_KEY not configured');
-
-    const geminiContents = pressMessages
-      .filter((m: any) => m.role !== 'system')
-      .map((m: any) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-    const systemText = pressMessages.find((m: any) => m.role === 'system')?.content;
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${geminiApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: geminiContents,
-          systemInstruction: systemText ? { parts: [{ text: systemText }] } : undefined,
-          generationConfig: { maxOutputTokens: 8000 },
-        }),
-      }
-    );
-    if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
-    const data = await response.json();
-    const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No se pudo generar la nota de prensa.';
-
-    if (sessionId) {
-      await supabaseClient.from('chat_intelligence_sessions').insert([
-        { session_id: sessionId, role: 'user', content: question, user_id: userId, conversation_id: conversationId },
-        { session_id: sessionId, role: 'assistant', content: answer, user_id: userId, conversation_id: conversationId }
-      ]);
-    }
-
-    return new Response(
-      JSON.stringify({ answer, suggestedQuestions: [], drumrollQuestion: null, metadata: { type: 'press', documentsFound: 0, structuredDataFound: allRixData.length } }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-}
+// RIX PRESS MODE HANDLER removed — press queries now route through standard pipeline with 'periodista' role
