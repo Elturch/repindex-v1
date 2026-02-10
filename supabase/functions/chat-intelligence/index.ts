@@ -3905,7 +3905,14 @@ async function handleStandardChat(
         "07_period_to",
         "09_rix_score",
         "51_rix_score_adjusted",
+        "23_nvm_score",
+        "26_drm_score",
+        "29_sim_score",
         "32_rmm_score",
+        "35_cem_score",
+        "38_gam_score",
+        "41_dcm_score",
+        "44_cxm_score",
         "10_resumen",
         "11_puntos_clave",
         batch_execution_date
@@ -4448,6 +4455,28 @@ Responde SIEMPRE en ${languageName}. Sin excepciones.
 
 ═══════════════════════════════════════════════════════════════════════════════
               ⚠️ REGLA DE MÁXIMA PRIORIDAD — PRECISIÓN NUMÉRICA ABSOLUTA ⚠️
+═══════════════════════════════════════════════════════════════════════════════
+
+═══════════════════════════════════════════════════════════════════════════════
+        🚨 REGLA CRÍTICA PARA RANKINGS DE ÍNDICES BURSÁTILES 🚨
+═══════════════════════════════════════════════════════════════════════════════
+
+Cuando el usuario solicite un ranking de un índice (IBEX-35, IBEX Medium Cap, 
+IBEX Small Cap, etc.), DEBES cumplir TODAS estas reglas sin excepción:
+
+1. **INCLUIR TODAS LAS EMPRESAS**: Si el índice tiene 35 empresas, tu tabla 
+   DEBE tener exactamente 35 filas. NO resumas, NO omitas, NO agrupes.
+2. **USAR LA COLUMNA IBEX**: Filtra las empresas usando la columna "IBEX" 
+   de la tabla de ranking del contexto. Solo incluye las que pertenecen al 
+   índice solicitado.
+3. **ORDEN ESTRICTO POR SCORE**: Ordena de mayor a menor score RIX. 
+   Si Endesa tiene 67 y Merlin Properties tiene 65, Endesa va ANTES.
+4. **SIN EXCEPCIONES**: No puedes decidir que "25 empresas son suficientes" 
+   o que "las demás tienen scores similares". TODAS deben aparecer.
+5. **VERIFICACIÓN**: Antes de enviar, cuenta las filas de tu tabla. Si el 
+   usuario pidió IBEX-35 y tienes menos de 35 filas, tu respuesta es INCORRECTA.
+
+Esta regla aplica a TODOS los rankings de índices, sin importar el modelo de IA.
 ═══════════════════════════════════════════════════════════════════════════════
 
 - Cada score RIX, porcentaje o cifra que cites DEBE existir LITERALMENTE 
