@@ -1,102 +1,70 @@
 
 
-# Plan: Eliminar truncamiento del ranking — mostrar TODAS las empresas por modelo
+# Plan: Corregir carga de sub-metricas y forzar completitud en informes de indices
 
-## Diagnostico
+## Diagnostico confirmado
 
-El problema de fondo no es el IBEX-35 especificamente, es que el sistema trunca al 22% de los datos disponibles:
+### Bug 1: Sub-metricas no se cargan de la base de datos
 
-| Metrica | Valor actual | Problema |
-|---------|-------------|----------|
-| Empresas por modelo | 179 | Solo se muestran 40 (22%) |
-| Modelos | 6 | OK, todos se muestran |
-| Ranking promedio | 179 empresas | Solo se muestran 50 (28%) |
-| Registros totales descartados | ~834 de 1,074 | 78% del contexto tirado |
-
-### Por que el top-40 no sirve
-
-Cualquier pregunta que implique empresas fuera del top 40 de un modelo fallara: ranking IBEX-35 completo, consultas sobre empresas con RIX bajo, comparativas sectoriales donde alguna empresa esta en la posicion 60+, etc. Es un recorte arbitrario que no tiene justificacion dado el espacio disponible.
-
-### Capacidad del modelo o3
+La query que carga `allRixData` (linea 3899-3912) solo pide estas columnas:
 
 ```text
-Contexto maximo de o3:      200,000 tokens (~800,000 chars)
-Contexto actual:            ~218,000 chars (~55,000 tokens)
-Espacio usado:              27%
-Espacio libre:              73% (~580,000 chars)
+01_run_id, 02_model_name, 03_target_name, 05_ticker,
+06_period_from, 07_period_to, 09_rix_score, 51_rix_score_adjusted,
+32_rmm_score, 10_resumen, 11_puntos_clave, batch_execution_date
 ```
 
-Mostrar las 179 empresas por modelo (en vez de 40) anade ~70,000 chars (~17,000 tokens), llegando a ~72,000 tokens. Aun queda el 64% del contexto libre.
-
-## Cambios concretos
-
-### Archivo: `supabase/functions/chat-intelligence/index.ts`
-
-**Cambio 1 — Eliminar `slice(0, 40)` del ranking por modelo (linea 4351)**
-
-Antes:
-```text
-records.slice(0, 40).forEach((record, idx) => { ... });
-if (records.length > 40) {
-  context += `| ... | ${records.length - 40} empresas más | ...`;
-}
-```
-
-Despues:
-```text
-records.forEach((record, idx) => { ... });
-// Sin truncamiento — se muestran TODAS las empresas evaluadas
-```
-
-Esto pasa de mostrar 40 a mostrar las 179 empresas para cada uno de los 6 modelos.
-
-**Cambio 2 — Eliminar `slice(0, 50)` del ranking promedio (linea 4368)**
-
-Antes:
-```text
-rankedByAverage.slice(0, 50).forEach((company, idx) => { ... });
-if (rankedByAverage.length > 50) {
-  context += `... y ${rankedByAverage.length - 50} empresas más.`;
-}
-```
-
-Despues:
-```text
-rankedByAverage.forEach((company, idx) => { ... });
-// Sin truncamiento — se muestran TODAS las empresas
-```
-
-### Impacto en el contexto
+Faltan las 7 sub-metricas que el mapeo de ranking (linea 4267-4274) intenta leer:
 
 ```text
-ANTES (truncado):
-  Ranking por modelo:  6 modelos x 40 empresas x ~100 chars  = ~24,000 chars
-  Ranking promedio:    50 empresas x ~80 chars                = ~4,000 chars
-  Total seccion:       ~28,000 chars
-
-DESPUES (completo):
-  Ranking por modelo:  6 modelos x 179 empresas x ~100 chars = ~107,400 chars
-  Ranking promedio:    179 empresas x ~80 chars               = ~14,320 chars
-  Total seccion:       ~121,720 chars
-
-Incremento:            +93,720 chars (~23,400 tokens)
-Contexto total:        ~312,000 chars (~78,000 tokens)
-Uso del contexto o3:   39% (antes 27%)
+23_nvm_score, 26_drm_score, 29_sim_score,
+35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score
 ```
 
-Sigue holgado. El limite de o3 es 200K tokens, estariamos al 39%.
+Resultado: todas aparecen como `-` en la tabla del contexto y el LLM dice "No dispongo de los sub-scores."
 
-## Resultado esperado
+### Bug 2: El LLM omite empresas del ranking
 
-- Cualquier pregunta sobre cualquier empresa tendra datos reales en el contexto
-- Rankings IBEX-35, IBEX-MC, sectoriales, comparativos — todos completos
-- No mas "No dispongo de ese dato" por truncamiento
-- No mas scores inventados por falta de datos reales
-- Funciona para preguntas que aun no conocemos, no solo para el caso IBEX-35
+Con 1.074 filas en contexto, el LLM decide "resumir" y muestra solo 25 de las 35 empresas IBEX-35 de ChatGPT. Endesa (posicion 3 con RIX 67) y Banco Santander (posicion 5 con RIX 66) quedan fuera, y el informe coloca a Merlin Properties y Banco Sabadell (posicion 6-7 con RIX 65) como "podio". No hay nada en el system prompt que impida este comportamiento.
 
-## Archivo a modificar
+## Solucion
+
+### Cambio 1 — Anadir sub-metricas al SELECT (linea 3899-3912)
+
+Anadir las 7 columnas que faltan a la query de carga:
+
+```text
+columns: `
+  "01_run_id", "02_model_name", "03_target_name", "05_ticker",
+  "06_period_from", "07_period_to", "09_rix_score", "51_rix_score_adjusted",
+  "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
+  "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
+  "10_resumen", "11_puntos_clave", batch_execution_date
+`
+```
+
+### Cambio 2 — Instruccion anti-omision en el system prompt
+
+Buscar el bloque del system prompt donde se dan instrucciones sobre informes y anadir una regla de completitud:
+
+```text
+REGLA CRITICA PARA RANKINGS DE INDICES:
+Cuando el usuario solicite un ranking de un indice (IBEX-35, IBEX-MC, etc.),
+DEBES incluir TODAS las empresas del indice sin excepcion. No resumas,
+no omitas, no agrupes. Usa la columna IBEX de la tabla de ranking para
+filtrar. Si el indice tiene 35 empresas, la tabla del informe debe tener
+exactamente 35 filas.
+```
+
+## Archivos a modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `supabase/functions/chat-intelligence/index.ts` | Eliminar `slice(0, 40)` en linea 4351 y bloque `if > 40` en lineas 4354-4356; eliminar `slice(0, 50)` en linea 4368 y bloque `if > 50` en lineas 4377-4379 |
+| `supabase/functions/chat-intelligence/index.ts` | Anadir 7 columnas de sub-metricas al SELECT de allRixData (linea 3899); anadir instruccion anti-omision al system prompt |
+
+## Resultado esperado
+
+- Las 8 sub-metricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM) apareceran con valores reales en vez de `-`
+- El LLM no podra omitir Endesa (67) ni Banco Santander (66) cuando se pida un ranking IBEX-35
+- El podio sera correcto: Telefonica (71), Logista/Endesa (67), Banco Santander (66)
 
