@@ -77,13 +77,17 @@ async function logApiUsage(params: ApiUsageParams): Promise<void> {
 interface FetchUnifiedRixOptions {
   supabaseClient: any;
   columns: string;
+  v2ExtraColumns?: string;   // Extra columns only available in rix_runs_v2 (e.g. respuesta_bruto_grok, respuesta_bruto_qwen)
   tickerFilter?: string | string[];
   limit?: number;
   logPrefix?: string;
 }
 
 async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any[]> {
-  const { supabaseClient, columns, tickerFilter, limit = 1000, logPrefix = '[Unified-RIX]' } = options;
+  const { supabaseClient, columns, v2ExtraColumns, tickerFilter, limit = 1000, logPrefix = '[Unified-RIX]' } = options;
+  
+  // V2 may have extra columns not present in legacy table
+  const v2Columns = v2ExtraColumns ? `${columns}, ${v2ExtraColumns}` : columns;
   
   // Build queries for both tables
   let queryRix = supabaseClient.from('rix_runs').select(columns).order('batch_execution_date', { ascending: false });
@@ -92,7 +96,7 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
   // This ensures we get Grok & Qwen even if analysis is pending for newest week
   let queryV2 = supabaseClient
     .from('rix_runs_v2')
-    .select(columns)
+    .select(v2Columns)
     .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
     .order('batch_execution_date', { ascending: false });
   
@@ -2696,6 +2700,7 @@ async function handleBulletinRequest(
       "25_explicaciones_detalladas",
       batch_execution_date
     `,
+    v2ExtraColumns: `respuesta_bruto_grok, respuesta_bruto_qwen`,
     tickerFilter: allTickers,
     limit: 800,
     logPrefix
@@ -2785,8 +2790,11 @@ async function handleBulletinRequest(
         if (r["22_explicacion"]) {
           bulletinContext += `\n**Explicación del Score:**\n${r["22_explicacion"]}\n`;
         }
-        if (r["25_explicaciones_detalladas"]) {
-          bulletinContext += `\n**Explicaciones Detalladas por Métrica:**\n${JSON.stringify(r["25_explicaciones_detalladas"], null, 2)}\n`;
+        // Fallback: use 22_explicacion when 25_explicaciones_detalladas is null (common in V2)
+        const detailedExplanation = r["25_explicaciones_detalladas"] || 
+          (r["22_explicacion"] ? { general: r["22_explicacion"] } : null);
+        if (detailedExplanation) {
+          bulletinContext += `\n**Explicaciones Detalladas por Métrica:**\n${JSON.stringify(detailedExplanation, null, 2)}\n`;
         }
         bulletinContext += '\n---\n';
       });
@@ -3646,53 +3654,89 @@ async function handleStandardChat(
   const searchableKeywords = questionKeywords.filter(k => k.length > 3).slice(0, 5);
   
   if (searchableKeywords.length > 0) {
+    const fullTextColumns = `
+      "03_target_name",
+      "05_ticker",
+      "02_model_name",
+      "06_period_from",
+      "07_period_to",
+      "09_rix_score",
+      "51_rix_score_adjusted",
+      "10_resumen",
+      "11_puntos_clave",
+      "20_res_gpt_bruto",
+      "21_res_perplex_bruto",
+      "22_res_gemini_bruto",
+      "23_res_deepseek_bruto",
+      "22_explicacion",
+      "25_explicaciones_detalladas",
+      "23_nvm_score",
+      "26_drm_score",
+      "29_sim_score",
+      "32_rmm_score",
+      "35_cem_score",
+      "38_gam_score",
+      "41_dcm_score",
+      "44_cxm_score",
+      "25_nvm_categoria",
+      "28_drm_categoria",
+      "31_sim_categoria",
+      "34_rmm_categoria",
+      "37_cem_categoria",
+      "40_gam_categoria",
+      "43_dcm_categoria",
+      "46_cxm_categoria"
+    `;
+    
+    // V2 has extra columns for Grok/Qwen raw text
+    const fullTextColumnsV2 = `${fullTextColumns}, respuesta_bruto_grok, respuesta_bruto_qwen`;
+    
     for (const keyword of searchableKeywords) {
       const searchPattern = `%${keyword}%`;
       
-      // BÚSQUEDA EXHAUSTIVA en TODOS los campos de texto de TODA la base de datos
-      const { data: textResults, error: textError } = await supabaseClient
-        .from('rix_runs')
-        .select(`
-          "03_target_name",
-          "05_ticker",
-          "02_model_name",
-          "06_period_from",
-          "07_period_to",
-          "09_rix_score",
-          "51_rix_score_adjusted",
-          "10_resumen",
-          "11_puntos_clave",
-          "20_res_gpt_bruto",
-          "21_res_perplex_bruto",
-          "22_res_gemini_bruto",
-          "23_res_deepseek_bruto",
-          "22_explicacion",
-          "25_explicaciones_detalladas",
-          "23_nvm_score",
-          "26_drm_score",
-          "29_sim_score",
-          "32_rmm_score",
-          "35_cem_score",
-          "38_gam_score",
-          "41_dcm_score",
-          "44_cxm_score",
-          "25_nvm_categoria",
-          "28_drm_categoria",
-          "31_sim_categoria",
-          "34_rmm_categoria",
-          "37_cem_categoria",
-          "40_gam_categoria",
-          "43_dcm_categoria",
-          "46_cxm_categoria"
-        `)
-        .or(`"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
-        .limit(5000); // SIN LÍMITE: capturar ABSOLUTAMENTE TODO
+      const legacyIlikeFilter = `"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`;
+      const v2IlikeFilter = `${legacyIlikeFilter},respuesta_bruto_grok.ilike.${searchPattern},respuesta_bruto_qwen.ilike.${searchPattern}`;
       
-      if (textError) {
-        console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
-      } else if (textResults && textResults.length > 0) {
-        console.log(`${logPrefix} Found ${textResults.length} records mentioning "${keyword}"`);
-        fullTextSearchResults.push(...textResults.map(r => ({ ...r, matchedKeyword: keyword })));
+      // BÚSQUEDA DUAL: consultar AMBAS tablas en paralelo
+      const [legacyResult, v2Result] = await Promise.all([
+        supabaseClient
+          .from('rix_runs')
+          .select(fullTextColumns)
+          .or(legacyIlikeFilter)
+          .limit(5000),
+        supabaseClient
+          .from('rix_runs_v2')
+          .select(fullTextColumnsV2)
+          .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
+          .or(v2IlikeFilter)
+          .limit(5000)
+      ]);
+      
+      if (legacyResult.error) {
+        console.error(`${logPrefix} Error in legacy full-text search for "${keyword}":`, legacyResult.error);
+      }
+      if (v2Result.error) {
+        console.error(`${logPrefix} Error in V2 full-text search for "${keyword}":`, v2Result.error);
+      }
+      
+      const legacyData = legacyResult.data || [];
+      const v2Data = v2Result.data || [];
+      
+      // Merge with V2 taking priority (dedup by company+model+period)
+      const mergedMap = new Map<string, any>();
+      legacyData.forEach(r => {
+        const key = `${r["05_ticker"]}_${r["02_model_name"]}_${r["06_period_from"]}`;
+        mergedMap.set(key, { ...r, matchedKeyword: keyword });
+      });
+      v2Data.forEach(r => {
+        const key = `${r["05_ticker"]}_${r["02_model_name"]}_${r["06_period_from"]}`;
+        mergedMap.set(key, { ...r, matchedKeyword: keyword }); // V2 overwrites
+      });
+      
+      const mergedResults = Array.from(mergedMap.values());
+      if (mergedResults.length > 0) {
+        console.log(`${logPrefix} Found ${mergedResults.length} records mentioning "${keyword}" (${legacyData.length} legacy + ${v2Data.length} v2)`);
+        fullTextSearchResults.push(...mergedResults);
       }
     }
     
@@ -3751,10 +3795,14 @@ async function handleStandardChat(
       batch_execution_date
     `;
     
+    // Grok/Qwen raw text columns only exist in rix_runs_v2
+    const v2ExtraFullDataColumns = `respuesta_bruto_grok, respuesta_bruto_qwen`;
+    
     for (const company of detectedCompanies.slice(0, 8)) {
       const companyFullData = await fetchUnifiedRixData({
         supabaseClient,
         columns: fullDataColumns,
+        v2ExtraColumns: v2ExtraFullDataColumns,
         tickerFilter: company.ticker,
         limit: 48, // 6 models × 8 weeks
         logPrefix
