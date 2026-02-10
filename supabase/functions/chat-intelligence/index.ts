@@ -1083,7 +1083,7 @@ async function getRelevantCompetitors(
     console.warn(`${logPrefix} NO COMPETITORS FOUND for ${company.ticker} - using fallback IBEX35`);
     
     const ibex35Fallback = allCompanies
-      .filter(c => c.ibex_family_code === 'IBEX35' && c.ticker !== company.ticker)
+      .filter(c => c.ibex_family_code === 'IBEX-35' && c.ticker !== company.ticker)
       .slice(0, limit);
     
     for (const c of ibex35Fallback) {
@@ -2022,7 +2022,7 @@ serve(async (req) => {
       
       // Get some example companies to suggest
       const exampleCompanies = companiesCache?.slice(0, 20).map(c => c.issuer_name) || [];
-      const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX35').slice(0, 10).map(c => c.issuer_name) || [];
+      const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX-35').slice(0, 10).map(c => c.issuer_name) || [];
       
       const suggestedCompanies = [...new Set([...ibexCompanies, ...exampleCompanies])].slice(0, 8);
       
@@ -2181,7 +2181,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
 }
 
 function getRedirectResponse(category: QuestionCategory, question: string, languageName: string, companiesCache: any[]): { answer: string; suggestedQuestions: string[] } {
-  const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX35').slice(0, 5).map(c => c.issuer_name) || ['Telefónica', 'BBVA', 'Santander', 'Iberdrola', 'Inditex'];
+  const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX-35').slice(0, 5).map(c => c.issuer_name) || ['Telefónica', 'BBVA', 'Santander', 'Iberdrola', 'Inditex'];
   
   const responses: Record<QuestionCategory, { answer: string; suggestedQuestions: string[] }> = {
     agent_identity: {
@@ -5379,7 +5379,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
         
         const avgRix = validScores.reduce((a, b) => a + b, 0) / validScores.length;
         
-        if (companyInfo.ibex_family_code === 'IBEX35') {
+        if (companyInfo.ibex_family_code === 'IBEX-35') {
           ibex35Companies.push({ company, avgRix });
         } else if (!companyInfo.cotiza_en_bolsa) {
           nonTradedCompanies.push({ company, avgRix });
