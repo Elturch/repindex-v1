@@ -3976,6 +3976,136 @@ async function handleStandardChat(
   console.log(`${logPrefix} Total RIX records loaded (direct period): ${allRixData.length} (depth: ${depthLevel})`);
 
   // =============================================================================
+  // PASO 5B: SQL-TO-NARRATIVE — Consulta SQL precisa para la pregunta
+  // =============================================================================
+  // En vez de inyectar 1.074+ filas de rankings en el contexto del LLM,
+  // generamos una consulta SQL precisa y le damos SOLO el resultado relevante.
+  // =============================================================================
+
+  let sqlResultData: any[] | null = null;
+  let generatedSQL: string | null = null;
+
+  try {
+    const sqlCurrentPeriodFrom = allRixData?.[0]?.['06_period_from'] || null;
+    const sqlCurrentPeriodTo = allRixData?.[0]?.['07_period_to'] || null;
+
+    if (sqlCurrentPeriodFrom) {
+      const distinctPeriods = [...new Set(allRixData.map(r => r['06_period_from']).filter(Boolean))]
+        .sort((a, b) => b.localeCompare(a));
+      const sqlPrevPeriodFrom = distinctPeriods[1] || null;
+
+      const ibex35List = (companiesCache || [])
+        .filter(c => c.ibex_family_code === 'IBEX-35')
+        .map(c => `${c.issuer_name} (${c.ticker})`)
+        .sort().join(', ');
+
+      const sectorList = [...new Set((companiesCache || []).map(c => c.sector_category).filter(Boolean))].sort().join(', ');
+      const modelNames = [...new Set(allRixData.map(r => r['02_model_name']).filter(Boolean))].join(', ');
+
+      const sqlSchemaPrompt = `Generate a PostgreSQL SELECT query for this user question.
+
+DATABASE SCHEMA:
+Table "rix_runs_v2": Weekly AI model evaluations of company reputation
+  - "02_model_name" TEXT (values: ${modelNames})
+  - "03_target_name" TEXT: Company name
+  - "05_ticker" TEXT: Stock ticker (e.g. TEF, SAN, IBE)
+  - "06_period_from" DATE, "07_period_to" DATE: Week range
+  - "09_rix_score" NUMERIC: Overall RIX score (0-100)
+  - "51_rix_score_adjusted" NUMERIC: Adjusted RIX score (preferred)
+  - "23_nvm_score","26_drm_score","29_sim_score","32_rmm_score","35_cem_score","38_gam_score","41_dcm_score","44_cxm_score": 8 sub-metrics
+  - "10_resumen" TEXT: Summary
+  - batch_execution_date TIMESTAMPTZ
+
+Table "repindex_root_issuers": Master company registry
+  - ticker TEXT PK, issuer_name TEXT
+  - ibex_family_code TEXT ('IBEX-35','IBEX-MC','IBEX-SC','No-IBEX')
+  - sector_category TEXT (${sectorList})
+  - subsector TEXT, cotiza_en_bolsa BOOLEAN
+
+CURRENT WEEK: ${sqlCurrentPeriodFrom} to ${sqlCurrentPeriodTo}
+PREVIOUS WEEK start: ${sqlPrevPeriodFrom || 'unknown'}
+IBEX-35: ${ibex35List}
+
+RULES:
+1. Use COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score
+2. JOIN: JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC')
+3. Always: r."09_rix_score" IS NOT NULL
+4. Current week: r."06_period_from" = '${sqlCurrentPeriodFrom}'
+5. For IBEX-35: i.ibex_family_code = 'IBEX-35'
+6. Always include: "03_target_name", "05_ticker", "02_model_name", rix_score
+7. Include all 8 sub-metrics for rankings/analysis
+8. DO NOT use LIMIT unless user asks for "top N"
+
+EXAMPLES:
+Q: "ranking IBEX-35 de ChatGPT"
+SQL: SELECT r."03_target_name", r."05_ticker", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score" FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."02_model_name" = 'ChatGPT' AND r."06_period_from" = '${sqlCurrentPeriodFrom}' AND i.ibex_family_code = 'IBEX-35' AND r."09_rix_score" IS NOT NULL ORDER BY rix_score DESC
+
+Q: "análisis de Telefónica"
+SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score", r."10_resumen" FROM rix_runs_v2 r WHERE (r."03_target_name" ILIKE '%Telefonica%' OR r."05_ticker" IN ('TEF','TEF.MC')) AND r."06_period_from" = '${sqlCurrentPeriodFrom}' AND r."09_rix_score" IS NOT NULL ORDER BY r."02_model_name"
+
+Q: "ranking completo de esta semana"
+SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score", i.ibex_family_code FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."06_period_from" = '${sqlCurrentPeriodFrom}' AND r."09_rix_score" IS NOT NULL ORDER BY rix_score DESC
+
+Q: "comparar bancos"
+SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score" FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."06_period_from" = '${sqlCurrentPeriodFrom}' AND i.sector_category = 'Financiero' AND r."09_rix_score" IS NOT NULL ORDER BY rix_score DESC
+
+USER QUESTION: "${question}"
+
+Respond with ONLY the SQL query. No markdown, no explanation.`;
+
+      console.log(`${logPrefix} SQL-to-Narrative: Generating SQL from user question...`);
+
+      const sqlGenResult = await callAISimple([
+        { role: 'system', content: 'You are a PostgreSQL query generator. Output ONLY valid SQL. No markdown, no explanation, no backticks.' },
+        { role: 'user', content: sqlSchemaPrompt }
+      ], 'gpt-4o-mini', 800, logPrefix);
+
+      if (sqlGenResult) {
+        generatedSQL = sqlGenResult.trim()
+          .replace(/^```sql\n?/i, '').replace(/^```\n?/, '')
+          .replace(/\n?```$/, '').trim();
+
+        // Security validation
+        const lowerSQL = generatedSQL.toLowerCase().trim();
+        const hasForbidden = /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke)\b/i.test(generatedSQL);
+
+        if (!lowerSQL.startsWith('select')) {
+          console.warn(`${logPrefix} SQL doesn't start with SELECT: ${generatedSQL.substring(0, 80)}`);
+          generatedSQL = null;
+        } else if (hasForbidden) {
+          console.warn(`${logPrefix} SQL contains forbidden keywords`);
+          generatedSQL = null;
+        }
+
+        if (generatedSQL) {
+          console.log(`${logPrefix} SQL validated. Executing: ${generatedSQL.substring(0, 200)}...`);
+
+          const { data: sqlData, error: sqlError } = await supabaseClient.rpc('execute_sql', {
+            sql_query: generatedSQL
+          });
+
+          if (sqlError) {
+            console.error(`${logPrefix} SQL execution error: ${sqlError.message}`);
+          } else if (sqlData && Array.isArray(sqlData) && sqlData.length > 0) {
+            sqlResultData = sqlData;
+            console.log(`${logPrefix} SQL result: ${sqlResultData.length} rows`);
+          } else if (sqlData && sqlData.error) {
+            console.error(`${logPrefix} SQL returned error: ${sqlData.error}`);
+          } else {
+            console.warn(`${logPrefix} SQL returned empty result`);
+          }
+        }
+      } else {
+        console.warn(`${logPrefix} SQL generation returned no result`);
+      }
+    }
+  } catch (sqlPipelineError) {
+    console.error(`${logPrefix} SQL-to-Narrative pipeline error:`, sqlPipelineError);
+  }
+
+  console.log(`${logPrefix} SQL pipeline: ${sqlResultData?.length || 0} rows. Metadata fallback: ${allRixData.length} rows`);
+
+  // =============================================================================
   // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
   // =============================================================================
   let context = '';
@@ -4300,214 +4430,93 @@ async function handleStandardChat(
     }
   }
 
-  // 6.3 Construir ranking general de la semana actual
-  if (allRixData && allRixData.length > 0) {
-    const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
+  // 6.3 DATOS CUANTITATIVOS — RESULTADO SQL PRECISO
+  // En vez de 6 tablas de 179 filas, inyectamos SOLO el resultado SQL focalizado
+  if (sqlResultData && sqlResultData.length > 0) {
+    const sqlPeriodFrom = sqlResultData[0]?.['06_period_from'] || '';
+    const sqlPeriodTo = sqlResultData[0]?.['07_period_to'] || '';
 
-    const uniquePeriods = [...new Set(allRixData.map(getPeriodKey))]
-      .sort((a, b) => {
-        const dateA = a.split('|')[1];
-        const dateB = b.split('|')[1];
-        return dateB.localeCompare(dateA);
-      });
+    context += `\n📊 ======================================================================\n`;
+    context += `📊 DATOS DE LA BASE DE DATOS (resultado exacto de consulta SQL)\n`;
+    context += `📊 ${sqlResultData.length} registros encontrados\n`;
+    if (sqlPeriodFrom) context += `📊 Período: ${sqlPeriodFrom} a ${sqlPeriodTo}\n`;
+    if (generatedSQL) context += `📊 Consulta: ${generatedSQL.substring(0, 200)}...\n`;
+    context += `📊 ======================================================================\n\n`;
+    context += `⚠️ REGLA CRÍTICA: Estos datos son EXACTOS de la base de datos.\n`;
+    context += `Cita cada valor LITERALMENTE. NO redondees, NO inventes, NO omitas filas.\n\n`;
 
-    const currentPeriod = uniquePeriods[0];
-    const currentWeekData = allRixData.filter(run => getPeriodKey(run) === currentPeriod);
+    // Build markdown table from SQL result
+    const columns = Object.keys(sqlResultData[0]);
+    const friendlyNames: Record<string, string> = {
+      '03_target_name': 'Empresa', '05_ticker': 'Ticker', '02_model_name': 'Modelo',
+      'rix_score': 'RIX', '09_rix_score': 'RIX', '51_rix_score_adjusted': 'RIX Adj',
+      '23_nvm_score': 'NVM', '26_drm_score': 'DRM', '29_sim_score': 'SIM',
+      '32_rmm_score': 'RMM', '35_cem_score': 'CEM', '38_gam_score': 'GAM',
+      '41_dcm_score': 'DCM', '44_cxm_score': 'CXM', '10_resumen': 'Resumen',
+      'ibex_family_code': 'IBEX', 'sector_category': 'Sector',
+      '06_period_from': 'Desde', '07_period_to': 'Hasta',
+    };
 
-    const previousPeriod = uniquePeriods[1];
-    const previousWeekData = previousPeriod 
-      ? allRixData.filter(run => getPeriodKey(run) === previousPeriod) 
-      : [];
-
-    const [currentFrom, currentTo] = currentPeriod ? currentPeriod.split('|') : [null, null];
-    const [prevFrom, prevTo] = previousPeriod ? previousPeriod.split('|') : [null, null];
-
-    console.log(`${logPrefix} Current period: ${currentFrom} to ${currentTo} (${currentWeekData.length} records)`);
-    console.log(`${logPrefix} Previous period: ${prevFrom || 'N/A'} to ${prevTo || 'N/A'} (${previousWeekData.length} records)`);
-
-    // =========================================================================
-    // 6.4 RANKING GENERAL (sin filtros destructivos)
-    // =========================================================================
-    const rankedRecords = currentWeekData
-      // ELIMINADO EL FILTRO DESTRUCTIVO: .filter(run => run["32_rmm_score"] !== 0)
-      .map(run => {
-        // Ticker matching: rix_runs_v2 may use 'SAN' while repindex_root_issuers uses 'SAN.MC'
-        const runTicker = run["05_ticker"] || '';
-        const companyInfo = companiesCache?.find(c => 
-          c.ticker === runTicker || 
-          c.ticker === `${runTicker}.MC` || 
-          c.ticker.replace('.MC', '') === runTicker
-        );
-        return {
-          company: run["03_target_name"],
-          ticker: run["05_ticker"],
-          model: run["02_model_name"],
-          rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
-          nvm: run["23_nvm_score"],
-          drm: run["26_drm_score"],
-          sim: run["29_sim_score"],
-          rmm: run["32_rmm_score"],
-          cem: run["35_cem_score"],
-          gam: run["38_gam_score"],
-          dcm: run["41_dcm_score"],
-          cxm: run["44_cxm_score"],
-          ibexFamily: companyInfo?.ibex_family_code || 'Otro',
-          periodFrom: run["06_period_from"],
-          periodTo: run["07_period_to"]
-        };
-      })
-      .filter(r => r.company && r.rixScore != null)
-      .sort((a, b) => (b.rixScore || 0) - (a.rixScore || 0));
-
-    const companyAverages = new Map<string, { scores: number[], ticker: string }>();
-    
-    currentWeekData.forEach(run => {
-      const companyName = run["03_target_name"];
-      const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
-      
-      if (!companyName || score == null) return;
-      
-      if (!companyAverages.has(companyName)) {
-        companyAverages.set(companyName, {
-          scores: [],
-          ticker: run["05_ticker"] || ''
-        });
-      }
-      
-      companyAverages.get(companyName)!.scores.push(score);
+    const skipColumns = new Set(['batch_execution_date', 'analysis_completed_at', '01_run_id', 'id', 'created_at', 'updated_at']);
+    const displayColumns = columns.filter(c => {
+      if (skipColumns.has(c)) return false;
+      if (['10_resumen', '11_puntos_clave'].includes(c) && sqlResultData!.length > 10) return false;
+      return true;
     });
 
-    const rankedByAverage = Array.from(companyAverages.entries())
+    const headers = displayColumns.map(c => friendlyNames[c] || c.replace(/^\d+_/, ''));
+    context += `| ${headers.join(' | ')} |\n`;
+    context += `|${headers.map(() => '---').join('|')}|\n`;
+
+    sqlResultData.forEach(row => {
+      const values = displayColumns.map(c => {
+        const val = row[c];
+        if (val === null || val === undefined) return '-';
+        if (typeof val === 'string' && val.length > 150) return val.substring(0, 150) + '...';
+        return String(val);
+      });
+      context += `| ${values.join(' | ')} |\n`;
+    });
+    context += `\n`;
+
+    // If small result set, show summaries
+    if (sqlResultData.length <= 12) {
+      const withResumen = sqlResultData.filter(r => r['10_resumen']);
+      if (withResumen.length > 0) {
+        context += `### Resúmenes por modelo:\n`;
+        withResumen.forEach(r => {
+          context += `**${r['03_target_name'] || ''} — ${r['02_model_name'] || ''}** (RIX: ${r['rix_score'] || r['09_rix_score'] || '-'}):\n`;
+          context += `${(r['10_resumen'] || '').substring(0, 500)}\n\n`;
+        });
+      }
+    }
+
+  } else if (allRixData && allRixData.length > 0) {
+    // FALLBACK: SQL pipeline failed — build compact summary (NOT 1074 rows)
+    const companyAvg = new Map<string, { scores: number[], ticker: string }>();
+    allRixData.forEach(run => {
+      const company = run['03_target_name'];
+      const score = run['51_rix_score_adjusted'] ?? run['09_rix_score'];
+      if (!company || score == null) return;
+      if (!companyAvg.has(company)) companyAvg.set(company, { scores: [], ticker: run['05_ticker'] || '' });
+      companyAvg.get(company)!.scores.push(score);
+    });
+
+    const ranked = Array.from(companyAvg.entries())
       .map(([company, data]) => ({
-        company,
-        ticker: data.ticker,
-        avgRix: Math.round((data.scores.reduce((a, b) => a + b, 0) / data.scores.length) * 10) / 10,
-        modelCount: data.scores.length
+        company, ticker: data.ticker,
+        avgRix: Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length * 10) / 10,
+        models: data.scores.length
       }))
       .sort((a, b) => b.avgRix - a.avgRix);
 
-    const trends = new Map<string, number>();
-    if (previousWeekData.length > 0) {
-      const prevScores = new Map<string, number[]>();
-      previousWeekData.forEach(run => {
-        const companyName = run["03_target_name"];
-        const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
-        if (!companyName || score == null) return;
-        
-        if (!prevScores.has(companyName)) prevScores.set(companyName, []);
-        prevScores.get(companyName)!.push(score);
-      });
-
-      rankedByAverage.forEach(curr => {
-        const prevData = prevScores.get(curr.company);
-        if (prevData && prevData.length > 0) {
-          const prevAvg = prevData.reduce((a, b) => a + b, 0) / prevData.length;
-          trends.set(curr.company, curr.avgRix - prevAvg);
-        }
-      });
-    }
-
-    const periodFrom = rankedRecords[0]?.periodFrom;
-    const periodTo = rankedRecords[0]?.periodTo;
-    
-    context += `\n📊 RANKINGS INDIVIDUALES POR MODELO DE IA — SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
-    context += `Cada modelo de IA evalúa de forma independiente. A continuación se muestra el ranking completo de cada modelo.\n`;
-    context += `Total de evaluaciones esta semana: ${rankedRecords.length}\n\n`;
-
-    // Group by AI model so every model's full ranking is visible to the LLM
-    const recordsByModel = new Map<string, typeof rankedRecords>();
-    rankedRecords.forEach(record => {
-      if (!recordsByModel.has(record.model)) {
-        recordsByModel.set(record.model, []);
-      }
-      recordsByModel.get(record.model)!.push(record);
+    context += `\n📊 RANKING GENERAL (promedio modelos IA, ${ranked.length} empresas, FALLBACK):\n`;
+    context += `| # | Empresa | Ticker | RIX Promedio | Modelos |\n`;
+    context += `|---|---------|--------|--------------|--------|\n`;
+    ranked.forEach((r, i) => {
+      context += `| ${i + 1} | ${r.company} | ${r.ticker} | ${r.avgRix} | ${r.models} |\n`;
     });
-
-    for (const [model, records] of recordsByModel) {
-      context += `\n📊 RANKING ${model.toUpperCase()} (${records.length} empresas evaluadas):\n`;
-      context += `| # | Empresa | Ticker | IBEX | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
-      context += `|---|---------|--------|------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
-      records.forEach((record, idx) => {
-        context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.ibexFamily} | ${record.rixScore} | ${record.nvm ?? '-'} | ${record.drm ?? '-'} | ${record.sim ?? '-'} | ${record.rmm ?? '-'} | ${record.cem ?? '-'} | ${record.gam ?? '-'} | ${record.dcm ?? '-'} | ${record.cxm ?? '-'} |\n`;
-      });
-    }
-
     context += `\n`;
-
-    context += `\n📊 PROMEDIOS POR EMPRESA (solo usar si el usuario pregunta explícitamente):\n`;
-    context += `Esta tabla muestra el promedio de los 4 modelos de IA para cada empresa.\n`;
-    context += `Total de empresas evaluadas: ${rankedByAverage.length}\n\n`;
-    context += `| # | Empresa | Ticker | RIX Promedio | # Modelos | Tendencia vs Semana Anterior |\n`;
-    context += `|---|---------|--------|--------------|-----------|------------------------------|\n`;
-    
-    rankedByAverage.forEach((company, idx) => {
-      const trend = trends.get(company.company);
-      const trendStr = trend !== undefined 
-        ? (trend > 0 ? `↗ +${trend.toFixed(1)}` : trend < 0 ? `↘ ${trend.toFixed(1)}` : '→ 0.0')
-        : 'N/A';
-      
-      context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${company.modelCount} | ${trendStr} |\n`;
-    });
-
-    context += `\n`;
-
-    const modelBreakdown = new Map<string, { count: number, avgScore: number, companies: Set<string> }>();
-    
-    currentWeekData.forEach(run => {
-      const model = run["02_model_name"];
-      const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
-      const company = run["03_target_name"];
-      
-      if (!model || score == null) return;
-      
-      if (!modelBreakdown.has(model)) {
-        modelBreakdown.set(model, { count: 0, avgScore: 0, companies: new Set() });
-      }
-      
-      const entry = modelBreakdown.get(model)!;
-      entry.count++;
-      entry.avgScore += score;
-      entry.companies.add(company);
-    });
-
-    context += `\n🤖 ANÁLISIS POR MODELO DE IA:\n\n`;
-    Array.from(modelBreakdown.entries())
-      .sort((a, b) => b[1].avgScore / b[1].count - a[1].avgScore / a[1].count)
-      .forEach(([model, data]) => {
-        const avg = Math.round((data.avgScore / data.count) * 10) / 10;
-        context += `**${model}**: ${data.count} evaluaciones, ${data.companies.size} empresas, promedio ${avg}\n`;
-      });
-
-    context += `\n`;
-
-    if (trends.size > 0) {
-      const sortedByTrend = Array.from(trends.entries())
-        .map(([company, trend]) => {
-          const companyData = rankedByAverage.find(c => c.company === company);
-          return { company, trend, ticker: companyData?.ticker || '', rix: companyData?.avgRix || 0 };
-        })
-        .sort((a, b) => b.trend - a.trend);
-
-      const topGainers = sortedByTrend.slice(0, 5);
-      const topLosers = sortedByTrend.slice(-5).reverse();
-
-      context += `\n📈 TOP 5 GANADORES (mayor mejora promedio vs semana anterior):\n`;
-      topGainers.forEach((item, idx) => {
-        context += `${idx + 1}. ${item.company} (${item.ticker}): RIX promedio ${item.rix}, cambio +${item.trend.toFixed(1)}\n`;
-      });
-
-      context += `\n📉 TOP 5 PERDEDORES (mayor caída promedio vs semana anterior):\n`;
-      topLosers.forEach((item, idx) => {
-        context += `${idx + 1}. ${item.company} (${item.ticker}): RIX promedio ${item.rix}, cambio ${item.trend.toFixed(1)}\n`;
-      });
-
-      context += `\n`;
-    }
-
-    if (previousWeekData.length > 0) {
-      context += `\n📅 DATOS SEMANA ANTERIOR (${prevFrom} a ${prevTo}):\n`;
-      context += `Total de evaluaciones: ${previousWeekData.length}\n\n`;
-    }
   } else {
     context += '\n⚠️ No hay datos estructurados de RIX disponibles.\n\n';
   }
@@ -4530,25 +4539,24 @@ Responde SIEMPRE en ${languageName}. Sin excepciones.
 ═══════════════════════════════════════════════════════════════════════════════
 
 ═══════════════════════════════════════════════════════════════════════════════
-        🚨 REGLA CRÍTICA PARA RANKINGS DE ÍNDICES BURSÁTILES 🚨
+        🚨 REGLA CRÍTICA: DATOS SQL = VERDAD ABSOLUTA 🚨
 ═══════════════════════════════════════════════════════════════════════════════
 
-Cuando el usuario solicite un ranking de un índice (IBEX-35, IBEX Medium Cap, 
-IBEX Small Cap, etc.), DEBES cumplir TODAS estas reglas sin excepción:
+Los datos cuantitativos en la sección "DATOS DE LA BASE DE DATOS" provienen 
+de una consulta SQL ejecutada directamente contra la base de datos.
+Son 100% exactos y verificados. REGLAS SIN EXCEPCIÓN:
 
-1. **INCLUIR TODAS LAS EMPRESAS**: Si el índice tiene 35 empresas, tu tabla 
-   DEBE tener exactamente 35 filas. NO resumas, NO omitas, NO agrupes.
-2. **USAR LA COLUMNA IBEX**: Filtra las empresas usando la columna "IBEX" 
-   de la tabla de ranking del contexto. Solo incluye las que pertenecen al 
-   índice solicitado.
-3. **ORDEN ESTRICTO POR SCORE**: Ordena de mayor a menor score RIX. 
-   Si Endesa tiene 67 y Merlin Properties tiene 65, Endesa va ANTES.
-4. **SIN EXCEPCIONES**: No puedes decidir que "25 empresas son suficientes" 
-   o que "las demás tienen scores similares". TODAS deben aparecer.
-5. **VERIFICACIÓN**: Antes de enviar, cuenta las filas de tu tabla. Si el 
-   usuario pidió IBEX-35 y tienes menos de 35 filas, tu respuesta es INCORRECTA.
+1. **CITAR LITERALMENTE**: Cada score DEBE copiarse exactamente como aparece 
+   en la tabla de datos SQL. NO redondees, NO estimes, NO inventes.
+2. **INCLUIR TODAS LAS FILAS**: Si la tabla tiene 35 filas, tu respuesta debe 
+   incluir las 35. NO resumas, NO omitas, NO agrupes.
+3. **NO CONFUNDIR EMPRESAS**: Acciona (ANA) y Acciona Energía (ANE.MC) son 
+   empresas DIFERENTES. Verifica el ticker antes de citar scores.
+4. **SIN INVENCIONES**: Si un dato no aparece en la tabla SQL, di "No dispongo 
+   de ese dato". NUNCA inventes un score.
+5. **ORDEN**: Respeta el orden de la tabla (normalmente por score descendente).
 
-Esta regla aplica a TODOS los rankings de índices, sin importar el modelo de IA.
+Esta regla aplica a TODOS los análisis, rankings y comparativas.
 ═══════════════════════════════════════════════════════════════════════════════
 
 - Cada score RIX, porcentaje o cifra que cites DEBE existir LITERALMENTE 
