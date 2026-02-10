@@ -4348,12 +4348,9 @@ async function handleStandardChat(
       context += `\n📊 RANKING ${model.toUpperCase()} (${records.length} empresas evaluadas):\n`;
       context += `| # | Empresa | Ticker | IBEX | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
       context += `|---|---------|--------|------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
-      records.slice(0, 40).forEach((record, idx) => {
+      records.forEach((record, idx) => {
         context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.ibexFamily} | ${record.rixScore} | ${record.nvm ?? '-'} | ${record.drm ?? '-'} | ${record.sim ?? '-'} | ${record.rmm ?? '-'} | ${record.cem ?? '-'} | ${record.gam ?? '-'} | ${record.dcm ?? '-'} | ${record.cxm ?? '-'} |\n`;
       });
-      if (records.length > 40) {
-        context += `| ... | ${records.length - 40} empresas más | | | | | | | | | | | |\n`;
-      }
     }
 
     context += `\n`;
@@ -4364,8 +4361,7 @@ async function handleStandardChat(
     context += `| # | Empresa | Ticker | RIX Promedio | # Modelos | Tendencia vs Semana Anterior |\n`;
     context += `|---|---------|--------|--------------|-----------|------------------------------|\n`;
     
-    // Increased from 20 to 50 companies shown
-    rankedByAverage.slice(0, 50).forEach((company, idx) => {
+    rankedByAverage.forEach((company, idx) => {
       const trend = trends.get(company.company);
       const trendStr = trend !== undefined 
         ? (trend > 0 ? `↗ +${trend.toFixed(1)}` : trend < 0 ? `↘ ${trend.toFixed(1)}` : '→ 0.0')
@@ -4373,10 +4369,6 @@ async function handleStandardChat(
       
       context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${company.modelCount} | ${trendStr} |\n`;
     });
-
-    if (rankedByAverage.length > 50) {
-      context += `\n... y ${rankedByAverage.length - 50} empresas más.\n`;
-    }
 
     context += `\n`;
 
