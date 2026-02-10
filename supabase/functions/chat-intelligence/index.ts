@@ -4257,15 +4257,26 @@ async function handleStandardChat(
     // =========================================================================
     const rankedRecords = currentWeekData
       // ELIMINADO EL FILTRO DESTRUCTIVO: .filter(run => run["32_rmm_score"] !== 0)
-      .map(run => ({
-        company: run["03_target_name"],
-        ticker: run["05_ticker"],
-        model: run["02_model_name"],
-        rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
-        rmmScore: run["32_rmm_score"],
-        periodFrom: run["06_period_from"],
-        periodTo: run["07_period_to"]
-      }))
+      .map(run => {
+        const companyInfo = companiesCache?.find(c => c.ticker === run["05_ticker"]);
+        return {
+          company: run["03_target_name"],
+          ticker: run["05_ticker"],
+          model: run["02_model_name"],
+          rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
+          nvm: run["23_nvm_score"],
+          drm: run["26_drm_score"],
+          sim: run["29_sim_score"],
+          rmm: run["32_rmm_score"],
+          cem: run["35_cem_score"],
+          gam: run["38_gam_score"],
+          dcm: run["41_dcm_score"],
+          cxm: run["44_cxm_score"],
+          ibexFamily: companyInfo?.ibex_family_code || 'Otro',
+          periodFrom: run["06_period_from"],
+          periodTo: run["07_period_to"]
+        };
+      })
       .filter(r => r.company && r.rixScore != null)
       .sort((a, b) => (b.rixScore || 0) - (a.rixScore || 0));
 
@@ -4335,13 +4346,13 @@ async function handleStandardChat(
 
     for (const [model, records] of recordsByModel) {
       context += `\n📊 RANKING ${model.toUpperCase()} (${records.length} empresas evaluadas):\n`;
-      context += `| # | Empresa | Ticker | RIX |\n`;
-      context += `|---|---------|--------|-----|\n`;
+      context += `| # | Empresa | Ticker | IBEX | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
+      context += `|---|---------|--------|------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
       records.slice(0, 40).forEach((record, idx) => {
-        context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} |\n`;
+        context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.ibexFamily} | ${record.rixScore} | ${record.nvm ?? '-'} | ${record.drm ?? '-'} | ${record.sim ?? '-'} | ${record.rmm ?? '-'} | ${record.cem ?? '-'} | ${record.gam ?? '-'} | ${record.dcm ?? '-'} | ${record.cxm ?? '-'} |\n`;
       });
       if (records.length > 40) {
-        context += `| ... | ${records.length - 40} empresas más | | |\n`;
+        context += `| ... | ${records.length - 40} empresas más | | | | | | | | | | | |\n`;
       }
     }
 
