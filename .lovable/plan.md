@@ -1,124 +1,207 @@
 
 
-# Plan: Carga directa de datos del periodo actual — eliminar paginacion cruzada
+# Plan: Restaurar arquitectura SQL-to-Narrative en el Agente Rix
 
-## Por que hemos fallado 3 veces
+## El problema real (por que hemos fallado 4 veces)
 
-El problema no es el truncamiento ni el batch size. El problema es **arquitectural**: la funcion `fetchUnifiedRixData` aplica `.range()` simultaneamente a dos tablas (`rix_runs` con 9.548 filas y `rix_runs_v2` con 4.142 filas), las mezcla con deduplicacion por lotes, y luego filtra en JavaScript por el periodo actual. Este enfoque tiene multiples puntos de fallo:
+Hemos estado parcheando el sintoma (paginacion, contexto, prompts) sin atacar la causa raiz: **la arquitectura actual es fundamentalmente incorrecta**.
+
+### Arquitectura actual (rota)
 
 ```text
-Estado actual del flujo:
-1. Paginar AMBAS tablas con .range(0, 999)     -> 1.000 de v2 (de 1.074 actuales)
-2. Paginar AMBAS tablas con .range(1000, 1999) -> 74 restantes de v2 + mezcla legacy
-3. Dedup por lote (no global)                  -> Las 74 filas pueden perderse
-4. Filtrar en JS por periodo                   -> "Current period: 1.000 records" (FALTAN 74)
-5. Empresas perdidas: Endesa, Santander, Iberdrola, Enagas, Ferrovial, Unicaja, Acciona Energia
+Pregunta del usuario
+    |
+    v
+Cargar 1.074 filas de rix_runs_v2 en bruto
+    |
+    v
+Inyectar TODO como texto Markdown en el contexto del LLM (~200K tokens)
+    |
+    v
+Pedirle al LLM que busque, filtre, ordene y narre dentro de 1.074 filas
+    |
+    v
+El LLM se confunde, omite empresas, inventa scores, mezcla tickers
 ```
 
-La solucion es **no paginar ciegamente todo el historico** sino **pedir directamente los datos del periodo que necesitamos** con un filtro WHERE en la base de datos.
-
-## Solucion definitiva: Carga directa por periodo
-
-### Cambio 1 — Nueva funcion `fetchCurrentPeriodData`
-
-Crear una funcion dedicada que:
-1. Consulta los 2 periodos mas recientes directamente en `rix_runs_v2` (que es la fuente autoritativa para datos actuales)
-2. Usa filtro `.eq("06_period_from", periodFrom)` para obtener EXACTAMENTE los registros del periodo
-3. Pagina con `.range()` SOLO dentro de esa consulta filtrada (1.074 filas = 2 lotes de 1.000)
-4. Garantiza completitud: si la semana tiene 1.074 registros, los carga TODOS
+### Arquitectura correcta (la que funcionaba)
 
 ```text
-Nuevo flujo:
-1. SELECT DISTINCT period_from, period_to FROM rix_runs_v2 ORDER BY DESC LIMIT 2
-2. Para cada periodo: paginar con .range() + filtro por periodo
-3. Resultado: 1.074/1.074 registros del periodo actual (100%)
-4. Sin dedup cruzada, sin mezcla de tablas, sin filas perdidas
+Pregunta del usuario
+    |
+    v
+Paso 1: Un LLM traduce la pregunta a una consulta SQL precisa
+    |
+    v
+Paso 2: Se ejecuta la SQL contra la base de datos (resultado exacto, 35 filas para IBEX-35)
+    |
+    v
+Paso 3: Un modelo razonador recibe SOLO el resultado SQL (35 filas, no 1.074)
+         y genera un informe ejecutivo narrativo
+    |
+    v
+Respuesta precisa, sin omisiones, sin scores inventados
 ```
 
-### Cambio 2 — Reemplazar el bucle de paginacion actual (lineas 3893-3937)
+La diferencia es critica: en vez de pedirle al LLM que navegue 1.074 filas de datos tabulares (tarea en la que los LLMs fallan sistematicamente), le damos un resultado SQL limpio y preciso de 35 filas y le pedimos que lo convierta en prosa.
 
-Sustituir todo el bloque de paginacion actual por una llamada a la nueva funcion. El codigo actual:
+## Bug adicional descubierto: Datos duplicados
+
+Acciona Energia tiene registros con DOS tickers diferentes en `rix_runs_v2` para la misma semana:
+
+- `ANE` con ChatGPT = 69
+- `ANE.MC` con ChatGPT = 46
+
+Son 12 filas (6+6) para la misma empresa. El ticker canonico en `repindex_root_issuers` es `ANE.MC`. El ticker `ANE` es un residuo de evaluaciones antiguas que NO deberia existir en la semana actual. De aqui venia el "69" que no cuadraba con el 46 real.
+
+## Solucion: Pipeline SQL-to-Narrative en 3 fases
+
+### Fase 1 -- Generacion de SQL
+
+Un primer LLM (rapido y barato, como gemini-2.5-flash) recibe:
+- La pregunta del usuario
+- El esquema de las tablas relevantes (`rix_runs_v2`, `repindex_root_issuers`)
+- Instrucciones para generar SQL preciso
+
+Ejemplo: "Dame el ranking IBEX-35 de ChatGPT esta semana" se traduce a:
 
 ```text
-// ANTES: Pagina ambas tablas ciegamente
-while (rixOffset < maxRixRecords) {
-  const batch = await fetchUnifiedRixData({ ..., offset: rixOffset });
-  // ...problema: mezcla rix_runs + rix_runs_v2 con mismo rango
-}
+SELECT r."03_target_name", r."05_ticker", r."09_rix_score",
+       r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score",
+       r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score"
+FROM rix_runs_v2 r
+JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC')
+WHERE r."02_model_name" = 'ChatGPT'
+  AND r."06_period_from" = '2026-02-01'
+  AND i.ibex_family_code = 'IBEX-35'
+  AND r."09_rix_score" IS NOT NULL
+ORDER BY r."09_rix_score" DESC
 ```
 
-Se reemplaza por:
+Resultado: exactamente 35 filas con datos verificados.
+
+### Fase 2 -- Ejecucion SQL segura
+
+Se ejecuta la consulta generada contra Supabase usando `supabase.rpc()` o una funcion SQL dedicada con parametros validados. El resultado son datos exactos de la base de datos, sin truncamiento, sin paginacion, sin deduplicacion.
+
+**Seguridad**: Solo se permiten consultas SELECT de solo lectura contra las tablas de datos RIX. Se valida la consulta antes de ejecutarla.
+
+### Fase 3 -- Narrativa con modelo razonador
+
+El modelo razonador (o3 o gemini-2.5-pro) recibe:
+- La pregunta original del usuario
+- El resultado SQL (35 filas, no 1.074)
+- El system prompt de Agente Rix (tono, estructura, metricas)
+- Contexto cualitativo del Vector Store (como ahora)
+
+Con solo 35 filas en lugar de 1.074, el modelo no puede confundir Acciona con Acciona Energia, no puede omitir Banco Santander, y no puede inventar un score de 69 porque los unicos datos que tiene son los de la consulta SQL.
+
+### Cambio adicional: Limpieza de datos duplicados ANE/ANE.MC
+
+Se necesita actualizar los registros de `rix_runs_v2` donde `05_ticker = 'ANE'` para la semana actual, o bien alinearlos con el ticker canonico `ANE.MC`, o bien eliminar los duplicados. Esto se puede hacer con una consulta de actualizacion.
+
+## Detalle tecnico de implementacion
+
+### Archivo: `supabase/functions/chat-intelligence/index.ts`
+
+**Cambios principales:**
+
+1. **Nuevo bloque: Generacion SQL** (reemplaza el bloque de carga directa por periodo, lineas 3888-3970)
+   - Crear un prompt de esquema con las columnas de `rix_runs_v2` y `repindex_root_issuers`
+   - Llamar a gemini-2.5-flash para generar la consulta SQL
+   - Validar que la SQL es SELECT-only y no contiene operaciones destructivas
+
+2. **Nuevo bloque: Ejecucion SQL** (reemplaza la construccion de ranking en JS, lineas 4303-4510)
+   - Ejecutar la SQL generada usando `supabase.rpc('execute_readonly_query', { query })` o similar
+   - Formatear el resultado como tabla Markdown compacta
+
+3. **Modificar contexto del LLM** (lineas 5000-5023)
+   - En vez de inyectar 1.074 filas de ranking, inyectar solo el resultado SQL (35-179 filas segun la pregunta)
+   - Mantener: Vector Store, grafo de conocimiento, memento corporativo, noticias
+   - Eliminar: los rankings masivos de 179 empresas x 6 modelos
+
+4. **Mantener las capacidades existentes** que no dependen de datos tabulares masivos:
+   - Busqueda vectorial (Vector Store)
+   - Grafo de conocimiento
+   - Memento corporativo
+   - Noticias corporativas
+   - Regresion estadistica
+
+### Funcion SQL segura necesaria
+
+Se necesita crear una funcion PostgreSQL `execute_readonly_query` que:
+- Solo acepte SELECT
+- Tenga timeout de 5 segundos
+- Opere con permisos de solo lectura
+- Devuelva resultados en formato JSON
 
 ```text
-// DESPUES: Carga directa del periodo actual y anterior
-// 1. Obtener los 2 periodos mas recientes
-const { data: latestPeriods } = await supabaseClient
-  .from('rix_runs_v2')
-  .select('"06_period_from", "07_period_to"')
-  .not('"09_rix_score"', 'is', null)
-  .order('batch_execution_date', { ascending: false })
-  .limit(1);
-
-// 2. Cargar TODOS los registros del periodo actual con paginacion segura
-let allCurrentData = [];
-let offset = 0;
-while (true) {
-  const { data } = await supabaseClient
-    .from('rix_runs_v2')
-    .select(columns)
-    .eq('"06_period_from"', currentPeriodFrom)
-    .eq('"07_period_to"', currentPeriodTo)
-    .not('"09_rix_score"', 'is', null)
-    .range(offset, offset + 999);
+CREATE OR REPLACE FUNCTION execute_readonly_query(query text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result jsonb;
+BEGIN
+  -- Validar que es SELECT
+  IF NOT (lower(trim(query)) LIKE 'select%') THEN
+    RAISE EXCEPTION 'Only SELECT queries allowed';
+  END IF;
   
-  allCurrentData.push(...data);
-  if (data.length < 1000) break;
-  offset += 1000;
-}
-// Resultado: 1.074/1.074 garantizados
+  -- Ejecutar con timeout
+  SET LOCAL statement_timeout = '5s';
+  EXECUTE 'SELECT jsonb_agg(row_to_json(t)) FROM (' || query || ') t' INTO result;
+  
+  RETURN COALESCE(result, '[]'::jsonb);
+END;
+$$;
 ```
 
-### Cambio 3 — Inyectar lista IBEX-35 verificada en el contexto
+### Seguridad de la funcion SQL
 
-Ademas de los rankings, inyectar la lista definitiva de las 35 empresas IBEX-35 directamente desde `repindex_root_issuers` para que el LLM no tenga que adivinar:
+La funcion `execute_readonly_query` se invoca SOLO desde el edge function con service_role_key (no desde el cliente). Adicionalmente:
+- Se valida que empiece por SELECT
+- Se aplica un timeout de 5 segundos
+- Se limita a las tablas de datos RIX (validacion adicional en el prompt de generacion SQL)
+
+## Limpieza de datos: Ticker ANE duplicado
+
+Se ejecutara una actualizacion para normalizar los tickers duplicados:
 
 ```text
-COMPOSICION OFICIAL IBEX-35 (fuente: repindex_root_issuers):
-1. Acciona (ANA) - IBEX-35
-2. Acciona Energia (ANE.MC) - IBEX-35
-3. Acerinox (ACX) - IBEX-35
-...
-35. Unicaja Banco (UNI) - IBEX-35
-
-Cuando el usuario pida un ranking IBEX-35, usa EXACTAMENTE estas 35 empresas.
+-- Opcion: Eliminar los registros con ticker ANE (sin .MC) que son duplicados
+-- La fuente canonica es ANE.MC segun repindex_root_issuers
+DELETE FROM rix_runs_v2 
+WHERE "05_ticker" = 'ANE' 
+  AND "06_period_from" = '2026-02-01';
 ```
 
-### Cambio 4 — Mantener datos historicos (opcional, para tendencias)
+O alternativamente, si los datos de ANE son los correctos y ANE.MC los duplicados, se invierte la limpieza. Esto requiere verificar cual de los dos conjuntos de evaluaciones es el correcto consultando al equipo.
 
-Para la semana anterior (necesaria para tendencias), aplicar el mismo patron: filtro por periodo + paginacion local. Esto reemplaza la carga masiva de 6.128 registros por ~2.148 registros relevantes (2 semanas).
+## Resultado esperado
+
+| Metrica | Arquitectura actual (rota) | Nueva arquitectura SQL |
+|---------|---------------------------|----------------------|
+| Datos que recibe el LLM | 1.074 filas brutas | 35 filas exactas (para IBEX-35) |
+| Acciona Energia score | "69" (ticker duplicado) | 46 (ticker canonico ANE.MC) |
+| Banco Santander | Omitido / "No dispongo" | RIX 66 (ChatGPT) |
+| Endesa | Omitido / "No dispongo" | RIX 67 (ChatGPT) |
+| Precision de scores | ~70% (LLM confunde filas) | 100% (datos de la DB directos) |
+| Tokens de contexto | ~150K (tablas masivas) | ~20K (resultado SQL + Vector Store) |
+| Coste por consulta | Alto (contexto enorme) | Menor (contexto reducido) |
 
 ## Archivos a modificar
 
 | Archivo | Cambio |
 |---------|--------|
-| `supabase/functions/chat-intelligence/index.ts` | (1) Nueva funcion `fetchCurrentPeriodData` que consulta directamente por periodo con filtro WHERE; (2) Reemplazar bucle de paginacion cruzada en lineas 3893-3937; (3) Inyectar lista IBEX-35 verificada desde companiesCache en el contexto del LLM; (4) Cargar periodo anterior con el mismo patron para tendencias |
+| `supabase/functions/chat-intelligence/index.ts` | Reemplazar carga masiva por pipeline SQL-to-Narrative en 3 fases |
+| Nueva migracion SQL | Crear funcion `execute_readonly_query` |
+| Script de limpieza | Eliminar duplicados ANE/ANE.MC en rix_runs_v2 |
 
-## Resultado esperado
+## Riesgos y mitigacion
 
-| Metrica | Antes (roto) | Despues (solucion) |
-|---------|-------------|-------------------|
-| Registros periodo actual | 1.000 de 1.074 (93%) | 1.074 de 1.074 (100%) |
-| Empresas IBEX-35 con dato | 28 de 35 | 35 de 35 |
-| Registros cargados total | 6.128 (5.054 innecesarios) | ~2.148 (solo 2 semanas) |
-| Endesa, Santander, Iberdrola | "No dispongo de ese dato" | Datos reales con score |
-| Tiempo de carga | ~3-4s (6 lotes) | ~1-2s (2-3 lotes) |
-
-## Por que esta solucion es definitiva
-
-1. **Elimina la causa raiz**: Ya no paginamos ciegamente. Pedimos exactamente lo que necesitamos
-2. **Sin dedup cruzada**: Solo consultamos rix_runs_v2 (fuente autoritativa). Sin mezcla de tablas
-3. **Garantia matematica**: Si la DB tiene 1.074 registros para el periodo, los obtenemos TODOS
-4. **Lista IBEX-35 explicita**: El LLM no puede equivocarse sobre la composicion del indice
-5. **Mas rapido**: Cargamos 2.148 registros relevantes en vez de 6.128 con historico innecesario
-6. **Escalable**: Funciona igual si el censo crece a 200, 300 o 500 empresas
+- **Riesgo**: El LLM genera SQL incorrecta. **Mitigacion**: El prompt de esquema incluye ejemplos de consultas correctas para los tipos de pregunta mas comunes (ranking por indice, comparativa, tendencia). Si la SQL falla, se usa un fallback con consultas predefinidas.
+- **Riesgo**: Preguntas abiertas que no se mapean bien a SQL (ej: "que opina ChatGPT de Telefonica"). **Mitigacion**: Para estas preguntas, se mantiene la busqueda vectorial como fuente principal, sin necesidad de SQL.
+- **Riesgo**: `execute_readonly_query` podria ser un vector de inyeccion SQL. **Mitigacion**: Solo se invoca desde el edge function con service_role, nunca desde el cliente. El prompt de generacion SQL restringe las tablas y el tipo de consulta.
 
