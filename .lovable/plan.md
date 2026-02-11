@@ -1,67 +1,49 @@
 
 
-# Plan: Blindar el pipeline SQL-to-Narrative contra duplicados y eliminar carga masiva residual
+# Plan: Corregir falso positivo en el clasificador de preguntas del Agente Rix
 
-## Diagnostico
+## Problema
 
-El pipeline SQL-to-Narrative esta implementado (PASO 5B, lineas 3978-4104), pero tiene dos problemas criticos:
+La pregunta "Me puedes habilitar un informe sobre los top 5 y bottom 5 RIX solo tomando en cuenta chatgpt y el ibex35?" se clasifica como `off_topic` y se rechaza.
 
-1. **Carga masiva residual**: El PASO 5 (lineas 3888-3976) sigue cargando ~1.074 registros de `rix_runs_v2` ANTES de ejecutar el pipeline SQL. Estos datos se usan como fallback y en busquedas por keywords, pudiendo inyectar datos conflictivos en el contexto del LLM junto con los resultados SQL limpios.
+**Causa raiz**: El regex de deteccion de off-topic en la linea 2133 contiene el patron `cuent[oa]` (pensado para detectar "cuento" = story). Pero la frase "tomando en **cuenta**" coincide con ese patron, provocando un falso positivo.
 
-2. **Sin deduplicacion en el prompt SQL**: El prompt de generacion SQL (linea 4031) usa un JOIN flexible que puede devolver AMBOS registros si existen `ANE` y `ANE.MC` para la misma empresa y periodo. No hay clausula `NOT EXISTS` para priorizar el ticker canonico.
+```
+Regex actual: /f[uú]tbol|pol[ií]tica|receta|chiste|poema|cuent[oa]|weather|.../
+                                                           ^^^^^^^^
+                                                     Coincide con "cuenta" en 
+                                                     "tomando en cuenta"
+```
 
-3. **Datos del keyword search contaminan**: Las lineas 4300-4392 inyectan "DATOS COMPLETOS DE EMPRESAS MENCIONADAS" desde `allRixData` (los 1.074 registros), que pueden incluir duplicados y contradicen los datos limpios del SQL.
+Ademas, preguntas genericas sobre el mercado (rankings, IBEX-35, sectores) que no mencionan una empresa especifica caen primero en la comprobacion de empresas (linea 2128), no detectan ninguna, y luego quedan expuestas al regex de off-topic.
 
 ## Cambios a realizar
 
-### Cambio 1 -- Anadir regla de deduplicacion al prompt SQL (lineas 4029-4037)
-
-Agregar una regla al SQL schema prompt que instruya al generador SQL a excluir tickers cortos cuando existe la version canonica (.MC):
-
-```text
-REGLA 9 (DEDUPLICACION): Si existen registros con ticker "X" y "X.MC" para 
-el mismo periodo y modelo, usar SOLO el ticker que coincida EXACTAMENTE con 
-repindex_root_issuers.ticker. Anadir:
-WHERE NOT EXISTS (
-  SELECT 1 FROM rix_runs_v2 r2 
-  WHERE r2."05_ticker" = r."05_ticker" || '.MC' 
-  AND r2."06_period_from" = r."06_period_from" 
-  AND r2."02_model_name" = r."02_model_name"
-  AND r2."09_rix_score" IS NOT NULL
-)
-```
-
-### Cambio 2 -- Reducir carga masiva del PASO 5 (lineas 3888-3976)
-
-En lugar de eliminar completamente la carga (se necesita para descubrir periodos y para el fallback), reducir a consultar SOLO los metadatos necesarios:
-- Mantener la consulta de descubrimiento de periodos (lineas 3920-3937)
-- Reducir las columnas cargadas al minimo: solo ticker, modelo, score, periodo (sin resumen ni puntos clave)
-- Esta data solo se usa como fallback si el SQL pipeline falla
-
-### Cambio 3 -- Evitar que el keyword search inyecte datos duplicados (lineas 4330-4392)
-
-Cuando se construyen los "DATOS COMPLETOS DE EMPRESAS MENCIONADAS", filtrar por ticker canonico usando `companiesCache`. Si una empresa aparece con dos tickers, solo usar el que coincide con la tabla maestra.
-
-### Cambio 4 -- Actualizar los ejemplos SQL del prompt (lineas 4039-4050)
-
-Incluir la clausula `NOT EXISTS` en TODOS los ejemplos SQL para que el LLM la replique consistentemente.
-
-## Detalle tecnico
-
 ### Archivo: `supabase/functions/chat-intelligence/index.ts`
 
-| Seccion | Lineas | Cambio |
-|---------|--------|--------|
-| SQL schema prompt - reglas | 4029-4037 | Agregar regla 9 de deduplicacion con NOT EXISTS |
-| SQL schema prompt - ejemplos | 4039-4050 | Actualizar los 4 ejemplos SQL con clausula NOT EXISTS |
-| Carga masiva PASO 5 | 3897-3917 | Reducir columnas a minimo (sin resumen/puntos_clave) |
-| Keyword search context | 4330-4392 | Filtrar duplicados por ticker canonico antes de inyectar |
+**Cambio 1 -- Corregir el regex off-topic (linea 2133)**
+
+Reemplazar `cuent[oa]` por patrones mas especificos que no colisionen con expresiones comunes del español:
+- `cuento` (sustantivo, "tell me a story") 
+- `cuentame un` (frase)
+- Usar word boundaries para evitar coincidencias parciales
+
+**Cambio 2 -- Anadir deteccion de preguntas de mercado/indice ANTES del filtro off-topic (linea 2127)**
+
+Insertar una comprobacion que detecte keywords de mercado como "ranking", "top", "bottom", "ibex", "sector", "mercado", "tendencia", "comparativa", etc., y las clasifique directamente como `corporate_analysis` sin necesidad de detectar una empresa especifica.
+
+```
+// Market-wide / index queries (no specific company needed)
+if (/ranking|top\s*\d|bottom\s*\d|ibex|sector|mercado|tendencia|comparativa|evoluci/i.test(q)) {
+  return 'corporate_analysis';
+}
+```
+
+Esto protege todas las preguntas que son claramente sobre analisis de mercado aunque no mencionen una empresa concreta.
 
 ## Resultado esperado
 
-- El SQL generado SIEMPRE excluye tickers duplicados, priorizando el canonico
-- Si `ANE` y `ANE.MC` coexisten, solo `ANE.MC` aparece en los resultados
-- Los datos del keyword search no contradicen los datos SQL
-- La carga masiva se reduce en peso pero mantiene su funcion de fallback
-- Acciona (ANA, score 55) y Acciona Energia (ANE.MC, score 46) nunca se confunden
-
+- "Me puedes habilitar un informe sobre los top 5 y bottom 5 RIX solo tomando en cuenta chatgpt y el ibex35?" -> `corporate_analysis` (antes: `off_topic`)
+- "Dame el ranking del sector energia" -> `corporate_analysis` (OK)
+- "Cuentame un chiste" -> `off_topic` (sigue funcionando)
+- "Cual es la tendencia del mercado?" -> `corporate_analysis` (antes: dependia del default)
