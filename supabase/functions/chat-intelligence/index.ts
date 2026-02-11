@@ -4035,10 +4035,6 @@ RULES:
 6. Always include: "03_target_name", "05_ticker", "02_model_name", rix_score
 7. Include all 8 sub-metrics for rankings/analysis
 8. DO NOT use LIMIT unless user asks for "top N"
-9. CRITICAL DEDUPLICATION: Always add this WHERE clause to prevent duplicate tickers (e.g. ANE vs ANE.MC):
-   AND NOT EXISTS (SELECT 1 FROM rix_runs_v2 r2 WHERE r2."05_ticker" = r."05_ticker" || '.MC' AND r2."06_period_from" = r."06_period_from" AND r2."02_model_name" = r."02_model_name")
-   This ensures that if both ANE and ANE.MC exist for the same week/model, only the canonical ticker (ANE.MC) is used.
-10. Only include records whose ticker matches a valid entry in repindex_root_issuers (via the JOIN).
 
 EXAMPLES:
 Q: "ranking IBEX-35 de ChatGPT"
