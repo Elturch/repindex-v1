@@ -3894,8 +3894,9 @@ async function handleStandardChat(
   // =============================================================================
   console.log(`${logPrefix} Loading structured RIX data — DIRECT PERIOD LOADING from rix_runs_v2...`);
   
+  // OPTIMIZADO: Solo metadatos mínimos para descubrimiento de periodos y fallback
+  // Los datos completos vienen del pipeline SQL-to-Narrative (PASO 5B)
   const rixColumns = `
-    "01_run_id",
     "02_model_name",
     "03_target_name",
     "05_ticker",
@@ -3903,16 +3904,6 @@ async function handleStandardChat(
     "07_period_to",
     "09_rix_score",
     "51_rix_score_adjusted",
-    "23_nvm_score",
-    "26_drm_score",
-    "29_sim_score",
-    "32_rmm_score",
-    "35_cem_score",
-    "38_gam_score",
-    "41_dcm_score",
-    "44_cxm_score",
-    "10_resumen",
-    "11_puntos_clave",
     batch_execution_date
   `;
 
@@ -4035,19 +4026,28 @@ RULES:
 6. Always include: "03_target_name", "05_ticker", "02_model_name", rix_score
 7. Include all 8 sub-metrics for rankings/analysis
 8. DO NOT use LIMIT unless user asks for "top N"
+9. DEDUPLICACION CRITICA: Si existen registros con ticker "X" y "X.MC" para el mismo periodo y modelo, SOLO usar el ticker canonico (el que existe en repindex_root_issuers). SIEMPRE anadir esta clausula al WHERE:
+   AND NOT EXISTS (
+     SELECT 1 FROM rix_runs_v2 r2
+     WHERE r2."05_ticker" = r."05_ticker" || '.MC'
+     AND r2."06_period_from" = r."06_period_from"
+     AND r2."02_model_name" = r."02_model_name"
+     AND r2."09_rix_score" IS NOT NULL
+   )
+   Esto asegura que si existen ANE y ANE.MC, solo se usa ANE.MC (el canonico).
 
 EXAMPLES:
 Q: "ranking IBEX-35 de ChatGPT"
-SQL: SELECT r."03_target_name", r."05_ticker", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score" FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."02_model_name" = 'ChatGPT' AND r."06_period_from" = '${sqlCurrentPeriodFrom}' AND i.ibex_family_code = 'IBEX-35' AND r."09_rix_score" IS NOT NULL ORDER BY rix_score DESC
+SQL: SELECT r."03_target_name", r."05_ticker", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score" FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."02_model_name" = 'ChatGPT' AND r."06_period_from" = '${sqlCurrentPeriodFrom}' AND i.ibex_family_code = 'IBEX-35' AND r."09_rix_score" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM rix_runs_v2 r2 WHERE r2."05_ticker" = r."05_ticker" || '.MC' AND r2."06_period_from" = r."06_period_from" AND r2."02_model_name" = r."02_model_name" AND r2."09_rix_score" IS NOT NULL) ORDER BY rix_score DESC
 
 Q: "análisis de Telefónica"
-SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score", r."10_resumen" FROM rix_runs_v2 r WHERE (r."03_target_name" ILIKE '%Telefonica%' OR r."05_ticker" IN ('TEF','TEF.MC')) AND r."06_period_from" = '${sqlCurrentPeriodFrom}' AND r."09_rix_score" IS NOT NULL ORDER BY r."02_model_name"
+SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score", r."10_resumen" FROM rix_runs_v2 r WHERE (r."03_target_name" ILIKE '%Telefonica%' OR r."05_ticker" IN ('TEF','TEF.MC')) AND r."06_period_from" = '${sqlCurrentPeriodFrom}' AND r."09_rix_score" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM rix_runs_v2 r2 WHERE r2."05_ticker" = r."05_ticker" || '.MC' AND r2."06_period_from" = r."06_period_from" AND r2."02_model_name" = r."02_model_name" AND r2."09_rix_score" IS NOT NULL) ORDER BY r."02_model_name"
 
 Q: "ranking completo de esta semana"
-SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score", i.ibex_family_code FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."06_period_from" = '${sqlCurrentPeriodFrom}' AND r."09_rix_score" IS NOT NULL ORDER BY rix_score DESC
+SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score", i.ibex_family_code FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."06_period_from" = '${sqlCurrentPeriodFrom}' AND r."09_rix_score" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM rix_runs_v2 r2 WHERE r2."05_ticker" = r."05_ticker" || '.MC' AND r2."06_period_from" = r."06_period_from" AND r2."02_model_name" = r."02_model_name" AND r2."09_rix_score" IS NOT NULL) ORDER BY rix_score DESC
 
 Q: "comparar bancos"
-SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score" FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."06_period_from" = '${sqlCurrentPeriodFrom}' AND i.sector_category = 'Financiero' AND r."09_rix_score" IS NOT NULL ORDER BY rix_score DESC
+SQL: SELECT r."03_target_name", r."05_ticker", r."02_model_name", COALESCE(r."51_rix_score_adjusted", r."09_rix_score") AS rix_score, r."23_nvm_score", r."26_drm_score", r."29_sim_score", r."32_rmm_score", r."35_cem_score", r."38_gam_score", r."41_dcm_score", r."44_cxm_score" FROM rix_runs_v2 r JOIN repindex_root_issuers i ON (i.ticker = r."05_ticker" OR i.ticker = r."05_ticker" || '.MC' OR r."05_ticker" = i.ticker || '.MC') WHERE r."06_period_from" = '${sqlCurrentPeriodFrom}' AND i.sector_category = 'Financiero' AND r."09_rix_score" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM rix_runs_v2 r2 WHERE r2."05_ticker" = r."05_ticker" || '.MC' AND r2."06_period_from" = r."06_period_from" AND r2."02_model_name" = r."02_model_name" AND r2."09_rix_score" IS NOT NULL) ORDER BY rix_score DESC
 
 USER QUESTION: "${question}"
 
@@ -4328,14 +4328,28 @@ Respond with ONLY the SQL query. No markdown, no explanation.`;
   }
 
   // 6.1 DATOS COMPLETOS DE EMPRESAS DETECTADAS (con textos brutos)
-  if (detectedCompanyFullData.length > 0) {
+  // DEDUPLICACION: Filtrar registros con tickers no-canonicos (ej. ANE cuando existe ANE.MC)
+  const canonicalTickers = new Set((companiesCache || []).map(c => c.ticker));
+  const deduplicatedCompanyFullData = detectedCompanyFullData.filter(r => {
+    const ticker = r["05_ticker"];
+    // Si el ticker está en la tabla maestra, mantener
+    if (canonicalTickers.has(ticker)) return true;
+    // Si existe la versión canónica con .MC, descartar este registro duplicado
+    if (canonicalTickers.has(ticker + '.MC')) {
+      console.log(`${logPrefix} Dedup: Filtering out non-canonical ticker ${ticker} (canonical: ${ticker}.MC)`);
+      return false;
+    }
+    return true;
+  });
+  
+  if (deduplicatedCompanyFullData.length > 0) {
     context += `\n🏢 ======================================================================\n`;
     context += `🏢 DATOS COMPLETOS DE EMPRESAS MENCIONADAS (INCLUYE TEXTOS ORIGINALES)\n`;
     context += `🏢 ======================================================================\n\n`;
     
     // Group by company
     const byCompany = new Map<string, any[]>();
-    detectedCompanyFullData.forEach(r => {
+    deduplicatedCompanyFullData.forEach(r => {
       const company = r["03_target_name"];
       if (!byCompany.has(company)) byCompany.set(company, []);
       byCompany.get(company)!.push(r);
