@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { BookOpen, User, AlertCircle, ChevronDown, ChevronUp, Settings2, Info, Newspaper } from "lucide-react";
+import { BookOpen, User, AlertCircle, ChevronDown, ChevronUp, Settings2, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatContext } from "@/contexts/ChatContext";
 import { CHAT_ROLES, getRoleById } from "@/lib/chatRoles";
@@ -18,8 +17,6 @@ export function SessionConfigPanel() {
     isSessionConfigured,
     configureSession,
     language,
-    hasRixPressAccess,
-    isRixPressMode,
   } = useChatContext();
   
   const [localRoleId, setLocalRoleId] = useState<string>(sessionRoleId);
@@ -44,15 +41,6 @@ export function SessionConfigPanel() {
       <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            {isRixPressMode && hasRixPressAccess && (
-              <>
-                <Badge className="text-[9px] bg-blue-600 text-white gap-1">
-                  <Newspaper className="h-2.5 w-2.5" />
-                  Rix Press
-                </Badge>
-                <span className="text-muted-foreground/50">•</span>
-              </>
-            )}
             <div className="flex items-center gap-1.5">
               <BookOpen className="h-3.5 w-3.5 text-purple-500" />
               <span className="text-purple-600 dark:text-purple-400 font-medium">{tr.depthExhaustive}</span>

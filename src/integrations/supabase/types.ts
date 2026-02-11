@@ -1420,48 +1420,6 @@ export type Database = {
         }
         Relationships: []
       }
-      platform_snapshots: {
-        Row: {
-          changes: Json
-          created_at: string
-          detailed_description: string
-          id: string
-          metrics_at_snapshot: Json | null
-          snapshot_date: string
-          snapshot_type: string
-          summary: string
-          tags: string[] | null
-          title: string
-          version: string
-        }
-        Insert: {
-          changes?: Json
-          created_at?: string
-          detailed_description: string
-          id?: string
-          metrics_at_snapshot?: Json | null
-          snapshot_date?: string
-          snapshot_type?: string
-          summary: string
-          tags?: string[] | null
-          title: string
-          version: string
-        }
-        Update: {
-          changes?: Json
-          created_at?: string
-          detailed_description?: string
-          id?: string
-          metrics_at_snapshot?: Json | null
-          snapshot_date?: string
-          snapshot_type?: string
-          summary?: string
-          tags?: string[] | null
-          title?: string
-          version?: string
-        }
-        Relationships: []
-      }
       profile_analysis_batches: {
         Row: {
           ai_provider: string | null
@@ -1606,48 +1564,6 @@ export type Database = {
           ticker?: string
           verified_competitors?: Json | null
           website?: string | null
-        }
-        Relationships: []
-      }
-      rix_composite_scores: {
-        Row: {
-          company_name: string
-          consensus_level: string
-          created_at: string
-          ic_score: number
-          id: string
-          individual_scores: Json
-          models_count: number
-          rixc_score: number
-          sigma_intermodelo: number
-          ticker: string
-          week_start: string
-        }
-        Insert: {
-          company_name: string
-          consensus_level: string
-          created_at?: string
-          ic_score: number
-          id?: string
-          individual_scores?: Json
-          models_count: number
-          rixc_score: number
-          sigma_intermodelo: number
-          ticker: string
-          week_start: string
-        }
-        Update: {
-          company_name?: string
-          consensus_level?: string
-          created_at?: string
-          ic_score?: number
-          id?: string
-          individual_scores?: Json
-          models_count?: number
-          rixc_score?: number
-          sigma_intermodelo?: number
-          ticker?: string
-          week_start?: string
         }
         Relationships: []
       }
@@ -3456,7 +3372,7 @@ export type Database = {
       reset_daily_fatigue_counters: { Args: never; Returns: undefined }
     }
     Enums: {
-      app_role: "admin" | "manager" | "user" | "press"
+      app_role: "admin" | "manager" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3584,7 +3500,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "manager", "user", "press"],
+      app_role: ["admin", "manager", "user"],
     },
   },
 } as const

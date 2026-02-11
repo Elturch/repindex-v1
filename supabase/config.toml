@@ -107,4 +107,3 @@ verify_jwt = false
 
 [functions.fetch-smart-suggestions]
 verify_jwt = false
-

@@ -8,7 +8,6 @@ import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml"
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
-import { isDevOrPreview } from "@/lib/env";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -104,7 +103,7 @@ export interface MethodologyMetadata {
 }
 
 export interface MessageMetadata {
-  type?: 'standard' | 'bulletin' | 'enriched' | 'press';
+  type?: 'standard' | 'bulletin' | 'enriched';
   companyName?: string;
   documentsFound?: number;
   structuredDataFound?: number;
@@ -142,7 +141,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean; pressMode?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -168,10 +167,6 @@ interface ChatContextType {
   sessionRoleId: string;
   isSessionConfigured: boolean;
   configureSession: (roleId: string) => Promise<void>;
-  // Rix Press
-  hasRixPressAccess: boolean;
-  isRixPressMode: boolean;
-  toggleRixPressMode: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -208,10 +203,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [sessionRoleId, setSessionRoleId] = useState<string>('general');
   const [isSessionConfigured, setIsSessionConfigured] = useState(false);
   
-  // Rix Press state
-  const [hasRixPressAccess, setHasRixPressAccess] = useState(false);
-  const [isRixPressMode, setIsRixPressMode] = useState(false);
-  
   // Use auth context for user ID - this syncs properly with AuthProvider
   const { user, isAuthenticated } = useAuth();
   const currentUserId = user?.id || null;
@@ -224,33 +215,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
       sessionId 
     });
   }, [isAuthenticated, currentUserId, sessionId]);
-
-  // Check if user has 'press' role
-  useEffect(() => {
-    // In preview/dev, grant press access for testing
-    if (isDevOrPreview()) {
-      setHasRixPressAccess(true);
-      return;
-    }
-    if (!currentUserId) {
-      setHasRixPressAccess(false);
-      return;
-    }
-    const checkPressRole = async () => {
-      try {
-        const { data } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', currentUserId)
-          .eq('role', 'press')
-          .maybeSingle();
-        setHasRixPressAccess(!!data);
-      } catch {
-        setHasRixPressAccess(false);
-      }
-    };
-    checkPressRole();
-  }, [currentUserId]);
 
   // Create or update user_conversations record when user is authenticated
   const ensureConversationRecord = useCallback(async (title?: string, depthLevel?: DepthLevel, roleId?: string) => {
@@ -385,7 +349,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean; pressMode?: boolean }) => {
+  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -465,28 +429,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         };
         setMessages(prev => [...prev, streamingMessage]);
 
-        // Always route through the standard chat-intelligence engine
-        const edgeFunctionName = 'chat-intelligence';
-        const requestBody = {
-          question,
-          conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
-          sessionId,
-          conversationId: convId,
-          bulletinMode: options?.bulletinMode || false,
-          bulletinCompanyName,
-          language: language.code,
-          languageName: language.nativeName,
-          depthLevel: options?.pressMode ? 'exhaustive' : (options?.depthLevel || 'complete'),
-          roleId: options?.pressMode ? 'periodista' : role?.id,
-          roleName: options?.pressMode ? '📰 Periodista Económico' : (role ? `${role.emoji} ${role.name}` : undefined),
-          rolePrompt: options?.pressMode ? undefined : role?.prompt,
-          streamMode: true,
-        };
-
-        console.log('[ChatContext] Routing to:', edgeFunctionName, options?.pressMode ? '(PRESS MODE)' : '');
-
         const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/${edgeFunctionName}`,
+          `${SUPABASE_URL}/functions/v1/chat-intelligence`,
           {
             method: 'POST',
             headers: {
@@ -494,7 +438,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
               'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
               'apikey': SUPABASE_ANON_KEY,
             },
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify({
+              question,
+              conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
+              sessionId,
+              conversationId: convId,
+              bulletinMode: options?.bulletinMode || false,
+              bulletinCompanyName,
+              language: language.code,
+              languageName: language.nativeName,
+              depthLevel: options?.depthLevel || 'complete',
+              roleId: role?.id,
+              roleName: role ? `${role.emoji} ${role.name}` : undefined,
+              rolePrompt: role?.prompt,
+              streamMode: true, // Enable streaming in edge function
+            }),
           }
         );
 
@@ -1424,18 +1382,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
         sessionRoleId,
         isSessionConfigured,
         configureSession,
-        // Rix Press
-        hasRixPressAccess,
-        isRixPressMode,
-        toggleRixPressMode: () => {
-          setIsRixPressMode(prev => {
-            const next = !prev;
-            if (next && !isSessionConfigured) {
-              configureSession('journalist');
-            }
-            return next;
-          });
-        },
       }}
     >
       {children}

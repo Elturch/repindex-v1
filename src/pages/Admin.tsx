@@ -56,10 +56,7 @@ import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
-import { RixPressUsersPanel } from '@/components/admin/RixPressUsersPanel';
-import { PlatformSnapshotsPanel } from '@/components/admin/PlatformSnapshotsPanel';
-import { RixcMonitorPanel } from '@/components/admin/RixcMonitorPanel';
-import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, Newspaper, BookOpen, Calculator } from 'lucide-react';
+import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -234,7 +231,78 @@ const Admin: React.FC = () => {
   const [savedInboundPlan, setSavedInboundPlan] = useState<{ plan: any; savedAt: string } | null>(null);
   const [useAIGeneration, setUseAIGeneration] = useState(true);
 
-  // Changelog del sistema migrado a tabla platform_snapshots (ver pestaña Snapshots)
+  // Changelog del sistema - historial de evolución de la herramienta
+  const systemChangelog = [
+    {
+      version: '2.5.0',
+      date: '2024-12-08',
+      title: 'Marketing Inbound con IA',
+      changes: [
+        'Generación de notificaciones personalizadas por perfil de usuario usando IA',
+        'Plan de inbound completo generado dinámicamente',
+        'Calendario semanal de push notifications adaptado a cada persona',
+        'Guardado del último plan generado para seguimiento',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.4.0',
+      date: '2024-12-07',
+      title: 'Análisis de Perfiles de Usuario',
+      changes: [
+        'Segmentación automática de usuarios en personas/estereotipos',
+        'Análisis de comportamiento basado en actividad real',
+        'Métricas por perfil: conversaciones, enriquecimientos, documentos',
+        'Distribución visual de perfiles',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.3.0',
+      date: '2024-12-05',
+      title: 'Enriquecimiento por Rol Profesional',
+      changes: [
+        '15 roles profesionales para adaptar respuestas',
+        'Analytics de uso de roles',
+        'Respuestas expandidas de 2500-5000 palabras',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.2.0',
+      date: '2024-12-01',
+      title: 'Generador de Boletines',
+      changes: [
+        'Boletines ejecutivos personalizados por empresa',
+        'Análisis competitivo automático',
+        'Formato magazine profesional para impresión',
+      ],
+      type: 'feature' as const,
+    },
+    {
+      version: '2.1.0',
+      date: '2024-11-28',
+      title: 'Vector Store Mejorado',
+      changes: [
+        'Indexación de respuestas completas de 4 IAs',
+        'Sincronización incremental automática',
+        'Mejora significativa en calidad de respuestas',
+      ],
+      type: 'improvement' as const,
+    },
+    {
+      version: '2.0.0',
+      date: '2024-11-20',
+      title: 'Agente Rix Flotante',
+      changes: [
+        'Chat disponible en todas las páginas',
+        'Contexto dinámico según página actual',
+        'Persistencia de conversaciones',
+        'Sugerencias contextuales',
+      ],
+      type: 'feature' as const,
+    },
+  ];
 
   // Test user for admin (only visible in Admin panel)
   const testUser: UserProfile = {
@@ -782,21 +850,9 @@ const Admin: React.FC = () => {
               <AlertTriangleIcon className="h-3.5 w-3.5" />
               Alertas
             </TabsTrigger>
-            <TabsTrigger value="rix-press" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-blue-500/10 to-indigo-500/10">
-              <Newspaper className="h-3.5 w-3.5 text-blue-600" />
-              Rix Press
-            </TabsTrigger>
-            <TabsTrigger value="snapshots" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-emerald-500/10 to-teal-500/10">
-              <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
-              Snapshots
-            </TabsTrigger>
             <TabsTrigger value="sales-agent" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-purple-500/10 to-amber-500/10">
               <TargetIcon className="h-3.5 w-3.5 text-purple-500" />
               Agente Comercial
-            </TabsTrigger>
-            <TabsTrigger value="rixc" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-cyan-500/10 to-blue-500/10">
-              <Calculator className="h-3.5 w-3.5 text-cyan-600" />
-              RIXc
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -1114,21 +1170,51 @@ const Admin: React.FC = () => {
                   </Card>
                 )}
 
-                {/* Changelog migrado a pestaña Snapshots */}
+                {/* Changelog del Sistema */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <BookOpen className="h-5 w-5 text-emerald-500" />
+                      <RefreshCw className="h-5 w-5 text-blue-500" />
                       Evolución de la Herramienta
                     </CardTitle>
                     <CardDescription>
-                      Historial completo en la pestaña Snapshots
+                      Historial de mejoras y nuevas funcionalidades
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <Button variant="outline" size="sm" onClick={() => setActiveTab('snapshots')}>
-                      <BookOpen className="h-4 w-4 mr-1" /> Ver Snapshots
-                    </Button>
+                    <ScrollArea className="h-[300px]">
+                      <div className="space-y-4">
+                        {systemChangelog.map((entry, idx) => (
+                          <div 
+                            key={entry.version} 
+                            className={`p-3 rounded-lg border ${
+                              idx === 0 ? 'bg-primary/5 border-primary/30' : 'bg-muted/30'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={entry.type === 'feature' ? 'default' : 'secondary'}
+                                  className="text-xs"
+                                >
+                                  v{entry.version}
+                                </Badge>
+                                <span className="font-medium text-sm">{entry.title}</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{entry.date}</span>
+                            </div>
+                            <ul className="text-xs text-muted-foreground space-y-1">
+                              {entry.changes.map((change, cIdx) => (
+                                <li key={cIdx} className="flex items-start gap-1">
+                                  <span className="text-green-500 mt-0.5">•</span>
+                                  {change}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
                   </CardContent>
                 </Card>
               </div>
@@ -2655,24 +2741,9 @@ const Admin: React.FC = () => {
             <InterestedLeadsPanel />
           </TabsContent>
 
-          {/* ==================== RIX PRESS ==================== */}
-          <TabsContent value="rix-press">
-            <RixPressUsersPanel />
-          </TabsContent>
-
-          {/* ==================== PLATFORM SNAPSHOTS ==================== */}
-          <TabsContent value="snapshots">
-            <PlatformSnapshotsPanel />
-          </TabsContent>
-
           {/* ==================== SALES INTELLIGENCE AGENT ==================== */}
           <TabsContent value="sales-agent">
             <SalesIntelligencePanel />
-          </TabsContent>
-
-          {/* ==================== RIXC COMPOSITE ==================== */}
-          <TabsContent value="rixc">
-            <RixcMonitorPanel />
           </TabsContent>
         </Tabs>
       </div>

@@ -244,29 +244,6 @@ export function getMetricDefinitionsForAnnex(): string {
 }
 
 // =============================================================================
-// RIXC COMPOSITE DEFINITION (en validación)
-// =============================================================================
-
-export const RIXC_DEFINITION = {
-  name: "RIX Compuesto",
-  acronym: "RIXc",
-  status: "en_validacion" as const,
-  description:
-    "Puntuación consolidada que integra los 6 modelos de IA mediante la mediana robusta. Descarta automáticamente outliers y hallucinations, proporcionando una lectura más estable que el promedio simple.",
-  formula: "RIXc = median(RIX_modelo_1, ..., RIX_modelo_n)",
-  sigmaFormula: "σ = stdev(scores individuales)",
-  icFormula: "IC = max(0, 100 - (σ × 100 / 12.5))",
-  sigmaMaxHistorico: 12.5,
-  consensusLevels: [
-    { level: "Hecho Consolidado", sigmaMax: 3, color: "green", description: "Los 6 modelos coinciden sustancialmente" },
-    { level: "Señal Fuerte", sigmaMax: 5, color: "blue", description: "Alta convergencia con variaciones menores" },
-    { level: "Divergencia Moderada", sigmaMax: 8, color: "amber", description: "Diferencias significativas entre modelos" },
-    { level: "Narrativa Fragmentada", sigmaMax: 12, color: "orange", description: "Los modelos ofrecen lecturas muy distintas" },
-    { level: "Dato Inestable", sigmaMax: Infinity, color: "red", description: "Divergencia extrema, dato poco fiable" },
-  ],
-};
-
-// =============================================================================
 // LEGACY MAPPING (for backward compatibility during migration)
 // Maps old incorrect names to correct technical names
 // =============================================================================
