@@ -87,7 +87,9 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
   const { supabaseClient, columns, tickerFilter, limit = 1000, offset = 0, logPrefix = '[Unified-RIX]' } = options;
   
   // Build queries for both tables
-  let queryRix = supabaseClient.from('rix_runs').select(columns).order('batch_execution_date', { ascending: false });
+  let queryRix = supabaseClient.from('rix_runs').select(columns)
+    .order('batch_execution_date', { ascending: false })
+    .order('"05_ticker"', { ascending: true });
   
   // V2: Include records with EITHER completed analysis OR valid rix_score
   // This ensures we get Grok & Qwen even if analysis is pending for newest week
@@ -95,7 +97,8 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
     .from('rix_runs_v2')
     .select(columns)
     .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
-    .order('batch_execution_date', { ascending: false });
+    .order('batch_execution_date', { ascending: false })
+    .order('"05_ticker"', { ascending: true });
   
   // Apply ticker filter if provided
   if (tickerFilter) {
@@ -114,7 +117,7 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
     queryV2 = queryV2.range(offset, offset + limit - 1);
   } else {
     queryRix = queryRix.limit(limit);
-    queryV2 = queryV2.limit(limit);
+    queryV2 = queryV2.limit(Math.max(limit, 2500));
   }
   
   // Execute in parallel
@@ -3845,7 +3848,7 @@ async function handleStandardChat(
   // Use pagination for large requests
   let allRixData: any[] = [];
   let rixOffset = 0;
-  const rixBatchSize = 2000;
+  const rixBatchSize = 3000;
   const maxRixRecords = depthLevel === 'exhaustive' ? 10000 : 5000;
   
   while (rixOffset < maxRixRecords) {
@@ -4248,6 +4251,46 @@ async function handleStandardChat(
       currentWeekData = currentWeekData.filter(r => indexTickers.has(r["05_ticker"]));
       context += `⚡ FILTRO APLICADO: Solo empresas del ${requestedIndex} (${currentWeekData.length} registros)\n`;
       console.log(`${logPrefix} Pre-filter: index=${requestedIndex}, ${currentWeekData.length} records remain`);
+      
+      // IBEX-35 GUARDRAIL: detect and repair incomplete data from LIMIT truncation
+      if (requestedIndex === 'IBEX-35') {
+        const expectedIbexCount = indexTickers.size;
+        const uniqueIbexTickers = new Set(currentWeekData.map(r => r["05_ticker"]));
+        
+        if (uniqueIbexTickers.size < expectedIbexCount) {
+          console.log(`${logPrefix} WARNING: IBEX-35 incomplete! Found ${uniqueIbexTickers.size}/${expectedIbexCount} companies. Fetching missing...`);
+          
+          const missingTickers = Array.from(indexTickers).filter(t => !uniqueIbexTickers.has(t));
+          
+          if (missingTickers.length > 0) {
+            const missingBatch = await fetchUnifiedRixData({
+              supabaseClient,
+              columns: `
+                "01_run_id", "02_model_name", "03_target_name", "05_ticker",
+                "06_period_from", "07_period_to", "09_rix_score", "51_rix_score_adjusted",
+                "32_rmm_score", "10_resumen", "11_puntos_clave", batch_execution_date
+              `,
+              tickerFilter: missingTickers,
+              limit: 500,
+              logPrefix: `${logPrefix} [IBEX-REPAIR]`
+            });
+            
+            if (missingBatch.length > 0) {
+              allRixData.push(...missingBatch);
+              // Re-apply period + model + index filters on the repaired data
+              const repairedData = missingBatch
+                .filter(run => getPeriodKey(run) === currentPeriod)
+                .filter(r => !requestedModel || r["02_model_name"] === requestedModel)
+                .filter(r => indexTickers.has(r["05_ticker"]));
+              currentWeekData.push(...repairedData);
+              
+              const repairedTickers = new Set(currentWeekData.map(r => r["05_ticker"]));
+              console.log(`${logPrefix} IBEX-35 repaired: now ${repairedTickers.size}/${expectedIbexCount} companies`);
+              context += `🔧 IBEX-35 datos reparados: ${repairedTickers.size}/${expectedIbexCount} empresas\n`;
+            }
+          }
+        }
+      }
     }
 
     const [currentFrom, currentTo] = currentPeriod ? currentPeriod.split('|') : [null, null];
