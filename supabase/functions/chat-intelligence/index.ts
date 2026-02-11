@@ -2129,8 +2129,13 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return 'corporate_analysis';
   }
   
-  // Off-topic patterns
-  if (/f[uú]tbol|pol[ií]tica|receta|chiste|poema|cuent[oa]|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(q)) {
+  // Market-wide / index queries (no specific company needed)
+  if (/ranking|top\s*\d|bottom\s*\d|ibex|sector(?:es)?|mercado|tendencia|comparativa|evoluci[oó]n|informe/i.test(q)) {
+    return 'corporate_analysis';
+  }
+  
+  // Off-topic patterns (cuento/cuéntame but NOT "en cuenta", "tener en cuenta", etc.)
+  if (/f[uú]tbol|pol[ií]tica|receta|chiste|poema|\bcuento\b|cu[eé]ntame\s+un|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(q)) {
     return 'off_topic';
   }
   
