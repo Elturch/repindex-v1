@@ -79,11 +79,12 @@ interface FetchUnifiedRixOptions {
   columns: string;
   tickerFilter?: string | string[];
   limit?: number;
+  offset?: number;
   logPrefix?: string;
 }
 
 async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any[]> {
-  const { supabaseClient, columns, tickerFilter, limit = 1000, logPrefix = '[Unified-RIX]' } = options;
+  const { supabaseClient, columns, tickerFilter, limit = 1000, offset = 0, logPrefix = '[Unified-RIX]' } = options;
   
   // Build queries for both tables
   let queryRix = supabaseClient.from('rix_runs').select(columns).order('batch_execution_date', { ascending: false });
@@ -107,9 +108,14 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
     }
   }
   
-  // Apply limits
-  queryRix = queryRix.limit(limit);
-  queryV2 = queryV2.limit(limit);
+  // Apply range (offset + limit)
+  if (offset > 0) {
+    queryRix = queryRix.range(offset, offset + limit - 1);
+    queryV2 = queryV2.range(offset, offset + limit - 1);
+  } else {
+    queryRix = queryRix.limit(limit);
+    queryV2 = queryV2.limit(limit);
+  }
   
   // Execute in parallel
   const [rixResult, v2Result] = await Promise.all([queryRix, queryV2]);
@@ -2120,7 +2126,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
   }
   
   // Off-topic patterns
-  if (/f[uú]tbol|pol[ií]tica|receta|chiste|poema|cuent[oa]|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(q)) {
+  if (/f[uú]tbol|pol[ií]tica|receta|chiste|poema|\bcuento\b|\bcuentos\b|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(q)) {
     return 'off_topic';
   }
   
@@ -3860,6 +3866,7 @@ async function handleStandardChat(
         batch_execution_date
       `,
       limit: rixBatchSize,
+      offset: rixOffset,
       logPrefix
     });
     
@@ -4184,13 +4191,64 @@ async function handleStandardChat(
         return dateB.localeCompare(dateA);
       });
 
-    const currentPeriod = uniquePeriods[0];
-    const currentWeekData = allRixData.filter(run => getPeriodKey(run) === currentPeriod);
+    // Smart period selection: skip sparse periods (e.g., sweep just started)
+    const MIN_RECORDS_FOR_CURRENT = 10;
+    let effectiveCurrentIdx = 0;
+    for (let i = 0; i < uniquePeriods.length; i++) {
+      const periodData = allRixData.filter(run => getPeriodKey(run) === uniquePeriods[i]);
+      if (periodData.length >= MIN_RECORDS_FOR_CURRENT) {
+        effectiveCurrentIdx = i;
+        break;
+      }
+    }
+    if (effectiveCurrentIdx > 0) {
+      console.log(`${logPrefix} ⚠️ Skipping ${effectiveCurrentIdx} sparse period(s), using ${uniquePeriods[effectiveCurrentIdx]} instead of ${uniquePeriods[0]}`);
+    }
 
-    const previousPeriod = uniquePeriods[1];
+    const currentPeriod = uniquePeriods[effectiveCurrentIdx];
+    let currentWeekData = allRixData.filter(run => getPeriodKey(run) === currentPeriod);
+
+    const previousPeriod = uniquePeriods[effectiveCurrentIdx + 1];
     const previousWeekData = previousPeriod 
       ? allRixData.filter(run => getPeriodKey(run) === previousPeriod) 
       : [];
+
+    // =========================================================================
+    // PRE-FILTERING: Apply model and index filters if user explicitly requested them
+    // =========================================================================
+    const questionLower = question.toLowerCase();
+    const modelFilters: Record<string, string> = {
+      'chatgpt': 'ChatGPT', 'gpt': 'ChatGPT',
+      'perplexity': 'Perplexity',
+      'gemini': 'Google Gemini', 'deepseek': 'Deepseek',
+      'grok': 'Grok', 'qwen': 'Qwen'
+    };
+    let requestedModel: string | null = null;
+    for (const [keyword, modelName] of Object.entries(modelFilters)) {
+      if (questionLower.includes(keyword)) {
+        requestedModel = modelName;
+        break;
+      }
+    }
+    let requestedIndex: string | null = null;
+    if (/ibex.?35/i.test(question)) requestedIndex = 'IBEX-35';
+    else if (/ibex.?mc/i.test(question)) requestedIndex = 'IBEX-MC';
+
+    if (requestedModel) {
+      currentWeekData = currentWeekData.filter(r => r["02_model_name"] === requestedModel);
+      context += `\n⚡ FILTRO APLICADO: Solo datos de ${requestedModel} (${currentWeekData.length} registros)\n`;
+      console.log(`${logPrefix} Pre-filter: model=${requestedModel}, ${currentWeekData.length} records remain`);
+    }
+    if (requestedIndex && companiesCache) {
+      const indexTickers = new Set(
+        companiesCache
+          .filter((c: any) => c.ibex_family_code === requestedIndex)
+          .map((c: any) => c.ticker)
+      );
+      currentWeekData = currentWeekData.filter(r => indexTickers.has(r["05_ticker"]));
+      context += `⚡ FILTRO APLICADO: Solo empresas del ${requestedIndex} (${currentWeekData.length} registros)\n`;
+      console.log(`${logPrefix} Pre-filter: index=${requestedIndex}, ${currentWeekData.length} records remain`);
+    }
 
     const [currentFrom, currentTo] = currentPeriod ? currentPeriod.split('|') : [null, null];
     const [prevFrom, prevTo] = previousPeriod ? previousPeriod.split('|') : [null, null];
