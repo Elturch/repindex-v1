@@ -1956,7 +1956,7 @@ serve(async (req) => {
       console.log(`${logPrefix} Loading companies from database...`);
       const { data: companies } = await supabaseClient
         .from('repindex_root_issuers')
-        .select('issuer_name, ticker, sector_category, ibex_family_code, cotiza_en_bolsa');
+        .select('issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms');
       
       if (companies) {
         companiesCache = companies;
@@ -2497,12 +2497,22 @@ async function handleBulletinRequest(
   console.log(`${logPrefix} Processing bulletin request for: ${companyQuery}`);
 
   // 1. Find the company in our database
-  const normalizedQuery = companyQuery.toLowerCase().trim();
-  const matchedCompany = companiesCache?.find(c => 
-    c.issuer_name.toLowerCase().includes(normalizedQuery) ||
-    c.ticker.toLowerCase() === normalizedQuery ||
-    normalizedQuery.includes(c.issuer_name.toLowerCase())
-  );
+  const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const normalizedQuery = normalize(companyQuery);
+  const matchedCompany = companiesCache?.find(c => {
+    const name = normalize(c.issuer_name);
+    const ticker = c.ticker?.toLowerCase() || '';
+    if (name.includes(normalizedQuery) || normalizedQuery.includes(name)) return true;
+    if (ticker === normalizedQuery) return true;
+    // Check include_terms (aliases without accents)
+    if (c.include_terms) {
+      try {
+        const terms = Array.isArray(c.include_terms) ? c.include_terms : JSON.parse(c.include_terms);
+        if (terms.some((t: string) => { const nt = normalize(t); return nt.length > 3 && (nt === normalizedQuery || normalizedQuery.includes(nt) || nt.includes(normalizedQuery)); })) return true;
+      } catch (_) { /* ignore */ }
+    }
+    return false;
+  });
 
   if (!matchedCompany) {
     console.log(`${logPrefix} Company not found: ${companyQuery}`);
@@ -3253,6 +3263,20 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
         detectedCompanies.push(company);
         break;
       }
+    }
+    
+    // Check include_terms aliases (e.g. "Acciona Energia" without accent)
+    if (!detectedCompanies.includes(company) && company.include_terms) {
+      try {
+        const terms = Array.isArray(company.include_terms) ? company.include_terms : JSON.parse(company.include_terms);
+        for (const term of terms) {
+          const normalizedTerm = (term as string).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          if (normalizedTerm.length > 3 && normalizedQuestion.includes(normalizedTerm)) {
+            detectedCompanies.push(company);
+            break;
+          }
+        }
+      } catch (_) { /* ignore parse errors */ }
     }
   }
   
