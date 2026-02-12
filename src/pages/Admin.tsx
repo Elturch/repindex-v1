@@ -37,7 +37,8 @@ import {
   Activity,
   ChevronDown,
   ChevronUp,
-  UserPlus
+  UserPlus,
+  BookOpen
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -56,6 +57,7 @@ import { AIModelsDashboard } from '@/components/admin/AIModelsDashboard';
 import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
+import TechnicalDocPanel from '@/components/admin/TechnicalDocPanel';
 import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon } from 'lucide-react';
 
 interface Company {
@@ -853,6 +855,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="sales-agent" className="flex items-center gap-1.5 px-3 text-xs bg-gradient-to-r from-purple-500/10 to-amber-500/10">
               <TargetIcon className="h-3.5 w-3.5 text-purple-500" />
               Agente Comercial
+            </TabsTrigger>
+            <TabsTrigger value="tech-docs" className="flex items-center gap-1.5 px-3 text-xs">
+              <BookOpen className="h-3.5 w-3.5" />
+              Docs Técnica
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -2744,6 +2750,11 @@ const Admin: React.FC = () => {
           {/* ==================== SALES INTELLIGENCE AGENT ==================== */}
           <TabsContent value="sales-agent">
             <SalesIntelligencePanel />
+          </TabsContent>
+
+          {/* ==================== TECHNICAL DOCUMENTATION ==================== */}
+          <TabsContent value="tech-docs">
+            <TechnicalDocPanel />
           </TabsContent>
         </Tabs>
       </div>
