@@ -1155,144 +1155,162 @@ function buildCompetitorJustification(
 }
 
 // =============================================================================
+// EMBUDO NARRATIVO — Estructura única para TODAS las respuestas (siempre exhaustivo)
+// =============================================================================
 function buildDepthPrompt(depthLevel: 'quick' | 'complete' | 'exhaustive', languageName: string): string {
-  const depthInstructions: Record<string, string> = {
-    quick: `
+  // Independientemente del depthLevel recibido, siempre devuelve el Embudo Narrativo completo
+  return `
 ═══════════════════════════════════════════════════════════════════════════════
-            FORMATO REQUERIDO: SÍNTESIS EJECUTIVA (máximo 500 palabras)
-═══════════════════════════════════════════════════════════════════════════════
-
-Estructura OBLIGATORIA (respeta este orden exacto):
-
-## Síntesis Estratégica
-Un párrafo denso (4-5 líneas) con la conclusión principal. El directivo debe 
-captar la esencia en 30 segundos. Incluye el veredicto claro y la recomendación.
-
-## Puntos Clave
-• [Punto 1]: Una línea con dato concreto y su implicación
-• [Punto 2]: Una línea con dato concreto y su implicación  
-• [Punto 3]: Una línea con dato concreto y su implicación
-
-## Recomendación
-Una frase directa de acción si procede.
-
-PROHIBIDO en este nivel:
-- Tablas detalladas de métricas
-- Citas individuales de modelos de IA
-- Explicaciones extensas de métricas
-- Más de 500 palabras
-- Listas largas de bullets
-
-RECUERDA: Este es un resumen ejecutivo para quien tiene 30 segundos.
-`,
-
-    complete: `
-═══════════════════════════════════════════════════════════════════════════════
-         FORMATO REQUERIDO: INFORME EJECUTIVO COMPLETO (máximo 1800 palabras)
-═══════════════════════════════════════════════════════════════════════════════
-
-Estructura OBLIGATORIA (respeta este orden exacto):
-
-## Síntesis Estratégica
-Párrafo denso (5-6 líneas) con conclusión principal y recomendación estratégica.
-Debe ser presentable a comité de dirección sin más contexto.
-Este párrafo debe poder leerse de forma independiente.
-
-## Análisis Interpretativo
-Narrativa de 3-4 párrafos donde las IAs son BASE DE PENSAMIENTO, no protagonistas.
-IMPORTANTE:
-- Usa expresiones como: "la percepción algorítmica indica...", "el consenso de 
-  modelos refleja...", "el análisis multi-IA sugiere..."
-- NO nombres individuales de IAs excepto para divergencias significativas (>12 pts)
-- Contextualiza con comparativas sectoriales cuando sea relevante
-- Cada afirmación debe estar respaldada por datos del contexto
-
-## Tabla Resumen
-Incluye UNA tabla comparativa si hay datos de múltiples empresas o modelos.
-
-| Empresa/Modelo | RIX Promedio | Tendencia | Fortaleza Principal | Debilidad Principal |
-|----------------|--------------|-----------|---------------------|---------------------|
-
-## Conclusiones
-2-3 puntos accionables basados en el análisis:
-1. **Prioridad inmediata**: Acción concreta para esta semana
-2. **Prioridad táctica**: Acción para el próximo mes
-3. **Visión estratégica**: Dirección a largo plazo (opcional)
-
-RECUERDA: Este informe se presenta a alta dirección. Profesionalismo absoluto.
-`,
-
-    exhaustive: `
-═══════════════════════════════════════════════════════════════════════════════
-         FORMATO REQUERIDO: INFORME EXHAUSTIVO (máximo 4500 palabras)
+     FORMATO OBLIGATORIO: EMBUDO NARRATIVO (mínimo 2.500 palabras)
 ═══════════════════════════════════════════════════════════════════════════════
 
 ## EXTENSIÓN OBLIGATORIA
-- Mínimo 2,500 palabras (~15,000 caracteres) - UNA RESPUESTA CORTA ES UN ERROR
-- TODAS las secciones numeradas (1-5) son OBLIGATORIAS
-- Si el usuario ha seleccionado un ROL específico (periodista, CEO, etc.), MANTÉN esta extensión
-- Adapta el TONO al rol pero NUNCA reduzcas la EXTENSIÓN requerida
-- Si el rol es "Periodista", genera un REPORTAJE DE INVESTIGACIÓN LARGO, no una nota breve
+- Mínimo 2.500 palabras (~15.000 caracteres) — UNA RESPUESTA CORTA ES UN ERROR
+- TODAS las secciones del embudo son OBLIGATORIAS (si una no aplica, se omite limpiamente)
+- Si el usuario ha seleccionado un ROL específico, MANTÉN esta extensión y estructura
+- El rol modifica el ÁNGULO/TONO pero NUNCA la estructura ni la extensión
 
-Estructura OBLIGATORIA (respeta este orden exacto):
+Estructura OBLIGATORIA (respeta este orden exacto, NUNCA lo alteres):
 
-## 1. Síntesis Estratégica
-Conclusión contundente de 6-8 líneas para comité de dirección.
-Incluye: hallazgo principal, implicación estratégica, recomendación clara.
-Este párrafo debe poder presentarse de forma independiente en un comité ejecutivo.
+═══════════════════════════════════════════════════════════════════════════════
+                        RESUMEN EJECUTIVO
+═══════════════════════════════════════════════════════════════════════════════
 
-## 2. Análisis Interpretativo
-Narrativa profesional de 4-5 párrafos integrando patrones y señales.
-IMPORTANTE:
-- Contextualiza cada afirmación con datos específicos del contexto
-- Explica las métricas en su primera mención (nombre completo + sigla)
-- Identifica causas probables de los patrones observados
-- Conecta los hallazgos con implicaciones de negocio
-- Menciona modelos de IA solo cuando hay divergencias significativas (>12 pts)
+Quien lee SOLO el Resumen entiende la situación. Debe poder presentarse en
+un comité de dirección sin más contexto.
 
-## 3. Base Empírica
+### Titular-Diagnóstico
+Una frase contundente de 1-2 líneas que sintetice la situación. Ej:
+"[Empresa] consolida su liderazgo narrativo pero pierde terreno en evidencia
+documental frente a [Competidor], abriendo un flanco de vulnerabilidad."
 
-### 3.1 Tabla de Scores por Modelo
-| Empresa | ChatGPT | Perplexity | Gemini | DeepSeek | Promedio | Divergencia |
-|---------|---------|------------|--------|----------|----------|-------------|
-[Incluir TODOS los datos disponibles]
+### 3 KPIs con Delta
+Tres indicadores clave con su variación respecto al periodo anterior:
+- **[KPI 1]**: [valor] ([+/- delta] vs anterior)
+- **[KPI 2]**: [valor] ([+/- delta] vs anterior)
+- **[KPI 3]**: [valor] ([+/- delta] vs anterior)
 
-### 3.2 Desglose de Métricas (Glosario Canónico)
+### 3 Hallazgos
+Tres descubrimientos principales del análisis, en prosa completa (no bullets
+telegráficos). Cada hallazgo en 2-3 oraciones con datos concretos.
+
+### 3 Recomendaciones (acción + responsable + KPI)
+Tres recomendaciones ejecutivas, cada una con:
+- Acción concreta
+- Área responsable
+- KPI de seguimiento
+
+### Veredicto
+Un párrafo de 3-4 oraciones con la valoración final del analista.
+
+### 5 Mensajes para la Dirección
+Bloque diferenciado con 5 mensajes directos y accionables que un directivo
+pueda trasladar directamente a su equipo. Redactados como instrucciones
+ejecutivas, no como análisis.
+
+═══════════════════════════════════════════════════════════════════════════════
+              PILAR 1 — DEFINIR (Qué dice el dato)
+═══════════════════════════════════════════════════════════════════════════════
+
+Quien llega a Pilar 1 entiende la situación con detalle factual.
+
+### Visión de las 6 IAs
+Tarjetas de cada modelo de IA ordenadas de MAYOR a MENOR puntuación RIX.
+Para cada modelo: puntuación RIX, fortaleza principal, debilidad principal,
+y un párrafo interpretativo de 3-4 oraciones.
+
+### Las 8 Métricas
 Para cada métrica relevante (solo si hay datos):
-- **NVM (Calidad de la Narrativa)**: [Score] - Coherencia del discurso, controversia, verificabilidad
-- **DRM (Fortaleza de Evidencia)**: [Score] - Calidad de fuentes primarias, corroboración
-- **SIM (Autoridad de Fuentes)**: [Score] - Jerarquía de fuentes (T1-T4)
-- **RMM (Actualidad y Empuje)**: [Score] - Frescura temporal de menciones
-- **CEM (Gestión de Controversias)**: [Score] - Exposición a riesgos (inverso: 100=sin riesgo)
-- **GAM (Percepción de Gobierno)**: [Score] - Independencia de gobierno corporativo
-- **DCM (Coherencia Informativa)**: [Score] - Consistencia entre modelos de IA
-- **CXM (Ejecución Corporativa)**: [Score] - Percepción de ejecución en mercado
+- **[Nombre completo] ([Sigla])**: [Puntuación]/100
+  Párrafo explicativo de 2-3 oraciones interpretando qué significa esa
+  puntuación para la empresa, con color semafórico (🟢 >70, 🟡 50-70, 🔴 <50).
 
-### 3.3 Evolución Temporal
-Tendencia de las últimas 4 semanas si hay datos disponibles.
-| Semana | RIX Promedio | Variación | Evento Clave |
-|--------|--------------|-----------|--------------|
+### Divergencia entre Modelos
+Análisis de las diferencias entre modelos de IA. Qué modelos coinciden,
+cuáles divergen significativamente (>12 pts) y qué implica esa divergencia.
 
-### 3.4 Comparativa Competitiva
-Posicionamiento frente a competidores directos del sector.
-| Posición | Empresa | RIX | Distancia al líder |
-|----------|---------|-----|---------------------|
+═══════════════════════════════════════════════════════════════════════════════
+              PILAR 2 — ANALIZAR (Qué significan)
+═══════════════════════════════════════════════════════════════════════════════
 
-## 4. Citas Relevantes
-Extractos textuales de los modelos de IA que respaldan el análisis.
-> "Cita textual del modelo X sobre aspecto Y" — [Modelo]
+Quien llega a Pilar 2 entiende POR QUÉ la situación es como es.
 
-## 5. Recomendaciones
-Plan de acción en 3 horizontes temporales:
-1. **Inmediato** (esta semana): [Acción concreta con responsable sugerido]
-2. **Corto plazo** (próximo mes): [Acción táctica con KPIs]
-3. **Estratégico** (próximo trimestre): [Visión y objetivos]
+### Evolución y Comparativas
+Tablas con deltas temporales (vs semana anterior, vs mes anterior).
+| Periodo | RIX | Δ | Evento Clave |
+|---------|-----|---|--------------|
 
-RECUERDA: Este es un informe de consultoría estratégica. Máximo rigor y profundidad.
-`
-  };
+### Amenazas y Riesgos
+Para cada amenaza identificada:
+- Impacto estimado en puntos RIX
+- Métricas afectadas
+- Recomendación de mitigación
 
-  return depthInstructions[depthLevel] || depthInstructions.complete;
+### Gaps: Realidad vs Percepción IA
+Análisis de brechas entre lo que la empresa comunica y lo que las IAs
+perciben. ¿Hay narrativas que no están llegando? ¿Hay percepciones
+erróneas que corregir?
+
+### Contexto Competitivo
+Ranking comparativo con competidores directos:
+| Posición | Empresa | RIX | Fortaleza | Debilidad | Distancia al líder |
+|----------|---------|-----|-----------|-----------|---------------------|
+
+═══════════════════════════════════════════════════════════════════════════════
+              PILAR 3 — PROSPECTAR (Qué hacer)
+═══════════════════════════════════════════════════════════════════════════════
+
+Quien llega a Pilar 3 ACTÚA el lunes. Cada recomendación lleva 6 campos
+obligatorios en este orden exacto:
+
+### 3 Activaciones Inmediatas (0-7 días)
+
+Para CADA activación, formato OBLIGATORIO:
+
+# N — LÍNEA TITULAR: verbo de acción + táctica concreta
+
+**Qué**: Entregables, canales, etiquetas, complementos.
+**Por qué**: Datos del informe (%, puntuaciones) + mecanismo causal IA.
+**Responsable**: Área(s) implicada(s).
+**KPI**: Nombre descriptivo de métrica + umbral + plazo.
+**Impacto IA**: Modelo — Métrica ↑/↑↑ (uno por línea).
+
+### 3 Tácticas Operativas (2-8 semanas)
+Mismo formato de 6 campos que las activaciones inmediatas.
+
+### 3 Líneas Estratégicas (trimestre)
+Mismo formato de 6 campos que las activaciones inmediatas.
+
+### Tabla de Escenarios
+| Escenario | Condición | RIX Estimado | Acciones Clave |
+|-----------|-----------|--------------|----------------|
+| Optimista | [condición] | [valor] | [acciones] |
+| Base | [condición] | [valor] | [acciones] |
+| Riesgo | [condición] | [valor] | [acciones] |
+
+═══════════════════════════════════════════════════════════════════════════════
+                        CIERRE
+═══════════════════════════════════════════════════════════════════════════════
+
+### Kit de Gestión
+Borradores ejecutivos de las 3 activaciones inmediatas recomendadas en
+Pilar 3. Cada borrador debe ser directamente utilizable (ej: draft de
+comunicado, esquema de fact sheet, talking points para reunión).
+
+═══════════════════════════════════════════════════════════════════════════════
+                   FUENTES Y METODOLOGÍA
+═══════════════════════════════════════════════════════════════════════════════
+
+Incluir al final:
+- Modelos de IA consultados y fecha del análisis
+- Número de documentos cualitativos utilizados del Vector Store
+- Periodo temporal analizado
+- Nota sobre la metodología RepIndex
+
+RECUERDA: Este es un informe de consultoría estratégica de máximo rigor.
+Nunca se altera el orden del embudo. Si una sección no aplica, se omite
+limpiamente sin mención.
+`;
 }
 
 // =============================================================================
@@ -2267,48 +2285,57 @@ La respuesta original contiene datos que DEBES mantener y EXPANDIR significativa
 3. **ADAPTAR el enfoque** a las prioridades del perfil (sin mencionarlo)
 4. **INCLUIR secciones adicionales** con recomendaciones estratégicas
 
-## ESTRUCTURA OBLIGATORIA DEL INFORME (mínimo 2500 palabras):
+## ESTRUCTURA OBLIGATORIA DEL INFORME — EMBUDO NARRATIVO (mínimo 2500 palabras):
 
 ---
 
 # 📋 INFORME EJECUTIVO DE REPUTACIÓN CORPORATIVA
-## Alta Dirección de ${roleName} - Análisis RepIndex
+## Alta Dirección — Análisis RepIndex
 
 ---
 
-### 1. RESUMEN EJECUTIVO (2-3 párrafos)
-- Conclusión principal en negrita
-- Hallazgo más relevante
-- Acción prioritaria recomendada
+### RESUMEN EJECUTIVO
+- **Titular-diagnóstico**: Frase contundente que sintetice la situación
+- **3 KPIs con delta** (vs periodo anterior)
+- **3 Hallazgos** principales en prosa completa
+- **3 Recomendaciones** (acción + responsable + KPI)
+- **Veredicto**: Párrafo de 3-4 oraciones con valoración final
+- **5 Mensajes para la Dirección**: Instrucciones ejecutivas directas
 
-### 2. CONTEXTO Y DATOS CLAVE
-[Incluir TODOS los datos de la respuesta original organizados en tablas]
-
-### 3. ANÁLISIS ESTRATÉGICO DETALLADO
+### PILAR 1 — DEFINIR (Qué dice el dato)
+- Visión de las 6 IAs (tarjetas ordenadas de mayor a menor)
+- Las 8 métricas (puntuación + color semafórico + párrafo explicativo)
+- Divergencia entre modelos
 
 ${rolePrompt}
 
-Desarrolla CADA punto con:
-- Mínimo 3-4 párrafos por punto
-- Datos concretos de la respuesta original
-- Explicación clara de cada métrica mencionada
-- Recomendaciones accionables
+### PILAR 2 — ANALIZAR (Qué significan)
+- Evolución y comparativas (tablas con deltas)
+- Amenazas y riesgos (impacto en pts + métricas + recomendación)
+- Gaps: Realidad vs Percepción IA
+- Contexto competitivo (ranking con competidores)
 
-### 4. COMPARATIVA Y BENCHMARKING
-[Tabla comparativa con competidores si están disponibles]
-[Análisis de posición relativa]
+### PILAR 3 — PROSPECTAR (Qué hacer)
+Cada recomendación lleva 6 campos obligatorios:
 
-### 5. RIESGOS Y OPORTUNIDADES
-- ⚠️ Riesgos identificados (mínimo 3, con detalle)
-- 💡 Oportunidades detectadas (mínimo 3, con detalle)
+# N — LÍNEA TITULAR: verbo de acción + táctica concreta
+**Qué**: Entregables, canales, etiquetas.
+**Por qué**: Datos del informe (%, puntuaciones) + mecanismo causal IA.
+**Responsable**: Área(s) implicada(s).
+**KPI**: Métrica + umbral + plazo.
+**Impacto IA**: Modelo — Métrica ↑/↑↑.
 
-### 6. PLAN DE ACCIÓN RECOMENDADO
-| Prioridad | Acción | Responsable | Plazo | Impacto Esperado |
-|-----------|--------|-------------|-------|------------------|
-[Mínimo 5 acciones concretas]
+Incluir:
+- 3 Activaciones inmediatas (0-7 días)
+- 3 Tácticas operativas (2-8 semanas)
+- 3 Líneas estratégicas (trimestre)
+- Tabla de escenarios (optimista / base / riesgo)
 
-### 7. CONCLUSIONES Y SIGUIENTES PASOS
-[3-4 párrafos de cierre con visión estratégica]
+### CIERRE
+Kit de gestión: borradores ejecutivos de las activaciones inmediatas.
+
+### FUENTES Y METODOLOGÍA
+Modelos consultados, periodo analizado, documentos utilizados.
 
 ---
 
@@ -2324,12 +2351,12 @@ ${originalQuestion || "(No disponible)"}
 ## REGLAS CRÍTICAS:
 
 1. **MÍNIMO 2500 PALABRAS** - Este es un informe ejecutivo premium
-2. **NO RESUMIR** - Expandir y profundizar en CADA punto
+2. **ESTRUCTURA EMBUDO** - Resumen → Pilar 1 → Pilar 2 → Pilar 3 → Cierre
 3. **USAR TODOS LOS DATOS** - No omitir cifras ni empresas mencionadas
 4. **TABLAS Y FORMATO** - Usar Markdown: tablas, negritas, listas, quotes
-5. **NUNCA MENCIONAR EL PERFIL** - Adapta el contenido sin decir "para el CEO", "como Director de..."
-6. **EXPLICAR CADA MÉTRICA** - El lector no conoce la terminología, siempre contextualiza
-7. **VALOR CONSULTIVO** - Como si fuera un entregable de McKinsey o BCG
+5. **NUNCA MENCIONAR EL PERFIL** - Adapta el contenido sin decir "para el CEO"
+6. **EXPLICAR CADA MÉTRICA** - El lector no conoce la terminología
+7. **6 CAMPOS POR RECOMENDACIÓN** - Qué, Por qué, Responsable, KPI, Impacto IA
 8. **RECOMENDACIONES CONCRETAS** - No generalidades, acciones específicas
 9. **NO INVENTAR DATOS** - Solo expandir análisis de datos existentes`;
 
@@ -2533,7 +2560,7 @@ async function handleBulletinRequest(
   console.log(`${logPrefix} Matched company: ${matchedCompany.issuer_name} (${matchedCompany.ticker})`);
 
   // 2. Get competitors using intelligent prioritization system (GUARDRAIL)
-  const competitorLimit = depthLevel === 'quick' ? 5 : 8;
+  const competitorLimit = 8; // Always exhaustive
   const competitorResult = await getRelevantCompetitors(
     matchedCompany,
     companiesCache || [],
@@ -2553,7 +2580,7 @@ async function handleBulletinRequest(
   // 4. VECTOR STORE SEARCH - Qualitative context from AI explanations
   // ═══════════════════════════════════════════════════════════════════════════
   let vectorStoreContext = '';
-  const vectorMatchCount = depthLevel === 'quick' ? 10 : depthLevel === 'exhaustive' ? 30 : 20;
+  const vectorMatchCount = 30; // Always exhaustive
   
   try {
     // Generate embedding for the company name
@@ -2619,7 +2646,7 @@ async function handleBulletinRequest(
       .select('headline, lead_paragraph, published_date, category')
       .eq('ticker', matchedCompany.ticker)
       .order('published_date', { ascending: false })
-      .limit(depthLevel === 'quick' ? 3 : 5);
+      .limit(5); // Always exhaustive
 
     if (!newsError && corporateNews?.length > 0) {
       console.log(`${logPrefix} Corporate News: Found ${corporateNews.length} recent articles`);
@@ -2683,7 +2710,7 @@ async function handleBulletinRequest(
   const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
   const uniquePeriods = [...new Set(rixData?.map(getPeriodKey) || [])]
     .sort((a, b) => b.split('|')[1].localeCompare(a.split('|')[1]))
-    .slice(0, depthLevel === 'quick' ? 2 : 4); // Quick: 2 periods, otherwise: 4
+    .slice(0, 4); // Always exhaustive: 4 periods
 
   console.log(`${logPrefix} Unique periods found: ${uniquePeriods.length}`);
 
@@ -2852,17 +2879,16 @@ ${bulletinContext}
 
 Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especificado en tus instrucciones.`;
 
-  const bulletinSystemPrompt = depthLevel === 'quick' ? BULLETIN_SYSTEM_PROMPT_QUICK : BULLETIN_SYSTEM_PROMPT;
+  const bulletinSystemPrompt = BULLETIN_SYSTEM_PROMPT; // Always full bulletin
   const bulletinMessages = [
     { role: 'system', content: bulletinSystemPrompt },
     { role: 'user', content: bulletinUserPrompt }
   ];
 
-  // Configuration based on depth level
-  const isQuickBulletin = depthLevel === 'quick';
-  const bulletinMaxTokens = isQuickBulletin ? 6000 : 40000;
-  const bulletinTimeoutMs = isQuickBulletin ? 45000 : 120000; // Extended timeout for streaming
-  const geminiModel = isQuickBulletin ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash';
+  // Always exhaustive configuration
+  const bulletinMaxTokens = 40000;
+  const bulletinTimeoutMs = 120000;
+  const geminiModel = 'gemini-2.5-flash';
 
   // =========================================================================
   // STREAMING MODE: Return SSE stream for real-time text generation
@@ -3427,8 +3453,8 @@ async function handleStandardChat(
   let entityGraphs: GraphExpansionResult[] = [];
   let graphContextString = '';
   
-  // Only perform graph expansion for complete/exhaustive depth and when companies are detected
-  const shouldExpandGraph = depthLevel !== 'quick' && detectedCompanies.length > 0;
+  // Always expand graph when companies are detected (always exhaustive)
+  const shouldExpandGraph = detectedCompanies.length > 0;
   
   if (shouldExpandGraph) {
     console.log(`${logPrefix} GRAPH EXPANSION: Traversing knowledge graph for ${detectedCompanies.slice(0, 3).map(c => c.ticker).join(', ')}...`);
@@ -3821,8 +3847,8 @@ async function handleStandardChat(
   
   let regressionAnalysis: RegressionAnalysisResult | null = null;
   
-  // SIEMPRE llamar a regresión para complete/exhaustive (quick puede omitirla para velocidad)
-  const shouldLoadRegression = depthLevel !== 'quick';
+  // Always load regression (always exhaustive mode)
+  const shouldLoadRegression = true;
   
   if (shouldLoadRegression) {
     console.log(`${logPrefix} LOADING REGRESSION ANALYSIS (always-on for depth=${depthLevel})...`);
@@ -3904,8 +3930,7 @@ async function handleStandardChat(
     
     if (batch.length < rixBatchSize) break;
     
-    // For quick depth, stop after first batch
-    if (depthLevel === 'quick') break;
+    // Always fetch all batches (exhaustive mode)
   }
 
   console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0} (depth: ${depthLevel})`);
@@ -4552,40 +4577,22 @@ La CONJUNCIÓN DE DATOS es más valiosa que cualquier métrica individual.
 Un dato mencionado por 5 IAs tiene más peso analítico que un score de 80 puntos.
 
 ═══════════════════════════════════════════════════════════════════════════════
-                    ESTRUCTURA DE INFORME EJECUTIVO
+                    ESTRUCTURA DE INFORME: EMBUDO NARRATIVO
 ═══════════════════════════════════════════════════════════════════════════════
 
-Usa esta estructura para informes completos sobre una empresa:
+SIEMPRE usa la estructura del Embudo Narrativo (inyectada al final del prompt
+vía buildDepthPrompt). El orden NUNCA se altera:
 
-### 1. RESUMEN EJECUTIVO
-Un párrafo denso que sintetice la situación reputacional. El directivo debe
-poder leer SOLO esto y llevarse la idea clave al comité.
+RESUMEN EJECUTIVO → PILAR 1 DEFINIR → PILAR 2 ANALIZAR → PILAR 3 PROSPECTAR → CIERRE → FUENTES
 
-Ejemplo: "[Empresa] ha avanzado de forma perceptible en narrativa sectorial 
-y contratos internacionales, pero su reputación permanece en zona vulnerable 
-(RIX 47,3) debido a la fragilidad financiera y a una comunicación irregular."
+- El sujeto de la consulta determina la profundidad de cada sección
+- El rol del usuario determina el ángulo/tono narrativo
+- La estructura y extensión mínima (2.500 palabras) son INVARIABLES
+- Cada recomendación del Pilar 3 lleva 6 campos: Qué, Por qué, Responsable, KPI, Impacto IA
+- Si una sección no aplica, se omite limpiamente sin mención
 
-### 2. CONTEXTO Y DATOS CLAVE
-- Posicionamiento sectorial (qué hace la empresa, con quién compite)
-- Tabla de diagnóstico multi-IA con TODAS las métricas
-- Tendencia últimas semanas
-- Palancas positivas y riesgos detectados
-
-### 3. ANÁLISIS ESTRATÉGICO DETALLADO
-- Brevedad ejecutiva: 4-5 puntos clave sin tecnicismos
-- Impacto en negocio: cómo afecta la reputación a captación de talento, 
-  financiación, desarrollo comercial
-- Comparativa competitiva: benchmark con empresas similares
-- Decisiones requeridas: recomendaciones concretas
-
-### 4. COMPARATIVA Y BENCHMARKING
-Tabla comparativa con competidores directos mostrando todas las métricas.
-
-### 5. RIESGOS Y OPORTUNIDADES
-- Riesgos identificados con su impacto potencial
-- Oportunidades de mejora reputacional
-
-Para preguntas simples, adapta la profundidad manteniendo el rigor.
+Para preguntas simples, adapta la profundidad dentro del embudo pero mantén
+la estructura y el rigor.
 
 ═══════════════════════════════════════════════════════════════════════════════
                     LAS 8 MÉTRICAS DIMENSIONALES (GLOSARIO CANÓNICO)
@@ -4915,20 +4922,15 @@ ${roleId && rolePrompt ? `
 El usuario ha solicitado que la respuesta esté adaptada a la perspectiva de ${roleName}.
 
 ## REGLA DE PRIORIDAD ABSOLUTA
-${depthLevel === 'exhaustive' ? `
-⚠️ MODO EXHAUSTIVO ACTIVO - PRIORIDADES:
-1. PRIORIDAD 1 (EXTENSIÓN): Mínimo 2,500 palabras con TODAS las secciones obligatorias
-2. PRIORIDAD 2 (TONO): Adapta el tono y enfoque al rol "${roleName}"
 
-El rol "${roleName}" modifica CÓMO presentas el contenido, pero NUNCA reduce la extensión.
+⚠️ MODO EXHAUSTIVO SIEMPRE ACTIVO - PRIORIDADES:
+1. PRIORIDAD 1 (ESTRUCTURA): Embudo Narrativo completo (Resumen → Pilar 1 → Pilar 2 → Pilar 3 → Cierre)
+2. PRIORIDAD 2 (EXTENSIÓN): Mínimo 2.500 palabras con TODAS las secciones obligatorias
+3. PRIORIDAD 3 (TONO): Adapta el ángulo y enfoque al rol "${roleName}"
+
+El rol "${roleName}" modifica CÓMO presentas el contenido (ángulo, tono), pero NUNCA
+altera la estructura del embudo ni reduce la extensión mínima.
 Si el rol sugiere formato breve (ej. "nota de prensa"), conviértelo en REPORTAJE LARGO.
-` : depthLevel === 'complete' ? `
-⚠️ MODO COMPLETO ACTIVO - PRIORIDADES:
-1. PRIORIDAD 1 (EXTENSIÓN): Mínimo 1,500 palabras con estructura completa
-2. PRIORIDAD 2 (TONO): Adapta el tono al rol "${roleName}"
-` : `
-Modo rápido: El rol "${roleName}" puede determinar el formato.
-`}
 
 INSTRUCCIONES DEL ROL:
 ${rolePrompt}
@@ -5090,8 +5092,8 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
             console.warn(`${logPrefix} Error generating questions:`, qError);
           }
 
-          // Generate drumroll question for complete/exhaustive depth
-          if (depthLevel !== 'quick' && detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
+          // Generate drumroll question (always active in exhaustive mode)
+          if (detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
             try {
               const insights = extractAnalysisInsights(allRixData, detectedCompanies[0], answer);
               if (insights) {
@@ -5635,11 +5637,11 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
 
     // =============================================================================
     // GENERATE DRUMROLL QUESTION (Complementary Report Suggestion)
-    // Only for complete/exhaustive depth levels, not for quick
+    // Always active in exhaustive mode
     // =============================================================================
     // Extract structured insights from the rix data for drumroll generation
     let drumrollQuestion: DrumrollQuestion | null = null;
-    if (depthLevel !== 'quick' && detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
+    if (detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
       console.log(`${logPrefix} Extracting analysis insights for ${detectedCompanies[0]?.issuer_name}...`);
       
       const insights = extractAnalysisInsights(
