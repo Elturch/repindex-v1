@@ -145,11 +145,15 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
 
       v1Total = v1Count || 0;
       totalRuns += v1Total;
-      console.log(`V1 total records: ${v1Total}`);
+      console.log(`V1 total records: ${v1Total}, indexed: ${rixV1IndexedInitial}`);
 
       v1PendingEstimate = Math.max(0, v1Total - rixV1IndexedInitial);
-      if (v1PendingEstimate === 0) {
-        console.log('V1 pending estimate is 0 — skipping V1 scan.');
+      // ALWAYS scan at least one page even if estimate is 0.
+      // The estimate can be wrong when indexed > source (e.g. deleted/modified source records).
+      const v1ForceOneScan = v1PendingEstimate === 0;
+      if (v1ForceOneScan) {
+        v1PendingEstimate = 1; // Force entry into the scan loop for at least one page
+        console.log('V1 pending estimate is 0 — will scan one page to verify.');
       }
 
       let v1Offset = 0;
@@ -189,6 +193,10 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
         if (rixBatch.length < v1BatchSize) break;
         v1Offset += v1BatchSize;
       }
+      // If we forced a scan and found nothing, reset estimate to 0
+      if (v1ForceOneScan && pendingFoundV1 === 0) {
+        v1PendingEstimate = 0;
+      }
       console.log(`V1: scanned ${v1Scanned}, pending found ${pendingFoundV1}, batch size now ${rixBatchToProcess.length}`);
     }
 
@@ -203,11 +211,14 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
 
       v2Total = v2Count || 0;
       totalRuns += v2Total;
-      console.log(`V2 total records: ${v2Total}`);
+      console.log(`V2 total records: ${v2Total}, indexed: ${rixV2IndexedInitial}`);
 
       v2PendingEstimate = Math.max(0, v2Total - rixV2IndexedInitial);
-      if (v2PendingEstimate === 0) {
-        console.log('V2 pending estimate is 0 — skipping V2 scan.');
+      // ALWAYS scan at least one page even if estimate is 0.
+      const v2ForceOneScan = v2PendingEstimate === 0;
+      if (v2ForceOneScan) {
+        v2PendingEstimate = 1; // Force entry into the scan loop for at least one page
+        console.log('V2 pending estimate is 0 — will scan one page to verify.');
       }
 
       let v2Offset = 0;
@@ -246,6 +257,10 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
 
         if (v2Batch.length < v2BatchSize) break;
         v2Offset += v2BatchSize;
+      }
+      // If we forced a scan and found nothing, reset estimate to 0
+      if (v2ForceOneScan && pendingFoundV2 === 0) {
+        v2PendingEstimate = 0;
       }
       console.log(`V2: scanned ${v2Scanned}, pending found ${pendingFoundV2}, batch size now ${rixBatchToProcess.length}`);
     }
