@@ -1,81 +1,64 @@
 
-# API Health Dashboard - Panel de Salud de APIs
 
-## Objetivo
-Crear un nuevo componente `ApiHealthDashboard` como una nueva tab en el panel Admin que muestre el estado de salud en tiempo real de todas las APIs del sistema, incluyendo resultados recientes de llamadas y estado operativo de cada proveedor.
+# Plan: Cerrar los gaps del sistema de auto-reparacion
 
-## Proveedores a monitorizar
-- **OpenAI** (o3, gpt-5, gpt-4o, gpt-4.1-mini) - Analisis RIX + Chat
-- **Perplexity** (sonar-pro) - Busqueda RIX + Momentum tips
-- **Google Gemini** (gemini-2.5-flash, gemini-2.5-pro) - Chat + Busqueda RIX
-- **DeepSeek** (deepseek-chat) - Busqueda RIX
-- **XAI/Grok** (grok-3) - Busqueda RIX
-- **Alibaba/Qwen** (qwen-max) - Busqueda RIX
-- **Firecrawl** - Web scraping corporativo
+## Diagnostico
 
-## Componentes del panel
+El sistema de reparacion autonoma tiene dos brechas que impiden la resolucion completa:
 
-### 1. Tarjetas de estado por proveedor (grid)
-Cada tarjeta mostrara:
-- Nombre del proveedor + icono
-- Estado (OK / Error / Sin datos) con semaforo visual (verde/amarillo/rojo)
-- Ultima llamada exitosa (hace cuanto tiempo)
-- Numero de llamadas en las ultimas 24h
-- Tasa de exito (% de llamadas sin error)
-- Latencia promedio (si disponible en metadata)
+1. **Accion no reconocida**: El `auto_sanitize` detecta respuestas invalidas y crea triggers con `action: 'repair_invalid_responses'`, pero el orquestador (`rix-batch-orchestrator`) no tiene un handler para esa accion. Resultado: el trigger falla con "Unknown action".
 
-### 2. Tabla de llamadas recientes
-- Ultimas 20 llamadas a todas las APIs
-- Columnas: Timestamp, Proveedor, Modelo, Edge Function, Action Type, Tokens, Coste, Ticker (si aplica)
-- Indicador visual de exito/error
+2. **`repair_search` bloqueado**: Un trigger de repair_search lleva mas de 8 horas en estado `processing` sin completarse, bloqueando nuevos triggers de reparacion.
 
-### 3. Resumen rapido
-- Total de llamadas en 24h
-- Providers activos vs inactivos
-- Ultimo error detectado (si hay)
+## Cambios propuestos
 
-## Implementacion tecnica
+### 1. Orquestador: Anadir handler para `repair_invalid_responses`
 
-### Archivo nuevo: `src/components/admin/ApiHealthDashboard.tsx`
-- Consulta a `api_usage_logs` para obtener las ultimas llamadas por proveedor
-- Agrupa por provider para calcular estado de salud
-- Usa intervalos de tiempo para determinar si un provider esta "activo" (llamada en ultimas 2h), "inactivo" (mas de 24h), o "sin datos"
-- Reutiliza el patron de `admin-api-data` edge function para obtener datos
+**Archivo**: `supabase/functions/rix-batch-orchestrator/index.ts`
 
-### Modificacion: `src/pages/Admin.tsx`
-- Anadir nueva tab "API Health" con icono `HeartPulse` de lucide-react
-- Importar y renderizar `ApiHealthDashboard`
-- Posicionar despues de "Gastos API" ya que son conceptos relacionados
+- Anadir `repair_invalid_responses` a la lista de prioridades (prioridad 15, entre repair_search y repair_analysis)
+- Implementar el handler que llame a `rix-quality-watchdog` con `action: 'repair'` (que ya existe y funciona)
+- Incluir auto-requeue si quedan reparaciones pendientes (mismo patron que repair_search y repair_analysis)
 
-### Datos
-- Se consulta directamente la tabla `api_usage_logs` via el edge function `admin-api-data` existente (o via query directa si es mas eficiente)
-- No requiere nuevas tablas ni migraciones
-- Los datos de salud se calculan en el frontend a partir de los logs existentes
+### 2. Orquestador: Limpiar triggers zombi de repair_search
 
-### Detalle tecnico del componente
+**Archivo**: `supabase/functions/rix-batch-orchestrator/index.ts`
+
+- En el health_check existente, anadir limpieza de triggers `repair_search` y `repair_invalid_responses` que lleven mas de 10 minutos en `processing`
+- Resetearlos a `pending` para que se reintenten (mismo patron que ya existe para otros triggers zombi)
+
+### 3. Registrar la nueva accion en admin-cron-triggers
+
+**Archivo**: `supabase/functions/admin-cron-triggers/index.ts`
+
+- Anadir `'repair_invalid_responses'` al array `ALLOWED_ACTIONS` para que pueda ser disparado manualmente desde el dashboard si fuese necesario
+
+## Detalle tecnico del handler
+
 ```text
-+--------------------------------------------------+
-| API Health Status                    [Refresh]    |
-+--------------------------------------------------+
-| [7 tarjetas en grid 2x4]                        |
-|                                                   |
-| OpenAI     Perplexity  Gemini    DeepSeek        |
-| [OK]       [OK]        [OK]      [OK]            |
-| 142 calls  89 calls    67 calls  45 calls        |
-|                                                   |
-| Grok       Qwen       Firecrawl                  |
-| [OK]       [OK]       [OK]                       |
-| 38 calls   41 calls   12 calls                   |
-+--------------------------------------------------+
-| Ultimas llamadas                                  |
-| Timestamp | Provider | Model | Function | Status |
-+--------------------------------------------------+
+repair_invalid_responses handler:
+  1. Leer params del trigger (sweep_id, max_repairs)
+  2. Llamar a rix-quality-watchdog con action='repair'
+  3. Si result.repaired > 0 y quedan pendientes:
+     -> re-queue con status 'pending'
+  4. Si no quedan pendientes:
+     -> marcar como 'completed'
 ```
 
-### Logica de estado
-- **Verde (OK)**: Ultima llamada exitosa hace menos de 2 horas
-- **Amarillo (Idle)**: Ultima llamada hace mas de 2h pero menos de 24h
-- **Rojo (Down)**: Ultima llamada hace mas de 24h o con errores recientes
-- **Gris (Sin datos)**: No hay registros para este provider
+La cadena completa quedaria:
 
-El componente usara los mismos estilos y patrones del resto del admin (Cards, Badges, Tables de shadcn/ui).
+```text
+Sweep 100% -> auto_sanitize -> detecta invalidos
+  -> repair_invalid_responses -> llama watchdog repair
+    -> auto-requeue si quedan pendientes
+      -> cuando todo limpio -> auto_populate_vectors
+        -> auto_generate_newsroom
+```
+
+## Impacto
+
+- Sin nuevas tablas ni migraciones
+- 3 archivos modificados (2 edge functions)
+- Cierra el gap que impedia la reparacion completa automatica
+- El trigger `repair_search` bloqueado se liberara en el siguiente ciclo del watchdog
+
