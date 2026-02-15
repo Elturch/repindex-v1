@@ -58,7 +58,8 @@ import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
 import TechnicalDocPanel from '@/components/admin/TechnicalDocPanel';
-import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon } from 'lucide-react';
+import { ApiHealthDashboard } from '@/components/admin/ApiHealthDashboard';
+import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, HeartPulse } from 'lucide-react';
 
 interface Company {
   id: string;
@@ -827,6 +828,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="api-costs" className="flex items-center gap-1.5 px-3 text-xs">
               <DollarSign className="h-3.5 w-3.5" />
               Gastos API
+            </TabsTrigger>
+            <TabsTrigger value="api-health" className="flex items-center gap-1.5 px-3 text-xs">
+              <HeartPulse className="h-3.5 w-3.5" />
+              API Health
             </TabsTrigger>
             <TabsTrigger value="sweep-monitor" className="flex items-center gap-1.5 px-3 text-xs">
               <Radar className="h-3.5 w-3.5" />
@@ -2710,6 +2715,11 @@ const Admin: React.FC = () => {
           {/* ==================== GASTOS API ==================== */}
           <TabsContent value="api-costs">
             <ApiCostDashboard />
+          </TabsContent>
+
+          {/* ==================== API HEALTH ==================== */}
+          <TabsContent value="api-health">
+            <ApiHealthDashboard />
           </TabsContent>
 
           {/* ==================== SWEEP MONITOR V2 ==================== */}
