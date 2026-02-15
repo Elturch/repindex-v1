@@ -776,7 +776,7 @@ const Admin: React.FC = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto mb-6 flex-wrap gap-1">
+          <TabsList className="inline-flex h-auto items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto mb-6 flex-wrap gap-1">
             <TabsTrigger value="overview" className="flex items-center gap-1.5 px-3 text-xs">
               <Building2 className="h-3.5 w-3.5" />
               Resumen
