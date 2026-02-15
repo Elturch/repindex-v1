@@ -835,6 +835,23 @@ async function processCronTriggers(
     if (resetRows.length > 0) {
       console.warn(`[cron_triggers] Zombie cleanup: reset ${resetRows.length} triggers stuck in processing: ${resetRows.map(r => r.action).join(', ')}`);
     }
+
+    // ADDITIONAL ZOMBIE CLEANUP: repair_search and repair_invalid_responses stuck >10 min
+    // These actions can get stuck due to API timeouts; reset them to pending for retry
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    for (const zombieAction of ['repair_search', 'repair_invalid_responses']) {
+      const { data: zombieRows, error: zombieErr } = await supabase
+        .from('cron_triggers')
+        .update({ status: 'pending', processed_at: null })
+        .eq('status', 'processing')
+        .eq('action', zombieAction)
+        .lt('created_at', tenMinAgo)
+        .select('id');
+
+      if (!zombieErr && zombieRows && zombieRows.length > 0) {
+        console.warn(`[cron_triggers] Zombie cleanup: reset ${zombieRows.length} stuck ${zombieAction} triggers`);
+      }
+    }
   } catch (e) {
     console.error('[cron_triggers] Zombie cleanup exception:', e);
   }
@@ -859,6 +876,7 @@ async function processCronTriggers(
 
     // Analysis pipeline first
     repair_search: 10,
+    repair_invalid_responses: 15,
     repair_analysis: 20,
     auto_sanitize: 30,
 
@@ -1701,6 +1719,98 @@ async function processCronTriggers(
 
         results.push({ id: trigger.id, action: trigger.action, success: response.ok, result: data });
         console.log(`[cron_triggers] auto_continue trigger ${trigger.id} completed (status: ${response.status})`);
+
+      } else if (trigger.action === 'repair_invalid_responses') {
+        // ============================================================
+        // REPAIR_INVALID_RESPONSES: Repara respuestas inválidas (refusals)
+        // Detectadas por auto_sanitize, llamamos al watchdog en modo repair.
+        // ============================================================
+        console.log(`[cron_triggers] Processing repair_invalid_responses trigger ${trigger.id}`);
+        
+        const triggerParams = trigger.params as { sweep_id?: string; max_repairs?: number } | null;
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/rix-quality-watchdog`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ 
+            action: 'repair',
+            max_repairs: triggerParams?.max_repairs || 10,
+          }),
+          signal: AbortSignal.timeout(150_000),
+        });
+
+        const responseText = await response.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = { raw: responseText };
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responseText}`);
+        }
+
+        const repaired = data.repaired ?? 0;
+        const pendingRepairs = data.pending ?? data.remaining ?? 0;
+
+        if (pendingRepairs > 0) {
+          // Still work remaining → re-queue for next cycle
+          console.log(`[cron_triggers] repair_invalid_responses: ${repaired} repaired, ${pendingRepairs} remaining → re-queueing`);
+          
+          await supabase
+            .from('cron_triggers')
+            .update({ 
+              status: 'pending',
+              processed_at: null,
+              result: {
+                last_batch: { repaired, pending: pendingRepairs, timestamp: new Date().toISOString() },
+              }
+            })
+            .eq('id', trigger.id);
+          
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: { ...data, requeued: true } });
+        } else {
+          // All clean → mark completed, chain to vector store
+          console.log(`[cron_triggers] repair_invalid_responses: all done (${repaired} repaired, 0 remaining)`);
+          
+          await supabase
+            .from('cron_triggers')
+            .update({ 
+              status: 'completed',
+              processed_at: new Date().toISOString(),
+              result: data,
+            })
+            .eq('id', trigger.id);
+
+          results.push({ id: trigger.id, action: trigger.action, success: true, result: data });
+
+          // Chain: trigger auto_sanitize again to verify everything is clean
+          // This will then chain to auto_populate_vectors if sweep is clean
+          const { data: existingSanitize } = await supabase
+            .from('cron_triggers')
+            .select('id')
+            .eq('action', 'auto_sanitize')
+            .in('status', ['pending', 'processing'])
+            .limit(1)
+            .maybeSingle();
+
+          if (!existingSanitize) {
+            await supabase.from('cron_triggers').insert({
+              action: 'auto_sanitize',
+              params: { 
+                triggered_by: 'repair_invalid_responses_chain',
+                auto_chain: true,
+                sweep_id: triggerParams?.sweep_id,
+              },
+              status: 'pending',
+            });
+            console.log('[repair_invalid_responses] All repairs done! Re-triggering auto_sanitize to verify cleanliness.');
+          }
+        }
 
       } else {
         // Acción desconocida
