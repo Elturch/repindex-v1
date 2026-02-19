@@ -1,43 +1,131 @@
 
-# Mover botón "Informe" al final de la burbuja, alineado a la derecha
+# Añadir Rol: Experto Pericial de Reputación
 
-## Cambio único — `src/components/chat/ChatMessages.tsx`
+## Por qué requiere un tratamiento especial
 
-### Qué se mueve
-El bloque actual (líneas 220-231) elimina el botón de su posición `absolute top-2 right-2` y lo reubica **después del bloque Drumroll** (línea 390), como el último elemento dentro de la burbuja del asistente.
+Todos los roles existentes adaptan el *tono* del informe estándar (ejecutivo, periodístico, financiero…). El perfil pericial es estructuralmente distinto: **prohíbe recomendaciones estratégicas** (el Pilar 3 actual las exige obligatoriamente), usa tercera persona forense, y tiene un estándar de evidencia propio (cadena de custodia, antes/después, no causalidad, solo correlación).
 
-### Posición nueva
-Después del cierre del bloque Drumroll (`</div>` en línea 390), antes del cierre de la burbuja (`</div>` en línea 391), se añade:
+Si se añade como un rol normal con un prompt insertado entre Pilar 1 y Pilar 2, el sistema forzará igualmente el Pilar 3 con "Activaciones inmediatas" y "Tácticas operativas" — justo lo que el perito no puede incluir en un dictamen.
 
-```tsx
-{/* Download button — bottom-right of assistant bubbles */}
-{message.role === 'assistant' && !message.isStreaming && message.metadata?.type !== 'bulletin' && (
-  <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30 flex justify-end`}>
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => downloadMessage(message)}
-      className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
-    >
-      <Download className="h-3.5 w-3.5" />
-      {!compact && <span className="text-[11px] font-medium">Descargar informe</span>}
-    </Button>
-  </div>
-)}
-```
+**Solución**: El rol se registra en el catálogo front-end, pero en el edge function se detecta por `roleId === 'perito_reputacional'` y se usa un system prompt completamente distinto, diseñado desde cero para producir documentos periciales, no informes ejecutivos.
 
-### Por qué este diseño
-- **`justify-end`**: alinea el botón a la derecha, igual que estaba antes.
-- **`border-t border-border/30`**: separa visualmente el botón del resto del contenido de la burbuja, como hacía el bloque de metodología.
-- **Sin `absolute`**: el botón forma parte del flujo normal del documento, no interfiere con el padding del contenido superior.
-- El texto pasa de "Informe" a "Descargar informe" para ser más descriptivo y autoexplicativo para el usuario final.
+---
 
-### Archivos modificados
+## Archivos a modificar
+
 | Archivo | Cambio |
 |---|---|
-| `src/components/chat/ChatMessages.tsx` | Eliminar `absolute top-2 right-2` (líneas 220-231) · Añadir botón al final de la burbuja tras el Drumroll |
+| `src/lib/chatRoles.ts` | Nueva categoría `pericial` + nuevo rol `perito_reputacional` |
+| `supabase/functions/chat-intelligence/index.ts` | Rama especial en `handleEnrichRequest` para el rol pericial |
 
-### Lo que NO cambia
-- Lógica de descarga (`downloadMessage`) — idéntica.
-- Todos los demás bloques de la burbuja (Feedback, Metodología, Rol, Drumroll).
-- Modo compacto: el botón aparece sin texto, solo el icono.
+---
+
+## Cambio 1 — `src/lib/chatRoles.ts`
+
+### Nueva categoría
+```ts
+export const ROLE_CATEGORIES = {
+  ...
+  pericial: 'Peritaje y Legal',
+} as const;
+```
+
+### Nuevo rol
+```ts
+{
+  id: 'perito_reputacional',
+  emoji: '🔏',
+  name: 'Experto Pericial de Reputación',
+  shortDescription: 'Dictámenes periciales, valor probatorio, rigor forense',
+  category: 'pericial',
+  prompt: `[ver abajo]`,
+}
+```
+
+El campo `prompt` del rol describe en términos ejecutivos el tipo de documento que se quiere. El edge function lo ignorará en favor del system prompt forense dedicado, pero queda como documentación del rol.
+
+---
+
+## Cambio 2 — `supabase/functions/chat-intelligence/index.ts` — rama pericial
+
+En `handleEnrichRequest` (línea ~2254), antes del system prompt estándar, se añade:
+
+```ts
+if (roleId === 'perito_reputacional') {
+  return await handlePericialEnrichRequest(
+    roleName, originalQuestion, originalResponse,
+    sessionId, logPrefix, supabaseClient, userId
+  );
+}
+```
+
+La nueva función `handlePericialEnrichRequest` construye un system prompt con esta estructura forense:
+
+---
+
+### Estructura del informe pericial generado
+
+```
+DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA
+Elaborado con metodología RepIndex — Universidad Complutense de Madrid
+
+1. IDENTIFICACIÓN DEL OBJETO DE ANÁLISIS
+   Entidad analizada · periodo · modelos consultados · fecha de extracción
+
+2. METODOLOGÍA Y CADENA DE CUSTODIA
+   Descripción del sistema RepIndex · qué mide cada modelo · 
+   cómo se recogen los datos · fecha y hora de recogida
+
+3. CONSTATACIÓN DE HECHOS MEDIBLES
+   Tabla de métricas con puntuación, fecha, modelo concreto, semáforo.
+   Solo métricas con dato disponible. "No se dispone de evidencia suficiente" 
+   cuando aplique.
+
+4. ANÁLISIS POR MÉTRICA PRIORIZADA
+   — Coherencia Informativa: ¿coinciden los modelos en los datos básicos?
+   — Fortaleza de Evidencia: ¿las afirmaciones tienen respaldo verificable?
+   — Gestión de Controversias: ¿hay narrativas de riesgo activas?
+   — Calidad de la Narrativa: ¿con qué atributos se describe la empresa?
+
+5. DIVERGENCIAS ENTRE MODELOS
+   Tabla modelo × métrica cuando los valores se separan > 10 puntos.
+   Se documenta modelo + afirmación exacta detectada + fecha.
+
+6. EVOLUCIÓN TEMPORAL (si hay datos)
+   Estado previo al evento → estado posterior.
+   Deltas concretos con fecha. Sin afirmar causalidad; solo 
+   "se observa una correlación temporal entre X e Y".
+
+7. CONCLUSIONES PERICIALES
+   Solo lo que los datos permiten sostener.
+   Si los datos no respaldan una conclusión, se declara explícitamente.
+   Base cuantitativa para valoración económica por perito especializado.
+
+8. FUENTES Y TRAZABILIDAD
+   Modelos consultados · versión metodológica · documentación de soporte.
+```
+
+### Reglas del system prompt pericial
+
+- Tercera persona siempre. Verbos: "se constata", "se observa", "los datos evidencian", "resulta acreditado", "no se dispone de evidencia suficiente para".
+- Prohibido: valoraciones subjetivas, recomendaciones estratégicas, lenguaje comercial, "creemos", "sugerimos".
+- Cada afirmación: dato + modelo concreto + fecha de recogida.
+- Divergencias documentadas modelo por modelo, nunca promediadas.
+- No cuantificación económica del daño, sí base cuantitativa (puntos perdidos, posiciones, deltas).
+- Referenciar metodología RepIndex y validación UCM como marco de credibilidad.
+- Mínimo 2.000 palabras para garantizar cobertura documental suficiente.
+
+---
+
+## Lo que NO cambia
+
+- El resto de roles existentes: sin tocar.
+- La lógica de datos, SQL, Vector Store, streaming, anti-alucinación.
+- El formato estándar del Embudo Narrativo para todos los demás roles.
+- El botón "Descargar informe" funciona igualmente con el output pericial.
+
+---
+
+## Despliegue
+
+Tras los cambios en código, se despliega el edge function `chat-intelligence`.
