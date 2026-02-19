@@ -1,102 +1,105 @@
 
-# Diagnóstico definitivo: por qué solo aparece Qwen en el informe pericial de AIRTIFICIAL
+# Fase 1: Desconectar rix_runs del chat-intelligence — Solo V2
 
-## Lo que confirman los datos
+## Estado actual del código (confirmado leyendo el fuente)
 
-La base de datos tiene los 6 modelos perfectamente para AIRTIFICIAL (ticker `ART`) en el snapshot del 15 de febrero (domingo canónico):
-- ChatGPT: RIX 51
-- Perplexity: RIX 47
-- Google Gemini: RIX 66
-- Deepseek: RIX 56
-- Grok: RIX 43
-- **Qwen: RIX 75**
+La función `fetchUnifiedRixData` (líneas 86–164) hace dos queries en paralelo:
+1. `rix_runs` (legacy) — devuelve datos pero NO tiene `respuesta_bruto_grok` ni `respuesta_bruto_qwen`
+2. `rix_runs_v2` — devuelve los 6 modelos con todas las columnas
 
-Todos están en `rix_runs_v2`, no en `rix_runs` (legacy). Los datos son correctos. El fallo es 100% del código.
+Cuando ambas queries se combinan en el `dedupeMap`, los registros de `rix_runs` (que carecen de las columnas nuevas) contaminan el resultado. Aunque V2 "gana" en la deduplicación para las filas que coinciden en clave `ticker_modelo_periodoFrom_periodoTo`, si las claves no coinciden exactamente (distinta `batch_execution_date` entre las dos tablas), los registros legacy permanecen en el resultado con `respuesta_bruto_grok = null`.
 
-## Los dos bugs exactos
+**Resultado:** El sistema mezcla registros de ambas fuentes, y los modelos clásicos (ChatGPT, Gemini, Perplexity, DeepSeek) aparecen sin cifras porque se carga su versión legacy sin los campos de categorías correctas.
 
-### Bug 1 (CRÍTICO) — Faltan columnas de Grok y Qwen en la carga de datos de empresa
+---
 
-En la línea 4009-4042, `fullDataColumns` (las columnas que se piden al cargar los datos completos de empresa) incluye los textos brutos de ChatGPT, Perplexity, Gemini y DeepSeek, **pero NO incluye `respuesta_bruto_grok` ni `respuesta_bruto_qwen`**:
+## Cambio único a aplicar
 
+### Refactor de `fetchUnifiedRixData` (líneas 86–164)
+
+Eliminar completamente la query a `rix_runs` y toda la lógica de deduplicación. La función queda limpia, simple y sin riesgo de contaminación:
+
+**Antes (80 líneas de lógica de combinación y deduplicación):**
 ```typescript
-// Lo que hay ahora (incompleto):
-"20_res_gpt_bruto",       // ChatGPT ✅
-"21_res_perplex_bruto",   // Perplexity ✅  
-"22_res_gemini_bruto",    // Google Gemini ✅
-"23_res_deepseek_bruto",  // DeepSeek ✅
-// respuesta_bruto_grok   ← FALTA ❌
-// respuesta_bruto_qwen   ← FALTA ❌
+async function fetchUnifiedRixData(options) {
+  // Dos queries paralelas
+  let queryRix = supabaseClient.from('rix_runs').select(columns)...
+  let queryV2 = supabaseClient.from('rix_runs_v2').select(columns)...
+  // Deduplicación compleja con dedupeMap
+  // 50+ líneas de lógica de combinación
+}
 ```
 
-Sin estas columnas, cuando el código llega a la sección 6.1 e intenta mostrar los textos de Grok y Qwen, los campos son `null` → el informe no incluye los análisis de Grok ni Qwen.
-
-### Bug 2 (SECUNDARIO) — El `limit: 48` puede dejar fuera modelos del snapshot más reciente
-
-La llamada de empresa usa `limit: 48` (línea 4049), calculado como "6 modelos × 8 semanas". El problema: `fetchUnifiedRixData` consulta `rix_runs` (legacy) Y `rix_runs_v2` por separado antes de deduplicar. Si `rix_runs_v2` para `ART` devuelve 18 registros (3 semanas × 6 modelos) y `rix_runs` devuelve otros 30, después de deduplicar pueden quedar más de 48 registros únicos en total. El `limit: 48` se aplica **antes** de la deduplicación en cada tabla individualmente, lo que puede truncar los registros del snapshot más reciente.
-
-Solución: aumentar el limit a `120` (6 modelos × 20 semanas = margen generoso) para NUNCA perder datos del snapshot actual.
-
-### Bug 3 (SECUNDARIO) — `records.slice(0, 6)` puede omitir modelos
-
-En la línea 4460, la tabla de scores muestra `records.slice(0, 6)`. Los records de empresa vienen ordenados por `batch_execution_date DESC`. Si hay 48 registros (8 semanas × 6 modelos), los primeros 6 son las 6 IAs de la semana más reciente — eso está bien. Pero la sección de textos brutos (línea 4467) también usa `records.slice(0, 6)`. Si el snapshot más reciente tiene solo 5 registros cargados (porque Grok o Qwen quedaron truncados), el informe pericial mostrará incompleto.
-
-## La corrección
-
-### Cambio 1 — Añadir columnas de Grok y Qwen a `fullDataColumns` (línea 4040)
-
+**Después (20 líneas, solo V2):**
 ```typescript
-// Añadir estas dos líneas al bloque fullDataColumns:
-"respuesta_bruto_grok",
-"respuesta_bruto_qwen",
+async function fetchUnifiedRixData(options) {
+  // Solo rix_runs_v2 — fuente única de verdad
+  let query = supabaseClient
+    .from('rix_runs_v2')
+    .select(columns)
+    .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
+    .order('batch_execution_date', { ascending: false })
+    .order('"05_ticker"', { ascending: true });
+
+  // Filtros de ticker
+  if (tickerFilter) { ... }
+
+  // Límite
+  if (offset > 0) {
+    query = query.range(offset, offset + limit - 1);
+  } else {
+    query = query.limit(Math.max(limit, 2500));
+  }
+
+  const { data, error } = await query;
+  if (error) console.error(`${logPrefix} Error:`, error.message);
+  console.log(`${logPrefix} V2-only: ${data?.length || 0} records`);
+  return data || [];
+}
 ```
 
-### Cambio 2 — Aumentar el limit de carga de empresa (línea 4049)
+---
 
-```typescript
-// De:
-limit: 48, // 6 models × 8 weeks
+## Qué se elimina
 
-// A:
-limit: 120, // 6 models × 20 weeks - margen generoso para no truncar
-```
+| Elemento eliminado | Motivo |
+|---|---|
+| `queryRix` (query a `rix_runs`) | No tiene `respuesta_bruto_grok` ni `respuesta_bruto_qwen` — contamina resultados |
+| `dedupeMap` (Map de deduplicación) | Innecesario cuando hay una sola fuente |
+| `rixData.forEach(...)` (primer pase) | Eliminado con la query legacy |
+| `v2Data.forEach(...)` (segundo pase) | Simplificado: los datos ya vienen directos de V2 |
+| `v2Count` y `analyzedCount` counters | Ya no son relevantes sin dos fuentes |
 
-### Cambio 3 — Filtrar el slice(0,6) para que muestre SOLO el snapshot canónico actual
+---
 
-En lugar de `records.slice(0, 6)` (que asume que los primeros 6 son siempre los del snapshot más reciente), filtrar explícitamente los records del canonicalDate antes de mostrar los scores y textos:
+## Qué NO cambia
 
-```typescript
-// En vez de:
-records.slice(0, 6).forEach(r => { ... })
+| Elemento | Estado |
+|---|---|
+| `fullDataColumns` (líneas 4009–4044) | Sin cambios — ya incluye `respuesta_bruto_grok` y `respuesta_bruto_qwen` |
+| `limit: 120` (línea 4051) | Sin cambios — ya está correcto |
+| Filtro por `latestDate` (líneas 4457–4465) | Sin cambios — ya usa `batch_execution_date` |
+| `modelResponseMap` con Grok y Qwen (líneas 4489–4498) | Sin cambios — ya está correcto |
+| `selectCanonicalPeriod` (líneas 4529+) | Sin cambios — lógica de domingo correcta |
+| Dashboard, hooks frontend, otras edge functions | Intactos — esta función es exclusiva de `chat-intelligence` |
+| La tabla `rix_runs` en la base de datos | NO se toca — sigue existiendo para la Fase 2 |
 
-// Usar:
-const latestRecords = records
-  .filter(r => r.batch_execution_date?.toString().split('T')[0] === canonicalDate)
-  .sort((a, b) => a["02_model_name"].localeCompare(b["02_model_name"]));
-const recordsToShow = latestRecords.length >= 1 ? latestRecords : records.slice(0, 6);
-recordsToShow.forEach(r => { ... })
-```
+---
 
-Esto garantiza que el informe pericial siempre muestre los 6 modelos del snapshot actual, nunca una mezcla de semanas distintas.
+## Riesgo
 
-## Archivos a modificar
+**Muy bajo.** `rix_runs_v2` ya tiene todos los datos que el chat-intelligence necesita para el snapshot más reciente. El único sacrificio es el histórico de oct-2025 a dic-2025, que el chat de todas formas no necesita para los informes periciales (siempre piden "la última semana").
+
+---
+
+## Archivo a modificar
 
 | Archivo | Líneas | Cambio |
 |---|---|---|
-| `supabase/functions/chat-intelligence/index.ts` | 4040-4041 (después de `44_cxm_categoria`) | Añadir `respuesta_bruto_grok` y `respuesta_bruto_qwen` a `fullDataColumns` |
-| `supabase/functions/chat-intelligence/index.ts` | 4049 | Cambiar `limit: 48` a `limit: 120` |
-| `supabase/functions/chat-intelligence/index.ts` | 4460 y 4467 | Cambiar `records.slice(0, 6)` por filtro explícito del canonicalDate |
-
-## Lo que NO cambia
-
-- La lógica de `selectCanonicalPeriod` (correcta).
-- El system prompt con las reglas de snapshot dominical (correcto).
-- El `fetchUnifiedRixData` (correcto).
-- El streaming SSE y todos los roles (correctos).
+| `supabase/functions/chat-intelligence/index.ts` | 86–164 | Reemplazar función `fetchUnifiedRixData` completa |
 
 ## Resultado esperado
 
-Tras estos tres cambios, el informe pericial de AIRTIFICIAL mostrará:
-- Tabla con los 6 modelos y todos sus sub-métricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM)
-- Texto original (extracto) de cada uno de los 6 modelos incluyendo Grok y Qwen
-- Referencia al snapshot del domingo 15 de febrero de 2026
+- Informe pericial de AIRTIFICIAL: **6 modelos con cifras completas**
+- Sin mezcla de tablas, sin deduplicación, sin contaminación de registros legacy
+- Código más limpio, más rápido, más fácil de mantener
