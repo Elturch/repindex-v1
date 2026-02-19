@@ -4038,6 +4038,8 @@ async function handleStandardChat(
       "40_gam_categoria",
       "43_dcm_categoria",
       "46_cxm_categoria",
+      respuesta_bruto_grok,
+      respuesta_bruto_qwen,
       batch_execution_date
     `;
     
@@ -4046,7 +4048,7 @@ async function handleStandardChat(
         supabaseClient,
         columns: fullDataColumns,
         tickerFilter: company.ticker,
-        limit: 48, // 6 models × 8 weeks
+        limit: 120, // 6 models × 20 weeks - margen generoso para no truncar
         logPrefix
       });
       
@@ -4451,20 +4453,30 @@ async function handleStandardChat(
       if (company) {
         context += `Sector: ${company.sector_category || 'N/A'} | IBEX: ${company.ibex_family_code || 'N/A'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
       }
-      
+
+      // Filtrar SOLO el snapshot canónico más reciente por fecha exacta
+      // Ordenamos desc para encontrar la fecha más reciente primero
+      const sortedDates = [...new Set(records.map((r: any) => r.batch_execution_date?.toString().split('T')[0]).filter(Boolean))].sort().reverse();
+      const latestDate = sortedDates[0] || null;
+      const latestRecords = latestDate
+        ? records.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === latestDate)
+            .sort((a: any, b: any) => (a["02_model_name"] || '').localeCompare(b["02_model_name"] || ''))
+        : records.slice(0, 6);
+      const recordsToShow = latestRecords.length >= 1 ? latestRecords : records.slice(0, 6);
+
       // Show scores by model
-      context += `### Scores por Modelo IA:\n`;
+      context += `### Scores por Modelo IA (snapshot: ${latestDate || 'más reciente'}, ${recordsToShow.length} modelos):\n`;
       context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
       context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
       
-      records.slice(0, 6).forEach(r => {
+      recordsToShow.forEach((r: any) => {
         const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
         context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
       });
       
       // Include raw text excerpts (most recent per model)
       context += `\n### Análisis de cada modelo IA:\n`;
-      records.slice(0, 6).forEach(r => {
+      recordsToShow.forEach((r: any) => {
         context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
         
         // Resumen
@@ -4473,7 +4485,7 @@ async function handleStandardChat(
         }
         
         // Raw text excerpt
-        // Map model name to raw response field (supports all 7 models)
+        // Map model name to raw response field (supports all 6 models)
         const modelResponseMap: Record<string, string> = {
           'ChatGPT': '20_res_gpt_bruto',
           'Perplexity': '21_res_perplex_bruto',
