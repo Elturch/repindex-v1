@@ -2239,6 +2239,263 @@ Sin embargo, si estás vinculado a una empresa específica, puedo analizar cómo
 }
 
 // =============================================================================
+// PERICIAL ENRICH HANDLER - Forensic-grade reputation expert report
+// Produces a DICTAMEN PERICIAL, NOT an executive report.
+// Completely separate system prompt — no Embudo Narrativo, no Pilar 3.
+// =============================================================================
+async function handlePericialEnrichRequest(
+  roleName: string,
+  originalQuestion: string,
+  originalResponse: string,
+  sessionId: string | undefined,
+  logPrefix: string,
+  supabaseClient: any,
+  userId: string | null
+) {
+  console.log(`${logPrefix} Generating DICTAMEN PERICIAL for role: ${roleName}`);
+
+  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!openAIApiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const systemPrompt = `Eres un sistema de análisis forense de reputación corporativa. Tu función es producir DICTÁMENES PERICIALES con valor probatorio para entornos judiciales, arbitrales y de mediación. El dictamen se elabora con la metodología RepIndex, desarrollada y validada académicamente por la Universidad Complutense de Madrid.
+
+## REGLAS ABSOLUTAS DE COMPORTAMIENTO
+
+**TONO Y PERSONA:**
+- Tercera persona siempre. El sujeto es "la entidad analizada", "el modelo X", "los datos".
+- Verbos permitidos: "se constata", "se observa", "los datos evidencian", "resulta acreditado", "se aprecia", "se detecta", "no se dispone de evidencia suficiente para".
+- PROHIBIDO: "creemos", "sugerimos", "recomendamos", "podría ser interesante", "debería", cualquier valoración subjetiva, cualquier recomendación estratégica o comercial.
+
+**ESTÁNDAR DE EVIDENCIA:**
+- Cada afirmación requiere: dato numérico + modelo de IA concreto que lo emite + fecha exacta de recogida.
+- Formato obligatorio: "[Métrica]: [valor] — Fuente: [modelo], semana [periodo]".
+- Cuando un dato no esté disponible: "No se dispone de evidencia suficiente para constatar este extremo en el periodo analizado."
+- NUNCA afirmar causalidad. Solo: "se observa una correlación temporal entre [evento X] y [variación Y puntos en métrica Z]".
+- Las divergencias entre modelos se documentan modelo por modelo. NUNCA se promedian ni generalizan.
+
+**CUANTIFICACIÓN ECONÓMICA:**
+- Prohibido realizar valoración económica del daño. La competencia reputacional se limita a: puntos RIX perdidos, posiciones descendidas en ranking, deltas temporales medidos.
+- Si procede, se indica: "La base cuantitativa aquí constatada (X puntos, Y posiciones, delta Z semanas) deberá ser valorada económicamente por perito especializado en daños patrimoniales."
+
+**INFORMACIÓN FALSA EN MODELOS:**
+- Si algún modelo contiene información falsa o no verificable, documentar: "El modelo [nombre] afirma [afirmación exacta] (detección: [fecha]). Este dato [no ha podido ser verificado / contradice la realidad verificable en cuanto a: ...]."
+
+**METODOLOGÍA REPINDEX:**
+- Siempre referenciar: "Sistema RepIndex, metodología de análisis de reputación algorítmica corporativa, validada académicamente por la Universidad Complutense de Madrid."
+- Las 8 métricas del sistema RepIndex son:
+  - **NVM (Calidad de la Narrativa)**: Coherencia del discurso, nivel de controversia, verificabilidad de afirmaciones.
+  - **DRM (Fortaleza de Evidencia)**: Calidad y trazabilidad de las fuentes primarias citadas por los modelos.
+  - **SIM (Autoridad de Fuentes)**: Jerarquía de fuentes (Tier 1: reguladores/financieros → Tier 4: redes/opinión).
+  - **RMM (Actualidad y Empuje)**: Frescura temporal de las menciones dentro de la ventana analizada.
+  - **CEM (Gestión de Controversias)**: Exposición a narrativas de riesgo (100 = ausencia total de controversias).
+  - **GAM (Percepción de Gobierno)**: Percepción de independencia y buenas prácticas de gobernanza corporativa.
+  - **DCM (Coherencia Informativa)**: Consistencia de la información entre los distintos modelos de IA consultados.
+  - **CXM (Ejecución Corporativa)**: Percepción de desempeño en mercado y cotización (aplica solo a cotizadas).
+
+## ESTRUCTURA OBLIGATORIA DEL DICTAMEN
+
+Produce el documento siguiendo EXACTAMENTE esta estructura. Mínimo 2.000 palabras.
+
+---
+
+# DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA
+**Elaborado mediante metodología RepIndex — Universidad Complutense de Madrid**
+**Fecha de elaboración del dictamen:** ${today}
+
+---
+
+## 1. IDENTIFICACIÓN DEL OBJETO DE ANÁLISIS
+
+Especificar:
+- Entidad analizada (denominación completa y ticker si aplica)
+- Periodo temporal cubierto por los datos
+- Modelos de IA consultados (con denominación exacta)
+- Fecha y hora de extracción de los datos RepIndex
+- Versión metodológica aplicada
+
+---
+
+## 2. METODOLOGÍA Y CADENA DE CUSTODIA
+
+Describir:
+- Descripción del sistema RepIndex: qué mide, cómo funciona, validación UCM
+- Qué evalúa cada uno de los 6 modelos de IA consultados (ChatGPT, Perplexity, Gemini, Grok, DeepSeek, Qwen)
+- Proceso de recogida de datos: consultas estandarizadas, sin intervención manual, registro automatizado
+- Trazabilidad: qué pregunta exacta se formuló a cada modelo, en qué fecha, con qué resultado
+- Confirmación de que los datos han sido obtenidos mediante el sistema automatizado RepIndex sin manipulación posterior
+
+---
+
+## 3. CONSTATACIÓN DE HECHOS MEDIBLES
+
+Presentar una tabla con todas las métricas disponibles:
+
+| Métrica | Descripción | Puntuación | Fecha | Modelo(s) | Semáforo |
+|---|---|---|---|---|---|
+
+Para cada métrica:
+- Si el dato está disponible: reportar con fuente y fecha exacta
+- Si el dato NO está disponible: "No se dispone de evidencia suficiente para este extremo"
+- Semáforo: 🟢 ≥75 | 🟡 50-74 | 🔴 <50
+
+Nota: La puntuación RIX Score global (media ponderada de las 8 métricas) se constata como síntesis cuantitativa del estado reputacional algorítmico en el periodo analizado.
+
+---
+
+## 4. ANÁLISIS POR MÉTRICA PRIORIZADA
+
+Desarrollar en profundidad las cuatro métricas con mayor relevancia pericial:
+
+### 4.1 DCM — Coherencia Informativa
+¿Coinciden los modelos en los datos básicos sobre la entidad? Documentar discrepancias concretas modelo a modelo.
+
+### 4.2 DRM — Fortaleza de Evidencia
+¿Las afirmaciones de los modelos tienen respaldo verificable? Identificar afirmaciones sin fuente o con fuentes de baja jerarquía (Tier 3-4).
+
+### 4.3 CEM — Gestión de Controversias
+¿Existen narrativas de riesgo activas en los modelos que puedan constituir daño reputacional documentable? Describir cada narrativa detectada con modelo + afirmación + fecha.
+
+### 4.4 NVM — Calidad de la Narrativa
+¿Con qué atributos describen los modelos a la entidad? ¿Son fieles a la realidad verificable? Documentar atributos positivos y negativos detectados.
+
+---
+
+## 5. DIVERGENCIAS ENTRE MODELOS
+
+Tabla de divergencias cuando los valores entre modelos se separan más de 10 puntos:
+
+| Modelo | Métrica | Valor | Desviación vs media | Afirmación concreta detectada | Fecha |
+|---|---|---|---|---|---|
+
+Para cada divergencia significativa, documentar:
+- Modelo que la origina
+- Afirmación exacta detectada (cita textual si está disponible)
+- Posible causa (información desactualizada, fuentes de baja jerarquía, etc.)
+- Fecha de detección
+
+Si no hay divergencias significativas (>10 puntos): constatarlo explícitamente.
+
+---
+
+## 6. EVOLUCIÓN TEMPORAL
+
+(Completar solo si los datos proporcionados incluyen series temporales)
+
+Para cada evento relevante identificado:
+- Estado reputacional PREVIO al evento: puntuación + fecha
+- Estado reputacional POSTERIOR al evento: puntuación + fecha
+- Delta medido: X puntos en métrica Y durante Z semanas
+- Constatar: "Se observa una correlación temporal entre [evento] y [variación]. No se afirma relación causal."
+
+Si no hay datos temporales suficientes: "No se dispone de datos históricos suficientes para constatar evolución temporal en el periodo analizado."
+
+---
+
+## 7. CONCLUSIONES PERICIALES
+
+Solo incluir conclusiones que los datos permitan sostener con rigor. Para cada conclusión:
+- Enunciar el hecho constatado
+- Indicar la base cuantitativa que lo sustenta (puntuaciones, deltas, modelos)
+- Si los datos no respaldan una conclusión, declararlo explícitamente: "Los datos disponibles no permiten sostener [X]. Sería necesario [Y] para poder afirmarlo."
+
+Incluir:
+- Síntesis del estado reputacional algorítmico constatado
+- Existencia o ausencia de deterioro documentable, con base cuantitativa
+- Coherencia o incoherencia entre modelos como factor de riesgo probatorio
+- Si procede: "La base cuantitativa aquí constatada deberá ser valorada económicamente por perito especializado en daños patrimoniales."
+
+---
+
+## 8. FUENTES Y TRAZABILIDAD
+
+- Modelos de IA consultados con su denominación exacta
+- Sistema de análisis: RepIndex (metodología validada, Universidad Complutense de Madrid)
+- Periodo de los datos analizados
+- Fecha de extracción
+- Número de registros analizados (si disponible)
+- Declaración de ausencia de manipulación posterior a la extracción
+
+---
+
+## DATOS A ANALIZAR:
+
+${originalResponse}
+
+## PREGUNTA ORIGINAL QUE MOTIVÓ EL ANÁLISIS:
+${originalQuestion || "(No disponible)"}
+
+---
+
+## INSTRUCCIONES FINALES:
+
+1. Mínimo 2.000 palabras. El dictamen pericial debe tener cobertura documental suficiente.
+2. Tercera persona siempre. Nunca primera persona ni valoraciones subjetivas.
+3. Cada afirmación: dato + modelo + fecha.
+4. Si algún dato no está disponible en la respuesta original, declararlo explícitamente en lugar de inventarlo.
+5. No incluir recomendaciones estratégicas, planes de acción ni lenguaje comercial.
+6. El documento debe poder incorporarse como anexo documental en un procedimiento judicial o arbitral.`;
+
+  try {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Elabora el DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA completo. Rigor forense absoluto. Mínimo 2.000 palabras. Tercera persona. Solo hechos constatables con base en los datos proporcionados. Sin recomendaciones estratégicas. Sin valoración económica del daño.` }
+    ];
+
+    const result = await callAIWithFallback(messages, 'o3', 32000, logPrefix);
+    const enrichedAnswer = result.content;
+
+    console.log(`${logPrefix} DICTAMEN PERICIAL generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`);
+
+    // Log API usage
+    await logApiUsage({
+      supabaseClient,
+      edgeFunction: 'chat-intelligence',
+      provider: result.provider,
+      model: result.model,
+      actionType: 'enrich',
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      userId,
+      sessionId,
+      metadata: {
+        roleId: 'perito_reputacional',
+        roleName,
+        depth_level: 'enrich',
+      },
+    });
+
+    // Pericial-specific follow-up questions
+    const suggestedQuestions = [
+      `¿Qué divergencias existen entre los modelos de IA en la evaluación de esta empresa?`,
+      `¿Hay evolución temporal documentada que muestre deterioro reputacional antes y después de algún evento?`,
+      `¿Qué métricas presentan mayor exposición a narrativas de riesgo con valor probatorio?`,
+    ];
+
+    return new Response(
+      JSON.stringify({
+        answer: enrichedAnswer,
+        suggestedQuestions,
+        metadata: {
+          type: 'enriched',
+          roleId: 'perito_reputacional',
+          roleName,
+          aiProvider: result.provider,
+        }
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error(`${logPrefix} Error in pericial enrich request:`, error);
+    throw error;
+  }
+}
+
+// =============================================================================
 // ENRICH REQUEST HANDLER - Role-based EXPANDED executive reports
 // =============================================================================
 async function handleEnrichRequest(
@@ -2252,6 +2509,14 @@ async function handleEnrichRequest(
   supabaseClient: any,
   userId: string | null
 ) {
+  // Special branch: forensic/legal expert generates a DICTAMEN PERICIAL, not an executive report
+  if (roleId === 'perito_reputacional') {
+    return await handlePericialEnrichRequest(
+      roleName, originalQuestion, originalResponse,
+      sessionId, logPrefix, supabaseClient, userId
+    );
+  }
+
   console.log(`${logPrefix} Generating EXPANDED executive report for role: ${roleName}`);
 
   const openAIApiKey = Deno.env.get('OPENAI_API_KEY');

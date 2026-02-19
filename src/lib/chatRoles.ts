@@ -7,7 +7,7 @@ export interface ChatRole {
   emoji: string;
   name: string;
   shortDescription: string;
-  category: 'general' | 'direccion' | 'comunicacion' | 'finanzas' | 'corporativo' | 'analisis';
+  category: 'general' | 'direccion' | 'comunicacion' | 'finanzas' | 'corporativo' | 'analisis' | 'pericial';
   prompt: string;
 }
 
@@ -18,6 +18,7 @@ export const ROLE_CATEGORIES = {
   finanzas: 'Finanzas e Inversión',
   corporativo: 'Gestión Corporativa',
   analisis: 'Análisis y Ventas',
+  pericial: 'Peritaje y Legal',
 } as const;
 
 export const CHAT_ROLES: ChatRole[] = [
@@ -333,6 +334,20 @@ Tono: Comercial, orientado a valor, persuasivo.`,
 
 Formato: Guión de venta, templates de email, respuestas a objeciones.
 Tono: Directo, orientado a ventas, urgente.`,
+  },
+
+  // PERITAJE Y LEGAL
+  {
+    id: 'perito_reputacional',
+    emoji: '🔏',
+    name: 'Experto Pericial de Reputación',
+    shortDescription: 'Dictámenes periciales, valor probatorio, rigor forense',
+    category: 'pericial',
+    prompt: `Este rol genera un DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA con rigor forense y valor probatorio.
+El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estándar.
+Estructura: Identificación del objeto · Metodología y cadena de custodia · Constatación de hechos medibles ·
+Análisis por métrica priorizada · Divergencias entre modelos · Evolución temporal · Conclusiones periciales · Fuentes.
+Tono: tercera persona forense. Verbos: "se constata", "se observa", "resulta acreditado". Sin recomendaciones estratégicas.`,
   },
 ];
 
