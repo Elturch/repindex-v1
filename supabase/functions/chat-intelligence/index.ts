@@ -71,9 +71,11 @@ async function logApiUsage(params: ApiUsageParams): Promise<void> {
 }
 
 // =============================================================================
-// UNIFIED RIX DATA HELPER - Combines rix_runs and rix_runs_v2
+// UNIFIED RIX DATA HELPER - Solo rix_runs_v2 (fuente única de verdad)
 // =============================================================================
-// This ensures we get data from all 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen)
+// Fase 1 (2026-02-19): Desconectado rix_runs (legacy). Solo V2 para eliminar
+// contaminación de esquemas incompatibles (rix_runs no tiene respuesta_bruto_grok
+// ni respuesta_bruto_qwen). rix_runs sigue existiendo en BD por si se necesita.
 interface FetchUnifiedRixOptions {
   supabaseClient: any;
   columns: string;
@@ -84,83 +86,37 @@ interface FetchUnifiedRixOptions {
 }
 
 async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any[]> {
-  const { supabaseClient, columns, tickerFilter, limit = 1000, offset = 0, logPrefix = '[Unified-RIX]' } = options;
-  
-  // Build queries for both tables
-  let queryRix = supabaseClient.from('rix_runs').select(columns)
-    .order('batch_execution_date', { ascending: false })
-    .order('"05_ticker"', { ascending: true });
-  
-  // V2: Include records with EITHER completed analysis OR valid rix_score
-  // This ensures we get Grok & Qwen even if analysis is pending for newest week
-  let queryV2 = supabaseClient
+  const { supabaseClient, columns, tickerFilter, limit = 1000, offset = 0, logPrefix = '[V2-RIX]' } = options;
+
+  // Solo rix_runs_v2 — sin deduplicación, sin contaminación de esquemas legacy
+  let query = supabaseClient
     .from('rix_runs_v2')
     .select(columns)
     .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
     .order('batch_execution_date', { ascending: false })
     .order('"05_ticker"', { ascending: true });
-  
-  // Apply ticker filter if provided
+
+  // Filtro por ticker
   if (tickerFilter) {
     if (Array.isArray(tickerFilter)) {
-      queryRix = queryRix.in('"05_ticker"', tickerFilter);
-      queryV2 = queryV2.in('"05_ticker"', tickerFilter);
+      query = query.in('"05_ticker"', tickerFilter);
     } else {
-      queryRix = queryRix.eq('"05_ticker"', tickerFilter);
-      queryV2 = queryV2.eq('"05_ticker"', tickerFilter);
+      query = query.eq('"05_ticker"', tickerFilter);
     }
   }
-  
-  // Apply range (offset + limit)
+
+  // Límite / paginación
   if (offset > 0) {
-    queryRix = queryRix.range(offset, offset + limit - 1);
-    queryV2 = queryV2.range(offset, offset + limit - 1);
+    query = query.range(offset, offset + limit - 1);
   } else {
-    queryRix = queryRix.limit(limit);
-    queryV2 = queryV2.limit(Math.max(limit, 2500));
+    query = query.limit(Math.max(limit, 2500));
   }
-  
-  // Execute in parallel
-  const [rixResult, v2Result] = await Promise.all([queryRix, queryV2]);
-  
-  const rixData = rixResult.data || [];
-  const v2Data = v2Result.data || [];
-  
-  // Combine with v2 data LAST so it takes precedence in deduplication
-  // v2 is the authoritative source for current data (has Grok & Qwen)
-  const dedupeMap = new Map<string, { record: any; isV2: boolean; hasAnalysis: boolean }>();
-  
-  // First pass: add all rix_runs (legacy) data
-  rixData.forEach(record => {
-    const key = `${record['05_ticker']}_${record['02_model_name']}_${record['06_period_from']}_${record['07_period_to']}`;
-    dedupeMap.set(key, { record, isV2: false, hasAnalysis: true });
-  });
-  
-  // Second pass: v2 data ALWAYS overwrites legacy data for same key
-  // This ensures v2 is the source of truth for current/trending analysis
-  // Prioritize records with completed analysis over those without
-  v2Data.forEach(record => {
-    const key = `${record['05_ticker']}_${record['02_model_name']}_${record['06_period_from']}_${record['07_period_to']}`;
-    const existing = dedupeMap.get(key);
-    const hasAnalysis = record.analysis_completed_at != null || record['09_rix_score'] != null;
-    
-    // V2 wins if: no existing record, existing is legacy, or v2 has newer/equal batch date
-    const shouldReplace = !existing || 
-      existing.isV2 === false || 
-      (record.batch_execution_date && existing.record.batch_execution_date && 
-       new Date(record.batch_execution_date) >= new Date(existing.record.batch_execution_date));
-    
-    if (shouldReplace) {
-      dedupeMap.set(key, { record, isV2: true, hasAnalysis });
-    }
-  });
-  
-  const result = Array.from(dedupeMap.values()).map(item => item.record);
-  const v2Count = Array.from(dedupeMap.values()).filter(item => item.isV2).length;
-  const analyzedCount = Array.from(dedupeMap.values()).filter(item => item.hasAnalysis).length;
-  console.log(`${logPrefix} Combined RIX data: ${rixData.length} legacy + ${v2Data.length} v2 = ${result.length} unique records (${v2Count} from v2, ${analyzedCount} with analysis)`);
-  
-  return result;
+
+  const { data, error } = await query;
+  if (error) console.error(`${logPrefix} Error fetching rix_runs_v2:`, error.message);
+  console.log(`${logPrefix} V2-only: ${data?.length || 0} records`);
+
+  return data || [];
 }
 
 // =============================================================================
