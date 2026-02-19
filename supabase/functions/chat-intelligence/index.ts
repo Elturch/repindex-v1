@@ -4508,36 +4508,79 @@ async function handleStandardChat(
 
   // 6.3 Construir ranking general de la semana actual
   if (allRixData && allRixData.length > 0) {
-    const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
 
-    const uniquePeriods = [...new Set(allRixData.map(getPeriodKey))]
-      .sort((a, b) => {
-        const dateA = a.split('|')[1];
-        const dateB = b.split('|')[1];
-        return dateB.localeCompare(dateA);
-      });
-
-    // Smart period selection: skip sparse periods (e.g., sweep just started)
-    const MIN_RECORDS_FOR_CURRENT = 10;
-    let effectiveCurrentIdx = 0;
-    for (let i = 0; i < uniquePeriods.length; i++) {
-      const periodData = allRixData.filter(run => getPeriodKey(run) === uniquePeriods[i]);
-      if (periodData.length >= MIN_RECORDS_FOR_CURRENT) {
-        effectiveCurrentIdx = i;
-        break;
+    // =========================================================================
+    // SELECCIÓN CANÓNICA DE SNAPSHOT: Los barridos reales siempre son en DOMINGO.
+    // batch_execution_date es la fuente de verdad (no period_from/period_to).
+    // Los barridos parciales o de prueba caen en días no dominicales y se ignoran.
+    // =========================================================================
+    const selectCanonicalPeriod = (data: any[]): { canonicalDate: string; previousDate: string | null; sundayDates: string[] } => {
+      // Agrupar por batch_execution_date (normalizado a YYYY-MM-DD)
+      const groupByBatchDate = new Map<string, any[]>();
+      for (const run of data) {
+        const rawDate = run.batch_execution_date;
+        const batchDate = rawDate ? rawDate.toString().split('T')[0] : null;
+        if (!batchDate) continue;
+        if (!groupByBatchDate.has(batchDate)) groupByBatchDate.set(batchDate, []);
+        groupByBatchDate.get(batchDate)!.push(run);
       }
-    }
-    if (effectiveCurrentIdx > 0) {
-      console.log(`${logPrefix} ⚠️ Skipping ${effectiveCurrentIdx} sparse period(s), using ${uniquePeriods[effectiveCurrentIdx]} instead of ${uniquePeriods[0]}`);
-    }
 
-    const currentPeriod = uniquePeriods[effectiveCurrentIdx];
-    let currentWeekData = allRixData.filter(run => getPeriodKey(run) === currentPeriod);
+      const isSunday = (dateStr: string): boolean => {
+        // Parse as UTC to avoid timezone day-shift
+        const d = new Date(dateStr + 'T12:00:00Z');
+        return d.getUTCDay() === 0;
+      };
 
-    const previousPeriod = uniquePeriods[effectiveCurrentIdx + 1];
-    const previousWeekData = previousPeriod 
-      ? allRixData.filter(run => getPeriodKey(run) === previousPeriod) 
+      const MIN_RECORDS_SUNDAY = 180; // 30 empresas × 6 modelos = snapshot mínimamente significativo
+
+      // Obtener domingos con suficientes registros, ordenados DESC
+      const sundayDates = [...groupByBatchDate.entries()]
+        .filter(([date, records]) => isSunday(date) && records.length >= MIN_RECORDS_SUNDAY)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([date]) => date);
+
+      if (sundayDates.length > 0) {
+        const canonicalDate = sundayDates[0];
+        const previousDate = sundayDates[1] ?? null;
+        console.log(`${logPrefix} 📅 Snapshot canónico: ${canonicalDate} (Domingo ✅, ${groupByBatchDate.get(canonicalDate)?.length} registros). Anterior: ${previousDate ?? 'ninguno'}`);
+        return { canonicalDate, previousDate, sundayDates };
+      }
+
+      // Fallback: usar la fecha con más registros (cubre pruebas o emergencias)
+      const fallbackDate = [...groupByBatchDate.entries()]
+        .sort(([, a], [, b]) => b.length - a.length)[0]?.[0] ?? null;
+      console.warn(`${logPrefix} ⚠️ No hay domingos con ≥180 registros. Fallback a fecha con más datos: ${fallbackDate}`);
+      return { canonicalDate: fallbackDate!, previousDate: null, sundayDates: [] };
+    };
+
+    const { canonicalDate, previousDate } = selectCanonicalPeriod(allRixData);
+
+    let currentWeekData = allRixData.filter(run => {
+      const batchDate = run.batch_execution_date?.toString().split('T')[0];
+      return batchDate === canonicalDate;
+    });
+
+    const previousWeekData = previousDate
+      ? allRixData.filter(run => run.batch_execution_date?.toString().split('T')[0] === previousDate)
       : [];
+
+    // Diagnóstico de cobertura del snapshot activo
+    const modelsInCurrentSnapshot = new Set(currentWeekData.map((r: any) => r["02_model_name"]));
+    const snapshotDateObj = new Date(canonicalDate + 'T12:00:00Z');
+    const isSundaySnapshot = snapshotDateObj.getUTCDay() === 0;
+    const tickersInSnapshot = new Set(currentWeekData.map((r: any) => r["05_ticker"]));
+
+    context += `\n📅 SNAPSHOT ACTIVO:\n`;
+    context += `- Fecha de ejecución: ${canonicalDate} (${isSundaySnapshot ? 'Domingo ✅' : 'No es domingo ⚠️ — barrido de prueba o fallback'})\n`;
+    context += `- Modelos con datos: ${Array.from(modelsInCurrentSnapshot).join(', ')} (${modelsInCurrentSnapshot.size}/6)\n`;
+    context += `- Registros totales: ${currentWeekData.length}\n`;
+    context += `- Empresas cubiertas: ${tickersInSnapshot.size}\n`;
+    if (previousDate) context += `- Snapshot anterior: ${previousDate}\n`;
+    if (modelsInCurrentSnapshot.size < 4) {
+      context += `⚠️ AVISO CRÍTICO: Solo ${modelsInCurrentSnapshot.size} modelos disponibles. Este snapshot puede estar incompleto.\n`;
+      console.warn(`${logPrefix} ⚠️ Solo ${modelsInCurrentSnapshot.size} modelos en snapshot actual. Posible barrido incompleto.`);
+    }
+    context += '\n';
 
     // =========================================================================
     // PRE-FILTERING: Apply model and index filters if user explicitly requested them
@@ -4832,6 +4875,36 @@ LO QUE NO ERES:
 • Un periodista buscando titulares sensacionalistas
 • Un manual técnico que lista métricas sin contexto
 • Un chatbot que responde con bullets desconectados
+
+═══════════════════════════════════════════════════════════════════════════════
+           ARQUITECTURA DE DATOS: REGLAS CRÍTICAS DE NEGOCIO
+═══════════════════════════════════════════════════════════════════════════════
+
+REGLA 1 — LOS SNAPSHOTS SON SEMANALES Y SIEMPRE EN DOMINGO:
+El sistema RepIndex ejecuta un barrido completo CADA DOMINGO. Cada snapshot
+incluye ~175 empresas × 6 modelos de IA = ~1.050 registros con una única
+batch_execution_date (domingo). NUNCA afirmes que solo un modelo ha evaluado
+esta semana si el snapshot está completo: si hay 1.050 registros con 6 modelos,
+todos evaluaron el mismo domingo.
+
+REGLA 2 — PERÍODOS PARCIALES Y DE PRUEBA:
+Pueden existir registros con fechas no dominicales (sábados, lunes, etc.).
+Son pruebas técnicas o barridos parciales, NUNCA son "la semana actual".
+La semana actual es SIEMPRE el snapshot dominical más reciente y completo.
+El contexto que recibes ya ha seleccionado el snapshot canónico correcto;
+confía en él.
+
+REGLA 3 — COBERTURA DE MODELOS:
+Un snapshot completo tiene SIEMPRE 6 modelos: ChatGPT, Perplexity, Gemini,
+DeepSeek, Grok y Qwen. Si el contexto indica que hay menos de 4 modelos,
+el snapshot puede ser incompleto — decláralo explícitamente al usuario.
+Nunca inventes presencia o ausencia de modelos: usa solo los datos del contexto.
+
+REGLA 4 — TRAZABILIDAD TEMPORAL:
+Al citar datos, referencia siempre la fecha del snapshot (domingo de ejecución),
+no el period_from/period_to. Ejemplo correcto: "En el snapshot del 15 de
+febrero de 2026..." — esto da al usuario certeza sobre cuándo se tomó la
+fotografía reputacional.
 
 ═══════════════════════════════════════════════════════════════════════════════
               PRINCIPIO RECTOR: DENSIDAD DE EVIDENCIA CRUZADA
