@@ -105,12 +105,11 @@ async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any
     }
   }
 
-  // Límite / paginación
-  if (offset > 0) {
-    query = query.range(offset, offset + limit - 1);
-  } else {
-    query = query.limit(Math.max(limit, 2500));
-  }
+  // Límite / paginación — SIEMPRE usar .range() para evitar el límite silencioso de
+  // 1000 filas de PostgREST que ignora cualquier .limit(N>1000) sin range.
+  // 5 domingos × ~1.050 registros = ~5.250 → effectiveLimit = 5.500 cubre todo.
+  const effectiveLimit = Math.max(limit, 5500);
+  query = query.range(offset, offset + effectiveLimit - 1);
 
   const { data, error } = await query;
   if (error) console.error(`${logPrefix} Error fetching rix_runs_v2:`, error.message);
@@ -4410,55 +4409,87 @@ async function handleStandardChat(
         context += `Sector: ${company.sector_category || 'N/A'} | IBEX: ${company.ibex_family_code || 'N/A'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
       }
 
-      // Filtrar SOLO el snapshot canónico más reciente por fecha exacta
-      // Ordenamos desc para encontrar la fecha más reciente primero
+      // Determinar qué fechas mostrar según si es multi-semana o no
       const sortedDates = [...new Set(records.map((r: any) => r.batch_execution_date?.toString().split('T')[0]).filter(Boolean))].sort().reverse();
       const latestDate = sortedDates[0] || null;
-      const latestRecords = latestDate
-        ? records.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === latestDate)
-            .sort((a: any, b: any) => (a["02_model_name"] || '').localeCompare(b["02_model_name"] || ''))
-        : records.slice(0, 6);
-      const recordsToShow = latestRecords.length >= 1 ? latestRecords : records.slice(0, 6);
 
-      // Show scores by model
-      context += `### Scores por Modelo IA (snapshot: ${latestDate || 'más reciente'}, ${recordsToShow.length} modelos):\n`;
-      context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
-      context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
-      
-      recordsToShow.forEach((r: any) => {
-        const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
-        context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
-      });
-      
-      // Include raw text excerpts (most recent per model)
-      context += `\n### Análisis de cada modelo IA:\n`;
-      recordsToShow.forEach((r: any) => {
-        context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
-        
-        // Resumen
-        if (r["10_resumen"]) {
-          context += `- **Resumen**: ${r["10_resumen"].substring(0, 500)}...\n`;
-        }
-        
-        // Raw text excerpt
-        // Map model name to raw response field (supports all 6 models)
-        const modelResponseMap: Record<string, string> = {
-          'ChatGPT': '20_res_gpt_bruto',
-          'Perplexity': '21_res_perplex_bruto',
-          'Google Gemini': '22_res_gemini_bruto',
-          'Gemini': '22_res_gemini_bruto',
-          'Deepseek': '23_res_deepseek_bruto',
-          'DeepSeek': '23_res_deepseek_bruto',
-          'Grok': 'respuesta_bruto_grok',
-          'Qwen': 'respuesta_bruto_qwen',
-        };
-        const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
-        const rawField = rawFieldKey ? r[rawFieldKey] : null;
-        
-        if (rawField) {
-          context += `- **Texto original (extracto)**: ${rawField.substring(0, 800)}...\n`;
-        }
-      });
+      // Si es multi-semana: incluir N semanas. Si no: solo la más reciente.
+      const datesToShow = isMultiWeekRequest
+        ? sortedDates.slice(0, requestedWeeks)
+        : [latestDate].filter(Boolean) as string[];
+
+      const recordsToShow = records
+        .filter((r: any) => datesToShow.includes(r.batch_execution_date?.toString().split('T')[0]))
+        .sort((a: any, b: any) => {
+          const dateDiff = (b.batch_execution_date?.toString() || '').localeCompare(a.batch_execution_date?.toString() || '');
+          return dateDiff !== 0 ? dateDiff : (a["02_model_name"] || '').localeCompare(b["02_model_name"] || '');
+        });
+
+      if (isMultiWeekRequest) {
+        // Multi-semana: tabla agrupada por fecha para mostrar evolución cronológica
+        context += `### Evolución por semana (${datesToShow.length} snapshots, ${requestedWeeks} semanas solicitadas):\n`;
+        datesToShow.forEach((date, weekIdx) => {
+          const weekRecords = recordsToShow.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === date);
+          const avgRix = weekRecords.length > 0
+            ? (weekRecords.reduce((s: number, r: any) => s + (r["51_rix_score_adjusted"] ?? r["09_rix_score"] ?? 0), 0) / weekRecords.length).toFixed(1)
+            : 'N/A';
+          context += `\n**📅 Semana ${weekIdx + 1}${weekIdx === 0 ? ' (MÁS RECIENTE)' : ''}: ${date}** — promedio RIX: ${avgRix}\n`;
+          context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
+          context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
+          weekRecords.forEach((r: any) => {
+            const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
+            context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
+          });
+        });
+        // Para multi-semana: incluir textos brutos solo del snapshot más reciente (evitar contexto enorme)
+        const latestWeekRecords = recordsToShow.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === datesToShow[0]);
+        context += `\n### Análisis narrativo (semana más reciente: ${datesToShow[0]}):\n`;
+        latestWeekRecords.forEach((r: any) => {
+          context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
+          if (r["10_resumen"]) {
+            context += `- **Resumen**: ${r["10_resumen"].substring(0, 500)}...\n`;
+          }
+          const modelResponseMap: Record<string, string> = {
+            'ChatGPT': '20_res_gpt_bruto', 'Perplexity': '21_res_perplex_bruto',
+            'Google Gemini': '22_res_gemini_bruto', 'Gemini': '22_res_gemini_bruto',
+            'Deepseek': '23_res_deepseek_bruto', 'DeepSeek': '23_res_deepseek_bruto',
+            'Grok': 'respuesta_bruto_grok', 'Qwen': 'respuesta_bruto_qwen',
+          };
+          const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
+          const rawField = rawFieldKey ? r[rawFieldKey] : null;
+          if (rawField) {
+            context += `- **Texto original (extracto)**: ${rawField.substring(0, 600)}...\n`;
+          }
+        });
+      } else {
+        // Caso normal (una sola semana): tabla de scores + textos completos
+        const singleWeekRecords = recordsToShow.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === latestDate);
+        context += `### Scores por Modelo IA (snapshot: ${latestDate || 'más reciente'}, ${singleWeekRecords.length} modelos):\n`;
+        context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
+        context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
+        singleWeekRecords.forEach((r: any) => {
+          const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
+          context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
+        });
+        context += `\n### Análisis de cada modelo IA:\n`;
+        singleWeekRecords.forEach((r: any) => {
+          context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
+          if (r["10_resumen"]) {
+            context += `- **Resumen**: ${r["10_resumen"].substring(0, 500)}...\n`;
+          }
+          const modelResponseMap: Record<string, string> = {
+            'ChatGPT': '20_res_gpt_bruto', 'Perplexity': '21_res_perplex_bruto',
+            'Google Gemini': '22_res_gemini_bruto', 'Gemini': '22_res_gemini_bruto',
+            'Deepseek': '23_res_deepseek_bruto', 'DeepSeek': '23_res_deepseek_bruto',
+            'Grok': 'respuesta_bruto_grok', 'Qwen': 'respuesta_bruto_qwen',
+          };
+          const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
+          const rawField = rawFieldKey ? r[rawFieldKey] : null;
+          if (rawField) {
+            context += `- **Texto original (extracto)**: ${rawField.substring(0, 800)}...\n`;
+          }
+        });
+      }
       context += '\n---\n\n';
     }
   }
@@ -4521,7 +4552,17 @@ async function handleStandardChat(
       return { canonicalDate: fallbackDate!, previousDate: null, sundayDates: [] };
     };
 
-    const { canonicalDate, previousDate } = selectCanonicalPeriod(allRixData);
+    const { canonicalDate, previousDate, sundayDates } = selectCanonicalPeriod(allRixData);
+
+    // Detección de intención multi-semana: evolución, tendencia, histórico, últimas N semanas, etc.
+    const isMultiWeekRequest = /\b(evoluci[oó]n|tendencia|hist[oó]rico|[úu]ltimas?\s+\d+\s+semanas?|[úu]ltimo\s+mes|semanas?\s+anteriores?|cronol[oó]gic|progres[oió]n|mes\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|\d+\s+semanas?)\b/i.test(question);
+    const requestedWeeks = (() => {
+      const m = question.match(/[úu]ltimas?\s+(\d+)\s+semanas?/i) || question.match(/(\d+)\s+semanas?/i);
+      return m ? Math.min(parseInt(m[1]), sundayDates.length || 5) : Math.min(4, sundayDates.length || 4);
+    })();
+    if (isMultiWeekRequest) {
+      console.log(`${logPrefix} 🗓️ Multi-week request detectado: ${requestedWeeks} semanas. Domingos disponibles: ${sundayDates.join(', ')}`);
+    }
 
     let currentWeekData = allRixData.filter(run => {
       const batchDate = run.batch_execution_date?.toString().split('T')[0];
@@ -4547,6 +4588,19 @@ async function handleStandardChat(
     if (modelsInCurrentSnapshot.size < 4) {
       context += `⚠️ AVISO CRÍTICO: Solo ${modelsInCurrentSnapshot.size} modelos disponibles. Este snapshot puede estar incompleto.\n`;
       console.warn(`${logPrefix} ⚠️ Solo ${modelsInCurrentSnapshot.size} modelos en snapshot actual. Posible barrido incompleto.`);
+    }
+    // Histórico multi-semana: mostrar todos los domingos disponibles cuando se piden tendencias
+    if (isMultiWeekRequest && sundayDates.length > 1) {
+      context += `\n📅 HISTÓRICO DISPONIBLE (${sundayDates.length} domingos canónicos, mostrando los ${requestedWeeks} más recientes):\n`;
+      sundayDates.slice(0, requestedWeeks).forEach((date, i) => {
+        const weekData = allRixData.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === date);
+        const models = new Set(weekData.map((r: any) => r["02_model_name"]));
+        const avgRix = weekData.length > 0
+          ? (weekData.reduce((sum: number, r: any) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"] ?? 0), 0) / weekData.length).toFixed(1)
+          : 'N/A';
+        context += `- Semana ${i + 1} (${i === 0 ? 'MÁS RECIENTE' : `hace ${i} semana${i > 1 ? 's' : ''}`}): ${date} → ${weekData.length} registros, ${models.size} modelos, RIX mercado promedio: ${avgRix}\n`;
+      });
+      context += `INSTRUCCIÓN: Para esta consulta usa los datos de las ${requestedWeeks} semanas anteriores para narrar la evolución cronológica.\n`;
     }
     context += '\n';
 
