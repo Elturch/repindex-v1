@@ -4171,6 +4171,13 @@ async function handleStandardChat(
   // =============================================================================
   let context = '';
 
+  // Detección anticipada de intención multi-semana (necesaria antes de sección 6.1)
+  const isMultiWeekRequest = /\b(evoluci[oó]n|tendencia|hist[oó]rico|[úu]ltimas?\s+\d+\s+semanas?|[úu]ltimo\s+mes|semanas?\s+anteriores?|cronol[oó]gic|progres[oió]n|mes\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|\d+\s+semanas?)\b/i.test(question);
+  const requestedWeeks = (() => {
+    const m = question.match(/[úu]ltimas?\s+(\d+)\s+semanas?/i) || question.match(/(\d+)\s+semanas?/i);
+    return m ? Math.min(parseInt(m[1]), 5) : 4;
+  })();
+
   // 6.0-REGRESSION: ANÁLISIS ESTADÍSTICO REAL (siempre disponible para complete/exhaustive)
   // Este contexto permite al LLM usar datos de tendencias y correlaciones precio-métrica
   if (regressionAnalysis && regressionAnalysis.success) {
@@ -4554,12 +4561,7 @@ async function handleStandardChat(
 
     const { canonicalDate, previousDate, sundayDates } = selectCanonicalPeriod(allRixData);
 
-    // Detección de intención multi-semana: evolución, tendencia, histórico, últimas N semanas, etc.
-    const isMultiWeekRequest = /\b(evoluci[oó]n|tendencia|hist[oó]rico|[úu]ltimas?\s+\d+\s+semanas?|[úu]ltimo\s+mes|semanas?\s+anteriores?|cronol[oó]gic|progres[oió]n|mes\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|\d+\s+semanas?)\b/i.test(question);
-    const requestedWeeks = (() => {
-      const m = question.match(/[úu]ltimas?\s+(\d+)\s+semanas?/i) || question.match(/(\d+)\s+semanas?/i);
-      return m ? Math.min(parseInt(m[1]), sundayDates.length || 5) : Math.min(4, sundayDates.length || 4);
-    })();
+    // isMultiWeekRequest y requestedWeeks ya definidos al inicio del PASO 6
     if (isMultiWeekRequest) {
       console.log(`${logPrefix} 🗓️ Multi-week request detectado: ${requestedWeeks} semanas. Domingos disponibles: ${sundayDates.join(', ')}`);
     }
