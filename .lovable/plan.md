@@ -1,133 +1,136 @@
 
-# Estructura Unica "Embudo Narrativo" - Modo Exhaustivo Siempre
+# Análisis Comparativo: Instrucciones Actuales vs. Propuesta Nueva
 
-## Resumen del cambio
+## Veredicto: Mejora clara. Sin deterioro. Con un matiz importante a decidir.
 
-Reemplazar las 3 estructuras actuales (quick/complete/exhaustive) por una unica estructura "Embudo Narrativo" que se aplica siempre en modo exhaustivo. Tambien se actualiza el handler de enrich y el sistema de sales-intelligence para seguir el mismo formato.
-
-## Alcance
-
-Se modifican **2 edge functions**:
-
-1. **`chat-intelligence/index.ts`** (principal)
-2. **`sales-intelligence-chat/index.ts`** (agente comercial)
+El nuevo relato no rompe nada de lo actual. Refina el tono, corrige un exceso de rigidez estructural y hace las respuestas más accesibles. A continuación el análisis línea a línea.
 
 ---
 
-## Cambios en `chat-intelligence/index.ts`
+## Lo que el sistema actual hace bien (y la propuesta respeta)
 
-### 1. Funcion `buildDepthPrompt` (lineas 1157-1296)
-
-Eliminar las 3 variantes (quick/complete/exhaustive) y reemplazar por una unica estructura que siempre devuelve el Embudo Narrativo completo, independientemente del parametro `depthLevel`:
-
-```
-RESUMEN EJECUTIVO
-  - Titular-diagnostico
-  - 3 KPIs con delta
-  - 3 Hallazgos
-  - 3 Recomendaciones (accion + responsable + KPI)
-  - Veredicto
-  - 5 Mensajes para la Direccion (bloque diferenciado)
-
-PILAR 1 -- DEFINIR (Que dice el dato)
-  - Vision de las 6 IAs (tarjetas ordenadas de mayor a menor)
-  - Las 8 metricas (puntuacion + color + parrafo explicativo)
-  - Divergencia entre modelos
-
-PILAR 2 -- ANALIZAR (Que significan)
-  - Evolucion y comparativas (tablas con deltas)
-  - Amenazas y riesgos (impacto en pts + metricas + recomendacion)
-  - Gaps: Realidad vs Percepcion IA
-  - Contexto competitivo (ranking)
-
-PILAR 3 -- PROSPECTAR (Que hacer)
-  - 3 Activaciones inmediatas (0-7 dias)
-  - 3 Tacticas operativas (2-8 semanas)
-  - 3 Lineas estrategicas (trimestre)
-  - Tabla de escenarios (optimista / base / riesgo)
-
-CIERRE
-  - Kit de gestion / borradores de activaciones inmediatas
-
-Fuentes y metodologia
-```
-
-### 2. Formato de recomendaciones en Pilar 3
-
-Cada activacion/tactica/linea estrategica lleva 6 campos obligatorios inyectados en el prompt:
-
-```
-# N -- LINEA TITULAR: verbo de accion + tactica concreta
-
-Que: Entregables, canales, etiquetas, complementos.
-Por que: Datos del informe (%, puntuaciones) + mecanismo causal IA.
-Responsable: Area(s) implicada(s).
-KPI: Nombre descriptivo de metrica + umbral + plazo.
-Impacto IA: Modelo -- Metrica (flecha arriba uno o dos niveles, uno por linea).
-```
-
-### 3. Bloque de estructura en el system prompt principal (lineas ~4555-4588)
-
-Reemplazar la seccion "ESTRUCTURA DE INFORME EJECUTIVO" actual (secciones 1-5 genericas) por el mismo Embudo Narrativo, para que tanto `buildDepthPrompt` como el system prompt base sean coherentes.
-
-### 4. Handler `handleEnrichRequest` (lineas 2217-2391)
-
-Reemplazar la estructura actual del enrich (secciones 1-7 genericas) por el Embudo Narrativo. El enrich sigue siendo una expansion, pero ahora la estructura de salida es identica: Resumen Ejecutivo, Pilar 1 DEFINIR, Pilar 2 ANALIZAR, Pilar 3 PROSPECTAR, Cierre.
-
-### 5. Regla de prioridad de roles (lineas ~4917-4931)
-
-Simplificar: ya no hay condicionales por depth level. El rol siempre modifica el angulo/tono pero NUNCA la estructura ni la extension. Se mantiene el minimo de 2.500 palabras.
-
-### 6. Parametros de data fetching
-
-Como todo es exhaustivo, los parametros que antes variaban por depth se fijan al maximo:
-- `vectorMatchCount`: siempre 30
-- `competitorLimit`: siempre 8
-- `maxRixRecords`: siempre 10.000
-- Periodos historicos: siempre 4
-- Noticias corporativas: siempre 5
-- Regresion estadistica: siempre activa
-
-Se mantiene el parametro `depthLevel` en la interfaz por retrocompatibilidad, pero internamente siempre se trata como exhaustivo.
+- Embudo Narrativo en 5 bloques (Resumen → Pilar 1 → Pilar 2 → Pilar 3 → Cierre): idéntico en ambos.
+- Formato de 6 campos para recomendaciones del Pilar 3: idéntico.
+- Principio de consenso: ya está en el sistema actual (bloques "Hecho Consolidado / Señal Fuerte / Indicación / Dato Aislado").
+- Prohibición de inventar datos, directivos o métricas: ya está.
+- Uso de tablas y comparativas visuales: ya está.
 
 ---
 
-## Cambios en `sales-intelligence-chat/index.ts`
+## Lo que la propuesta mejora respecto al sistema actual
 
-Adaptar el prompt de ventas para que siga la misma estructura de Embudo Narrativo pero con el angulo comercial:
+### 1. Flexibilidad estructural — MEJORA SIGNIFICATIVA
 
-- Resumen Ejecutivo con angulo de venta (titular-diagnostico orientado a urgencia comercial)
-- Pilar 1 DEFINIR: datos crudos traducidos a impacto de negocio
-- Pilar 2 ANALIZAR: comparativas con competidores, riesgos invisibles
-- Pilar 3 PROSPECTAR: por que RepIndex resuelve cada problema detectado
-- Cierre: Preguntas "imposibles" (ya existentes) + call to action
+**Actual**: "NUNCA se altera el orden. Mínimo 2.500 palabras. TODAS las secciones son OBLIGATORIAS."
 
-Se mantiene el lenguaje resultadista y la prohibicion de acronimos tecnicos del prompt actual.
+**Propuesta**: "La estructura es una guía, no un corsé. Activa solo los bloques que aporten valor a la consulta. Si un bloque no aplica, omítelo."
+
+**Impacto**: El sistema actual fuerza 2.500 palabras aunque la pregunta sea "¿cuál es el RIX de Repsol esta semana?". La propuesta permite respuestas proporcionadas a la pregunta. Es un cambio funcional importante: más eficiente, menos artificial.
+
+### 2. Acrónimos prohibidos → nombres descriptivos — MEJORA DE USABILIDAD
+
+**Actual**: El sistema dice "SIEMPRE explica cada métrica en su primera mención, luego usa la sigla." Resultado: el modelo acaba escribiendo NVM, DRM, SIM repetidamente.
+
+**Propuesta**: "Nunca uses acrónimos. Usa el nombre descriptivo." Y añade la regla de explicar entre rayas solo la primera vez.
+
+**Impacto**: Beneficia directamente al usuario final que no conoce RepIndex. La propuesta es más estricta y más clara en este punto.
+
+### 3. Reglas de escritura explícitas — MEJORA DE CONSISTENCIA
+
+**Actual**: El sistema define tono (profesional, declarativo, narrativo, accesible) pero no da reglas de estilo concretas.
+
+**Propuesta**: Añade reglas operativas ausentes hoy:
+- Frases ≤25 palabras
+- Párrafos ≤4 líneas
+- "Ha subido 8 puntos, de 54 a 62" en lugar de "ha mejorado mucho"
+- "Las IAs" como sujeto genérico; nombre propio cuando sea una concreta
+
+**Impacto**: Aumenta la homogeneidad de las respuestas. Elimina respuestas verbosas o vagas.
+
+### 4. Adaptación por tipo de consulta — MEJORA DE RELEVANCIA
+
+**Actual**: No hay instrucción explícita de adaptar profundidad según el tipo de pregunta (empresa vs. sector vs. comparativa).
+
+**Propuesta**: "Escalar profundidad: empresa → máxima · sector → media · comparativa → enfrentada · el resto → focalizada."
+
+**Impacto**: Hace el comportamiento del agente más predecible y ajustado.
+
+### 5. Aviso explícito sobre priorización de consenso — MEJORA DE TRANSPARENCIA
+
+**Actual**: El sistema prioriza consenso pero no instruye al modelo a comunicarlo al usuario.
+
+**Propuesta**: "Priorizar consenso (5-6 IAs coinciden) sobre menciones aisladas. Avisa explícitamente en texto que estás priorizando consenso y que es posible que estés dejando de mencionar acontecimientos con menciones aisladas."
+
+**Impacto**: Mejora la honestidad epistémica del agente. El usuario entiende por qué algo no aparece mencionado.
 
 ---
 
-## Lo que NO cambia
+## Lo que la propuesta cambia que requiere una decisión
 
-- Pipeline SQL-to-Narrative (fases de generacion SQL + ejecucion + razonamiento)
-- Sistema de Vector Store y Graph RAG
-- Protocolo anti-alucinacion (cero inventos)
-- Glosario canonico de metricas (NVM, DRM, SIM, etc.)
-- Sistema de streaming SSE
-- Logica de deteccion de empresas y competidores
-- Boletin ejecutivo (tiene su propio prompt especializado)
-- Regresion estadistica y correlacion de precios
+### El mínimo de 2.500 palabras
+
+**Actual**: Fijo en 2.500 palabras. Todas las secciones obligatorias.
+
+**Propuesta**: Sin mínimo de palabras explícito. Estructura adaptable a la consulta.
+
+Este es el único cambio con riesgo real: sin un mínimo, los modelos tienden a ser demasiado breves en preguntas simples. La propuesta compensa esto con "empresa → máxima profundidad", pero no hay un número concreto.
+
+**Recomendación**: Mantener el mínimo de 2.500 palabras solo para análisis de empresa completo. Para el resto, dejar que la estructura adaptable lo regule.
 
 ---
 
-## Seccion tecnica
+## Lo que NO cambia (confirmado en el código actual)
+
+| Elemento | Estado |
+|---|---|
+| Orden del embudo (5 bloques) | Sin cambios |
+| Formato 6 campos Pilar 3 | Sin cambios |
+| Anti-alucinación de directivos | Sin cambios |
+| Pipeline SQL-to-Narrative | Sin cambios |
+| Vector Store y Graph RAG | Sin cambios |
+| Streaming SSE | Sin cambios |
+| Glosario canónico de métricas | Sin cambios |
+| Protocolo de datos corporativos | Sin cambios |
+
+---
+
+## Punto de atención: el Agente Comercial (sales-intelligence-chat)
+
+El agente comercial también sigue el Embudo Narrativo, pero con ángulo de venta ("urgencia comercial", "riesgos invisibles", "preguntas imposibles"). La propuesta nueva no menciona este agente. Hay dos opciones:
+
+1. Aplicar las mismas reglas de escritura (frases cortas, sin acrónimos, datos concretos) también al agente comercial.
+2. Dejar el agente comercial con su prompt actual y aplicar la propuesta solo al Agente Rix.
+
+---
+
+## Plan de implementación
+
+Si apruebas el plan, los cambios técnicos son **exclusivamente en `chat-intelligence/index.ts`**:
+
+### Cambio 1 — `buildDepthPrompt` (línea 1162)
+Eliminar el requisito "TODAS las secciones son OBLIGATORIAS" y "mínimo 2.500 palabras" como regla universal. Reemplazar por la escala de profundidad adaptable: empresa → máxima, sector → media, comparativa → enfrentada, resto → focalizada. Mantener 2.500 palabras solo para empresa completo.
+
+### Cambio 2 — Reglas de métricas (línea 4601)
+Reemplazar "SIEMPRE explica cada métrica en su primera mención, luego usa la sigla" por "Nunca uses acrónimos. Usa el nombre descriptivo. La primera vez, explica entre rayas qué mide."
+
+### Cambio 3 — Reglas de escritura (línea ~4540)
+En el bloque "TU TONO", añadir las reglas operativas:
+- Frases ≤25 palabras
+- Párrafos ≤4 líneas
+- Datos concretos: nunca "ha mejorado mucho" → siempre la cifra exacta con delta
+- "Las IAs" como sujeto genérico; nombre propio cuando sea una concreta
+
+### Cambio 4 — Adaptación por tipo de consulta (línea ~4583)
+Añadir la escala de profundidad por tipo de consulta en el bloque de Estructura del sistema.
+
+### Cambio 5 — Aviso de priorización de consenso (línea ~4563)
+Añadir la instrucción de avisar explícitamente al usuario cuando se prioriza consenso y se omiten menciones aisladas.
 
 ### Archivos modificados
 | Archivo | Tipo de cambio |
-|---------|---------------|
-| `supabase/functions/chat-intelligence/index.ts` | Reescritura de `buildDepthPrompt`, seccion de estructura en system prompt, `handleEnrichRequest`, fijacion de parametros de data fetching |
-| `supabase/functions/sales-intelligence-chat/index.ts` | Reestructuracion del `SALES_SYSTEM_PROMPT` al formato Embudo Narrativo |
+|---|---|
+| `supabase/functions/chat-intelligence/index.ts` | Refinamiento de tono, reglas de escritura, flexibilidad estructural, regla de acrónimos |
+| `supabase/functions/sales-intelligence-chat/index.ts` | Opcional, según decisión del usuario |
 
-### Riesgos y mitigaciones
-- **Respuestas mas largas en modo "quick"**: Al forzar exhaustivo siempre, las respuestas seran mas largas y lentas. Dado que el usuario lo ha solicitado explicitamente ("todo en exhaustivo"), esto es aceptable.
-- **Coste de tokens**: Aumentara el consumo de tokens al usar siempre modelos de razonamiento con max tokens altos. Se mantiene el logging de costes para monitorizar.
-- **Compliance del modelo**: Los LLMs siguen la estructura con ~85-90% de fidelidad. El formato de 6 campos en recomendaciones es lo suficientemente estructurado para que lo respeten de forma consistente.
+### Lo que NO se toca
+- Lógica de datos, SQL, Vector Store, streaming, anti-alucinación, formato 6 campos Pilar 3, orden del embudo.
