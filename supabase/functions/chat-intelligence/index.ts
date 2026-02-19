@@ -4824,7 +4824,7 @@ async function handleStandardChat(
     }
 
     if (previousWeekData.length > 0) {
-      context += `\n📅 DATOS SEMANA ANTERIOR (${prevFrom} a ${prevTo}):\n`;
+      context += `\n📅 DATOS SEMANA ANTERIOR (snapshot: ${previousDate ?? 'N/A'}):\n`;
       context += `Total de evaluaciones: ${previousWeekData.length}\n\n`;
     }
   } else {
