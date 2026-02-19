@@ -1,53 +1,43 @@
 
-# Hacer visible el botón "Descargar informe" en todos los mensajes del hilo
+# Mover botón "Informe" al final de la burbuja, alineado a la derecha
 
-## Diagnóstico
+## Cambio único — `src/components/chat/ChatMessages.tsx`
 
-El botón "Descargar como informe" existe en cada respuesta del asistente, dentro del componente `MarkdownMessage`. El problema tiene dos causas combinadas:
+### Qué se mueve
+El bloque actual (líneas 220-231) elimina el botón de su posición `absolute top-2 right-2` y lo reubica **después del bloque Drumroll** (línea 390), como el último elemento dentro de la burbuja del asistente.
 
-1. **Altura fija del ScrollArea**: El área de chat tiene altura fija (`h-[500px]`). Con 3 respuestas largas en el hilo, los botones de descarga de los mensajes anteriores quedan enterrados dentro del scroll y no son fáciles de localizar.
+### Posición nueva
+Después del cierre del bloque Drumroll (`</div>` en línea 390), antes del cierre de la burbuja (`</div>` en línea 391), se añade:
 
-2. **El botón solo aparece al 70% de opacidad** (`opacity-70`) sin ningún indicador visual claro. No hay hover card ni tooltip que avise al usuario de su existencia.
+```tsx
+{/* Download button — bottom-right of assistant bubbles */}
+{message.role === 'assistant' && !message.isStreaming && message.metadata?.type !== 'bulletin' && (
+  <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30 flex justify-end`}>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => downloadMessage(message)}
+      className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
+    >
+      <Download className="h-3.5 w-3.5" />
+      {!compact && <span className="text-[11px] font-medium">Descargar informe</span>}
+    </Button>
+  </div>
+)}
+```
 
-3. **El botón está al final de cada burbuja de respuesta**, después del contenido de la metodología, el feedback y el rol de enriquecimiento. En respuestas largas, queda muy lejos del inicio del mensaje y el usuario no llega a verlo.
+### Por qué este diseño
+- **`justify-end`**: alinea el botón a la derecha, igual que estaba antes.
+- **`border-t border-border/30`**: separa visualmente el botón del resto del contenido de la burbuja, como hacía el bloque de metodología.
+- **Sin `absolute`**: el botón forma parte del flujo normal del documento, no interfiere con el padding del contenido superior.
+- El texto pasa de "Informe" a "Descargar informe" para ser más descriptivo y autoexplicativo para el usuario final.
 
-## Solución
-
-Mover el botón de descarga a un lugar **siempre visible** junto a cada mensaje del asistente: como una acción en la cabecera/barra superior de la burbuja, no al final. Así el usuario puede descargar cualquier respuesta del hilo sin tener que hacer scroll hasta el final de cada una.
-
-### Cambio 1 — `src/components/chat/ChatMessages.tsx`
-
-Añadir una barra de acciones en la parte superior derecha de cada burbuja de respuesta del asistente (no en el mensaje del usuario). Esta barra contiene el botón de descarga y es siempre visible (no depende del hover).
-
-El botón llama a la función de descarga de `MarkdownMessage`, pero para poder hacerlo desde fuera necesitamos o bien:
-- **Opción A**: Pasar el contenido del mensaje y el handler de descarga directamente desde `ChatMessages`, generando el HTML de exportación con los mismos parámetros que ya tiene `MarkdownMessage`.
-- **Opción B** (más limpia): Extraer la función `downloadMessage` de `MarkdownMessage` a un hook reutilizable o pasarla como `ref`.
-
-Usaremos **Opción A**: en `ChatMessages`, para cada mensaje del asistente que no esté en streaming, mostrar un pequeño botón de descarga en la esquina superior derecha de la burbuja. El botón usa la misma lógica de exportación que ya existe en `MarkdownMessage` — importamos `generateExportHtml` (actualmente es una función privada, hay que exportarla) y lo invocamos desde `ChatMessages`.
-
-### Cambio 2 — `src/components/ui/markdown-message.tsx`
-
-- Exportar la función `generateExportHtml` para poder usarla desde `ChatMessages`.
-- Eliminar el botón de descarga del interior de `MarkdownMessage` (para evitar duplicidad). O mantenerlo pero hacerlo `opacity-0` si el botón externo ya lo cubre.
-
-### Cambio 3 — Diseño del botón
-
-El botón de descarga en la cabecera de la burbuja:
-- Icono `Download` + texto "Informe"
-- `variant="ghost"` con `size="sm"`
-- Siempre visible (sin `opacity-70`), alineado a la derecha del borde superior de la burbuja
-- Solo aparece en mensajes del asistente que **no estén en streaming** (`!message.isStreaming`)
-
-## Archivos a modificar
-
+### Archivos modificados
 | Archivo | Cambio |
 |---|---|
-| `src/components/ui/markdown-message.tsx` | Exportar `generateExportHtml`; mover/eliminar el botón interno |
-| `src/components/chat/ChatMessages.tsx` | Añadir botón de descarga visible en cabecera de cada burbuja del asistente |
+| `src/components/chat/ChatMessages.tsx` | Eliminar `absolute top-2 right-2` (líneas 220-231) · Añadir botón al final de la burbuja tras el Drumroll |
 
-## Lo que NO cambia
-
-- Lógica de exportación HTML (idéntica a la actual)
-- Lógica de streaming y renderizado de mensajes
-- Componentes de feedback, metodología y rol de enriquecimiento
-- Estilos del informe exportado
+### Lo que NO cambia
+- Lógica de descarga (`downloadMessage`) — idéntica.
+- Todos los demás bloques de la burbuja (Feedback, Metodología, Rol, Drumroll).
+- Modo compacto: el botón aparece sin texto, solo el icono.
