@@ -217,18 +217,6 @@ export function ChatMessages({
                   : 'bg-card border border-border'
               }`}
             >
-              {/* Download button — always visible in top-right of assistant bubbles */}
-              {message.role === 'assistant' && !message.isStreaming && message.metadata?.type !== 'bulletin' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => downloadMessage(message)}
-                  className="absolute top-2 right-2 h-7 px-2 gap-1 text-muted-foreground hover:text-foreground z-10"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  {!compact && <span className="text-[11px] font-medium">Informe</span>}
-                </Button>
-              )}
 
               {/* Enriched response badge */}
               {message.metadata?.type === 'enriched' && message.metadata?.enrichedFromRole && (
@@ -385,7 +373,22 @@ export function ChatMessages({
                         <ArrowRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                     </CardContent>
-                  </Card>
+                </Card>
+                </div>
+              )}
+
+              {/* Download button — bottom-right of assistant bubbles */}
+              {message.role === 'assistant' && !message.isStreaming && message.metadata?.type !== 'bulletin' && (
+                <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30 flex justify-end`}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => downloadMessage(message)}
+                    className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {!compact && <span className="text-[11px] font-medium">Descargar informe</span>}
+                  </Button>
                 </div>
               )}
             </div>
