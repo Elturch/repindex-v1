@@ -4645,7 +4645,7 @@ async function handleStandardChat(
               allRixData.push(...missingBatch);
               // Re-apply period + model + index filters on the repaired data
               const repairedData = missingBatch
-                .filter(run => getPeriodKey(run) === currentPeriod)
+                .filter(run => run.batch_execution_date?.toString().split('T')[0] === canonicalDate)
                 .filter(r => !requestedModel || r["02_model_name"] === requestedModel)
                 .filter(r => indexTickers.has(r["05_ticker"]));
               currentWeekData.push(...repairedData);
@@ -4659,11 +4659,8 @@ async function handleStandardChat(
       }
     }
 
-    const [currentFrom, currentTo] = currentPeriod ? currentPeriod.split('|') : [null, null];
-    const [prevFrom, prevTo] = previousPeriod ? previousPeriod.split('|') : [null, null];
-
-    console.log(`${logPrefix} Current period: ${currentFrom} to ${currentTo} (${currentWeekData.length} records)`);
-    console.log(`${logPrefix} Previous period: ${prevFrom || 'N/A'} to ${prevTo || 'N/A'} (${previousWeekData.length} records)`);
+    console.log(`${logPrefix} Canonical snapshot: ${canonicalDate} (${currentWeekData.length} records)`);
+    console.log(`${logPrefix} Previous snapshot: ${previousDate ?? 'N/A'} (${previousWeekData.length} records)`);
 
     // =========================================================================
     // 6.4 RANKING GENERAL (sin filtros destructivos)
