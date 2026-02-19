@@ -4,20 +4,22 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
-import { MarkdownMessage } from "@/components/ui/markdown-message";
+import { MarkdownMessage, generateExportHtml } from "@/components/ui/markdown-message";
 import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
 import { ResponseFeedback } from "./ResponseFeedback";
 import { MethodologyFooter } from "./MethodologyFooter";
 import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight } from "lucide-react";
+import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight, Download } from "lucide-react";
 import { Message, useChatContext } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
 import { useAuth } from "@/contexts/AuthContext";
 import { getRoleById } from "@/lib/chatRoles";
 import { getChatTranslations } from "@/lib/chatTranslations";
+import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -48,6 +50,29 @@ export function ChatMessages({
   const tr = getChatTranslations(languageCode);
   const { user } = useAuth();
   const { configureSession } = useChatContext();
+  const { toast } = useToast();
+
+  const downloadMessage = (message: Message) => {
+    const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+    const roleName = message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined;
+    const htmlContent = generateExportHtml(
+      message.content,
+      tr,
+      languageCode,
+      roleName,
+      message.metadata?.verifiedSources,
+      message.metadata?.methodology?.periodFrom,
+      message.metadata?.methodology?.periodTo,
+    );
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `repindex_informe_${timestamp}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast({ title: tr.pdfExported, description: tr.pdfExportedDesc });
+  };
   
   // Smart suggestions with live data and personalization
   const { 
@@ -186,12 +211,25 @@ export function ChatMessages({
         {messages.map((message, idx) => (
           <div key={idx} className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div
-              className={`${compact ? 'max-w-[90%]' : 'max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} ${
+              className={`relative ${compact ? 'max-w-[90%]' : 'max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} ${
                 message.role === 'user'
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card border border-border'
               }`}
             >
+              {/* Download button — always visible in top-right of assistant bubbles */}
+              {message.role === 'assistant' && !message.isStreaming && message.metadata?.type !== 'bulletin' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => downloadMessage(message)}
+                  className="absolute top-2 right-2 h-7 px-2 gap-1 text-muted-foreground hover:text-foreground z-10"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {!compact && <span className="text-[11px] font-medium">Informe</span>}
+                </Button>
+              )}
+
               {/* Enriched response badge */}
               {message.metadata?.type === 'enriched' && message.metadata?.enrichedFromRole && (
                 <div className="flex items-center gap-2 mb-2 pb-2 border-b border-border/50">

@@ -215,25 +215,12 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
         {content}
       </ReactMarkdown>
       
-      {showDownload && (
-        <div className="flex justify-end mt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={downloadMessage}
-            className="opacity-70 hover:opacity-100 transition-opacity gap-2 text-muted-foreground hover:text-foreground"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">Descargar como informe</span>
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
 
 // Generate complete HTML document for export with premium RepIndex report styling
-function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string, verifiedSources?: VerifiedSource[], periodFrom?: string, periodTo?: string): string {
+export function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string, verifiedSources?: VerifiedSource[], periodFrom?: string, periodTo?: string): string {
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
   const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
