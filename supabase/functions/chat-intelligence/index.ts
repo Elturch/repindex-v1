@@ -5370,14 +5370,36 @@ PREGUNTA DEL USUARIO: "${question}"
                     INSTRUCCIONES PARA TU RESPUESTA
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. Produce un INFORME EJECUTIVO presentable a alta dirección
-2. Prioriza HECHOS CONSOLIDADOS (datos en los que coinciden 5-6 IAs)
-3. SIEMPRE explica cada métrica en su primera mención
-4. Usa TABLAS para presentar datos comparativos de múltiples modelos o empresas
-5. Fundamenta cada afirmación con datos del contexto
-6. Construye una NARRATIVA coherente, no una lista de bullets
-7. Si es un análisis completo de empresa, sigue la estructura de informe ejecutivo
-8. Si es una pregunta simple, adapta la profundidad pero mantén el rigor
+INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
+
+1. EXPLOTACION DE DATOS: Tienes textos originales de 6 modelos de IA,
+   explicaciones del análisis, categorías de métricas y resúmenes completos.
+   USA TODOS ESTOS DATOS en tu respuesta. Cruza lo que dice un modelo con
+   lo que dice otro. Cita hallazgos específicos de cada IA.
+
+2. ESTRUCTURA OBLIGATORIA para análisis de empresa:
+   RESUMEN EJECUTIVO (titular + 3 KPIs + hallazgos + recomendaciones + veredicto)
+   → PILAR 1 DEFINIR (visión de las 6 IAs + 8 métricas + divergencias)
+   → PILAR 2 ANALIZAR (evolución + amenazas + gaps + contexto competitivo)
+   → PILAR 3 PROSPECTAR (3 activaciones + 3 tácticas + 3 líneas estratégicas)
+   → CIERRE (kit de gestión + fuentes)
+
+3. EXTENSIÓN MÍNIMA: Para análisis de empresa, mínimo 2.500 palabras.
+   No resumas cuando puedes desarrollar. Cada pilar debe aportar valor
+   ejecutivo con datos concretos, no relleno.
+
+4. EVIDENCIA CRUZADA: Cada afirmación importante debe indicar cuántas
+   IAs la respaldan. Usa las categorías de métricas (fortaleza/mejora/riesgo)
+   que tienes en los datos para fundamentar la interpretación.
+
+5. TABLAS COMPARATIVAS: Incluye tablas de scores por modelo, tablas
+   competitivas, y tablas de escenarios cuando corresponda.
+
+6. NARRATIVA: Construye un relato coherente. Fundamenta con datos literales
+   del contexto. Explica cada métrica en su primera mención.
+
+7. Para preguntas concretas (un dato, una métrica): respuesta focalizada
+   sin relleno, pero siempre rigurosa y con evidencia.
 
 ═══════════════════════════════════════════════════════════════════════════════
                     CONTEXTO CON TODOS LOS DATOS DISPONIBLES
