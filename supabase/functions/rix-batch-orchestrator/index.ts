@@ -839,7 +839,7 @@ async function processCronTriggers(
     // ADDITIONAL ZOMBIE CLEANUP: repair_search and repair_invalid_responses stuck >10 min
     // These actions can get stuck due to API timeouts; reset them to pending for retry
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    for (const zombieAction of ['repair_search', 'repair_invalid_responses']) {
+    for (const zombieAction of ['repair_search', 'repair_invalid_responses', 'auto_populate_vectors', 'vector_store_continue', 'auto_generate_newsroom', 'auto_sanitize']) {
       const { data: zombieRows, error: zombieErr } = await supabase
         .from('cron_triggers')
         .update({ status: 'pending', processed_at: null })
