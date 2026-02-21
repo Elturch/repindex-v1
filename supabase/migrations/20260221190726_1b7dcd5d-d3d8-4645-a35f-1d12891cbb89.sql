@@ -1,0 +1,1 @@
+UPDATE cron_triggers SET status = 'completed', processed_at = now() WHERE id = '9b931903-80e7-4a89-a693-53ee202af248';
