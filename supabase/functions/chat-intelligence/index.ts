@@ -4409,8 +4409,12 @@ async function handleStandardChat(
       byCompany.get(company)!.push(r);
     });
     
+    // Determine primary company (the one the user is asking about)
+    const primaryCompanyTicker = detectedCompanies.length > 0 ? detectedCompanies[0].ticker : null;
+    
     for (const [companyName, records] of byCompany) {
       const company = detectedCompanies.find(c => c.issuer_name === companyName);
+      const isPrimaryCompany = company?.ticker === primaryCompanyTicker;
       context += `## 📊 ${companyName.toUpperCase()} (${records[0]["05_ticker"]})\n`;
       if (company) {
         context += `Sector: ${company.sector_category || 'N/A'} | IBEX: ${company.ibex_family_code || 'N/A'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
@@ -4454,7 +4458,7 @@ async function handleStandardChat(
         latestWeekRecords.forEach((r: any) => {
           context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
           if (r["10_resumen"]) {
-            context += `- **Resumen**: ${r["10_resumen"].substring(0, 500)}...\n`;
+            context += `- **Resumen**: ${r["10_resumen"].substring(0, isPrimaryCompany ? 1500 : 500)}...\n`;
           }
           const modelResponseMap: Record<string, string> = {
             'ChatGPT': '20_res_gpt_bruto', 'Perplexity': '21_res_perplex_bruto',
@@ -4465,7 +4469,19 @@ async function handleStandardChat(
           const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
           const rawField = rawFieldKey ? r[rawFieldKey] : null;
           if (rawField) {
-            context += `- **Texto original (extracto)**: ${rawField.substring(0, 600)}...\n`;
+            context += `- **Texto original (extracto)**: ${rawField.substring(0, isPrimaryCompany ? 2500 : 600)}...\n`;
+          }
+          // Inject explanations for primary company
+          if (isPrimaryCompany) {
+            if (r["22_explicacion"]) {
+              context += `- **Explicación del análisis**: ${r["22_explicacion"].substring(0, 2000)}\n`;
+            }
+            if (r["25_explicaciones_detalladas"]) {
+              const detalladas = typeof r["25_explicaciones_detalladas"] === 'string' 
+                ? r["25_explicaciones_detalladas"] 
+                : JSON.stringify(r["25_explicaciones_detalladas"]);
+              context += `- **Desglose dimensional**: ${detalladas.substring(0, 2000)}\n`;
+            }
           }
         });
       } else {
@@ -4477,12 +4493,16 @@ async function handleStandardChat(
         singleWeekRecords.forEach((r: any) => {
           const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
           context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
+          // Inject category interpretation row for primary company
+          if (isPrimaryCompany) {
+            context += `| _(${r["02_model_name"]} interp.)_ | | ${r["25_nvm_categoria"] || '-'} | ${r["28_drm_categoria"] || '-'} | ${r["31_sim_categoria"] || '-'} | ${r["34_rmm_categoria"] || '-'} | ${r["37_cem_categoria"] || '-'} | ${r["40_gam_categoria"] || '-'} | ${r["43_dcm_categoria"] || '-'} | ${r["46_cxm_categoria"] || '-'} |\n`;
+          }
         });
         context += `\n### Análisis de cada modelo IA:\n`;
         singleWeekRecords.forEach((r: any) => {
           context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
           if (r["10_resumen"]) {
-            context += `- **Resumen**: ${r["10_resumen"].substring(0, 500)}...\n`;
+            context += `- **Resumen**: ${r["10_resumen"].substring(0, isPrimaryCompany ? 1500 : 500)}...\n`;
           }
           const modelResponseMap: Record<string, string> = {
             'ChatGPT': '20_res_gpt_bruto', 'Perplexity': '21_res_perplex_bruto',
@@ -4493,7 +4513,19 @@ async function handleStandardChat(
           const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
           const rawField = rawFieldKey ? r[rawFieldKey] : null;
           if (rawField) {
-            context += `- **Texto original (extracto)**: ${rawField.substring(0, 800)}...\n`;
+            context += `- **Texto original (extracto)**: ${rawField.substring(0, isPrimaryCompany ? 3000 : 800)}...\n`;
+          }
+          // Inject explanations for primary company
+          if (isPrimaryCompany) {
+            if (r["22_explicacion"]) {
+              context += `- **Explicación del análisis**: ${r["22_explicacion"].substring(0, 2000)}\n`;
+            }
+            if (r["25_explicaciones_detalladas"]) {
+              const detalladas = typeof r["25_explicaciones_detalladas"] === 'string' 
+                ? r["25_explicaciones_detalladas"] 
+                : JSON.stringify(r["25_explicaciones_detalladas"]);
+              context += `- **Desglose dimensional**: ${detalladas.substring(0, 2000)}\n`;
+            }
           }
         });
       }
@@ -4761,13 +4793,16 @@ async function handleStandardChat(
     context += `| # | Empresa | Ticker | RIX | Modelo IA |\n`;
     context += `|---|---------|--------|-----|----------|\n`;
     
-    // Increased from 50 to 150 records shown
-    rankedRecords.slice(0, 150).forEach((record, idx) => {
+    // Intelligent ranking: full when user asks for rankings, reduced otherwise to save tokens
+    const isRankingQuery = /\b(ranking|top\s?\d|ibex|clasificaci[oó]n|mejor|peor|l[ií]der|primera|[uú]ltima|posici[oó]n|listado|todas las empresas)\b/i.test(question);
+    const rankingLimit = isRankingQuery ? 150 : 30;
+    
+    rankedRecords.slice(0, rankingLimit).forEach((record, idx) => {
       context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} | ${record.model} |\n`;
     });
 
-    if (rankedRecords.length > 150) {
-      context += `\n... y ${rankedRecords.length - 150} evaluaciones más.\n`;
+    if (rankedRecords.length > rankingLimit) {
+      context += `\n... y ${rankedRecords.length - rankingLimit} evaluaciones más.\n`;
     }
 
     context += `\n`;
@@ -4778,8 +4813,8 @@ async function handleStandardChat(
     context += `| # | Empresa | Ticker | RIX Promedio | # Modelos | Tendencia vs Semana Anterior |\n`;
     context += `|---|---------|--------|--------------|-----------|------------------------------|\n`;
     
-    // Increased from 20 to 50 companies shown
-    rankedByAverage.slice(0, 50).forEach((company, idx) => {
+    const averageLimit = isRankingQuery ? 50 : 20;
+    rankedByAverage.slice(0, averageLimit).forEach((company, idx) => {
       const trend = trends.get(company.company);
       const trendStr = trend !== undefined 
         ? (trend > 0 ? `↗ +${trend.toFixed(1)}` : trend < 0 ? `↘ ${trend.toFixed(1)}` : '→ 0.0')
@@ -4788,8 +4823,8 @@ async function handleStandardChat(
       context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${company.modelCount} | ${trendStr} |\n`;
     });
 
-    if (rankedByAverage.length > 50) {
-      context += `\n... y ${rankedByAverage.length - 50} empresas más.\n`;
+    if (rankedByAverage.length > averageLimit) {
+      context += `\n... y ${rankedByAverage.length - averageLimit} empresas más.\n`;
     }
 
     context += `\n`;
