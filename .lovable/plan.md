@@ -1,170 +1,94 @@
 
 
-# Plan: Convertir al Agente Rix en un campeon de respuestas
+# Plan: Enriquecer las respuestas del Agente Rix reforzando las instrucciones de profundidad
 
-## Diagnostico: Por que las respuestas pierden matices
+## Diagnostico
 
-El problema NO esta en las instrucciones al LLM (que son excelentes), ni en la estructura del Embudo Narrativo (que es solida). El problema esta en que **el LLM recibe datos amputados** y luego se le pide que haga un analisis de nivel ejecutivo con ellos.
+Los 5 cambios anteriores (textos brutos expandidos, categorias, explicaciones, resumenes, ranking inteligente) estan funcionando correctamente: el LLM recibe datos mucho mas ricos. Pero las respuestas salen mas cortas porque:
 
-### Los 5 cuellos de botella actuales
+1. **El userPrompt no refuerza la profundidad**: Las 8 instrucciones finales (lineas 5373-5380) son genericas. Dicen "informe ejecutivo" pero nunca mencionan el minimo de 2.500 palabras, ni nombran los pilares del Embudo, ni dicen "usa TODOS los datos disponibles de los 6 modelos".
 
-**1. Las respuestas brutas de cada IA estan truncadas a 600-800 caracteres**
-- Linea 4468: `rawField.substring(0, 600)` (multi-semana)
-- Linea 4496: `rawField.substring(0, 800)` (semana unica)
-- Estas respuestas son textos de 3.000-8.000 caracteres donde cada IA explica EN DETALLE por que puntua como puntua. El LLM solo ve el 10-20% del texto original. Es como pedirle a un analista que haga un informe leyendo solo el primer parrafo de cada fuente.
+2. **Sesgo de recencia**: El LLM ve el Embudo Narrativo detallado en el system prompt (lineas 1119-1277), pero lo ultimo que procesa es el userPrompt con instrucciones vagas. El modelo prioriza las instrucciones mas recientes.
 
-**2. Las categorias de metricas se cargan pero NUNCA se inyectan en el contexto**
-- Se cargan: `25_nvm_categoria`, `28_drm_categoria`, `31_sim_categoria`, etc. (lineas 3988-3995)
-- Pero en la tabla de scores (lineas 4475-4479), solo se muestran los numeros, nunca la categoria ("fortaleza", "riesgo", "mejora"). El LLM tiene que adivinar la interpretacion en lugar de recibirla pre-calculada.
+3. **Mas contexto, misma exigencia**: Al duplicar los datos de entrada sin reforzar la exigencia de output, el LLM interpreta que puede "resumir" el contexto expandido en lugar de explotarlo exhaustivamente.
 
-**3. Las explicaciones detalladas se cargan pero se descartan**
-- `22_explicacion` y `25_explicaciones_detalladas` se piden en la query (lineas 3978-3979) pero NUNCA aparecen en la seccion 6.1 de contexto de empresa. Son los textos donde el sistema de analisis V2 explica POR QUE puso cada puntuacion. Es inteligencia pura que se tira a la basura.
+## Solucion: Reforzar el userPrompt con instrucciones de explotacion de datos
 
-**4. Los resumenes estan truncados a 500 caracteres**
-- Linea 4485: `r["10_resumen"].substring(0, 500)` — un resumen de 1.500 chars se corta a un tercio.
+Un unico cambio en el archivo `supabase/functions/chat-intelligence/index.ts`, en la seccion del `userPrompt` (lineas 5365-5388).
 
-**5. El ranking general consume tokens sin aportar al analisis de empresa**
-- 150 filas de ranking individual (lineas 4764-4767) + 50 filas de promedios (lineas 4782-4788) = ~5.000 tokens de tablas que el LLM raramente necesita cuando el usuario pregunta por UNA empresa. Estos tokens podrian usarse para los textos completos.
+### Cambio: Reescribir las instrucciones del userPrompt
 
-## Plan de accion: 5 cambios en un solo archivo
-
-Archivo: `supabase/functions/chat-intelligence/index.ts`
-
-### Cambio 1 — Textos brutos COMPLETOS para la empresa preguntada
-
-Cuando el usuario pregunta por una empresa concreta, el texto bruto de cada modelo es la fuente primaria de matices. Ampliar de 600/800 chars a 3.000 chars para la empresa principal (la primera detectada) y mantener 800 para las demas empresas detectadas.
+Las instrucciones actuales (lineas 5373-5380) son:
 
 ```
-Antes (linea 4496):
-rawField.substring(0, 800)
-
-Despues:
-rawField.substring(0, isPrimaryCompany ? 3000 : 800)
+1. Produce un INFORME EJECUTIVO presentable a alta direccion
+2. Prioriza HECHOS CONSOLIDADOS (datos en los que coinciden 5-6 IAs)
+3. SIEMPRE explica cada metrica en su primera mencion
+4. Usa TABLAS para presentar datos comparativos
+5. Fundamenta cada afirmacion con datos del contexto
+6. Construye una NARRATIVA coherente, no una lista de bullets
+7. Si es un analisis completo de empresa, sigue la estructura de informe ejecutivo
+8. Si es una pregunta simple, adapta la profundidad pero manten el rigor
 ```
 
-Mismo cambio en linea 4468 para multi-semana (de 600 a 2500/600).
-
-`isPrimaryCompany` se determina comparando con `detectedCompanies[0]`.
-
-### Cambio 2 — Inyectar categorias de metricas en la tabla de scores
-
-Anadir una fila de interpretacion debajo de cada modelo en la tabla de contexto:
+Se reemplazan por instrucciones que explotan los datos enriquecidos y refuerzan la estructura:
 
 ```
-Antes:
-| ChatGPT | 64 | 71 | 63 | 35 | 35 | 100 | 50 | 88 | 62 |
+INSTRUCCIONES DE PROFUNDIDAD:
 
-Despues:
-| ChatGPT | 64 | 71 | 63 | 35 | 35 | 100 | 50 | 88 | 62 |
-| _(interpretacion)_ | | fortaleza | mejora | riesgo | riesgo | fortaleza | mejora | fortaleza | mejora |
+1. EXPLOTACION DE DATOS: Tienes textos originales de 6 modelos de IA,
+   explicaciones del analisis, categorias de metricas y resumenes completos.
+   USA TODOS ESTOS DATOS en tu respuesta. Cruza lo que dice un modelo con 
+   lo que dice otro. Cita hallazgos especificos de cada IA.
+
+2. ESTRUCTURA OBLIGATORIA para analisis de empresa:
+   RESUMEN EJECUTIVO (titular + 3 KPIs + hallazgos + recomendaciones + veredicto)
+   -> PILAR 1 DEFINIR (vision de las 6 IAs + 8 metricas + divergencias)
+   -> PILAR 2 ANALIZAR (evolucion + amenazas + gaps + contexto competitivo)
+   -> PILAR 3 PROSPECTAR (3 activaciones + 3 tacticas + 3 lineas estrategicas)
+   -> CIERRE (kit de gestion + fuentes)
+
+3. EXTENSION MINIMA: Para analisis de empresa, minimo 2.500 palabras.
+   No resumas cuando puedes desarrollar. Cada pilar debe aportar valor
+   ejecutivo con datos concretos, no relleno.
+
+4. EVIDENCIA CRUZADA: Cada afirmacion importante debe indicar cuantas
+   IAs la respaldan. Usa las categorias de metricas (fortaleza/mejora/riesgo)
+   que tienes en los datos para fundamentar la interpretacion.
+
+5. TABLAS COMPARATIVAS: Incluye tablas de scores por modelo, tablas
+   competitivas, y tablas de escenarios cuando corresponda.
+
+6. NARRATIVA: Construye un relato coherente. Fundamenta con datos literales
+   del contexto. Explica cada metrica en su primera mencion.
+
+7. Para preguntas concretas (un dato, una metrica): respuesta focalizada
+   sin relleno, pero siempre rigurosa y con evidencia.
 ```
 
-Esto se logra leyendo los campos `25_nvm_categoria`, `28_drm_categoria`, etc. que YA estan cargados.
-
-### Cambio 3 — Incluir explicaciones detalladas para la empresa principal
-
-Para la empresa principal (la que el usuario pregunta), anadir un bloque con `22_explicacion` y/o `25_explicaciones_detalladas` despues de cada texto bruto:
-
-```typescript
-// Solo para la empresa principal, inyectar explicaciones del analisis
-if (isPrimaryCompany) {
-  if (r["22_explicacion"]) {
-    context += `- **Explicacion del analisis**: ${r["22_explicacion"].substring(0, 2000)}\n`;
-  }
-  if (r["25_explicaciones_detalladas"]) {
-    const detalladas = typeof r["25_explicaciones_detalladas"] === 'string' 
-      ? r["25_explicaciones_detalladas"] 
-      : JSON.stringify(r["25_explicaciones_detalladas"]);
-    context += `- **Desglose dimensional**: ${detalladas.substring(0, 2000)}\n`;
-  }
-}
-```
-
-### Cambio 4 — Resumenes completos (sin truncar)
-
-Ampliar el limite del resumen de 500 a 1500 caracteres para la empresa principal:
-
-```
-Antes (linea 4485):
-r["10_resumen"].substring(0, 500)
-
-Despues:
-r["10_resumen"].substring(0, isPrimaryCompany ? 1500 : 500)
-```
-
-### Cambio 5 — Ranking inteligente: completo solo cuando se pide
-
-Reducir el ranking individual de 150 a 30 filas y el de promedios de 50 a 20 filas EXCEPTO cuando el usuario pregunta explicitamente por rankings, top, IBEX completo, etc.
-
-```typescript
-// Detectar si la consulta pide ranking explicitamente
-const isRankingQuery = /\b(ranking|top\s?\d|ibex|clasificaci[oó]n|mejor|peor|l[ií]der|primera|[uú]ltima|posici[oó]n|listado|todas las empresas)\b/i.test(question);
-
-const rankingLimit = isRankingQuery ? 150 : 30;
-const averageLimit = isRankingQuery ? 50 : 20;
-```
-
-Los tokens liberados (~3.000-4.000) se redirigen automaticamente a los textos brutos y explicaciones de la empresa principal.
-
-## Resultado esperado
-
-El LLM recibira, para la empresa preguntada:
-- 6 textos brutos de ~3.000 chars cada uno (antes: 800) = la materia prima completa
-- 6 categorias por metrica (antes: ninguna) = interpretacion pre-calculada
-- 6 explicaciones detalladas (antes: ninguna) = el "por que" de cada puntuacion
-- 6 resumenes de ~1.500 chars (antes: 500) = contexto completo
-- 8 scores numericos + RIX por modelo (sin cambios)
-
-Con esta informacion, el LLM puede:
-- Cruzar lo que dice ChatGPT con lo que dice DeepSeek sobre el mismo tema
-- Identificar matices cualitativos que solo aparecen en un modelo
-- Usar las categorias para no tener que "adivinar" si un 35 es malo
-- Citar explicaciones concretas del analisis en lugar de inventar interpretaciones
-
-## Impacto en tokens
-
-```text
-Antes:
-  Textos brutos:     6 x 800  = 4.800 chars (~1.200 tokens)
-  Resumenes:         6 x 500  = 3.000 chars (~750 tokens)
-  Explicaciones:     0 chars
-  Categorias:        0 chars
-  Ranking:           150 filas + 50 filas = ~5.000 tokens
-  Total empresa:     ~7.000 tokens utiles
-
-Despues:
-  Textos brutos:     6 x 3.000 = 18.000 chars (~4.500 tokens)
-  Resumenes:         6 x 1.500 = 9.000 chars (~2.250 tokens)
-  Explicaciones:     6 x 2.000 = 12.000 chars (~3.000 tokens)
-  Categorias:        ~200 chars (~50 tokens)
-  Ranking:           30 filas + 20 filas = ~2.000 tokens
-  Total empresa:     ~12.000 tokens utiles
-```
-
-Incremento neto: ~5.000 tokens. Dentro del margen del modelo o3 (200k contexto) y Gemini 2.5 Flash (1M contexto). Sin riesgo de timeout.
-
-## Lo que NO cambia
-
-- El Embudo Narrativo (estructura de respuesta)
-- El system prompt (reglas, tono, estilo)
-- "Guia, no corse" (flexibilidad adaptativa)
-- El principio de densidad de evidencia cruzada
-- La deteccion de empresas y temas
-- El grafo de conocimiento y vector store
-- El analisis de regresion
-- El frontend
-- Las queries de datos (ya cargan todo, solo no lo muestran)
-
-## Seccion tecnica
+### Detalle tecnico
 
 | Linea(s) | Cambio |
 |----------|--------|
-| ~4412 | Calcular `isPrimaryCompany` comparando con `detectedCompanies[0]` |
-| 4468 | Ampliar substring de textos brutos multi-semana: 600 a 2500 (primaria) / 600 (resto) |
-| 4475-4479 | Anadir fila de categorias debajo de cada modelo en tabla de scores |
-| 4482-4498 | Inyectar `22_explicacion` y `25_explicaciones_detalladas` para empresa primaria |
-| 4485 | Ampliar substring de resumen: 500 a 1500 (primaria) / 500 (resto) |
-| 4496 | Ampliar substring de textos brutos: 800 a 3000 (primaria) / 800 (resto) |
-| 4764-4767 | Reducir ranking individual segun `isRankingQuery` |
-| 4782-4788 | Reducir promedios segun `isRankingQuery` |
+| 5369-5381 | Reemplazar las 8 instrucciones genericas del userPrompt por las 7 instrucciones de explotacion de datos que refuerzan la estructura del Embudo, la extension minima y el uso exhaustivo de los datos enriquecidos |
+
+### Lo que NO cambia
+
+- El system prompt (Embudo Narrativo, metricas, reglas)
+- Los datos inyectados (textos brutos, explicaciones, categorias)
+- El max_completion_tokens (24.000 es suficiente)
+- El modelo (o3 con fallback a Gemini 2.5 Flash)
+- El ranking inteligente
+- El frontend
+- "Guia, no corse" (se mantiene la flexibilidad)
+
+### Resultado esperado
+
+El LLM recibira como ultima instruccion (recency bias) un recordatorio explicito de:
+- Que tiene datos de 6 modelos y DEBE cruzarlos
+- Que debe seguir la estructura de 5 bloques
+- Que el minimo es 2.500 palabras para empresa
+- Que tiene categorias y explicaciones y debe usarlas
+
+Esto convierte los datos enriquecidos (que ya estan ahi) en respuestas enriquecidas (que ahora el LLM sabe que debe producir).
 
