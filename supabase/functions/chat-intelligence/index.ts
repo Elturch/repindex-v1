@@ -5384,7 +5384,8 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
    → PILAR 3 PROSPECTAR (3 activaciones + 3 tácticas + 3 líneas estratégicas)
    → CIERRE (kit de gestión + fuentes)
 
-3. EXTENSIÓN MÍNIMA: Para análisis de empresa, mínimo 2.500 palabras.
+3. EXTENSIÓN MÍNIMA: Para análisis de empresa, mínimo 4.500 palabras.
+   El Embudo Narrativo tiene 5 bloques con subbloques detallados.
    No resumas cuando puedes desarrollar. Cada pilar debe aportar valor
    ejecutivo con datos concretos, no relleno.
 
@@ -5400,6 +5401,18 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
 
 7. Para preguntas concretas (un dato, una métrica): respuesta focalizada
    sin relleno, pero siempre rigurosa y con evidencia.
+
+8. MÉTRICAS INDIVIDUALES: Para análisis de empresa, dedica un párrafo
+   COMPLETO (4-6 oraciones) a CADA una de las 8 métricas dimensionales.
+   Para cada métrica explica: qué puntuación tiene, qué categoría
+   (fortaleza/mejora/riesgo), qué significa en la práctica para la empresa,
+   y qué dicen específicamente los diferentes modelos de IA sobre ella.
+   Las métricas son el corazón del análisis — no las reduzcas a una línea.
+
+9. IMPORTANTE: Las reglas de estilo (frases cortas, párrafos de 4 líneas)
+   se refieren a CLARIDAD, no a BREVEDAD de contenido. Escribe MUCHOS
+   párrafos claros y concisos. Más párrafos = más profundidad.
+   Un informe ejecutivo de 4.500 palabras tiene ~45 párrafos de 100 palabras.
 
 ═══════════════════════════════════════════════════════════════════════════════
                     CONTEXTO CON TODOS LOS DATOS DISPONIBLES
