@@ -1,123 +1,170 @@
 
-# Plan: Habilitar evolución multi-semana en el chat (4 semanas pedidas por el usuario)
 
-## Los dos problemas encadenados
+# Plan: Convertir al Agente Rix en un campeon de respuestas
 
-### Problema 1 — PostgREST trunca el fetch inicial a 1.000 filas (bug ya identificado)
+## Diagnostico: Por que las respuestas pierden matices
 
-En `fetchUnifiedRixData` (línea 112), la rama para `offset=0` usa `.limit()` en lugar de `.range()`. PostgREST tiene un límite de servidor de 1.000 filas que ignora silenciosamente cualquier `.limit(N)` mayor que 1.000 cuando no se usa `.range()`.
+El problema NO esta en las instrucciones al LLM (que son excelentes), ni en la estructura del Embudo Narrativo (que es solida). El problema esta en que **el LLM recibe datos amputados** y luego se le pide que haga un analisis de nivel ejecutivo con ellos.
 
-Con 1.050 registros por domingo, el fetch solo trae el primer domingo. `selectCanonicalPeriod` ve 1 fecha → `sundayDates = ["2026-02-15"]` → `previousDate = null`. Con 4 domingos a 1.050 registros cada uno = 4.200 registros totales, el fetch inicial necesita obligatoriamente `.range(0, 4999)`.
+### Los 5 cuellos de botella actuales
 
-**Corrección (líneas 108-113):**
-```typescript
-// Antes:
-if (offset > 0) {
-  query = query.range(offset, offset + limit - 1);
-} else {
-  query = query.limit(Math.max(limit, 2500));  // BUG: trunca a 1.000
-}
+**1. Las respuestas brutas de cada IA estan truncadas a 600-800 caracteres**
+- Linea 4468: `rawField.substring(0, 600)` (multi-semana)
+- Linea 4496: `rawField.substring(0, 800)` (semana unica)
+- Estas respuestas son textos de 3.000-8.000 caracteres donde cada IA explica EN DETALLE por que puntua como puntua. El LLM solo ve el 10-20% del texto original. Es como pedirle a un analista que haga un informe leyendo solo el primer parrafo de cada fuente.
 
-// Después:
-const effectiveLimit = Math.max(limit, 5000); // 5 domingos × 1.050 = 5.250
-query = query.range(offset, offset + effectiveLimit - 1);
+**2. Las categorias de metricas se cargan pero NUNCA se inyectan en el contexto**
+- Se cargan: `25_nvm_categoria`, `28_drm_categoria`, `31_sim_categoria`, etc. (lineas 3988-3995)
+- Pero en la tabla de scores (lineas 4475-4479), solo se muestran los numeros, nunca la categoria ("fortaleza", "riesgo", "mejora"). El LLM tiene que adivinar la interpretacion en lugar de recibirla pre-calculada.
+
+**3. Las explicaciones detalladas se cargan pero se descartan**
+- `22_explicacion` y `25_explicaciones_detalladas` se piden en la query (lineas 3978-3979) pero NUNCA aparecen en la seccion 6.1 de contexto de empresa. Son los textos donde el sistema de analisis V2 explica POR QUE puso cada puntuacion. Es inteligencia pura que se tira a la basura.
+
+**4. Los resumenes estan truncados a 500 caracteres**
+- Linea 4485: `r["10_resumen"].substring(0, 500)` — un resumen de 1.500 chars se corta a un tercio.
+
+**5. El ranking general consume tokens sin aportar al analisis de empresa**
+- 150 filas de ranking individual (lineas 4764-4767) + 50 filas de promedios (lineas 4782-4788) = ~5.000 tokens de tablas que el LLM raramente necesita cuando el usuario pregunta por UNA empresa. Estos tokens podrian usarse para los textos completos.
+
+## Plan de accion: 5 cambios en un solo archivo
+
+Archivo: `supabase/functions/chat-intelligence/index.ts`
+
+### Cambio 1 — Textos brutos COMPLETOS para la empresa preguntada
+
+Cuando el usuario pregunta por una empresa concreta, el texto bruto de cada modelo es la fuente primaria de matices. Ampliar de 600/800 chars a 3.000 chars para la empresa principal (la primera detectada) y mantener 800 para las demas empresas detectadas.
+
+```
+Antes (linea 4496):
+rawField.substring(0, 800)
+
+Despues:
+rawField.substring(0, isPrimaryCompany ? 3000 : 800)
 ```
 
-Con 5.000 como límite efectivo, el sistema trae los 5.174 registros existentes y `sundayDates` tiene los 5 domingos canónicos disponibles.
+Mismo cambio en linea 4468 para multi-semana (de 600 a 2500/600).
 
----
+`isPrimaryCompany` se determina comparando con `detectedCompanies[0]`.
 
-### Problema 2 — `detectedCompanyFullData` solo muestra el snapshot más reciente (pérdida de histórico)
+### Cambio 2 — Inyectar categorias de metricas en la tabla de scores
 
-En la sección 6.1 (líneas 4413-4420), aunque se cargan hasta 120 registros por empresa (6 modelos × 20 semanas), el código filtra deliberadamente por `latestDate` y descarta todas las semanas anteriores:
+Anadir una fila de interpretacion debajo de cada modelo en la tabla de contexto:
 
-```typescript
-// Línea 4416-4421 — elimina todo excepto el domingo más reciente:
-const latestDate = sortedDates[0] || null;
-const latestRecords = latestDate
-  ? records.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === latestDate)
-  : records.slice(0, 6);
-const recordsToShow = latestRecords.length >= 1 ? latestRecords : records.slice(0, 6);
+```
+Antes:
+| ChatGPT | 64 | 71 | 63 | 35 | 35 | 100 | 50 | 88 | 62 |
+
+Despues:
+| ChatGPT | 64 | 71 | 63 | 35 | 35 | 100 | 50 | 88 | 62 |
+| _(interpretacion)_ | | fortaleza | mejora | riesgo | riesgo | fortaleza | mejora | fortaleza | mejora |
 ```
 
-Cuando el LLM recibe el contexto, solo ve los datos de la semana del 15-feb para la empresa, aunque la BD tenga 5 semanas completas. El LLM no puede narrar una evolución de 4 semanas si nunca recibe esos datos.
+Esto se logra leyendo los campos `25_nvm_categoria`, `28_drm_categoria`, etc. que YA estan cargados.
 
-**Corrección:** Detectar si la pregunta contiene palabras clave de evolución/tendencia ("últimas N semanas", "evolución", "tendencia", "histórico", "mes", "4 semanas"...) y en ese caso incluir en el contexto todas las semanas disponibles de la empresa, no solo la última.
+### Cambio 3 — Incluir explicaciones detalladas para la empresa principal
 
-```typescript
-// Detectar intención de análisis multi-semana
-const isMultiWeekRequest = /\b(evoluci[oó]n|tendencia|hist[oó]rico|[úu]ltimas?\s+\d+\s+semanas?|[úu]ltimo\s+mes|semanas?\s+anteriores?|cronol[oó]gic|progres[oió]n)\b/i.test(question);
-
-// Número de semanas solicitadas (por defecto 4)
-const requestedWeeks = (() => {
-  const match = question.match(/[úu]ltimas?\s+(\d+)\s+semanas?/i);
-  return match ? Math.min(parseInt(match[1]), 5) : 4; // máximo 5 (lo que hay en BD)
-})();
-
-// En lugar de filtrar solo latestDate, incluir N semanas si es multi-semana
-const datesToShow = isMultiWeekRequest
-  ? sortedDates.slice(0, requestedWeeks)  // las N semanas pedidas
-  : [sortedDates[0]];                      // solo la última (comportamiento actual)
-
-const recordsToShow = records
-  .filter((r: any) => datesToShow.includes(r.batch_execution_date?.toString().split('T')[0]))
-  .sort((a: any, b: any) => {
-    // Primero por fecha DESC, luego por modelo ASC
-    const dateDiff = b.batch_execution_date?.toString().localeCompare(a.batch_execution_date?.toString());
-    return dateDiff !== 0 ? dateDiff : (a["02_model_name"] || '').localeCompare(b["02_model_name"] || '');
-  });
-```
-
----
-
-### Problema 3 (colateral) — `selectCanonicalPeriod` solo devuelve 2 fechas
-
-La función actualmente solo expone `canonicalDate` y `previousDate` (máximo 2 semanas). Para consultas de 4 semanas, hay que exponer `sundayDates` completo (ya existe en el array pero no se usa más allá de las 2 primeras posiciones) y construir el contexto con datos de cada semana solicitada.
-
-**Corrección:** Añadir al bloque de contexto del snapshot las semanas históricas cuando `isMultiWeekRequest = true`:
+Para la empresa principal (la que el usuario pregunta), anadir un bloque con `22_explicacion` y/o `25_explicaciones_detalladas` despues de cada texto bruto:
 
 ```typescript
-if (isMultiWeekRequest && sundayDates.length > 1) {
-  context += `\n📅 HISTÓRICO DISPONIBLE (${sundayDates.length} semanas):\n`;
-  sundayDates.forEach((date, i) => {
-    const weekData = allRixData.filter(r => r.batch_execution_date?.toString().split('T')[0] === date);
-    const models = new Set(weekData.map(r => r["02_model_name"]));
-    context += `- Semana ${i + 1}: ${date} → ${weekData.length} registros, ${models.size} modelos\n`;
-  });
+// Solo para la empresa principal, inyectar explicaciones del analisis
+if (isPrimaryCompany) {
+  if (r["22_explicacion"]) {
+    context += `- **Explicacion del analisis**: ${r["22_explicacion"].substring(0, 2000)}\n`;
+  }
+  if (r["25_explicaciones_detalladas"]) {
+    const detalladas = typeof r["25_explicaciones_detalladas"] === 'string' 
+      ? r["25_explicaciones_detalladas"] 
+      : JSON.stringify(r["25_explicaciones_detalladas"]);
+    context += `- **Desglose dimensional**: ${detalladas.substring(0, 2000)}\n`;
+  }
 }
 ```
 
----
+### Cambio 4 — Resumenes completos (sin truncar)
 
-## Archivos a modificar
+Ampliar el limite del resumen de 500 a 1500 caracteres para la empresa principal:
 
-| Archivo | Líneas | Cambio |
-|---|---|---|
-| `supabase/functions/chat-intelligence/index.ts` | 108-113 | Cambiar `.limit()` a `.range()` con efectiveLimit = 5.000 |
-| `supabase/functions/chat-intelligence/index.ts` | 4413-4421 | Añadir detección de `isMultiWeekRequest` y mostrar N semanas en contexto empresa |
-| `supabase/functions/chat-intelligence/index.ts` | 4541-4551 | Añadir bloque de histórico multi-semana al contexto del snapshot |
+```
+Antes (linea 4485):
+r["10_resumen"].substring(0, 500)
 
-## Lo que NO cambia
+Despues:
+r["10_resumen"].substring(0, isPrimaryCompany ? 1500 : 500)
+```
 
-- La tabla `rix_runs` — intacta
-- El dashboard y los hooks frontend — sin cambios
-- La lógica de `selectCanonicalPeriod` — correcta, ya filtra domingos con ≥180 registros
-- El `fullDataColumns` de empresa (línea 3965) — ya incluye `batch_execution_date` y los 6 modelos
+### Cambio 5 — Ranking inteligente: completo solo cuando se pide
 
-## Datos disponibles en BD (confirmados)
+Reducir el ranking individual de 150 a 30 filas y el de promedios de 50 a 20 filas EXCEPTO cuando el usuario pregunta explicitamente por rankings, top, IBEX completo, etc.
 
-| Domingo | Registros | Modelos |
-|---------|-----------|---------|
-| 2026-02-15 | 1.050 | 6 |
-| 2026-02-08 | 1.056 | 6 |
-| 2026-02-01 | 1.062 | 6 |
-| 2026-01-25 | 969 | 6 |
-| 2026-01-18 | 1.037 | 6 |
+```typescript
+// Detectar si la consulta pide ranking explicitamente
+const isRankingQuery = /\b(ranking|top\s?\d|ibex|clasificaci[oó]n|mejor|peor|l[ií]der|primera|[uú]ltima|posici[oó]n|listado|todas las empresas)\b/i.test(question);
 
-Con el fix del `.range()`, los 5.174 registros estarán disponibles para el chat. Una petición de "evolución de las últimas 4 semanas de AIRTIFICIAL" recibirá en contexto 6 modelos × 4 domingos = 24 filas de datos, más los textos brutos de cada modelo por semana.
+const rankingLimit = isRankingQuery ? 150 : 30;
+const averageLimit = isRankingQuery ? 50 : 20;
+```
+
+Los tokens liberados (~3.000-4.000) se redirigen automaticamente a los textos brutos y explicaciones de la empresa principal.
 
 ## Resultado esperado
 
-- "Dame la evolución de las últimas 4 semanas de Telefónica" → el LLM recibe datos de los 4 domingos con los 6 modelos cada uno
-- "¿Cómo ha evolucionado el mercado en enero?" → el agente compara los 4 domingos de enero con métricas concretas
-- La pericial comparada (2 semanas) también se beneficia del fix del `.range()` que corrige el truncamiento
+El LLM recibira, para la empresa preguntada:
+- 6 textos brutos de ~3.000 chars cada uno (antes: 800) = la materia prima completa
+- 6 categorias por metrica (antes: ninguna) = interpretacion pre-calculada
+- 6 explicaciones detalladas (antes: ninguna) = el "por que" de cada puntuacion
+- 6 resumenes de ~1.500 chars (antes: 500) = contexto completo
+- 8 scores numericos + RIX por modelo (sin cambios)
+
+Con esta informacion, el LLM puede:
+- Cruzar lo que dice ChatGPT con lo que dice DeepSeek sobre el mismo tema
+- Identificar matices cualitativos que solo aparecen en un modelo
+- Usar las categorias para no tener que "adivinar" si un 35 es malo
+- Citar explicaciones concretas del analisis en lugar de inventar interpretaciones
+
+## Impacto en tokens
+
+```text
+Antes:
+  Textos brutos:     6 x 800  = 4.800 chars (~1.200 tokens)
+  Resumenes:         6 x 500  = 3.000 chars (~750 tokens)
+  Explicaciones:     0 chars
+  Categorias:        0 chars
+  Ranking:           150 filas + 50 filas = ~5.000 tokens
+  Total empresa:     ~7.000 tokens utiles
+
+Despues:
+  Textos brutos:     6 x 3.000 = 18.000 chars (~4.500 tokens)
+  Resumenes:         6 x 1.500 = 9.000 chars (~2.250 tokens)
+  Explicaciones:     6 x 2.000 = 12.000 chars (~3.000 tokens)
+  Categorias:        ~200 chars (~50 tokens)
+  Ranking:           30 filas + 20 filas = ~2.000 tokens
+  Total empresa:     ~12.000 tokens utiles
+```
+
+Incremento neto: ~5.000 tokens. Dentro del margen del modelo o3 (200k contexto) y Gemini 2.5 Flash (1M contexto). Sin riesgo de timeout.
+
+## Lo que NO cambia
+
+- El Embudo Narrativo (estructura de respuesta)
+- El system prompt (reglas, tono, estilo)
+- "Guia, no corse" (flexibilidad adaptativa)
+- El principio de densidad de evidencia cruzada
+- La deteccion de empresas y temas
+- El grafo de conocimiento y vector store
+- El analisis de regresion
+- El frontend
+- Las queries de datos (ya cargan todo, solo no lo muestran)
+
+## Seccion tecnica
+
+| Linea(s) | Cambio |
+|----------|--------|
+| ~4412 | Calcular `isPrimaryCompany` comparando con `detectedCompanies[0]` |
+| 4468 | Ampliar substring de textos brutos multi-semana: 600 a 2500 (primaria) / 600 (resto) |
+| 4475-4479 | Anadir fila de categorias debajo de cada modelo en tabla de scores |
+| 4482-4498 | Inyectar `22_explicacion` y `25_explicaciones_detalladas` para empresa primaria |
+| 4485 | Ampliar substring de resumen: 500 a 1500 (primaria) / 500 (resto) |
+| 4496 | Ampliar substring de textos brutos: 800 a 3000 (primaria) / 800 (resto) |
+| 4764-4767 | Reducir ranking individual segun `isRankingQuery` |
+| 4782-4788 | Reducir promedios segun `isRankingQuery` |
+
