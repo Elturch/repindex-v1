@@ -1100,6 +1100,31 @@ export function SweepMonitorPanel() {
     <div className="space-y-4">
       {/* Health Dashboard - Always visible at top */}
       <SweepHealthDashboard />
+
+      {/* Alerta: empresas pendientes sin actividad */}
+      {(unifiedMetrics?.searchPending || 0) > 0 && 
+       (unifiedMetrics?.searchProcessing || 0) === 0 && 
+       !cascade.isRunning && (
+        <Card className="border-orange-500 bg-orange-50 dark:bg-orange-950/20">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              <div>
+                <p className="font-semibold text-orange-700 dark:text-orange-400">
+                  {unifiedMetrics?.searchPending} empresas pendientes sin procesar
+                </p>
+                <p className="text-sm text-orange-600/80 dark:text-orange-400/60">
+                  El barrido parece detenido. Pulsa "Reanudar" para continuar.
+                </p>
+              </div>
+            </div>
+            <Button onClick={() => handleLaunchCascade(false)} className="gap-2">
+              <Play className="h-4 w-4" />
+              Reanudar Barrido
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       
       {/* Header */}
       <Card>
@@ -1194,7 +1219,7 @@ export function SweepMonitorPanel() {
               - Pendientes: búsqueda OK pero sin score (pendingAnalyzable) + sin datos (pendingNoData)
               - Fallidos: sweep_progress.status = failed
             */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 pt-3">
               <div className="text-center p-3 rounded-lg bg-muted/50">
                 <div className="text-2xl font-bold text-foreground">
                   {unifiedMetrics?.totalCompanies || status?.totalCompanies || 0}
@@ -1240,6 +1265,15 @@ export function SweepMonitorPanel() {
                     (analizables)
                   </div>
                 )}
+              </div>
+              <div className="text-center p-3 rounded-lg bg-orange-500/10">
+                <div className="text-2xl font-bold text-orange-600">
+                  {unifiedMetrics?.searchPending || 0}
+                </div>
+                <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+                  <Search className="h-3 w-3" />
+                  Pend. búsqueda
+                </div>
               </div>
               <div className="text-center p-3 rounded-lg bg-destructive/10">
                 <div className="text-2xl font-bold text-destructive">
