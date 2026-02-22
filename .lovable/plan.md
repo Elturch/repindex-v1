@@ -1,88 +1,139 @@
 
-# Plan: Corregir bug critico de auto-completado fantasma
 
-## Diagnostico
+# Plan: Sistema de barrido dominical a prueba de fallos
 
-El watchdog del orquestador tiene una logica de "auto-completar duplicados" (lineas 2148-2207 de `rix-batch-orchestrator/index.ts`) que confunde los datos de la semana ANTERIOR con datos del barrido actual.
+## Diagnostico: Por que cada domingo falla algo
 
-La secuencia del fallo:
-1. Domingo 00:00:05 UTC: Se inicializa el sweep W09 con 175 empresas en estado "pending"
-2. Domingo 00:00:09: El watchdog ejecuta la limpieza de duplicados
-3. Busca el `06_period_from` mas reciente en rix_runs_v2 -> obtiene `2026-02-15` (datos de W08)
-4. Comprueba si cada empresa pending tiene >=5 registros con esa fecha -> SI, porque W08 ya los tiene
-5. Auto-completa 49 empresas (limite de 50 por invocacion) como "duplicadas" con `models_completed: 6`
-6. Las fases reales arrancan y procesan las 126 restantes normalmente
+El orquestador tiene **3 problemas estructurales** que causan fallos recurrentes:
 
-El mismo bug afecto a W08 (126 de 175 = 49 ghosts) porque la logica confundio datos de W07.
+### Problema 1: Multiples rutas de codigo usan `06_period_from` en vez de `batch_execution_date`
 
-## Solucion
+El fix anterior (auto-completado lineas 2160-2185 y reconciliacion 2225-2251) se aplico correctamente, pero hay **3 lugares mas** donde se sigue usando `06_period_from` para identificar "la semana actual":
 
-Anadir un filtro por `batch_execution_date` a la consulta de auto-completado. `batch_execution_date` se establece al domingo actual y es el UNICO campo que distingue datos de semanas distintas cuando `06_period_from` coincide (los periodos se solapan entre semanas consecutivas).
+- **`hasCompanyDataThisWeek()`** (lineas 87-124): Calcula fechas de periodo manualmente y busca por `06_period_from` + `07_period_to`. En domingo a las 00:00, esta funcion puede coincidir con datos de la semana anterior.
+- **Auto-chain data check** (lineas 2354-2386): Cuando el sweep termina, busca `06_period_from` mas reciente para verificar completitud. Puede mezclar datos de semanas distintas.
+- **`repair_search`** (lineas 1380-1395): Busca registros sin datos por `06_period_from`. Puede reparar registros de la semana equivocada.
 
-### Cambio 1: Corregir auto-completado de duplicados (lineas 2160-2185)
+### Problema 2: No hay periodo de gracia tras la inicializacion
 
-Reemplazar la consulta que usa `06_period_from` por una que use `batch_execution_date` del domingo actual:
+El sweep se crea a las 00:00:05 UTC y el watchdog ejecuta el auto-complete a las 00:00:09. Solo 4 segundos despues. No hay ningun registro real todavia, pero la logica de auto-complete consulta `rix_runs_v2` y puede encontrar datos de semanas anteriores.
+
+### Problema 3: `getCurrentSweepId()` usa calculo de semana no-estandar
+
+La funcion (lineas 37-43) calcula el numero de semana con una formula propia que puede no coincidir con ISO 8601. Esto podria crear desalineaciones si el sweep_id no coincide con lo esperado.
+
+---
+
+## Solucion: 4 cambios defensivos
+
+### Cambio 1: Reemplazar `hasCompanyDataThisWeek()` para usar `batch_execution_date`
+
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 87-124)
+
+En lugar de calcular `periodFrom`/`periodTo` manualmente (propenso a errores en domingo), buscar por `batch_execution_date` del domingo actual. Esto es consistente con el fix anterior y con `rix-search-v2`.
 
 ```typescript
-// ANTES (BUGGY): usa 06_period_from que coincide con la semana anterior
+// ANTES: calculo manual de periodo (fragil)
+const periodFromStr = periodFrom.toISOString().split('T')[0];
+const { count } = await supabase
+  .from('rix_runs_v2')
+  .select('*', { count: 'exact', head: true })
+  .eq('05_ticker', ticker)
+  .eq('06_period_from', periodFromStr)
+  .eq('07_period_to', periodToStr);
+
+// DESPUES: batch_execution_date del domingo actual (robusto)
+const { count } = await supabase
+  .from('rix_runs_v2')
+  .select('*', { count: 'exact', head: true })
+  .eq('05_ticker', ticker)
+  .eq('batch_execution_date', currentSundayISO);
+```
+
+### Cambio 2: Agregar periodo de gracia de 30 minutos
+
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 2148-2198)
+
+Antes de ejecutar el auto-complete de duplicados, verificar que el sweep no es "nuevo" (creado hace menos de 30 minutos). Si es nuevo, saltar completamente la logica de auto-complete.
+
+```typescript
+// Obtener timestamp de creacion del sweep
+const { data: sweepCreation } = await supabase
+  .from('sweep_progress')
+  .select('created_at')
+  .eq('sweep_id', sweepId)
+  .order('created_at', { ascending: true })
+  .limit(1)
+  .maybeSingle();
+
+const sweepAgeMs = sweepCreation?.created_at 
+  ? Date.now() - new Date(sweepCreation.created_at).getTime()
+  : Infinity;
+
+// No auto-completar si el sweep tiene < 30 min de vida
+if (sweepAgeMs < 30 * 60 * 1000) {
+  console.log(`[watchdog] Sweep ${sweepId} is only ${Math.round(sweepAgeMs/1000)}s old. Skipping auto-complete (grace period).`);
+} else {
+  // ... logica de auto-complete existente ...
+}
+```
+
+### Cambio 3: Corregir auto-chain para usar `batch_execution_date`
+
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 2354-2386)
+
+La seccion de encadenamiento automatico (cuando `pending === 0 && processing === 0`) aun usa `06_period_from` para verificar datos. Reemplazar por `batch_execution_date`.
+
+```typescript
+// ANTES (lineas 2355-2386):
 const { data: latestWeek } = await supabase
   .from('rix_runs_v2')
   .select('06_period_from')
   .order('06_period_from', { ascending: false })
   .limit(1)
   .maybeSingle();
-// ... luego verifica con .eq('06_period_from', periodFromStr)
+// ... usa periodFromStr para filtrar
 
-// DESPUES (CORRECTO): usa batch_execution_date del domingo actual
+// DESPUES:
 const now = new Date();
 const dayOfWeek = now.getDay();
 const currentSunday = new Date(now);
 currentSunday.setDate(now.getDate() - dayOfWeek);
-currentSunday.setHours(0, 0, 0, 0);
-const currentBatchDate = currentSunday.toISOString();
-
-// ... y verifica con .eq('batch_execution_date', currentBatchDate)
+currentSunday.setUTCHours(0, 0, 0, 0);
+const chainBatchDate = currentSunday.toISOString();
+// ... usa chainBatchDate con .eq('batch_execution_date', chainBatchDate)
 ```
 
-### Cambio 2: Corregir la reconciliacion (lineas 2225-2251)
+### Cambio 4: Corregir `repair_search` para usar `batch_execution_date`
 
-La misma logica defectuosa se usa en la seccion de reconciliacion de empresas fantasma. Aplicar el mismo fix: usar `batch_execution_date` en vez de `06_period_from`.
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 1380-1395)
 
-### Cambio 3: Accion inmediata para el barrido de hoy
+Mismo patron: reemplazar la consulta por `06_period_from` con `batch_execution_date`.
 
-Resetear las 49 empresas fantasma de W09 a "pending" para que se procesen:
+---
 
-```sql
-UPDATE sweep_progress 
-SET status = 'pending', 
-    models_completed = 0, 
-    completed_at = NULL,
-    error_message = 'Reset: ghost company from auto-complete bug'
-WHERE sweep_id = '2026-W09' 
-AND ticker IN ('A3M','ACS','ACX','AENA','ALM','AMS','ANA','ANE.MC','CABK','CAF','CIE','CLNX','COL','DOM','EDR','ELE','ENC','ENG','ENO','FDR','FER','GRF','HOME','IAG','IBE','IDR','ITX','LDA','LOG','LRE','MAP','MEL','MRL','MTS','NTGY','PUIG','RED','REP','ROVI','SAB','SAN','SCYR','SLR','TEF','TRE','TUB','UNI','VID','VIS');
-```
+## Resumen de archivos modificados
 
-Este SQL debe ejecutarse en el entorno Live (Cloud View > Run SQL > Live).
-
-## Archivos modificados
-
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Lineas 2160-2185: Usar `batch_execution_date` del domingo actual en vez de `06_period_from` mas reciente. Lineas 2225-2251: Mismo fix en reconciliacion. |
-| SQL directo (Live) | Resetear 49 empresas fantasma de W09 a pending |
+| Archivo | Lineas | Cambio |
+|---------|--------|--------|
+| `rix-batch-orchestrator/index.ts` | 87-124 | `hasCompanyDataThisWeek` usa `batch_execution_date` |
+| `rix-batch-orchestrator/index.ts` | 2148-2198 | Periodo de gracia de 30 min tras init |
+| `rix-batch-orchestrator/index.ts` | 2354-2386 | Auto-chain usa `batch_execution_date` |
+| `rix-batch-orchestrator/index.ts` | 1380-1395 | `repair_search` usa `batch_execution_date` |
 
 ## Lo que NO cambia
 
-- La logica de `hasCompanyDataThisWeek` (usa fechas calculadas que no coinciden, funciona correctamente)
-- La verificacion de duplicados en `rix-search-v2` (usa `batch_execution_date` correctamente)
-- Las funciones de busqueda y analisis
+- La logica de inicializacion del sweep (funciona correctamente)
+- El fire-and-forget del watchdog (arquitectura validada)
+- La cadena autonoma post-sweep (auto_sanitize -> vectors -> newsroom)
 - El frontend
-- La cadena autonoma post-sweep
+- Ninguna otra edge function
 
 ## Resultado esperado
 
-Tras el fix y el reset SQL:
-1. Las 49 empresas vuelven a estado "pending"
-2. El watchdog las detecta y las procesa en las proximas invocaciones (cada 5 min)
-3. El auto-completado ya no confunde datos de semanas anteriores
-4. Semanas futuras procesaran las 175 empresas completas
+Tras estos 4 cambios, el sistema:
+1. No confundira datos de semanas anteriores con la actual (eliminacion total de `06_period_from` como filtro temporal)
+2. No auto-completara empresas fantasma durante los primeros 30 minutos del barrido
+3. Reparara solo registros de la semana correcta
+4. Las 175 empresas se procesaran completas cada domingo sin intervencion manual
+
