@@ -1,139 +1,85 @@
 
 
-# Plan: Sistema de barrido dominical a prueba de fallos
+# Plan: Alerta visible y boton de reanudacion cuando hay empresas pendientes
 
-## Diagnostico: Por que cada domingo falla algo
+## Problema actual
 
-El orquestador tiene **3 problemas estructurales** que causan fallos recurrentes:
+El monitor muestra "129 completados, 0 procesando, 0 fallidos" y parece que todo esta bien. Pero hay 46 empresas en estado `pending` que no se estan procesando. No hay ninguna alerta visual ni boton dedicado para reanudar el barrido de esas empresas pendientes.
 
-### Problema 1: Multiples rutas de codigo usan `06_period_from` en vez de `batch_execution_date`
+## Solucion
 
-El fix anterior (auto-completado lineas 2160-2185 y reconciliacion 2225-2251) se aplico correctamente, pero hay **3 lugares mas** donde se sigue usando `06_period_from` para identificar "la semana actual":
+### Cambio 1: Banner de alerta prominente cuando hay pendientes sin actividad
 
-- **`hasCompanyDataThisWeek()`** (lineas 87-124): Calcula fechas de periodo manualmente y busca por `06_period_from` + `07_period_to`. En domingo a las 00:00, esta funcion puede coincidir con datos de la semana anterior.
-- **Auto-chain data check** (lineas 2354-2386): Cuando el sweep termina, busca `06_period_from` mas reciente para verificar completitud. Puede mezclar datos de semanas distintas.
-- **`repair_search`** (lineas 1380-1395): Busca registros sin datos por `06_period_from`. Puede reparar registros de la semana equivocada.
+Anadir un banner naranja/rojo en la parte superior del panel (debajo del SweepHealthDashboard) que aparece SOLO cuando:
+- Hay empresas `pending` en sweep_progress
+- No hay empresas `processing`
+- No hay cascada activa
 
-### Problema 2: No hay periodo de gracia tras la inicializacion
+El banner mostrara: "46 empresas pendientes sin procesar. El barrido parece detenido."
 
-El sweep se crea a las 00:00:05 UTC y el watchdog ejecuta el auto-complete a las 00:00:09. Solo 4 segundos despues. No hay ningun registro real todavia, pero la logica de auto-complete consulta `rix_runs_v2` y puede encontrar datos de semanas anteriores.
+### Cambio 2: Boton "Reanudar Barrido" en el banner
 
-### Problema 3: `getCurrentSweepId()` usa calculo de semana no-estandar
+Dentro del banner, un boton que lanza la cascada automaticamente (reutiliza `handleLaunchCascade`). Esto permite reanudar con un solo clic cuando hay empresas atascadas.
 
-La funcion (lineas 37-43) calcula el numero de semana con una formula propia que puede no coincidir con ISO 8601. Esto podria crear desalineaciones si el sweep_id no coincide con lo esperado.
+### Cambio 3: Mostrar el contador de pendientes en las estadisticas
 
----
+Actualmente la fila de stats muestra: Total | Completados | Procesando | Pendientes analisis | Fallidos. El problema es que "Pendientes analisis" se refiere a registros con datos pero sin score, NO a empresas sin buscar.
 
-## Solucion: 4 cambios defensivos
+Anadir una sexta stat card: "Pendientes busqueda" que muestre `unifiedMetrics.searchPending` (empresas cuyo sweep_progress esta en pending).
 
-### Cambio 1: Reemplazar `hasCompanyDataThisWeek()` para usar `batch_execution_date`
+### Archivo modificado
 
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 87-124)
+| Archivo | Cambio |
+|---------|--------|
+| `src/components/admin/SweepMonitorPanel.tsx` | Banner de alerta (linea ~1100), boton reanudar, nueva stat card de pendientes de busqueda (linea ~1197) |
 
-En lugar de calcular `periodFrom`/`periodTo` manualmente (propenso a errores en domingo), buscar por `batch_execution_date` del domingo actual. Esto es consistente con el fix anterior y con `rix-search-v2`.
+### Detalle tecnico
 
+**Banner (entre linea 1102 y 1104):**
 ```typescript
-// ANTES: calculo manual de periodo (fragil)
-const periodFromStr = periodFrom.toISOString().split('T')[0];
-const { count } = await supabase
-  .from('rix_runs_v2')
-  .select('*', { count: 'exact', head: true })
-  .eq('05_ticker', ticker)
-  .eq('06_period_from', periodFromStr)
-  .eq('07_period_to', periodToStr);
-
-// DESPUES: batch_execution_date del domingo actual (robusto)
-const { count } = await supabase
-  .from('rix_runs_v2')
-  .select('*', { count: 'exact', head: true })
-  .eq('05_ticker', ticker)
-  .eq('batch_execution_date', currentSundayISO);
+{/* Alerta: empresas pendientes sin actividad */}
+{(unifiedMetrics?.searchPending || 0) > 0 && 
+ (unifiedMetrics?.searchProcessing || 0) === 0 && 
+ !cascade.isRunning && (
+  <Card className="border-orange-500 bg-orange-50 dark:bg-orange-950/20">
+    <CardContent className="flex items-center justify-between py-4">
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="h-5 w-5 text-orange-500" />
+        <div>
+          <p className="font-semibold text-orange-700 dark:text-orange-400">
+            {unifiedMetrics.searchPending} empresas pendientes sin procesar
+          </p>
+          <p className="text-sm text-orange-600/80 dark:text-orange-400/60">
+            El barrido parece detenido. Pulsa "Reanudar" para continuar.
+          </p>
+        </div>
+      </div>
+      <Button onClick={() => handleLaunchCascade(false)} className="gap-2">
+        <Play className="h-4 w-4" />
+        Reanudar Barrido
+      </Button>
+    </CardContent>
+  </Card>
+)}
 ```
 
-### Cambio 2: Agregar periodo de gracia de 30 minutos
-
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 2148-2198)
-
-Antes de ejecutar el auto-complete de duplicados, verificar que el sweep no es "nuevo" (creado hace menos de 30 minutos). Si es nuevo, saltar completamente la logica de auto-complete.
-
+**Stat card adicional (en el grid de linea 1197, cambiar `grid-cols-5` a `grid-cols-6`):**
 ```typescript
-// Obtener timestamp de creacion del sweep
-const { data: sweepCreation } = await supabase
-  .from('sweep_progress')
-  .select('created_at')
-  .eq('sweep_id', sweepId)
-  .order('created_at', { ascending: true })
-  .limit(1)
-  .maybeSingle();
-
-const sweepAgeMs = sweepCreation?.created_at 
-  ? Date.now() - new Date(sweepCreation.created_at).getTime()
-  : Infinity;
-
-// No auto-completar si el sweep tiene < 30 min de vida
-if (sweepAgeMs < 30 * 60 * 1000) {
-  console.log(`[watchdog] Sweep ${sweepId} is only ${Math.round(sweepAgeMs/1000)}s old. Skipping auto-complete (grace period).`);
-} else {
-  // ... logica de auto-complete existente ...
-}
+<div className="text-center p-3 rounded-lg bg-orange-500/10">
+  <div className="text-2xl font-bold text-orange-600">
+    {unifiedMetrics?.searchPending || 0}
+  </div>
+  <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+    <Search className="h-3 w-3" />
+    Pend. busqueda
+  </div>
+</div>
 ```
-
-### Cambio 3: Corregir auto-chain para usar `batch_execution_date`
-
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 2354-2386)
-
-La seccion de encadenamiento automatico (cuando `pending === 0 && processing === 0`) aun usa `06_period_from` para verificar datos. Reemplazar por `batch_execution_date`.
-
-```typescript
-// ANTES (lineas 2355-2386):
-const { data: latestWeek } = await supabase
-  .from('rix_runs_v2')
-  .select('06_period_from')
-  .order('06_period_from', { ascending: false })
-  .limit(1)
-  .maybeSingle();
-// ... usa periodFromStr para filtrar
-
-// DESPUES:
-const now = new Date();
-const dayOfWeek = now.getDay();
-const currentSunday = new Date(now);
-currentSunday.setDate(now.getDate() - dayOfWeek);
-currentSunday.setUTCHours(0, 0, 0, 0);
-const chainBatchDate = currentSunday.toISOString();
-// ... usa chainBatchDate con .eq('batch_execution_date', chainBatchDate)
-```
-
-### Cambio 4: Corregir `repair_search` para usar `batch_execution_date`
-
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 1380-1395)
-
-Mismo patron: reemplazar la consulta por `06_period_from` con `batch_execution_date`.
-
----
-
-## Resumen de archivos modificados
-
-| Archivo | Lineas | Cambio |
-|---------|--------|--------|
-| `rix-batch-orchestrator/index.ts` | 87-124 | `hasCompanyDataThisWeek` usa `batch_execution_date` |
-| `rix-batch-orchestrator/index.ts` | 2148-2198 | Periodo de gracia de 30 min tras init |
-| `rix-batch-orchestrator/index.ts` | 2354-2386 | Auto-chain usa `batch_execution_date` |
-| `rix-batch-orchestrator/index.ts` | 1380-1395 | `repair_search` usa `batch_execution_date` |
-
-## Lo que NO cambia
-
-- La logica de inicializacion del sweep (funciona correctamente)
-- El fire-and-forget del watchdog (arquitectura validada)
-- La cadena autonoma post-sweep (auto_sanitize -> vectors -> newsroom)
-- El frontend
-- Ninguna otra edge function
 
 ## Resultado esperado
 
-Tras estos 4 cambios, el sistema:
-1. No confundira datos de semanas anteriores con la actual (eliminacion total de `06_period_from` como filtro temporal)
-2. No auto-completara empresas fantasma durante los primeros 30 minutos del barrido
-3. Reparara solo registros de la semana correcta
-4. Las 175 empresas se procesaran completas cada domingo sin intervencion manual
-
+Cuando haya empresas pendientes sin actividad:
+1. Un banner naranja visible inmediatamente al entrar al admin
+2. Un boton "Reanudar Barrido" de un solo clic
+3. El contador de pendientes de busqueda siempre visible en las estadisticas
+4. Cuando todo esta procesando o completado, el banner desaparece automaticamente
