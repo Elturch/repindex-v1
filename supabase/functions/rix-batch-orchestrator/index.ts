@@ -83,32 +83,26 @@ async function getActiveSweepId(
   return calendarSweep;
 }
 
-// Verifica si una empresa ya tiene datos para el período de análisis actual
+// Verifica si una empresa ya tiene datos para el batch_execution_date actual (domingo)
+// FIX: Usa batch_execution_date en vez de 06_period_from para evitar confusión entre semanas
 async function hasCompanyDataThisWeek(
   supabase: ReturnType<typeof createClient>,
   ticker: string
 ): Promise<boolean> {
-  // Calculate the current analysis period (Monday to Sunday of PREVIOUS week)
+  // Calcular el domingo actual (batch_execution_date canónico)
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  
-  // Period is always the PREVIOUS week
-  const periodFrom = new Date(now);
-  periodFrom.setDate(now.getDate() + mondayOffset - 7); // Monday of previous week
-  const periodTo = new Date(periodFrom);
-  periodTo.setDate(periodFrom.getDate() + 6); // Sunday of previous week
+  const currentSunday = new Date(now);
+  currentSunday.setDate(now.getDate() - dayOfWeek);
+  currentSunday.setUTCHours(0, 0, 0, 0);
+  const currentSundayISO = currentSunday.toISOString();
 
-  const periodFromStr = periodFrom.toISOString().split('T')[0];
-  const periodToStr = periodTo.toISOString().split('T')[0];
-
-  // Check if there's AT LEAST 1 record for this period (not 6, to catch early)
+  // Check if there's AT LEAST 1 record for THIS SUNDAY's batch
   const { count, error } = await supabase
     .from('rix_runs_v2')
     .select('*', { count: 'exact', head: true })
     .eq('05_ticker', ticker)
-    .eq('06_period_from', periodFromStr)
-    .eq('07_period_to', periodToStr);
+    .eq('batch_execution_date', currentSundayISO);
 
   if (error) {
     console.error(`[phase] Error checking data for ${ticker}:`, error);
@@ -118,7 +112,7 @@ async function hasCompanyDataThisWeek(
   // If we have at least 1 record, the company is already being processed or done
   const hasData = (count || 0) >= 1;
   if (hasData) {
-    console.log(`[phase] ${ticker} already has ${count} records for period ${periodFromStr} to ${periodToStr}`);
+    console.log(`[phase] ${ticker} already has ${count} records for batch_execution_date ${currentSundayISO}`);
   }
   return hasData;
 }
@@ -1376,25 +1370,16 @@ async function processCronTriggers(
         const startedAt = Date.now();
         const maxPerInvocation = Math.max(1, Math.min(batchSize, 10));
         
-        // Find the most recent week with data (instead of calculating dates manually)
-        const { data: latestWeek } = await supabase
-          .from('rix_runs_v2')
-          .select('06_period_from')
-          .order('06_period_from', { ascending: false })
-          .limit(1)
-          .single();
+        // FIX: Use batch_execution_date (current Sunday) instead of 06_period_from
+        // This prevents repairing records from the wrong week
+        const repairNow = new Date();
+        const repairDow = repairNow.getDay();
+        const repairSunday = new Date(repairNow);
+        repairSunday.setDate(repairNow.getDate() - repairDow);
+        repairSunday.setUTCHours(0, 0, 0, 0);
+        const repairBatchDate = repairSunday.toISOString();
         
-        const periodFromStr = latestWeek?.['06_period_from'] || (() => {
-          // Fallback: calculate manually if no data exists
-          const now = new Date();
-          const dayOfWeek = now.getDay();
-          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-          const periodFrom = new Date(now);
-          periodFrom.setDate(now.getDate() + mondayOffset);
-          return periodFrom.toISOString().split('T')[0];
-        })();
-        
-        console.log(`[cron_triggers] repair_search targeting week: ${periodFromStr}`);
+        console.log(`[cron_triggers] repair_search targeting batch_execution_date: ${repairBatchDate}`);
         
         // Model to column mapping
         const MODEL_COLUMNS_REPAIR: Record<string, string> = {
@@ -1411,7 +1396,7 @@ async function processCronTriggers(
         const { data: allPeriodRecords } = await supabase
           .from('rix_runs_v2')
           .select('id, 05_ticker, 02_model_name, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
-          .eq('06_period_from', periodFromStr);
+          .eq('batch_execution_date', repairBatchDate);
         
         // Filter records where MODEL-SPECIFIC column is null
         const missingRecords: Array<{id: string, ticker: string, model: string}> = [];
@@ -2147,53 +2132,72 @@ const {
       // ═══════════════════════════════════════════════════════════════════
       // 2.5 CRITICAL FIX: Auto-complete "pending" companies that already have data
       // This prevents infinite retry loops for duplicates
+      // GRACE PERIOD: Skip entirely if sweep is < 30 min old to prevent ghost companies
       // ═══════════════════════════════════════════════════════════════════
-      const { data: pendingCompanies } = await supabase
+      
+      // Check sweep age first
+      const { data: sweepCreation } = await supabase
         .from('sweep_progress')
-        .select('ticker')
+        .select('created_at')
         .eq('sweep_id', sweepId)
-        .eq('status', 'pending')
-        .limit(50);
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
-      if (pendingCompanies && pendingCompanies.length > 0) {
-        // FIX: Use batch_execution_date of current Sunday instead of 06_period_from
-        // 06_period_from overlaps between consecutive weeks, causing false duplicate detection
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const currentSunday = new Date(now);
-        currentSunday.setDate(now.getDate() - dayOfWeek);
-        currentSunday.setUTCHours(0, 0, 0, 0);
-        const currentBatchDate = currentSunday.toISOString();
-        
-        let autoCompletedCount = 0;
-        
-        for (const company of pendingCompanies) {
-          // Check if this company already has ≥5 models for THIS WEEK's batch
-          const { count } = await supabase
-            .from('rix_runs_v2')
-            .select('*', { count: 'exact', head: true })
-            .eq('05_ticker', company.ticker)
-            .eq('batch_execution_date', currentBatchDate);
+      const sweepAgeMs = sweepCreation?.created_at 
+        ? Date.now() - new Date(sweepCreation.created_at).getTime()
+        : Infinity;
+
+      if (sweepAgeMs < 30 * 60 * 1000) {
+        console.log(`[${triggerMode}] Sweep ${sweepId} is only ${Math.round(sweepAgeMs/1000)}s old. Skipping auto-complete (grace period 30min).`);
+      } else {
+        const { data: pendingCompanies } = await supabase
+          .from('sweep_progress')
+          .select('ticker')
+          .eq('sweep_id', sweepId)
+          .eq('status', 'pending')
+          .limit(50);
+
+        if (pendingCompanies && pendingCompanies.length > 0) {
+          // FIX: Use batch_execution_date of current Sunday instead of 06_period_from
+          // 06_period_from overlaps between consecutive weeks, causing false duplicate detection
+          const now = new Date();
+          const dayOfWeek = now.getDay();
+          const currentSunday = new Date(now);
+          currentSunday.setDate(now.getDate() - dayOfWeek);
+          currentSunday.setUTCHours(0, 0, 0, 0);
+          const currentBatchDate = currentSunday.toISOString();
           
-          if ((count || 0) >= 5) {
-            // Auto-complete this duplicate
-            await supabase
-              .from('sweep_progress')
-              .update({ 
-                status: 'completed', 
-                completed_at: new Date().toISOString(),
-                models_completed: count
-              })
-              .eq('sweep_id', sweepId)
-              .eq('ticker', company.ticker);
+          let autoCompletedCount = 0;
+          
+          for (const company of pendingCompanies) {
+            // Check if this company already has ≥5 models for THIS WEEK's batch
+            const { count } = await supabase
+              .from('rix_runs_v2')
+              .select('*', { count: 'exact', head: true })
+              .eq('05_ticker', company.ticker)
+              .eq('batch_execution_date', currentBatchDate);
             
-            console.log(`[${triggerMode}] Auto-completed duplicate: ${company.ticker} (${count} models already exist)`);
-            autoCompletedCount++;
+            if ((count || 0) >= 5) {
+              // Auto-complete this duplicate
+              await supabase
+                .from('sweep_progress')
+                .update({ 
+                  status: 'completed', 
+                  completed_at: new Date().toISOString(),
+                  models_completed: count
+                })
+                .eq('sweep_id', sweepId)
+                .eq('ticker', company.ticker);
+              
+              console.log(`[${triggerMode}] Auto-completed duplicate: ${company.ticker} (${count} models already exist)`);
+              autoCompletedCount++;
+            }
           }
-        }
-        
-        if (autoCompletedCount > 0) {
-          console.log(`[${triggerMode}] Auto-completed ${autoCompletedCount} duplicate companies in pre-cleanup`);
+          
+          if (autoCompletedCount > 0) {
+            console.log(`[${triggerMode}] Auto-completed ${autoCompletedCount} duplicate companies in pre-cleanup`);
+          }
         }
       }
 
@@ -2351,22 +2355,16 @@ const {
         // CRITICAL FIX: Usa columnas específicas por modelo para detectar datos faltantes
         // ============================================================
         
-        // Use the most recent period_from with real data (avoid week mismatch / mixing)
-        const { data: latestWeek } = await supabase
-          .from('rix_runs_v2')
-          .select('06_period_from')
-          .order('06_period_from', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const periodFromStr = latestWeek?.['06_period_from'] || (() => {
-          const now = new Date();
-          const dayOfWeek = now.getDay();
-          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-          const periodFrom = new Date(now);
-          periodFrom.setDate(now.getDate() + mondayOffset);
-          return periodFrom.toISOString().split('T')[0];
-        })();
+        // FIX: Use batch_execution_date (current Sunday) instead of 06_period_from
+        // This prevents mixing data from different weeks in the auto-chain verification
+        const chainNow = new Date();
+        const chainDow = chainNow.getDay();
+        const chainSunday = new Date(chainNow);
+        chainSunday.setDate(chainNow.getDate() - chainDow);
+        chainSunday.setUTCHours(0, 0, 0, 0);
+        const chainBatchDate = chainSunday.toISOString();
+        
+        console.log(`[${triggerMode}] Auto-chain using batch_execution_date: ${chainBatchDate}`);
         
         // Model to column mapping for correct data detection
         const MODEL_COLUMNS: Record<string, string> = {
@@ -2379,11 +2377,11 @@ const {
           'Qwen': 'respuesta_bruto_qwen',
         };
         
-        // PASO 1: Get ALL records for this period with model-specific columns
+        // PASO 1: Get ALL records for this batch with model-specific columns
         const { data: allRecords } = await supabase
           .from('rix_runs_v2')
           .select('id, 02_model_name, 09_rix_score, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen')
-          .eq('06_period_from', periodFromStr);
+          .eq('batch_execution_date', chainBatchDate);
         
         // Count records without data USING MODEL-SPECIFIC COLUMNS
         let missingDataCount = 0;
