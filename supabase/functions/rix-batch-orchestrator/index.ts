@@ -2156,33 +2156,24 @@ const {
         .limit(50);
 
       if (pendingCompanies && pendingCompanies.length > 0) {
-        // Use the most recent period_from with real data (single source of truth)
-        const { data: latestWeek } = await supabase
-          .from('rix_runs_v2')
-          .select('06_period_from')
-          .order('06_period_from', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const periodFromStr = latestWeek?.['06_period_from'] || (() => {
-          // Fallback: calculate manually if no data exists
-          const now = new Date();
-          const dayOfWeek = now.getDay();
-          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-          const periodFrom = new Date(now);
-          periodFrom.setDate(now.getDate() + mondayOffset);
-          return periodFrom.toISOString().split('T')[0];
-        })();
+        // FIX: Use batch_execution_date of current Sunday instead of 06_period_from
+        // 06_period_from overlaps between consecutive weeks, causing false duplicate detection
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const currentSunday = new Date(now);
+        currentSunday.setDate(now.getDate() - dayOfWeek);
+        currentSunday.setUTCHours(0, 0, 0, 0);
+        const currentBatchDate = currentSunday.toISOString();
         
         let autoCompletedCount = 0;
         
         for (const company of pendingCompanies) {
-          // Check if this company already has ≥5 models for this period
+          // Check if this company already has ≥5 models for THIS WEEK's batch
           const { count } = await supabase
             .from('rix_runs_v2')
             .select('*', { count: 'exact', head: true })
             .eq('05_ticker', company.ticker)
-            .eq('06_period_from', periodFromStr);
+            .eq('batch_execution_date', currentBatchDate);
           
           if ((count || 0) >= 5) {
             // Auto-complete this duplicate
@@ -2221,34 +2212,25 @@ const {
       if (suspectCompanies && suspectCompanies.length > 0) {
         console.log(`[${triggerMode}] Checking ${suspectCompanies.length} suspect companies with <6 models`);
         
-        // Use the most recent period_from with real data
-        const { data: latestWeek } = await supabase
-          .from('rix_runs_v2')
-          .select('06_period_from')
-          .order('06_period_from', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const reconcilePeriodFromStr = latestWeek?.['06_period_from'] || (() => {
-          const now = new Date();
-          const dayOfWeek = now.getDay();
-          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-          const periodFrom = new Date(now);
-          periodFrom.setDate(now.getDate() + mondayOffset);
-          return periodFrom.toISOString().split('T')[0];
-        })();
+        // FIX: Use batch_execution_date of current Sunday (same logic as above)
+        const reconcileNow = new Date();
+        const reconcileDow = reconcileNow.getDay();
+        const reconcileSunday = new Date(reconcileNow);
+        reconcileSunday.setDate(reconcileNow.getDate() - reconcileDow);
+        reconcileSunday.setUTCHours(0, 0, 0, 0);
+        const reconcileBatchDate = reconcileSunday.toISOString();
         
         let resetCount = 0;
-        let incompleteCount = 0;  // NEW: Track companies with 1-5 models
+        let incompleteCount = 0;
         const incompleteCompanies: Array<{ticker: string, actualModels: number}> = [];
         
         for (const company of suspectCompanies) {
-          // Verificar cuántos registros realmente tiene
+          // Verificar cuántos registros realmente tiene EN ESTE BARRIDO
           const { count } = await supabase
             .from('rix_runs_v2')
             .select('*', { count: 'exact', head: true })
             .eq('05_ticker', company.ticker)
-            .eq('06_period_from', reconcilePeriodFromStr);
+            .eq('batch_execution_date', reconcileBatchDate);
           
           const actualModels = count || 0;
           
