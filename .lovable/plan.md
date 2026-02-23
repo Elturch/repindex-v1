@@ -1,193 +1,116 @@
 
-# Plan: Eliminar duplicados, cerrar el bug, y automatizar todo
 
-## Causa raiz del problema
+# Plan: Limpieza de duplicados con migracion optimizada
 
-La funcion `getIndexedRixRunIds` en `populate-vector-store/index.ts` consulta documentos existentes con:
+## El problema
 
-```
-.select('metadata->>rix_run_id')
-.in('metadata->>rix_run_id', ids)
-```
+Las queries anteriores fallan porque:
+1. Cualquier `ROW_NUMBER() OVER(PARTITION BY ...)` escanea las 1.12M filas antes de aplicar el LIMIT
+2. El timeout por defecto de Supabase (unos 30s) no es suficiente para procesar 1.12M filas
+3. No se puede ejecutar DELETE desde la herramienta de lectura
 
-PostgREST tiene un limite de 1000 filas por respuesta. Cuando cada `rix_run_id` tiene 125+ copias, una consulta de 500 IDs devuelve 62,500+ filas, pero PostgREST **trunca silenciosamente a 1000**. Esas 1000 filas cubren solo ~8 IDs unicos. Los otros 492 se consideran "no indexados" y se reinsertan como duplicados.
+## Solucion: Migracion SQL con timeout extendido y delete por rangos de ID
 
-El cron `vector_store_continue` se auto-encadena cada 5 minutos. Como `remaining` nunca llega a 0, el proceso se repite infinitamente: ~90 duplicados cada 5 minutos, durante 43 dias, generando 1.13M de filas basura.
+Crear una migracion que:
 
-V2 no tiene este problema porque V1 agota los 45 segundos de timeout antes de que V2 se procese.
+1. Suba el `statement_timeout` a 300 segundos
+2. Primero cree el indice en `metadata->>'rix_run_id'` (acelera todo lo demas)
+3. Luego elimine duplicados en un loop PL/pgSQL por rangos de 10,000 IDs
+4. Cree el segundo indice en `metadata->>'source_table'`
 
-## Solucion: 4 cambios
-
-### Cambio 1: Migracion SQL - Limpiar 1.12M duplicados y crear indices
-
-Eliminar todos los documentos V1 duplicados, dejando solo el mas reciente por `rix_run_id`. Crear indices GIN para que las consultas futuras de existencia sean rapidas.
+### Migracion SQL
 
 ```sql
--- Paso 1: Eliminar duplicados V1 (conservar solo el mas reciente)
-DELETE FROM documents
-WHERE id IN (
-  SELECT id FROM (
-    SELECT id,
-      ROW_NUMBER() OVER (
-        PARTITION BY metadata->>'rix_run_id'
-        ORDER BY id DESC
-      ) as rn
-    FROM documents
-    WHERE metadata->>'rix_run_id' IS NOT NULL
-      AND (metadata->>'source_table' IS NULL 
-           OR metadata->>'source_table' = 'rix_runs')
-  ) ranked
-  WHERE rn > 1
-);
+-- Extend timeout for this heavy operation
+SET statement_timeout = '600s';
+SET lock_timeout = '60s';
 
--- Paso 2: Indices para acelerar consultas de existencia
+-- Step 1: Create index FIRST to speed up duplicate detection
 CREATE INDEX IF NOT EXISTS idx_documents_rix_run_id 
 ON documents ((metadata->>'rix_run_id'));
+
+-- Step 2: Delete all V1 duplicates in one pass using the new index
+-- Keep only the row with the highest id per rix_run_id
+DELETE FROM documents d
+USING (
+  SELECT metadata->>'rix_run_id' as rid, MAX(id) as keep_id
+  FROM documents
+  WHERE metadata->>'rix_run_id' IS NOT NULL
+    AND (metadata->>'source_table' IS NULL OR metadata->>'source_table' = 'rix_runs')
+  GROUP BY metadata->>'rix_run_id'
+) keepers
+WHERE d.metadata->>'rix_run_id' = keepers.rid
+  AND d.id < keepers.keep_id
+  AND d.metadata->>'rix_run_id' IS NOT NULL
+  AND (d.metadata->>'source_table' IS NULL OR d.metadata->>'source_table' = 'rix_runs');
+
+-- Step 3: Create second index
+CREATE INDEX IF NOT EXISTS idx_documents_source_table 
+ON documents ((metadata->>'source_table'));
+
+-- Step 4: Reclaim space
+VACUUM (VERBOSE) documents;
+```
+
+La clave es que con `SET statement_timeout = '600s'` el indice se crea primero, y una vez que el indice existe, el DELETE con `USING` + `GROUP BY` es eficiente porque usa el indice para agrupar por `rix_run_id` en vez de escanear secuencialmente.
+
+### Si el DELETE sigue siendo demasiado grande
+
+Plan B: usar una funcion PL/pgSQL con loop que procese en batches:
+
+```sql
+SET statement_timeout = '600s';
+
+CREATE INDEX IF NOT EXISTS idx_documents_rix_run_id 
+ON documents ((metadata->>'rix_run_id'));
+
+DO $$
+DECLARE
+  deleted_count INT := 1;
+  total_deleted INT := 0;
+BEGIN
+  WHILE deleted_count > 0 LOOP
+    WITH to_kill AS (
+      SELECT d.id
+      FROM documents d
+      JOIN documents d2 
+        ON d.metadata->>'rix_run_id' = d2.metadata->>'rix_run_id'
+        AND d.id < d2.id
+      WHERE d.metadata->>'rix_run_id' IS NOT NULL
+        AND (d.metadata->>'source_table' IS NULL 
+             OR d.metadata->>'source_table' = 'rix_runs')
+      LIMIT 50000
+    )
+    DELETE FROM documents WHERE id IN (SELECT id FROM to_kill);
+    
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    total_deleted := total_deleted + deleted_count;
+    RAISE NOTICE 'Deleted % rows (total: %)', deleted_count, total_deleted;
+  END LOOP;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_documents_source_table 
 ON documents ((metadata->>'source_table'));
 ```
 
-Resultado esperado: de ~1.14M a ~18K filas (9,101 V1 + 6,600 V2 + 3,000 news).
+### Despues de la limpieza
 
-### Cambio 2: Corregir el bug raiz en `getIndexedRixRunIds`
+Insertar el trigger manual para generar el newsroom:
 
-**Archivo:** `supabase/functions/populate-vector-store/index.ts` (lineas 61-82)
-
-El fix: usar `SELECT DISTINCT metadata->>'rix_run_id'` con un limite alto, o mejor aun, usar `head: true` con count para verificar existencia. La solucion mas robusta es consultar con `.select('metadata->>rix_run_id')` pero **anadiendo un DISTINCT** o cambiando la estrategia a un check individual por ID.
-
-La solucion optima: usar una query SQL directa con `SELECT DISTINCT`:
-
-```typescript
-const getIndexedRixRunIds = async (runIds: string[]): Promise<Set<string>> => {
-  const ids = Array.from(new Set(runIds.filter(Boolean)));
-  if (ids.length === 0) return new Set();
-
-  // Use RPC or direct query with DISTINCT to avoid PostgREST row limit issue
-  // Option: check existence one-by-one with head:true (no row limit issue)
-  const out = new Set<string>();
-  
-  // Batch check in groups of 50 to keep queries fast
-  for (let i = 0; i < ids.length; i += 50) {
-    const batch = ids.slice(i, i + 50);
-    const { data, error } = await supabaseClient
-      .from('documents')
-      .select('metadata->>rix_run_id')
-      .in('metadata->>rix_run_id', batch)
-      .limit(batch.length);  // Max 1 row per ID is enough
-    
-    // With duplicates cleaned and index created, 
-    // this returns at most 50 rows (1 per ID)
-    if (!error && data) {
-      for (const row of data as any[]) {
-        if (row?.rix_run_id) out.add(row.rix_run_id);
-      }
-    }
-  }
-  return out;
-};
+```sql
+INSERT INTO cron_triggers (action, status) 
+VALUES ('auto_generate_newsroom', 'pending');
 ```
 
-Pero esto solo funciona post-limpieza. Para ser 100% a prueba de fallos incluso si vuelven a aparecer duplicados, la mejor estrategia es **verificar existencia con `count` + `head:true`**:
+## Cambio tecnico
 
-```typescript
-const getIndexedRixRunIds = async (runIds: string[]): Promise<Set<string>> => {
-  const ids = Array.from(new Set(runIds.filter(Boolean)));
-  if (ids.length === 0) return new Set();
-
-  const out = new Set<string>();
-  
-  // Check in batches of 100 using count (immune to duplicates)
-  for (let i = 0; i < ids.length; i += 100) {
-    const batch = ids.slice(i, i + 100);
-    for (const id of batch) {
-      const { count } = await supabaseClient
-        .from('documents')
-        .select('id', { count: 'exact', head: true })
-        .eq('metadata->>rix_run_id', id);
-      
-      if ((count || 0) > 0) out.add(id);
-    }
-  }
-  return out;
-};
-```
-
-Sin embargo, esto seria lento (500 queries). Mejor solucion post-limpieza:
-
-```typescript
-const getIndexedRixRunIds = async (runIds: string[]): Promise<Set<string>> => {
-  const ids = Array.from(new Set(runIds.filter(Boolean)));
-  if (ids.length === 0) return new Set();
-
-  const out = new Set<string>();
-  
-  // Post-cleanup: max 1 doc per rix_run_id, so .in() works fine
-  // But add safety: use smaller batches + limit to avoid truncation
-  for (let i = 0; i < ids.length; i += 100) {
-    const batch = ids.slice(i, i + 100);
-    const { data, error } = await supabaseClient
-      .from('documents')
-      .select('metadata->>rix_run_id')
-      .in('metadata->>rix_run_id', batch)
-      .limit(batch.length);
-
-    if (!error && data) {
-      for (const row of data as any[]) {
-        if (row?.rix_run_id) out.add(row.rix_run_id);
-      }
-    }
-  }
-  return out;
-};
-```
-
-### Cambio 3: Corregir doble-conteo en el orquestador
-
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 1023-1025 y 1131-1133)
-
-```typescript
-// ANTES (bug):
-const remainingRix = Number(data?.remaining ?? 0);
-const remainingNews = Number(data?.remaining_news ?? 0);
-const remainingTotal = remainingRix + remainingNews;
-
-// DESPUES:
-const remainingTotal = Math.max(0, Number(data?.remaining ?? 0));
-```
-
-### Cambio 4: Retry 503 en newsroom y lanzar newsroom manualmente
-
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (handler `auto_generate_newsroom`)
-
-Anadir reintento automatico cuando la llamada a `generate-news-story` falla con 503:
-
-```typescript
-let response = await fetch(url, options);
-if (response.status === 503) {
-  console.log('[auto_generate_newsroom] Got 503, retrying in 10s...');
-  await new Promise(r => setTimeout(r, 10000));
-  response = await fetch(url, options);
-}
-```
-
-Ademas, insertar un trigger manual en `cron_triggers` para generar el newsroom de la semana actual.
-
-## Resumen de cambios
-
-| Archivo / Recurso | Cambio |
+| Archivo | Accion |
 |---|---|
-| Migracion SQL | Eliminar 1.12M duplicados V1 + crear 2 indices |
-| `populate-vector-store/index.ts` | Fix `getIndexedRixRunIds` - batches de 100 con `.limit()` |
-| `rix-batch-orchestrator/index.ts` | Fix doble-conteo `remainingTotal` (2 sitios) |
-| `rix-batch-orchestrator/index.ts` | Retry 503 en newsroom handler |
+| Nueva migracion SQL | Timeout extendido + indice + delete masivo + segundo indice |
 | Trigger manual | Lanzar newsroom para semana actual |
 
 ## Resultado esperado
 
-1. Tabla `documents` pasa de 1.14M a ~18K filas
-2. Las consultas de existencia pasan de 30s+ a <1s (indice + sin duplicados)
-3. El vector store completa la sincronizacion en minutos
-4. La cadena `sanitize -> vectors -> newsroom` no se bloquea
-5. El newsroom se genera para la semana actual
-6. V2 nunca sufrira este bug porque la verificacion usa batches pequenos con `.limit()`
+- Tabla `documents` de ~1.14M a ~18K filas
+- Indices creados para que las queries futuras sean instantaneas
+- Newsroom se genera para la semana actual
