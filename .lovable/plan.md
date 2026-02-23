@@ -1,116 +1,109 @@
 
 
-# Plan: Limpieza de duplicados con migracion optimizada
+# Plan: Edge function de limpieza de duplicados
 
-## El problema
+## Problema
 
-Las queries anteriores fallan porque:
-1. Cualquier `ROW_NUMBER() OVER(PARTITION BY ...)` escanea las 1.12M filas antes de aplicar el LIMIT
-2. El timeout por defecto de Supabase (unos 30s) no es suficiente para procesar 1.12M filas
-3. No se puede ejecutar DELETE desde la herramienta de lectura
+El SQL Editor de Supabase impone un timeout upstream de ~30s que no se puede sobreescribir con `SET statement_timeout`. Cualquier operacion que escanee las 1.12M filas de `documents` falla antes de completar, incluyendo `GROUP BY`, `ROW_NUMBER()`, y `CREATE TEMP TABLE`.
 
-## Solucion: Migracion SQL con timeout extendido y delete por rangos de ID
+## Solucion: Edge function dedicada
 
-Crear una migracion que:
+Crear una edge function `cleanup-duplicate-documents` que:
 
-1. Suba el `statement_timeout` a 300 segundos
-2. Primero cree el indice en `metadata->>'rix_run_id'` (acelera todo lo demas)
-3. Luego elimine duplicados en un loop PL/pgSQL por rangos de 10,000 IDs
-4. Cree el segundo indice en `metadata->>'source_table'`
+1. Usa la funcion SQL `execute_sql` (que ya existe como RPC) para ejecutar queries pequenas
+2. Trabaja en batches de ~5,000 IDs a la vez usando rangos de ID primario
+3. Para cada batch: identifica duplicados y los elimina
+4. Se auto-invoca si queda trabajo pendiente (o el usuario la llama varias veces)
 
-### Migracion SQL
+### Logica de la edge function
 
-```sql
--- Extend timeout for this heavy operation
-SET statement_timeout = '600s';
-SET lock_timeout = '60s';
+```
+Para cada rango de 5000 IDs:
+  1. SELECT metadata->>'rix_run_id' as rid, MIN(id) as min_id, MAX(id) as max_id, COUNT(*) as cnt
+     FROM documents
+     WHERE id BETWEEN batch_start AND batch_end
+       AND metadata->>'rix_run_id' IS NOT NULL
+       AND (metadata->>'source_table' IS NULL OR metadata->>'source_table' = 'rix_runs')
+     GROUP BY metadata->>'rix_run_id'
+     HAVING COUNT(*) > 1
 
--- Step 1: Create index FIRST to speed up duplicate detection
-CREATE INDEX IF NOT EXISTS idx_documents_rix_run_id 
-ON documents ((metadata->>'rix_run_id'));
+  2. Para cada rix_run_id con duplicados:
+     DELETE FROM documents
+     WHERE metadata->>'rix_run_id' = :rid
+       AND (metadata->>'source_table' IS NULL OR metadata->>'source_table' = 'rix_runs')
+       AND id < (SELECT MAX(id) FROM documents WHERE metadata->>'rix_run_id' = :rid)
 
--- Step 2: Delete all V1 duplicates in one pass using the new index
--- Keep only the row with the highest id per rix_run_id
-DELETE FROM documents d
-USING (
-  SELECT metadata->>'rix_run_id' as rid, MAX(id) as keep_id
-  FROM documents
-  WHERE metadata->>'rix_run_id' IS NOT NULL
-    AND (metadata->>'source_table' IS NULL OR metadata->>'source_table' = 'rix_runs')
-  GROUP BY metadata->>'rix_run_id'
-) keepers
-WHERE d.metadata->>'rix_run_id' = keepers.rid
-  AND d.id < keepers.keep_id
-  AND d.metadata->>'rix_run_id' IS NOT NULL
-  AND (d.metadata->>'source_table' IS NULL OR d.metadata->>'source_table' = 'rix_runs');
-
--- Step 3: Create second index
-CREATE INDEX IF NOT EXISTS idx_documents_source_table 
-ON documents ((metadata->>'source_table'));
-
--- Step 4: Reclaim space
-VACUUM (VERBOSE) documents;
+  3. Reportar progreso
 ```
 
-La clave es que con `SET statement_timeout = '600s'` el indice se crea primero, y una vez que el indice existe, el DELETE con `USING` + `GROUP BY` es eficiente porque usa el indice para agrupar por `rix_run_id` en vez de escanear secuencialmente.
+Pero esto sigue teniendo el problema de que la subquery del DELETE escanea toda la tabla.
 
-### Si el DELETE sigue siendo demasiado grande
+### Mejor estrategia: Dos fases via edge function
 
-Plan B: usar una funcion PL/pgSQL con loop que procese en batches:
+**Fase 1 - Construir lista de IDs a conservar** (multiples llamadas pequenas):
+- Consultar en rangos de 5000 IDs: para cada rango, obtener el MAX(id) por rix_run_id
+- Acumular en memoria un Map de rix_run_id -> max_id_to_keep
+- Esto requiere ~230 llamadas (1.14M / 5000), cada una tarda <1s con el indice
 
-```sql
-SET statement_timeout = '600s';
+**Fase 2 - Eliminar duplicados** (multiples llamadas pequenas):
+- Para cada rango de 5000 IDs: DELETE WHERE id BETWEEN X AND Y AND id NOT IN (lista de IDs a conservar de ese rango)
+- Cada DELETE toca como maximo 5000 filas, completa en <1s
 
-CREATE INDEX IF NOT EXISTS idx_documents_rix_run_id 
-ON documents ((metadata->>'rix_run_id'));
+### Edge function: detalles tecnicos
 
-DO $$
-DECLARE
-  deleted_count INT := 1;
-  total_deleted INT := 0;
-BEGIN
-  WHILE deleted_count > 0 LOOP
-    WITH to_kill AS (
-      SELECT d.id
-      FROM documents d
-      JOIN documents d2 
-        ON d.metadata->>'rix_run_id' = d2.metadata->>'rix_run_id'
-        AND d.id < d2.id
-      WHERE d.metadata->>'rix_run_id' IS NOT NULL
-        AND (d.metadata->>'source_table' IS NULL 
-             OR d.metadata->>'source_table' = 'rix_runs')
-      LIMIT 50000
-    )
-    DELETE FROM documents WHERE id IN (SELECT id FROM to_kill);
-    
-    GET DIAGNOSTICS deleted_count = ROW_COUNT;
-    total_deleted := total_deleted + deleted_count;
-    RAISE NOTICE 'Deleted % rows (total: %)', deleted_count, total_deleted;
-  END LOOP;
-END $$;
+**Archivo:** `supabase/functions/cleanup-duplicate-documents/index.ts`
 
-CREATE INDEX IF NOT EXISTS idx_documents_source_table 
-ON documents ((metadata->>'source_table'));
+La funcion:
+- Usa `supabaseClient` con service role key para acceso directo
+- Fase 1: Itera por rangos de ID, construye el mapa de keepers
+- Fase 2: Itera por rangos de ID, elimina todo lo que no esta en keepers
+- Devuelve progreso en JSON
+- Tiene un timeout de edge function de ~400s, suficiente para completar ambas fases
+
+```text
+Flujo:
+  GET /cleanup-duplicate-documents
+    |
+    v
+  [Fase 1: Scan por rangos de 5000 IDs]
+    -> Para cada rango: SELECT metadata->>'rix_run_id', MAX(id) GROUP BY ...
+    -> Acumular mapa: { rix_run_id: max_id }
+    -> ~230 queries, <1s cada una
+    |
+    v
+  [Fase 2: Delete por rangos de 5000 IDs]
+    -> Para cada rango: DELETE WHERE id BETWEEN X AND Y
+         AND rix_run_id IS NOT NULL
+         AND source_table IS NULL/rix_runs
+         AND id NOT IN (keepers del rango)
+    -> ~230 queries, <1s cada una
+    |
+    v
+  [Response: { deleted: N, kept: M, duration_ms: T }]
 ```
 
 ### Despues de la limpieza
 
-Insertar el trigger manual para generar el newsroom:
+Una vez que la edge function reporta exito:
+1. Crear el indice secundario (manual en SQL Editor, ya no hay 1.12M filas):
+   ```sql
+   CREATE INDEX IF NOT EXISTS idx_documents_source_table ON documents ((metadata->>'source_table'));
+   ```
+2. Lanzar el newsroom:
+   ```sql
+   INSERT INTO cron_triggers (action, status) VALUES ('auto_generate_newsroom', 'pending');
+   ```
 
-```sql
-INSERT INTO cron_triggers (action, status) 
-VALUES ('auto_generate_newsroom', 'pending');
-```
-
-## Cambio tecnico
+## Cambios
 
 | Archivo | Accion |
 |---|---|
-| Nueva migracion SQL | Timeout extendido + indice + delete masivo + segundo indice |
-| Trigger manual | Lanzar newsroom para semana actual |
+| `supabase/functions/cleanup-duplicate-documents/index.ts` | Nueva edge function para limpieza en batches |
 
 ## Resultado esperado
 
-- Tabla `documents` de ~1.14M a ~18K filas
-- Indices creados para que las queries futuras sean instantaneas
-- Newsroom se genera para la semana actual
+- La edge function completa en 2-4 minutos
+- Tabla `documents` pasa de ~1.14M a ~18K filas
+- Sin timeouts porque cada query individual toca maximo 5000 filas
+- Se puede invocar con curl o desde el navegador
+
