@@ -62,21 +62,29 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       const ids = Array.from(new Set(runIds.filter(Boolean)));
       if (ids.length === 0) return new Set();
 
-      const { data, error } = await supabaseClient
-        .from('documents')
-        .select('metadata->>rix_run_id')
-        .in('metadata->>rix_run_id', ids);
-
-      if (error) {
-        console.error('Error bulk-checking existing RIX docs:', error);
-        // Fail open: treat as none indexed to avoid blocking sync
-        return new Set();
-      }
-
       const out = new Set<string>();
-      for (const row of (data || []) as any[]) {
-        const id = row?.rix_run_id;
-        if (id) out.add(id);
+
+      // Process in small batches of 100 with .limit() to prevent
+      // PostgREST silent truncation (1000-row default limit).
+      // Post-cleanup there should be max 1 doc per rix_run_id,
+      // but the .limit() makes this immune to any future duplicates.
+      for (let i = 0; i < ids.length; i += 100) {
+        const batch = ids.slice(i, i + 100);
+        const { data, error } = await supabaseClient
+          .from('documents')
+          .select('metadata->>rix_run_id')
+          .in('metadata->>rix_run_id', batch)
+          .limit(batch.length);
+
+        if (error) {
+          console.error(`Error bulk-checking existing RIX docs (batch ${i}):`, error);
+          continue;
+        }
+
+        for (const row of (data || []) as any[]) {
+          const id = row?.rix_run_id;
+          if (id) out.add(id);
+        }
       }
       return out;
     };
@@ -85,21 +93,27 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       const u = Array.from(new Set(urls.filter(Boolean)));
       if (u.length === 0) return new Set();
 
-      const { data, error } = await supabaseClient
-        .from('documents')
-        .select('metadata->>article_url')
-        .eq('metadata->>type', 'corporate_news')
-        .in('metadata->>article_url', u);
-
-      if (error) {
-        console.error('Error bulk-checking existing corporate news docs:', error);
-        return new Set();
-      }
-
       const out = new Set<string>();
-      for (const row of (data || []) as any[]) {
-        const url = row?.article_url;
-        if (url) out.add(url);
+
+      // Same batching strategy as getIndexedRixRunIds to avoid PostgREST truncation
+      for (let i = 0; i < u.length; i += 100) {
+        const batch = u.slice(i, i + 100);
+        const { data, error } = await supabaseClient
+          .from('documents')
+          .select('metadata->>article_url')
+          .eq('metadata->>type', 'corporate_news')
+          .in('metadata->>article_url', batch)
+          .limit(batch.length);
+
+        if (error) {
+          console.error(`Error bulk-checking existing corporate news docs (batch ${i}):`, error);
+          continue;
+        }
+
+        for (const row of (data || []) as any[]) {
+          const url = row?.article_url;
+          if (url) out.add(url);
+        }
       }
       return out;
     };
