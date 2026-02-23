@@ -1258,9 +1258,9 @@ async function processCronTriggers(
           }),
         });
 
-        // Retry once on 503 (Cloudflare transient error)
-        if (response.status === 503) {
-          console.log('[auto_generate_newsroom] Got 503, retrying in 10s...');
+        // Retry once on 503/504 (Cloudflare transient error / Gateway Timeout)
+        if (response.status === 503 || response.status === 504) {
+          console.log(`[auto_generate_newsroom] Got ${response.status}, retrying in 10s...`);
           await new Promise(r => setTimeout(r, 10000));
           response = await fetch(`${supabaseUrl}/functions/v1/generate-news-story`, {
             method: 'POST',
@@ -1284,6 +1284,22 @@ async function processCronTriggers(
         }
 
         if (!response.ok) {
+          // Auto-retry mechanism: if still failing, check how many previous attempts
+          // and re-enqueue if under 3 attempts
+          const attemptNumber = ((trigger.params as any)?.attempt || 0) + 1;
+          console.log(`[auto_generate_newsroom] Failed with HTTP ${response.status}, attempt ${attemptNumber}/3`);
+          
+          if (attemptNumber < 3) {
+            console.log(`[auto_generate_newsroom] Re-enqueueing as pending (attempt ${attemptNumber + 1})...`);
+            await supabase
+              .from('cron_triggers')
+              .insert({
+                action: 'auto_generate_newsroom',
+                params: { ...(trigger.params as object || {}), attempt: attemptNumber },
+                status: 'pending',
+              });
+          }
+          
           throw new Error(`HTTP ${response.status}: ${responseText}`);
         }
 
