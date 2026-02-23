@@ -1020,9 +1020,9 @@ async function processCronTriggers(
           throw new Error(`HTTP ${response.status}: ${responseText}`);
         }
 
-        const remainingRix = Number(data?.remaining ?? 0);
-        const remainingNews = Number(data?.remaining_news ?? 0);
-        const remainingTotal = Math.max(0, remainingRix + remainingNews);
+        // `remaining` already includes rix+news for sourceFilter='all'
+        // Do NOT add remaining_news again (that was the double-counting bug)
+        const remainingTotal = Math.max(0, Number(data?.remaining ?? 0));
 
         if (remainingTotal > 0) {
           console.log(`[cron_triggers] auto_populate_vectors: remaining_total=${remainingTotal} → re-queueing`);
@@ -1128,9 +1128,8 @@ async function processCronTriggers(
           throw new Error(`HTTP ${response.status}: ${responseText}`);
         }
 
-        const remainingRix = Number(data?.remaining ?? 0);
-        const remainingNews = Number(data?.remaining_news ?? 0);
-        const remainingTotal = Math.max(0, remainingRix + remainingNews);
+        // `remaining` already includes rix+news for sourceFilter='all'
+        const remainingTotal = Math.max(0, Number(data?.remaining ?? 0));
 
         // Mark this trigger as completed - the populate-vector-store function
         // will insert a new trigger if more work remains
@@ -1247,7 +1246,7 @@ async function processCronTriggers(
         // ============================================================
         console.log(`[cron_triggers] Processing auto_generate_newsroom trigger ${trigger.id}`);
         
-        const response = await fetch(`${supabaseUrl}/functions/v1/generate-news-story`, {
+        let response = await fetch(`${supabaseUrl}/functions/v1/generate-news-story`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1258,6 +1257,23 @@ async function processCronTriggers(
             saveToDb: true 
           }),
         });
+
+        // Retry once on 503 (Cloudflare transient error)
+        if (response.status === 503) {
+          console.log('[auto_generate_newsroom] Got 503, retrying in 10s...');
+          await new Promise(r => setTimeout(r, 10000));
+          response = await fetch(`${supabaseUrl}/functions/v1/generate-news-story`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${serviceKey}`,
+            },
+            body: JSON.stringify({ 
+              trigger: 'cron',
+              saveToDb: true 
+            }),
+          });
+        }
 
         const responseText = await response.text();
         let data: any = {};
