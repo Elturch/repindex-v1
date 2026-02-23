@@ -1,55 +1,56 @@
 
 
-# Plan: Prevenir duplicados en el Vector Store
+# Plan: Hacer resiliente la generación del Newsroom
 
-## Problema raiz
+## Problema
 
-La funcion `populate-vector-store` tiene una vulnerabilidad en su chequeo de existencia (`getIndexedRixRunIds`): usa `.limit(100)` al buscar documentos existentes. Si hay duplicados, la query devuelve menos IDs unicos de los esperados, causando que el sistema piense que faltan documentos y los vuelva a insertar, creando mas duplicados en un bucle infinito.
+La edge function `generate-news-story` da timeout (HTTP 504) de forma consistente. Ha fallado 3 veces seguidas (20 Feb, 23 Feb x2). La función hace demasiadas operaciones secuenciales:
+- ~20 llamadas a OpenAI Embeddings
+- ~20 búsquedas vectoriales
+- 1 llamada masiva a Gemini (65K tokens output)
+- ~16 upserts a la BD
 
-## Solucion: Doble proteccion (aplicacion + base de datos)
+Todo esto excede el limite de ejecucion de las Edge Functions de Supabase (~400s).
 
-### 1. Corregir `getIndexedRixRunIds` en `populate-vector-store`
+## Solucion: Dos mejoras complementarias
 
-Cambiar la query de existencia para que use `SELECT DISTINCT` o un limite mas alto. La solucion mas limpia: eliminar el `.limit()` restrictivo y usar un approach que siempre devuelva IDs unicos.
+### 1. Agregar reintento para 504 en el orquestador
 
-Cambio concreto en lineas 71-89:
-- En lugar de `select('metadata->>rix_run_id').in(...).limit(batch.length)`, usar un limite mucho mas alto (ej. 10000) para que incluso si hay duplicados residuales, todos los IDs unicos del batch sean detectados.
-- Alternativa: contar por rix_run_id en vez de listar filas.
+Actualmente solo reintenta en 503. Agregar 504 a la logica de reintento, ya que ambos son errores transitorios de gateway.
 
-### 2. Aplicar la misma correccion a `getIndexedNewsUrls`
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 1261-1276)
 
-Mismo patron en lineas 98-118 para `article_url` de noticias corporativas.
+Cambio: Donde dice `if (response.status === 503)`, cambiar a `if (response.status === 503 || response.status === 504)`.
 
-### 3. Crear indice UNIQUE parcial en la base de datos (proteccion definitiva)
+### 2. Reducir el tiempo de ejecucion de `generate-news-story`
 
-Crear un indice unico parcial que impida duplicados a nivel de base de datos:
+La mayor perdida de tiempo esta en `fetchVectorStoreContext`: hace 20+ llamadas individuales a OpenAI Embeddings + 20+ RPCs de busqueda vectorial de forma secuencial. Esto puede tardar 30-60 segundos solo en este paso.
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_unique_rix_run_id 
-ON documents ((metadata->>'rix_run_id'))
-WHERE metadata->>'rix_run_id' IS NOT NULL;
-```
+**Archivo:** `supabase/functions/generate-news-story/index.ts`
 
-Esto garantiza que aunque la aplicacion falle en detectar duplicados (por concurrencia, bugs, etc.), la base de datos rechaza el INSERT duplicado. La edge function ya maneja errores de insert, asi que un conflicto simplemente se registra como error y continua.
+Cambios:
+- Limitar el numero de empresas a buscar en el vector store de ~20 a 10 (las mas relevantes)
+- Paralelizar las llamadas a embeddings y busquedas vectoriales usando `Promise.allSettled` en batches de 5
+- Reducir `maxOutputTokens` de Gemini de 65536 a 32768 (suficiente para 15 historias)
+- Esto deberia reducir el tiempo total de ~400s a ~200s
 
-### 4. Crear indice UNIQUE para noticias corporativas
+### 3. Mecanismo de auto-reintento con trigger persistente
 
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_unique_article_url
-ON documents ((metadata->>'article_url'))
-WHERE metadata->>'type' = 'corporate_news';
-```
+Cuando el orquestador detecte un fallo 504 incluso despues de reintentar, en lugar de marcar como `failed` definitivamente, insertar un nuevo trigger `auto_generate_newsroom` con status `pending` para que el proximo ciclo de 5 minutos lo vuelva a intentar (maximo 3 intentos).
+
+**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
+
+Cambio: Despues del bloque de reintento 503/504, si sigue fallando, verificar cuantos intentos previos ha habido. Si menos de 3, insertar nuevo trigger pending.
 
 ## Cambios tecnicos
 
 | Archivo | Cambio |
 |---|---|
-| `supabase/functions/populate-vector-store/index.ts` | Subir el `.limit()` de `getIndexedRixRunIds` a 10000 (o eliminarlo) para evitar truncamiento silencioso. Mismo fix en `getIndexedNewsUrls`. |
-| Nueva migracion SQL | Crear indices UNIQUE parciales en `documents` para `rix_run_id` y `article_url` |
+| `supabase/functions/rix-batch-orchestrator/index.ts` | Agregar reintento para 504; auto-reintento con maximo 3 intentos |
+| `supabase/functions/generate-news-story/index.ts` | Reducir empresas en vector search a 10; paralelizar embeddings; reducir maxOutputTokens a 32768 |
 
 ## Resultado esperado
 
-- La funcion `populate-vector-store` detecta correctamente todos los documentos ya indexados, sin importar cuantos duplicados residuales existan.
-- La base de datos rechaza cualquier intento de insertar un duplicado, actuando como red de seguridad definitiva.
-- El problema no puede volver a ocurrir ni por bugs de aplicacion ni por ejecuciones concurrentes.
-
+- El newsroom se genera de forma resiliente, reintentando automaticamente ante timeouts
+- El tiempo de ejecucion se reduce un ~50%, cabiendo dentro del limite de Edge Functions
+- Si persisten los timeouts, el sistema reintenta hasta 3 veces en intervalos de 5 minutos
