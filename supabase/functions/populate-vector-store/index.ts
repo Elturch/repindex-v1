@@ -74,7 +74,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
           .from('documents')
           .select('metadata->>rix_run_id')
           .in('metadata->>rix_run_id', batch)
-          .limit(batch.length);
+          .limit(10000);
 
         if (error) {
           console.error(`Error bulk-checking existing RIX docs (batch ${i}):`, error);
@@ -103,7 +103,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
           .select('metadata->>article_url')
           .eq('metadata->>type', 'corporate_news')
           .in('metadata->>article_url', batch)
-          .limit(batch.length);
+          .limit(10000);
 
         if (error) {
           console.error(`Error bulk-checking existing corporate news docs (batch ${i}):`, error);
