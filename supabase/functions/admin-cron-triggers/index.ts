@@ -53,9 +53,9 @@ function isAllowedOrigin(req: Request): boolean {
   return false
 }
 
-type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'repair_invalid_responses' | 'get_latest'
+type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'repair_invalid_responses' | 'auto_generate_newsroom' | 'auto_sanitize' | 'get_latest'
 
-const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'repair_invalid_responses', 'get_latest']
+const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'repair_invalid_responses', 'auto_generate_newsroom', 'auto_sanitize', 'get_latest']
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
