@@ -107,3 +107,6 @@ verify_jwt = false
 
 [functions.fetch-smart-suggestions]
 verify_jwt = false
+
+[functions.cleanup-duplicate-documents]
+verify_jwt = false
