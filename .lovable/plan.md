@@ -1,56 +1,39 @@
 
 
-# Plan: Hacer resiliente la generación del Newsroom
+# Plan: Permitir lanzar `auto_generate_newsroom` desde el proxy
 
 ## Problema
 
-La edge function `generate-news-story` da timeout (HTTP 504) de forma consistente. Ha fallado 3 veces seguidas (20 Feb, 23 Feb x2). La función hace demasiadas operaciones secuenciales:
-- ~20 llamadas a OpenAI Embeddings
-- ~20 búsquedas vectoriales
-- 1 llamada masiva a Gemini (65K tokens output)
-- ~16 upserts a la BD
+La edge function `admin-cron-triggers` tiene una lista cerrada de acciones permitidas (`ALLOWED_ACTIONS`) que no incluye `auto_generate_newsroom` ni `auto_sanitize`. Esto impide:
+1. Que yo (Lovable) pueda insertar triggers directamente
+2. Que el panel de Cron Monitor pueda lanzarlo manualmente
+3. Que cualquier operacion administrativa lo dispare sin acceso directo a la BD
 
-Todo esto excede el limite de ejecucion de las Edge Functions de Supabase (~400s).
+## Solucion
 
-## Solucion: Dos mejoras complementarias
+Agregar las acciones faltantes a la lista `ALLOWED_ACTIONS` en `admin-cron-triggers`.
 
-### 1. Agregar reintento para 504 en el orquestador
+## Cambio tecnico
 
-Actualmente solo reintenta en 503. Agregar 504 a la logica de reintento, ya que ambos son errores transitorios de gateway.
+**Archivo:** `supabase/functions/admin-cron-triggers/index.ts`
 
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts` (lineas 1261-1276)
+Linea 55, cambiar:
 
-Cambio: Donde dice `if (response.status === 503)`, cambiar a `if (response.status === 503 || response.status === 504)`.
+```typescript
+// ANTES
+type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'repair_invalid_responses' | 'get_latest'
 
-### 2. Reducir el tiempo de ejecucion de `generate-news-story`
+const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'repair_invalid_responses', 'get_latest']
+```
 
-La mayor perdida de tiempo esta en `fetchVectorStoreContext`: hace 20+ llamadas individuales a OpenAI Embeddings + 20+ RPCs de busqueda vectorial de forma secuencial. Esto puede tardar 30-60 segundos solo en este paso.
+```typescript
+// DESPUES
+type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'repair_invalid_responses' | 'auto_generate_newsroom' | 'auto_sanitize' | 'get_latest'
 
-**Archivo:** `supabase/functions/generate-news-story/index.ts`
+const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'repair_invalid_responses', 'auto_generate_newsroom', 'auto_sanitize', 'get_latest']
+```
 
-Cambios:
-- Limitar el numero de empresas a buscar en el vector store de ~20 a 10 (las mas relevantes)
-- Paralelizar las llamadas a embeddings y busquedas vectoriales usando `Promise.allSettled` en batches de 5
-- Reducir `maxOutputTokens` de Gemini de 65536 a 32768 (suficiente para 15 historias)
-- Esto deberia reducir el tiempo total de ~400s a ~200s
+## Despues del despliegue
 
-### 3. Mecanismo de auto-reintento con trigger persistente
+Inmediatamente llamare al proxy para insertar el trigger `auto_generate_newsroom` con `attempt: 1` y verificare que el orquestador lo recoge en su siguiente ciclo.
 
-Cuando el orquestador detecte un fallo 504 incluso despues de reintentar, en lugar de marcar como `failed` definitivamente, insertar un nuevo trigger `auto_generate_newsroom` con status `pending` para que el proximo ciclo de 5 minutos lo vuelva a intentar (maximo 3 intentos).
-
-**Archivo:** `supabase/functions/rix-batch-orchestrator/index.ts`
-
-Cambio: Despues del bloque de reintento 503/504, si sigue fallando, verificar cuantos intentos previos ha habido. Si menos de 3, insertar nuevo trigger pending.
-
-## Cambios tecnicos
-
-| Archivo | Cambio |
-|---|---|
-| `supabase/functions/rix-batch-orchestrator/index.ts` | Agregar reintento para 504; auto-reintento con maximo 3 intentos |
-| `supabase/functions/generate-news-story/index.ts` | Reducir empresas en vector search a 10; paralelizar embeddings; reducir maxOutputTokens a 32768 |
-
-## Resultado esperado
-
-- El newsroom se genera de forma resiliente, reintentando automaticamente ante timeouts
-- El tiempo de ejecucion se reduce un ~50%, cabiendo dentro del limite de Edge Functions
-- Si persisten los timeouts, el sistema reintenta hasta 3 veces en intervalos de 5 minutos
