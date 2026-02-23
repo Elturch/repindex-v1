@@ -269,7 +269,7 @@ ${qualitativeContext}
             temperature: 0.8,
             topP: 0.95,
             topK: 40,
-            maxOutputTokens: 65536,
+            maxOutputTokens: 32768,
             responseMimeType: "application/json",
             thinkingConfig: {
               thinkingLevel: "low"
@@ -473,61 +473,66 @@ async function fetchVectorStoreContext(
 ): Promise<string> {
   const contextParts: string[] = [];
   
-  // Get top companies to search for qualitative data
+  // Get top companies to search for qualitative data (limited to 10 most relevant)
   const companiesToSearch = new Set<string>();
   
-  // Add companies from top risers
-  weekData.topRisers?.slice(0, 5).forEach((r: any) => {
+  // Add companies from top risers (top 3)
+  weekData.topRisers?.slice(0, 3).forEach((r: any) => {
     companiesToSearch.add(r.company_name);
   });
   
-  // Add companies from top fallers
-  weekData.topFallers?.slice(0, 5).forEach((r: any) => {
+  // Add companies from top fallers (top 3)
+  weekData.topFallers?.slice(0, 3).forEach((r: any) => {
     companiesToSearch.add(r.company_name);
   });
   
-  // Add companies with high divergence
-  weekData.divergences?.slice(0, 5).forEach((d: any) => {
+  // Add companies with high divergence (top 2)
+  weekData.divergences?.slice(0, 2).forEach((d: any) => {
     companiesToSearch.add(d.company_name);
   });
   
-  // Add IBEX top companies
-  weekData.ibexTop?.slice(0, 5).forEach((c: any) => {
+  // Add IBEX top companies (top 2)
+  weekData.ibexTop?.slice(0, 2).forEach((c: any) => {
     companiesToSearch.add(c.company_name);
   });
 
-  // For each key company, fetch relevant vector documents
-  for (const companyName of companiesToSearch) {
-    try {
-      // Generate embedding for company search
-      const searchQuery = `${companyName} reputación análisis esta semana`;
-      
-      const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAIApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-3-small',
-          input: searchQuery,
-        }),
-      });
+  // Parallelize embedding + vector search in batches of 5
+  const companiesArray = Array.from(companiesToSearch).slice(0, 10);
+  console.log(`[vector-context] Searching ${companiesArray.length} companies in parallel batches`);
+  
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < companiesArray.length; i += BATCH_SIZE) {
+    const batch = companiesArray.slice(i, i + BATCH_SIZE);
+    
+    const batchResults = await Promise.allSettled(
+      batch.map(async (companyName) => {
+        const searchQuery = `${companyName} reputación análisis esta semana`;
+        
+        const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openAIApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'text-embedding-3-small',
+            input: searchQuery,
+          }),
+        });
 
-      if (!embeddingResponse.ok) continue;
+        if (!embeddingResponse.ok) return null;
 
-      const embeddingData = await embeddingResponse.json();
-      const embedding = embeddingData.data[0].embedding;
+        const embeddingData = await embeddingResponse.json();
+        const embedding = embeddingData.data[0].embedding;
 
-      // Search vector store
-      const { data: docs } = await supabase.rpc('match_documents', {
-        query_embedding: embedding,
-        match_count: 3,
-        filter: {}
-      });
+        const { data: docs } = await supabase.rpc('match_documents', {
+          query_embedding: embedding,
+          match_count: 3,
+          filter: {}
+        });
 
-      if (docs?.length) {
-        // Filter for this company and recent data
+        if (!docs?.length) return null;
+
         const relevantDocs = docs.filter((d: any) => 
           d.metadata?.company_name?.toLowerCase().includes(companyName.toLowerCase()) ||
           d.content?.toLowerCase().includes(companyName.toLowerCase())
@@ -536,8 +541,7 @@ async function fetchVectorStoreContext(
         if (relevantDocs.length > 0) {
           const doc = relevantDocs[0];
           const meta = doc.metadata || {};
-          
-          contextParts.push(`
+          return `
 ### ${companyName} (${meta.ticker || 'N/A'})
 **Modelo IA**: ${meta.ai_model || 'N/A'}
 **RIX Score**: ${meta.rix_score || 'N/A'}
@@ -546,11 +550,18 @@ async function fetchVectorStoreContext(
 **Análisis Cualitativo**:
 ${doc.content?.substring(0, 2000) || 'Sin contenido disponible'}
 
----`);
+---`;
         }
+        return null;
+      })
+    );
+
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled' && result.value) {
+        contextParts.push(result.value);
+      } else if (result.status === 'rejected') {
+        console.warn(`[vector-context] Batch item failed:`, result.reason);
       }
-    } catch (err) {
-      console.warn(`Error fetching vector context for ${companyName}:`, err);
     }
   }
 
