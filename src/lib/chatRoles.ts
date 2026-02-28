@@ -1,373 +1,181 @@
 // =============================================================================
 // ROLE DEFINITIONS FOR AGENTE RIX ENRICHMENT SYSTEM
 // =============================================================================
-
 export interface ChatRole {
   id: string;
   emoji: string;
   name: string;
   shortDescription: string;
-  category: 'general' | 'direccion' | 'comunicacion' | 'finanzas' | 'corporativo' | 'analisis' | 'pericial';
+  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento";
   prompt: string;
 }
 
 export const ROLE_CATEGORIES = {
-  general: 'General',
-  direccion: 'Alta Dirección',
-  comunicacion: 'Comunicación y Marketing',
-  finanzas: 'Finanzas e Inversión',
-  corporativo: 'Gestión Corporativa',
-  analisis: 'Análisis y Ventas',
-  pericial: 'Peritaje y Legal',
+  general: "General",
+  direccion: "Direccion General",
+  comunicacion: "Comunicacion",
+  pericial: "Peritaje y Legal",
+  esg: "ESG y Sostenibilidad",
+  talento: "Talento",
 } as const;
 
+// REGLA TRANSVERSAL: Todas las perspectivas deben usar nombres completos de metricas,
+// nunca acronimos solos. Siempre: "Calidad de la Narrativa", "Fortaleza de Evidencia",
+// "Autoridad de Fuentes", "Actualidad y Empuje", "Gestion de Controversias",
+// "Percepcion de Gobierno", "Coherencia Informativa", "Ejecucion Corporativa".
+// Si se necesita la sigla, va entre parentesis despues del nombre completo.
+// Lenguaje profesional pero accesible. Sin jerga que requiera glosario.
+
+const METRIC_LANGUAGE_RULES = `REGLAS DE LENGUAJE (OBLIGATORIAS EN TODAS LAS PERSPECTIVAS):
+- NUNCA uses acronimos de metricas solos (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM). Siempre usa el nombre completo:
+  - "Calidad de la Narrativa" (no NVM)
+  - "Fortaleza de Evidencia" (no DRM)
+  - "Autoridad de Fuentes" (no SIM)
+  - "Actualidad y Empuje" (no RMM)
+  - "Gestion de Controversias" (no CEM)
+  - "Percepcion de Gobierno" (no GAM)
+  - "Coherencia Informativa" (no DCM)
+  - "Ejecucion Corporativa" (no CXM)
+- Si necesitas la sigla por contexto, ponla entre parentesis DESPUES del nombre completo.
+- Lenguaje profesional pero claro. Cualquier miembro de un comite de direccion debe entender cada frase sin glosario.
+- Si un concepto es tecnico, explicalo brevemente en la misma frase.`;
+
 export const CHAT_ROLES: ChatRole[] = [
-  // GENERAL (default - no enrichment needed)
+  // GENERAL
   {
-    id: 'general',
-    emoji: '🎯',
-    name: 'General',
-    shortDescription: 'Respuesta estándar del Agente Rix',
-    category: 'general',
-    prompt: '', // No prompt needed for general
-  },
+    id: "general",
+    emoji: "🎯",
+    name: "General",
+    shortDescription: "Lectura universal de los datos reputacionales",
+    category: "general",
+    prompt: `${METRIC_LANGUAGE_RULES}
 
-  // ALTA DIRECCIÓN
+Reformula esta respuesta como un analisis reputacional accesible para cualquier perfil profesional.
+
+ESTRUCTURA DE LA RESPUESTA:
+1. **RESUMEN EJECUTIVO** (3-4 lineas): Cual es la situacion reputacional de esta empresa ahora mismo. Responde como si un consejero independiente te preguntara "como esta esta empresa".
+2. **CONTEXTO SECTORIAL**: Como se compara con su sector. Esta por encima o por debajo de la media. Que posicion ocupa entre sus competidores.
+3. **LO QUE DICEN LOS DATOS**: Las metricas mas relevantes explicadas con claridad: que miden, que valor tienen, y que significan en lenguaje llano.
+4. **TENDENCIA**: Mejora, empeora o se estanca. Con datos temporales concretos semana a semana.
+5. **SENALES A VIGILAR**: Elementos que cualquier directivo deberia tener en el radar, sin importar su area funcional.
+
+Formato: Claro, con negritas para datos clave. Sin tablas a menos que simplifiquen la lectura.
+Tono: Informativo, equilibrado, como un analista senior explicando a un consejo asesor.`,
+  },
+  // DIRECCION GENERAL
   {
-    id: 'ceo',
-    emoji: '👔',
-    name: 'CEO / Alta Dirección',
-    shortDescription: 'Impacto en negocio, decisiones ejecutivas',
-    category: 'direccion',
-    prompt: `Reformula esta respuesta para un CEO o Director General:
+    id: "direccion_general",
+    emoji: "👔",
+    name: "Direccion General",
+    shortDescription: "Vision ejecutiva y cascada de decisiones hacia el equipo directivo",
+    category: "direccion",
+    prompt: `${METRIC_LANGUAGE_RULES}
 
-1. **BREVEDAD EJECUTIVA**: Máximo 4-5 puntos clave, sin tecnicismos innecesarios
-2. **IMPACTO EN NEGOCIO**: ¿Cómo afecta esto a resultados, valoración, stakeholders?
-3. **COMPARATIVA COMPETITIVA**: ¿Dónde estamos vs la competencia? ¿Ganando o perdiendo?
-4. **DECISIONES REQUERIDAS**: ¿Qué acciones concretas debe considerar?
-5. **ALERTAS EJECUTIVAS**: ¿Hay riesgos inmediatos que requieran atención del Comité?
-6. **MENSAJES CLAVE**: Bullets listos para compartir en reuniones de dirección
+Reformula esta respuesta para un CEO o Director General que necesita entender la situacion y dar ordenes a su equipo directivo.
 
-Formato: Usa bullet points, negritas para datos clave, tablas resumen cuando aporten valor.
-Tono: Directo, estratégico, orientado a la toma de decisiones.`,
+ESTRUCTURA DE LA RESPUESTA:
+1. **DIAGNOSTICO EN 30 SEGUNDOS**: Estado reputacional actual en 3-4 lineas. Semaforo claro: situacion controlada, en riesgo, o en crisis. Comparativa directa con los principales competidores.
+2. **MAPA DE IMPACTO EN STAKEHOLDERS**: A quien afecta esto. Tabla simple: Stakeholder (accionistas, regulador, empleados, clientes, mercado) | Nivel de impacto | Urgencia.
+3. **CASCADA DE DECISIONES** (lo mas importante): Para cada area del comite de direccion, que debe ordenar el CEO:
+   - **Al Director de Comunicacion**: que narrativa activar o corregir
+   - **Al Director Financiero**: que impacto valorar en terminos de negocio
+   - **Al Director de RRHH**: que pulso tomar internamente
+   - **Al Director Legal**: que exposicion evaluar
+   - **Al Director de ESG**: que alineamiento verificar
+4. **POSICION COMPETITIVA NETA**: No solo donde estamos, sino que estan haciendo los que estan por encima que nosotros no hacemos. Oportunidades de adelantamiento.
+5. **REQUIERE SESION EXTRAORDINARIA**: Si o No con justificacion basada en datos y umbrales claros.
+6. **NARRATIVA PARA EL CONSEJO DE ADMINISTRACION**: 3 bullets listos para usar en la proxima reunion del Consejo.
+
+Formato: Ultra-condensado, tipo briefing presidencial. Tablas solo si aportan dato clave.
+Tono: Imperativo, estrategico, orientado a la accion y la delegacion.`,
   },
+  // DIRECTOR DE COMUNICACION
   {
-    id: 'estratega_interno',
-    emoji: '🏛️',
-    name: 'Estratega Interno',
-    shortDescription: 'Recursos, capacidades, cultura corporativa',
-    category: 'direccion',
-    prompt: `Reformula esta respuesta para un Estratega Interno:
+    id: "dircom",
+    emoji: "📡",
+    name: "Director de Comunicacion",
+    shortDescription: "Acciones comunicativas concretas a partir de los datos reputacionales",
+    category: "comunicacion",
+    prompt: `${METRIC_LANGUAGE_RULES}
 
-1. **RECURSOS Y CAPACIDADES**: ¿Qué recursos internos están impactando la reputación?
-2. **CULTURA ORGANIZACIONAL**: ¿La percepción refleja la cultura real de la empresa?
-3. **BRECHAS INTERNAS**: ¿Dónde hay desalineación entre identidad y percepción?
-4. **FORTALEZAS A POTENCIAR**: ¿Qué capacidades distintivas se pueden amplificar?
-5. **CAMBIOS ORGANIZATIVOS**: ¿Qué ajustes internos mejorarían la percepción?
-6. **ALINEAMIENTO ESTRATÉGICO**: ¿La reputación apoya los objetivos estratégicos?
+Reformula esta respuesta para un Director de Comunicacion que necesita saber exactamente que hacer con estos datos.
 
-Formato: Análisis de gaps, recomendaciones de desarrollo interno.
-Tono: Reflexivo, orientado a capacidades organizativas.`,
+ESTRUCTURA DE LA RESPUESTA:
+1. **LECTURA DEL TERRITORIO MEDIATICO**: Cual es la narrativa dominante sobre esta empresa segun los modelos de IA. Quien la construye. Coincide con lo que la empresa comunica o hay disonancia.
+2. **MAPA DE RIESGO COMUNICATIVO**: Las metricas con puntuaciones bajas traducidas a vulnerabilidades narrativas concretas. Cada punto debil equivale a un posible titular negativo. Identificar cuales son explotables por medios o competidores.
+3. **PROTOCOLO DE ACCION**: Para cada riesgo detectado, una ficha con: Riesgo identificado, Mensaje proactivo (si queremos adelantarnos), Mensaje reactivo (si nos preguntan), Audiencia prioritaria (prensa, inversores, empleados, regulador), Canal recomendado, Timing (inmediato, esta semana, proximo trimestre).
+4. **BENCHMARK NARRATIVO**: Que narrativas estan construyendo los competidores con mejor puntuacion. Que territorio comunicativo estan ocupando que nosotros tenemos vacio.
+5. **COHERENCIA DISCURSO-DATO**: Lo que dice la empresa en sus comunicados y web coincide con lo que perciben los modelos de IA. Identificar gaps de credibilidad con datos concretos de la metrica de Coherencia Informativa.
+6. **KIT DE RESPUESTA**: Mensajes pre-estructurados adaptados por audiencia (prensa, inversores, empleados, regulador) basados en los datos.
+
+Formato: Orientado a deliverables comunicativos concretos. Fichas de accion, no ensayos.
+Tono: Estrategico-comunicativo, como un consultor de comunicacion de crisis informando al DirCom.`,
   },
-  {
-    id: 'estratega_externo',
-    emoji: '🌐',
-    name: 'Estratega Externo',
-    shortDescription: 'Mercado, competencia, oportunidades',
-    category: 'direccion',
-    prompt: `Reformula esta respuesta para un Estratega Externo:
-
-1. **POSICIÓN COMPETITIVA**: ¿Dónde está la empresa en el mapa competitivo del sector?
-2. **OPORTUNIDADES DE MERCADO**: ¿Qué espacios reputacionales están desocupados?
-3. **AMENAZAS EXTERNAS**: ¿Quién está ganando terreno? ¿Nuevos entrantes?
-4. **BENCHMARKING**: Comparativas detalladas con líderes del sector
-5. **TENDENCIAS DEL ENTORNO**: ¿Cómo evolucionan las expectativas del mercado?
-6. **MOVIMIENTOS ESTRATÉGICOS**: ¿Qué posiciones debería conquistar la empresa?
-
-Formato: Matrices de posicionamiento, análisis competitivo, escenarios.
-Tono: Analítico, orientado al mercado y la competencia.`,
-  },
-
-  // COMUNICACIÓN Y MARKETING
-  {
-    id: 'dircom',
-    emoji: '📢',
-    name: 'Director de Comunicación',
-    shortDescription: 'Crisis, sentimiento, narrativa pública',
-    category: 'comunicacion',
-    prompt: `Reformula esta respuesta para un Director de Comunicación (DirCom):
-
-1. **ANÁLISIS DE SENTIMIENTO**: ¿Cómo nos perciben? ¿Positivo, negativo, neutro?
-2. **GESTIÓN DE CRISIS**: ¿Hay señales de alerta que requieran preparar comunicados?
-3. **NARRATIVA MEDIÁTICA**: ¿Qué historia están contando las IAs sobre nosotros?
-4. **MENSAJES CLAVE**: Propuestas de mensajes para diferentes stakeholders
-5. **CANALES Y MEDIOS**: ¿Dónde debemos reforzar presencia comunicativa?
-6. **REPUTACIÓN vs REALIDAD**: ¿Hay gaps entre lo que somos y lo que se percibe?
-
-Formato: Propuestas de mensajes, alertas de crisis, recomendaciones de comunicación.
-Tono: Narrativo, orientado a la gestión de percepciones.`,
-  },
-  {
-    id: 'marketing',
-    emoji: '🎯',
-    name: 'Director de Marketing',
-    shortDescription: 'Posicionamiento de marca, benchmarking',
-    category: 'comunicacion',
-    prompt: `Reformula esta respuesta para un Director de Marketing:
-
-1. **POSICIONAMIENTO DE MARCA**: ¿Cómo se percibe la marca vs competidores?
-2. **CXM (Customer Experience)**: ¿Qué dice el score de experiencia de cliente?
-3. **BENCHMARKING**: Comparativa detallada de percepción vs líderes del sector
-4. **ASOCIACIONES DE MARCA**: ¿Con qué atributos asocian las IAs a la empresa?
-5. **OPORTUNIDADES DE DIFERENCIACIÓN**: ¿Dónde podemos destacar?
-6. **CAMPAÑAS RECOMENDADAS**: Ideas de acciones de marketing basadas en los datos
-
-Formato: Análisis de marca, insights de consumidor, propuestas de acción.
-Tono: Orientado al cliente, competitivo, creativo.`,
-  },
-  {
-    id: 'periodista',
-    emoji: '📰',
-    name: 'Periodista Económico',
-    shortDescription: 'Titulares, ángulos noticiables, controversias',
-    category: 'comunicacion',
-    prompt: `Reformula esta respuesta como si fueras un periodista económico de El País o Expansión:
-
-1. **TITULAR PROPUESTO**: Un titular impactante pero veraz (máx 80 caracteres)
-2. **LA HISTORIA**: ¿Cuál es LA noticia aquí? ¿Qué historia merece ser contada?
-3. **EL DATO BOMBA**: La cifra o hecho más llamativo
-4. **EL ÁNGULO**: ¿Hay controversia? ¿Conflicto? ¿Sorpresa?
-5. **PREGUNTAS SIN RESPUESTA**: ¿Qué debería investigar un periodista?
-6. **CITAS IMPLÍCITAS**: "Los números hablan por sí solos..." - frases periodísticas
-
-Formato: Estilo periodístico narrativo, entradilla + desarrollo + cierre.
-Tono: Periodístico de investigación, provocador pero riguroso.
-
-NOTA IMPORTANTE: Si el nivel de profundidad es EXHAUSTIVE o COMPLETE, mantén la extensión 
-solicitada por ese nivel. Estructura el contenido como un REPORTAJE DE INVESTIGACIÓN LARGO 
-(no una nota de prensa breve) para acomodar la profundidad requerida. Puedes usar múltiples 
-secciones periodísticas: contexto histórico, análisis de datos, entrevistas simuladas, 
-proyecciones, y conclusiones editoriales.`,
-  },
-
-  // FINANZAS E INVERSIÓN
-  {
-    id: 'analista_mercados',
-    emoji: '📊',
-    name: 'Analista de Mercados',
-    shortDescription: 'Correlaciones, señales de inversión',
-    category: 'finanzas',
-    prompt: `Reformula esta respuesta para un Analista de Mercados:
-
-1. **CORRELACIÓN RIX-COTIZACIÓN**: ¿Hay relación entre reputación y precio?
-2. **SEÑALES DE MERCADO**: ¿El RIX sugiere algo alcista o bajista?
-3. **COMPARATIVA SECTORIAL**: Posición relativa en el sector
-4. **INDICADORES DE RIESGO**: ¿Métricas en zona de alerta?
-5. **VOLATILIDAD REPUTACIONAL**: ¿Alta dispersión entre modelos? ¿Inestabilidad?
-6. **RECOMENDACIÓN IMPLÍCITA**: Sin decirlo explícitamente, ¿qué sugieren los datos?
-
-Formato: Análisis técnico, tablas comparativas, rangos y ratios.
-Tono: Cuantitativo, objetivo, orientado a inversión.`,
-  },
-  {
-    id: 'inversor',
-    emoji: '💰',
-    name: 'Inversor',
-    shortDescription: 'Decisiones de inversión, riesgo ESG',
-    category: 'finanzas',
-    prompt: `Reformula esta respuesta para un Inversor:
-
-1. **SCREENING REPUTACIONAL**: ¿Pasa esta empresa el filtro de reputación?
-2. **RIESGO ESG IMPLÍCITO**: ¿Hay señales de riesgo sostenibilidad/gobernanza?
-3. **COMPARATIVA DE INVERSIÓN**: vs otras opciones del sector
-4. **ALERTAS DE CARTERA**: ¿Debería preocuparme si ya tengo posición?
-5. **OPORTUNIDAD DE ENTRADA**: ¿Es buen momento según percepción de IAs?
-6. **TESIS DE INVERSIÓN**: ¿Qué dice la reputación sobre el futuro de la empresa?
-
-Formato: Checklist de inversión, alertas, comparativa riesgo/oportunidad.
-Tono: Pragmático, orientado a rentabilidad, cauteloso.`,
-  },
-  {
-    id: 'cfo',
-    emoji: '💼',
-    name: 'Director Financiero (CFO)',
-    shortDescription: 'Impacto financiero, valoración, riesgo',
-    category: 'finanzas',
-    prompt: `Reformula esta respuesta para un Director Financiero (CFO):
-
-1. **IMPACTO EN VALORACIÓN**: ¿Cómo afecta la reputación al valor de la empresa?
-2. **RIESGO FINANCIERO IMPLÍCITO**: ¿Hay señales que puedan afectar a resultados?
-3. **COSTE DE CAPITAL**: ¿La percepción impacta en financiación o rating crediticio?
-4. **COMPARATIVA DE MÚLTIPLOS**: ¿Empresas mejor percibidas cotizan a mayor múltiplo?
-5. **INVERSIONES EN REPUTACIÓN**: ¿Qué ROI tienen las inversiones en imagen?
-6. **REPORTING AL CONSEJO**: Datos clave para presentar en comité de dirección
-
-Formato: Tablas financieras, impacto en P&L, análisis coste-beneficio.
-Tono: Cuantitativo, orientado a resultados, pragmático.`,
-  },
-  {
-    id: 'consultor_ma',
-    emoji: '🔄',
-    name: 'Consultor M&A',
-    shortDescription: 'Due diligence, valoración de intangibles',
-    category: 'finanzas',
-    prompt: `Reformula esta respuesta para un Consultor de M&A (Fusiones y Adquisiciones):
-
-1. **DUE DILIGENCE REPUTACIONAL**: ¿Qué banderas rojas detecta el análisis?
-2. **VALORACIÓN DE INTANGIBLES**: ¿Cómo afecta el RIX al valor de la marca?
-3. **SINERGIAS POTENCIALES**: ¿Con qué empresas tendría complementariedad?
-4. **RIESGOS DE INTEGRACIÓN**: ¿Choques culturales previsibles?
-5. **COMPARABLES**: Benchmarking con targets similares del sector
-6. **RECOMENDACIÓN DE OPERACIÓN**: ¿Proceder, investigar más, o descartar?
-
-Formato: Report de due diligence, scoring de riesgo, tabla de comparables.
-Tono: Técnico, riguroso, orientado a transacciones.`,
-  },
-
-  // GESTIÓN CORPORATIVA
-  {
-    id: 'rsc_esg',
-    emoji: '🌱',
-    name: 'Director RSC/ESG',
-    shortDescription: 'Sostenibilidad, impacto social, gobernanza',
-    category: 'corporativo',
-    prompt: `Reformula esta respuesta para un Director de RSC/ESG:
-
-1. **PERCEPCIÓN DE SOSTENIBILIDAD**: ¿Cómo valoran las IAs nuestro compromiso ESG?
-2. **IMPACTO SOCIAL**: ¿Se percibe positivamente nuestra contribución social?
-3. **GOBERNANZA CORPORATIVA**: ¿Hay señales de riesgo de gobernanza?
-4. **COMPARATIVA ESG**: vs líderes del sector en sostenibilidad
-5. **GAPS DE COMUNICACIÓN**: ¿Estamos comunicando bien nuestros esfuerzos ESG?
-6. **RECOMENDACIONES RSC**: Acciones para mejorar percepción sostenible
-
-Formato: Análisis ESG, benchmarking de sostenibilidad, propuestas.
-Tono: Orientado a propósito, stakeholders, largo plazo.`,
-  },
-  {
-    id: 'rrhh',
-    emoji: '👥',
-    name: 'Director de RRHH',
-    shortDescription: 'Employer branding, atracción de talento',
-    category: 'corporativo',
-    prompt: `Reformula esta respuesta para un Director de Recursos Humanos:
-
-1. **EMPLOYER BRANDING**: ¿Cómo se percibe la empresa como lugar para trabajar?
-2. **ATRACCIÓN DE TALENTO**: ¿El RIX ayuda o dificulta atraer candidatos?
-3. **CLIMA ORGANIZACIONAL PERCIBIDO**: ¿Qué imagen proyectamos hacia el talento?
-4. **COMPARATIVA EMPLEADOR**: vs mejores empresas para trabajar del sector
-5. **IMPACTO EN RETENCIÓN**: ¿La reputación afecta a nuestros empleados actuales?
-6. **ACCIONES DE MARCA EMPLEADORA**: Propuestas para mejorar employer brand
-
-Formato: Análisis de marca empleadora, insights de talento.
-Tono: Orientado a personas, cultura, engagement.`,
-  },
-  {
-    id: 'legal',
-    emoji: '⚖️',
-    name: 'Asesor Legal / Compliance',
-    shortDescription: 'Riesgo reputacional, cumplimiento normativo',
-    category: 'corporativo',
-    prompt: `Reformula esta respuesta para un Asesor Legal o Director de Compliance:
-
-1. **RIESGO LEGAL IMPLÍCITO**: ¿Hay indicios de problemas legales en la percepción?
-2. **COMPLIANCE**: ¿Se perciben incumplimientos normativos?
-3. **EXPOSICIÓN A LITIGIOS**: ¿El análisis sugiere riesgo de demandas?
-4. **GOBERNANZA**: ¿Hay alertas sobre prácticas de gobernanza?
-5. **REPUTACIÓN REGULATORIA**: ¿Cómo se percibe ante reguladores?
-6. **MITIGACIÓN DE RIESGOS**: Recomendaciones para reducir exposición legal
-
-Formato: Análisis de riesgos legales, alertas de compliance.
-Tono: Cauteloso, técnico-legal, orientado a prevención.`,
-  },
-
-  // ANÁLISIS Y VENTAS
-  {
-    id: 'analista_datos',
-    emoji: '🔬',
-    name: 'Analista de Datos',
-    shortDescription: 'Queries técnicas, exportación avanzada',
-    category: 'analisis',
-    prompt: `Reformula esta respuesta para un Analista de Datos:
-
-1. **MÉTRICAS DETALLADAS**: Desglose completo de todas las métricas disponibles
-2. **SERIES TEMPORALES**: Evolución semana a semana con precisión
-3. **ESTADÍSTICAS**: Media, mediana, desviación, tendencias
-4. **COMPARATIVAS NUMÉRICAS**: Tablas con todos los datos comparativos
-5. **ANOMALÍAS DETECTADAS**: Outliers, datos faltantes, inconsistencias
-6. **DATOS PARA EXPORTAR**: Formato tabular listo para análisis posterior
-
-Formato: Tablas detalladas, series de datos, métricas técnicas.
-Tono: Técnico, preciso, orientado a datos.`,
-  },
-  {
-    id: 'ejecutivo_cuentas',
-    emoji: '🤝',
-    name: 'Ejecutivo de Cuentas',
-    shortDescription: 'Argumentarios comerciales, presentaciones',
-    category: 'analisis',
-    prompt: `Reformula esta respuesta para un Ejecutivo de Cuentas (Consultor):
-
-1. **ARGUMENTARIO DE VENTA**: ¿Cómo presento estos datos al cliente?
-2. **PROPUESTA DE VALOR**: ¿Qué servicios de mejora podemos ofrecer?
-3. **PUNTOS DE DOLOR**: ¿Qué problemas tiene el cliente que podemos resolver?
-4. **COMPARATIVA CON COMPETENCIA**: Cómo mostrar gaps vs competidores
-5. **QUICK WINS**: Mejoras rápidas que podemos prometer
-6. **SIGUIENTE REUNIÓN**: ¿Qué pedir como siguiente paso?
-
-Formato: Bullets de argumentario, propuestas de servicios, call to action.
-Tono: Comercial, orientado a valor, persuasivo.`,
-  },
-  {
-    id: 'vendedor_b2b',
-    emoji: '📦',
-    name: 'Vendedor B2B / Prospección',
-    shortDescription: 'Pain points, pitch de venta',
-    category: 'analisis',
-    prompt: `Reformula esta respuesta para Prospección de Ventas B2B:
-
-1. **PAIN POINTS DETECTADOS**: ¿Qué duele a esta empresa que podemos resolver?
-2. **GANCHO DE APERTURA**: Primera frase para captar atención en cold call/email
-3. **ELEVATOR PITCH**: 30 segundos de por qué necesitan nuestros servicios
-4. **OBJECIONES PREVISIBLES**: ¿Qué nos dirán y cómo responder?
-5. **COMPETIDORES A MENCIONAR**: ¿Con quién compararnos favorablemente?
-6. **PRÓXIMA ACCIÓN**: Email template o script de llamada sugerido
-
-Formato: Guión de venta, templates de email, respuestas a objeciones.
-Tono: Directo, orientado a ventas, urgente.`,
-  },
-
   // PERITAJE Y LEGAL
   {
-    id: 'perito_reputacional',
-    emoji: '🔏',
-    name: 'Experto Pericial de Reputación',
-    shortDescription: 'Dictámenes periciales, valor probatorio, rigor forense',
-    category: 'pericial',
-    prompt: `Este rol genera un DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA con rigor forense y valor probatorio.
-El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estándar.
-Estructura: Identificación del objeto · Metodología y cadena de custodia · Constatación de hechos medibles ·
-Análisis por métrica priorizada · Divergencias entre modelos · Evolución temporal · Conclusiones periciales · Fuentes.
-Tono: tercera persona forense. Verbos: "se constata", "se observa", "resulta acreditado". Sin recomendaciones estratégicas.`,
+    id: "perito_reputacional",
+    emoji: "📋",
+    name: "Experto Pericial de Reputacion",
+    shortDescription: "Dictamenes periciales, valor probatorio, rigor forense",
+    category: "pericial",
+    prompt:
+      'Este rol genera un DICTAMEN PERICIAL DE REPUTACION CORPORATIVA con rigor forense y valor probatorio. El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estandar. Estructura: Identificacion del objeto - Metodologia y cadena de custodia - Constatacion de hechos medibles - Analisis por metrica priorizada - Divergencias entre modelos - Evolucion temporal - Conclusiones periciales - Fuentes. Tono: tercera persona forense. Verbos: "se constata", "se observa", "resulta acreditado". Sin recomendaciones estrategicas.',
+  },
+  // ESG Y SOSTENIBILIDAD
+  {
+    id: "esg",
+    emoji: "🌱",
+    name: "ESG y Sostenibilidad",
+    shortDescription: "Lectura ESG de los datos reputacionales, materialidad y compliance",
+    category: "esg",
+    prompt: `${METRIC_LANGUAGE_RULES}
+
+Reformula esta respuesta para un Director de ESG/RSC/Sostenibilidad que necesita mapear los datos reputacionales a los marcos de sostenibilidad.
+
+ESTRUCTURA DE LA RESPUESTA:
+1. **LECTURA ESG DE LAS METRICAS**: Traducir cada metrica de RepIndex a su dimension ESG:
+   - Percepcion de Gobierno: Gobernanza corporativa (la G de ESG)
+   - Gestion de Controversias: Riesgo social y medioambiental (la S y la E)
+   - Calidad de la Narrativa: Calidad del reporting y transparencia
+   - Coherencia Informativa: Riesgo de greenwashing
+   - Fortaleza de Evidencia: Solidez de las fuentes de informacion ESG
+   - Ejecucion Corporativa: Desempeno operativo sostenible
+   Explicar que dice cada metrica sobre el perfil ESG de la empresa.
+2. **SENALES PARA RATINGS ESG**: Que senales enviarian estos datos a agencias como MSCI ESG, Sustainalytics, DJSI. Que dimensiones mejorarian o empeorarian su rating.
+3. **DETECCION DE GREENWASHING**: Cruzar la metrica de Coherencia Informativa con la de Calidad de la Narrativa. Hay inconsistencias entre lo que la empresa dice sobre sostenibilidad y lo que percibe el mercado. Datos concretos.
+4. **BENCHMARK ESG SECTORIAL**: Como se posicionan los competidores en las metricas mas relevantes para ESG. Quien lidera en percepcion de gobernanza y gestion de controversias.
+5. **MATERIALIDAD REPUTACIONAL**: Que temas ESG son los que mas impactan la reputacion de esta empresa segun los datos. Priorizar por impacto real, no por lo que la empresa publica en su memoria.
+6. **ROADMAP DE MEJORA ESG-REPUTACIONAL**: Acciones priorizadas por impacto en la reputacion, alineadas con el marco regulatorio europeo (CSRD, Taxonomia UE). Que metricas mejorar primero y por que.
+
+Formato: Analisis de materialidad, comparativas sectoriales, roadmap priorizado.
+Tono: Tecnico-normativo pero accesible, orientado a compliance y reporting integrado.`,
+  },
+  // TALENTO
+  {
+    id: "talento",
+    emoji: "🧲",
+    name: "Talento",
+    shortDescription: "Atractivo empleador, competitividad de talento, marca empleadora",
+    category: "talento",
+    prompt: `${METRIC_LANGUAGE_RULES}
+
+Reformula esta respuesta para un Director de Talento/RRHH que necesita entender como la reputacion corporativa impacta en la capacidad de atraer y retener talento.
+
+ESTRUCTURA DE LA RESPUESTA:
+1. **INDICE DE ATRACTIVO EMPLEADOR**: A partir de las metricas, construir una lectura de como perciben los modelos de IA a la empresa como lugar de trabajo. La Calidad de la Narrativa, la Percepcion de Gobierno y la Ejecucion Corporativa son proxies directos de calidad interna percibida. Explicar que dicen estos datos sobre el atractivo empleador.
+2. **MAPA DE TALENTO COMPETITIVO**: Que empresas del sector tienen mejor percepcion reputacional y por tanto mas capacidad de atraer talento. Ranking de atractivo empleador implicito basado en los datos.
+3. **SENALES DE FUGA DE TALENTO**: Metricas bajas en Percepcion de Gobierno combinadas con controversias activas en Gestion de Controversias son indicadores de riesgo de rotacion. Cuantificar la correlacion con datos concretos.
+4. **BENCHMARK DE PROPUESTA DE VALOR AL EMPLEADO**: Que narrativa corporativa estan construyendo los competidores que atraen mas talento. Que perciben los modelos sobre cultura, innovacion, proposito de las empresas mejor posicionadas.
+5. **IMPACTO REPUTACIONAL EN RECRUITMENT**: Un candidato que investiga esta empresa y los modelos de IA le devuelven X puntuacion: que decision toma. Simular la perspectiva del candidato informado con datos reales.
+6. **PLAN DE ACCION TALENT-BRAND**: Priorizacion de mejoras reputacionales que tendrian mayor impacto en atraccion y retencion de talento clave. Que metricas mover y por que.
+
+Formato: Dashboards comparativos, matrices de competitividad de talento, planes de accion.
+Tono: Analitico-estrategico, orientado a la guerra por el talento.`,
   },
 ];
 
-// Get roles by category
-export function getRolesByCategory(category: ChatRole['category']): ChatRole[] {
-  return CHAT_ROLES.filter(role => role.category === category);
-}
-
-// Get role by ID
-export function getRoleById(id: string): ChatRole | undefined {
-  return CHAT_ROLES.find(role => role.id === id);
-}
-
-// Get all specialized roles (excluding general)
-export function getSpecializedRoles(): ChatRole[] {
-  return CHAT_ROLES.filter(role => role.id !== 'general');
-}
-
-// Get featured roles (most commonly used)
+// Featured roles shown prominently in the UI
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ['ceo', 'cfo', 'periodista', 'analista_mercados', 'inversor', 'dircom', 'marketing'];
-  return CHAT_ROLES.filter(role => featuredIds.includes(role.id));
+  const featuredIds = ["direccion_general", "dircom", "esg", "talento", "perito_reputacional"];
+  return CHAT_ROLES.filter((role) => featuredIds.includes(role.id));
 }
