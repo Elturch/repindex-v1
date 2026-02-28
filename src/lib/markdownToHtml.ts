@@ -1,6 +1,53 @@
 // Premium Markdown to HTML converter with professional styling
 
 // Premium CSS styles for tables and overall document
+// Emoji result grid styles for aligned emoji+label+value blocks
+export const emojiGridStyles = `
+  .emoji-result-grid {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 6px 12px;
+    margin: 16px 0;
+    padding: 16px;
+    background: #f7f9fa;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+  }
+
+  .emoji-result-row {
+    display: contents;
+  }
+
+  .emoji-result-icon {
+    text-align: center;
+    font-size: 1.1em;
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+    line-height: 1.5;
+  }
+
+  .emoji-result-label {
+    font-weight: 500;
+    color: #0f1419;
+    line-height: 1.5;
+  }
+
+  .emoji-result-value {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #0f1419;
+    line-height: 1.5;
+  }
+
+  @media print {
+    .emoji-result-grid {
+      break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+`;
+
 export const premiumTableStyles = `
   /* Tables - Editorial Styling */
   .table-wrapper {
@@ -415,6 +462,9 @@ export function convertMarkdownToHtml(markdown: string): string {
   html = processOrderedLists(html);
   html = processUnorderedLists(html);
   
+  // Emoji result blocks (before paragraph wrapping)
+  html = processEmojiResultBlocks(html);
+  
   // Wrap remaining text in paragraphs
   html = wrapInParagraphs(html);
   
@@ -581,6 +631,61 @@ function processUnorderedLists(html: string): string {
   }
   
   if (inList) result.push('</ul>');
+  return result.join('\n');
+}
+
+// Detect and convert consecutive emoji-prefixed lines into aligned grid
+function processEmojiResultBlocks(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let emojiBuffer: string[] = [];
+  
+  const emojiLinePattern = /^(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s+(.+)$/u;
+  
+  const flushBuffer = () => {
+    if (emojiBuffer.length >= 2) {
+      let grid = '<div class="emoji-result-grid">';
+      for (const line of emojiBuffer) {
+        const match = line.match(emojiLinePattern);
+        if (match) {
+          const emoji = match[1];
+          const rest = match[2];
+          const colonIdx = rest.indexOf(':');
+          if (colonIdx !== -1) {
+            const label = rest.substring(0, colonIdx).trim();
+            const value = rest.substring(colonIdx + 1).trim();
+            grid += `<div class="emoji-result-row"><span class="emoji-result-icon">${emoji}</span><span class="emoji-result-label">${label}</span><span class="emoji-result-value">${value}</span></div>`;
+          } else {
+            grid += `<div class="emoji-result-row"><span class="emoji-result-icon">${emoji}</span><span class="emoji-result-label">${rest}</span><span class="emoji-result-value"></span></div>`;
+          }
+        }
+      }
+      grid += '</div>';
+      result.push(grid);
+    } else {
+      // Single emoji line — keep as-is
+      result.push(...emojiBuffer);
+    }
+    emojiBuffer = [];
+  };
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip lines that are already HTML tags
+    if (trimmed.startsWith('<') && !trimmed.startsWith('<strong') && !trimmed.startsWith('<em')) {
+      flushBuffer();
+      result.push(line);
+      continue;
+    }
+    if (emojiLinePattern.test(trimmed)) {
+      emojiBuffer.push(trimmed);
+    } else {
+      flushBuffer();
+      result.push(line);
+    }
+  }
+  flushBuffer();
+  
   return result.join('\n');
 }
 
