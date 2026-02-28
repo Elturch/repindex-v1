@@ -1,17 +1,16 @@
 import { useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownMessage, generateExportHtml } from "@/components/ui/markdown-message";
-import { CompanyBulletinViewer } from "./CompanyBulletinViewer";
+
 import { ResponseFeedback } from "./ResponseFeedback";
 import { MethodologyFooter } from "./MethodologyFooter";
 import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, FileText, ExternalLink, Loader2, Theater, ArrowRight, Download } from "lucide-react";
+import { Sparkles, RefreshCw, Loader2, Theater, ArrowRight, Download } from "lucide-react";
 import { Message, useChatContext } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
@@ -44,7 +43,6 @@ export function ChatMessages({
   sessionId,
   languageCode = 'es',
 }: ChatMessagesProps) {
-  const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const vectorStoreStatus = useVectorStoreStatus();
   const tr = getChatTranslations(languageCode);
@@ -233,39 +231,6 @@ export function ChatMessages({
               
               {message.role === 'user' ? (
                 <div className={`whitespace-pre-wrap ${compact ? 'text-xs' : 'text-sm'}`}>{message.content}</div>
-              ) : message.metadata?.type === 'bulletin' ? (
-                compact ? (
-                  // Compact mode: show link to full chat
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-primary">
-                      <FileText className="h-4 w-4" />
-                      <span className="text-xs font-semibold">
-                        Boletín de {message.metadata?.companyName || 'Empresa'}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      Boletín ejecutivo generado correctamente
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full text-xs h-8 gap-2"
-                      onClick={() => navigate('/chat')}
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Ver boletín completo
-                    </Button>
-                  </div>
-                ) : (
-                  // Full mode: show complete bulletin viewer with bibliography
-                  <CompanyBulletinViewer 
-                    content={message.content}
-                    companyName={message.metadata?.companyName}
-                    verifiedSources={message.metadata?.verifiedSources}
-                    periodFrom={message.metadata?.methodology?.periodFrom}
-                    periodTo={message.metadata?.methodology?.periodTo}
-                  />
-                )
               ) : (
                 <div className="relative">
                 <MarkdownMessage 
@@ -378,7 +343,7 @@ export function ChatMessages({
               )}
 
               {/* Download button — bottom-right of assistant bubbles */}
-              {message.role === 'assistant' && !message.isStreaming && message.metadata?.type !== 'bulletin' && (
+              {message.role === 'assistant' && !message.isStreaming && (
                 <div className={`${compact ? 'mt-2 pt-2' : 'mt-3 pt-3'} border-t border-border/30 flex justify-end`}>
                   <Button
                     variant="ghost"
