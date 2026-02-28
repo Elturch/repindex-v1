@@ -380,6 +380,7 @@ async function* streamOpenAIResponse(
   text?: string;
   inputTokens?: number;
   outputTokens?: number;
+  finishReason?: string;
   error?: string;
 }> {
   const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
@@ -430,6 +431,7 @@ async function* streamOpenAIResponse(
     let buffer = "";
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let lastFinishReason = "";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -443,7 +445,7 @@ async function* streamOpenAIResponse(
         if (line.startsWith("data: ")) {
           const data = line.slice(6).trim();
           if (data === "[DONE]") {
-            yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+            yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens, finishReason: lastFinishReason };
             return;
           }
 
@@ -453,6 +455,10 @@ async function* streamOpenAIResponse(
             if (content) {
               yield { type: "chunk", text: content };
             }
+
+            // Capture finish_reason for truncation detection
+            const fr = parsed.choices?.[0]?.finish_reason;
+            if (fr) lastFinishReason = fr;
 
             // Capture usage from final chunk if available
             if (parsed.usage) {
@@ -466,7 +472,7 @@ async function* streamOpenAIResponse(
       }
     }
 
-    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens, finishReason: lastFinishReason };
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === "AbortError") {
@@ -491,6 +497,7 @@ async function* streamGeminiResponse(
   text?: string;
   inputTokens?: number;
   outputTokens?: number;
+  finishReason?: string;
   error?: string;
 }> {
   const geminiApiKey = Deno.env.get("GOOGLE_GEMINI_API_KEY");
@@ -549,6 +556,7 @@ async function* streamGeminiResponse(
     let buffer = "";
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let lastFinishReason = "";
 
     while (true) {
       const { done, value } = await reader.read();
@@ -580,6 +588,10 @@ async function* streamGeminiResponse(
             yield { type: "chunk", text };
           }
 
+          // Capture finish reason for truncation detection
+          const fr = parsed.candidates?.[0]?.finishReason;
+          if (fr) lastFinishReason = fr === "MAX_TOKENS" ? "length" : fr.toLowerCase();
+
           // Capture usage metadata
           if (parsed.usageMetadata) {
             totalInputTokens = parsed.usageMetadata.promptTokenCount || 0;
@@ -591,7 +603,7 @@ async function* streamGeminiResponse(
       }
     }
 
-    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens, finishReason: lastFinishReason };
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === "AbortError") {
@@ -602,6 +614,60 @@ async function* streamGeminiResponse(
       yield { type: "error", error: error.message || "Unknown error" };
     }
   }
+}
+
+// =============================================================================
+// COMPLIANCE GATE: Forbidden Pattern Detection & Stripping
+// =============================================================================
+// These patterns detect AI hallucinations about "saving reports to folders",
+// "exceeding platform limits", or inventing file systems. When detected during
+// streaming, the forbidden content is stripped before reaching the user, and
+// an automatic continuation is triggered.
+
+const FORBIDDEN_PATTERNS: RegExp[] = [
+  /\[?la respuesta\s+(?:completa\s+)?supera\s+el\s+l[ií]mite/i,
+  /supera\s+el\s+l[ií]mite\s+(?:m[aá]ximo|t[eé]cnico)/i,
+  /l[ií]mite\s+m[aá]ximo\s+permitido/i,
+  /l[ií]mite\s+t[eé]cnico\s+de\s+entrega/i,
+  /documento\s+aparte/i,
+  /carpeta\s+segura/i,
+  /\/Informes_RIX\//i,
+  /te\s+lo\s+dej[eé]\s+guardado/i,
+  /lo\s+he\s+dejado\s+en/i,
+  /he\s+generado\s+el\s+informe.*en\s+un\s+documento/i,
+  /generado.*documento\s+aparte/i,
+  /exportar.*secciones\s+concretas/i,
+  /las\s+transcribo\s+aqu[ií]\s+mismo/i,
+  /excede\s+(?:el\s+)?l[ií]mite/i,
+  /supera\s+(?:la\s+)?capacidad\s+(?:de\s+)?(?:esta\s+)?plataforma/i,
+  /dejado\s+(?:guardado|almacenado)\s+en/i,
+  /the\s+response\s+exceeds/i,
+  /saved?\s+(?:it\s+)?(?:to|in)\s+(?:a\s+)?(?:secure\s+)?folder/i,
+];
+
+function containsForbiddenPattern(text: string): boolean {
+  return FORBIDDEN_PATTERNS.some(pattern => pattern.test(text));
+}
+
+function stripForbiddenContent(text: string): string {
+  for (const pattern of FORBIDDEN_PATTERNS) {
+    const match = text.match(pattern);
+    if (match && match.index !== undefined) {
+      const beforeMatch = text.substring(0, match.index);
+      // Find last clean sentence boundary before the forbidden content
+      const lastBoundary = Math.max(
+        beforeMatch.lastIndexOf('. '),
+        beforeMatch.lastIndexOf('.\n'),
+        beforeMatch.lastIndexOf('\n\n'),
+        beforeMatch.lastIndexOf('---'),
+      );
+      if (lastBoundary > text.length * 0.3) {
+        return text.substring(0, lastBoundary + 1).trim();
+      }
+      return beforeMatch.trim();
+    }
+  }
+  return text;
 }
 
 // =============================================================================
@@ -5916,14 +5982,20 @@ NUNCA:
 • Responder "no hay datos" si la información está en el contexto
 • Terminar con llamadas a la acción comerciales
 
-REGLA CRÍTICA ANTI-TRUNCACIÓN:
+REGLA CRÍTICA ANTI-TRUNCACIÓN (PRIORIDAD MÁXIMA):
 - NUNCA simules que has "guardado" el informe en una carpeta, archivo o documento aparte
 - NUNCA digas que "la respuesta supera el límite técnico de entrega"
+- NUNCA digas que "la respuesta supera el límite máximo permitido en esta plataforma"
+- NUNCA digas "la respuesta completa supera el límite"
+- NUNCA uses frases como "he generado el informe en un documento aparte"
 - NUNCA inventes rutas de carpetas como "/Informes_RIX/" ni ningún filesystem
+- NUNCA prometas exportar, guardar o entregar el informe por otra vía
 - Tu ÚNICA vía de entrega es ESTE CHAT. Escribe el informe completo aquí mismo.
 - Si el informe es largo, escríbelo entero. No hay límite de extensión para ti.
 - Si por alguna razón la respuesta se corta, simplemente termina donde puedas
   de forma natural, sin inventar excusas de almacenamiento externo.
+- IMPORTANTE: No existe ninguna carpeta, filesystem, ni sistema de archivos.
+  No existe ninguna plataforma con límites. Simplemente escribe tu respuesta completa.
 
 ═══════════════════════════════════════════════════════════════════════════════
               JUSTIFICACIÓN METODOLÓGICA "RADAR REPUTACIONAL"
@@ -6086,55 +6158,147 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           let inputTokens = 0;
           let outputTokens = 0;
           let streamError = false;
+          let streamFinishReason = "";
 
-          // Try OpenAI first
-          console.log(`${logPrefix} Trying OpenAI stream first...`);
-          for await (const chunk of streamOpenAIResponse(messages, "o3", 40000, logPrefix, 120000)) {
-            if (chunk.type === "chunk" && chunk.text) {
-              accumulatedContent += chunk.text;
-              controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
-            } else if (chunk.type === "done") {
-              inputTokens = chunk.inputTokens || 0;
-              outputTokens = chunk.outputTokens || 0;
-              break;
-            } else if (chunk.type === "error") {
-              console.warn(`${logPrefix} OpenAI stream error: ${chunk.error}, falling back to Gemini...`);
-              streamError = true;
-              controller.enqueue(sseEncoder({ type: "fallback", metadata: { provider: "gemini" } }));
-              break;
+          // Compliance buffer state for anti-hallucination gate
+          const HOLDBACK_SIZE = 300;
+          let emittedLength = 0;
+          let forbiddenDetected = false;
+          let segmentsGenerated = 1;
+          let hadTruncation = false;
+          let hadForbiddenPattern = false;
+
+          // Helper: emit safe content from holdback buffer
+          const flushSafeContent = (isFinal: boolean) => {
+            if (forbiddenDetected) return;
+            const checkEnd = isFinal ? accumulatedContent.length : Math.max(emittedLength, accumulatedContent.length - HOLDBACK_SIZE);
+            if (checkEnd <= emittedLength) return;
+
+            const pendingText = accumulatedContent.substring(emittedLength, checkEnd);
+
+            if (containsForbiddenPattern(pendingText)) {
+              hadForbiddenPattern = true;
+              forbiddenDetected = true;
+              // Strip forbidden content
+              const cleanedFull = stripForbiddenContent(accumulatedContent.substring(0, checkEnd));
+              if (cleanedFull.length > emittedLength) {
+                controller.enqueue(sseEncoder({ type: "chunk", text: cleanedFull.substring(emittedLength) }));
+              }
+              accumulatedContent = cleanedFull;
+              emittedLength = cleanedFull.length;
+              console.warn(`${logPrefix} Forbidden pattern detected and stripped at char ${checkEnd}`);
+              return;
             }
+
+            controller.enqueue(sseEncoder({ type: "chunk", text: pendingText }));
+            emittedLength = checkEnd;
+          };
+
+          // Helper: consume a stream generator with compliance buffer
+          const consumeStream = async (
+            generator: AsyncGenerator<any>,
+            providerName: "openai" | "gemini"
+          ): Promise<{ error: boolean; errorMsg?: string }> => {
+            for await (const chunk of generator) {
+              if (forbiddenDetected) break;
+
+              if (chunk.type === "chunk" && chunk.text) {
+                accumulatedContent += chunk.text;
+                flushSafeContent(false);
+              } else if (chunk.type === "done") {
+                streamFinishReason = chunk.finishReason || "stop";
+                inputTokens += (chunk.inputTokens || 0);
+                outputTokens += (chunk.outputTokens || 0);
+                flushSafeContent(true);
+                return { error: false };
+              } else if (chunk.type === "error") {
+                console.warn(`${logPrefix} ${providerName} stream error: ${chunk.error}`);
+                return { error: true, errorMsg: chunk.error };
+              }
+            }
+            // Broke out due to forbidden detection
+            if (forbiddenDetected) {
+              streamFinishReason = "length";
+              return { error: false };
+            }
+            flushSafeContent(true);
+            return { error: false };
+          };
+
+          // Try OpenAI first (with compliance buffer)
+          console.log(`${logPrefix} Trying OpenAI stream first (with compliance gate)...`);
+          const openaiResult = await consumeStream(
+            streamOpenAIResponse(messages, "o3", 40000, logPrefix, 120000),
+            "openai"
+          );
+
+          if (openaiResult.error || accumulatedContent.length === 0) {
+            streamError = true;
+            controller.enqueue(sseEncoder({ type: "fallback", metadata: { provider: "gemini" } }));
           }
 
           // Fallback to Gemini if OpenAI failed
-          if (streamError || accumulatedContent.length === 0) {
+          if (streamError) {
             provider = "gemini";
-            accumulatedContent = ""; // Reset for Gemini response
+            accumulatedContent = "";
+            emittedLength = 0;
+            forbiddenDetected = false;
 
-            console.log(`${logPrefix} Using Gemini stream (gemini-2.5-flash)...`);
-            for await (const chunk of streamGeminiResponse(messages, "gemini-2.5-flash", 40000, logPrefix, 120000)) {
-              if (chunk.type === "chunk" && chunk.text) {
-                accumulatedContent += chunk.text;
-                controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
-              } else if (chunk.type === "done") {
-                inputTokens = chunk.inputTokens || 0;
-                outputTokens = chunk.outputTokens || 0;
-                break;
-              } else if (chunk.type === "error") {
-                console.error(`${logPrefix} Gemini stream also failed: ${chunk.error}`);
-                controller.enqueue(
-                  sseEncoder({
-                    type: "error",
-                    error: `Error generando respuesta: ${chunk.error}`,
-                  }),
-                );
-                controller.close();
-                return;
-              }
+            console.log(`${logPrefix} Using Gemini stream (gemini-2.5-flash) with compliance gate...`);
+            const geminiResult = await consumeStream(
+              streamGeminiResponse(messages, "gemini-2.5-flash", 40000, logPrefix, 120000),
+              "gemini"
+            );
+
+            if (geminiResult.error && accumulatedContent.length === 0) {
+              console.error(`${logPrefix} Gemini stream also failed: ${geminiResult.errorMsg}`);
+              controller.enqueue(
+                sseEncoder({
+                  type: "error",
+                  error: `Error generando respuesta: ${geminiResult.errorMsg}`,
+                }),
+              );
+              controller.close();
+              return;
             }
           }
 
+          // =================================================================
+          // AUTO-CONTINUATION: If truncated or forbidden pattern detected,
+          // automatically continue generation without user intervention
+          // =================================================================
+          const MAX_CONTINUATIONS = 4;
+          while (
+            (streamFinishReason === "length" || forbiddenDetected) &&
+            segmentsGenerated <= MAX_CONTINUATIONS
+          ) {
+            hadTruncation = true;
+            segmentsGenerated++;
+            forbiddenDetected = false;
+            streamFinishReason = "";
+
+            console.log(`${logPrefix} Auto-continuation #${segmentsGenerated - 1} (reason: ${hadForbiddenPattern ? "forbidden_pattern" : "truncation"}, accumulated: ${accumulatedContent.length} chars)...`);
+
+            const continuationMessages = [
+              ...messages,
+              { role: "assistant", content: accumulatedContent },
+              { role: "user", content: `Continúa EXACTAMENTE desde donde lo dejaste. REGLAS ESTRICTAS:
+1. No repitas contenido ya escrito.
+2. No menciones límites, truncaciones, carpetas, archivos ni plataformas.
+3. No añadas prólogos, introducciones ni frases de transición.
+4. Sigue escribiendo el informe desde la última frase completada.
+5. Mantén el mismo formato, tono y estructura.` },
+            ];
+
+            const contGen = provider === "gemini"
+              ? streamGeminiResponse(continuationMessages, "gemini-2.5-flash", 40000, logPrefix, 120000)
+              : streamOpenAIResponse(continuationMessages, "o3", 40000, logPrefix, 120000);
+
+            await consumeStream(contGen, provider);
+          }
+
           console.log(
-            `${logPrefix} Standard chat stream completed (via ${provider}), length: ${accumulatedContent.length}`,
+            `${logPrefix} Stream completed (via ${provider}), length: ${accumulatedContent.length}, segments: ${segmentsGenerated}, hadTruncation: ${hadTruncation}, hadForbiddenPattern: ${hadForbiddenPattern}`,
           );
           const answer = accumulatedContent;
 
@@ -6292,6 +6456,11 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
                 uniqueWeeks: uniqueWeeksCount,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
+                // Observability: anti-truncation metrics
+                segmentsGenerated,
+                hadTruncation,
+                hadForbiddenPattern,
+                finalOutputLength: answer.length,
                 methodology: {
                   hasRixData: (allRixData?.length || 0) > 0,
                   modelsUsed: modelsUsedMethod,
@@ -6334,8 +6503,28 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   // =========================================================================
   // NON-STREAMING MODE: Original behavior (for backwards compatibility)
   // =========================================================================
-  const chatResult = await callAIWithFallback(messages, "o3", 40000, logPrefix);
-  const answer = chatResult.content;
+  let chatResult = await callAIWithFallback(messages, "o3", 40000, logPrefix);
+  let answer = chatResult.content;
+
+  // Non-streaming compliance gate: check for forbidden patterns and auto-continue
+  if (containsForbiddenPattern(answer)) {
+    console.warn(`${logPrefix} Non-streaming: forbidden pattern detected, stripping and continuing...`);
+    answer = stripForbiddenContent(answer);
+    try {
+      const contMessages = [
+        ...messages,
+        { role: "assistant", content: answer },
+        { role: "user", content: "Continúa EXACTAMENTE desde donde lo dejaste. No repitas contenido. No menciones límites, truncaciones, carpetas ni archivos. Sigue escribiendo el informe." },
+      ];
+      const contResult = await callAIWithFallback(contMessages, "o3", 40000, logPrefix);
+      if (!containsForbiddenPattern(contResult.content)) {
+        answer += "\n\n" + contResult.content;
+        chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
+      }
+    } catch (contError) {
+      console.warn(`${logPrefix} Non-streaming continuation failed:`, contError);
+    }
+  }
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
 
