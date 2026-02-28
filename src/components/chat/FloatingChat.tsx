@@ -128,9 +128,9 @@ export function FloatingChat() {
     trackChatToggle(false);
   };
 
-  const handleSendMessage = (message: string, options?: { bulletinMode?: boolean }) => {
+  const handleSendMessage = (message: string) => {
     trackChatMessage(message.length, hasDynamicContext);
-    sendMessage(message, options);
+    sendMessage(message);
   };
 
   const handleSuggestionClick = (suggestion: string) => {

@@ -13,9 +13,8 @@ import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceEx
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU";
 
-// Helper to get timeout based on depth level and bulletin mode
-function getTimeoutForRequest(depthLevel: string = 'complete', bulletinMode: boolean = false): number {
-  if (bulletinMode) return 300000; // 5 min for bulletins
+// Helper to get timeout based on depth level
+function getTimeoutForRequest(depthLevel: string = 'complete'): number {
   switch (depthLevel) {
     case 'quick': return 120000;     // 2 min
     case 'complete': return 180000;  // 3 min  
@@ -103,7 +102,7 @@ export interface MethodologyMetadata {
 }
 
 export interface MessageMetadata {
-  type?: 'standard' | 'bulletin' | 'enriched';
+  type?: 'standard' | 'enriched';
   companyName?: string;
   documentsFound?: number;
   structuredDataFound?: number;
@@ -141,7 +140,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { bulletinMode?: boolean; depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -349,7 +348,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { bulletinMode?: boolean; depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
+  const sendMessage = useCallback(async (question: string, options?: { depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -394,25 +393,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       depth_level: options?.depthLevel || 'complete',
     });
 
-    // Extract company name from bulletin request if bulletinMode is active
-    let bulletinCompanyName: string | null = null;
-    if (options?.bulletinMode) {
-      const bulletinPatterns = [
-        /(?:bolet[íi]n|informe|reporte)\s+(?:ejecutivo\s+)?(?:de|para|sobre)\s+(.+?)$/i,
-        /(?:de|para|sobre)\s+(.+?)$/i,
-      ];
-      for (const pattern of bulletinPatterns) {
-        const match = question.match(pattern);
-        if (match) {
-          bulletinCompanyName = match[1].trim().replace(/\s+y\s+(?:sus?\s+)?(?:competidores?|competencia)$/i, '');
-          break;
-        }
-      }
-    }
-
     try {
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
-      const timeoutMs = getTimeoutForRequest(options?.depthLevel || 'complete', options?.bulletinMode || false);
+      const timeoutMs = getTimeoutForRequest(options?.depthLevel || 'complete');
       
       console.log('[ChatContext] Sending message with language:', language.code, 'depth:', options?.depthLevel, 'streaming:', useStreaming);
 
@@ -443,8 +426,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
               conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
               sessionId,
               conversationId: convId,
-              bulletinMode: options?.bulletinMode || false,
-              bulletinCompanyName,
               language: language.code,
               languageName: language.nativeName,
               depthLevel: options?.depthLevel || 'complete',
@@ -637,8 +618,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
           sessionId,
           conversationId: convId,
-          bulletinMode: options?.bulletinMode || false,
-          bulletinCompanyName,
           language: language.code,
           languageName: language.nativeName,
           depthLevel: options?.depthLevel || 'complete',
@@ -678,19 +657,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
           conversation_id: convId,
         });
 
-        if (data.metadata?.type === 'bulletin') {
-          toast({
-            title: "Boletín generado",
-            description: currentUserId 
-              ? `Boletín de ${data.metadata.companyName || 'empresa'} guardado en "Mis Documentos"` 
-              : `Boletín de ${data.metadata.companyName || 'empresa'} listo para descargar`,
-          });
-        } else {
-          toast({
-            title: "Respuesta recibida",
-            description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
-          });
-        }
+        toast({
+          title: "Respuesta recibida",
+          description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
+        });
       }
     } catch (error) {
       console.error('Error in chat intelligence:', error);
