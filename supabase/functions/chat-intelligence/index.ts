@@ -619,40 +619,68 @@ async function* streamGeminiResponse(
 // =============================================================================
 // COMPLIANCE GATE: Forbidden Pattern Detection & Stripping
 // =============================================================================
-// These patterns detect AI hallucinations about "saving reports to folders",
-// "exceeding platform limits", or inventing file systems. When detected during
-// streaming, the forbidden content is stripped before reaching the user, and
-// an automatic continuation is triggered.
+// Robust normalization + expanded semantic families for forbidden patterns.
+// Detects AI hallucinations about "saving reports to folders", "exceeding
+// platform limits", or inventing file systems. Applied AFTER NFD normalization.
 
+/**
+ * Normalize text for compliance matching: lowercase, strip diacritics,
+ * collapse whitespace, normalize quotes/symbols.
+ */
+function normalizeForCompliance(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip diacritics
+    .replace(/[""«»]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Patterns are written to match NFD-normalized (accent-free) text
 const FORBIDDEN_PATTERNS: RegExp[] = [
-  /\[?la\s+respuesta\s+(?:completa\s+)?supera\s+el\s+l[ií]mite/i,
-  /supera\s+el\s+l[ií]mite\s+(?:m[aá]ximo|t[eé]cnico)/i,
-  /l[ií]mite\s+m[aá]ximo\s+permitido/i,
-  /l[ií]mite\s+t[eé]cnico\s+de\s+entrega/i,
-  /la\s+respuesta[\s\S]{0,120}?l[ií]mite[\s\S]{0,120}?(?:plataforma|entrega)/i,
-  /documento\s+aparte/i,
-  /carpeta\s+segura/i,
-  /\/Informes_RIX\//i,
-  /informes[_\s-]?rix/i,
-  /te\s+lo\s+dej[eé]\s+guardado/i,
-  /lo\s+he\s+dejado\s+en/i,
-  /he\s+generado\s+el\s+informe.*en\s+un\s+documento/i,
-  /generado.*documento\s+aparte/i,
-  /exportar.*secciones\s+concretas/i,
-  /las\s+transcribo\s+aqu[ií]\s+mismo/i,
-  /excede\s+(?:el\s+)?l[ií]mite/i,
-  /supera\s+(?:la\s+)?capacidad\s+(?:de\s+)?(?:esta\s+)?plataforma/i,
-  /dejado\s+(?:guardado|almacenado)\s+en/i,
-  /the\s+response\s+exceeds/i,
-  /saved?\s+(?:it\s+)?(?:to|in)\s+(?:a\s+)?(?:secure\s+)?folder/i,
+  // === Family: "limite" / "longitud" / "capacidad" / "excede" ===
+  /la\s+respuesta\s+(?:completa\s+)?supera\s+el\s+limite/,
+  /supera\s+el\s+limite\s+(?:maximo|tecnico)/,
+  /limite\s+maximo\s+permitido/,
+  /limite\s+tecnico\s+de\s+entrega/,
+  /la\s+respuesta[\s\S]{0,120}?limite[\s\S]{0,120}?(?:plataforma|entrega)/,
+  /supera\s+(?:el\s+)?(?:maximo\s+de\s+)?longitud/,
+  /longitud\s+maxima\s+(?:permitida|de\s+respuesta)/,
+  /maximo\s+de\s+longitud\s+permitido/,
+  /excede\s+(?:el\s+)?(?:limite|longitud|maximo)/,
+  /supera\s+(?:la\s+)?capacidad\s+(?:de\s+)?(?:esta\s+)?plataforma/,
+  /(?:response|output)\s+(?:exceeds?|too\s+long|limit)/,
+  /the\s+response\s+exceeds/,
+  // === Family: external file/folder/save hallucinations ===
+  /documento\s+aparte/,
+  /carpeta\s+segura/,
+  /\/informes[_\-]?rix\//,
+  /informes[_\s\-]?rix/,
+  /te\s+lo\s+deje\s+guardado/,
+  /lo\s+he\s+dejado\s+en/,
+  /he\s+generado\s+el\s+informe.*en\s+un\s+documento/,
+  /generado.*documento\s+aparte/,
+  /dejado\s+(?:guardado|almacenado)\s+en/,
+  /saved?\s+(?:it\s+)?(?:to|in)\s+(?:a\s+)?(?:secure\s+)?folder/,
+  // === Family: promises of external delivery ===
+  /exportar.*secciones\s+concretas/,
+  /las\s+transcribo\s+aqui\s+mismo/,
+  /(?:adjunto|archivo|fichero)\s+(?:separado|externo|adicional)/,
+  /(?:te\s+envio|te\s+mando|te\s+remito)\s+(?:el\s+)?(?:informe|documento|archivo)/,
+  /puedes?\s+descargar(?:lo)?\s+(?:desde|en)/,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
+  const normalized = normalizeForCompliance(text);
   let earliest = -1;
   for (const pattern of FORBIDDEN_PATTERNS) {
-    const match = pattern.exec(text);
+    const match = pattern.exec(normalized);
     if (match && match.index !== undefined) {
-      earliest = earliest === -1 ? match.index : Math.min(earliest, match.index);
+      // Map back to approximate original position
+      const approxOrigIndex = match.index;
+      earliest = earliest === -1 ? approxOrigIndex : Math.min(earliest, approxOrigIndex);
     }
   }
   return earliest;
@@ -1251,7 +1279,12 @@ La estructura se adapta a lo que el usuario pregunta. Activa solo los bloques
 que aporten valor a la consulta concreta. Si un bloque no aplica, omítelo.
 
 Escala de profundidad según tipo de consulta:
-- Análisis de empresa: máxima profundidad — mínimo 2.500 palabras OBLIGATORIO
+- Análisis de empresa: máxima profundidad — RANGO OBJETIVO: 4.500–5.400 palabras.
+  No escribas menos de 4.500 ni te extiendas más allá de 5.400 sin motivo analítico claro.
+  Prioriza DENSIDAD ANALÍTICA (hechos + interpretación + recomendación) sobre repetición decorativa.
+  Distribución orientativa: Resumen ~600 · Pilar 1 ~1.500 · Pilar 2 ~1.200 · Pilar 3 ~1.000 · Cierre ~200.
+  Termina cuando el análisis esté completo y sea accionable. No alargues por inercia.
+  No dupliques ideas entre pilares — cada sección aporta información nueva.
 - Análisis sectorial: profundidad media — activa bloques relevantes
 - Comparativa entre empresas: estructura enfrentada — tabla vs. tabla
 - Pregunta concreta (un dato, una métrica): respuesta focalizada — solo lo pedido
@@ -2307,12 +2340,27 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return "off_topic";
   }
 
-  // Test limits patterns
+  // Test limits patterns — expanded to catch injection attempts
   if (/ignore.*instructions|ignora.*instrucciones|jailbreak|bypass|prompt injection|actua como|act as if/i.test(q)) {
     return "test_limits";
   }
 
-  // Default: try to process as corporate analysis
+  // Detect "responde literalmente" / "repeat exactly" injection attempts
+  if (/responde\s+(?:literalmente|exactamente|solo\s+con)|repite?\s+(?:exactamente|literalmente|solo)|repeat\s+(?:exactly|only)|respond\s+only\s+with/i.test(q)) {
+    return "test_limits";
+  }
+
+  // Sector/methodology/ranking queries WITHOUT a specific company
+  if (/\b(?:sector|ranking|top\s+\d+|ibex|mercado|metodolog[ií]a|c[oó]mo\s+funciona|qu[eé]\s+es\s+(?:el\s+)?r[ií]x)\b/i.test(q)) {
+    return "corporate_analysis"; // legitimate, will be handled with proper depth
+  }
+
+  // Default: only fall to corporate_analysis if the question has substance
+  // Short prompts (<20 chars) or pure instructions without company context → test_limits
+  if (q.length < 20 && !/\b(?:analiza|compara|ranking|top|sector)\b/i.test(q)) {
+    return "test_limits";
+  }
+
   return "corporate_analysis";
 }
 
@@ -6092,10 +6140,11 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
    → PILAR 3 PROSPECTAR (3 activaciones + 3 tácticas + 3 líneas estratégicas)
    → CIERRE (kit de gestión + fuentes)
 
-3. EXTENSIÓN MÍNIMA: Para análisis de empresa, mínimo 4.500 palabras.
-   El Embudo Narrativo tiene 5 bloques con subbloques detallados.
-   No resumas cuando puedes desarrollar. Cada pilar debe aportar valor
-   ejecutivo con datos concretos, no relleno.
+3. EXTENSIÓN: Para análisis de empresa, rango objetivo 4.500–5.400 palabras.
+   Prioriza densidad analítica sobre volumen. Cada pilar debe aportar valor
+   ejecutivo con datos concretos, no relleno. Termina cuando el análisis
+   esté completo y sea accionable — no alargues por inercia.
+   No dupliques ideas entre pilares.
 
 4. EVIDENCIA CRUZADA: Cada afirmación importante debe indicar cuántas
    IAs la respaldan. Usa las categorías de métricas (fortaleza/mejora/riesgo)
@@ -6120,11 +6169,15 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
 9. IMPORTANTE: Las reglas de estilo (frases cortas, párrafos de 4 líneas)
    se refieren a CLARIDAD, no a BREVEDAD de contenido. Escribe MUCHOS
    párrafos claros y concisos. Más párrafos = más profundidad.
-   Un informe ejecutivo de 4.500 palabras tiene ~45 párrafos de 100 palabras.
 
-10. ENTREGA COMPLETA: Escribe el informe ENTERO en esta respuesta.
-    NUNCA digas que lo has guardado en una carpeta o documento aparte.
-    No existe ningún sistema de archivos. Tu única vía de entrega es este chat.
+10. REGLA CRÍTICA ANTI-TRUNCACIÓN:
+    Escribe el informe ENTERO en esta respuesta.
+    NUNCA digas que lo has guardado en una carpeta, documento aparte ni archivo.
+    NUNCA menciones límites de longitud, límites de plataforma ni truncaciones.
+    NUNCA prometas enviar, exportar o adjuntar el informe por otra vía.
+    No existe ningún sistema de archivos, carpeta /Informes_RIX/ ni plataforma de descarga.
+    Tu ÚNICA vía de entrega es este chat. Si el espacio se acaba, simplemente
+    continúa escribiendo — el sistema encadena automáticamente.
 
 ═══════════════════════════════════════════════════════════════════════════════
                     CONTEXTO CON TODOS LOS DATOS DISPONIBLES
@@ -6298,15 +6351,11 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
 
             console.log(`${logPrefix} Auto-continuation #${segmentsGenerated - 1} (reason: ${hadForbiddenPattern ? "forbidden_pattern" : "truncation"}, accumulated: ${accumulatedContent.length} chars)...`);
 
+            // Compact continuation: only last 500 chars for context, not the full content
+            const lastChunk = accumulatedContent.slice(-500);
             const continuationMessages = [
-              ...messages,
-              { role: "assistant", content: accumulatedContent },
-              { role: "user", content: `Continúa EXACTAMENTE desde donde lo dejaste. REGLAS ESTRICTAS:
-1. No repitas contenido ya escrito.
-2. No menciones límites, truncaciones, carpetas, archivos ni plataformas.
-3. No añadas prólogos, introducciones ni frases de transición.
-4. Sigue escribiendo el informe desde la última frase completada.
-5. Mantén el mismo formato, tono y estructura.` },
+              { role: "system", content: `Eres el Agente Rix continuando un informe de reputación corporativa. Continúa EXACTAMENTE desde el punto donde se interrumpió. REGLAS ESTRICTAS: 1) No repitas contenido. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) No añadas prólogos ni transiciones. 4) Mantén formato, tono y estructura. 5) Si el informe está completo, escribe solo una frase de cierre. Responde en ${languageName}.` },
+              { role: "user", content: `El informe se interrumpió. Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa escribiendo desde ahí. No repitas nada.` },
             ];
 
             const contGen = provider === "gemini"
@@ -6525,24 +6574,40 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   let chatResult = await callAIWithFallback(messages, "o3", 40000, logPrefix);
   let answer = chatResult.content;
 
-  // Non-streaming compliance gate: check for forbidden patterns and auto-continue
-  if (containsForbiddenPattern(answer)) {
-    console.warn(`${logPrefix} Non-streaming: forbidden pattern detected, stripping and continuing...`);
+  // Non-streaming compliance gate: check for forbidden patterns and auto-continue (up to 4 attempts)
+  let nonStreamSegments = 1;
+  let nonStreamHadForbidden = false;
+  const MAX_NS_CONTINUATIONS = 4;
+  
+  while (containsForbiddenPattern(answer) && nonStreamSegments <= MAX_NS_CONTINUATIONS) {
+    nonStreamHadForbidden = true;
+    nonStreamSegments++;
+    console.warn(`${logPrefix} Non-streaming: forbidden pattern detected (attempt ${nonStreamSegments}), stripping and continuing...`);
     answer = stripForbiddenContent(answer);
     try {
+      const lastChunk = answer.slice(-500);
       const contMessages = [
-        ...messages,
-        { role: "assistant", content: answer },
-        { role: "user", content: "Continúa EXACTAMENTE desde donde lo dejaste. No repitas contenido. No menciones límites, truncaciones, carpetas ni archivos. Sigue escribiendo el informe." },
+        { role: "system", content: `Eres el Agente Rix continuando un informe. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.` },
+        { role: "user", content: `El informe se interrumpió. Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa desde ahí. No repitas.` },
       ];
       const contResult = await callAIWithFallback(contMessages, "o3", 40000, logPrefix);
       if (!containsForbiddenPattern(contResult.content)) {
         answer += "\n\n" + contResult.content;
         chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
+        break; // Clean continuation, done
+      } else {
+        // Strip again and loop
+        answer += "\n\n" + stripForbiddenContent(contResult.content);
+        chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
       }
     } catch (contError) {
       console.warn(`${logPrefix} Non-streaming continuation failed:`, contError);
+      break;
     }
+  }
+  
+  if (nonStreamHadForbidden) {
+    console.log(`${logPrefix} Non-streaming compliance: ${nonStreamSegments} segments, final clean: ${!containsForbiddenPattern(answer)}`);
   }
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);

@@ -82,22 +82,49 @@ const LOADING_MESSAGES = [
   "Finalizando análisis...",
 ];
 
+/**
+ * Normalize text for compliance matching (mirrors backend logic):
+ * lowercase, strip diacritics, collapse whitespace, normalize quotes.
+ */
+function normalizeForCompliance(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[""«»]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Patterns match NFD-normalized (accent-free) text — mirrors backend FORBIDDEN_PATTERNS
 const STREAM_FORBIDDEN_PATTERNS: RegExp[] = [
-  /\[?la respuesta\s+(?:completa\s+)?supera\s+el\s+l[ií]mite/i,
-  /l[ií]mite\s+m[aá]ximo\s+permitido/i,
-  /l[ií]mite\s+t[eé]cnico\s+de\s+entrega/i,
-  /documento\s+aparte/i,
-  /carpeta\s+segura/i,
-  /\/Informes_RIX\//i,
-  /informes[_\s-]?rix/i,
-  /te\s+lo\s+dej[eé]\s+guardado/i,
-  /lo\s+he\s+dejado\s+en/i,
+  /la\s+respuesta\s+(?:completa\s+)?supera\s+el\s+limite/,
+  /limite\s+maximo\s+permitido/,
+  /limite\s+tecnico\s+de\s+entrega/,
+  /supera\s+(?:el\s+)?(?:maximo\s+de\s+)?longitud/,
+  /longitud\s+maxima\s+(?:permitida|de\s+respuesta)/,
+  /maximo\s+de\s+longitud\s+permitido/,
+  /excede\s+(?:el\s+)?(?:limite|longitud|maximo)/,
+  /supera\s+(?:la\s+)?capacidad\s+(?:de\s+)?(?:esta\s+)?plataforma/,
+  /(?:response|output)\s+(?:exceeds?|too\s+long|limit)/,
+  /documento\s+aparte/,
+  /carpeta\s+segura/,
+  /\/informes[_\-]?rix\//,
+  /informes[_\s\-]?rix/,
+  /te\s+lo\s+deje\s+guardado/,
+  /lo\s+he\s+dejado\s+en/,
+  /dejado\s+(?:guardado|almacenado)\s+en/,
+  /(?:adjunto|archivo|fichero)\s+(?:separado|externo|adicional)/,
+  /(?:te\s+envio|te\s+mando|te\s+remito)\s+(?:el\s+)?(?:informe|documento|archivo)/,
+  /puedes?\s+descargar(?:lo)?\s+(?:desde|en)/,
 ];
 
 function sanitizeStreamContent(text: string): string {
+  const normalized = normalizeForCompliance(text);
   let earliest = -1;
   for (const pattern of STREAM_FORBIDDEN_PATTERNS) {
-    const match = pattern.exec(text);
+    const match = pattern.exec(normalized);
     if (match && match.index !== undefined) {
       earliest = earliest === -1 ? match.index : Math.min(earliest, match.index);
     }
@@ -105,6 +132,7 @@ function sanitizeStreamContent(text: string): string {
 
   if (earliest === -1) return text;
 
+  // Map normalized index back to original text (approximate — safe to cut early)
   const beforeMatch = text.substring(0, earliest);
   const lastBoundary = Math.max(
     beforeMatch.lastIndexOf('. '),
