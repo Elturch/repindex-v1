@@ -253,7 +253,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             title: title || 'Nueva conversación',
             last_message_at: new Date().toISOString(),
             messages_count: 1,
-            session_depth_level: depthLevel || 'complete',
+            session_depth_level: depthLevel || 'exhaustive',
             session_role_id: roleId || 'general'
           })
           .select('id')
@@ -390,12 +390,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
       content: question,
       user_id: currentUserId,
       conversation_id: convId,
-      depth_level: options?.depthLevel || 'complete',
+      depth_level: options?.depthLevel || sessionDepthLevel,
     });
 
     try {
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
-      const timeoutMs = getTimeoutForRequest(options?.depthLevel || 'complete');
+      const timeoutMs = getTimeoutForRequest(options?.depthLevel || sessionDepthLevel);
       
       console.log('[ChatContext] Sending message with language:', language.code, 'depth:', options?.depthLevel, 'streaming:', useStreaming);
 
@@ -428,7 +428,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               conversationId: convId,
               language: language.code,
               languageName: language.nativeName,
-              depthLevel: options?.depthLevel || 'complete',
+              depthLevel: options?.depthLevel || sessionDepthLevel,
               roleId: role?.id,
               roleName: role ? `${role.emoji} ${role.name}` : undefined,
               rolePrompt: role?.prompt,
@@ -467,7 +467,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 companyName: data.metadata?.companyName,
                 documentsFound: data.metadata?.documentsFound,
                 structuredDataFound: data.metadata?.structuredDataFound,
-                depthLevel: options?.depthLevel || 'complete',
+                depthLevel: options?.depthLevel || sessionDepthLevel,
                 questionCategory: data.metadata?.questionCategory,
                 methodology: data.metadata?.methodology || {
                   hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
@@ -579,7 +579,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 companyName: finalMetadata?.companyName,
                 documentsFound: finalMetadata?.documentsFound,
                 structuredDataFound: finalMetadata?.structuredDataFound,
-                depthLevel: options?.depthLevel || 'complete',
+                depthLevel: options?.depthLevel || sessionDepthLevel,
                 questionCategory: finalMetadata?.questionCategory,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
@@ -620,7 +620,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           conversationId: convId,
           language: language.code,
           languageName: language.nativeName,
-          depthLevel: options?.depthLevel || 'complete',
+          depthLevel: options?.depthLevel || sessionDepthLevel,
           roleId: role?.id,
           roleName: role ? `${role.emoji} ${role.name}` : undefined,
           rolePrompt: role?.prompt,
@@ -639,7 +639,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
             companyName: data.metadata?.companyName,
             documentsFound: data.metadata?.documentsFound,
             structuredDataFound: data.metadata?.structuredDataFound,
-            depthLevel: options?.depthLevel || 'complete',
+            depthLevel: options?.depthLevel || sessionDepthLevel,
             questionCategory: data.metadata?.questionCategory,
           },
         };
