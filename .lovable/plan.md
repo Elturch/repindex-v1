@@ -1,45 +1,28 @@
 
 
-# Eliminar boton de Boletin Ejecutivo y codigo relacionado
+# Restaurar profundidad exhaustiva en todas las respuestas del Agente Rix
 
-## Resumen
+## Problema detectado
 
-Eliminar el boton de generar boletin ejecutivo (icono FileText) del chat input y limpiar todo el codigo asociado en el frontend. El backend (chat-intelligence) se deja intacto para no romper compatibilidad.
+Hay dos fallos que provocan que las respuestas sean escuetas en vez de exhaustivas:
 
-## Archivos afectados
+1. **FloatingChat pierde las opciones**: `handleSendMessage` y `handleSuggestionClick` en `FloatingChat.tsx` llaman a `sendMessage(message)` SIN pasar las opciones de `depthLevel` ni `roleId`. El `ChatInput` las prepara correctamente pero FloatingChat las ignora.
 
-### 1. `src/components/chat/ChatInput.tsx`
-- Eliminar el estado `bulletinModeActive` y `setBulletinModeActive`
-- Eliminar la funcion `handleBulletinClick`
-- Eliminar el `useEffect` que resetea el bulletin mode
-- Eliminar el boton con icono `FileText` y su Tooltip
-- Eliminar `bulletinMode` del objeto `options` en `onSend`
-- Eliminar la referencia a `bulletinModeActive` en el placeholder y className del Textarea
-- Eliminar `bulletinMode` de la interfaz `ChatInputProps.onSend`
-- Eliminar el import de `FileText` de lucide-react
+2. **Fallback a 'complete' en vez de 'exhaustive'**: En `ChatContext.tsx`, la llamada a la edge function usa `options?.depthLevel || 'complete'` en varios sitios (lineas 398, 431, 394). Si no llegan opciones, el sistema cae a `complete` en vez de `exhaustive`, lo que reduce el volumen de datos recuperados (5.000 records vs 10.000).
 
-### 2. `src/components/chat/FloatingChat.tsx`
-- Eliminar `bulletinMode` del tipo de `handleSendMessage`
+## Cambios
 
-### 3. `src/contexts/ChatContext.tsx`
-- Eliminar `bulletinMode` del tipo de `sendMessage`
-- Eliminar la logica de extraccion de `bulletinCompanyName`
-- Eliminar `bulletinMode` y `bulletinCompanyName` del body enviado a la API
-- Eliminar la funcion helper `getTimeoutForRequest` de su logica de bulletin (mantener timeouts por depth)
-- Eliminar el tipo `'bulletin'` de `MessageMetadata.type`
-- Eliminar el toast de "Boletin generado"
+### 1. `src/components/chat/FloatingChat.tsx`
+- Cambiar `handleSendMessage` para aceptar y reenviar las opciones de ChatInput (depthLevel, roleId)
+- Cambiar `handleSuggestionClick` para enviar siempre con depthLevel `exhaustive` y el roleId de sesion
 
-### 4. `src/components/chat/ChatMessages.tsx`
-- Eliminar el import de `CompanyBulletinViewer`
-- Eliminar la rama condicional que renderiza `CompanyBulletinViewer` para mensajes tipo bulletin
+### 2. `src/contexts/ChatContext.tsx`
+- Cambiar el fallback de `options?.depthLevel || 'complete'` a `options?.depthLevel || sessionDepthLevel` (que siempre es `'exhaustive'`) en:
+  - El timeout calculation (linea 398)
+  - El body de la request a la edge function (linea 431)
+  - El insert en BD (linea 394)
+- Esto garantiza que incluso sin opciones explicitas, se use la configuracion de sesion
 
-### 5. `src/components/chat/CompanyBulletinViewer.tsx`
-- Eliminar el archivo completo
+## Resultado esperado
 
-### 6. `src/lib/chatTranslations.ts`
-- Eliminar las propiedades `generateBulletin`, `bulletinPromptPrefix` e `inputPlaceholderBulletin` de la interfaz `ChatTranslations` y de los 10 idiomas
-
-## Lo que NO se toca
-
-- **`supabase/functions/chat-intelligence/index.ts`**: La funcion `handleBulletinRequest` y la logica de `bulletinMode` en el backend se mantienen intactas. Simplemente nunca recibira `bulletinMode: true` desde el frontend, asi que el codigo queda inerte pero no rompe nada.
-
+Todas las consultas, tanto desde la pagina completa `/chat` como desde el widget flotante, enviaran siempre `depthLevel: 'exhaustive'` a la edge function, activando la recuperacion de 10.000 registros RIX y el prompt del Embudo Narrativo con minimo 4.500 palabras.
