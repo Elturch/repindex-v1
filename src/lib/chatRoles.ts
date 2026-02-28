@@ -179,3 +179,8 @@ export function getFeaturedRoles(): ChatRole[] {
   const featuredIds = ["direccion_general", "dircom", "esg", "talento", "perito_reputacional"];
   return CHAT_ROLES.filter((role) => featuredIds.includes(role.id));
 }
+
+// Get a role by its ID
+export function getRoleById(id: string): ChatRole | undefined {
+  return CHAT_ROLES.find((role) => role.id === id);
+}
