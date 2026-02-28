@@ -1115,7 +1115,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
             /* Contenido de mensajes */
             .message {
               margin-bottom: 24px;
-              page-break-inside: avoid;
             }
             
             .message-user {
@@ -1146,6 +1145,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             .message-content {
               white-space: pre-wrap;
               line-height: 1.75;
+              overflow-wrap: anywhere;
+              word-break: break-word;
             }
             
             .message-assistant .message-content h1,
@@ -1232,8 +1233,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 print-color-adjust: exact;
               }
               .report-header { break-after: avoid; }
-              .message { break-inside: avoid; }
+              .message-user { break-inside: avoid; }
+              .message-role { break-after: avoid; }
               .report-footer { break-before: avoid; }
+              table { page-break-inside: auto; }
+              thead { display: table-header-group; }
+              tr { page-break-inside: avoid; }
               
               /* Hide browser extensions, TTS controls, and fixed elements */
               [class*="speech"], [class*="tts"], [class*="read-aloud"], [class*="readaloud"],

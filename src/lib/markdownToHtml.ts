@@ -39,9 +39,93 @@ export const emojiGridStyles = `
     line-height: 1.5;
   }
 
+  /* Numbered emoji metrics table */
+  .emoji-metrics-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 16px 0;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  .emoji-metrics-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid #f0f4f8;
+    color: #0f1419;
+    vertical-align: middle;
+  }
+
+  .emoji-metrics-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .emoji-metrics-table tr:nth-child(even) {
+    background: #f7f9fa;
+  }
+
+  .emoji-metrics-table .metric-idx {
+    width: 32px;
+    text-align: center;
+    font-weight: 700;
+    color: #1a73e8;
+  }
+
+  .emoji-metrics-table .metric-name {
+    font-weight: 500;
+  }
+
+  .emoji-metrics-table .metric-value {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .emoji-metrics-table .metric-status {
+    width: 32px;
+    text-align: center;
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+    font-size: 1.1em;
+  }
+
+  /* Section band for decorative headers */
+  .section-band {
+    margin: 32px 0 20px 0;
+    padding: 14px 24px;
+    background: #f0f4f8;
+    border-top: 2px solid #1a73e8;
+    border-bottom: 2px solid #1a73e8;
+    text-align: center;
+  }
+
+  .section-band-title {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #0f1419;
+    margin: 0;
+    line-height: 1.4;
+  }
+
   @media print {
     .emoji-result-grid {
       break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .emoji-metrics-table {
+      break-inside: avoid;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .section-band {
+      break-inside: avoid;
+      break-after: avoid;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -193,6 +277,8 @@ export const baseExportStyles = `
     line-height: 1.35;
     color: var(--text);
     letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   
   h1 { 
@@ -238,6 +324,8 @@ export const baseExportStyles = `
     margin: 0 0 18px 0;
     text-align: justify;
     hyphens: auto;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   
   strong { 
@@ -288,6 +376,8 @@ export const baseExportStyles = `
     padding-left: 30px;
     position: relative;
     line-height: 1.65;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   
   ul li::before {
@@ -375,13 +465,16 @@ export const baseExportStyles = `
       page-break-after: avoid;
     }
     
+    /* Allow tables to span pages but protect rows */
     table {
-      page-break-inside: avoid;
+      page-break-inside: auto;
     }
     
     table, thead, tbody, tr, th, td {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     
     thead {
@@ -462,8 +555,14 @@ export function convertMarkdownToHtml(markdown: string): string {
   html = processOrderedLists(html);
   html = processUnorderedLists(html);
   
+  // Decorative section headers (════ TITLE ════)
+  html = processDecorativeSectionHeaders(html);
+  
   // Emoji result blocks (before paragraph wrapping)
   html = processEmojiResultBlocks(html);
+  
+  // Numbered metric lines with trailing emojis
+  html = processNumberedMetricBlocks(html);
   
   // Wrap remaining text in paragraphs
   html = wrapInParagraphs(html);
@@ -538,7 +637,6 @@ function buildTableHtml(rows: string[]): string {
       const cells = parseTableCells(row);
       html += '<tr>';
       for (const cell of cells) {
-        // Process emoji in cell content
         const processedCell = processEmojis(cell);
         html += `<th>${processedCell}</th>`;
       }
@@ -554,7 +652,6 @@ function buildTableHtml(rows: string[]): string {
       const cells = parseTableCells(row);
       html += '<tr>';
       for (const cell of cells) {
-        // Process emoji in cell content
         const processedCell = processEmojis(cell);
         html += `<td>${processedCell}</td>`;
       }
@@ -569,7 +666,6 @@ function buildTableHtml(rows: string[]): string {
 
 // Process emojis to ensure proper rendering
 function processEmojis(text: string): string {
-  // Emoji unicode ranges pattern
   const emojiPattern = /(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu;
   return text.replace(emojiPattern, '<span class="emoji">$1</span>');
 }
@@ -634,6 +730,49 @@ function processUnorderedLists(html: string): string {
   return result.join('\n');
 }
 
+// Detect decorative section headers: line of repeated chars, title, line of repeated chars
+function processDecorativeSectionHeaders(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  // Pattern for decorative separator lines (═, =, ─, -, *, ~) repeated 4+ times
+  const separatorPattern = /^[═=─\-\*~☰▬■□▪▫●○◆◇►◄▲▼]{4,}\s*$/;
+  
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    
+    // Check for 3-line pattern: separator / title / separator
+    if (separatorPattern.test(trimmed) && i + 2 < lines.length) {
+      const titleLine = lines[i + 1].trim();
+      const bottomLine = lines[i + 2].trim();
+      
+      // Title must be non-empty text (not another separator, not HTML)
+      if (
+        titleLine.length > 0 &&
+        !separatorPattern.test(titleLine) &&
+        !titleLine.startsWith('<') &&
+        separatorPattern.test(bottomLine)
+      ) {
+        result.push(`<div class="section-band"><p class="section-band-title">${processEmojis(titleLine)}</p></div>`);
+        i += 3;
+        continue;
+      }
+    }
+    
+    // Also convert standalone separator lines to <hr> to avoid raw character overflow
+    if (separatorPattern.test(trimmed) && trimmed.length >= 6) {
+      result.push('<hr>');
+      i++;
+      continue;
+    }
+    
+    result.push(lines[i]);
+    i++;
+  }
+  
+  return result.join('\n');
+}
+
 // Detect and convert consecutive emoji-prefixed lines into aligned grid
 function processEmojiResultBlocks(html: string): string {
   const lines = html.split('\n');
@@ -650,10 +789,14 @@ function processEmojiResultBlocks(html: string): string {
         if (match) {
           const emoji = match[1];
           const rest = match[2];
-          const colonIdx = rest.indexOf(':');
+          // Try colon separator first, then em-dash
+          let colonIdx = rest.indexOf(':');
+          if (colonIdx === -1) colonIdx = rest.indexOf('—');
+          if (colonIdx === -1) colonIdx = rest.indexOf(' - ');
           if (colonIdx !== -1) {
+            const sep = rest[colonIdx] === ' ' ? colonIdx + 3 : colonIdx + 1;
             const label = rest.substring(0, colonIdx).trim();
-            const value = rest.substring(colonIdx + 1).trim();
+            const value = rest.substring(sep).trim();
             grid += `<div class="emoji-result-row"><span class="emoji-result-icon">${emoji}</span><span class="emoji-result-label">${label}</span><span class="emoji-result-value">${value}</span></div>`;
           } else {
             grid += `<div class="emoji-result-row"><span class="emoji-result-icon">${emoji}</span><span class="emoji-result-label">${rest}</span><span class="emoji-result-value"></span></div>`;
@@ -663,7 +806,6 @@ function processEmojiResultBlocks(html: string): string {
       grid += '</div>';
       result.push(grid);
     } else {
-      // Single emoji line — keep as-is
       result.push(...emojiBuffer);
     }
     emojiBuffer = [];
@@ -671,7 +813,6 @@ function processEmojiResultBlocks(html: string): string {
   
   for (const line of lines) {
     const trimmed = line.trim();
-    // Skip lines that are already HTML tags
     if (trimmed.startsWith('<') && !trimmed.startsWith('<strong') && !trimmed.startsWith('<em')) {
       flushBuffer();
       result.push(line);
@@ -689,12 +830,98 @@ function processEmojiResultBlocks(html: string): string {
   return result.join('\n');
 }
 
+// Detect numbered metric lines with trailing emoji: "1. Metric Name — 61 pts 🟡"
+function processNumberedMetricBlocks(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let metricBuffer: { idx: string; name: string; value: string; emoji: string }[] = [];
+  
+  // Pattern: inside <li>...</li> or raw numbered line with trailing emoji
+  // Matches: "Metric Name — 61 pts 🟡" or "Metric Name: 78.2 ✅"
+  const metricInLiPattern = /^<li>(.+?)\s*[—\-:]\s*(.+?)\s*(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*<\/li>$/u;
+  const rawNumberedPattern = /^(\d+)\.\s+(.+?)\s*[—\-:]\s*(.+?)\s*(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*$/u;
+  
+  const flushMetrics = () => {
+    if (metricBuffer.length >= 2) {
+      let table = '<table class="emoji-metrics-table">';
+      for (const m of metricBuffer) {
+        table += `<tr><td class="metric-idx">${m.idx}</td><td class="metric-name">${m.name}</td><td class="metric-value">${m.value}</td><td class="metric-status">${m.emoji}</td></tr>`;
+      }
+      table += '</table>';
+      result.push(table);
+    } else {
+      // Re-emit original lines
+      for (const m of metricBuffer) {
+        result.push(`<li>${m.name} — ${m.value} ${m.emoji}</li>`);
+      }
+    }
+    metricBuffer = [];
+  };
+  
+  let insideOl = false;
+  let olCounter = 0;
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Track <ol> context
+    if (trimmed === '<ol>') {
+      insideOl = true;
+      olCounter = 0;
+      result.push(line);
+      continue;
+    }
+    if (trimmed === '</ol>') {
+      flushMetrics();
+      insideOl = false;
+      olCounter = 0;
+      result.push(line);
+      continue;
+    }
+    
+    if (insideOl) {
+      const liMatch = trimmed.match(metricInLiPattern);
+      if (liMatch) {
+        olCounter++;
+        metricBuffer.push({
+          idx: String(olCounter),
+          name: liMatch[1].trim(),
+          value: liMatch[2].trim(),
+          emoji: liMatch[3],
+        });
+        continue;
+      } else {
+        flushMetrics();
+        result.push(line);
+        continue;
+      }
+    }
+    
+    // Raw numbered lines outside <ol>
+    const rawMatch = trimmed.match(rawNumberedPattern);
+    if (rawMatch) {
+      metricBuffer.push({
+        idx: rawMatch[1],
+        name: rawMatch[2].trim(),
+        value: rawMatch[3].trim(),
+        emoji: rawMatch[4],
+      });
+      continue;
+    }
+    
+    flushMetrics();
+    result.push(line);
+  }
+  flushMetrics();
+  
+  return result.join('\n');
+}
+
 function wrapInParagraphs(html: string): string {
   const lines = html.split('\n');
   const result: string[] = [];
   let paragraphBuffer = '';
   
-  // Extended list of block-level tags and their closings
   const blockTags = [
     '<h1', '<h2', '<h3', '<h4', '<h5', '<h6',
     '</h1', '</h2', '</h3', '</h4', '</h5', '</h6',
@@ -716,28 +943,22 @@ function wrapInParagraphs(html: string): string {
   
   for (const line of lines) {
     const trimmed = line.trim();
-    
-    // Check if line is a block element or empty
     const isBlock = blockTags.some(tag => trimmed.toLowerCase().startsWith(tag)) || trimmed === '';
     
     if (isBlock) {
-      // Flush paragraph buffer before adding block element
       if (paragraphBuffer) {
         result.push(`<p>${paragraphBuffer}</p>`);
         paragraphBuffer = '';
       }
       if (trimmed) result.push(line);
     } else {
-      // Accumulate text for paragraph
       paragraphBuffer += (paragraphBuffer ? ' ' : '') + trimmed;
     }
   }
   
-  // Flush any remaining paragraph content
   if (paragraphBuffer) {
     result.push(`<p>${paragraphBuffer}</p>`);
   }
   
-  // Clean up empty paragraphs
   return result.join('\n').replace(/<p>\s*<\/p>/g, '');
 }
