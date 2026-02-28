@@ -1,80 +1,137 @@
 
+Objetivo de esta iteración
+- Dejar la exportación HTML/PDF “a prueba de cortes”: sin bloques truncados, sin cabeceras decorativas rotas, y con resultados de métricas con emojis tabulados de forma consistente y elegante.
+- Aplicar los mismos cambios a ambas rutas de exportación (conversación completa y respuesta individual) para que no vuelva a haber inconsistencias.
 
-# Tabulación y alineación de resultados con emojis en PDFs
+Diagnóstico técnico confirmado (sobre código y datos reales)
+1) El recorte de informes se explica por reglas de impresión demasiado rígidas
+- En `src/contexts/ChatContext.tsx` cada `.message` tiene `page-break-inside: avoid` / `break-inside: avoid`.
+- Cuando un bloque de asistente es muy largo (informes de 4.500+ palabras), el motor de impresión intenta no partirlo y termina cortando/rompiendo paginación.
+- También hay reglas de tabla con `page-break-inside: avoid` que pueden causar clipping en tablas largas.
 
-## Problema
+2) Las “cabeceras entre líneas dobles” no se parsean como estructura, quedan como texto crudo
+- En contenido real aparecen patrones como:
+  - `════════════════════`
+  - `RESUMEN EJECUTIVO`
+  - `════════════════════`
+- `convertMarkdownToHtml` no tiene parser para estas bandas; pasan a párrafo, se pegan con texto adyacente y se desordenan (especialmente en print).
 
-Cuando el agente genera líneas de resultados con emojis (ej. `✅ NVM: 78.2`, `🔴 CEM: 34.1`, `🟢 Gobierno: Sólido`), estas aparecen como párrafos sueltos o listas normales en el HTML exportado, sin alineación visual. Los emojis se quiebran, los valores no cuadran y el resultado pierde la presentación ejecutiva esperada.
+3) La tabulación de resultados con emojis cubre pocos casos
+- El parser actual (`processEmojiResultBlocks`) solo detecta líneas que empiezan por emoji.
+- En informes reales abundan líneas tipo:
+  - `1. Calidad de la Narrativa — 61 pts 🟡`
+- Ese formato no se convierte a grid/tabla, por eso siguen saliendo “sueltas”.
 
-## Solución
+4) Hay dos motores de exportación distintos y desalineados
+- `src/contexts/ChatContext.tsx` usa `src/lib/markdownToHtml.ts`.
+- `src/components/ui/markdown-message.tsx` tiene su propio convertidor interno (duplicado), sin todas las mejoras recientes (p. ej., grids emoji).
+- Resultado: dependiendo de dónde exportes, el PDF sale distinto.
 
-Detectar automáticamente bloques de líneas consecutivas con emoji al inicio y convertirlos en una cuadrícula CSS alineada, con el emoji, el label y el valor cada uno en su columna.
+Plan de implementación
 
-## Cambios
+Fase 1 — Blindaje de paginación para que no se corte nada
+Archivos:
+- `src/contexts/ChatContext.tsx`
+- `src/lib/markdownToHtml.ts`
+- `src/components/ui/markdown-message.tsx`
 
-### 1. `src/lib/markdownToHtml.ts` -- Detección y conversión de bloques emoji
+Cambios:
+1.1 Relajar bloqueos de salto de página en contenedores grandes
+- Quitar `break-inside/page-break-inside: avoid` de wrappers de mensaje completos.
+- Mantener `avoid` solo en elementos pequeños que sí deben ir juntos (chips, cards cortas, cabeceras locales, filas concretas).
 
-Añadir una función `processEmojiResultBlocks` que se ejecute antes de `wrapInParagraphs`:
+1.2 Reglas de impresión robustas para contenido largo
+- Definir explícitamente:
+  - `overflow-wrap: anywhere;`
+  - `word-break: break-word;`
+  - en `p`, headings, celdas de tabla y bloques decorativos.
+- Evita cortes visuales por líneas largas sin espacios (especialmente separadores Unicode).
 
-- Detectar secuencias de 2+ líneas consecutivas que empiezan con emoji (unicode Emoji_Presentation o Extended_Pictographic).
-- Cada línea se parsea en: **emoji** | **label** (texto antes de `:`) | **valor** (texto después de `:`).
-- Se genera un `<div class="emoji-result-grid">` con cada fila como `<div class="emoji-result-row">`.
-- Si no hay `:` separador, la línea entera va como label (sin columna de valor).
+1.3 Tablas imprimibles multipágina
+- Cambiar estrategia de tablas largas:
+  - permitir `page-break-inside: auto` en tabla global,
+  - mantener integridad por fila (`tr { break-inside: avoid; }`),
+  - conservar `thead { display: table-header-group; }`.
 
-### 2. `src/lib/markdownToHtml.ts` -- CSS para la cuadrícula emoji
+Fase 2 — Parseo estructural de cabeceras decorativas con línea superior/inferior
+Archivo:
+- `src/lib/markdownToHtml.ts`
 
-Añadir `emojiGridStyles` al export de estilos:
+Cambios:
+2.1 Nuevo parser previo a `wrapInParagraphs`
+- Añadir `processDecorativeSectionHeaders` para detectar bloques:
+  - línea de separación (repetición de `═`, `=`, `-`, `─`, etc.),
+  - título intermedio,
+  - misma línea de separación debajo.
+- Transformarlo a HTML semántico (ej. `<div class="section-band">...</div>` o heading dedicado).
 
-```text
-.emoji-result-grid
-  - display: grid
-  - grid-template-columns: 28px 1fr auto
-  - gap: 6px 12px
-  - margin: 16px 0
-  - padding: 16px
-  - background: #f7f9fa
-  - border: 1px solid #e5e7eb
-  - border-radius: 8px
+2.2 Estilo editorial sin riesgo de corte
+- CSS nuevo para `section-band`:
+  - doble línea controlada por bordes (no texto de caracteres repetidos),
+  - título centrado y con line-height seguro,
+  - `break-inside: avoid` solo para esa banda.
+- Resultado: mismo look ejecutivo, sin texto recortado.
 
-.emoji-result-row
-  - display: contents (para que cada hijo ocupe su columna del grid)
+Fase 3 — Tabulación real de resultados con emojis (incluyendo métricas numeradas)
+Archivo:
+- `src/lib/markdownToHtml.ts`
 
-.emoji-result-icon
-  - text-align: center
-  - font-size: 1.1em
+Cambios:
+3.1 Ampliar detección de bloques de resultados
+- Mantener soporte actual para líneas que empiezan por emoji.
+- Añadir soporte para líneas de métrica numerada con emoji al final:
+  - patrón tipo `N. Nombre métrica — 61 pts 🟡`.
+- Parsear en columnas estables: índice, métrica, valor, estado (emoji).
 
-.emoji-result-label
-  - font-weight: 500
-  - color: #0f1419
+3.2 Render a tabla/grid profesional
+- Crear estructura `emoji-metrics-table` (o grid equivalente) con:
+  - alineación numérica tabular,
+  - ancho fijo para estado emoji,
+  - columnas consistentes en pantalla y print.
 
-.emoji-result-value
-  - text-align: right
-  - font-weight: 600
-  - font-variant-numeric: tabular-nums
-  - color: #0f1419
-```
+3.3 Compatibilidad con variaciones reales
+- Soportar separadores `—`, `-`, `:` y unidades `pts`, `puntos`.
+- Tolerar espacios dobles y acentos sin romper parseo.
 
-### 3. `src/contexts/ChatContext.tsx` -- Incluir los nuevos estilos en el HTML de exportación
+Fase 4 — Unificación de motores de exportación (el cambio más importante para estabilidad)
+Archivo clave:
+- `src/components/ui/markdown-message.tsx`
 
-Importar `emojiGridStyles` desde `markdownToHtml.ts` y añadirlo dentro del bloque `<style>` del documento HTML exportado, junto a `premiumTableStyles` y `technicalSheetStyles`.
+Cambios:
+4.1 Eliminar deriva por duplicación
+- Sustituir el convertidor local duplicado por el convertidor compartido de `src/lib/markdownToHtml.ts`.
+- Importar estilos compartidos (tablas, emoji grids, nuevas section bands) en lugar de mantener CSS paralelo incompatible.
 
-### 4. `src/lib/markdownToHtml.ts` -- Estilos de impresión
+4.2 Igualar output entre “Descargar informe” y “Descargar respuesta”
+- Asegurar que ambos caminos consumen el mismo parser + mismas reglas print.
+- Esto evita que una corrección funcione en `/chat` pero falle en descarga individual.
 
-Añadir reglas `@media print` para `.emoji-result-grid`:
-- `break-inside: avoid`
-- Mantener colores con `-webkit-print-color-adjust: exact`
+Fase 5 — Validación con casos reales de producción (los que ya fallan)
+Validaciones obligatorias:
+1) Informe largo (4.500+ palabras) con varios bloques:
+- Verificar que no hay truncado de texto ni “cortes secos”.
 
-## Lógica de detección
+2) Cabeceras decorativas:
+- Caso `════════ / TÍTULO / ════════` debe renderizarse limpio, sin texto cortado.
 
-Una línea se considera "emoji result" si:
-1. Empieza con un carácter emoji (tras trim).
-2. El resto tiene contenido textual (no es solo emoji).
+3) Bloques de métricas con emojis:
+- Líneas tipo `1. ... — 61 pts 🟡` deben verse tabuladas y alineadas.
 
-Un bloque se forma con 2+ líneas consecutivas que cumplen este criterio. Las líneas sueltas con emoji siguen tratándose como párrafos normales (no se fuerza cuadrícula para una sola línea).
+4) Exportación por ambas rutas:
+- Conversación completa (`ChatContext.downloadAsHtml`)
+- Respuesta individual (`MarkdownMessage.generateExportHtml`)
 
-## Impacto
+Criterios de aceptación
+- No hay cortes en PDFs/print de informes extensos.
+- Las cabeceras “entre líneas” quedan limpias y uniformes (sin desbordes).
+- Los resultados con emojis aparecen en formato tabulado, no como texto suelto.
+- La salida visual es consistente en todas las opciones de exportación.
+- Se mantiene la estética editorial definida por el proyecto (DM Sans, paleta corporativa, jerarquía ejecutiva).
 
-- 2 archivos modificados: `src/lib/markdownToHtml.ts`, `src/contexts/ChatContext.tsx`
-- Los informes PDF/HTML existentes se benefician automáticamente sin cambio en el backend
-- Compatible con todos los emojis que ya usa el agente (checkmarks, círculos de color, estrellas, flechas, etc.)
-
+Riesgos y mitigación
+- Riesgo: sobre-detección de separadores y convertir texto que no toca.
+  - Mitigación: exigir patrón de 3 líneas (línea+título+línea) con umbral mínimo de longitud.
+- Riesgo: tablas extremadamente largas en print.
+  - Mitigación: permitir cortes por tabla completa pero proteger filas y repetir encabezado.
+- Riesgo: regresión visual por retirar reglas `avoid`.
+  - Mitigación: mover `avoid` a bloques pequeños/clave en lugar de contenedores gigantes.
