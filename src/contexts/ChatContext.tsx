@@ -928,15 +928,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Informe RepIndex - ${dateForTitle}</title>
+          <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
           <style>
             :root {
-              --primary: #3b82f6;
-              --primary-dark: #1e40af;
-              --primary-light: #60a5fa;
-              --text: #1f2937;
-              --text-light: #6b7280;
+              --primary: #1a73e8;
+              --primary-dark: #1a3a5c;
+              --text: #0f1419;
+              --text-light: #536471;
+              --text-muted: #8899a6;
               --bg: #ffffff;
-              --bg-alt: #f8fafc;
+              --bg-alt: #f7f9fa;
               --border: #e5e7eb;
             }
             
@@ -948,41 +949,25 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }
             
             body {
-              font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               max-width: 900px;
               margin: 0 auto;
               padding: 40px 24px;
-              line-height: 1.7;
+              line-height: 1.75;
               color: var(--text);
               background: var(--bg);
-              font-size: 14px;
+              font-size: 14.5px;
               -webkit-font-smoothing: antialiased;
             }
             
-            /* Header corporativo premium */
+            /* Header corporativo editorial */
             .report-header {
-              background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-              color: white;
+              background: #f0f4f8;
+              color: #0f1419;
               padding: 44px 40px;
-              border-radius: 18px;
+              border-radius: 12px;
               margin-bottom: 40px;
-              position: relative;
-              overflow: hidden;
-              box-shadow: 0 20px 60px rgba(15, 23, 42, 0.4), 0 8px 24px rgba(0, 0, 0, 0.12);
-              border: 1px solid rgba(255,255,255,0.08);
-            }
-            
-            .report-header::before {
-              content: '';
-              position: absolute;
-              top: 0;
-              left: 0;
-              right: 0;
-              bottom: 0;
-              background: 
-                radial-gradient(ellipse at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
-                radial-gradient(ellipse at 90% 80%, rgba(99, 102, 241, 0.12) 0%, transparent 50%);
-              pointer-events: none;
+              border: 1px solid #e5e7eb;
             }
             
             .report-header .header-top {
@@ -990,38 +975,37 @@ export function ChatProvider({ children }: ChatProviderProps) {
               justify-content: space-between;
               align-items: flex-start;
               margin-bottom: 24px;
-              position: relative;
             }
             
             .report-header .logo-section {
-              position: relative;
             }
             
             .report-header .logo {
-              font-size: 32px;
-              font-weight: 800;
+              font-size: 28px;
+              font-weight: 700;
+              color: #0f1419;
               letter-spacing: -0.02em;
               margin-bottom: 4px;
-              position: relative;
             }
             
             .report-header .logo span {
-              color: #60a5fa;
+              color: #8899a6;
             }
             
             .report-header .company-tagline {
-              font-size: 10px;
+              font-size: 11px;
               text-transform: uppercase;
               letter-spacing: 2px;
-              opacity: 0.7;
+              color: #8899a6;
               font-weight: 500;
             }
             
             .report-header .header-badge {
-              background: rgba(59, 130, 246, 0.2);
-              border: 1px solid rgba(255,255,255,0.15);
+              background: transparent;
+              border: 1px solid #1a73e8;
+              color: #1a73e8;
               padding: 6px 14px;
-              border-radius: 20px;
+              border-radius: 4px;
               font-size: 10px;
               font-weight: 600;
               text-transform: uppercase;
@@ -1030,31 +1014,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
             
             .report-header .divider {
               height: 1px;
-              background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0.2) 80%, transparent 100%);
+              background: #e5e7eb;
               margin-bottom: 20px;
             }
             
             .report-header .report-title {
               font-size: 20px;
-              font-weight: 700;
+              font-weight: 600;
+              color: #0f1419;
               margin-bottom: 4px;
-              position: relative;
             }
             
             .report-header .subtitle {
               font-size: 13px;
-              opacity: 0.8;
+              color: #536471;
               font-weight: 400;
               margin-bottom: 20px;
-              position: relative;
             }
             
             .report-header .meta {
               display: flex;
               gap: 28px;
               font-size: 12px;
-              opacity: 0.75;
-              position: relative;
+              color: #536471;
+              font-weight: 400;
             }
             
             .report-header .meta-item {
@@ -1070,17 +1053,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
             }
             
             .message-user {
-              background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+              background: #1a73e8;
               color: white;
               padding: 16px 20px;
               border-radius: 12px 12px 4px 12px;
               margin-left: 15%;
-              box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
             }
             
             .message-assistant {
-              background: var(--bg-alt);
-              border: 1px solid var(--border);
+              background: #f7f9fa;
+              border: 1px solid #e5e7eb;
               padding: 24px;
               border-radius: 4px 12px 12px 12px;
               margin-right: 5%;
@@ -1088,11 +1070,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
             
             .message-role {
               font-size: 11px;
-              font-weight: 700;
+              font-weight: 600;
               text-transform: uppercase;
               letter-spacing: 0.5px;
               margin-bottom: 10px;
-              opacity: 0.8;
+              color: #536471;
             }
             
             .message-content {
@@ -1154,14 +1136,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
               padding-top: 24px;
               border-top: 2px solid var(--border);
               text-align: center;
-              color: var(--text-light);
-              font-size: 12px;
             }
             
             .report-footer .logo {
-              font-size: 18px;
+              font-size: 16px;
               font-weight: 700;
-              color: var(--primary);
+              color: #0f1419;
               margin-bottom: 8px;
             }
             
@@ -1171,9 +1151,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
             
             .report-footer .disclaimer {
               margin-top: 16px;
-              font-size: 11px;
-              color: #9ca3af;
-              font-style: italic;
+              font-size: 10px;
+              color: #8899a6;
+              font-weight: 400;
             }
             
             @media print {
@@ -1281,9 +1261,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           
           <footer class="report-footer">
             <div class="logo">RepIndex</div>
-            <p style="font-size: 14px; color: #64748b; margin: 8px 0;">Inteligencia Artificial para Análisis de Reputación Corporativa</p>
-            <p style="font-size: 13px; color: #3b82f6; font-weight: 600; margin: 8px 0;">🌐 repindex.ai</p>
-            <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+            <p style="font-size: 11px; color: #536471; font-weight: 400; margin: 8px 0;">Inteligencia de Reputación Corporativa</p>
+            <p style="font-size: 12px; color: #1a73e8; font-weight: 600; margin: 8px 0;">🌐 repindex.ai</p>
+            <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
               <p class="disclaimer">
                 © ${new Date().getFullYear()} RepIndex. Este documento es confidencial y ha sido generado automáticamente por Agente Rix. 
                 Los datos y análisis se basan en información disponible en la base de datos de RepIndex. 
