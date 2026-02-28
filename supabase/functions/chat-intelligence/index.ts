@@ -1,10 +1,10 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 // In-memory cache for company data
@@ -32,10 +32,10 @@ async function logApiUsage(params: ApiUsageParams): Promise<void> {
   try {
     // Fetch cost config
     const { data: costConfig } = await params.supabaseClient
-      .from('api_cost_config')
-      .select('input_cost_per_million, output_cost_per_million')
-      .eq('provider', params.provider)
-      .eq('model', params.model)
+      .from("api_cost_config")
+      .select("input_cost_per_million, output_cost_per_million")
+      .eq("provider", params.provider)
+      .eq("model", params.model)
       .single();
 
     // Calculate estimated cost
@@ -47,26 +47,24 @@ async function logApiUsage(params: ApiUsageParams): Promise<void> {
     }
 
     // Insert log
-    const { error } = await params.supabaseClient
-      .from('api_usage_logs')
-      .insert({
-        edge_function: params.edgeFunction,
-        provider: params.provider,
-        model: params.model,
-        action_type: params.actionType,
-        input_tokens: params.inputTokens,
-        output_tokens: params.outputTokens,
-        estimated_cost_usd: estimatedCost,
-        user_id: params.userId || null,
-        session_id: params.sessionId || null,
-        metadata: params.metadata || {},
-      });
+    const { error } = await params.supabaseClient.from("api_usage_logs").insert({
+      edge_function: params.edgeFunction,
+      provider: params.provider,
+      model: params.model,
+      action_type: params.actionType,
+      input_tokens: params.inputTokens,
+      output_tokens: params.outputTokens,
+      estimated_cost_usd: estimatedCost,
+      user_id: params.userId || null,
+      session_id: params.sessionId || null,
+      metadata: params.metadata || {},
+    });
 
     if (error) {
-      console.warn('Failed to log API usage:', error.message);
+      console.warn("Failed to log API usage:", error.message);
     }
   } catch (e) {
-    console.warn('Error in logApiUsage:', e);
+    console.warn("Error in logApiUsage:", e);
   }
 }
 
@@ -86,14 +84,14 @@ interface FetchUnifiedRixOptions {
 }
 
 async function fetchUnifiedRixData(options: FetchUnifiedRixOptions): Promise<any[]> {
-  const { supabaseClient, columns, tickerFilter, limit = 1000, offset = 0, logPrefix = '[V2-RIX]' } = options;
+  const { supabaseClient, columns, tickerFilter, limit = 1000, offset = 0, logPrefix = "[V2-RIX]" } = options;
 
   // Solo rix_runs_v2 — sin deduplicación, sin contaminación de esquemas legacy
   let query = supabaseClient
-    .from('rix_runs_v2')
+    .from("rix_runs_v2")
     .select(columns)
-    .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
-    .order('batch_execution_date', { ascending: false })
+    .or("analysis_completed_at.not.is.null,09_rix_score.not.is.null")
+    .order("batch_execution_date", { ascending: false })
     .order('"05_ticker"', { ascending: true });
 
   // Filtro por ticker
@@ -133,17 +131,26 @@ interface VerifiedSource {
   url: string;
   domain: string;
   title?: string;
-  sourceModel: 'ChatGPT' | 'Perplexity';
+  sourceModel: "ChatGPT" | "Perplexity";
   citationNumber?: number;
-  temporalCategory: 'window' | 'reinforcement' | 'unknown';
+  temporalCategory: "window" | "reinforcement" | "unknown";
   extractedDate?: string;
 }
 
 // Spanish month names for date extraction
 const SPANISH_MONTHS: Record<string, number> = {
-  'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3,
-  'mayo': 4, 'junio': 5, 'julio': 6, 'agosto': 7,
-  'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11
+  enero: 0,
+  febrero: 1,
+  marzo: 2,
+  abril: 3,
+  mayo: 4,
+  junio: 5,
+  julio: 6,
+  agosto: 7,
+  septiembre: 8,
+  octubre: 9,
+  noviembre: 10,
+  diciembre: 11,
 };
 
 /**
@@ -153,11 +160,12 @@ function extractNearestDate(text: string, urlPosition: number): Date | null {
   const start = Math.max(0, urlPosition - 200);
   const end = Math.min(text.length, urlPosition + 200);
   const context = text.slice(start, end);
-  
+
   const dates: { date: Date; distance: number }[] = [];
-  
+
   // Pattern 1: "DD de MES de AAAA" (Spanish full date)
-  const fullDatePattern = /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4})/gi;
+  const fullDatePattern =
+    /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4})/gi;
   let match;
   while ((match = fullDatePattern.exec(context)) !== null) {
     const day = parseInt(match[1], 10);
@@ -166,24 +174,25 @@ function extractNearestDate(text: string, urlPosition: number): Date | null {
     if (month !== undefined && year >= 2020 && year <= 2030) {
       dates.push({
         date: new Date(year, month, day),
-        distance: Math.abs(match.index - (urlPosition - start))
+        distance: Math.abs(match.index - (urlPosition - start)),
       });
     }
   }
-  
+
   // Pattern 2: "MES de AAAA" or "MES AAAA"
-  const monthYearPattern = /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})/gi;
+  const monthYearPattern =
+    /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:de\s+)?(\d{4})/gi;
   while ((match = monthYearPattern.exec(context)) !== null) {
     const month = SPANISH_MONTHS[match[1].toLowerCase()];
     const year = parseInt(match[2], 10);
     if (month !== undefined && year >= 2020 && year <= 2030) {
       dates.push({
         date: new Date(year, month, 15),
-        distance: Math.abs(match.index - (urlPosition - start))
+        distance: Math.abs(match.index - (urlPosition - start)),
       });
     }
   }
-  
+
   if (dates.length === 0) return null;
   dates.sort((a, b) => a.distance - b.distance);
   return dates[0].date;
@@ -195,35 +204,35 @@ function extractNearestDate(text: string, urlPosition: number): Date | null {
 function classifyTemporally(
   extractedDate: Date | null,
   periodFrom: Date | null,
-  periodTo: Date | null
-): 'window' | 'reinforcement' | 'unknown' {
-  if (!extractedDate) return 'unknown';
-  if (!periodFrom || !periodTo) return 'unknown';
-  
+  periodTo: Date | null,
+): "window" | "reinforcement" | "unknown" {
+  if (!extractedDate) return "unknown";
+  if (!periodFrom || !periodTo) return "unknown";
+
   // Extend window by 3 days on each side
   const windowStart = new Date(periodFrom);
   windowStart.setDate(windowStart.getDate() - 3);
   const windowEnd = new Date(periodTo);
   windowEnd.setDate(windowEnd.getDate() + 3);
-  
+
   if (extractedDate >= windowStart && extractedDate <= windowEnd) {
-    return 'window';
+    return "window";
   } else if (extractedDate < periodFrom) {
-    return 'reinforcement';
+    return "reinforcement";
   }
-  return 'unknown';
+  return "unknown";
 }
 
 function extractVerifiedSources(
   chatGptRaw: string | null,
   perplexityRaw: string | null,
   periodFrom: string | null = null,
-  periodTo: string | null = null
+  periodTo: string | null = null,
 ): VerifiedSource[] {
   const sources: VerifiedSource[] = [];
   const periodFromDate = periodFrom ? new Date(periodFrom) : null;
   const periodToDate = periodTo ? new Date(periodTo) : null;
-  
+
   // Extract ChatGPT sources (only with utm_source=openai)
   if (chatGptRaw) {
     const chatGptPattern = /\[([^\]]+)\]\((https?:\/\/[^)]+utm_source=openai[^)]*)\)/g;
@@ -234,23 +243,25 @@ function extractVerifiedSources(
       const urlPosition = match.index;
       try {
         const urlObj = new URL(url);
-        const domain = urlObj.hostname.replace(/^www\./, '');
-        if (!sources.some(s => s.url === url)) {
+        const domain = urlObj.hostname.replace(/^www\./, "");
+        if (!sources.some((s) => s.url === url)) {
           const extractedDate = extractNearestDate(chatGptRaw, urlPosition);
           const temporalCategory = classifyTemporally(extractedDate, periodFromDate, periodToDate);
-          sources.push({ 
-            url, 
-            domain, 
-            title: title || undefined, 
-            sourceModel: 'ChatGPT',
+          sources.push({
+            url,
+            domain,
+            title: title || undefined,
+            sourceModel: "ChatGPT",
             temporalCategory,
             extractedDate: extractedDate?.toISOString(),
           });
         }
-      } catch { /* Invalid URL */ }
+      } catch {
+        /* Invalid URL */
+      }
     }
   }
-  
+
   // Extract Perplexity sources
   if (perplexityRaw) {
     // Try JSON parsing first
@@ -258,25 +269,29 @@ function extractVerifiedSources(
       const parsed = JSON.parse(perplexityRaw);
       if (parsed.citations && Array.isArray(parsed.citations)) {
         parsed.citations.forEach((citation: string, index: number) => {
-          if (citation && citation.startsWith('http')) {
+          if (citation && citation.startsWith("http")) {
             try {
               const urlObj = new URL(citation);
-              const domain = urlObj.hostname.replace(/^www\./, '');
-              if (!sources.some(s => s.url === citation)) {
-                sources.push({ 
-                  url: citation, 
-                  domain, 
-                  sourceModel: 'Perplexity', 
+              const domain = urlObj.hostname.replace(/^www\./, "");
+              if (!sources.some((s) => s.url === citation)) {
+                sources.push({
+                  url: citation,
+                  domain,
+                  sourceModel: "Perplexity",
                   citationNumber: index + 1,
-                  temporalCategory: 'unknown', // JSON structure doesn't provide date context
+                  temporalCategory: "unknown", // JSON structure doesn't provide date context
                 });
               }
-            } catch { /* Invalid URL */ }
+            } catch {
+              /* Invalid URL */
+            }
           }
         });
       }
-    } catch { /* Not JSON, try regex */ }
-    
+    } catch {
+      /* Not JSON, try regex */
+    }
+
     // Markdown links from Perplexity
     const markdownPattern = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
     let match;
@@ -284,44 +299,46 @@ function extractVerifiedSources(
       const title = match[1].trim();
       const url = match[2].trim();
       const urlPosition = match.index;
-      if (sources.some(s => s.url === url)) continue;
-      if (url.includes('perplexity.ai')) continue;
+      if (sources.some((s) => s.url === url)) continue;
+      if (url.includes("perplexity.ai")) continue;
       try {
         const urlObj = new URL(url);
-        const domain = urlObj.hostname.replace(/^www\./, '');
+        const domain = urlObj.hostname.replace(/^www\./, "");
         const extractedDate = extractNearestDate(perplexityRaw, urlPosition);
         const temporalCategory = classifyTemporally(extractedDate, periodFromDate, periodToDate);
-        sources.push({ 
-          url, 
-          domain, 
-          title: title || undefined, 
-          sourceModel: 'Perplexity',
+        sources.push({
+          url,
+          domain,
+          title: title || undefined,
+          sourceModel: "Perplexity",
           temporalCategory,
           extractedDate: extractedDate?.toISOString(),
         });
-      } catch { /* Invalid URL */ }
+      } catch {
+        /* Invalid URL */
+      }
     }
   }
-  
+
   return sources;
 }
 
 function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
   const allSources: VerifiedSource[] = [];
-  
+
   for (const run of rixData) {
     const sources = extractVerifiedSources(
-      run['20_res_gpt_bruto'] ?? null,
-      run['21_res_perplex_bruto'] ?? null,
-      run['06_period_from'] ?? null,
-      run['07_period_to'] ?? null
+      run["20_res_gpt_bruto"] ?? null,
+      run["21_res_perplex_bruto"] ?? null,
+      run["06_period_from"] ?? null,
+      run["07_period_to"] ?? null,
     );
     allSources.push(...sources);
   }
-  
+
   // Deduplicate by URL
   const seen = new Set<string>();
-  return allSources.filter(source => {
+  return allSources.filter((source) => {
     if (seen.has(source.url)) return false;
     seen.add(source.url);
     return true;
@@ -332,7 +349,7 @@ function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
 // SSE STREAMING HELPERS
 // =============================================================================
 
-type SSEEventType = 'start' | 'chunk' | 'metadata' | 'done' | 'error' | 'fallback';
+type SSEEventType = "start" | "chunk" | "metadata" | "done" | "error" | "fallback";
 
 interface SSEEvent {
   type: SSEEventType;
@@ -357,12 +374,18 @@ async function* streamOpenAIResponse(
   model: string,
   maxTokens: number,
   logPrefix: string,
-  timeout: number = 120000
-): AsyncGenerator<{ type: 'chunk' | 'done' | 'error'; text?: string; inputTokens?: number; outputTokens?: number; error?: string }> {
-  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-  
+  timeout: number = 120000,
+): AsyncGenerator<{
+  type: "chunk" | "done" | "error";
+  text?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  error?: string;
+}> {
+  const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+
   if (!openAIApiKey) {
-    yield { type: 'error', error: 'OpenAI API key not configured' };
+    yield { type: "error", error: "OpenAI API key not configured" };
     return;
   }
 
@@ -371,12 +394,12 @@ async function* streamOpenAIResponse(
 
   try {
     console.log(`${logPrefix} Starting OpenAI stream (${model})...`);
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openAIApiKey}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
@@ -393,18 +416,18 @@ async function* streamOpenAIResponse(
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`${logPrefix} OpenAI stream error:`, response.status, errorText);
-      yield { type: 'error', error: `OpenAI error: ${response.status}` };
+      yield { type: "error", error: `OpenAI error: ${response.status}` };
       return;
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      yield { type: 'error', error: 'No response body' };
+      yield { type: "error", error: "No response body" };
       return;
     }
 
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
@@ -413,14 +436,14 @@ async function* streamOpenAIResponse(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
+        if (line.startsWith("data: ")) {
           const data = line.slice(6).trim();
-          if (data === '[DONE]') {
-            yield { type: 'done', inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+          if (data === "[DONE]") {
+            yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
             return;
           }
 
@@ -428,9 +451,9 @@ async function* streamOpenAIResponse(
             const parsed = JSON.parse(data);
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
-              yield { type: 'chunk', text: content };
+              yield { type: "chunk", text: content };
             }
-            
+
             // Capture usage from final chunk if available
             if (parsed.usage) {
               totalInputTokens = parsed.usage.prompt_tokens || 0;
@@ -443,16 +466,15 @@ async function* streamOpenAIResponse(
       }
     }
 
-    yield { type: 'done', inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
-
+    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
   } catch (error) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
+    if (error.name === "AbortError") {
       console.warn(`${logPrefix} OpenAI stream timeout`);
-      yield { type: 'error', error: 'OpenAI timeout' };
+      yield { type: "error", error: "OpenAI timeout" };
     } else {
       console.error(`${logPrefix} OpenAI stream error:`, error);
-      yield { type: 'error', error: error.message || 'Unknown error' };
+      yield { type: "error", error: error.message || "Unknown error" };
     }
   }
 }
@@ -463,12 +485,18 @@ async function* streamGeminiResponse(
   model: string,
   maxTokens: number,
   logPrefix: string,
-  timeout: number = 120000
-): AsyncGenerator<{ type: 'chunk' | 'done' | 'error'; text?: string; inputTokens?: number; outputTokens?: number; error?: string }> {
-  const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-  
+  timeout: number = 120000,
+): AsyncGenerator<{
+  type: "chunk" | "done" | "error";
+  text?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  error?: string;
+}> {
+  const geminiApiKey = Deno.env.get("GOOGLE_GEMINI_API_KEY");
+
   if (!geminiApiKey) {
-    yield { type: 'error', error: 'Gemini API key not configured' };
+    yield { type: "error", error: "Gemini API key not configured" };
     return;
   }
 
@@ -480,26 +508,26 @@ async function* streamGeminiResponse(
 
     // Convert messages to Gemini format
     const contents = messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
+      .filter((m) => m.role !== "system")
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
       }));
 
-    const systemInstruction = messages.find(m => m.role === 'system')?.content;
+    const systemInstruction = messages.find((m) => m.role === "system")?.content;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${geminiApiKey}`,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents,
           systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-          generationConfig: { maxOutputTokens: maxTokens }
+          generationConfig: { maxOutputTokens: maxTokens },
         }),
         signal: controller.signal,
-      }
+      },
     );
 
     clearTimeout(timeoutId);
@@ -507,18 +535,18 @@ async function* streamGeminiResponse(
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`${logPrefix} Gemini stream error:`, response.status, errorText);
-      yield { type: 'error', error: `Gemini error: ${response.status}` };
+      yield { type: "error", error: `Gemini error: ${response.status}` };
       return;
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      yield { type: 'error', error: 'No response body' };
+      yield { type: "error", error: "No response body" };
       return;
     }
 
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
@@ -527,31 +555,31 @@ async function* streamGeminiResponse(
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      
+
       // Gemini streams as NDJSON-like format
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed === '[' || trimmed === ']' || trimmed === ',') continue;
-        
+        if (!trimmed || trimmed === "[" || trimmed === "]" || trimmed === ",") continue;
+
         // Clean up JSON array markers
         let jsonStr = trimmed;
-        if (jsonStr.startsWith(',')) jsonStr = jsonStr.slice(1);
-        if (jsonStr.startsWith('[')) jsonStr = jsonStr.slice(1);
-        if (jsonStr.endsWith(',')) jsonStr = jsonStr.slice(0, -1);
-        if (jsonStr.endsWith(']')) jsonStr = jsonStr.slice(0, -1);
-        
+        if (jsonStr.startsWith(",")) jsonStr = jsonStr.slice(1);
+        if (jsonStr.startsWith("[")) jsonStr = jsonStr.slice(1);
+        if (jsonStr.endsWith(",")) jsonStr = jsonStr.slice(0, -1);
+        if (jsonStr.endsWith("]")) jsonStr = jsonStr.slice(0, -1);
+
         if (!jsonStr.trim()) continue;
 
         try {
           const parsed = JSON.parse(jsonStr);
           const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
           if (text) {
-            yield { type: 'chunk', text };
+            yield { type: "chunk", text };
           }
-          
+
           // Capture usage metadata
           if (parsed.usageMetadata) {
             totalInputTokens = parsed.usageMetadata.promptTokenCount || 0;
@@ -563,16 +591,15 @@ async function* streamGeminiResponse(
       }
     }
 
-    yield { type: 'done', inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
-
+    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
   } catch (error) {
     clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
+    if (error.name === "AbortError") {
       console.warn(`${logPrefix} Gemini stream timeout`);
-      yield { type: 'error', error: 'Gemini timeout' };
+      yield { type: "error", error: "Gemini timeout" };
     } else {
       console.error(`${logPrefix} Gemini stream error:`, error);
-      yield { type: 'error', error: error.message || 'Unknown error' };
+      yield { type: "error", error: error.message || "Unknown error" };
     }
   }
 }
@@ -582,7 +609,7 @@ async function* streamGeminiResponse(
 // =============================================================================
 interface AICallResult {
   content: string;
-  provider: 'openai' | 'gemini';
+  provider: "openai" | "gemini";
   model: string;
   inputTokens: number;
   outputTokens: number;
@@ -597,58 +624,60 @@ async function callAIWithFallback(
   options?: {
     preferGemini?: boolean;
     geminiTimeout?: number;
-  }
+  },
 ): Promise<AICallResult> {
-  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-  const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+  const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+  const geminiApiKey = Deno.env.get("GOOGLE_GEMINI_API_KEY");
 
   const preferGemini = options?.preferGemini ?? false;
   const geminiTimeout = options?.geminiTimeout ?? timeout;
-  
+
   // Model mapping: OpenAI → Gemini equivalent
   const modelMapping: Record<string, string> = {
-    'o3': 'gemini-2.5-flash',
-    'gpt-4o-mini': 'gemini-2.5-flash-lite',
-    'gpt-4o': 'gemini-2.5-flash',
+    o3: "gemini-2.5-flash",
+    "gpt-4o-mini": "gemini-2.5-flash-lite",
+    "gpt-4o": "gemini-2.5-flash",
   };
-  
+
   // 1. Try OpenAI first (unless preferGemini)
   if (!preferGemini && openAIApiKey) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
-      
+
       console.log(`${logPrefix} Calling OpenAI (${model})...`);
-      
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
+
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${openAIApiKey}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openAIApiKey}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model,
           messages,
           max_completion_tokens: maxTokens,
         }),
-        signal: controller.signal
+        signal: controller.signal,
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (response.ok) {
         const data = await response.json();
         const usage = data.usage || {};
-        console.log(`${logPrefix} OpenAI response received successfully (in: ${usage.prompt_tokens || 0}, out: ${usage.completion_tokens || 0})`);
-        return { 
-          content: data.choices[0].message.content, 
-          provider: 'openai',
+        console.log(
+          `${logPrefix} OpenAI response received successfully (in: ${usage.prompt_tokens || 0}, out: ${usage.completion_tokens || 0})`,
+        );
+        return {
+          content: data.choices[0].message.content,
+          provider: "openai",
           model: model,
           inputTokens: usage.prompt_tokens || 0,
           outputTokens: usage.completion_tokens || 0,
         };
       }
-      
+
       // Errors that trigger fallback: 429, 500, 502, 503, 504
       if ([429, 500, 502, 503, 504].includes(response.status)) {
         const errorText = await response.text();
@@ -659,11 +688,10 @@ async function callAIWithFallback(
         console.error(`${logPrefix} OpenAI API error (${response.status}):`, errorText);
         throw new Error(`OpenAI API error: ${response.statusText}`);
       }
-      
     } catch (error) {
-      if (error.name === 'AbortError') {
+      if (error.name === "AbortError") {
         console.warn(`${logPrefix} OpenAI timeout (${timeout}ms), switching to Gemini fallback...`);
-      } else if (error.message?.includes('OpenAI API error')) {
+      } else if (error.message?.includes("OpenAI API error")) {
         throw error; // Re-throw non-recoverable errors
       } else {
         console.warn(`${logPrefix} OpenAI network error, switching to Gemini fallback:`, error.message);
@@ -674,51 +702,50 @@ async function callAIWithFallback(
       console.warn(`${logPrefix} No OpenAI API key, using Gemini directly...`);
     }
   }
-  
+
   // 2. Fallback to Gemini
   if (!geminiApiKey) {
-    throw new Error('Both OpenAI and Gemini API keys are not configured');
+    throw new Error("Both OpenAI and Gemini API keys are not configured");
   }
-  
-  const geminiModel = modelMapping[model] || 'gemini-2.5-flash';
+
+  const geminiModel = modelMapping[model] || "gemini-2.5-flash";
   console.log(`${logPrefix} Using Gemini fallback (${geminiModel})...`);
 
   // Gemini request with timeout (prevents hanging requests that end as client-side "Failed to fetch")
   const geminiController = new AbortController();
   const geminiTimeoutId = setTimeout(() => geminiController.abort(), geminiTimeout);
 
-  const geminiResponse = await fetch(
-    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${geminiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: geminiModel,
-        messages,
-        max_tokens: maxTokens,
-      }),
-      signal: geminiController.signal,
-    }
-  );
+  const geminiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${geminiApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: geminiModel,
+      messages,
+      max_tokens: maxTokens,
+    }),
+    signal: geminiController.signal,
+  });
 
   clearTimeout(geminiTimeoutId);
-  
+
   if (!geminiResponse.ok) {
     const errorText = await geminiResponse.text();
     console.error(`${logPrefix} Gemini API error:`, errorText);
     throw new Error(`Both OpenAI and Gemini failed. Gemini error: ${geminiResponse.statusText}`);
   }
-  
+
   const geminiData = await geminiResponse.json();
   const geminiUsage = geminiData.usage || {};
-  console.log(`${logPrefix} Gemini response received successfully (fallback, in: ${geminiUsage.prompt_tokens || 0}, out: ${geminiUsage.completion_tokens || 0})`);
-  
-  return { 
-    content: geminiData.choices[0].message.content, 
-    provider: 'gemini',
+  console.log(
+    `${logPrefix} Gemini response received successfully (fallback, in: ${geminiUsage.prompt_tokens || 0}, out: ${geminiUsage.completion_tokens || 0})`,
+  );
+
+  return {
+    content: geminiData.choices[0].message.content,
+    provider: "gemini",
     model: geminiModel,
     inputTokens: geminiUsage.prompt_tokens || 0,
     outputTokens: geminiUsage.completion_tokens || 0,
@@ -730,7 +757,7 @@ async function callAISimple(
   messages: { role: string; content: string }[],
   model: string,
   maxTokens: number,
-  logPrefix: string
+  logPrefix: string,
 ): Promise<string | null> {
   try {
     const result = await callAIWithFallback(messages, model, maxTokens, logPrefix, 30000);
@@ -748,19 +775,19 @@ async function callAISimple(
 // Known non-competitors to filter out (falsos positivos conocidos)
 const KNOWN_NON_COMPETITORS: Record<string, string[]> = {
   // Telefónica NO compite con empresas de otros subsectores del "Telecomunicaciones y Tecnología"
-  'TEF': ['AMS', 'IDR', 'GOOGLE-PRIV', 'AMAZON-PRIV', 'META-PRIV', 'APPLE-PRIV', 'MSFT-PRIV', 'LLYC'],
+  TEF: ["AMS", "IDR", "GOOGLE-PRIV", "AMAZON-PRIV", "META-PRIV", "APPLE-PRIV", "MSFT-PRIV", "LLYC"],
   // Amadeus (tech viajes) no compite con operadores telecom
-  'AMS': ['TEF', 'CLNX', 'MAS'],
+  AMS: ["TEF", "CLNX", "MAS"],
   // Indra (defensa/IT) no compite con operadores telecom
-  'IDR': ['TEF', 'CLNX', 'MAS'],
+  IDR: ["TEF", "CLNX", "MAS"],
 };
 
 // Sector similarity groups for fallback competitor matching
 const RELATED_SECTORS: Record<string, string[]> = {
-  'Telecomunicaciones y Tecnología': [], // Too broad, rely on subsector matching
-  'Energía y Utilities': ['Infraestructuras'],
-  'Financiero': [], // Banks compete only with banks
-  'Construcción e Infraestructuras': ['Energía y Utilities'],
+  "Telecomunicaciones y Tecnología": [], // Too broad, rely on subsector matching
+  "Energía y Utilities": ["Infraestructuras"],
+  Financiero: [], // Banks compete only with banks
+  "Construcción e Infraestructuras": ["Energía y Utilities"],
 };
 
 interface CompanyData {
@@ -794,30 +821,34 @@ async function getRelevantCompetitors(
   allCompanies: CompanyData[],
   supabaseClient: any,
   limit: number = 5,
-  logPrefix: string = '[Competitors]'
+  logPrefix: string = "[Competitors]",
 ): Promise<CompetitorResult> {
   const collected: CompanyData[] = [];
   const usedTickers = new Set<string>([company.ticker]);
 
   // Tracking variables for methodology justification
-  let tierUsed = 'NONE';
+  let tierUsed = "NONE";
   let verifiedCount = 0;
   let subsectorCount = 0;
 
   console.log(`${logPrefix} Getting competitors for ${company.issuer_name} (${company.ticker})`);
-  console.log(`${logPrefix} Company sector: ${company.sector_category}, subsector: ${company.subsector}, IBEX: ${company.ibex_family_code}`);
-  console.log(`${logPrefix} Verified competitors from issuer record: ${JSON.stringify(company.verified_competitors || [])}`);
+  console.log(
+    `${logPrefix} Company sector: ${company.sector_category}, subsector: ${company.subsector}, IBEX: ${company.ibex_family_code}`,
+  );
+  console.log(
+    `${logPrefix} Verified competitors from issuer record: ${JSON.stringify(company.verified_competitors || [])}`,
+  );
 
   // Helper to add companies avoiding duplicates
   const addCompetitor = (c: CompanyData): boolean => {
     if (usedTickers.has(c.ticker)) return false;
-    
+
     // Apply blacklist filter
     if (KNOWN_NON_COMPETITORS[company.ticker]?.includes(c.ticker)) {
       console.log(`${logPrefix} Blacklisted: ${c.ticker} (known non-competitor of ${company.ticker})`);
       return false;
     }
-    
+
     usedTickers.add(c.ticker);
     collected.push(c);
     return true;
@@ -827,25 +858,33 @@ async function getRelevantCompetitors(
   // TIER 0 (NEW PRIORITY): Verified competitors from repindex_root_issuers.verified_competitors
   // If this field is populated, use EXCLUSIVELY these competitors and skip all other tiers
   // ═══════════════════════════════════════════════════════════════════════════
-  if (company.verified_competitors && Array.isArray(company.verified_competitors) && company.verified_competitors.length > 0) {
-    console.log(`${logPrefix} TIER 0 (VERIFIED_COMPETITORS): Found ${company.verified_competitors.length} verified competitors in issuer record`);
-    
+  if (
+    company.verified_competitors &&
+    Array.isArray(company.verified_competitors) &&
+    company.verified_competitors.length > 0
+  ) {
+    console.log(
+      `${logPrefix} TIER 0 (VERIFIED_COMPETITORS): Found ${company.verified_competitors.length} verified competitors in issuer record`,
+    );
+
     for (const competitorTicker of company.verified_competitors) {
       if (collected.length >= limit) break;
-      
-      const competitor = allCompanies.find(c => c.ticker === competitorTicker);
+
+      const competitor = allCompanies.find((c) => c.ticker === competitorTicker);
       if (competitor && addCompetitor(competitor)) {
         verifiedCount++;
-        tierUsed = 'TIER0-VERIFIED-ISSUER';
+        tierUsed = "TIER0-VERIFIED-ISSUER";
         console.log(`${logPrefix}   → ${competitor.ticker} (verified from issuer record)`);
       } else if (!competitor) {
         console.warn(`${logPrefix}   ⚠️ Verified competitor ticker not found in companies cache: ${competitorTicker}`);
       }
     }
-    
+
     // EXCLUSIVE: If we have verified_competitors, we return ONLY these - no fallback to other tiers
     if (collected.length > 0) {
-      console.log(`${logPrefix} Returning ${collected.length} competitors EXCLUSIVELY from TIER 0 (verified_competitors)`);
+      console.log(
+        `${logPrefix} Returning ${collected.length} competitors EXCLUSIVELY from TIER 0 (verified_competitors)`,
+      );
       const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
       return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
     }
@@ -857,22 +896,24 @@ async function getRelevantCompetitors(
   // ═══════════════════════════════════════════════════════════════════════════
   try {
     const { data: reverseRelationships, error: reverseError } = await supabaseClient
-      .from('competitor_relationships')
-      .select('source_ticker, relationship_type, confidence_score')
-      .eq('competitor_ticker', company.ticker)
-      .order('confidence_score', { ascending: false });
+      .from("competitor_relationships")
+      .select("source_ticker, relationship_type, confidence_score")
+      .eq("competitor_ticker", company.ticker)
+      .order("confidence_score", { ascending: false });
 
     if (!reverseError && reverseRelationships?.length > 0) {
       console.log(`${logPrefix} TIER 1: Found ${reverseRelationships.length} reverse-direction competitors`);
-      
+
       for (const rel of reverseRelationships) {
         if (collected.length >= limit) break;
-        
-        const competitor = allCompanies.find(c => c.ticker === rel.source_ticker);
+
+        const competitor = allCompanies.find((c) => c.ticker === rel.source_ticker);
         if (competitor && addCompetitor(competitor)) {
           verifiedCount++;
-          tierUsed = 'TIER1-BIDIRECTIONAL';
-          console.log(`${logPrefix}   → ${competitor.ticker} (bidirectional verified, ${rel.relationship_type}, score: ${rel.confidence_score})`);
+          tierUsed = "TIER1-BIDIRECTIONAL";
+          console.log(
+            `${logPrefix}   → ${competitor.ticker} (bidirectional verified, ${rel.relationship_type}, score: ${rel.confidence_score})`,
+          );
         }
       }
     }
@@ -885,22 +926,26 @@ async function getRelevantCompetitors(
   // ═══════════════════════════════════════════════════════════════════════════
   try {
     const { data: verifiedRelationships, error } = await supabaseClient
-      .from('competitor_relationships')
-      .select('competitor_ticker, relationship_type, confidence_score')
-      .eq('source_ticker', company.ticker)
-      .order('confidence_score', { ascending: false });
+      .from("competitor_relationships")
+      .select("competitor_ticker, relationship_type, confidence_score")
+      .eq("source_ticker", company.ticker)
+      .order("confidence_score", { ascending: false });
 
     if (!error && verifiedRelationships?.length > 0) {
-      console.log(`${logPrefix} TIER 2: Found ${verifiedRelationships.length} verified competitors from relationships table`);
-      
+      console.log(
+        `${logPrefix} TIER 2: Found ${verifiedRelationships.length} verified competitors from relationships table`,
+      );
+
       for (const rel of verifiedRelationships) {
         if (collected.length >= limit) break;
-        
-        const competitor = allCompanies.find(c => c.ticker === rel.competitor_ticker);
+
+        const competitor = allCompanies.find((c) => c.ticker === rel.competitor_ticker);
         if (competitor && addCompetitor(competitor)) {
           verifiedCount++;
-          if (tierUsed === 'NONE') tierUsed = 'TIER2-VERIFIED-RELATIONSHIPS';
-          console.log(`${logPrefix}   → ${competitor.ticker} (verified relationship, ${rel.relationship_type}, score: ${rel.confidence_score})`);
+          if (tierUsed === "NONE") tierUsed = "TIER2-VERIFIED-RELATIONSHIPS";
+          console.log(
+            `${logPrefix}   → ${competitor.ticker} (verified relationship, ${rel.relationship_type}, score: ${rel.confidence_score})`,
+          );
         }
       }
     }
@@ -919,18 +964,17 @@ async function getRelevantCompetitors(
   // NOTE: From this tier onwards, competitors are "por categoría" and need disclosure
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.subsector && company.ibex_family_code) {
-    const tier3 = allCompanies.filter(c => 
-      c.subsector === company.subsector &&
-      c.ibex_family_code === company.ibex_family_code
+    const tier3 = allCompanies.filter(
+      (c) => c.subsector === company.subsector && c.ibex_family_code === company.ibex_family_code,
     );
-    
+
     console.log(`${logPrefix} TIER 3: Found ${tier3.length} same-subsector + same-IBEX companies`);
-    
+
     for (const c of tier3) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
         subsectorCount++;
-        if (tierUsed === 'NONE') tierUsed = 'TIER3-SUBSECTOR-IBEX';
+        if (tierUsed === "NONE") tierUsed = "TIER3-SUBSECTOR-IBEX";
         console.log(`${logPrefix}   → ${c.ticker} (subsector: ${c.subsector}, IBEX: ${c.ibex_family_code})`);
       }
     }
@@ -945,17 +989,15 @@ async function getRelevantCompetitors(
   // TIER 4: Same SUBSECTOR only (any IBEX family)
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.subsector) {
-    const tier4 = allCompanies.filter(c => 
-      c.subsector === company.subsector
-    );
-    
+    const tier4 = allCompanies.filter((c) => c.subsector === company.subsector);
+
     console.log(`${logPrefix} TIER 4: Found ${tier4.length} same-subsector companies (any IBEX)`);
-    
+
     for (const c of tier4) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
         subsectorCount++;
-        if (tierUsed === 'NONE') tierUsed = 'TIER4-SUBSECTOR';
+        if (tierUsed === "NONE") tierUsed = "TIER4-SUBSECTOR";
         console.log(`${logPrefix}   → ${c.ticker} (subsector: ${c.subsector})`);
       }
     }
@@ -970,17 +1012,16 @@ async function getRelevantCompetitors(
   // TIER 5: Same SECTOR + Same IBEX Family (fallback, AND not OR!)
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.sector_category && company.ibex_family_code) {
-    const tier5 = allCompanies.filter(c => 
-      c.sector_category === company.sector_category &&
-      c.ibex_family_code === company.ibex_family_code
+    const tier5 = allCompanies.filter(
+      (c) => c.sector_category === company.sector_category && c.ibex_family_code === company.ibex_family_code,
     );
-    
+
     console.log(`${logPrefix} TIER 5: Found ${tier5.length} same-sector + same-IBEX companies`);
-    
+
     for (const c of tier5) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
-        if (tierUsed === 'NONE') tierUsed = 'TIER5-SECTOR-IBEX';
+        if (tierUsed === "NONE") tierUsed = "TIER5-SECTOR-IBEX";
         console.log(`${logPrefix}   → ${c.ticker} (sector: ${c.sector_category}, IBEX: ${c.ibex_family_code})`);
       }
     }
@@ -996,41 +1037,43 @@ async function getRelevantCompetitors(
   // ═══════════════════════════════════════════════════════════════════════════
   if (company.sector_category) {
     // If we have subsector, only accept companies in same or related subsectors
-    const tier6 = allCompanies.filter(c => {
+    const tier6 = allCompanies.filter((c) => {
       if (c.sector_category !== company.sector_category) return false;
-      
+
       // If source has subsector, prefer matching or empty subsectors
       if (company.subsector && c.subsector && c.subsector !== company.subsector) {
         // Check if subsectors are related (e.g., both telecom-related)
         const sourceSubsector = company.subsector.toLowerCase();
         const targetSubsector = c.subsector.toLowerCase();
-        
+
         // Reject obvious mismatches
         const incompatiblePairs = [
-          ['telecom', 'viajes'],
-          ['telecom', 'defensa'],
-          ['telecom', 'big tech'],
-          ['telecom', 'comunicación'],
-          ['banca', 'seguros'],
+          ["telecom", "viajes"],
+          ["telecom", "defensa"],
+          ["telecom", "big tech"],
+          ["telecom", "comunicación"],
+          ["banca", "seguros"],
         ];
-        
+
         for (const [a, b] of incompatiblePairs) {
-          if ((sourceSubsector.includes(a) && targetSubsector.includes(b)) ||
-              (sourceSubsector.includes(b) && targetSubsector.includes(a))) {
+          if (
+            (sourceSubsector.includes(a) && targetSubsector.includes(b)) ||
+            (sourceSubsector.includes(b) && targetSubsector.includes(a))
+          ) {
             return false;
           }
         }
       }
-      
+
       return true;
     });
-    
+
     console.log(`${logPrefix} TIER 6: Found ${tier6.length} filtered same-sector companies`);
-    
+
     for (const c of tier6) {
       if (collected.length >= limit) break;
       if (addCompetitor(c)) {
-        if (tierUsed === 'NONE') tierUsed = 'TIER6-SECTOR';
+        if (tierUsed === "NONE") tierUsed = "TIER6-SECTOR";
         console.log(`${logPrefix}   → ${c.ticker} (sector: ${c.sector_category})`);
       }
     }
@@ -1041,19 +1084,19 @@ async function getRelevantCompetitors(
   // ═══════════════════════════════════════════════════════════════════════════
   if (collected.length === 0) {
     console.warn(`${logPrefix} NO COMPETITORS FOUND for ${company.ticker} - using fallback IBEX35`);
-    
+
     const ibex35Fallback = allCompanies
-      .filter(c => c.ibex_family_code === 'IBEX35' && c.ticker !== company.ticker)
+      .filter((c) => c.ibex_family_code === "IBEX35" && c.ticker !== company.ticker)
       .slice(0, limit);
-    
+
     for (const c of ibex35Fallback) {
       addCompetitor(c);
     }
-    
-    tierUsed = 'TIER7-FALLBACK-IBEX35';
+
+    tierUsed = "TIER7-FALLBACK-IBEX35";
   }
 
-  console.log(`${logPrefix} Final competitor list (${collected.length}): ${collected.map(c => c.ticker).join(', ')}`);
+  console.log(`${logPrefix} Final competitor list (${collected.length}): ${collected.map((c) => c.ticker).join(", ")}`);
   const justification = buildCompetitorJustification(tierUsed, verifiedCount, subsectorCount, company);
   return { competitors: collected.slice(0, limit), justification, tierUsed, verifiedCount, subsectorCount };
 }
@@ -1065,54 +1108,58 @@ function buildCompetitorJustification(
   tierUsed: string,
   verifiedCount: number,
   subsectorCount: number,
-  company: CompanyData
+  company: CompanyData,
 ): string {
   const parts: string[] = [];
-  
+
   // Explain the tier used
   const tierExplanations: Record<string, string> = {
-    'TIER0-VERIFIED-ISSUER': 'competidores directos verificados manualmente (lista curada)',
-    'TIER1-BIDIRECTIONAL': 'relaciones bidireccionales verificadas en base de datos',
-    'TIER2-VERIFIED-RELATIONSHIPS': 'relaciones directas verificadas en tabla de competidores',
-    'TIER3-SUBSECTOR-IBEX': `mismo subsector (${company.subsector}) y familia IBEX (${company.ibex_family_code})`,
-    'TIER4-SUBSECTOR': `mismo subsector (${company.subsector})`,
-    'TIER5-SECTOR-IBEX': `mismo sector (${company.sector_category}) y familia IBEX (${company.ibex_family_code})`,
-    'TIER6-SECTOR': `mismo sector (${company.sector_category}) con filtrado de incompatibilidades`,
-    'TIER7-FALLBACK-IBEX35': 'fallback a empresas del IBEX-35 (sin competidores directos identificados)',
-    'NONE': 'metodología no determinada',
+    "TIER0-VERIFIED-ISSUER": "competidores directos verificados manualmente (lista curada)",
+    "TIER1-BIDIRECTIONAL": "relaciones bidireccionales verificadas en base de datos",
+    "TIER2-VERIFIED-RELATIONSHIPS": "relaciones directas verificadas en tabla de competidores",
+    "TIER3-SUBSECTOR-IBEX": `mismo subsector (${company.subsector}) y familia IBEX (${company.ibex_family_code})`,
+    "TIER4-SUBSECTOR": `mismo subsector (${company.subsector})`,
+    "TIER5-SECTOR-IBEX": `mismo sector (${company.sector_category}) y familia IBEX (${company.ibex_family_code})`,
+    "TIER6-SECTOR": `mismo sector (${company.sector_category}) con filtrado de incompatibilidades`,
+    "TIER7-FALLBACK-IBEX35": "fallback a empresas del IBEX-35 (sin competidores directos identificados)",
+    NONE: "metodología no determinada",
   };
 
   parts.push(`Competidores seleccionados mediante: ${tierExplanations[tierUsed] || tierUsed}.`);
-  
+
   // Special case: TIER0-VERIFIED-ISSUER has highest confidence
-  if (tierUsed === 'TIER0-VERIFIED-ISSUER') {
+  if (tierUsed === "TIER0-VERIFIED-ISSUER") {
     parts.push(`✓ ${verifiedCount} competidores directos confirmados.`);
   } else if (verifiedCount > 0) {
     parts.push(`${verifiedCount} competidores verificados en base de datos.`);
   }
-  
+
   if (subsectorCount > 0) {
     parts.push(`${subsectorCount} competidores del mismo subsector (${company.subsector}).`);
   }
-  
+
   // Add warning if using category-based fallback (TIER3+)
-  const categoryTiers = ['TIER3-SUBSECTOR-IBEX', 'TIER4-SUBSECTOR', 'TIER5-SECTOR-IBEX', 'TIER6-SECTOR'];
+  const categoryTiers = ["TIER3-SUBSECTOR-IBEX", "TIER4-SUBSECTOR", "TIER5-SECTOR-IBEX", "TIER6-SECTOR"];
   if (categoryTiers.includes(tierUsed)) {
-    parts.push('⚠️ NOTA: Esta empresa no tiene competidores verificados definidos. Los competidores mostrados pertenecen a la misma categoría/subsector y se incluyen con fines de contexto sectorial, no como competencia directa confirmada.');
+    parts.push(
+      "⚠️ NOTA: Esta empresa no tiene competidores verificados definidos. Los competidores mostrados pertenecen a la misma categoría/subsector y se incluyen con fines de contexto sectorial, no como competencia directa confirmada.",
+    );
   }
-  
+
   // Add warning if using full fallback
-  if (tierUsed.includes('FALLBACK')) {
-    parts.push('⚠️ NOTA: Esta empresa no tiene competidores verificados ni subsector definido - las comparativas deben interpretarse con cautela.');
+  if (tierUsed.includes("FALLBACK")) {
+    parts.push(
+      "⚠️ NOTA: Esta empresa no tiene competidores verificados ni subsector definido - las comparativas deben interpretarse con cautela.",
+    );
   }
-  
-  return parts.join(' ');
+
+  return parts.join(" ");
 }
 
 // =============================================================================
 // EMBUDO NARRATIVO — Estructura guía, no corsé. Se adapta a la consulta.
 // =============================================================================
-function buildDepthPrompt(depthLevel: 'quick' | 'complete' | 'exhaustive', languageName: string): string {
+function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", languageName: string): string {
   // Independientemente del depthLevel recibido, siempre devuelve el Embudo Narrativo.
   // La estructura se adapta: empresa → máxima profundidad (≥2.500 palabras);
   // sector → media; comparativa → enfrentada; resto → focalizada.
@@ -1284,7 +1331,7 @@ interface DrumrollQuestion {
   title: string;
   fullQuestion: string;
   teaser: string;
-  reportType: 'competitive' | 'vulnerabilities' | 'projection' | 'sector';
+  reportType: "competitive" | "vulnerabilities" | "projection" | "sector";
 }
 
 interface AnalysisInsights {
@@ -1293,9 +1340,9 @@ interface AnalysisInsights {
   overallScore: number;
   weakestMetrics: { name: string; score: number; interpretation: string }[];
   strongestMetrics: { name: string; score: number; interpretation: string }[];
-  trend: 'up' | 'down' | 'stable';
+  trend: "up" | "down" | "stable";
   trendDelta: number;
-  divergenceLevel: 'low' | 'medium' | 'high';
+  divergenceLevel: "low" | "medium" | "high";
   divergenceDetail?: string;
   keyFinding: string;
 }
@@ -1304,103 +1351,148 @@ interface AnalysisInsights {
 function extractAnalysisInsights(
   rixData: any[],
   primaryCompany: { ticker: string; issuer_name: string },
-  answer: string
+  answer: string,
 ): AnalysisInsights | null {
-  
   // Filter data for this company
   const companyData = rixData
-    .filter(r => r['05_ticker'] === primaryCompany.ticker)
+    .filter((r) => r["05_ticker"] === primaryCompany.ticker)
     .sort((a, b) => new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime());
-  
+
   if (companyData.length === 0) {
     return null;
   }
-  
+
   // Get latest week data (multiple models)
   const latestDate = companyData[0]?.batch_execution_date;
-  const latestWeekData = companyData.filter(r => r.batch_execution_date === latestDate);
-  
+  const latestWeekData = companyData.filter((r) => r.batch_execution_date === latestDate);
+
   // Calculate average RIX across models
-  const rixScores = latestWeekData.map(r => r['09_rix_score']).filter(s => s != null && s > 0);
+  const rixScores = latestWeekData.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
   const avgRix = rixScores.length > 0 ? Math.round(rixScores.reduce((a, b) => a + b, 0) / rixScores.length) : 0;
-  
+
   // Calculate divergence between models
   const maxRix = Math.max(...rixScores);
   const minRix = Math.min(...rixScores);
   const divergence = maxRix - minRix;
-  let divergenceLevel: 'low' | 'medium' | 'high' = 'low';
-  let divergenceDetail = '';
-  
+  let divergenceLevel: "low" | "medium" | "high" = "low";
+  let divergenceDetail = "";
+
   if (divergence >= 20) {
-    divergenceLevel = 'high';
-    const maxModel = latestWeekData.find(r => r['09_rix_score'] === maxRix)?.['02_model_name'];
-    const minModel = latestWeekData.find(r => r['09_rix_score'] === minRix)?.['02_model_name'];
+    divergenceLevel = "high";
+    const maxModel = latestWeekData.find((r) => r["09_rix_score"] === maxRix)?.["02_model_name"];
+    const minModel = latestWeekData.find((r) => r["09_rix_score"] === minRix)?.["02_model_name"];
     divergenceDetail = `${maxModel} (${maxRix}) vs ${minModel} (${minRix})`;
   } else if (divergence >= 10) {
-    divergenceLevel = 'medium';
+    divergenceLevel = "medium";
   }
-  
+
   // Extract metric scores from latest run (use first model with complete data)
-  const latestRun = latestWeekData.find(r => r['23_nvm_score'] != null) || latestWeekData[0];
-  
+  const latestRun = latestWeekData.find((r) => r["23_nvm_score"] != null) || latestWeekData[0];
+
   const metrics = [
-    { name: 'NVM (Narrativa)', fullName: 'Calidad Narrativa', score: latestRun?.['23_nvm_score'], category: latestRun?.['25_nvm_categoria'] },
-    { name: 'DRM (Evidencia)', fullName: 'Evidencia Documental', score: latestRun?.['26_drm_score'], category: latestRun?.['28_drm_categoria'] },
-    { name: 'SIM (Autoridad)', fullName: 'Autoridad de Fuentes', score: latestRun?.['29_sim_score'], category: latestRun?.['31_sim_categoria'] },
-    { name: 'RMM (Momentum)', fullName: 'Momentum Mediático', score: latestRun?.['32_rmm_score'], category: latestRun?.['34_rmm_categoria'] },
-    { name: 'CEM (Riesgo)', fullName: 'Gestión de Controversias', score: latestRun?.['35_cem_score'], category: latestRun?.['37_cem_categoria'] },
-    { name: 'GAM (Gobernanza)', fullName: 'Percepción de Gobierno', score: latestRun?.['38_gam_score'], category: latestRun?.['40_gam_categoria'] },
-    { name: 'DCM (Coherencia)', fullName: 'Coherencia Informativa', score: latestRun?.['41_dcm_score'], category: latestRun?.['43_dcm_categoria'] },
-    { name: 'CXM (Ejecución)', fullName: 'Ejecución Corporativa', score: latestRun?.['44_cxm_score'], category: latestRun?.['46_cxm_categoria'] },
-  ].filter(m => m.score != null && m.score > 0);
-  
+    {
+      name: "NVM (Narrativa)",
+      fullName: "Calidad Narrativa",
+      score: latestRun?.["23_nvm_score"],
+      category: latestRun?.["25_nvm_categoria"],
+    },
+    {
+      name: "DRM (Evidencia)",
+      fullName: "Evidencia Documental",
+      score: latestRun?.["26_drm_score"],
+      category: latestRun?.["28_drm_categoria"],
+    },
+    {
+      name: "SIM (Autoridad)",
+      fullName: "Autoridad de Fuentes",
+      score: latestRun?.["29_sim_score"],
+      category: latestRun?.["31_sim_categoria"],
+    },
+    {
+      name: "RMM (Momentum)",
+      fullName: "Momentum Mediático",
+      score: latestRun?.["32_rmm_score"],
+      category: latestRun?.["34_rmm_categoria"],
+    },
+    {
+      name: "CEM (Riesgo)",
+      fullName: "Gestión de Controversias",
+      score: latestRun?.["35_cem_score"],
+      category: latestRun?.["37_cem_categoria"],
+    },
+    {
+      name: "GAM (Gobernanza)",
+      fullName: "Percepción de Gobierno",
+      score: latestRun?.["38_gam_score"],
+      category: latestRun?.["40_gam_categoria"],
+    },
+    {
+      name: "DCM (Coherencia)",
+      fullName: "Coherencia Informativa",
+      score: latestRun?.["41_dcm_score"],
+      category: latestRun?.["43_dcm_categoria"],
+    },
+    {
+      name: "CXM (Ejecución)",
+      fullName: "Ejecución Corporativa",
+      score: latestRun?.["44_cxm_score"],
+      category: latestRun?.["46_cxm_categoria"],
+    },
+  ].filter((m) => m.score != null && m.score > 0);
+
   // Sort by score to find weakest and strongest
   const sortedByScore = [...metrics].sort((a, b) => a.score - b.score);
   const weakest = sortedByScore.slice(0, 2);
   const strongest = sortedByScore.slice(-2).reverse();
-  
+
   // Calculate trend from historical data (compare last 2 weeks if available)
-  let trend: 'up' | 'down' | 'stable' = 'stable';
+  let trend: "up" | "down" | "stable" = "stable";
   let trendDelta = 0;
-  
-  const uniqueDates = [...new Set(companyData.map(r => r.batch_execution_date))].sort().reverse();
+
+  const uniqueDates = [...new Set(companyData.map((r) => r.batch_execution_date))].sort().reverse();
   if (uniqueDates.length >= 2) {
-    const thisWeekData = companyData.filter(r => r.batch_execution_date === uniqueDates[0]);
-    const lastWeekData = companyData.filter(r => r.batch_execution_date === uniqueDates[1]);
-    
-    const thisWeekAvg = thisWeekData.map(r => r['09_rix_score']).filter(Boolean).reduce((a, b) => a + b, 0) / thisWeekData.length;
-    const lastWeekAvg = lastWeekData.map(r => r['09_rix_score']).filter(Boolean).reduce((a, b) => a + b, 0) / lastWeekData.length;
-    
+    const thisWeekData = companyData.filter((r) => r.batch_execution_date === uniqueDates[0]);
+    const lastWeekData = companyData.filter((r) => r.batch_execution_date === uniqueDates[1]);
+
+    const thisWeekAvg =
+      thisWeekData
+        .map((r) => r["09_rix_score"])
+        .filter(Boolean)
+        .reduce((a, b) => a + b, 0) / thisWeekData.length;
+    const lastWeekAvg =
+      lastWeekData
+        .map((r) => r["09_rix_score"])
+        .filter(Boolean)
+        .reduce((a, b) => a + b, 0) / lastWeekData.length;
+
     trendDelta = Math.round(thisWeekAvg - lastWeekAvg);
-    if (trendDelta >= 3) trend = 'up';
-    else if (trendDelta <= -3) trend = 'down';
+    if (trendDelta >= 3) trend = "up";
+    else if (trendDelta <= -3) trend = "down";
   }
-  
+
   // Extract key finding from answer (first 300 chars or first paragraph)
-  const firstParagraph = answer.split('\n\n')[0] || answer.substring(0, 300);
-  const keyFinding = firstParagraph.length > 200 
-    ? firstParagraph.substring(0, 200) + '...'
-    : firstParagraph;
-  
+  const firstParagraph = answer.split("\n\n")[0] || answer.substring(0, 300);
+  const keyFinding = firstParagraph.length > 200 ? firstParagraph.substring(0, 200) + "..." : firstParagraph;
+
   return {
     company: primaryCompany.issuer_name,
     ticker: primaryCompany.ticker,
     overallScore: avgRix,
-    weakestMetrics: weakest.map(m => ({ 
-      name: m.name, 
-      score: m.score,
-      interpretation: m.category || 'Sin categoría'
-    })),
-    strongestMetrics: strongest.map(m => ({
+    weakestMetrics: weakest.map((m) => ({
       name: m.name,
-      score: m.score, 
-      interpretation: m.category || 'Sin categoría'
+      score: m.score,
+      interpretation: m.category || "Sin categoría",
+    })),
+    strongestMetrics: strongest.map((m) => ({
+      name: m.name,
+      score: m.score,
+      interpretation: m.category || "Sin categoría",
     })),
     trend,
     trendDelta,
     divergenceLevel,
     divergenceDetail,
-    keyFinding
+    keyFinding,
   };
 }
 
@@ -1411,9 +1503,8 @@ async function generateDrumrollQuestion(
   allCompaniesCache: any[] | null,
   language: string,
   languageName: string,
-  logPrefix: string
+  logPrefix: string,
 ): Promise<DrumrollQuestion | null> {
-  
   // Solo generar para preguntas corporativas con datos estructurados
   if (detectedCompanies.length === 0 || !insights) {
     console.log(`${logPrefix} No drumroll: no companies or no insights available`);
@@ -1422,16 +1513,16 @@ async function generateDrumrollQuestion(
 
   const primaryCompany = detectedCompanies[0];
   const sectorInfo = primaryCompany.sector_category || null;
-  
+
   // Encontrar competidores del mismo sector
   let competitors: string[] = [];
   if (sectorInfo && allCompaniesCache) {
     competitors = allCompaniesCache
-      .filter(c => c.sector_category === sectorInfo && c.ticker !== primaryCompany.ticker)
+      .filter((c) => c.sector_category === sectorInfo && c.ticker !== primaryCompany.ticker)
       .slice(0, 5)
-      .map(c => c.issuer_name);
+      .map((c) => c.issuer_name);
   }
-  
+
   // Build prompt with REAL structured data
   const drumrollPrompt = `Acabas de generar un análisis sobre: "${originalQuestion}"
 
@@ -1441,18 +1532,18 @@ async function generateDrumrollQuestion(
 
 EMPRESA ANALIZADA: ${insights.company} (${insights.ticker})
 SCORE RIX ACTUAL: ${insights.overallScore}/100
-TENDENCIA: ${insights.trend === 'up' ? '📈 Subiendo' : insights.trend === 'down' ? '📉 Bajando' : '➡️ Estable'} (${insights.trendDelta > 0 ? '+' : ''}${insights.trendDelta} pts vs semana anterior)
+TENDENCIA: ${insights.trend === "up" ? "📈 Subiendo" : insights.trend === "down" ? "📉 Bajando" : "➡️ Estable"} (${insights.trendDelta > 0 ? "+" : ""}${insights.trendDelta} pts vs semana anterior)
 
 MÉTRICAS MÁS DÉBILES (oportunidad de mejora):
-${insights.weakestMetrics.map(m => `• ${m.name}: ${m.score}/100 (${m.interpretation})`).join('\n')}
+${insights.weakestMetrics.map((m) => `• ${m.name}: ${m.score}/100 (${m.interpretation})`).join("\n")}
 
 MÉTRICAS MÁS FUERTES:
-${insights.strongestMetrics.map(m => `• ${m.name}: ${m.score}/100 (${m.interpretation})`).join('\n')}
+${insights.strongestMetrics.map((m) => `• ${m.name}: ${m.score}/100 (${m.interpretation})`).join("\n")}
 
-NIVEL DE DIVERGENCIA ENTRE IAs: ${insights.divergenceLevel.toUpperCase()}${insights.divergenceDetail ? ` - ${insights.divergenceDetail}` : ''}
+NIVEL DE DIVERGENCIA ENTRE IAs: ${insights.divergenceLevel.toUpperCase()}${insights.divergenceDetail ? ` - ${insights.divergenceDetail}` : ""}
 
-SECTOR: ${sectorInfo || 'No específico'}
-COMPETIDORES DISPONIBLES: ${competitors.join(', ') || 'No identificados'}
+SECTOR: ${sectorInfo || "No específico"}
+COMPETIDORES DISPONIBLES: ${competitors.join(", ") || "No identificados"}
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1489,28 +1580,36 @@ Responde SOLO en JSON válido (sin markdown):
   try {
     const result = await callAISimple(
       [
-        { role: 'system', content: `Eres un estratega de inteligencia competitiva que propone análisis ESPECÍFICOS basados en datos reales. NUNCA propones informes genéricos. Siempre refieres métricas, scores o tendencias concretas en tus propuestas. Responde SOLO en JSON válido sin bloques de código.` },
-        { role: 'user', content: drumrollPrompt }
+        {
+          role: "system",
+          content: `Eres un estratega de inteligencia competitiva que propone análisis ESPECÍFICOS basados en datos reales. NUNCA propones informes genéricos. Siempre refieres métricas, scores o tendencias concretas en tus propuestas. Responde SOLO en JSON válido sin bloques de código.`,
+        },
+        { role: "user", content: drumrollPrompt },
       ],
-      'gpt-4o-mini',
+      "gpt-4o-mini",
       500,
-      logPrefix
+      logPrefix,
     );
-    
+
     if (!result) {
       console.log(`${logPrefix} No drumroll: AI returned null`);
       return null;
     }
-    
-    const cleanResult = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+    const cleanResult = result
+      .replace(/```json\n?/g, "")
+      .replace(/```\n?/g, "")
+      .trim();
     const parsed = JSON.parse(cleanResult);
-    
+
     // Validar estructura completa
     if (parsed.title && parsed.fullQuestion && parsed.teaser && parsed.reportType) {
-      console.log(`${logPrefix} Drumroll generated: "${parsed.title}" (type: ${parsed.reportType}, based on ${insights.weakestMetrics[0]?.name || 'general'} insights)`);
+      console.log(
+        `${logPrefix} Drumroll generated: "${parsed.title}" (type: ${parsed.reportType}, based on ${insights.weakestMetrics[0]?.name || "general"} insights)`,
+      );
       return parsed as DrumrollQuestion;
     }
-    
+
     console.log(`${logPrefix} No drumroll: invalid structure`, parsed);
     return null;
   } catch (error) {
@@ -1847,7 +1946,7 @@ REGLAS:
 `;
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
@@ -1855,39 +1954,42 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { 
-      question, 
-      conversationHistory = [], 
-      sessionId, 
-      action, 
-      roleId, 
-      roleName, 
-      rolePrompt, 
-      originalQuestion, 
-      originalResponse, 
-      conversationId, 
-      bulletinMode, 
-      bulletinCompanyName, 
-      language = 'es', 
-      languageName = 'Español',
-      depthLevel = 'complete',
-      streamMode = false // NEW: enable SSE streaming
+    const {
+      question,
+      conversationHistory = [],
+      sessionId,
+      action,
+      roleId,
+      roleName,
+      rolePrompt,
+      originalQuestion,
+      originalResponse,
+      conversationId,
+      bulletinMode,
+      bulletinCompanyName,
+      language = "es",
+      languageName = "Español",
+      depthLevel = "complete",
+      streamMode = false, // NEW: enable SSE streaming
     } = body;
-    
+
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
     // =============================================================================
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     );
-    
+
     let userId: string | null = null;
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader?.startsWith('Bearer ')) {
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.substring(7);
       try {
-        const { data: { user }, error } = await supabaseClient.auth.getUser(token);
+        const {
+          data: { user },
+          error,
+        } = await supabaseClient.auth.getUser(token);
         if (user && !error) {
           userId = user.id;
           console.log(`${logPrefix} Authenticated user: ${userId}`);
@@ -1896,7 +1998,7 @@ serve(async (req) => {
         console.warn(`${logPrefix} Could not extract user from token:`, authError);
       }
     }
-    
+
     // =============================================================================
     // CHECK FOR STREAMING MODE (SSE response)
     // =============================================================================
@@ -1905,41 +2007,41 @@ serve(async (req) => {
       // For now, fall through to standard processing but return as SSE
       // Full streaming will be implemented in a follow-up
     }
-    
+
     // =============================================================================
     // CHECK FOR ENRICH ACTION (role-based response adaptation)
     // =============================================================================
-    if (action === 'enrich' && roleId && rolePrompt && originalResponse) {
+    if (action === "enrich" && roleId && rolePrompt && originalResponse) {
       console.log(`${logPrefix} ENRICH REQUEST for role: ${roleName} (${roleId})`);
       return await handleEnrichRequest(
         roleId,
         roleName,
         rolePrompt,
-        originalQuestion || '',
+        originalQuestion || "",
         originalResponse,
         sessionId,
         logPrefix,
         supabaseClient,
-        userId
+        userId,
       );
     }
 
     console.log(`${logPrefix} User question:`, question);
     console.log(`${logPrefix} Depth level:`, depthLevel);
 
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openAIApiKey) {
-      throw new Error('OpenAI API key not configured');
+      throw new Error("OpenAI API key not configured");
     }
 
     // Load or refresh company cache
     const now = Date.now();
-    if (!companiesCache || (now - cacheTimestamp) > CACHE_TTL) {
+    if (!companiesCache || now - cacheTimestamp > CACHE_TTL) {
       console.log(`${logPrefix} Loading companies from database...`);
       const { data: companies } = await supabaseClient
-        .from('repindex_root_issuers')
-        .select('issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms');
-      
+        .from("repindex_root_issuers")
+        .select("issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms");
+
       if (companies) {
         companiesCache = companies;
         cacheTimestamp = now;
@@ -1952,16 +2054,16 @@ serve(async (req) => {
     // =============================================================================
     const questionCategory = categorizeQuestion(question, companiesCache || []);
     console.log(`${logPrefix} Question category: ${questionCategory}`);
-    
-    if (questionCategory !== 'corporate_analysis') {
+
+    if (questionCategory !== "corporate_analysis") {
       const redirectResponse = getRedirectResponse(questionCategory, question, languageName, companiesCache || []);
-      
+
       // Save to database
       if (sessionId) {
-        await supabaseClient.from('chat_intelligence_sessions').insert([
+        await supabaseClient.from("chat_intelligence_sessions").insert([
           {
             session_id: sessionId,
-            role: 'user',
+            role: "user",
             content: question,
             user_id: userId,
             question_category: questionCategory,
@@ -1969,25 +2071,25 @@ serve(async (req) => {
           },
           {
             session_id: sessionId,
-            role: 'assistant',
+            role: "assistant",
             content: redirectResponse.answer,
             suggested_questions: redirectResponse.suggestedQuestions,
             user_id: userId,
             question_category: questionCategory,
-          }
+          },
         ]);
       }
-      
+
       return new Response(
         JSON.stringify({
           answer: redirectResponse.answer,
           suggestedQuestions: redirectResponse.suggestedQuestions,
           metadata: {
-            type: 'redirect',
+            type: "redirect",
             questionCategory,
-          }
+          },
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -2001,28 +2103,32 @@ serve(async (req) => {
       /^(?:quiero|necesito|me\s+gustar[íi]a)\s+(?:un\s+)?bolet[íi]n/i,
     ];
 
-    const isGenericBulletinRequest = GENERIC_BULLETIN_PATTERNS.some(pattern => pattern.test(question.trim()));
-    
+    const isGenericBulletinRequest = GENERIC_BULLETIN_PATTERNS.some((pattern) => pattern.test(question.trim()));
+
     if (isGenericBulletinRequest) {
       console.log(`${logPrefix} GENERIC BULLETIN REQUEST - asking for company`);
-      
+
       // Get some example companies to suggest
-      const exampleCompanies = companiesCache?.slice(0, 20).map(c => c.issuer_name) || [];
-      const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX35').slice(0, 10).map(c => c.issuer_name) || [];
-      
+      const exampleCompanies = companiesCache?.slice(0, 20).map((c) => c.issuer_name) || [];
+      const ibexCompanies =
+        companiesCache
+          ?.filter((c) => c.ibex_family_code === "IBEX35")
+          .slice(0, 10)
+          .map((c) => c.issuer_name) || [];
+
       const suggestedCompanies = [...new Set([...ibexCompanies, ...exampleCompanies])].slice(0, 8);
-      
+
       return new Response(
         JSON.stringify({
           answer: `¡Perfecto! 📋 Puedo generar un **boletín ejecutivo** completo para cualquier empresa de nuestra base de datos.\n\n**¿De qué empresa quieres el boletín?**\n\nEscribe el nombre de la empresa (por ejemplo: Telefónica, Inditex, Repsol, BBVA, Iberdrola...) y generaré un análisis detallado incluyendo:\n\n- 📊 **RIX Score** por cada modelo de IA (ChatGPT, Perplexity, Gemini, DeepSeek)\n- 🏆 **Comparativa** con competidores del mismo sector\n- 📈 **Tendencia** de las últimas 4 semanas\n- 💡 **Conclusiones** y recomendaciones\n\nEl boletín estará listo para **descargar o imprimir** en formato profesional.`,
-          suggestedQuestions: suggestedCompanies.map(c => `Genera un boletín de ${c}`),
+          suggestedQuestions: suggestedCompanies.map((c) => `Genera un boletín de ${c}`),
           metadata: {
-            type: 'standard',
+            type: "standard",
             documentsFound: 0,
-            structuredDataFound: companiesCache?.length || 0
-          }
+            structuredDataFound: companiesCache?.length || 0,
+          },
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -2043,7 +2149,7 @@ serve(async (req) => {
         logPrefix,
         userId,
         conversationId,
-        streamMode // Pass streaming mode to bulletin handler
+        streamMode, // Pass streaming mode to bulletin handler
       );
     }
 
@@ -2061,23 +2167,22 @@ serve(async (req) => {
       language,
       languageName,
       depthLevel,
-      roleId,      // NEW: pass role info
+      roleId, // NEW: pass role info
       roleName,
       rolePrompt,
-      streamMode   // Pass streaming mode to standard chat handler
+      streamMode, // Pass streaming mode to standard chat handler
     );
-
   } catch (error) {
     console.error(`${logPrefix} Error in chat-intelligence function:`, error);
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-        details: error instanceof Error ? error.stack : undefined
+        error: error instanceof Error ? error.message : "Unknown error occurred",
+        details: error instanceof Error ? error.stack : undefined,
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });
@@ -2085,48 +2190,65 @@ serve(async (req) => {
 // =============================================================================
 // GUARDRAILS: QUESTION CATEGORIZATION
 // =============================================================================
-type QuestionCategory = 
-  | 'corporate_analysis'    // Normal question about companies
-  | 'agent_identity'        // "Who are you?"
-  | 'personal_query'        // About an individual person
-  | 'off_topic'             // Outside scope
-  | 'test_limits';          // Jailbreak/testing attempts
+type QuestionCategory =
+  | "corporate_analysis" // Normal question about companies
+  | "agent_identity" // "Who are you?"
+  | "personal_query" // About an individual person
+  | "off_topic" // Outside scope
+  | "test_limits"; // Jailbreak/testing attempts
 
 function categorizeQuestion(question: string, companiesCache: any[]): QuestionCategory {
-  const q = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  
+  const q = question
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
   // Agent identity patterns
-  if (/qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|que modelo|qué modelo|who are you|what are you/i.test(q)) {
-    return 'agent_identity';
+  if (
+    /qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|que modelo|qué modelo|who are you|what are you/i.test(q)
+  ) {
+    return "agent_identity";
   }
-  
+
   // Personal query patterns (asking about themselves or specific people without company context)
   if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analiza(me)?|sobre m[ií]|analyze me|about me/i.test(q)) {
-    return 'personal_query';
+    return "personal_query";
   }
-  
+
   // If mentions known companies, it's corporate analysis
   if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
-    return 'corporate_analysis';
+    return "corporate_analysis";
   }
-  
+
   // Off-topic patterns
-  if (/f[uú]tbol|pol[ií]tica|receta|chiste|poema|\bcuento\b|\bcuentos\b|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(q)) {
-    return 'off_topic';
+  if (
+    /f[uú]tbol|pol[ií]tica|receta|chiste|poema|\bcuento\b|\bcuentos\b|weather|tiempo hace|football|soccer|joke|recipe|poem|story/i.test(
+      q,
+    )
+  ) {
+    return "off_topic";
   }
-  
+
   // Test limits patterns
   if (/ignore.*instructions|ignora.*instrucciones|jailbreak|bypass|prompt injection|actua como|act as if/i.test(q)) {
-    return 'test_limits';
+    return "test_limits";
   }
-  
+
   // Default: try to process as corporate analysis
-  return 'corporate_analysis';
+  return "corporate_analysis";
 }
 
-function getRedirectResponse(category: QuestionCategory, question: string, languageName: string, companiesCache: any[]): { answer: string; suggestedQuestions: string[] } {
-  const ibexCompanies = companiesCache?.filter(c => c.ibex_family_code === 'IBEX35').slice(0, 5).map(c => c.issuer_name) || ['Telefónica', 'BBVA', 'Santander', 'Iberdrola', 'Inditex'];
-  
+function getRedirectResponse(
+  category: QuestionCategory,
+  question: string,
+  languageName: string,
+  companiesCache: any[],
+): { answer: string; suggestedQuestions: string[] } {
+  const ibexCompanies = companiesCache
+    ?.filter((c) => c.ibex_family_code === "IBEX35")
+    .slice(0, 5)
+    .map((c) => c.issuer_name) || ["Telefónica", "BBVA", "Santander", "Iberdrola", "Inditex"];
+
   const responses: Record<QuestionCategory, { answer: string; suggestedQuestions: string[] }> = {
     agent_identity: {
       answer: `Soy el **Agente Rix**, un analista especializado en reputación algorítmica corporativa.
@@ -2144,7 +2266,7 @@ Mi función es ayudarte a interpretar cómo los principales modelos de inteligen
         `Analiza la reputación de ${ibexCompanies[0]}`,
         `Top 5 empresas del IBEX-35 esta semana`,
         `Comparativa del sector Banca`,
-      ]
+      ],
     },
     personal_query: {
       answer: `Mi especialidad es el análisis de reputación **corporativa**, no individual. Analizo cómo las IAs perciben a empresas como entidades, no a personas físicas.
@@ -2156,7 +2278,7 @@ Sin embargo, si estás vinculado a una empresa específica, puedo analizar cómo
         `Analiza ${ibexCompanies[0]}`,
         `¿Cómo se percibe el liderazgo de ${ibexCompanies[1]}?`,
         `Reputación del sector Tecnología`,
-      ]
+      ],
     },
     off_topic: {
       answer: `Esa pregunta está fuera de mi especialización. Como Agente Rix, me centro exclusivamente en el **análisis de reputación algorítmica corporativa**.
@@ -2168,28 +2290,20 @@ Sin embargo, si estás vinculado a una empresa específica, puedo analizar cómo
 - 📋 Informes ejecutivos sobre la percepción en IAs
 
 ¿Hay alguna empresa o sector que te interese analizar?`,
-      suggestedQuestions: [
-        `Ranking del sector Energía`,
-        `Top 10 empresas esta semana`,
-        `Analiza ${ibexCompanies[2]}`,
-      ]
+      suggestedQuestions: [`Ranking del sector Energía`, `Top 10 empresas esta semana`, `Analiza ${ibexCompanies[2]}`],
     },
     test_limits: {
       answer: `Soy el Agente Rix, un analista de reputación corporativa. Mi función es ayudarte a entender cómo las IAs perciben a las empresas españolas.
 
 ¿En qué empresa o sector te gustaría que nos centráramos?`,
-      suggestedQuestions: [
-        `Analiza ${ibexCompanies[0]}`,
-        `Top 5 del IBEX-35`,
-        `Comparativa sector Telecomunicaciones`,
-      ]
+      suggestedQuestions: [`Analiza ${ibexCompanies[0]}`, `Top 5 del IBEX-35`, `Comparativa sector Telecomunicaciones`],
     },
     corporate_analysis: {
-      answer: '', // Not used for this category
-      suggestedQuestions: []
-    }
+      answer: "", // Not used for this category
+      suggestedQuestions: [],
+    },
   };
-  
+
   return responses[category];
 }
 
@@ -2205,16 +2319,16 @@ async function handlePericialEnrichRequest(
   sessionId: string | undefined,
   logPrefix: string,
   supabaseClient: any,
-  userId: string | null
+  userId: string | null,
 ) {
   console.log(`${logPrefix} Generating DICTAMEN PERICIAL for role: ${roleName}`);
 
-  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openAIApiKey) {
-    throw new Error('OpenAI API key not configured');
+    throw new Error("OpenAI API key not configured");
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().split("T")[0];
 
   const systemPrompt = `Eres un sistema de análisis forense de reputación corporativa. Tu función es producir DICTÁMENES PERICIALES con valor probatorio para entornos judiciales, arbitrales y de mediación. El dictamen se elabora con la metodología RepIndex, desarrollada y validada académicamente por la Universidad Complutense de Madrid.
 
@@ -2396,30 +2510,35 @@ ${originalQuestion || "(No disponible)"}
 
   try {
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Elabora el DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA completo. Rigor forense absoluto. Mínimo 2.000 palabras. Tercera persona. Solo hechos constatables con base en los datos proporcionados. Sin recomendaciones estratégicas. Sin valoración económica del daño.` }
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: `Elabora el DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA completo. Rigor forense absoluto. Mínimo 2.000 palabras. Tercera persona. Solo hechos constatables con base en los datos proporcionados. Sin recomendaciones estratégicas. Sin valoración económica del daño.`,
+      },
     ];
 
-    const result = await callAIWithFallback(messages, 'o3', 32000, logPrefix);
+    const result = await callAIWithFallback(messages, "o3", 32000, logPrefix);
     const enrichedAnswer = result.content;
 
-    console.log(`${logPrefix} DICTAMEN PERICIAL generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`);
+    console.log(
+      `${logPrefix} DICTAMEN PERICIAL generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`,
+    );
 
     // Log API usage
     await logApiUsage({
       supabaseClient,
-      edgeFunction: 'chat-intelligence',
+      edgeFunction: "chat-intelligence",
       provider: result.provider,
       model: result.model,
-      actionType: 'enrich',
+      actionType: "enrich",
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       userId,
       sessionId,
       metadata: {
-        roleId: 'perito_reputacional',
+        roleId: "perito_reputacional",
         roleName,
-        depth_level: 'enrich',
+        depth_level: "enrich",
       },
     });
 
@@ -2435,15 +2554,14 @@ ${originalQuestion || "(No disponible)"}
         answer: enrichedAnswer,
         suggestedQuestions,
         metadata: {
-          type: 'enriched',
-          roleId: 'perito_reputacional',
+          type: "enriched",
+          roleId: "perito_reputacional",
           roleName,
           aiProvider: result.provider,
-        }
+        },
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-
   } catch (error) {
     console.error(`${logPrefix} Error in pericial enrich request:`, error);
     throw error;
@@ -2462,21 +2580,26 @@ async function handleEnrichRequest(
   sessionId: string | undefined,
   logPrefix: string,
   supabaseClient: any,
-  userId: string | null
+  userId: string | null,
 ) {
   // Special branch: forensic/legal expert generates a DICTAMEN PERICIAL, not an executive report
-  if (roleId === 'perito_reputacional') {
+  if (roleId === "perito_reputacional") {
     return await handlePericialEnrichRequest(
-      roleName, originalQuestion, originalResponse,
-      sessionId, logPrefix, supabaseClient, userId
+      roleName,
+      originalQuestion,
+      originalResponse,
+      sessionId,
+      logPrefix,
+      supabaseClient,
+      userId,
     );
   }
 
   console.log(`${logPrefix} Generating EXPANDED executive report for role: ${roleName}`);
 
-  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+  const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openAIApiKey) {
-    throw new Error('OpenAI API key not configured');
+    throw new Error("OpenAI API key not configured");
   }
 
   const systemPrompt = `Eres el Agente Rix, un consultor senior de reputación corporativa creando un **INFORME EJECUTIVO COMPLETO** para alta dirección.
@@ -2591,55 +2714,54 @@ ${originalQuestion || "(No disponible)"}
 
   try {
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para alta dirección. Este debe ser un documento profesional de consultoría premium de MÁXIMA CALIDAD sin límite de extensión - si necesitas 5000 palabras, escribe 5000 palabras. Expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE. EXCELENCIA sobre brevedad. RECUERDA: No menciones el perfil del destinatario en el texto, simplemente adapta el enfoque. Y SIEMPRE explica qué significa cada métrica RepIndex que menciones.` }
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: `Genera un INFORME EJECUTIVO COMPLETO Y EXTENSO para alta dirección. Este debe ser un documento profesional de consultoría premium de MÁXIMA CALIDAD sin límite de extensión - si necesitas 5000 palabras, escribe 5000 palabras. Expandiendo y profundizando en todos los datos disponibles. NO resumas, EXPANDE. EXCELENCIA sobre brevedad. RECUERDA: No menciones el perfil del destinatario en el texto, simplemente adapta el enfoque. Y SIEMPRE explica qué significa cada métrica RepIndex que menciones.`,
+      },
     ];
 
-    const result = await callAIWithFallback(messages, 'o3', 32000, logPrefix);
+    const result = await callAIWithFallback(messages, "o3", 32000, logPrefix);
     const enrichedAnswer = result.content;
 
-    console.log(`${logPrefix} EXPANDED executive report generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`);
+    console.log(
+      `${logPrefix} EXPANDED executive report generated (via ${result.provider}), length: ${enrichedAnswer.length} chars`,
+    );
 
     // Log API usage
     await logApiUsage({
       supabaseClient,
-      edgeFunction: 'chat-intelligence',
+      edgeFunction: "chat-intelligence",
       provider: result.provider,
       model: result.model,
-      actionType: 'enrich',
+      actionType: "enrich",
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       userId,
       sessionId,
-      metadata: { 
-        roleId, 
+      metadata: {
+        roleId,
         roleName,
-        depth_level: 'enrich', // Enrichment is always a separate call
+        depth_level: "enrich", // Enrichment is always a separate call
       },
     });
 
     // Generate role-specific follow-up questions
-    const suggestedQuestions = await generateRoleSpecificQuestions(
-      roleId,
-      roleName,
-      originalQuestion,
-      logPrefix
-    );
+    const suggestedQuestions = await generateRoleSpecificQuestions(roleId, roleName, originalQuestion, logPrefix);
 
     return new Response(
       JSON.stringify({
         answer: enrichedAnswer,
         suggestedQuestions,
         metadata: {
-          type: 'enriched',
+          type: "enriched",
           roleId,
           roleName,
           aiProvider: result.provider,
-        }
+        },
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-
   } catch (error) {
     console.error(`${logPrefix} Error in enrich request:`, error);
     throw error;
@@ -2651,56 +2773,31 @@ async function generateRoleSpecificQuestions(
   roleId: string,
   roleName: string,
   originalQuestion: string,
-  logPrefix: string
+  logPrefix: string,
 ): Promise<string[]> {
   const roleQuestionHints: Record<string, string[]> = {
-    ceo: [
-      "impacto en negocio",
-      "decisiones estratégicas",
-      "comparativa competitiva",
-      "riesgos principales"
-    ],
-    periodista: [
-      "titulares noticiables",
-      "controversias",
-      "investigación periodística",
-      "ángulos de historia"
-    ],
+    ceo: ["impacto en negocio", "decisiones estratégicas", "comparativa competitiva", "riesgos principales"],
+    periodista: ["titulares noticiables", "controversias", "investigación periodística", "ángulos de historia"],
     analista_mercados: [
       "correlación RIX-cotización",
       "señales de mercado",
       "análisis técnico",
-      "comparativa sectorial"
+      "comparativa sectorial",
     ],
-    inversor: [
-      "screening reputacional",
-      "riesgo ESG",
-      "oportunidades de entrada",
-      "alertas de cartera"
-    ],
-    dircom: [
-      "gestión de crisis",
-      "narrativa mediática",
-      "mensajes clave",
-      "sentimiento público"
-    ],
-    marketing: [
-      "posicionamiento de marca",
-      "benchmarking",
-      "diferenciación",
-      "experiencia de cliente"
-    ],
+    inversor: ["screening reputacional", "riesgo ESG", "oportunidades de entrada", "alertas de cartera"],
+    dircom: ["gestión de crisis", "narrativa mediática", "mensajes clave", "sentimiento público"],
+    marketing: ["posicionamiento de marca", "benchmarking", "diferenciación", "experiencia de cliente"],
     estratega_interno: [
       "capacidades organizativas",
       "cultura corporativa",
       "recursos internos",
-      "brechas de alineamiento"
+      "brechas de alineamiento",
     ],
     estratega_externo: [
       "posición competitiva",
       "oportunidades de mercado",
       "amenazas externas",
-      "movimientos estratégicos"
+      "movimientos estratégicos",
     ],
   };
 
@@ -2708,16 +2805,22 @@ async function generateRoleSpecificQuestions(
 
   try {
     const messages = [
-      { 
-        role: 'system', 
-        content: `Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(', ')}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]`
+      {
+        role: "system",
+        content: `Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(", ")}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]`,
       },
-      { role: 'user', content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}.` }
+      {
+        role: "user",
+        content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}.`,
+      },
     ];
 
-    const text = await callAISimple(messages, 'gpt-4o-mini', 300, logPrefix);
+    const text = await callAISimple(messages, "gpt-4o-mini", 300, logPrefix);
     if (text) {
-      const cleanText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const cleanText = text
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
       return JSON.parse(cleanText);
     }
   } catch (error) {
@@ -2726,13 +2829,35 @@ async function generateRoleSpecificQuestions(
 
   // Fallback questions based on role
   const fallbackQuestions: Record<string, string[]> = {
-    ceo: ["¿Cuáles son los 3 riesgos reputacionales más urgentes?", "¿Cómo estamos vs la competencia directa?", "¿Qué decisiones debería considerar?"],
-    periodista: ["¿Qué empresa tiene la historia más noticiable esta semana?", "¿Hay alguna controversia emergente?", "¿Qué titular propones para esta información?"],
-    analista_mercados: ["¿Hay correlación entre RIX y cotización?", "¿Qué señales técnicas detectas?", "Comparativa detallada del sector"],
-    inversor: ["¿Pasa esta empresa el filtro reputacional?", "¿Cuál es el nivel de riesgo ESG?", "¿Es buen momento para entrar?"],
+    ceo: [
+      "¿Cuáles son los 3 riesgos reputacionales más urgentes?",
+      "¿Cómo estamos vs la competencia directa?",
+      "¿Qué decisiones debería considerar?",
+    ],
+    periodista: [
+      "¿Qué empresa tiene la historia más noticiable esta semana?",
+      "¿Hay alguna controversia emergente?",
+      "¿Qué titular propones para esta información?",
+    ],
+    analista_mercados: [
+      "¿Hay correlación entre RIX y cotización?",
+      "¿Qué señales técnicas detectas?",
+      "Comparativa detallada del sector",
+    ],
+    inversor: [
+      "¿Pasa esta empresa el filtro reputacional?",
+      "¿Cuál es el nivel de riesgo ESG?",
+      "¿Es buen momento para entrar?",
+    ],
   };
 
-  return fallbackQuestions[roleId] || ["¿Puedes profundizar más?", "¿Cómo se compara con competidores?", "¿Cuál es la tendencia?"];
+  return (
+    fallbackQuestions[roleId] || [
+      "¿Puedes profundizar más?",
+      "¿Cómo se compara con competidores?",
+      "¿Cuál es la tendencia?",
+    ]
+  );
 }
 
 // =============================================================================
@@ -2741,31 +2866,46 @@ async function generateRoleSpecificQuestions(
 async function handleBulletinRequest(
   companyQuery: string,
   originalQuestion: string,
-  depthLevel: 'quick' | 'complete' | 'exhaustive',
+  depthLevel: "quick" | "complete" | "exhaustive",
   supabaseClient: any,
   openAIApiKey: string,
   sessionId: string | undefined,
   logPrefix: string,
   userId: string | null,
   conversationId: string | undefined,
-  streamMode: boolean = false // NEW: support streaming mode
+  streamMode: boolean = false, // NEW: support streaming mode
 ) {
   console.log(`${logPrefix} Processing bulletin request for: ${companyQuery}`);
 
   // 1. Find the company in our database
-  const normalize = (s: string) => s.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
   const normalizedQuery = normalize(companyQuery);
-  const matchedCompany = companiesCache?.find(c => {
+  const matchedCompany = companiesCache?.find((c) => {
     const name = normalize(c.issuer_name);
-    const ticker = c.ticker?.toLowerCase() || '';
+    const ticker = c.ticker?.toLowerCase() || "";
     if (name.includes(normalizedQuery) || normalizedQuery.includes(name)) return true;
     if (ticker === normalizedQuery) return true;
     // Check include_terms (aliases without accents)
     if (c.include_terms) {
       try {
         const terms = Array.isArray(c.include_terms) ? c.include_terms : JSON.parse(c.include_terms);
-        if (terms.some((t: string) => { const nt = normalize(t); return nt.length > 3 && (nt === normalizedQuery || normalizedQuery.includes(nt) || nt.includes(normalizedQuery)); })) return true;
-      } catch (_) { /* ignore */ }
+        if (
+          terms.some((t: string) => {
+            const nt = normalize(t);
+            return (
+              nt.length > 3 && (nt === normalizedQuery || normalizedQuery.includes(nt) || nt.includes(normalizedQuery))
+            );
+          })
+        )
+          return true;
+      } catch (_) {
+        /* ignore */
+      }
     }
     return false;
   });
@@ -2774,15 +2914,18 @@ async function handleBulletinRequest(
     console.log(`${logPrefix} Company not found: ${companyQuery}`);
     return new Response(
       JSON.stringify({
-        answer: `❌ No encontré la empresa "${companyQuery}" en la base de datos de RepIndex.\n\n**Empresas disponibles** (algunas sugerencias):\n${companiesCache?.slice(0, 10).map(c => `- ${c.issuer_name} (${c.ticker})`).join('\n')}\n\nPor favor, especifica el nombre exacto o el ticker de la empresa.`,
+        answer: `❌ No encontré la empresa "${companyQuery}" en la base de datos de RepIndex.\n\n**Empresas disponibles** (algunas sugerencias):\n${companiesCache
+          ?.slice(0, 10)
+          .map((c) => `- ${c.issuer_name} (${c.ticker})`)
+          .join("\n")}\n\nPor favor, especifica el nombre exacto o el ticker de la empresa.`,
         suggestedQuestions: [
           "¿Qué empresas están disponibles en RepIndex?",
           "Genera un boletín de Telefónica",
-          "Lista las empresas del sector Energía"
+          "Lista las empresas del sector Energía",
         ],
-        metadata: { type: 'error', bulletinRequested: true }
+        metadata: { type: "error", bulletinRequested: true },
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 
@@ -2795,34 +2938,36 @@ async function handleBulletinRequest(
     companiesCache || [],
     supabaseClient,
     competitorLimit,
-    logPrefix
+    logPrefix,
   );
   const competitors = competitorResult.competitors;
 
-  console.log(`${logPrefix} Smart competitor selection: ${competitors.map(c => c.ticker).join(', ')}`);
-  console.log(`${logPrefix} Competitor methodology: ${competitorResult.tierUsed} (verified: ${competitorResult.verifiedCount}, subsector: ${competitorResult.subsectorCount})`);
+  console.log(`${logPrefix} Smart competitor selection: ${competitors.map((c) => c.ticker).join(", ")}`);
+  console.log(
+    `${logPrefix} Competitor methodology: ${competitorResult.tierUsed} (verified: ${competitorResult.verifiedCount}, subsector: ${competitorResult.subsectorCount})`,
+  );
 
   // 3. Get all tickers to fetch (company + competitors)
-  const allTickers = [matchedCompany.ticker, ...competitors.map(c => c.ticker)];
+  const allTickers = [matchedCompany.ticker, ...competitors.map((c) => c.ticker)];
 
   // ═══════════════════════════════════════════════════════════════════════════
   // 4. VECTOR STORE SEARCH - Qualitative context from AI explanations
   // ═══════════════════════════════════════════════════════════════════════════
-  let vectorStoreContext = '';
+  let vectorStoreContext = "";
   const vectorMatchCount = 30; // Always exhaustive
-  
+
   try {
     // Generate embedding for the company name
-    const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
+    const embeddingResponse = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openAIApiKey}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: 'text-embedding-3-small',
-        input: `${matchedCompany.issuer_name} ${matchedCompany.ticker} reputación corporativa análisis`
-      })
+        model: "text-embedding-3-small",
+        input: `${matchedCompany.issuer_name} ${matchedCompany.ticker} reputación corporativa análisis`,
+      }),
     });
 
     if (embeddingResponse.ok) {
@@ -2831,29 +2976,33 @@ async function handleBulletinRequest(
 
       if (queryEmbedding) {
         // Search Vector Store for relevant documents
-        const { data: vectorDocs, error: vectorError } = await supabaseClient.rpc('match_documents', {
+        const { data: vectorDocs, error: vectorError } = await supabaseClient.rpc("match_documents", {
           query_embedding: queryEmbedding,
           match_count: vectorMatchCount,
-          filter: {} // Could filter by metadata->ticker if indexed
+          filter: {}, // Could filter by metadata->ticker if indexed
         });
 
         if (!vectorError && vectorDocs?.length > 0) {
           // Filter results to only include documents about this company
           const relevantDocs = vectorDocs.filter((doc: any) => {
-            const content = doc.content?.toLowerCase() || '';
+            const content = doc.content?.toLowerCase() || "";
             const metadata = doc.metadata || {};
-            return content.includes(matchedCompany.ticker.toLowerCase()) ||
-                   content.includes(matchedCompany.issuer_name.toLowerCase()) ||
-                   metadata.ticker === matchedCompany.ticker;
+            return (
+              content.includes(matchedCompany.ticker.toLowerCase()) ||
+              content.includes(matchedCompany.issuer_name.toLowerCase()) ||
+              metadata.ticker === matchedCompany.ticker
+            );
           });
 
           if (relevantDocs.length > 0) {
-            console.log(`${logPrefix} Vector Store: Found ${relevantDocs.length} relevant documents (from ${vectorDocs.length} total)`);
-            
+            console.log(
+              `${logPrefix} Vector Store: Found ${relevantDocs.length} relevant documents (from ${vectorDocs.length} total)`,
+            );
+
             vectorStoreContext = `\n📚 ANÁLISIS CUALITATIVOS DE IAs (Vector Store - ${relevantDocs.length} documentos):\n`;
             relevantDocs.slice(0, 10).forEach((doc: any, i: number) => {
-              const content = doc.content?.substring(0, 600) || '';
-              const similarity = doc.similarity ? ` [Similaridad: ${(doc.similarity * 100).toFixed(1)}%]` : '';
+              const content = doc.content?.substring(0, 600) || "";
+              const similarity = doc.similarity ? ` [Similaridad: ${(doc.similarity * 100).toFixed(1)}%]` : "";
               vectorStoreContext += `\n[Fuente ${i + 1}]${similarity}:\n${content}...\n`;
             });
           }
@@ -2867,22 +3016,22 @@ async function handleBulletinRequest(
   // ═══════════════════════════════════════════════════════════════════════════
   // 5. CORPORATE NEWS - Recent news about the company
   // ═══════════════════════════════════════════════════════════════════════════
-  let corporateNewsContext = '';
-  
+  let corporateNewsContext = "";
+
   try {
     const { data: corporateNews, error: newsError } = await supabaseClient
-      .from('corporate_news')
-      .select('headline, lead_paragraph, published_date, category')
-      .eq('ticker', matchedCompany.ticker)
-      .order('published_date', { ascending: false })
+      .from("corporate_news")
+      .select("headline, lead_paragraph, published_date, category")
+      .eq("ticker", matchedCompany.ticker)
+      .order("published_date", { ascending: false })
       .limit(5); // Always exhaustive
 
     if (!newsError && corporateNews?.length > 0) {
       console.log(`${logPrefix} Corporate News: Found ${corporateNews.length} recent articles`);
-      
+
       corporateNewsContext = `\n📰 NOTICIAS CORPORATIVAS RECIENTES (${corporateNews.length}):\n`;
       corporateNews.forEach((news: any, i: number) => {
-        corporateNewsContext += `${i + 1}. [${news.published_date || 'Sin fecha'}] ${news.headline}\n`;
+        corporateNewsContext += `${i + 1}. [${news.published_date || "Sin fecha"}] ${news.headline}\n`;
         if (news.lead_paragraph) {
           corporateNewsContext += `   ${news.lead_paragraph.substring(0, 200)}...\n`;
         }
@@ -2930,7 +3079,7 @@ async function handleBulletinRequest(
     `,
     tickerFilter: allTickers,
     limit: 800,
-    logPrefix
+    logPrefix,
   });
 
   console.log(`${logPrefix} Fetched ${rixData?.length || 0} RIX records for bulletin`);
@@ -2938,72 +3087,72 @@ async function handleBulletinRequest(
   // 7. Organize data by week and company
   const getPeriodKey = (run: any) => `${run["06_period_from"]}|${run["07_period_to"]}`;
   const uniquePeriods = [...new Set(rixData?.map(getPeriodKey) || [])]
-    .sort((a, b) => b.split('|')[1].localeCompare(a.split('|')[1]))
+    .sort((a, b) => b.split("|")[1].localeCompare(a.split("|")[1]))
     .slice(0, 4); // Always exhaustive: 4 periods
 
   console.log(`${logPrefix} Unique periods found: ${uniquePeriods.length}`);
 
   // 8. Build bulletin context
-  let bulletinContext = '';
+  let bulletinContext = "";
 
   // Company info
   bulletinContext += `📌 EMPRESA PRINCIPAL:\n`;
   bulletinContext += `- Nombre: ${matchedCompany.issuer_name}\n`;
   bulletinContext += `- Ticker: ${matchedCompany.ticker}\n`;
-  bulletinContext += `- Sector: ${matchedCompany.sector_category || 'No especificado'}\n`;
-  bulletinContext += `- Subsector: ${matchedCompany.subsector || 'No definido'}\n`;
-  bulletinContext += `- Categoría IBEX: ${matchedCompany.ibex_family_code || 'No IBEX'}\n`;
-  bulletinContext += `- Cotiza en bolsa: ${matchedCompany.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
+  bulletinContext += `- Sector: ${matchedCompany.sector_category || "No especificado"}\n`;
+  bulletinContext += `- Subsector: ${matchedCompany.subsector || "No definido"}\n`;
+  bulletinContext += `- Categoría IBEX: ${matchedCompany.ibex_family_code || "No IBEX"}\n`;
+  bulletinContext += `- Cotiza en bolsa: ${matchedCompany.cotiza_en_bolsa ? "Sí" : "No"}\n\n`;
 
   // Competitors info WITH METHODOLOGY JUSTIFICATION
   bulletinContext += `🏢 COMPETIDORES (${competitors.length}) - METODOLOGÍA DE SELECCIÓN:\n`;
   bulletinContext += `${competitorResult.justification}\n\n`;
   competitors.forEach((c, idx) => {
     bulletinContext += `${idx + 1}. ${c.issuer_name} (${c.ticker})\n`;
-    bulletinContext += `   - Sector: ${c.sector_category || 'Sin sector'} | Subsector: ${c.subsector || 'N/D'}\n`;
+    bulletinContext += `   - Sector: ${c.sector_category || "Sin sector"} | Subsector: ${c.subsector || "N/D"}\n`;
   });
-  bulletinContext += '\n';
+  bulletinContext += "\n";
 
   // Add Vector Store context if available
   if (vectorStoreContext) {
     bulletinContext += vectorStoreContext;
-    bulletinContext += '\n';
+    bulletinContext += "\n";
   }
 
   // Add Corporate News context if available
   if (corporateNewsContext) {
     bulletinContext += corporateNewsContext;
-    bulletinContext += '\n';
+    bulletinContext += "\n";
   }
 
   // Data by week with DETAILED metrics
   uniquePeriods.forEach((period, weekIdx) => {
-    const [periodFrom, periodTo] = period.split('|');
-    const weekData = rixData?.filter(r => getPeriodKey(r) === period) || [];
-    
-    const weekLabel = weekIdx === 0 ? 'SEMANA ACTUAL' : `SEMANA -${weekIdx}`;
+    const [periodFrom, periodTo] = period.split("|");
+    const weekData = rixData?.filter((r) => getPeriodKey(r) === period) || [];
+
+    const weekLabel = weekIdx === 0 ? "SEMANA ACTUAL" : `SEMANA -${weekIdx}`;
     bulletinContext += `\n📅 ${weekLabel} (${periodFrom} a ${periodTo}):\n\n`;
 
     // DETAILED Data for main company
-    const mainCompanyData = weekData.filter(r => r["05_ticker"] === matchedCompany.ticker);
+    const mainCompanyData = weekData.filter((r) => r["05_ticker"] === matchedCompany.ticker);
     bulletinContext += `**${matchedCompany.issuer_name} - DATOS DETALLADOS**:\n\n`;
-    
+
     if (mainCompanyData.length > 0) {
-      mainCompanyData.forEach(r => {
+      mainCompanyData.forEach((r) => {
         const score = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
         bulletinContext += `### ${r["02_model_name"]} - RIX: ${score}\n`;
-        
+
         // Include all RIX metrics
         bulletinContext += `**Métricas del RIX:**\n`;
-        bulletinContext += `- NVM (Visibility): ${r["23_nvm_score"] ?? 'N/A'} - ${r["25_nvm_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- DRM (Digital Resonance): ${r["26_drm_score"] ?? 'N/A'} - ${r["28_drm_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- SIM (Sentiment): ${r["29_sim_score"] ?? 'N/A'} - ${r["31_sim_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- RMM (Momentum): ${r["32_rmm_score"] ?? 'N/A'} - ${r["34_rmm_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- CEM (Crisis Exposure): ${r["35_cem_score"] ?? 'N/A'} - ${r["37_cem_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- GAM (Growth Association): ${r["38_gam_score"] ?? 'N/A'} - ${r["40_gam_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- DCM (Data Consistency): ${r["41_dcm_score"] ?? 'N/A'} - ${r["43_dcm_categoria"] || 'Sin categoría'}\n`;
-        bulletinContext += `- CXM (Customer Experience): ${r["44_cxm_score"] ?? 'N/A'} - ${r["46_cxm_categoria"] || 'Sin categoría'}\n`;
-        
+        bulletinContext += `- NVM (Visibility): ${r["23_nvm_score"] ?? "N/A"} - ${r["25_nvm_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- DRM (Digital Resonance): ${r["26_drm_score"] ?? "N/A"} - ${r["28_drm_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- SIM (Sentiment): ${r["29_sim_score"] ?? "N/A"} - ${r["31_sim_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- RMM (Momentum): ${r["32_rmm_score"] ?? "N/A"} - ${r["34_rmm_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- CEM (Crisis Exposure): ${r["35_cem_score"] ?? "N/A"} - ${r["37_cem_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- GAM (Growth Association): ${r["38_gam_score"] ?? "N/A"} - ${r["40_gam_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- DCM (Data Consistency): ${r["41_dcm_score"] ?? "N/A"} - ${r["43_dcm_categoria"] || "Sin categoría"}\n`;
+        bulletinContext += `- CXM (Customer Experience): ${r["44_cxm_score"] ?? "N/A"} - ${r["46_cxm_categoria"] || "Sin categoría"}\n`;
+
         // Include summary and key points
         if (r["10_resumen"]) {
           bulletinContext += `\n**Resumen de la IA:**\n${r["10_resumen"]}\n`;
@@ -3020,25 +3169,28 @@ async function handleBulletinRequest(
         if (r["25_explicaciones_detalladas"]) {
           bulletinContext += `\n**Explicaciones Detalladas por Métrica:**\n${JSON.stringify(r["25_explicaciones_detalladas"], null, 2)}\n`;
         }
-        bulletinContext += '\n---\n';
+        bulletinContext += "\n---\n";
       });
-      
-      const avgScore = mainCompanyData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / mainCompanyData.length;
+
+      const avgScore =
+        mainCompanyData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) /
+        mainCompanyData.length;
       bulletinContext += `\n**PROMEDIO RIX ${matchedCompany.issuer_name}**: ${avgScore.toFixed(1)}\n`;
     } else {
       bulletinContext += `- Sin datos esta semana\n`;
     }
-    bulletinContext += '\n';
+    bulletinContext += "\n";
 
     // Data for competitors with metrics
     bulletinContext += `**COMPETIDORES - RESUMEN ESTA SEMANA**:\n`;
     bulletinContext += `| Empresa | Ticker | RIX Prom | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
     bulletinContext += `|---------|--------|----------|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
-    
-    competitors.forEach(comp => {
-      const compData = weekData.filter(r => r["05_ticker"] === comp.ticker);
+
+    competitors.forEach((comp) => {
+      const compData = weekData.filter((r) => r["05_ticker"] === comp.ticker);
       if (compData.length > 0) {
-        const avgScore = compData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / compData.length;
+        const avgScore =
+          compData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / compData.length;
         const avgNVM = compData.reduce((sum, r) => sum + (r["23_nvm_score"] || 0), 0) / compData.length;
         const avgDRM = compData.reduce((sum, r) => sum + (r["26_drm_score"] || 0), 0) / compData.length;
         const avgSIM = compData.reduce((sum, r) => sum + (r["29_sim_score"] || 0), 0) / compData.length;
@@ -3050,22 +3202,22 @@ async function handleBulletinRequest(
         bulletinContext += `| ${comp.issuer_name} | ${comp.ticker} | ${avgScore.toFixed(1)} | ${avgNVM.toFixed(0)} | ${avgDRM.toFixed(0)} | ${avgSIM.toFixed(0)} | ${avgRMM.toFixed(0)} | ${avgCEM.toFixed(0)} | ${avgGAM.toFixed(0)} | ${avgDCM.toFixed(0)} | ${avgCXM.toFixed(0)} |\n`;
       }
     });
-    bulletinContext += '\n';
+    bulletinContext += "\n";
 
     // Individual competitor details for current week only
     if (weekIdx === 0) {
       bulletinContext += `\n**DETALLES DE COMPETIDORES - SEMANA ACTUAL:**\n`;
-      competitors.forEach(comp => {
-        const compData = weekData.filter(r => r["05_ticker"] === comp.ticker);
+      competitors.forEach((comp) => {
+        const compData = weekData.filter((r) => r["05_ticker"] === comp.ticker);
         if (compData.length > 0) {
           bulletinContext += `\n### ${comp.issuer_name} (${comp.ticker}):\n`;
-          compData.forEach(r => {
+          compData.forEach((r) => {
             const score = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
             bulletinContext += `- ${r["02_model_name"]}: RIX ${score}`;
             if (r["10_resumen"]) {
               bulletinContext += ` | Resumen: ${r["10_resumen"].substring(0, 200)}...`;
             }
-            bulletinContext += '\n';
+            bulletinContext += "\n";
           });
         }
       });
@@ -3074,16 +3226,17 @@ async function handleBulletinRequest(
 
   // Sector average calculation
   if (matchedCompany.sector_category) {
-    const sectorCompanies = companiesCache?.filter(c => c.sector_category === matchedCompany.sector_category) || [];
-    const currentWeekData = rixData?.filter(r => getPeriodKey(r) === uniquePeriods[0]) || [];
-    
+    const sectorCompanies = companiesCache?.filter((c) => c.sector_category === matchedCompany.sector_category) || [];
+    const currentWeekData = rixData?.filter((r) => getPeriodKey(r) === uniquePeriods[0]) || [];
+
     let sectorTotal = 0;
     let sectorCount = 0;
-    
-    sectorCompanies.forEach(comp => {
-      const compData = currentWeekData.filter(r => r["05_ticker"] === comp.ticker);
+
+    sectorCompanies.forEach((comp) => {
+      const compData = currentWeekData.filter((r) => r["05_ticker"] === comp.ticker);
       if (compData.length > 0) {
-        const avg = compData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / compData.length;
+        const avg =
+          compData.reduce((sum, r) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"]), 0) / compData.length;
         sectorTotal += avg;
         sectorCount++;
       }
@@ -3100,7 +3253,7 @@ async function handleBulletinRequest(
 
   // 7. Call AI with bulletin prompt
   console.log(`${logPrefix} Calling AI for bulletin generation (depth: ${depthLevel}, streaming: ${streamMode})...`);
-  
+
   const bulletinUserPrompt = `Genera un BOLETÍN EJECUTIVO completo para la empresa ${matchedCompany.issuer_name} (${matchedCompany.ticker}).
 
 CONTEXTO CON TODOS LOS DATOS:
@@ -3110,47 +3263,49 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 
   const bulletinSystemPrompt = BULLETIN_SYSTEM_PROMPT; // Always full bulletin
   const bulletinMessages = [
-    { role: 'system', content: bulletinSystemPrompt },
-    { role: 'user', content: bulletinUserPrompt }
+    { role: "system", content: bulletinSystemPrompt },
+    { role: "user", content: bulletinUserPrompt },
   ];
 
   // Always exhaustive configuration
   const bulletinMaxTokens = 40000;
   const bulletinTimeoutMs = 120000;
-  const geminiModel = 'gemini-2.5-flash';
+  const geminiModel = "gemini-2.5-flash";
 
   // =========================================================================
   // STREAMING MODE: Return SSE stream for real-time text generation
   // =========================================================================
   if (streamMode) {
     console.log(`${logPrefix} Starting STREAMING bulletin generation...`);
-    
+
     const sseEncoder = createSSEEncoder();
-    
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
           // Send initial metadata
-          controller.enqueue(sseEncoder({
-            type: 'start',
-            metadata: {
-              companyName: matchedCompany.issuer_name,
-              ticker: matchedCompany.ticker,
-              sector: matchedCompany.sector_category,
-              subsector: matchedCompany.subsector,
-              competitorsCount: competitors.length,
-              competitorMethodology: competitorResult.tierUsed,
-              competitorJustification: competitorResult.justification,
-              verifiedCompetitors: competitorResult.verifiedCount,
-              vectorStoreDocsUsed: vectorStoreContext ? true : false,
-              corporateNewsUsed: corporateNewsContext ? true : false,
-              weeksAnalyzed: uniquePeriods.length,
-              dataPointsUsed: rixData?.length || 0,
-            }
-          }));
+          controller.enqueue(
+            sseEncoder({
+              type: "start",
+              metadata: {
+                companyName: matchedCompany.issuer_name,
+                ticker: matchedCompany.ticker,
+                sector: matchedCompany.sector_category,
+                subsector: matchedCompany.subsector,
+                competitorsCount: competitors.length,
+                competitorMethodology: competitorResult.tierUsed,
+                competitorJustification: competitorResult.justification,
+                verifiedCompetitors: competitorResult.verifiedCount,
+                vectorStoreDocsUsed: vectorStoreContext ? true : false,
+                corporateNewsUsed: corporateNewsContext ? true : false,
+                weeksAnalyzed: uniquePeriods.length,
+                dataPointsUsed: rixData?.length || 0,
+              },
+            }),
+          );
 
-          let accumulatedContent = '';
-          let provider: 'openai' | 'gemini' = 'openai';
+          let accumulatedContent = "";
+          let provider: "openai" | "gemini" = "openai";
           let inputTokens = 0;
           let outputTokens = 0;
           let streamError = false;
@@ -3158,18 +3313,24 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           // Try OpenAI first (unless quick mode prefers Gemini)
           if (!isQuickBulletin) {
             console.log(`${logPrefix} Trying OpenAI stream first...`);
-            for await (const chunk of streamOpenAIResponse(bulletinMessages, 'o3', bulletinMaxTokens, logPrefix, bulletinTimeoutMs)) {
-              if (chunk.type === 'chunk' && chunk.text) {
+            for await (const chunk of streamOpenAIResponse(
+              bulletinMessages,
+              "o3",
+              bulletinMaxTokens,
+              logPrefix,
+              bulletinTimeoutMs,
+            )) {
+              if (chunk.type === "chunk" && chunk.text) {
                 accumulatedContent += chunk.text;
-                controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
-              } else if (chunk.type === 'done') {
+                controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
+              } else if (chunk.type === "done") {
                 inputTokens = chunk.inputTokens || 0;
                 outputTokens = chunk.outputTokens || 0;
                 break;
-              } else if (chunk.type === 'error') {
+              } else if (chunk.type === "error") {
                 console.warn(`${logPrefix} OpenAI stream error: ${chunk.error}, falling back to Gemini...`);
                 streamError = true;
-                controller.enqueue(sseEncoder({ type: 'fallback', metadata: { provider: 'gemini' } }));
+                controller.enqueue(sseEncoder({ type: "fallback", metadata: { provider: "gemini" } }));
                 break;
               }
             }
@@ -3179,24 +3340,32 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 
           // Fallback to Gemini if OpenAI failed
           if (streamError || accumulatedContent.length === 0) {
-            provider = 'gemini';
-            accumulatedContent = ''; // Reset for Gemini response
-            
+            provider = "gemini";
+            accumulatedContent = ""; // Reset for Gemini response
+
             console.log(`${logPrefix} Using Gemini stream (${geminiModel})...`);
-            for await (const chunk of streamGeminiResponse(bulletinMessages, geminiModel, bulletinMaxTokens, logPrefix, bulletinTimeoutMs)) {
-              if (chunk.type === 'chunk' && chunk.text) {
+            for await (const chunk of streamGeminiResponse(
+              bulletinMessages,
+              geminiModel,
+              bulletinMaxTokens,
+              logPrefix,
+              bulletinTimeoutMs,
+            )) {
+              if (chunk.type === "chunk" && chunk.text) {
                 accumulatedContent += chunk.text;
-                controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
-              } else if (chunk.type === 'done') {
+                controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
+              } else if (chunk.type === "done") {
                 inputTokens = chunk.inputTokens || 0;
                 outputTokens = chunk.outputTokens || 0;
                 break;
-              } else if (chunk.type === 'error') {
+              } else if (chunk.type === "error") {
                 console.error(`${logPrefix} Gemini stream also failed: ${chunk.error}`);
-                controller.enqueue(sseEncoder({ 
-                  type: 'error', 
-                  error: `Error generando boletín: ${chunk.error}` 
-                }));
+                controller.enqueue(
+                  sseEncoder({
+                    type: "error",
+                    error: `Error generando boletín: ${chunk.error}`,
+                  }),
+                );
                 controller.close();
                 return;
               }
@@ -3208,153 +3377,169 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           // Log API usage in background
           logApiUsage({
             supabaseClient,
-            edgeFunction: 'chat-intelligence',
+            edgeFunction: "chat-intelligence",
             provider,
-            model: provider === 'openai' ? 'o3' : geminiModel,
-            actionType: 'bulletin_stream',
+            model: provider === "openai" ? "o3" : geminiModel,
+            actionType: "bulletin_stream",
             inputTokens,
             outputTokens,
             userId,
             sessionId,
-            metadata: { 
-              companyName: matchedCompany.issuer_name, 
+            metadata: {
+              companyName: matchedCompany.issuer_name,
               ticker: matchedCompany.ticker,
               depth_level: depthLevel,
               streaming: true,
             },
-          }).catch(e => console.warn('Failed to log usage:', e));
+          }).catch((e) => console.warn("Failed to log usage:", e));
 
           // Save to database in background
           if (sessionId) {
-            supabaseClient.from('chat_intelligence_sessions').insert([
-              {
-                session_id: sessionId,
-                role: 'user',
-                content: originalQuestion,
-                company: matchedCompany.ticker,
-                analysis_type: 'bulletin',
-                user_id: userId
-              },
-              {
-                session_id: sessionId,
-                role: 'assistant',
-                content: accumulatedContent,
-                company: matchedCompany.ticker,
-                analysis_type: 'bulletin',
-                structured_data_found: rixData?.length || 0,
-                user_id: userId
-              }
-            ]).then(() => console.log(`${logPrefix} Session saved`))
-              .catch((e: Error) => console.warn('Failed to save session:', e));
+            supabaseClient
+              .from("chat_intelligence_sessions")
+              .insert([
+                {
+                  session_id: sessionId,
+                  role: "user",
+                  content: originalQuestion,
+                  company: matchedCompany.ticker,
+                  analysis_type: "bulletin",
+                  user_id: userId,
+                },
+                {
+                  session_id: sessionId,
+                  role: "assistant",
+                  content: accumulatedContent,
+                  company: matchedCompany.ticker,
+                  analysis_type: "bulletin",
+                  structured_data_found: rixData?.length || 0,
+                  user_id: userId,
+                },
+              ])
+              .then(() => console.log(`${logPrefix} Session saved`))
+              .catch((e: Error) => console.warn("Failed to save session:", e));
           }
 
           // Save to user_documents in background
           if (userId) {
             const documentTitle = `Boletín Ejecutivo: ${matchedCompany.issuer_name}`;
-            supabaseClient.from('user_documents').insert({
-              user_id: userId,
-              document_type: 'bulletin',
-              title: documentTitle,
-              company_name: matchedCompany.issuer_name,
-              ticker: matchedCompany.ticker,
-              content_markdown: accumulatedContent,
-              conversation_id: conversationId || null,
-              metadata: {
-                sector: matchedCompany.sector_category,
-                competitorsCount: competitors.length,
-                weeksAnalyzed: uniquePeriods.length,
-                dataPointsUsed: rixData?.length || 0,
-                aiProvider: provider,
-                generatedAt: new Date().toISOString()
-              }
-            }).then(() => console.log(`${logPrefix} Document saved`))
-              .catch((e: Error) => console.warn('Failed to save document:', e));
+            supabaseClient
+              .from("user_documents")
+              .insert({
+                user_id: userId,
+                document_type: "bulletin",
+                title: documentTitle,
+                company_name: matchedCompany.issuer_name,
+                ticker: matchedCompany.ticker,
+                content_markdown: accumulatedContent,
+                conversation_id: conversationId || null,
+                metadata: {
+                  sector: matchedCompany.sector_category,
+                  competitorsCount: competitors.length,
+                  weeksAnalyzed: uniquePeriods.length,
+                  dataPointsUsed: rixData?.length || 0,
+                  aiProvider: provider,
+                  generatedAt: new Date().toISOString(),
+                },
+              })
+              .then(() => console.log(`${logPrefix} Document saved`))
+              .catch((e: Error) => console.warn("Failed to save document:", e));
           }
 
           // Generate suggested questions
           const suggestedQuestions = [
-            `Genera un boletín de ${competitors[0]?.issuer_name || 'otra empresa'}`,
+            `Genera un boletín de ${competitors[0]?.issuer_name || "otra empresa"}`,
             `¿Cómo se compara ${matchedCompany.issuer_name} con el sector ${matchedCompany.sector_category}?`,
-            `Top 5 empresas del sector ${matchedCompany.sector_category}`
+            `Top 5 empresas del sector ${matchedCompany.sector_category}`,
           ];
 
           // Calculate divergence for methodology metadata
-          const modelScores = rixData
-            ?.filter(r => r['09_rix_score'] != null && r['09_rix_score'] > 0)
-            ?.map(r => r['09_rix_score']) || [];
+          const modelScores =
+            rixData?.filter((r) => r["09_rix_score"] != null && r["09_rix_score"] > 0)?.map((r) => r["09_rix_score"]) ||
+            [];
           const maxScore = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScore = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePoints = maxScore - minScore;
-          const divergenceLevel = divergencePoints <= 8 ? 'low' : divergencePoints <= 15 ? 'medium' : 'high';
-          
+          const divergenceLevel = divergencePoints <= 8 ? "low" : divergencePoints <= 15 ? "medium" : "high";
+
           // Extract unique models used
-          const modelsUsed = [...new Set(rixData?.map(r => r['02_model_name']).filter(Boolean) || [])];
-          
+          const modelsUsed = [...new Set(rixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+
           // Extract period info
-          const periodFrom = rixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
-          const periodTo = rixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
+          const periodFrom = rixData
+            ?.map((r) => r["06_period_from"])
+            .filter(Boolean)
+            .sort()[0];
+          const periodTo = rixData
+            ?.map((r) => r["07_period_to"])
+            .filter(Boolean)
+            .sort()
+            .reverse()[0];
 
           // Extract verified sources from raw AI responses (only ChatGPT + Perplexity)
           const verifiedSources = extractSourcesFromRixData(rixData || []);
           console.log(`${logPrefix} Extracted ${verifiedSources.length} verified sources from RIX data`);
 
           // Send final done event with enriched methodology metadata
-          controller.enqueue(sseEncoder({
-            type: 'done',
-            suggestedQuestions,
-            metadata: {
-              type: 'bulletin',
-              companyName: matchedCompany.issuer_name,
-              ticker: matchedCompany.ticker,
-              sector: matchedCompany.sector_category,
-              competitorsCount: competitors.length,
-              weeksAnalyzed: uniquePeriods.length,
-              dataPointsUsed: rixData?.length || 0,
-              aiProvider: provider,
-              // Verified sources from ChatGPT and Perplexity for bibliography
-              verifiedSources: verifiedSources.length > 0 ? verifiedSources : undefined,
-              // Methodology metadata for "Radar Reputacional" validation sheet
-              methodology: {
-                hasRixData: (rixData?.length || 0) > 0,
-                modelsUsed,
-                periodFrom,
-                periodTo,
-                observationsCount: rixData?.length || 0,
-                divergenceLevel,
-                divergencePoints,
-                uniqueCompanies: 1,
-                uniqueWeeks: uniquePeriods.length,
+          controller.enqueue(
+            sseEncoder({
+              type: "done",
+              suggestedQuestions,
+              metadata: {
+                type: "bulletin",
+                companyName: matchedCompany.issuer_name,
+                ticker: matchedCompany.ticker,
+                sector: matchedCompany.sector_category,
+                competitorsCount: competitors.length,
+                weeksAnalyzed: uniquePeriods.length,
+                dataPointsUsed: rixData?.length || 0,
+                aiProvider: provider,
+                // Verified sources from ChatGPT and Perplexity for bibliography
+                verifiedSources: verifiedSources.length > 0 ? verifiedSources : undefined,
+                // Methodology metadata for "Radar Reputacional" validation sheet
+                methodology: {
+                  hasRixData: (rixData?.length || 0) > 0,
+                  modelsUsed,
+                  periodFrom,
+                  periodTo,
+                  observationsCount: rixData?.length || 0,
+                  divergenceLevel,
+                  divergencePoints,
+                  uniqueCompanies: 1,
+                  uniqueWeeks: uniquePeriods.length,
+                },
               },
-            }
-          }));
+            }),
+          );
 
           controller.close();
-          
         } catch (error) {
           console.error(`${logPrefix} Streaming error:`, error);
-          controller.enqueue(sseEncoder({ 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error de streaming desconocido'
-          }));
+          controller.enqueue(
+            sseEncoder({
+              type: "error",
+              error: error instanceof Error ? error.message : "Error de streaming desconocido",
+            }),
+          );
           controller.close();
         }
-      }
+      },
     });
 
     return new Response(stream, {
       headers: {
         ...corsHeaders,
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      }
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   }
 
   // =========================================================================
   // NON-STREAMING MODE: Original behavior (for backwards compatibility)
   // =========================================================================
-  const bulletinModel = isQuickBulletin ? 'gpt-4o-mini' : 'o3';
+  const bulletinModel = isQuickBulletin ? "gpt-4o-mini" : "o3";
 
   const result = await callAIWithFallback(
     bulletinMessages,
@@ -3362,9 +3547,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     bulletinMaxTokens,
     logPrefix,
     bulletinTimeoutMs,
-    isQuickBulletin
-      ? { preferGemini: true, geminiTimeout: bulletinTimeoutMs }
-      : { geminiTimeout: bulletinTimeoutMs }
+    isQuickBulletin ? { preferGemini: true, geminiTimeout: bulletinTimeoutMs } : { geminiTimeout: bulletinTimeoutMs },
   );
   const bulletinContent = result.content;
 
@@ -3373,52 +3556,52 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
   // Log API usage
   await logApiUsage({
     supabaseClient,
-    edgeFunction: 'chat-intelligence',
+    edgeFunction: "chat-intelligence",
     provider: result.provider,
     model: result.model,
-    actionType: 'bulletin',
+    actionType: "bulletin",
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
     userId,
     sessionId,
-    metadata: { 
-      companyName: matchedCompany.issuer_name, 
+    metadata: {
+      companyName: matchedCompany.issuer_name,
       ticker: matchedCompany.ticker,
-      depth_level: 'bulletin',
+      depth_level: "bulletin",
     },
   });
 
   // 8. Save to database (chat_intelligence_sessions)
   if (sessionId) {
-    await supabaseClient.from('chat_intelligence_sessions').insert([
+    await supabaseClient.from("chat_intelligence_sessions").insert([
       {
         session_id: sessionId,
-        role: 'user',
+        role: "user",
         content: originalQuestion,
         company: matchedCompany.ticker,
-        analysis_type: 'bulletin',
-        user_id: userId
+        analysis_type: "bulletin",
+        user_id: userId,
       },
       {
         session_id: sessionId,
-        role: 'assistant',
+        role: "assistant",
         content: bulletinContent,
         company: matchedCompany.ticker,
-        analysis_type: 'bulletin',
+        analysis_type: "bulletin",
         structured_data_found: rixData?.length || 0,
-        user_id: userId
-      }
+        user_id: userId,
+      },
     ]);
   }
-  
+
   // 8b. Save bulletin to user_documents for authenticated users
   if (userId) {
     const documentTitle = `Boletín Ejecutivo: ${matchedCompany.issuer_name}`;
     console.log(`${logPrefix} Saving bulletin to user_documents for user: ${userId}`);
-    
-    const { error: docError } = await supabaseClient.from('user_documents').insert({
+
+    const { error: docError } = await supabaseClient.from("user_documents").insert({
       user_id: userId,
-      document_type: 'bulletin',
+      document_type: "bulletin",
       title: documentTitle,
       company_name: matchedCompany.issuer_name,
       ticker: matchedCompany.ticker,
@@ -3430,10 +3613,10 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         weeksAnalyzed: uniquePeriods.length,
         dataPointsUsed: rixData?.length || 0,
         aiProvider: result.provider,
-        generatedAt: new Date().toISOString()
-      }
+        generatedAt: new Date().toISOString(),
+      },
     });
-    
+
     if (docError) {
       console.error(`${logPrefix} Error saving bulletin to user_documents:`, docError);
     } else {
@@ -3443,9 +3626,9 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 
   // 9. Return bulletin response
   const suggestedQuestions = [
-    `Genera un boletín de ${competitors[0]?.issuer_name || 'otra empresa'}`,
+    `Genera un boletín de ${competitors[0]?.issuer_name || "otra empresa"}`,
     `¿Cómo se compara ${matchedCompany.issuer_name} con el sector ${matchedCompany.sector_category}?`,
-    `Top 5 empresas del sector ${matchedCompany.sector_category}`
+    `Top 5 empresas del sector ${matchedCompany.sector_category}`,
   ];
 
   return new Response(
@@ -3453,7 +3636,7 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
       answer: bulletinContent,
       suggestedQuestions,
       metadata: {
-        type: 'bulletin',
+        type: "bulletin",
         companyName: matchedCompany.issuer_name,
         ticker: matchedCompany.ticker,
         sector: matchedCompany.sector_category,
@@ -3467,9 +3650,9 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
         weeksAnalyzed: uniquePeriods.length,
         dataPointsUsed: rixData?.length || 0,
         aiProvider: result.provider,
-      }
+      },
     }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 }
 
@@ -3481,62 +3664,81 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
 // =============================================================================
 function detectCompaniesInQuestion(question: string, companiesCache: any[]): any[] {
   if (!companiesCache || companiesCache.length === 0) return [];
-  
-  const normalizedQuestion = question.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Remove accents
-  
+
+  const normalizedQuestion = question
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // Remove accents
+
   const detectedCompanies: any[] = [];
-  
+
   for (const company of companiesCache) {
-    const companyName = company.issuer_name?.toLowerCase()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") || '';
-    const ticker = company.ticker?.toLowerCase() || '';
-    
+    const companyName =
+      company.issuer_name
+        ?.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") || "";
+    const ticker = company.ticker?.toLowerCase() || "";
+
     // Full name match
     if (companyName && normalizedQuestion.includes(companyName)) {
       detectedCompanies.push(company);
       continue;
     }
-    
+
     // Ticker match (only if ticker is at least 2 chars and appears as a word)
     if (ticker && ticker.length >= 2) {
-      const tickerRegex = new RegExp(`\\b${ticker}\\b`, 'i');
+      const tickerRegex = new RegExp(`\\b${ticker}\\b`, "i");
       if (tickerRegex.test(normalizedQuestion)) {
         detectedCompanies.push(company);
         continue;
       }
     }
-    
+
     // Partial name match (significant words > 4 chars, avoiding common words)
-    const commonWords = ['banco', 'grupo', 'empresa', 'compañia', 'sociedad', 'holding', 'spain', 'españa', 'corp', 'corporation'];
-    const nameWords = companyName.split(/\s+/).filter(
-      word => word.length > 4 && !commonWords.includes(word)
-    );
-    
+    const commonWords = [
+      "banco",
+      "grupo",
+      "empresa",
+      "compañia",
+      "sociedad",
+      "holding",
+      "spain",
+      "españa",
+      "corp",
+      "corporation",
+    ];
+    const nameWords = companyName.split(/\s+/).filter((word) => word.length > 4 && !commonWords.includes(word));
+
     for (const word of nameWords) {
       if (normalizedQuestion.includes(word)) {
         detectedCompanies.push(company);
         break;
       }
     }
-    
+
     // Check include_terms aliases (e.g. "Acciona Energia" without accent)
     if (!detectedCompanies.includes(company) && company.include_terms) {
       try {
         const terms = Array.isArray(company.include_terms) ? company.include_terms : JSON.parse(company.include_terms);
         for (const term of terms) {
-          const normalizedTerm = (term as string).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const normalizedTerm = (term as string)
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
           if (normalizedTerm.length > 3 && normalizedQuestion.includes(normalizedTerm)) {
             detectedCompanies.push(company);
             break;
           }
         }
-      } catch (_) { /* ignore parse errors */ }
+      } catch (_) {
+        /* ignore parse errors */
+      }
     }
   }
-  
+
   // Deduplicate
-  return [...new Map(detectedCompanies.map(c => [c.ticker, c])).values()];
+  return [...new Map(detectedCompanies.map((c) => [c.ticker, c])).values()];
 }
 
 async function handleStandardChat(
@@ -3547,21 +3749,23 @@ async function handleStandardChat(
   sessionId: string | undefined,
   logPrefix: string,
   userId: string | null,
-  language: string = 'es',
-  languageName: string = 'Español',
-  depthLevel: 'quick' | 'complete' | 'exhaustive' = 'complete',
+  language: string = "es",
+  languageName: string = "Español",
+  depthLevel: "quick" | "complete" | "exhaustive" = "complete",
   roleId?: string,
   roleName?: string,
   rolePrompt?: string,
-  streamMode: boolean = false
+  streamMode: boolean = false,
 ) {
-  console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || 'General'}`);
+  console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || "General"}`);
   // =============================================================================
   // =============================================================================
   // PASO 0: DETECTAR EMPRESAS MENCIONADAS EN LA PREGUNTA
   // =============================================================================
   const detectedCompanies = detectCompaniesInQuestion(question, companiesCache || []);
-  console.log(`${logPrefix} Detected companies in question: ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'none'}`);
+  console.log(
+    `${logPrefix} Detected companies in question: ${detectedCompanies.map((c) => c.issuer_name).join(", ") || "none"}`,
+  );
 
   // =============================================================================
   // PASO 0.5: CARGAR DATOS CORPORATIVOS VERIFICADOS (MEMENTO CORPORATIVO)
@@ -3576,21 +3780,23 @@ async function handleStandardChat(
     company_description: string | null;
     snapshot_date_only: string;
     days_old: number;
-    confidence_level: 'VERIFIED' | 'RECENT' | 'HISTORICAL' | 'STALE';
+    confidence_level: "VERIFIED" | "RECENT" | "HISTORICAL" | "STALE";
   }
 
   const corporateMementos: CorporateMemento[] = [];
-  
+
   if (detectedCompanies.length > 0) {
-    const tickers = detectedCompanies.map(c => c.ticker);
-    console.log(`${logPrefix} Loading corporate snapshots for: ${tickers.join(', ')}`);
-    
+    const tickers = detectedCompanies.map((c) => c.ticker);
+    console.log(`${logPrefix} Loading corporate snapshots for: ${tickers.join(", ")}`);
+
     const { data: corporateData, error: corporateError } = await supabaseClient
-      .from('corporate_snapshots')
-      .select('ticker, ceo_name, president_name, chairman_name, headquarters_city, company_description, snapshot_date_only')
-      .in('ticker', tickers)
-      .order('snapshot_date_only', { ascending: false });
-    
+      .from("corporate_snapshots")
+      .select(
+        "ticker, ceo_name, president_name, chairman_name, headquarters_city, company_description, snapshot_date_only",
+      )
+      .in("ticker", tickers)
+      .order("snapshot_date_only", { ascending: false });
+
     if (corporateError) {
       console.warn(`${logPrefix} Error fetching corporate snapshots:`, corporateError.message);
     } else if (corporateData && corporateData.length > 0) {
@@ -3601,23 +3807,23 @@ async function handleStandardChat(
           byTicker.set(snapshot.ticker, snapshot);
         }
       });
-      
+
       byTicker.forEach((snapshot) => {
         const snapshotDate = new Date(snapshot.snapshot_date_only);
         const daysOld = Math.floor((Date.now() - snapshotDate.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         // Determine confidence level based on freshness
-        let confidenceLevel: CorporateMemento['confidence_level'];
+        let confidenceLevel: CorporateMemento["confidence_level"];
         if (daysOld <= 7) {
-          confidenceLevel = 'VERIFIED';
+          confidenceLevel = "VERIFIED";
         } else if (daysOld <= 30) {
-          confidenceLevel = 'RECENT';
+          confidenceLevel = "RECENT";
         } else if (daysOld <= 90) {
-          confidenceLevel = 'HISTORICAL';
+          confidenceLevel = "HISTORICAL";
         } else {
-          confidenceLevel = 'STALE';
+          confidenceLevel = "STALE";
         }
-        
+
         corporateMementos.push({
           ticker: snapshot.ticker,
           ceo_name: snapshot.ceo_name,
@@ -3627,11 +3833,13 @@ async function handleStandardChat(
           company_description: snapshot.company_description,
           snapshot_date_only: snapshot.snapshot_date_only,
           days_old: daysOld,
-          confidence_level: confidenceLevel
+          confidence_level: confidenceLevel,
         });
       });
-      
-      console.log(`${logPrefix} Loaded ${corporateMementos.length} corporate mementos with confidence levels: ${corporateMementos.map(m => `${m.ticker}:${m.confidence_level}`).join(', ')}`);
+
+      console.log(
+        `${logPrefix} Loaded ${corporateMementos.length} corporate mementos with confidence levels: ${corporateMementos.map((m) => `${m.ticker}:${m.confidence_level}`).join(", ")}`,
+      );
     }
   }
 
@@ -3646,7 +3854,7 @@ async function handleStandardChat(
     subsector: string | null;
     ibex_family: string | null;
     depth: number;
-    relation: 'ORIGIN' | 'COMPITE_CON' | 'MISMO_SUBSECTOR' | 'MISMO_SECTOR';
+    relation: "ORIGIN" | "COMPITE_CON" | "MISMO_SUBSECTOR" | "MISMO_SECTOR";
     strength: number;
     path: string[];
   }
@@ -3680,36 +3888,43 @@ async function handleStandardChat(
   }
 
   let entityGraphs: GraphExpansionResult[] = [];
-  let graphContextString = '';
-  
+  let graphContextString = "";
+
   // Always expand graph when companies are detected (always exhaustive)
   const shouldExpandGraph = detectedCompanies.length > 0;
-  
+
   if (shouldExpandGraph) {
-    console.log(`${logPrefix} GRAPH EXPANSION: Traversing knowledge graph for ${detectedCompanies.slice(0, 3).map(c => c.ticker).join(', ')}...`);
-    
+    console.log(
+      `${logPrefix} GRAPH EXPANSION: Traversing knowledge graph for ${detectedCompanies
+        .slice(0, 3)
+        .map((c) => c.ticker)
+        .join(", ")}...`,
+    );
+
     try {
       // Expand graph for up to 3 detected companies (parallel calls)
       const graphPromises = detectedCompanies.slice(0, 3).map(async (company) => {
-        const { data, error } = await supabaseClient.rpc('expand_entity_graph_with_scores', {
+        const { data, error } = await supabaseClient.rpc("expand_entity_graph_with_scores", {
           p_ticker: company.ticker,
           p_depth: 2,
-          p_weeks: 4
+          p_weeks: 4,
         });
-        
+
         if (error) {
           console.warn(`${logPrefix} Graph expansion error for ${company.ticker}:`, error.message);
           return null;
         }
-        
+
         return data as GraphExpansionResult;
       });
-      
+
       const results = await Promise.all(graphPromises);
       entityGraphs = results.filter((r): r is GraphExpansionResult => r !== null);
-      
-      console.log(`${logPrefix} Graph expansion complete: ${entityGraphs.length} graphs, ${entityGraphs.reduce((sum, g) => sum + (g.metadata?.total_entities || 0), 0)} total entities`);
-      
+
+      console.log(
+        `${logPrefix} Graph expansion complete: ${entityGraphs.length} graphs, ${entityGraphs.reduce((sum, g) => sum + (g.metadata?.total_entities || 0), 0)} total entities`,
+      );
+
       // Build graph context string for LLM
       if (entityGraphs.length > 0) {
         graphContextString = buildGraphContextString(entityGraphs, detectedCompanies);
@@ -3724,85 +3939,89 @@ async function handleStandardChat(
   // Helper function to build graph context string
   function buildGraphContextString(graphs: GraphExpansionResult[], companies: any[]): string {
     const sections: string[] = [];
-    
+
     sections.push(`🕸️ ======================================================================`);
     sections.push(`🕸️ GRAFO DE CONOCIMIENTO EMPRESARIAL (Relaciones Verificadas)`);
     sections.push(`🕸️ ======================================================================\n`);
-    
+
     for (const graph of graphs) {
       if (!graph.primary_entity || !graph.graph) continue;
-      
+
       const primary = graph.primary_entity;
       const primaryScore = graph.entity_scores?.[primary.ticker];
-      
+
       sections.push(`## ENTIDAD PRINCIPAL: ${primary.name} (${primary.ticker})`);
-      sections.push(`- Sector: ${primary.sector || 'N/A'}`);
-      sections.push(`- Subsector: ${primary.subsector || 'N/A'}`);
+      sections.push(`- Sector: ${primary.sector || "N/A"}`);
+      sections.push(`- Subsector: ${primary.subsector || "N/A"}`);
       if (primaryScore) {
-        sections.push(`- RIX Promedio: ${primaryScore.avg_rix} pts (rango: ${primaryScore.min_rix}-${primaryScore.max_rix})`);
-        sections.push(`- Modelos analizados: ${primaryScore.models?.join(', ') || 'N/A'}`);
+        sections.push(
+          `- RIX Promedio: ${primaryScore.avg_rix} pts (rango: ${primaryScore.min_rix}-${primaryScore.max_rix})`,
+        );
+        sections.push(`- Modelos analizados: ${primaryScore.models?.join(", ") || "N/A"}`);
       }
-      
+
       // Verified competitors (COMPITE_CON)
-      const competitors = graph.graph.filter(e => e.relation === 'COMPITE_CON');
+      const competitors = graph.graph.filter((e) => e.relation === "COMPITE_CON");
       if (competitors.length > 0) {
         sections.push(`\n### COMPETIDORES VERIFICADOS (COMPITE_CON - Alta confianza):`);
         for (const comp of competitors) {
           const compScore = graph.entity_scores?.[comp.ticker];
-          const delta = compScore && primaryScore 
-            ? (compScore.avg_rix - primaryScore.avg_rix).toFixed(1)
-            : null;
-          const deltaStr = delta ? ` (${parseFloat(delta) >= 0 ? '+' : ''}${delta} vs primaria)` : '';
-          sections.push(`- ${comp.name} (${comp.ticker}): RIX ${compScore?.avg_rix || 'N/A'}${deltaStr}`);
+          const delta = compScore && primaryScore ? (compScore.avg_rix - primaryScore.avg_rix).toFixed(1) : null;
+          const deltaStr = delta ? ` (${parseFloat(delta) >= 0 ? "+" : ""}${delta} vs primaria)` : "";
+          sections.push(`- ${comp.name} (${comp.ticker}): RIX ${compScore?.avg_rix || "N/A"}${deltaStr}`);
         }
       }
-      
+
       // Same subsector peers
-      const subsectorPeers = graph.graph.filter(e => e.relation === 'MISMO_SUBSECTOR');
+      const subsectorPeers = graph.graph.filter((e) => e.relation === "MISMO_SUBSECTOR");
       if (subsectorPeers.length > 0) {
         sections.push(`\n### MISMO SUBSECTOR (${primary.subsector}):`);
         for (const peer of subsectorPeers.slice(0, 8)) {
           const peerScore = graph.entity_scores?.[peer.ticker];
-          sections.push(`- ${peer.name} (${peer.ticker}): RIX ${peerScore?.avg_rix || 'N/A'}`);
+          sections.push(`- ${peer.name} (${peer.ticker}): RIX ${peerScore?.avg_rix || "N/A"}`);
         }
       }
-      
+
       // Sector-level aggregates
       const allEntityScores = Object.entries(graph.entity_scores || {})
         .filter(([ticker]) => ticker !== primary.ticker)
         .map(([ticker, score]) => ({ ticker, ...score }))
-        .filter(e => e.avg_rix);
-      
+        .filter((e) => e.avg_rix);
+
       if (allEntityScores.length > 0) {
-        const avgSectorRix = Math.round(allEntityScores.reduce((sum, e) => sum + e.avg_rix, 0) / allEntityScores.length * 10) / 10;
+        const avgSectorRix =
+          Math.round((allEntityScores.reduce((sum, e) => sum + e.avg_rix, 0) / allEntityScores.length) * 10) / 10;
         const sortedByRix = [...allEntityScores].sort((a, b) => b.avg_rix - a.avg_rix);
         const topPerformer = sortedByRix[0];
         const bottomPerformer = sortedByRix[sortedByRix.length - 1];
-        
+
         sections.push(`\n### CONTEXTO SECTORIAL:`);
         sections.push(`- RIX promedio del sector: ${avgSectorRix}`);
         if (primaryScore) {
           const diff = (primaryScore.avg_rix - avgSectorRix).toFixed(1);
-          const comparison = parseFloat(diff) >= 0 ? 'por encima' : 'por debajo';
-          sections.push(`- ${primary.name} está ${Math.abs(parseFloat(diff))} pts ${comparison} del promedio sectorial`);
+          const comparison = parseFloat(diff) >= 0 ? "por encima" : "por debajo";
+          sections.push(
+            `- ${primary.name} está ${Math.abs(parseFloat(diff))} pts ${comparison} del promedio sectorial`,
+          );
         }
         if (topPerformer) {
-          const topName = graph.graph.find(e => e.ticker === topPerformer.ticker)?.name || topPerformer.ticker;
+          const topName = graph.graph.find((e) => e.ticker === topPerformer.ticker)?.name || topPerformer.ticker;
           sections.push(`- Líder sectorial: ${topName} (RIX ${topPerformer.avg_rix})`);
         }
         if (bottomPerformer && bottomPerformer.ticker !== topPerformer?.ticker) {
-          const bottomName = graph.graph.find(e => e.ticker === bottomPerformer.ticker)?.name || bottomPerformer.ticker;
+          const bottomName =
+            graph.graph.find((e) => e.ticker === bottomPerformer.ticker)?.name || bottomPerformer.ticker;
           sections.push(`- Rezagado sectorial: ${bottomName} (RIX ${bottomPerformer.avg_rix})`);
         }
       }
-      
+
       // Relationship summary
       sections.push(`\n### RESUMEN DEL GRAFO:`);
       sections.push(`- Total entidades conectadas: ${graph.metadata?.total_entities || graph.graph.length}`);
       sections.push(`- Competidores verificados: ${competitors.length}`);
       sections.push(`- Mismo subsector: ${subsectorPeers.length}`);
       sections.push(`- Entidades con scores RIX: ${graph.metadata?.entities_with_scores || 0}`);
-      
+
       // Confidence note
       if (competitors.length > 0) {
         sections.push(`\n⚠️ ALTA CONFIANZA: Competidores verificados + datos RIX completos disponibles.`);
@@ -3811,11 +4030,11 @@ async function handleStandardChat(
       } else {
         sections.push(`\n⚠️ CONFIANZA BAJA: Datos limitados, comparativas solo contextuales.`);
       }
-      
+
       sections.push(`\n---\n`);
     }
-    
-    return sections.join('\n');
+
+    return sections.join("\n");
   }
 
   // =============================================================================
@@ -3830,74 +4049,404 @@ async function handleStandardChat(
   }
 
   const corporateNews: CorporateNewsItem[] = [];
-  
+
   if (detectedCompanies.length > 0) {
-    const tickers = detectedCompanies.map(c => c.ticker);
-    
+    const tickers = detectedCompanies.map((c) => c.ticker);
+
     const { data: newsData, error: newsError } = await supabaseClient
-      .from('corporate_news')
-      .select('ticker, headline, published_date')
-      .in('ticker', tickers)
-      .order('published_date', { ascending: false })
+      .from("corporate_news")
+      .select("ticker, headline, published_date")
+      .in("ticker", tickers)
+      .order("published_date", { ascending: false })
       .limit(30); // Max 30 news items per query
-    
+
     if (newsError) {
       console.warn(`${logPrefix} Error fetching corporate news:`, newsError.message);
     } else if (newsData && newsData.length > 0) {
       newsData.forEach((news: any) => {
         let daysOld: number | null = null;
         let isRecent = false;
-        
+
         if (news.published_date) {
           const pubDate = new Date(news.published_date);
           daysOld = Math.floor((Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24));
           isRecent = daysOld < 14;
         }
-        
+
         corporateNews.push({
           ticker: news.ticker,
           headline: news.headline,
           published_date: news.published_date,
           days_old: daysOld,
-          is_recent: isRecent
+          is_recent: isRecent,
         });
       });
-      
-      console.log(`${logPrefix} Loaded ${corporateNews.length} corporate news items (${corporateNews.filter(n => n.is_recent).length} recent)`);
+
+      console.log(
+        `${logPrefix} Loaded ${corporateNews.length} corporate news items (${corporateNews.filter((n) => n.is_recent).length} recent)`,
+      );
     }
   }
 
   // =============================================================================
   // PASO 1: EXTRAER KEYWORDS RELEVANTES DE LA PREGUNTA
   // =============================================================================
-  const stopWords = new Set(['de', 'la', 'el', 'en', 'que', 'es', 'y', 'a', 'los', 'las', 'un', 'una', 'por', 'con', 'para', 'del', 'al', 'se', 'su', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'sí', 'porque', 'esta', 'entre', 'cuando', 'muy', 'sin', 'sobre', 'también', 'me', 'hasta', 'hay', 'donde', 'quien', 'desde', 'todo', 'nos', 'durante', 'todos', 'uno', 'les', 'ni', 'contra', 'otros', 'ese', 'eso', 'ante', 'ellos', 'e', 'esto', 'mí', 'antes', 'algunos', 'qué', 'unos', 'yo', 'otro', 'otras', 'otra', 'él', 'tanto', 'esa', 'estos', 'mucho', 'quienes', 'nada', 'muchos', 'cual', 'poco', 'ella', 'estar', 'estas', 'algunas', 'algo', 'nosotros', 'mi', 'mis', 'tú', 'te', 'ti', 'tu', 'tus', 'ellas', 'nosotras', 'vosotros', 'vosotras', 'os', 'mío', 'mía', 'míos', 'mías', 'tuyo', 'tuya', 'tuyos', 'tuyas', 'suyo', 'suya', 'suyos', 'suyas', 'nuestro', 'nuestra', 'nuestros', 'nuestras', 'vuestro', 'vuestra', 'vuestros', 'vuestras', 'esos', 'esas', 'estoy', 'estás', 'está', 'estamos', 'estáis', 'están', 'esté', 'estés', 'estemos', 'estéis', 'estén', 'estaré', 'estarás', 'estará', 'estaremos', 'estaréis', 'estarán', 'estaría', 'estarías', 'estaríamos', 'estaríais', 'estarían', 'estaba', 'estabas', 'estábamos', 'estabais', 'estaban', 'estuve', 'estuviste', 'estuvo', 'estuvimos', 'estuvisteis', 'estuvieron', 'estuviera', 'estuvieras', 'estuviéramos', 'estuvierais', 'estuvieran', 'estuviese', 'estuvieses', 'estuviésemos', 'estuvieseis', 'estuviesen', 'estando', 'estado', 'estada', 'estados', 'estadas', 'estad', 'he', 'has', 'ha', 'hemos', 'habéis', 'han', 'haya', 'hayas', 'hayamos', 'hayáis', 'hayan', 'habré', 'habrás', 'habrá', 'habremos', 'habréis', 'habrán', 'habría', 'habrías', 'habríamos', 'habríais', 'habrían', 'había', 'habías', 'habíamos', 'habíais', 'habían', 'hube', 'hubiste', 'hubo', 'hubimos', 'hubisteis', 'hubieron', 'hubiera', 'hubieras', 'hubiéramos', 'hubierais', 'hubieran', 'hubiese', 'hubieses', 'hubiésemos', 'hubieseis', 'hubiesen', 'habiendo', 'habido', 'habida', 'habidos', 'habidas', 'soy', 'eres', 'somos', 'sois', 'son', 'sea', 'seas', 'seamos', 'seáis', 'sean', 'seré', 'serás', 'será', 'seremos', 'seréis', 'serán', 'sería', 'serías', 'seríamos', 'seríais', 'serían', 'era', 'eras', 'éramos', 'erais', 'eran', 'fui', 'fuiste', 'fue', 'fuimos', 'fuisteis', 'fueron', 'fuera', 'fueras', 'fuéramos', 'fuerais', 'fueran', 'fuese', 'fueses', 'fuésemos', 'fueseis', 'fuesen', 'siendo', 'sido', 'tengo', 'tienes', 'tiene', 'tenemos', 'tenéis', 'tienen', 'tenga', 'tengas', 'tengamos', 'tengáis', 'tengan', 'tendré', 'tendrás', 'tendrá', 'tendremos', 'tendréis', 'tendrán', 'tendría', 'tendrías', 'tendríamos', 'tendríais', 'tendrían', 'tenía', 'tenías', 'teníamos', 'teníais', 'tenían', 'tuve', 'tuviste', 'tuvo', 'tuvimos', 'tuvisteis', 'tuvieron', 'tuviera', 'tuvieras', 'tuviéramos', 'tuvierais', 'tuvieran', 'tuviese', 'tuvieses', 'tuviésemos', 'tuvieseis', 'tuviesen', 'teniendo', 'tenido', 'tenida', 'tenidos', 'tenidas', 'tened', 'dime', 'dame', 'cuál', 'cuáles', 'cuánto', 'cuánta', 'cuántos', 'cuántas', 'cómo', 'dónde', 'cuándo', 'quién', 'qué', 'todas', 'empresa', 'empresas', 'cualquier', 'alguna', 'alguno']);
-  
+  const stopWords = new Set([
+    "de",
+    "la",
+    "el",
+    "en",
+    "que",
+    "es",
+    "y",
+    "a",
+    "los",
+    "las",
+    "un",
+    "una",
+    "por",
+    "con",
+    "para",
+    "del",
+    "al",
+    "se",
+    "su",
+    "como",
+    "más",
+    "pero",
+    "sus",
+    "le",
+    "ya",
+    "o",
+    "este",
+    "sí",
+    "porque",
+    "esta",
+    "entre",
+    "cuando",
+    "muy",
+    "sin",
+    "sobre",
+    "también",
+    "me",
+    "hasta",
+    "hay",
+    "donde",
+    "quien",
+    "desde",
+    "todo",
+    "nos",
+    "durante",
+    "todos",
+    "uno",
+    "les",
+    "ni",
+    "contra",
+    "otros",
+    "ese",
+    "eso",
+    "ante",
+    "ellos",
+    "e",
+    "esto",
+    "mí",
+    "antes",
+    "algunos",
+    "qué",
+    "unos",
+    "yo",
+    "otro",
+    "otras",
+    "otra",
+    "él",
+    "tanto",
+    "esa",
+    "estos",
+    "mucho",
+    "quienes",
+    "nada",
+    "muchos",
+    "cual",
+    "poco",
+    "ella",
+    "estar",
+    "estas",
+    "algunas",
+    "algo",
+    "nosotros",
+    "mi",
+    "mis",
+    "tú",
+    "te",
+    "ti",
+    "tu",
+    "tus",
+    "ellas",
+    "nosotras",
+    "vosotros",
+    "vosotras",
+    "os",
+    "mío",
+    "mía",
+    "míos",
+    "mías",
+    "tuyo",
+    "tuya",
+    "tuyos",
+    "tuyas",
+    "suyo",
+    "suya",
+    "suyos",
+    "suyas",
+    "nuestro",
+    "nuestra",
+    "nuestros",
+    "nuestras",
+    "vuestro",
+    "vuestra",
+    "vuestros",
+    "vuestras",
+    "esos",
+    "esas",
+    "estoy",
+    "estás",
+    "está",
+    "estamos",
+    "estáis",
+    "están",
+    "esté",
+    "estés",
+    "estemos",
+    "estéis",
+    "estén",
+    "estaré",
+    "estarás",
+    "estará",
+    "estaremos",
+    "estaréis",
+    "estarán",
+    "estaría",
+    "estarías",
+    "estaríamos",
+    "estaríais",
+    "estarían",
+    "estaba",
+    "estabas",
+    "estábamos",
+    "estabais",
+    "estaban",
+    "estuve",
+    "estuviste",
+    "estuvo",
+    "estuvimos",
+    "estuvisteis",
+    "estuvieron",
+    "estuviera",
+    "estuvieras",
+    "estuviéramos",
+    "estuvierais",
+    "estuvieran",
+    "estuviese",
+    "estuvieses",
+    "estuviésemos",
+    "estuvieseis",
+    "estuviesen",
+    "estando",
+    "estado",
+    "estada",
+    "estados",
+    "estadas",
+    "estad",
+    "he",
+    "has",
+    "ha",
+    "hemos",
+    "habéis",
+    "han",
+    "haya",
+    "hayas",
+    "hayamos",
+    "hayáis",
+    "hayan",
+    "habré",
+    "habrás",
+    "habrá",
+    "habremos",
+    "habréis",
+    "habrán",
+    "habría",
+    "habrías",
+    "habríamos",
+    "habríais",
+    "habrían",
+    "había",
+    "habías",
+    "habíamos",
+    "habíais",
+    "habían",
+    "hube",
+    "hubiste",
+    "hubo",
+    "hubimos",
+    "hubisteis",
+    "hubieron",
+    "hubiera",
+    "hubieras",
+    "hubiéramos",
+    "hubierais",
+    "hubieran",
+    "hubiese",
+    "hubieses",
+    "hubiésemos",
+    "hubieseis",
+    "hubiesen",
+    "habiendo",
+    "habido",
+    "habida",
+    "habidos",
+    "habidas",
+    "soy",
+    "eres",
+    "somos",
+    "sois",
+    "son",
+    "sea",
+    "seas",
+    "seamos",
+    "seáis",
+    "sean",
+    "seré",
+    "serás",
+    "será",
+    "seremos",
+    "seréis",
+    "serán",
+    "sería",
+    "serías",
+    "seríamos",
+    "seríais",
+    "serían",
+    "era",
+    "eras",
+    "éramos",
+    "erais",
+    "eran",
+    "fui",
+    "fuiste",
+    "fue",
+    "fuimos",
+    "fuisteis",
+    "fueron",
+    "fuera",
+    "fueras",
+    "fuéramos",
+    "fuerais",
+    "fueran",
+    "fuese",
+    "fueses",
+    "fuésemos",
+    "fueseis",
+    "fuesen",
+    "siendo",
+    "sido",
+    "tengo",
+    "tienes",
+    "tiene",
+    "tenemos",
+    "tenéis",
+    "tienen",
+    "tenga",
+    "tengas",
+    "tengamos",
+    "tengáis",
+    "tengan",
+    "tendré",
+    "tendrás",
+    "tendrá",
+    "tendremos",
+    "tendréis",
+    "tendrán",
+    "tendría",
+    "tendrías",
+    "tendríamos",
+    "tendríais",
+    "tendrían",
+    "tenía",
+    "tenías",
+    "teníamos",
+    "teníais",
+    "tenían",
+    "tuve",
+    "tuviste",
+    "tuvo",
+    "tuvimos",
+    "tuvisteis",
+    "tuvieron",
+    "tuviera",
+    "tuvieras",
+    "tuviéramos",
+    "tuvierais",
+    "tuvieran",
+    "tuviese",
+    "tuvieses",
+    "tuviésemos",
+    "tuvieseis",
+    "tuviesen",
+    "teniendo",
+    "tenido",
+    "tenida",
+    "tenidos",
+    "tenidas",
+    "tened",
+    "dime",
+    "dame",
+    "cuál",
+    "cuáles",
+    "cuánto",
+    "cuánta",
+    "cuántos",
+    "cuántas",
+    "cómo",
+    "dónde",
+    "cuándo",
+    "quién",
+    "qué",
+    "todas",
+    "empresa",
+    "empresas",
+    "cualquier",
+    "alguna",
+    "alguno",
+  ]);
+
   // Extract meaningful keywords from question
   const questionKeywords = question
     .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s]/g, ' ')
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, " ")
     .split(/\s+/)
-    .filter(word => word.length > 2 && !stopWords.has(word));
-  
-  console.log(`${logPrefix} Extracted keywords: ${questionKeywords.slice(0, 10).join(', ')}`);
+    .filter((word) => word.length > 2 && !stopWords.has(word));
+
+  console.log(`${logPrefix} Extracted keywords: ${questionKeywords.slice(0, 10).join(", ")}`);
 
   // =============================================================================
   // PASO 2: BÚSQUEDA FULL-TEXT EN TODA LA BASE DE DATOS
   // =============================================================================
   console.log(`${logPrefix} Performing FULL DATABASE SEARCH across all text fields...`);
-  
+
   let fullTextSearchResults: any[] = [];
-  const searchableKeywords = questionKeywords.filter(k => k.length > 3).slice(0, 5);
-  
+  const searchableKeywords = questionKeywords.filter((k) => k.length > 3).slice(0, 5);
+
   if (searchableKeywords.length > 0) {
     for (const keyword of searchableKeywords) {
       const searchPattern = `%${keyword}%`;
-      
+
       // BÚSQUEDA EXHAUSTIVA en TODOS los campos de texto de TODA la base de datos
       const { data: textResults, error: textError } = await supabaseClient
-        .from('rix_runs')
-        .select(`
+        .from("rix_runs")
+        .select(
+          `
           "03_target_name",
           "05_ticker",
           "02_model_name",
@@ -3929,27 +4478,30 @@ async function handleStandardChat(
           "40_gam_categoria",
           "43_dcm_categoria",
           "46_cxm_categoria"
-        `)
-        .or(`"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`)
+        `,
+        )
+        .or(
+          `"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`,
+        )
         .limit(5000); // SIN LÍMITE: capturar ABSOLUTAMENTE TODO
-      
+
       if (textError) {
         console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
       } else if (textResults && textResults.length > 0) {
         console.log(`${logPrefix} Found ${textResults.length} records mentioning "${keyword}"`);
-        fullTextSearchResults.push(...textResults.map(r => ({ ...r, matchedKeyword: keyword })));
+        fullTextSearchResults.push(...textResults.map((r) => ({ ...r, matchedKeyword: keyword })));
       }
     }
-    
+
     // Deduplicate
     const seen = new Set();
-    fullTextSearchResults = fullTextSearchResults.filter(r => {
+    fullTextSearchResults = fullTextSearchResults.filter((r) => {
       const key = `${r["03_target_name"]}-${r["02_model_name"]}-${r["06_period_from"]}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-    
+
     console.log(`${logPrefix} Total unique full-text search results: ${fullTextSearchResults.length}`);
   }
 
@@ -3957,10 +4509,10 @@ async function handleStandardChat(
   // PASO 3: CARGAR DATOS COMPLETOS DE EMPRESAS DETECTADAS (con textos)
   // =============================================================================
   let detectedCompanyFullData: any[] = [];
-  
+
   if (detectedCompanies.length > 0) {
     console.log(`${logPrefix} Loading FULL DATA (including raw texts) for detected companies - ALL 6 AI MODELS...`);
-    
+
     const fullDataColumns = `
       "02_model_name",
       "03_target_name",
@@ -3997,16 +4549,16 @@ async function handleStandardChat(
       respuesta_bruto_qwen,
       batch_execution_date
     `;
-    
+
     for (const company of detectedCompanies.slice(0, 8)) {
       const companyFullData = await fetchUnifiedRixData({
         supabaseClient,
         columns: fullDataColumns,
         tickerFilter: company.ticker,
         limit: 120, // 6 models × 20 weeks - margen generoso para no truncar
-        logPrefix
+        logPrefix,
       });
-      
+
       console.log(`${logPrefix} Loaded ${companyFullData.length} full records for ${company.issuer_name}`);
       detectedCompanyFullData.push(...companyFullData);
     }
@@ -4016,14 +4568,14 @@ async function handleStandardChat(
   // PASO 4: GENERAR EMBEDDING Y VECTOR SEARCH (complementario)
   // =============================================================================
   console.log(`${logPrefix} Generating embedding for vector search...`);
-  const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
+  const embeddingResponse = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${openAIApiKey}`,
-      'Content-Type': 'application/json',
+      Authorization: `Bearer ${openAIApiKey}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: 'text-embedding-3-small',
+      model: "text-embedding-3-small",
       input: question,
     }),
   });
@@ -4036,10 +4588,10 @@ async function handleStandardChat(
   const embedding = embeddingData.data[0].embedding;
 
   // Vector search - máximo absoluto
-  const { data: vectorDocs } = await supabaseClient.rpc('match_documents', {
+  const { data: vectorDocs } = await supabaseClient.rpc("match_documents", {
     query_embedding: embedding,
     match_count: 200, // TODOS los documentos relevantes
-    filter: {}
+    filter: {},
   });
 
   console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
@@ -4049,7 +4601,7 @@ async function handleStandardChat(
   // La regresión da contexto de tendencias y correlación precio-métricas
   // que enriquece TODAS las respuestas del agente
   // =============================================================================
-  
+
   interface RegressionAnalysisResult {
     success: boolean;
     dataProfile?: {
@@ -4065,7 +4617,7 @@ async function handleStandardChat(
       correlationWithPrice: number;
       pValue: number;
       isSignificant: boolean;
-      direction: 'positive' | 'negative' | 'none';
+      direction: "positive" | "negative" | "none";
       sampleSize: number;
     }>;
     topPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
@@ -4075,43 +4627,45 @@ async function handleStandardChat(
     methodology?: string;
     caveats?: string[];
   }
-  
+
   let regressionAnalysis: RegressionAnalysisResult | null = null;
-  
+
   // Always load regression (always exhaustive mode)
   const shouldLoadRegression = true;
-  
+
   if (shouldLoadRegression) {
     console.log(`${logPrefix} LOADING REGRESSION ANALYSIS (always-on for depth=${depthLevel})...`);
-    
+
     try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-      
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
       // Usar timeout corto para no ralentizar mucho
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s max
-      
+
       const regressionResponse = await fetch(`${supabaseUrl}/functions/v1/rix-regression-analysis`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${supabaseAnonKey}`,
         },
         body: JSON.stringify({ minWeeks: 6 }), // Menos restrictivo para más datos
         signal: controller.signal,
       });
-      
+
       clearTimeout(timeoutId);
-      
+
       if (regressionResponse.ok) {
         regressionAnalysis = await regressionResponse.json();
-        console.log(`${logPrefix} Regression analysis loaded: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records, ${regressionAnalysis?.dataProfile?.companiesWithPrices || 0} companies with prices`);
+        console.log(
+          `${logPrefix} Regression analysis loaded: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records, ${regressionAnalysis?.dataProfile?.companiesWithPrices || 0} companies with prices`,
+        );
       } else {
         console.warn(`${logPrefix} Regression analysis failed: ${regressionResponse.status}`);
       }
     } catch (regError) {
-      if (regError.name === 'AbortError') {
+      if (regError.name === "AbortError") {
         console.warn(`${logPrefix} Regression analysis timeout (15s) - continuing without it`);
       } else {
         console.error(`${logPrefix} Error loading regression analysis:`, regError);
@@ -4125,13 +4679,13 @@ async function handleStandardChat(
   // PASO 5: CARGAR DATOS ESTRUCTURADOS (con paginación inteligente)
   // =============================================================================
   console.log(`${logPrefix} Loading structured RIX data for rankings - ALL 6 AI MODELS...`);
-  
+
   // Use pagination for large requests
   let allRixData: any[] = [];
   let rixOffset = 0;
   const rixBatchSize = 3000;
-  const maxRixRecords = depthLevel === 'exhaustive' ? 10000 : 5000;
-  
+  const maxRixRecords = depthLevel === "exhaustive" ? 10000 : 5000;
+
   while (rixOffset < maxRixRecords) {
     const batch = await fetchUnifiedRixData({
       supabaseClient,
@@ -4151,16 +4705,16 @@ async function handleStandardChat(
       `,
       limit: rixBatchSize,
       offset: rixOffset,
-      logPrefix
+      logPrefix,
     });
-    
+
     if (!batch || batch.length === 0) break;
-    
+
     allRixData.push(...batch);
     rixOffset += batch.length;
-    
+
     if (batch.length < rixBatchSize) break;
-    
+
     // Always fetch all batches (exhaustive mode)
   }
 
@@ -4169,10 +4723,13 @@ async function handleStandardChat(
   // =============================================================================
   // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
   // =============================================================================
-  let context = '';
+  let context = "";
 
   // Detección anticipada de intención multi-semana (necesaria antes de sección 6.1)
-  const isMultiWeekRequest = /\b(evoluci[oó]n|tendencia|hist[oó]rico|[úu]ltimas?\s+\d+\s+semanas?|[úu]ltimo\s+mes|semanas?\s+anteriores?|cronol[oó]gic|progres[oió]n|mes\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|\d+\s+semanas?)\b/i.test(question);
+  const isMultiWeekRequest =
+    /\b(evoluci[oó]n|tendencia|hist[oó]rico|[úu]ltimas?\s+\d+\s+semanas?|[úu]ltimo\s+mes|semanas?\s+anteriores?|cronol[oó]gic|progres[oió]n|mes\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|\d+\s+semanas?)\b/i.test(
+      question,
+    );
   const requestedWeeks = (() => {
     const m = question.match(/[úu]ltimas?\s+(\d+)\s+semanas?/i) || question.match(/(\d+)\s+semanas?/i);
     return m ? Math.min(parseInt(m[1]), 5) : 4;
@@ -4185,56 +4742,57 @@ async function handleStandardChat(
     context += `📊 CONTEXTO ESTADÍSTICO: CORRELACIONES MÉTRICAS RIX ↔ PRECIO\n`;
     context += `📊 (Usa estos datos para enriquecer análisis de tendencias y valoración)\n`;
     context += `📊 ======================================================================\n\n`;
-    
+
     context += `### Perfil de Datos Analizados:\n`;
-    context += `- **Total registros**: ${regressionAnalysis.dataProfile?.totalRecords.toLocaleString() || 'N/A'}\n`;
-    context += `- **Empresas con precios**: ${regressionAnalysis.dataProfile?.companiesWithPrices || 'N/A'}\n`;
-    context += `- **Semanas analizadas**: ${regressionAnalysis.dataProfile?.weeksAnalyzed || 'N/A'}\n`;
-    context += `- **Rango temporal**: ${regressionAnalysis.dataProfile?.dateRange?.from || 'N/A'} a ${regressionAnalysis.dataProfile?.dateRange?.to || 'N/A'}\n`;
-    context += `- **Modelos IA incluidos**: ${regressionAnalysis.dataProfile?.modelsIncluded?.join(', ') || 'N/A'}\n\n`;
-    
+    context += `- **Total registros**: ${regressionAnalysis.dataProfile?.totalRecords.toLocaleString() || "N/A"}\n`;
+    context += `- **Empresas con precios**: ${regressionAnalysis.dataProfile?.companiesWithPrices || "N/A"}\n`;
+    context += `- **Semanas analizadas**: ${regressionAnalysis.dataProfile?.weeksAnalyzed || "N/A"}\n`;
+    context += `- **Rango temporal**: ${regressionAnalysis.dataProfile?.dateRange?.from || "N/A"} a ${regressionAnalysis.dataProfile?.dateRange?.to || "N/A"}\n`;
+    context += `- **Modelos IA incluidos**: ${regressionAnalysis.dataProfile?.modelsIncluded?.join(", ") || "N/A"}\n\n`;
+
     context += `### Métricas TOP Predictoras (estadísticamente significativas):\n`;
     if (regressionAnalysis.topPredictors && regressionAnalysis.topPredictors.length > 0) {
       context += `| Métrica | Nombre | Correlación | Interpretación |\n`;
       context += `|---------|--------|-------------|----------------|\n`;
-      regressionAnalysis.topPredictors.forEach(p => {
-        const interp = p.correlation > 0 
-          ? `Mayor ${p.displayName} → precio tiende a subir` 
-          : `Mayor ${p.displayName} → precio tiende a bajar`;
-        context += `| ${p.metric.replace(/^\d+_/, '')} | ${p.displayName} | ${p.correlation > 0 ? '+' : ''}${p.correlation.toFixed(3)} | ${interp} |\n`;
+      regressionAnalysis.topPredictors.forEach((p) => {
+        const interp =
+          p.correlation > 0
+            ? `Mayor ${p.displayName} → precio tiende a subir`
+            : `Mayor ${p.displayName} → precio tiende a bajar`;
+        context += `| ${p.metric.replace(/^\d+_/, "")} | ${p.displayName} | ${p.correlation > 0 ? "+" : ""}${p.correlation.toFixed(3)} | ${interp} |\n`;
       });
     } else {
       context += `No se encontraron métricas con correlación estadísticamente significativa con el precio.\n`;
     }
     context += `\n`;
-    
+
     context += `### Análisis Completo por Métrica:\n`;
     if (regressionAnalysis.metricAnalysis && regressionAnalysis.metricAnalysis.length > 0) {
       context += `| Métrica | Correlación | p-value | Significativo | Dirección | Muestra |\n`;
       context += `|---------|-------------|---------|---------------|-----------|--------|\n`;
-      regressionAnalysis.metricAnalysis.forEach(m => {
-        const sigSymbol = m.isSignificant ? '✓' : '✗';
-        const dirSymbol = m.direction === 'positive' ? '↗' : m.direction === 'negative' ? '↘' : '→';
-        context += `| ${m.displayName} | ${m.correlationWithPrice > 0 ? '+' : ''}${m.correlationWithPrice.toFixed(3)} | ${m.pValue.toFixed(3)} | ${sigSymbol} | ${dirSymbol} | n=${m.sampleSize} |\n`;
+      regressionAnalysis.metricAnalysis.forEach((m) => {
+        const sigSymbol = m.isSignificant ? "✓" : "✗";
+        const dirSymbol = m.direction === "positive" ? "↗" : m.direction === "negative" ? "↘" : "→";
+        context += `| ${m.displayName} | ${m.correlationWithPrice > 0 ? "+" : ""}${m.correlationWithPrice.toFixed(3)} | ${m.pValue.toFixed(3)} | ${sigSymbol} | ${dirSymbol} | n=${m.sampleSize} |\n`;
       });
     }
     context += `\n`;
-    
+
     context += `### Calidad del Modelo:\n`;
     context += `- **R² (varianza explicada)**: ${((regressionAnalysis.rSquared || 0) * 100).toFixed(1)}%\n`;
     context += `- **R² ajustado**: ${((regressionAnalysis.adjustedRSquared || 0) * 100).toFixed(1)}%\n\n`;
-    
+
     context += `### Metodología:\n`;
-    context += `${regressionAnalysis.methodology || 'Correlación de Pearson entre métricas RIX y variación de precio semanal.'}\n\n`;
-    
+    context += `${regressionAnalysis.methodology || "Correlación de Pearson entre métricas RIX y variación de precio semanal."}\n\n`;
+
     context += `### ⚠️ Limitaciones y Caveats:\n`;
     if (regressionAnalysis.caveats) {
-      regressionAnalysis.caveats.forEach(c => {
+      regressionAnalysis.caveats.forEach((c) => {
         context += `- ${c}\n`;
       });
     }
     context += `\n`;
-    
+
     context += `📊 ======================================================================\n\n`;
   }
 
@@ -4242,7 +4800,7 @@ async function handleStandardChat(
   // Provides structured entity relationships for reasoning about connections
   if (graphContextString) {
     context += graphContextString;
-    context += '\n';
+    context += "\n";
   }
 
   // 6.0-A MEMENTO CORPORATIVO - DATOS VERIFICADOS (PRIORIDAD MÁXIMA)
@@ -4251,20 +4809,20 @@ async function handleStandardChat(
     context += `🏛️ MEMENTO CORPORATIVO - DATOS VERIFICADOS CON FECHA\n`;
     context += `🏛️ IMPORTANTE: Usa estos datos para responder preguntas sobre liderazgo y datos corporativos\n`;
     context += `🏛️ ======================================================================\n\n`;
-    
-    corporateMementos.forEach(memento => {
-      const company = detectedCompanies.find(c => c.ticker === memento.ticker);
+
+    corporateMementos.forEach((memento) => {
+      const company = detectedCompanies.find((c) => c.ticker === memento.ticker);
       const companyName = company?.issuer_name || memento.ticker;
-      
+
       context += `## 🏢 ${companyName.toUpperCase()} (${memento.ticker})\n`;
       context += `📅 **Fecha de actualización**: ${memento.snapshot_date_only} (hace ${memento.days_old} días)\n`;
       context += `🔒 **Nivel de certeza**: ${memento.confidence_level}\n\n`;
-      
+
       // ========================================================================
       // REGLA ANTI-ALUCINACIÓN: Bloquear mención de ejecutivos si NO hay datos
       // ========================================================================
       const hasLeadershipData = memento.president_name || memento.ceo_name || memento.chairman_name;
-      
+
       if (!hasLeadershipData) {
         context += `🚫 **ADVERTENCIA CRÍTICA - DATOS DE LIDERAZGO NO DISPONIBLES**\n`;
         context += `⚠️ NO hay datos verificados de directivos (CEO, Presidente, Chairman) para ${companyName}.\n`;
@@ -4275,17 +4833,17 @@ async function handleStandardChat(
         context += `⚠️ NO uses tu conocimiento de entrenamiento para nombrar ejecutivos - puede estar desactualizado.\n\n`;
       } else {
         // Guidance for certainty levels (solo si HAY datos)
-        if (memento.confidence_level === 'VERIFIED') {
+        if (memento.confidence_level === "VERIFIED") {
           context += `✅ *Datos verificados (< 7 días) - Puedes hacer afirmaciones directas mencionando la fecha*\n`;
-        } else if (memento.confidence_level === 'RECENT') {
+        } else if (memento.confidence_level === "RECENT") {
           context += `⚠️ *Datos recientes (7-30 días) - Menciona la fecha y sugiere verificar si es crítico*\n`;
-        } else if (memento.confidence_level === 'HISTORICAL') {
+        } else if (memento.confidence_level === "HISTORICAL") {
           context += `📜 *Datos históricos (30-90 días) - Usa caveats: "según información de [fecha]..."*\n`;
         } else {
           context += `❓ *Datos antiguos (> 90 días) - Solo mencionar como referencia histórica*\n`;
         }
         context += `\n`;
-        
+
         // Mostrar cargos con etiquetas correctas según el contexto español
         if (memento.president_name) {
           context += `👔 **Presidente Ejecutivo**: ${memento.president_name}\n`;
@@ -4297,12 +4855,12 @@ async function handleStandardChat(
           context += `🏛️ **Presidente del Consejo**: ${memento.chairman_name}\n`;
         }
       }
-      
+
       if (memento.headquarters_city) {
         context += `📍 **Sede**: ${memento.headquarters_city}\n`;
       }
       if (memento.company_description) {
-        context += `📝 **Descripción**: ${memento.company_description.substring(0, 300)}${memento.company_description.length > 300 ? '...' : ''}\n`;
+        context += `📝 **Descripción**: ${memento.company_description.substring(0, 300)}${memento.company_description.length > 300 ? "..." : ""}\n`;
       }
       context += `\n---\n\n`;
     });
@@ -4310,27 +4868,27 @@ async function handleStandardChat(
 
   // 6.0-B NOTICIAS CORPORATIVAS RECIENTES
   if (corporateNews.length > 0) {
-    const recentNews = corporateNews.filter(n => n.is_recent);
-    const olderNews = corporateNews.filter(n => !n.is_recent);
-    
+    const recentNews = corporateNews.filter((n) => n.is_recent);
+    const olderNews = corporateNews.filter((n) => !n.is_recent);
+
     context += `📰 ======================================================================\n`;
     context += `📰 NOTICIAS CORPORATIVAS (de portales oficiales de las empresas)\n`;
     context += `📰 ======================================================================\n\n`;
-    
+
     if (recentNews.length > 0) {
       context += `### 🆕 Noticias Recientes (últimos 14 días):\n`;
-      recentNews.slice(0, 10).forEach(news => {
-        const company = detectedCompanies.find(c => c.ticker === news.ticker);
-        context += `- **${company?.issuer_name || news.ticker}** (${news.published_date || 'sin fecha'}): ${news.headline}\n`;
+      recentNews.slice(0, 10).forEach((news) => {
+        const company = detectedCompanies.find((c) => c.ticker === news.ticker);
+        context += `- **${company?.issuer_name || news.ticker}** (${news.published_date || "sin fecha"}): ${news.headline}\n`;
       });
       context += `\n`;
     }
-    
+
     if (olderNews.length > 0) {
       context += `### 📅 Noticias Anteriores:\n`;
-      olderNews.slice(0, 5).forEach(news => {
-        const company = detectedCompanies.find(c => c.ticker === news.ticker);
-        context += `- **${company?.issuer_name || news.ticker}** (${news.published_date || 'sin fecha'}): ${news.headline}\n`;
+      olderNews.slice(0, 5).forEach((news) => {
+        const company = detectedCompanies.find((c) => c.ticker === news.ticker);
+        context += `- **${company?.issuer_name || news.ticker}** (${news.published_date || "sin fecha"}): ${news.headline}\n`;
       });
       context += `\n`;
     }
@@ -4343,39 +4901,39 @@ async function handleStandardChat(
     context += `🔍 RESULTADOS DE BÚSQUEDA EN TEXTOS ORIGINALES DE IA\n`;
     context += `🔍 Se encontraron ${fullTextSearchResults.length} registros relevantes en la base de datos\n`;
     context += `🔍 ======================================================================\n\n`;
-    
+
     // Group by keyword
     const byKeyword = new Map<string, any[]>();
-    fullTextSearchResults.forEach(r => {
-      const kw = r.matchedKeyword || 'general';
+    fullTextSearchResults.forEach((r) => {
+      const kw = r.matchedKeyword || "general";
       if (!byKeyword.has(kw)) byKeyword.set(kw, []);
       byKeyword.get(kw)!.push(r);
     });
-    
+
     for (const [keyword, results] of byKeyword) {
       context += `## 📰 Resultados para "${keyword.toUpperCase()}" (${results.length} registros):\n\n`;
       context += `| Empresa | Ticker | Modelo IA | Período | RIX |\n`;
       context += `|---------|--------|-----------|---------|-----|\n`;
-      
-      results.slice(0, 20).forEach(r => {
+
+      results.slice(0, 20).forEach((r) => {
         const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
         context += `| ${r["03_target_name"]} | ${r["05_ticker"]} | ${r["02_model_name"]} | ${r["06_period_from"]} a ${r["07_period_to"]} | ${rix} |\n`;
       });
-      
+
       // Include text excerpts - más extensos para contexto ejecutivo
       context += `\n### Extractos relevantes (fuentes originales de IA):\n`;
       results.slice(0, 8).forEach((r, idx) => {
         const fields = [
-          { name: 'ChatGPT', value: r["20_res_gpt_bruto"] },
-          { name: 'Perplexity', value: r["21_res_perplex_bruto"] },
-          { name: 'Gemini', value: r["22_res_gemini_bruto"] },
-          { name: 'DeepSeek', value: r["23_res_deepseek_bruto"] },
-          { name: 'Grok', value: r["respuesta_bruto_grok"] },
-          { name: 'Qwen', value: r["respuesta_bruto_qwen"] },
-          { name: 'Explicación', value: r["22_explicacion"] },
-          { name: 'Resumen', value: r["10_resumen"] },
+          { name: "ChatGPT", value: r["20_res_gpt_bruto"] },
+          { name: "Perplexity", value: r["21_res_perplex_bruto"] },
+          { name: "Gemini", value: r["22_res_gemini_bruto"] },
+          { name: "DeepSeek", value: r["23_res_deepseek_bruto"] },
+          { name: "Grok", value: r["respuesta_bruto_grok"] },
+          { name: "Qwen", value: r["respuesta_bruto_qwen"] },
+          { name: "Explicación", value: r["22_explicacion"] },
+          { name: "Resumen", value: r["10_resumen"] },
         ];
-        
+
         for (const field of fields) {
           if (field.value && field.value.toLowerCase().includes(keyword.toLowerCase())) {
             const lowerText = field.value.toLowerCase();
@@ -4383,16 +4941,16 @@ async function handleStandardChat(
             const start = Math.max(0, pos - 250);
             const end = Math.min(field.value.length, pos + keyword.length + 500);
             const snippet = field.value.substring(start, end);
-            
+
             context += `\n**${idx + 1}. ${r["03_target_name"]} (${r["02_model_name"]} - ${field.name}):**\n`;
             context += `> "...${snippet}..."\n`;
             break;
           }
         }
       });
-      context += '\n';
+      context += "\n";
     }
-    context += '\n';
+    context += "\n";
   }
 
   // 6.1 DATOS COMPLETOS DE EMPRESAS DETECTADAS (con textos brutos)
@@ -4400,60 +4958,76 @@ async function handleStandardChat(
     context += `\n🏢 ======================================================================\n`;
     context += `🏢 DATOS COMPLETOS DE EMPRESAS MENCIONADAS (INCLUYE TEXTOS ORIGINALES)\n`;
     context += `🏢 ======================================================================\n\n`;
-    
+
     // Group by company
     const byCompany = new Map<string, any[]>();
-    detectedCompanyFullData.forEach(r => {
+    detectedCompanyFullData.forEach((r) => {
       const company = r["03_target_name"];
       if (!byCompany.has(company)) byCompany.set(company, []);
       byCompany.get(company)!.push(r);
     });
-    
+
     // Determine primary company (the one the user is asking about)
     const primaryCompanyTicker = detectedCompanies.length > 0 ? detectedCompanies[0].ticker : null;
-    
+
     for (const [companyName, records] of byCompany) {
-      const company = detectedCompanies.find(c => c.issuer_name === companyName);
+      const company = detectedCompanies.find((c) => c.issuer_name === companyName);
       const isPrimaryCompany = company?.ticker === primaryCompanyTicker;
       context += `## 📊 ${companyName.toUpperCase()} (${records[0]["05_ticker"]})\n`;
       if (company) {
-        context += `Sector: ${company.sector_category || 'N/A'} | IBEX: ${company.ibex_family_code || 'N/A'} | Cotiza: ${company.cotiza_en_bolsa ? 'Sí' : 'No'}\n\n`;
+        context += `Sector: ${company.sector_category || "N/A"} | IBEX: ${company.ibex_family_code || "N/A"} | Cotiza: ${company.cotiza_en_bolsa ? "Sí" : "No"}\n\n`;
       }
 
       // Determinar qué fechas mostrar según si es multi-semana o no
-      const sortedDates = [...new Set(records.map((r: any) => r.batch_execution_date?.toString().split('T')[0]).filter(Boolean))].sort().reverse();
+      const sortedDates = [
+        ...new Set(records.map((r: any) => r.batch_execution_date?.toString().split("T")[0]).filter(Boolean)),
+      ]
+        .sort()
+        .reverse();
       const latestDate = sortedDates[0] || null;
 
       // Si es multi-semana: incluir N semanas. Si no: solo la más reciente.
       const datesToShow = isMultiWeekRequest
         ? sortedDates.slice(0, requestedWeeks)
-        : [latestDate].filter(Boolean) as string[];
+        : ([latestDate].filter(Boolean) as string[]);
 
       const recordsToShow = records
-        .filter((r: any) => datesToShow.includes(r.batch_execution_date?.toString().split('T')[0]))
+        .filter((r: any) => datesToShow.includes(r.batch_execution_date?.toString().split("T")[0]))
         .sort((a: any, b: any) => {
-          const dateDiff = (b.batch_execution_date?.toString() || '').localeCompare(a.batch_execution_date?.toString() || '');
-          return dateDiff !== 0 ? dateDiff : (a["02_model_name"] || '').localeCompare(b["02_model_name"] || '');
+          const dateDiff = (b.batch_execution_date?.toString() || "").localeCompare(
+            a.batch_execution_date?.toString() || "",
+          );
+          return dateDiff !== 0 ? dateDiff : (a["02_model_name"] || "").localeCompare(b["02_model_name"] || "");
         });
 
       if (isMultiWeekRequest) {
         // Multi-semana: tabla agrupada por fecha para mostrar evolución cronológica
         context += `### Evolución por semana (${datesToShow.length} snapshots, ${requestedWeeks} semanas solicitadas):\n`;
         datesToShow.forEach((date, weekIdx) => {
-          const weekRecords = recordsToShow.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === date);
-          const avgRix = weekRecords.length > 0
-            ? (weekRecords.reduce((s: number, r: any) => s + (r["51_rix_score_adjusted"] ?? r["09_rix_score"] ?? 0), 0) / weekRecords.length).toFixed(1)
-            : 'N/A';
-          context += `\n**📅 Semana ${weekIdx + 1}${weekIdx === 0 ? ' (MÁS RECIENTE)' : ''}: ${date}** — promedio RIX: ${avgRix}\n`;
+          const weekRecords = recordsToShow.filter(
+            (r: any) => r.batch_execution_date?.toString().split("T")[0] === date,
+          );
+          const avgRix =
+            weekRecords.length > 0
+              ? (
+                  weekRecords.reduce(
+                    (s: number, r: any) => s + (r["51_rix_score_adjusted"] ?? r["09_rix_score"] ?? 0),
+                    0,
+                  ) / weekRecords.length
+                ).toFixed(1)
+              : "N/A";
+          context += `\n**📅 Semana ${weekIdx + 1}${weekIdx === 0 ? " (MÁS RECIENTE)" : ""}: ${date}** — promedio RIX: ${avgRix}\n`;
           context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
           context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
           weekRecords.forEach((r: any) => {
             const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
-            context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
+            context += `| ${r["02_model_name"]} | ${rix ?? "-"} | ${r["23_nvm_score"] ?? "-"} | ${r["26_drm_score"] ?? "-"} | ${r["29_sim_score"] ?? "-"} | ${r["32_rmm_score"] ?? "-"} | ${r["35_cem_score"] ?? "-"} | ${r["38_gam_score"] ?? "-"} | ${r["41_dcm_score"] ?? "-"} | ${r["44_cxm_score"] ?? "-"} |\n`;
           });
         });
         // Para multi-semana: incluir textos brutos solo del snapshot más reciente (evitar contexto enorme)
-        const latestWeekRecords = recordsToShow.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === datesToShow[0]);
+        const latestWeekRecords = recordsToShow.filter(
+          (r: any) => r.batch_execution_date?.toString().split("T")[0] === datesToShow[0],
+        );
         context += `\n### Análisis narrativo (semana más reciente: ${datesToShow[0]}):\n`;
         latestWeekRecords.forEach((r: any) => {
           context += `\n**${r["02_model_name"]}** (${r["06_period_from"]} a ${r["07_period_to"]}):\n`;
@@ -4461,10 +5035,14 @@ async function handleStandardChat(
             context += `- **Resumen**: ${r["10_resumen"].substring(0, isPrimaryCompany ? 1500 : 500)}...\n`;
           }
           const modelResponseMap: Record<string, string> = {
-            'ChatGPT': '20_res_gpt_bruto', 'Perplexity': '21_res_perplex_bruto',
-            'Google Gemini': '22_res_gemini_bruto', 'Gemini': '22_res_gemini_bruto',
-            'Deepseek': '23_res_deepseek_bruto', 'DeepSeek': '23_res_deepseek_bruto',
-            'Grok': 'respuesta_bruto_grok', 'Qwen': 'respuesta_bruto_qwen',
+            ChatGPT: "20_res_gpt_bruto",
+            Perplexity: "21_res_perplex_bruto",
+            "Google Gemini": "22_res_gemini_bruto",
+            Gemini: "22_res_gemini_bruto",
+            Deepseek: "23_res_deepseek_bruto",
+            DeepSeek: "23_res_deepseek_bruto",
+            Grok: "respuesta_bruto_grok",
+            Qwen: "respuesta_bruto_qwen",
           };
           const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
           const rawField = rawFieldKey ? r[rawFieldKey] : null;
@@ -4477,25 +5055,28 @@ async function handleStandardChat(
               context += `- **Explicación del análisis**: ${r["22_explicacion"].substring(0, 2000)}\n`;
             }
             if (r["25_explicaciones_detalladas"]) {
-              const detalladas = typeof r["25_explicaciones_detalladas"] === 'string' 
-                ? r["25_explicaciones_detalladas"] 
-                : JSON.stringify(r["25_explicaciones_detalladas"]);
+              const detalladas =
+                typeof r["25_explicaciones_detalladas"] === "string"
+                  ? r["25_explicaciones_detalladas"]
+                  : JSON.stringify(r["25_explicaciones_detalladas"]);
               context += `- **Desglose dimensional**: ${detalladas.substring(0, 2000)}\n`;
             }
           }
         });
       } else {
         // Caso normal (una sola semana): tabla de scores + textos completos
-        const singleWeekRecords = recordsToShow.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === latestDate);
-        context += `### Scores por Modelo IA (snapshot: ${latestDate || 'más reciente'}, ${singleWeekRecords.length} modelos):\n`;
+        const singleWeekRecords = recordsToShow.filter(
+          (r: any) => r.batch_execution_date?.toString().split("T")[0] === latestDate,
+        );
+        context += `### Scores por Modelo IA (snapshot: ${latestDate || "más reciente"}, ${singleWeekRecords.length} modelos):\n`;
         context += `| Modelo | RIX | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
         context += `|--------|-----|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
         singleWeekRecords.forEach((r: any) => {
           const rix = r["51_rix_score_adjusted"] ?? r["09_rix_score"];
-          context += `| ${r["02_model_name"]} | ${rix ?? '-'} | ${r["23_nvm_score"] ?? '-'} | ${r["26_drm_score"] ?? '-'} | ${r["29_sim_score"] ?? '-'} | ${r["32_rmm_score"] ?? '-'} | ${r["35_cem_score"] ?? '-'} | ${r["38_gam_score"] ?? '-'} | ${r["41_dcm_score"] ?? '-'} | ${r["44_cxm_score"] ?? '-'} |\n`;
+          context += `| ${r["02_model_name"]} | ${rix ?? "-"} | ${r["23_nvm_score"] ?? "-"} | ${r["26_drm_score"] ?? "-"} | ${r["29_sim_score"] ?? "-"} | ${r["32_rmm_score"] ?? "-"} | ${r["35_cem_score"] ?? "-"} | ${r["38_gam_score"] ?? "-"} | ${r["41_dcm_score"] ?? "-"} | ${r["44_cxm_score"] ?? "-"} |\n`;
           // Inject category interpretation row for primary company
           if (isPrimaryCompany) {
-            context += `| _(${r["02_model_name"]} interp.)_ | | ${r["25_nvm_categoria"] || '-'} | ${r["28_drm_categoria"] || '-'} | ${r["31_sim_categoria"] || '-'} | ${r["34_rmm_categoria"] || '-'} | ${r["37_cem_categoria"] || '-'} | ${r["40_gam_categoria"] || '-'} | ${r["43_dcm_categoria"] || '-'} | ${r["46_cxm_categoria"] || '-'} |\n`;
+            context += `| _(${r["02_model_name"]} interp.)_ | | ${r["25_nvm_categoria"] || "-"} | ${r["28_drm_categoria"] || "-"} | ${r["31_sim_categoria"] || "-"} | ${r["34_rmm_categoria"] || "-"} | ${r["37_cem_categoria"] || "-"} | ${r["40_gam_categoria"] || "-"} | ${r["43_dcm_categoria"] || "-"} | ${r["46_cxm_categoria"] || "-"} |\n`;
           }
         });
         context += `\n### Análisis de cada modelo IA:\n`;
@@ -4505,10 +5086,14 @@ async function handleStandardChat(
             context += `- **Resumen**: ${r["10_resumen"].substring(0, isPrimaryCompany ? 1500 : 500)}...\n`;
           }
           const modelResponseMap: Record<string, string> = {
-            'ChatGPT': '20_res_gpt_bruto', 'Perplexity': '21_res_perplex_bruto',
-            'Google Gemini': '22_res_gemini_bruto', 'Gemini': '22_res_gemini_bruto',
-            'Deepseek': '23_res_deepseek_bruto', 'DeepSeek': '23_res_deepseek_bruto',
-            'Grok': 'respuesta_bruto_grok', 'Qwen': 'respuesta_bruto_qwen',
+            ChatGPT: "20_res_gpt_bruto",
+            Perplexity: "21_res_perplex_bruto",
+            "Google Gemini": "22_res_gemini_bruto",
+            Gemini: "22_res_gemini_bruto",
+            Deepseek: "23_res_deepseek_bruto",
+            DeepSeek: "23_res_deepseek_bruto",
+            Grok: "respuesta_bruto_grok",
+            Qwen: "respuesta_bruto_qwen",
           };
           const rawFieldKey = modelResponseMap[r["02_model_name"]] || null;
           const rawField = rawFieldKey ? r[rawFieldKey] : null;
@@ -4521,15 +5106,16 @@ async function handleStandardChat(
               context += `- **Explicación del análisis**: ${r["22_explicacion"].substring(0, 2000)}\n`;
             }
             if (r["25_explicaciones_detalladas"]) {
-              const detalladas = typeof r["25_explicaciones_detalladas"] === 'string' 
-                ? r["25_explicaciones_detalladas"] 
-                : JSON.stringify(r["25_explicaciones_detalladas"]);
+              const detalladas =
+                typeof r["25_explicaciones_detalladas"] === "string"
+                  ? r["25_explicaciones_detalladas"]
+                  : JSON.stringify(r["25_explicaciones_detalladas"]);
               context += `- **Desglose dimensional**: ${detalladas.substring(0, 2000)}\n`;
             }
           }
         });
       }
-      context += '\n---\n\n';
+      context += "\n---\n\n";
     }
   }
 
@@ -4538,26 +5124,27 @@ async function handleStandardChat(
     context += `📚 CONTEXTO ADICIONAL DEL VECTOR STORE (${vectorDocs.length} documentos):\n\n`;
     vectorDocs.forEach((doc: any, idx: number) => {
       const metadata = doc.metadata || {};
-      context += `[${idx + 1}] ${metadata.company_name || 'Sin empresa'} - ${metadata.week || 'Sin fecha'}\n`;
-      context += `${doc.content?.substring(0, 600) || 'Sin contenido'}...\n\n`;
+      context += `[${idx + 1}] ${metadata.company_name || "Sin empresa"} - ${metadata.week || "Sin fecha"}\n`;
+      context += `${doc.content?.substring(0, 600) || "Sin contenido"}...\n\n`;
     });
-    context += '\n';
+    context += "\n";
   }
 
   // 6.3 Construir ranking general de la semana actual
   if (allRixData && allRixData.length > 0) {
-
     // =========================================================================
     // SELECCIÓN CANÓNICA DE SNAPSHOT: Los barridos reales siempre son en DOMINGO.
     // batch_execution_date es la fuente de verdad (no period_from/period_to).
     // Los barridos parciales o de prueba caen en días no dominicales y se ignoran.
     // =========================================================================
-    const selectCanonicalPeriod = (data: any[]): { canonicalDate: string; previousDate: string | null; sundayDates: string[] } => {
+    const selectCanonicalPeriod = (
+      data: any[],
+    ): { canonicalDate: string; previousDate: string | null; sundayDates: string[] } => {
       // Agrupar por batch_execution_date (normalizado a YYYY-MM-DD)
       const groupByBatchDate = new Map<string, any[]>();
       for (const run of data) {
         const rawDate = run.batch_execution_date;
-        const batchDate = rawDate ? rawDate.toString().split('T')[0] : null;
+        const batchDate = rawDate ? rawDate.toString().split("T")[0] : null;
         if (!batchDate) continue;
         if (!groupByBatchDate.has(batchDate)) groupByBatchDate.set(batchDate, []);
         groupByBatchDate.get(batchDate)!.push(run);
@@ -4565,7 +5152,7 @@ async function handleStandardChat(
 
       const isSunday = (dateStr: string): boolean => {
         // Parse as UTC to avoid timezone day-shift
-        const d = new Date(dateStr + 'T12:00:00Z');
+        const d = new Date(dateStr + "T12:00:00Z");
         return d.getUTCDay() === 0;
       };
 
@@ -4580,14 +5167,17 @@ async function handleStandardChat(
       if (sundayDates.length > 0) {
         const canonicalDate = sundayDates[0];
         const previousDate = sundayDates[1] ?? null;
-        console.log(`${logPrefix} 📅 Snapshot canónico: ${canonicalDate} (Domingo ✅, ${groupByBatchDate.get(canonicalDate)?.length} registros). Anterior: ${previousDate ?? 'ninguno'}`);
+        console.log(
+          `${logPrefix} 📅 Snapshot canónico: ${canonicalDate} (Domingo ✅, ${groupByBatchDate.get(canonicalDate)?.length} registros). Anterior: ${previousDate ?? "ninguno"}`,
+        );
         return { canonicalDate, previousDate, sundayDates };
       }
 
       // Fallback: usar la fecha con más registros (cubre pruebas o emergencias)
-      const fallbackDate = [...groupByBatchDate.entries()]
-        .sort(([, a], [, b]) => b.length - a.length)[0]?.[0] ?? null;
-      console.warn(`${logPrefix} ⚠️ No hay domingos con ≥180 registros. Fallback a fecha con más datos: ${fallbackDate}`);
+      const fallbackDate = [...groupByBatchDate.entries()].sort(([, a], [, b]) => b.length - a.length)[0]?.[0] ?? null;
+      console.warn(
+        `${logPrefix} ⚠️ No hay domingos con ≥180 registros. Fallback a fecha con más datos: ${fallbackDate}`,
+      );
       return { canonicalDate: fallbackDate!, previousDate: null, sundayDates: [] };
     };
 
@@ -4595,58 +5185,71 @@ async function handleStandardChat(
 
     // isMultiWeekRequest y requestedWeeks ya definidos al inicio del PASO 6
     if (isMultiWeekRequest) {
-      console.log(`${logPrefix} 🗓️ Multi-week request detectado: ${requestedWeeks} semanas. Domingos disponibles: ${sundayDates.join(', ')}`);
+      console.log(
+        `${logPrefix} 🗓️ Multi-week request detectado: ${requestedWeeks} semanas. Domingos disponibles: ${sundayDates.join(", ")}`,
+      );
     }
 
-    let currentWeekData = allRixData.filter(run => {
-      const batchDate = run.batch_execution_date?.toString().split('T')[0];
+    let currentWeekData = allRixData.filter((run) => {
+      const batchDate = run.batch_execution_date?.toString().split("T")[0];
       return batchDate === canonicalDate;
     });
 
     const previousWeekData = previousDate
-      ? allRixData.filter(run => run.batch_execution_date?.toString().split('T')[0] === previousDate)
+      ? allRixData.filter((run) => run.batch_execution_date?.toString().split("T")[0] === previousDate)
       : [];
 
     // Diagnóstico de cobertura del snapshot activo
     const modelsInCurrentSnapshot = new Set(currentWeekData.map((r: any) => r["02_model_name"]));
-    const snapshotDateObj = new Date(canonicalDate + 'T12:00:00Z');
+    const snapshotDateObj = new Date(canonicalDate + "T12:00:00Z");
     const isSundaySnapshot = snapshotDateObj.getUTCDay() === 0;
     const tickersInSnapshot = new Set(currentWeekData.map((r: any) => r["05_ticker"]));
 
     context += `\n📅 SNAPSHOT ACTIVO:\n`;
-    context += `- Fecha de ejecución: ${canonicalDate} (${isSundaySnapshot ? 'Domingo ✅' : 'No es domingo ⚠️ — barrido de prueba o fallback'})\n`;
-    context += `- Modelos con datos: ${Array.from(modelsInCurrentSnapshot).join(', ')} (${modelsInCurrentSnapshot.size}/6)\n`;
+    context += `- Fecha de ejecución: ${canonicalDate} (${isSundaySnapshot ? "Domingo ✅" : "No es domingo ⚠️ — barrido de prueba o fallback"})\n`;
+    context += `- Modelos con datos: ${Array.from(modelsInCurrentSnapshot).join(", ")} (${modelsInCurrentSnapshot.size}/6)\n`;
     context += `- Registros totales: ${currentWeekData.length}\n`;
     context += `- Empresas cubiertas: ${tickersInSnapshot.size}\n`;
     if (previousDate) context += `- Snapshot anterior: ${previousDate}\n`;
     if (modelsInCurrentSnapshot.size < 4) {
       context += `⚠️ AVISO CRÍTICO: Solo ${modelsInCurrentSnapshot.size} modelos disponibles. Este snapshot puede estar incompleto.\n`;
-      console.warn(`${logPrefix} ⚠️ Solo ${modelsInCurrentSnapshot.size} modelos en snapshot actual. Posible barrido incompleto.`);
+      console.warn(
+        `${logPrefix} ⚠️ Solo ${modelsInCurrentSnapshot.size} modelos en snapshot actual. Posible barrido incompleto.`,
+      );
     }
     // Histórico multi-semana: mostrar todos los domingos disponibles cuando se piden tendencias
     if (isMultiWeekRequest && sundayDates.length > 1) {
       context += `\n📅 HISTÓRICO DISPONIBLE (${sundayDates.length} domingos canónicos, mostrando los ${requestedWeeks} más recientes):\n`;
       sundayDates.slice(0, requestedWeeks).forEach((date, i) => {
-        const weekData = allRixData.filter((r: any) => r.batch_execution_date?.toString().split('T')[0] === date);
+        const weekData = allRixData.filter((r: any) => r.batch_execution_date?.toString().split("T")[0] === date);
         const models = new Set(weekData.map((r: any) => r["02_model_name"]));
-        const avgRix = weekData.length > 0
-          ? (weekData.reduce((sum: number, r: any) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"] ?? 0), 0) / weekData.length).toFixed(1)
-          : 'N/A';
-        context += `- Semana ${i + 1} (${i === 0 ? 'MÁS RECIENTE' : `hace ${i} semana${i > 1 ? 's' : ''}`}): ${date} → ${weekData.length} registros, ${models.size} modelos, RIX mercado promedio: ${avgRix}\n`;
+        const avgRix =
+          weekData.length > 0
+            ? (
+                weekData.reduce(
+                  (sum: number, r: any) => sum + (r["51_rix_score_adjusted"] ?? r["09_rix_score"] ?? 0),
+                  0,
+                ) / weekData.length
+              ).toFixed(1)
+            : "N/A";
+        context += `- Semana ${i + 1} (${i === 0 ? "MÁS RECIENTE" : `hace ${i} semana${i > 1 ? "s" : ""}`}): ${date} → ${weekData.length} registros, ${models.size} modelos, RIX mercado promedio: ${avgRix}\n`;
       });
       context += `INSTRUCCIÓN: Para esta consulta usa los datos de las ${requestedWeeks} semanas anteriores para narrar la evolución cronológica.\n`;
     }
-    context += '\n';
+    context += "\n";
 
     // =========================================================================
     // PRE-FILTERING: Apply model and index filters if user explicitly requested them
     // =========================================================================
     const questionLower = question.toLowerCase();
     const modelFilters: Record<string, string> = {
-      'chatgpt': 'ChatGPT', 'gpt': 'ChatGPT',
-      'perplexity': 'Perplexity',
-      'gemini': 'Google Gemini', 'deepseek': 'Deepseek',
-      'grok': 'Grok', 'qwen': 'Qwen'
+      chatgpt: "ChatGPT",
+      gpt: "ChatGPT",
+      perplexity: "Perplexity",
+      gemini: "Google Gemini",
+      deepseek: "Deepseek",
+      grok: "Grok",
+      qwen: "Qwen",
     };
     let requestedModel: string | null = null;
     for (const [keyword, modelName] of Object.entries(modelFilters)) {
@@ -4656,34 +5259,34 @@ async function handleStandardChat(
       }
     }
     let requestedIndex: string | null = null;
-    if (/ibex.?35/i.test(question)) requestedIndex = 'IBEX-35';
-    else if (/ibex.?mc/i.test(question)) requestedIndex = 'IBEX-MC';
+    if (/ibex.?35/i.test(question)) requestedIndex = "IBEX-35";
+    else if (/ibex.?mc/i.test(question)) requestedIndex = "IBEX-MC";
 
     if (requestedModel) {
-      currentWeekData = currentWeekData.filter(r => r["02_model_name"] === requestedModel);
+      currentWeekData = currentWeekData.filter((r) => r["02_model_name"] === requestedModel);
       context += `\n⚡ FILTRO APLICADO: Solo datos de ${requestedModel} (${currentWeekData.length} registros)\n`;
       console.log(`${logPrefix} Pre-filter: model=${requestedModel}, ${currentWeekData.length} records remain`);
     }
     if (requestedIndex && companiesCache) {
       const indexTickers = new Set(
-        companiesCache
-          .filter((c: any) => c.ibex_family_code === requestedIndex)
-          .map((c: any) => c.ticker)
+        companiesCache.filter((c: any) => c.ibex_family_code === requestedIndex).map((c: any) => c.ticker),
       );
-      currentWeekData = currentWeekData.filter(r => indexTickers.has(r["05_ticker"]));
+      currentWeekData = currentWeekData.filter((r) => indexTickers.has(r["05_ticker"]));
       context += `⚡ FILTRO APLICADO: Solo empresas del ${requestedIndex} (${currentWeekData.length} registros)\n`;
       console.log(`${logPrefix} Pre-filter: index=${requestedIndex}, ${currentWeekData.length} records remain`);
-      
+
       // IBEX-35 GUARDRAIL: detect and repair incomplete data from LIMIT truncation
-      if (requestedIndex === 'IBEX-35') {
+      if (requestedIndex === "IBEX-35") {
         const expectedIbexCount = indexTickers.size;
-        const uniqueIbexTickers = new Set(currentWeekData.map(r => r["05_ticker"]));
-        
+        const uniqueIbexTickers = new Set(currentWeekData.map((r) => r["05_ticker"]));
+
         if (uniqueIbexTickers.size < expectedIbexCount) {
-          console.log(`${logPrefix} WARNING: IBEX-35 incomplete! Found ${uniqueIbexTickers.size}/${expectedIbexCount} companies. Fetching missing...`);
-          
-          const missingTickers = Array.from(indexTickers).filter(t => !uniqueIbexTickers.has(t));
-          
+          console.log(
+            `${logPrefix} WARNING: IBEX-35 incomplete! Found ${uniqueIbexTickers.size}/${expectedIbexCount} companies. Fetching missing...`,
+          );
+
+          const missingTickers = Array.from(indexTickers).filter((t) => !uniqueIbexTickers.has(t));
+
           if (missingTickers.length > 0) {
             const missingBatch = await fetchUnifiedRixData({
               supabaseClient,
@@ -4694,19 +5297,19 @@ async function handleStandardChat(
               `,
               tickerFilter: missingTickers,
               limit: 500,
-              logPrefix: `${logPrefix} [IBEX-REPAIR]`
+              logPrefix: `${logPrefix} [IBEX-REPAIR]`,
             });
-            
+
             if (missingBatch.length > 0) {
               allRixData.push(...missingBatch);
               // Re-apply period + model + index filters on the repaired data
               const repairedData = missingBatch
-                .filter(run => run.batch_execution_date?.toString().split('T')[0] === canonicalDate)
-                .filter(r => !requestedModel || r["02_model_name"] === requestedModel)
-                .filter(r => indexTickers.has(r["05_ticker"]));
+                .filter((run) => run.batch_execution_date?.toString().split("T")[0] === canonicalDate)
+                .filter((r) => !requestedModel || r["02_model_name"] === requestedModel)
+                .filter((r) => indexTickers.has(r["05_ticker"]));
               currentWeekData.push(...repairedData);
-              
-              const repairedTickers = new Set(currentWeekData.map(r => r["05_ticker"]));
+
+              const repairedTickers = new Set(currentWeekData.map((r) => r["05_ticker"]));
               console.log(`${logPrefix} IBEX-35 repaired: now ${repairedTickers.size}/${expectedIbexCount} companies`);
               context += `🔧 IBEX-35 datos reparados: ${repairedTickers.size}/${expectedIbexCount} empresas\n`;
             }
@@ -4716,40 +5319,40 @@ async function handleStandardChat(
     }
 
     console.log(`${logPrefix} Canonical snapshot: ${canonicalDate} (${currentWeekData.length} records)`);
-    console.log(`${logPrefix} Previous snapshot: ${previousDate ?? 'N/A'} (${previousWeekData.length} records)`);
+    console.log(`${logPrefix} Previous snapshot: ${previousDate ?? "N/A"} (${previousWeekData.length} records)`);
 
     // =========================================================================
     // 6.4 RANKING GENERAL (sin filtros destructivos)
     // =========================================================================
     const rankedRecords = currentWeekData
       // ELIMINADO EL FILTRO DESTRUCTIVO: .filter(run => run["32_rmm_score"] !== 0)
-      .map(run => ({
+      .map((run) => ({
         company: run["03_target_name"],
         ticker: run["05_ticker"],
         model: run["02_model_name"],
         rixScore: run["51_rix_score_adjusted"] ?? run["09_rix_score"],
         rmmScore: run["32_rmm_score"],
         periodFrom: run["06_period_from"],
-        periodTo: run["07_period_to"]
+        periodTo: run["07_period_to"],
       }))
-      .filter(r => r.company && r.rixScore != null)
+      .filter((r) => r.company && r.rixScore != null)
       .sort((a, b) => (b.rixScore || 0) - (a.rixScore || 0));
 
-    const companyAverages = new Map<string, { scores: number[], ticker: string }>();
-    
-    currentWeekData.forEach(run => {
+    const companyAverages = new Map<string, { scores: number[]; ticker: string }>();
+
+    currentWeekData.forEach((run) => {
       const companyName = run["03_target_name"];
       const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
-      
+
       if (!companyName || score == null) return;
-      
+
       if (!companyAverages.has(companyName)) {
         companyAverages.set(companyName, {
           scores: [],
-          ticker: run["05_ticker"] || ''
+          ticker: run["05_ticker"] || "",
         });
       }
-      
+
       companyAverages.get(companyName)!.scores.push(score);
     });
 
@@ -4758,23 +5361,23 @@ async function handleStandardChat(
         company,
         ticker: data.ticker,
         avgRix: Math.round((data.scores.reduce((a, b) => a + b, 0) / data.scores.length) * 10) / 10,
-        modelCount: data.scores.length
+        modelCount: data.scores.length,
       }))
       .sort((a, b) => b.avgRix - a.avgRix);
 
     const trends = new Map<string, number>();
     if (previousWeekData.length > 0) {
       const prevScores = new Map<string, number[]>();
-      previousWeekData.forEach(run => {
+      previousWeekData.forEach((run) => {
         const companyName = run["03_target_name"];
         const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
         if (!companyName || score == null) return;
-        
+
         if (!prevScores.has(companyName)) prevScores.set(companyName, []);
         prevScores.get(companyName)!.push(score);
       });
 
-      rankedByAverage.forEach(curr => {
+      rankedByAverage.forEach((curr) => {
         const prevData = prevScores.get(curr.company);
         if (prevData && prevData.length > 0) {
           const prevAvg = prevData.reduce((a, b) => a + b, 0) / prevData.length;
@@ -4785,18 +5388,21 @@ async function handleStandardChat(
 
     const periodFrom = rankedRecords[0]?.periodFrom;
     const periodTo = rankedRecords[0]?.periodTo;
-    
+
     context += `\n📊 RANKING INDIVIDUAL SEMANA ACTUAL (${periodFrom} a ${periodTo}):\n`;
     context += `Este es el ranking tal como aparece en el dashboard principal.\n`;
     context += `Cada fila es una evaluación individual: Empresa + Modelo IA + RIX Score.\n`;
     context += `Total de evaluaciones esta semana: ${rankedRecords.length}\n\n`;
     context += `| # | Empresa | Ticker | RIX | Modelo IA |\n`;
     context += `|---|---------|--------|-----|----------|\n`;
-    
+
     // Intelligent ranking: full when user asks for rankings, reduced otherwise to save tokens
-    const isRankingQuery = /\b(ranking|top\s?\d|ibex|clasificaci[oó]n|mejor|peor|l[ií]der|primera|[uú]ltima|posici[oó]n|listado|todas las empresas)\b/i.test(question);
+    const isRankingQuery =
+      /\b(ranking|top\s?\d|ibex|clasificaci[oó]n|mejor|peor|l[ií]der|primera|[uú]ltima|posici[oó]n|listado|todas las empresas)\b/i.test(
+        question,
+      );
     const rankingLimit = isRankingQuery ? 150 : 30;
-    
+
     rankedRecords.slice(0, rankingLimit).forEach((record, idx) => {
       context += `| ${idx + 1} | ${record.company} | ${record.ticker} | ${record.rixScore} | ${record.model} |\n`;
     });
@@ -4812,14 +5418,19 @@ async function handleStandardChat(
     context += `Total de empresas evaluadas: ${rankedByAverage.length}\n\n`;
     context += `| # | Empresa | Ticker | RIX Promedio | # Modelos | Tendencia vs Semana Anterior |\n`;
     context += `|---|---------|--------|--------------|-----------|------------------------------|\n`;
-    
+
     const averageLimit = isRankingQuery ? 50 : 20;
     rankedByAverage.slice(0, averageLimit).forEach((company, idx) => {
       const trend = trends.get(company.company);
-      const trendStr = trend !== undefined 
-        ? (trend > 0 ? `↗ +${trend.toFixed(1)}` : trend < 0 ? `↘ ${trend.toFixed(1)}` : '→ 0.0')
-        : 'N/A';
-      
+      const trendStr =
+        trend !== undefined
+          ? trend > 0
+            ? `↗ +${trend.toFixed(1)}`
+            : trend < 0
+              ? `↘ ${trend.toFixed(1)}`
+              : "→ 0.0"
+          : "N/A";
+
       context += `| ${idx + 1} | ${company.company} | ${company.ticker} | ${company.avgRix} | ${company.modelCount} | ${trendStr} |\n`;
     });
 
@@ -4829,19 +5440,19 @@ async function handleStandardChat(
 
     context += `\n`;
 
-    const modelBreakdown = new Map<string, { count: number, avgScore: number, companies: Set<string> }>();
-    
-    currentWeekData.forEach(run => {
+    const modelBreakdown = new Map<string, { count: number; avgScore: number; companies: Set<string> }>();
+
+    currentWeekData.forEach((run) => {
       const model = run["02_model_name"];
       const score = run["51_rix_score_adjusted"] ?? run["09_rix_score"];
       const company = run["03_target_name"];
-      
+
       if (!model || score == null) return;
-      
+
       if (!modelBreakdown.has(model)) {
         modelBreakdown.set(model, { count: 0, avgScore: 0, companies: new Set() });
       }
-      
+
       const entry = modelBreakdown.get(model)!;
       entry.count++;
       entry.avgScore += score;
@@ -4861,8 +5472,8 @@ async function handleStandardChat(
     if (trends.size > 0) {
       const sortedByTrend = Array.from(trends.entries())
         .map(([company, trend]) => {
-          const companyData = rankedByAverage.find(c => c.company === company);
-          return { company, trend, ticker: companyData?.ticker || '', rix: companyData?.avgRix || 0 };
+          const companyData = rankedByAverage.find((c) => c.company === company);
+          return { company, trend, ticker: companyData?.ticker || "", rix: companyData?.avgRix || 0 };
         })
         .sort((a, b) => b.trend - a.trend);
 
@@ -4883,11 +5494,11 @@ async function handleStandardChat(
     }
 
     if (previousWeekData.length > 0) {
-      context += `\n📅 DATOS SEMANA ANTERIOR (snapshot: ${previousDate ?? 'N/A'}):\n`;
+      context += `\n📅 DATOS SEMANA ANTERIOR (snapshot: ${previousDate ?? "N/A"}):\n`;
       context += `Total de evaluaciones: ${previousWeekData.length}\n\n`;
     }
   } else {
-    context += '\n⚠️ No hay datos estructurados de RIX disponibles.\n\n';
+    context += "\n⚠️ No hay datos estructurados de RIX disponibles.\n\n";
   }
 
   // Context is complete - no hints needed
@@ -4897,9 +5508,9 @@ async function handleStandardChat(
   // =============================================================================
   // PASO 5: LLAMAR A LA IA CON CONTEXTO COMPLETO
   // =============================================================================
-  
+
   console.log(`${logPrefix} Language: ${language} (${languageName})`);
-  
+
   const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName} (${language})]
 Responde SIEMPRE en ${languageName}. Sin excepciones.
 
@@ -5337,7 +5948,9 @@ IMPORTANTE:
 
 ${buildDepthPrompt(depthLevel, languageName)}
 
-${roleId && rolePrompt ? `
+${
+  roleId && rolePrompt
+    ? `
 ═══════════════════════════════════════════════════════════════════════════════
               PERSPECTIVA PROFESIONAL PRE-SELECCIONADA: ${roleName}
 ═══════════════════════════════════════════════════════════════════════════════
@@ -5358,7 +5971,9 @@ ${rolePrompt}
 
 IMPORTANTE: La respuesta ya debe estar adaptada a esta perspectiva desde el inicio.
 No generes una respuesta genérica primero - genera directamente el análisis con esta perspectiva.
-` : ''}
+`
+    : ""
+}
 
 [IDIOMA: Responde en ${languageName}]`;
 
@@ -5424,9 +6039,9 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
 
   console.log(`${logPrefix} Calling AI model (streaming: ${streamMode})...`);
   const messages = [
-    { role: 'system', content: systemPrompt },
+    { role: "system", content: systemPrompt },
     ...conversationHistory,
-    { role: 'user', content: userPrompt }
+    { role: "user", content: userPrompt },
   ];
 
   // =========================================================================
@@ -5434,114 +6049,131 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   // =========================================================================
   if (streamMode) {
     console.log(`${logPrefix} Starting STREAMING standard chat...`);
-    
+
     const sseEncoder = createSSEEncoder();
-    
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
           // Send initial metadata
-          controller.enqueue(sseEncoder({
-            type: 'start',
-            metadata: {
-              language,
-              languageName,
-              depthLevel,
-              detectedCompanies: detectedCompanies.map(c => c.issuer_name),
-            }
-          }));
+          controller.enqueue(
+            sseEncoder({
+              type: "start",
+              metadata: {
+                language,
+                languageName,
+                depthLevel,
+                detectedCompanies: detectedCompanies.map((c) => c.issuer_name),
+              },
+            }),
+          );
 
-          let accumulatedContent = '';
-          let provider: 'openai' | 'gemini' = 'openai';
+          let accumulatedContent = "";
+          let provider: "openai" | "gemini" = "openai";
           let inputTokens = 0;
           let outputTokens = 0;
           let streamError = false;
 
           // Try OpenAI first
           console.log(`${logPrefix} Trying OpenAI stream first...`);
-          for await (const chunk of streamOpenAIResponse(messages, 'o3', 24000, logPrefix, 120000)) {
-            if (chunk.type === 'chunk' && chunk.text) {
+          for await (const chunk of streamOpenAIResponse(messages, "o3", 32000, logPrefix, 120000)) {
+            if (chunk.type === "chunk" && chunk.text) {
               accumulatedContent += chunk.text;
-              controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
-            } else if (chunk.type === 'done') {
+              controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
+            } else if (chunk.type === "done") {
               inputTokens = chunk.inputTokens || 0;
               outputTokens = chunk.outputTokens || 0;
               break;
-            } else if (chunk.type === 'error') {
+            } else if (chunk.type === "error") {
               console.warn(`${logPrefix} OpenAI stream error: ${chunk.error}, falling back to Gemini...`);
               streamError = true;
-              controller.enqueue(sseEncoder({ type: 'fallback', metadata: { provider: 'gemini' } }));
+              controller.enqueue(sseEncoder({ type: "fallback", metadata: { provider: "gemini" } }));
               break;
             }
           }
 
           // Fallback to Gemini if OpenAI failed
           if (streamError || accumulatedContent.length === 0) {
-            provider = 'gemini';
-            accumulatedContent = ''; // Reset for Gemini response
-            
+            provider = "gemini";
+            accumulatedContent = ""; // Reset for Gemini response
+
             console.log(`${logPrefix} Using Gemini stream (gemini-2.5-flash)...`);
-            for await (const chunk of streamGeminiResponse(messages, 'gemini-2.5-flash', 24000, logPrefix, 120000)) {
-              if (chunk.type === 'chunk' && chunk.text) {
+            for await (const chunk of streamGeminiResponse(messages, "gemini-2.5-flash", 32000, logPrefix, 120000)) {
+              if (chunk.type === "chunk" && chunk.text) {
                 accumulatedContent += chunk.text;
-                controller.enqueue(sseEncoder({ type: 'chunk', text: chunk.text }));
-              } else if (chunk.type === 'done') {
+                controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
+              } else if (chunk.type === "done") {
                 inputTokens = chunk.inputTokens || 0;
                 outputTokens = chunk.outputTokens || 0;
                 break;
-              } else if (chunk.type === 'error') {
+              } else if (chunk.type === "error") {
                 console.error(`${logPrefix} Gemini stream also failed: ${chunk.error}`);
-                controller.enqueue(sseEncoder({ 
-                  type: 'error', 
-                  error: `Error generando respuesta: ${chunk.error}` 
-                }));
+                controller.enqueue(
+                  sseEncoder({
+                    type: "error",
+                    error: `Error generando respuesta: ${chunk.error}`,
+                  }),
+                );
                 controller.close();
                 return;
               }
             }
           }
 
-          console.log(`${logPrefix} Standard chat stream completed (via ${provider}), length: ${accumulatedContent.length}`);
+          console.log(
+            `${logPrefix} Standard chat stream completed (via ${provider}), length: ${accumulatedContent.length}`,
+          );
           const answer = accumulatedContent;
 
           // Log API usage in background
           logApiUsage({
             supabaseClient,
-            edgeFunction: 'chat-intelligence',
+            edgeFunction: "chat-intelligence",
             provider,
-            model: provider === 'openai' ? 'o3' : 'gemini-2.5-flash',
-            actionType: 'chat_stream',
+            model: provider === "openai" ? "o3" : "gemini-2.5-flash",
+            actionType: "chat_stream",
             inputTokens,
             outputTokens,
             userId,
             sessionId,
-            metadata: { 
+            metadata: {
               depth_level: depthLevel,
               role: roleId || null,
               role_name: roleName || null,
               streaming: true,
             },
-          }).catch(e => console.warn('Failed to log usage:', e));
+          }).catch((e) => console.warn("Failed to log usage:", e));
 
           // =============================================================================
           // Generate suggested questions and drumroll (same logic as non-streaming)
           // =============================================================================
           console.log(`${logPrefix} Generating follow-up questions for streaming response...`);
-          
+
           // Simplified question generation for streaming (avoid long delay)
           let suggestedQuestions: string[] = [];
           let drumrollQuestion: DrumrollQuestion | null = null;
-          
+
           try {
             // Quick question generation
-            const questionPrompt = `Based on this analysis about ${detectedCompanies.map(c => c.issuer_name).join(', ') || 'corporate reputation'}, generate 3 follow-up questions in ${languageName}. Respond ONLY with a JSON array of 3 strings.`;
-            const questionResult = await callAISimple([
-              { role: 'system', content: `Generate follow-up questions in ${languageName}. Respond ONLY with JSON array.` },
-              { role: 'user', content: questionPrompt }
-            ], 'gpt-4o-mini', 300, logPrefix);
-            
+            const questionPrompt = `Based on this analysis about ${detectedCompanies.map((c) => c.issuer_name).join(", ") || "corporate reputation"}, generate 3 follow-up questions in ${languageName}. Respond ONLY with a JSON array of 3 strings.`;
+            const questionResult = await callAISimple(
+              [
+                {
+                  role: "system",
+                  content: `Generate follow-up questions in ${languageName}. Respond ONLY with JSON array.`,
+                },
+                { role: "user", content: questionPrompt },
+              ],
+              "gpt-4o-mini",
+              300,
+              logPrefix,
+            );
+
             if (questionResult) {
-              const cleanText = questionResult.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+              const cleanText = questionResult
+                .replace(/```json\n?/g, "")
+                .replace(/```\n?/g, "")
+                .trim();
               suggestedQuestions = JSON.parse(cleanText);
             }
           } catch (qError) {
@@ -5560,7 +6192,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
                   companiesCache,
                   language,
                   languageName,
-                  logPrefix
+                  logPrefix,
                 );
               }
             } catch (dError) {
@@ -5569,43 +6201,55 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           }
 
           // Calculate methodology metadata
-          const modelScores = allRixData
-            ?.filter(r => r['09_rix_score'] != null && r['09_rix_score'] > 0)
-            ?.map(r => r['09_rix_score']) || [];
+          const modelScores =
+            allRixData
+              ?.filter((r) => r["09_rix_score"] != null && r["09_rix_score"] > 0)
+              ?.map((r) => r["09_rix_score"]) || [];
           const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePointsMethod = maxScoreMethod - minScoreMethod;
-          const divergenceLevelMethod = divergencePointsMethod <= 8 ? 'low' : divergencePointsMethod <= 15 ? 'medium' : 'high';
-          const modelsUsedMethod = [...new Set(allRixData?.map(r => r['02_model_name']).filter(Boolean) || [])];
-          const periodFromMethod = allRixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
-          const periodToMethod = allRixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
-          const uniqueCompaniesCount = new Set(allRixData?.map(r => r['05_ticker']).filter(Boolean) || []).size;
-          const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0;
+          const divergenceLevelMethod =
+            divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
+          const modelsUsedMethod = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+          const periodFromMethod = allRixData
+            ?.map((r) => r["06_period_from"])
+            .filter(Boolean)
+            .sort()[0];
+          const periodToMethod = allRixData
+            ?.map((r) => r["07_period_to"])
+            .filter(Boolean)
+            .sort()
+            .reverse()[0];
+          const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
+          const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
 
           // Save to database
           if (sessionId) {
-            supabaseClient.from('chat_intelligence_sessions').insert([
-              {
-                session_id: sessionId,
-                role: 'user',
-                content: question,
-                user_id: userId,
-                depth_level: depthLevel
-              },
-              {
-                session_id: sessionId,
-                role: 'assistant',
-                content: answer,
-                documents_found: vectorDocs?.length || 0,
-                structured_data_found: allRixData?.length || 0,
-                suggested_questions: suggestedQuestions,
-                drumroll_question: drumrollQuestion,
-                depth_level: depthLevel,
-                question_category: detectedCompanies.length > 0 ? 'corporate_analysis' : 'general_query',
-                user_id: userId
-              }
-            ]).then(() => console.log(`${logPrefix} Session saved`))
-              .catch((e: Error) => console.warn('Failed to save session:', e));
+            supabaseClient
+              .from("chat_intelligence_sessions")
+              .insert([
+                {
+                  session_id: sessionId,
+                  role: "user",
+                  content: question,
+                  user_id: userId,
+                  depth_level: depthLevel,
+                },
+                {
+                  session_id: sessionId,
+                  role: "assistant",
+                  content: answer,
+                  documents_found: vectorDocs?.length || 0,
+                  structured_data_found: allRixData?.length || 0,
+                  suggested_questions: suggestedQuestions,
+                  drumroll_question: drumrollQuestion,
+                  depth_level: depthLevel,
+                  question_category: detectedCompanies.length > 0 ? "corporate_analysis" : "general_query",
+                  user_id: userId,
+                },
+              ])
+              .then(() => console.log(`${logPrefix} Session saved`))
+              .catch((e: Error) => console.warn("Failed to save session:", e));
           }
 
           // Extract verified sources from full RIX data (includes raw AI responses)
@@ -5613,85 +6257,88 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           console.log(`${logPrefix} Extracted ${verifiedSourcesStandard.length} verified sources from RIX data`);
 
           // Send final done event with all metadata
-          controller.enqueue(sseEncoder({
-            type: 'done',
-            suggestedQuestions,
-            drumrollQuestion,
-            metadata: {
-              type: 'standard',
-              documentsFound: vectorDocs?.length || 0,
-              structuredDataFound: allRixData?.length || 0,
-              dataWeeks: uniqueWeeksCount,
-              aiProvider: provider,
-              depthLevel,
-              questionCategory: detectedCompanies.length > 0 ? 'corporate_analysis' : 'general_query',
-              modelsUsed: modelsUsedMethod,
-              periodFrom: periodFromMethod,
-              periodTo: periodToMethod,
-              divergenceLevel: divergenceLevelMethod,
-              divergencePoints: divergencePointsMethod,
-              uniqueCompanies: uniqueCompaniesCount,
-              uniqueWeeks: uniqueWeeksCount,
-              // Verified sources from ChatGPT and Perplexity for bibliography
-              verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
-              methodology: {
-                hasRixData: (allRixData?.length || 0) > 0,
+          controller.enqueue(
+            sseEncoder({
+              type: "done",
+              suggestedQuestions,
+              drumrollQuestion,
+              metadata: {
+                type: "standard",
+                documentsFound: vectorDocs?.length || 0,
+                structuredDataFound: allRixData?.length || 0,
+                dataWeeks: uniqueWeeksCount,
+                aiProvider: provider,
+                depthLevel,
+                questionCategory: detectedCompanies.length > 0 ? "corporate_analysis" : "general_query",
                 modelsUsed: modelsUsedMethod,
                 periodFrom: periodFromMethod,
                 periodTo: periodToMethod,
-                observationsCount: allRixData?.length || 0,
                 divergenceLevel: divergenceLevelMethod,
                 divergencePoints: divergencePointsMethod,
                 uniqueCompanies: uniqueCompaniesCount,
                 uniqueWeeks: uniqueWeeksCount,
+                // Verified sources from ChatGPT and Perplexity for bibliography
+                verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
+                methodology: {
+                  hasRixData: (allRixData?.length || 0) > 0,
+                  modelsUsed: modelsUsedMethod,
+                  periodFrom: periodFromMethod,
+                  periodTo: periodToMethod,
+                  observationsCount: allRixData?.length || 0,
+                  divergenceLevel: divergenceLevelMethod,
+                  divergencePoints: divergencePointsMethod,
+                  uniqueCompanies: uniqueCompaniesCount,
+                  uniqueWeeks: uniqueWeeksCount,
+                },
               },
-            }
-          }));
+            }),
+          );
 
           controller.close();
-          
         } catch (error) {
           console.error(`${logPrefix} Streaming error:`, error);
-          controller.enqueue(sseEncoder({ 
-            type: 'error', 
-            error: error instanceof Error ? error.message : 'Error de streaming desconocido'
-          }));
+          controller.enqueue(
+            sseEncoder({
+              type: "error",
+              error: error instanceof Error ? error.message : "Error de streaming desconocido",
+            }),
+          );
           controller.close();
         }
-      }
+      },
     });
 
     return new Response(stream, {
       headers: {
         ...corsHeaders,
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      }
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   }
 
   // =========================================================================
   // NON-STREAMING MODE: Original behavior (for backwards compatibility)
   // =========================================================================
-  const chatResult = await callAIWithFallback(messages, 'o3', 24000, logPrefix);
+  const chatResult = await callAIWithFallback(messages, "o3", 32000, logPrefix);
   const answer = chatResult.content;
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
 
   // Log API usage with depth_level tracking
-  console.log(`${logPrefix} Logging API usage with depth_level: ${depthLevel}, role: ${roleId || 'none'}`);
+  console.log(`${logPrefix} Logging API usage with depth_level: ${depthLevel}, role: ${roleId || "none"}`);
   await logApiUsage({
     supabaseClient,
-    edgeFunction: 'chat-intelligence',
+    edgeFunction: "chat-intelligence",
     provider: chatResult.provider,
     model: chatResult.model,
-    actionType: 'chat',
+    actionType: "chat",
     inputTokens: chatResult.inputTokens,
     outputTokens: chatResult.outputTokens,
     userId,
     sessionId,
-    metadata: { 
+    metadata: {
       depth_level: depthLevel,
       role: roleId || null,
       role_name: roleName || null,
@@ -5702,344 +6349,371 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   // PASO 6: GENERAR PREGUNTAS SUGERIDAS BASADAS EN ANÁLISIS DE DATOS
   // =============================================================================
   console.log(`${logPrefix} Analyzing data for hidden patterns and generating smart questions...`);
-  
+
   // =============================================================================
   // ANÁLISIS DE DATOS CON VALIDACIÓN DE CALIDAD
   // Solo genera insights basados en datos SÓLIDOS (cobertura completa de 4 modelos)
   // =============================================================================
   const analyzeDataForInsights = () => {
     if (!allRixData || allRixData.length === 0) {
-      return { patterns: [], anomalies: [], surprises: [], modelDivergences: [], dataQuality: 'insufficient' };
+      return { patterns: [], anomalies: [], surprises: [], modelDivergences: [], dataQuality: "insufficient" };
     }
-    
+
     const patterns: string[] = [];
     const anomalies: string[] = [];
     const surprises: string[] = [];
-    
+
     // Group data by company
     const byCompany: Record<string, any[]> = {};
-    allRixData.forEach(r => {
+    allRixData.forEach((r) => {
       const company = r["03_target_name"];
       if (!byCompany[company]) byCompany[company] = [];
       byCompany[company].push(r);
     });
-    
+
     // =============================================================================
     // VALIDACIÓN DE CALIDAD: Solo considerar empresas con datos de los 4 modelos
     // =============================================================================
-    const REQUIRED_MODELS = ['chatgpt', 'perplexity', 'gemini', 'deepseek'];
+    const REQUIRED_MODELS = ["chatgpt", "perplexity", "gemini", "deepseek"];
     const MIN_MODELS_FOR_INSIGHT = 4; // Exigimos cobertura completa
-    
+
     const companiesWithFullCoverage: Record<string, any[]> = {};
     Object.entries(byCompany).forEach(([company, records]) => {
-      const modelsPresent = new Set(
-        records
-          .map(r => r["02_model_name"]?.toLowerCase())
-          .filter(Boolean)
-      );
-      
+      const modelsPresent = new Set(records.map((r) => r["02_model_name"]?.toLowerCase()).filter(Boolean));
+
       // Verificar que tenga datos de los 4 modelos con scores válidos
-      const hasAllModels = REQUIRED_MODELS.every(model => 
-        records.some(r => 
-          r["02_model_name"]?.toLowerCase().includes(model) && 
-          r["09_rix_score"] != null &&
-          r["09_rix_score"] > 0
-        )
+      const hasAllModels = REQUIRED_MODELS.every((model) =>
+        records.some(
+          (r) =>
+            r["02_model_name"]?.toLowerCase().includes(model) && r["09_rix_score"] != null && r["09_rix_score"] > 0,
+        ),
       );
-      
+
       if (hasAllModels) {
         companiesWithFullCoverage[company] = records;
       }
     });
-    
+
     const fullCoverageCount = Object.keys(companiesWithFullCoverage).length;
-    console.log(`${logPrefix} Companies with full 4-model coverage: ${fullCoverageCount}/${Object.keys(byCompany).length}`);
-    
+    console.log(
+      `${logPrefix} Companies with full 4-model coverage: ${fullCoverageCount}/${Object.keys(byCompany).length}`,
+    );
+
     // Si no hay suficientes empresas con cobertura completa, no generar insights
     if (fullCoverageCount < 10) {
-      console.log(`${logPrefix} Insufficient data quality for insights (need at least 10 companies with full coverage)`);
-      return { 
-        patterns: [], 
-        anomalies: [], 
-        surprises: [], 
+      console.log(
+        `${logPrefix} Insufficient data quality for insights (need at least 10 companies with full coverage)`,
+      );
+      return {
+        patterns: [],
+        anomalies: [],
+        surprises: [],
         modelDivergences: [],
-        dataQuality: 'insufficient',
-        coverageStats: { full: fullCoverageCount, total: Object.keys(byCompany).length }
+        dataQuality: "insufficient",
+        coverageStats: { full: fullCoverageCount, total: Object.keys(byCompany).length },
       };
     }
-    
+
     // =============================================================================
     // 1. DIVERGENCIAS ENTRE MODELOS (solo empresas con cobertura completa)
     // =============================================================================
-    const modelDivergences: { company: string; ticker: string; chatgpt: number; deepseek: number; perplexity: number; gemini: number; maxDiff: number; models: string }[] = [];
-    
+    const modelDivergences: {
+      company: string;
+      ticker: string;
+      chatgpt: number;
+      deepseek: number;
+      perplexity: number;
+      gemini: number;
+      maxDiff: number;
+      models: string;
+    }[] = [];
+
     Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
-      const chatgpt = records.find(r => r["02_model_name"]?.toLowerCase().includes('chatgpt'));
-      const deepseek = records.find(r => r["02_model_name"]?.toLowerCase().includes('deepseek'));
-      const perplexity = records.find(r => r["02_model_name"]?.toLowerCase().includes('perplexity'));
-      const gemini = records.find(r => r["02_model_name"]?.toLowerCase().includes('gemini'));
-      
+      const chatgpt = records.find((r) => r["02_model_name"]?.toLowerCase().includes("chatgpt"));
+      const deepseek = records.find((r) => r["02_model_name"]?.toLowerCase().includes("deepseek"));
+      const perplexity = records.find((r) => r["02_model_name"]?.toLowerCase().includes("perplexity"));
+      const gemini = records.find((r) => r["02_model_name"]?.toLowerCase().includes("gemini"));
+
       if (chatgpt && deepseek && perplexity && gemini) {
         const scores = [
-          { model: 'ChatGPT', score: chatgpt["09_rix_score"] },
-          { model: 'DeepSeek', score: deepseek["09_rix_score"] },
-          { model: 'Perplexity', score: perplexity["09_rix_score"] },
-          { model: 'Gemini', score: gemini["09_rix_score"] },
+          { model: "ChatGPT", score: chatgpt["09_rix_score"] },
+          { model: "DeepSeek", score: deepseek["09_rix_score"] },
+          { model: "Perplexity", score: perplexity["09_rix_score"] },
+          { model: "Gemini", score: gemini["09_rix_score"] },
         ];
-        
-        const maxScore = Math.max(...scores.map(s => s.score));
-        const minScore = Math.min(...scores.map(s => s.score));
+
+        const maxScore = Math.max(...scores.map((s) => s.score));
+        const minScore = Math.min(...scores.map((s) => s.score));
         const maxDiff = maxScore - minScore;
-        
+
         // Solo reportar divergencias significativas (>=12 puntos) con datos sólidos
         if (maxDiff >= 12) {
-          const highest = scores.find(s => s.score === maxScore)!;
-          const lowest = scores.find(s => s.score === minScore)!;
-          
+          const highest = scores.find((s) => s.score === maxScore)!;
+          const lowest = scores.find((s) => s.score === minScore)!;
+
           modelDivergences.push({
             company,
-            ticker: chatgpt["05_ticker"] || '',
+            ticker: chatgpt["05_ticker"] || "",
             chatgpt: chatgpt["09_rix_score"],
             deepseek: deepseek["09_rix_score"],
             perplexity: perplexity["09_rix_score"],
             gemini: gemini["09_rix_score"],
             maxDiff,
-            models: `${highest.model} (${highest.score}) vs ${lowest.model} (${lowest.score})`
+            models: `${highest.model} (${highest.score}) vs ${lowest.model} (${lowest.score})`,
           });
         }
       }
     });
-    
+
     modelDivergences.sort((a, b) => b.maxDiff - a.maxDiff);
     if (modelDivergences.length > 0) {
       const top = modelDivergences[0];
       anomalies.push(`${top.company} tiene ${top.maxDiff} puntos de divergencia: ${top.models}`);
     }
-    
+
     // =============================================================================
     // 2. ANÁLISIS SECTORIAL (solo con sectores que tengan ≥3 empresas con cobertura completa)
     // =============================================================================
     if (companiesCache) {
       const bySector: Record<string, { company: string; avgRix: number; ticker: string }[]> = {};
-      
+
       Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
-        const companyInfo = companiesCache?.find(c => c.ticker === records[0]?.["05_ticker"]);
+        const companyInfo = companiesCache?.find((c) => c.ticker === records[0]?.["05_ticker"]);
         const sector = companyInfo?.sector_category;
         if (!sector) return;
-        
+
         // Calcular promedio de los 4 modelos para esta empresa
-        const validScores = records.map(r => r["09_rix_score"]).filter(s => s != null && s > 0);
+        const validScores = records.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
         if (validScores.length < 4) return; // Necesitamos los 4 scores
-        
+
         const avgRix = validScores.reduce((a, b) => a + b, 0) / validScores.length;
-        
+
         if (!bySector[sector]) bySector[sector] = [];
         bySector[sector].push({ company, avgRix, ticker: records[0]?.["05_ticker"] });
       });
-      
+
       Object.entries(bySector).forEach(([sector, companies]) => {
         // Solo analizar sectores con al menos 3 empresas con cobertura completa
         if (companies.length < 3) return;
-        
+
         const sectorAvg = companies.reduce((sum, c) => sum + c.avgRix, 0) / companies.length;
         const sortedByRix = [...companies].sort((a, b) => b.avgRix - a.avgRix);
-        
+
         // Detectar outliers: empresas que difieren >12 puntos de la media sectorial
-        companies.forEach(c => {
+        companies.forEach((c) => {
           const diff = c.avgRix - sectorAvg;
           if (Math.abs(diff) >= 12) {
-            const direction = diff > 0 ? 'supera' : 'está por debajo de';
-            surprises.push(`${c.company} ${direction} la media del sector ${sector} (${sectorAvg.toFixed(0)}) en ${Math.abs(diff).toFixed(0)} puntos (promedio 4 modelos: ${c.avgRix.toFixed(0)})`);
+            const direction = diff > 0 ? "supera" : "está por debajo de";
+            surprises.push(
+              `${c.company} ${direction} la media del sector ${sector} (${sectorAvg.toFixed(0)}) en ${Math.abs(diff).toFixed(0)} puntos (promedio 4 modelos: ${c.avgRix.toFixed(0)})`,
+            );
           }
         });
       });
     }
-    
+
     // =============================================================================
     // 3. IBEX35 vs NO COTIZADAS (solo con cobertura completa)
     // =============================================================================
     if (companiesCache) {
       const ibex35Companies: { company: string; avgRix: number }[] = [];
       const nonTradedCompanies: { company: string; avgRix: number }[] = [];
-      
+
       Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
-        const companyInfo = companiesCache?.find(c => c.ticker === records[0]?.["05_ticker"]);
+        const companyInfo = companiesCache?.find((c) => c.ticker === records[0]?.["05_ticker"]);
         if (!companyInfo) return;
-        
-        const validScores = records.map(r => r["09_rix_score"]).filter(s => s != null && s > 0);
+
+        const validScores = records.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
         if (validScores.length < 4) return;
-        
+
         const avgRix = validScores.reduce((a, b) => a + b, 0) / validScores.length;
-        
-        if (companyInfo.ibex_family_code === 'IBEX35') {
+
+        if (companyInfo.ibex_family_code === "IBEX35") {
           ibex35Companies.push({ company, avgRix });
         } else if (!companyInfo.cotiza_en_bolsa) {
           nonTradedCompanies.push({ company, avgRix });
         }
       });
-      
+
       // Solo generar insight si hay suficientes datos en ambos grupos
       if (ibex35Companies.length >= 10 && nonTradedCompanies.length >= 5) {
         const avgIbex = ibex35Companies.reduce((sum, c) => sum + c.avgRix, 0) / ibex35Companies.length;
-        
+
         const outperformers = nonTradedCompanies
-          .filter(c => c.avgRix > avgIbex + 5)
+          .filter((c) => c.avgRix > avgIbex + 5)
           .sort((a, b) => b.avgRix - a.avgRix);
-        
+
         if (outperformers.length > 0) {
           const best = outperformers[0];
-          patterns.push(`${best.company} (no cotizada, promedio ${best.avgRix.toFixed(0)}) supera la media del IBEX35 (${avgIbex.toFixed(0)}) basado en consenso de 4 modelos`);
+          patterns.push(
+            `${best.company} (no cotizada, promedio ${best.avgRix.toFixed(0)}) supera la media del IBEX35 (${avgIbex.toFixed(0)}) basado en consenso de 4 modelos`,
+          );
         }
       }
     }
-    
+
     // =============================================================================
     // 4. DESEQUILIBRIOS DE MÉTRICAS (solo con todas las métricas presentes)
     // =============================================================================
     Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
       // Usar el registro con más métricas completas
-      records.forEach(r => {
+      records.forEach((r) => {
         const metrics = [
-          { name: 'NVM', score: r["23_nvm_score"] },
-          { name: 'DRM', score: r["26_drm_score"] },
-          { name: 'SIM', score: r["29_sim_score"] },
-          { name: 'RMM', score: r["32_rmm_score"] },
-          { name: 'CEM', score: r["35_cem_score"] },
-          { name: 'GAM', score: r["38_gam_score"] },
-          { name: 'DCM', score: r["41_dcm_score"] },
-          { name: 'CXM', score: r["44_cxm_score"] },
-        ].filter(m => m.score != null && m.score > 0);
-        
+          { name: "NVM", score: r["23_nvm_score"] },
+          { name: "DRM", score: r["26_drm_score"] },
+          { name: "SIM", score: r["29_sim_score"] },
+          { name: "RMM", score: r["32_rmm_score"] },
+          { name: "CEM", score: r["35_cem_score"] },
+          { name: "GAM", score: r["38_gam_score"] },
+          { name: "DCM", score: r["41_dcm_score"] },
+          { name: "CXM", score: r["44_cxm_score"] },
+        ].filter((m) => m.score != null && m.score > 0);
+
         // Solo considerar si tiene al menos 7 de 8 métricas (datos sólidos)
         if (metrics.length >= 7) {
-          const max = metrics.reduce((a, b) => a.score > b.score ? a : b);
-          const min = metrics.reduce((a, b) => a.score < b.score ? a : b);
-          
+          const max = metrics.reduce((a, b) => (a.score > b.score ? a : b));
+          const min = metrics.reduce((a, b) => (a.score < b.score ? a : b));
+
           // Desequilibrio significativo: ≥30 puntos
           if (max.score - min.score >= 30) {
             const model = r["02_model_name"];
-            patterns.push(`${company} (según ${model}): desequilibrio de ${max.score - min.score} pts entre ${max.name} (${max.score}) y ${min.name} (${min.score})`);
+            patterns.push(
+              `${company} (según ${model}): desequilibrio de ${max.score - min.score} pts entre ${max.name} (${max.score}) y ${min.name} (${min.score})`,
+            );
           }
         }
       });
     });
-    
+
     // =============================================================================
     // 5. CONSENSO vs DISCORDIA (solo empresas con 4 modelos)
     // =============================================================================
     Object.entries(companiesWithFullCoverage).forEach(([company, records]) => {
-      const scores = records.map(r => r["09_rix_score"]).filter(s => s != null && s > 0);
-      
+      const scores = records.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
+
       // Requiere exactamente 4 scores válidos
       if (scores.length !== 4) return;
-      
+
       const min = Math.min(...scores);
       const max = Math.max(...scores);
       const range = max - min;
       const avg = scores.reduce((a, b) => a + b, 0) / 4;
-      
+
       if (range <= 4) {
-        patterns.push(`${company} tiene consenso perfecto entre los 4 modelos: RIX entre ${min} y ${max} (promedio: ${avg.toFixed(0)})`);
+        patterns.push(
+          `${company} tiene consenso perfecto entre los 4 modelos: RIX entre ${min} y ${max} (promedio: ${avg.toFixed(0)})`,
+        );
       } else if (range >= 20) {
-        anomalies.push(`${company} genera discordia total: ${range} puntos entre modelos (${min}-${max}), requiere análisis`);
+        anomalies.push(
+          `${company} genera discordia total: ${range} puntos entre modelos (${min}-${max}), requiere análisis`,
+        );
       }
     });
-    
+
     // =============================================================================
     // 6. TENDENCIA DE MODELOS (solo con volumen suficiente)
     // =============================================================================
     const modelStats: Record<string, { scores: number[]; count: number }> = {};
-    Object.values(companiesWithFullCoverage).flat().forEach(r => {
-      const model = r["02_model_name"];
-      const score = r["09_rix_score"];
-      if (!model || score == null || score <= 0) return;
-      
-      if (!modelStats[model]) modelStats[model] = { scores: [], count: 0 };
-      modelStats[model].scores.push(score);
-      modelStats[model].count++;
-    });
-    
+    Object.values(companiesWithFullCoverage)
+      .flat()
+      .forEach((r) => {
+        const model = r["02_model_name"];
+        const score = r["09_rix_score"];
+        if (!model || score == null || score <= 0) return;
+
+        if (!modelStats[model]) modelStats[model] = { scores: [], count: 0 };
+        modelStats[model].scores.push(score);
+        modelStats[model].count++;
+      });
+
     const modelRankings = Object.entries(modelStats)
       .filter(([_, data]) => data.count >= 50) // Mínimo 50 empresas para estadística robusta
       .map(([model, data]) => ({
         model,
         avg: data.scores.reduce((a, b) => a + b, 0) / data.count,
-        count: data.count
+        count: data.count,
       }))
       .sort((a, b) => b.avg - a.avg);
-    
+
     if (modelRankings.length >= 4) {
       const mostGenerous = modelRankings[0];
       const mostCritical = modelRankings[modelRankings.length - 1];
       const diff = mostGenerous.avg - mostCritical.avg;
-      
+
       if (diff >= 4) {
-        patterns.push(`${mostGenerous.model} es sistemáticamente ${diff.toFixed(1)} pts más generoso que ${mostCritical.model} (basado en ${mostGenerous.count} empresas con cobertura completa)`);
+        patterns.push(
+          `${mostGenerous.model} es sistemáticamente ${diff.toFixed(1)} pts más generoso que ${mostCritical.model} (basado en ${mostGenerous.count} empresas con cobertura completa)`,
+        );
       }
     }
-    
+
     return {
       patterns: patterns.slice(0, 4),
       anomalies: anomalies.slice(0, 4),
       surprises: surprises.slice(0, 4),
       modelDivergences: modelDivergences.slice(0, 3),
-      dataQuality: 'solid',
-      coverageStats: { full: fullCoverageCount, total: Object.keys(byCompany).length }
+      dataQuality: "solid",
+      coverageStats: { full: fullCoverageCount, total: Object.keys(byCompany).length },
     };
   };
-  
+
   const dataInsights = analyzeDataForInsights();
-  console.log(`${logPrefix} Data insights found: ${dataInsights.patterns.length} patterns, ${dataInsights.anomalies.length} anomalies, ${dataInsights.surprises.length} surprises`);
-  
+  console.log(
+    `${logPrefix} Data insights found: ${dataInsights.patterns.length} patterns, ${dataInsights.anomalies.length} anomalies, ${dataInsights.surprises.length} surprises`,
+  );
+
   // Extract topics already discussed to avoid repetition
   const discussedTopics = new Set<string>();
-  const allConversationText = [
-    ...conversationHistory.map((m: any) => m.content || ''),
-    question,
-    answer
-  ].join(' ').toLowerCase();
-  
+  const allConversationText = [...conversationHistory.map((m: any) => m.content || ""), question, answer]
+    .join(" ")
+    .toLowerCase();
+
   // Mark mentioned companies as discussed
   if (allRixData) {
-    allRixData.forEach(r => {
+    allRixData.forEach((r) => {
       const companyName = r["03_target_name"]?.toLowerCase();
       if (companyName && allConversationText.includes(companyName)) {
         discussedTopics.add(companyName);
       }
     });
   }
-  
-  const availableSectors = companiesCache 
-    ? [...new Set(companiesCache.map(c => c.sector_category).filter(Boolean))].join(', ')
-    : 'Energía, Banca, Telecomunicaciones, Construcción, Tecnología, Consumo';
+
+  const availableSectors = companiesCache
+    ? [...new Set(companiesCache.map((c) => c.sector_category).filter(Boolean))].join(", ")
+    : "Energía, Banca, Telecomunicaciones, Construcción, Tecnología, Consumo";
 
   // Build prompt with REAL DATA DISCOVERIES (solo si hay calidad suficiente)
-  const hasQualityData = dataInsights.dataQuality === 'solid' && 
+  const hasQualityData =
+    dataInsights.dataQuality === "solid" &&
     (dataInsights.patterns.length > 0 || dataInsights.anomalies.length > 0 || dataInsights.surprises.length > 0);
-  
-  const dataDiscoveriesPrompt = hasQualityData 
-    ? `You are an EXPERT DATA ANALYST who has discovered hidden patterns analyzing ${dataInsights.coverageStats?.full || 'multiple'} companies with COMPLETE COVERAGE from all 4 AI models. Generate 3 questions that SURPRISE the user by revealing non-obvious insights.
+
+  const dataDiscoveriesPrompt = hasQualityData
+    ? `You are an EXPERT DATA ANALYST who has discovered hidden patterns analyzing ${dataInsights.coverageStats?.full || "multiple"} companies with COMPLETE COVERAGE from all 4 AI models. Generate 3 questions that SURPRISE the user by revealing non-obvious insights.
 
 🔬 VERIFIED DISCOVERIES (based ONLY on companies with data from ChatGPT + Perplexity + Gemini + DeepSeek):
 
 📊 DETECTED PATTERNS:
-${dataInsights.patterns.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+${dataInsights.patterns.map((p, i) => `${i + 1}. ${p}`).join("\n")}
 
 ⚠️ ANOMALIES FOUND:
-${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join('\n') : '- No significant anomalies with solid data'}
+${dataInsights.anomalies.length > 0 ? dataInsights.anomalies.map((a, i) => `${i + 1}. ${a}`).join("\n") : "- No significant anomalies with solid data"}
 
 💡 DATA SURPRISES:
-${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join('\n') : '- No notable surprises with complete data'}
+${dataInsights.surprises.length > 0 ? dataInsights.surprises.map((s, i) => `${i + 1}. ${s}`).join("\n") : "- No notable surprises with complete data"}
 
 🎯 MAXIMUM DIVERGENCES BETWEEN MODELS (4 models analyzed):
-${dataInsights.modelDivergences?.length > 0 
-  ? dataInsights.modelDivergences.map((d, i) => `${i + 1}. ${d.company}: ${d.models} = ${d.maxDiff} pts difference`).join('\n')
-  : '- High consensus between models'}
+${
+  dataInsights.modelDivergences?.length > 0
+    ? dataInsights.modelDivergences
+        .map((d, i) => `${i + 1}. ${d.company}: ${d.models} = ${d.maxDiff} pts difference`)
+        .join("\n")
+    : "- High consensus between models"
+}
 
 📈 DATA QUALITY: ${dataInsights.coverageStats?.full}/${dataInsights.coverageStats?.total} companies with complete 4-model coverage
 
 TOPICS ALREADY DISCUSSED (AVOID REPEATING):
-${[...discussedTopics].slice(0, 10).join(', ') || 'None specific yet'}
+${[...discussedTopics].slice(0, 10).join(", ") || "None specific yet"}
 
 CURRENT USER QUESTION: "${question}"
 
@@ -6073,16 +6747,22 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
 
   try {
     const questionsMessages = [
-      { role: 'system', content: `You are a data analyst who generates questions based on REAL discoveries. Each question must reveal a hidden insight in the data. IMPORTANT: Generate all questions in ${languageName}. Respond ONLY with the JSON array.` },
-      { role: 'user', content: dataDiscoveriesPrompt }
+      {
+        role: "system",
+        content: `You are a data analyst who generates questions based on REAL discoveries. Each question must reveal a hidden insight in the data. IMPORTANT: Generate all questions in ${languageName}. Respond ONLY with the JSON array.`,
+      },
+      { role: "user", content: dataDiscoveriesPrompt },
     ];
 
     let suggestedQuestions: string[] = [];
-    
-    const questionsText = await callAISimple(questionsMessages, 'gpt-4o-mini', 600, logPrefix);
+
+    const questionsText = await callAISimple(questionsMessages, "gpt-4o-mini", 600, logPrefix);
     if (questionsText) {
       try {
-        const cleanText = questionsText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const cleanText = questionsText
+          .replace(/```json\n?/g, "")
+          .replace(/```\n?/g, "")
+          .trim();
         suggestedQuestions = JSON.parse(cleanText);
         console.log(`${logPrefix} Generated ${suggestedQuestions.length} data-driven questions`);
       } catch (parseError) {
@@ -6099,16 +6779,14 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     let drumrollQuestion: DrumrollQuestion | null = null;
     if (detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
       console.log(`${logPrefix} Extracting analysis insights for ${detectedCompanies[0]?.issuer_name}...`);
-      
-      const insights = extractAnalysisInsights(
-        allRixData,
-        detectedCompanies[0],
-        answer
-      );
-      
+
+      const insights = extractAnalysisInsights(allRixData, detectedCompanies[0], answer);
+
       if (insights) {
-        console.log(`${logPrefix} Insights extracted: RIX=${insights.overallScore}, weakest=${insights.weakestMetrics[0]?.name}, trend=${insights.trend}(${insights.trendDelta}pts), divergence=${insights.divergenceLevel}`);
-        
+        console.log(
+          `${logPrefix} Insights extracted: RIX=${insights.overallScore}, weakest=${insights.weakestMetrics[0]?.name}, trend=${insights.trend}(${insights.trendDelta}pts), divergence=${insights.divergenceLevel}`,
+        );
+
         drumrollQuestion = await generateDrumrollQuestion(
           question,
           insights,
@@ -6116,7 +6794,7 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
           companiesCache,
           language,
           languageName,
-          logPrefix
+          logPrefix,
         );
       } else {
         console.log(`${logPrefix} No insights extracted - skipping drumroll`);
@@ -6124,21 +6802,21 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     }
 
     // Determine question category (simplified classification)
-    const questionCategory = detectedCompanies.length > 0 ? 'corporate_analysis' : 'general_query';
+    const questionCategory = detectedCompanies.length > 0 ? "corporate_analysis" : "general_query";
 
     // Save to database with new fields
     if (sessionId) {
-      await supabaseClient.from('chat_intelligence_sessions').insert([
+      await supabaseClient.from("chat_intelligence_sessions").insert([
         {
           session_id: sessionId,
-          role: 'user',
+          role: "user",
           content: question,
           user_id: userId,
-          depth_level: depthLevel
+          depth_level: depthLevel,
         },
         {
           session_id: sessionId,
-          role: 'assistant',
+          role: "assistant",
           content: answer,
           documents_found: vectorDocs?.length || 0,
           structured_data_found: allRixData?.length || 0,
@@ -6146,30 +6824,38 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
           drumroll_question: drumrollQuestion,
           depth_level: depthLevel,
           question_category: questionCategory,
-          user_id: userId
-        }
+          user_id: userId,
+        },
       ]);
     }
 
     // Calculate divergence for methodology metadata
-    const modelScores = allRixData
-      ?.filter(r => r['09_rix_score'] != null && r['09_rix_score'] > 0)
-      ?.map(r => r['09_rix_score']) || [];
+    const modelScores =
+      allRixData?.filter((r) => r["09_rix_score"] != null && r["09_rix_score"] > 0)?.map((r) => r["09_rix_score"]) ||
+      [];
     const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
     const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
     const divergencePointsMethod = maxScoreMethod - minScoreMethod;
-    const divergenceLevelMethod = divergencePointsMethod <= 8 ? 'low' : divergencePointsMethod <= 15 ? 'medium' : 'high';
-    
+    const divergenceLevelMethod =
+      divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
+
     // Extract unique models used
-    const modelsUsedMethod = [...new Set(allRixData?.map(r => r['02_model_name']).filter(Boolean) || [])];
-    
+    const modelsUsedMethod = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+
     // Extract period info
-    const periodFromMethod = allRixData?.map(r => r['06_period_from']).filter(Boolean).sort()[0];
-    const periodToMethod = allRixData?.map(r => r['07_period_to']).filter(Boolean).sort().reverse()[0];
-    
+    const periodFromMethod = allRixData
+      ?.map((r) => r["06_period_from"])
+      .filter(Boolean)
+      .sort()[0];
+    const periodToMethod = allRixData
+      ?.map((r) => r["07_period_to"])
+      .filter(Boolean)
+      .sort()
+      .reverse()[0];
+
     // Extract unique companies and weeks
-    const uniqueCompaniesCount = new Set(allRixData?.map(r => r['05_ticker']).filter(Boolean) || []).size;
-    const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0;
+    const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
+    const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
 
     return new Response(
       JSON.stringify({
@@ -6202,13 +6888,12 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
             uniqueCompanies: uniqueCompaniesCount,
             uniqueWeeks: uniqueWeeksCount,
           },
-        }
+        },
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
-
   } catch (questionsError) {
     console.error(`${logPrefix} Error generating follow-up questions:`, questionsError);
     return new Response(
@@ -6219,15 +6904,15 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
         metadata: {
           documentsFound: vectorDocs?.length || 0,
           structuredDataFound: allRixData?.length || 0,
-          dataWeeks: allRixData ? [...new Set(allRixData.map(r => r.batch_execution_date))].length : 0,
+          dataWeeks: allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0,
           aiProvider: chatResult.provider,
           depthLevel,
-          questionCategory: 'error',
-        }
+          questionCategory: "error",
+        },
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 }
