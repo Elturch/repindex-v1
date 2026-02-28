@@ -25,9 +25,9 @@ export const technicalSheetStyles = `
     padding-top: 24px;
     border-top: 2px solid #e5e7eb;
     font-size: 9px;
-    color: #6b7280;
+    color: #536471;
     line-height: 1.4;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
   .technical-sheet-header {
@@ -36,7 +36,7 @@ export const technicalSheetStyles = `
     font-weight: 700;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: #9ca3af;
+    color: #8899a6;
     margin-bottom: 20px;
     padding-bottom: 12px;
     border-bottom: 1px dashed #d1d5db;
@@ -45,7 +45,7 @@ export const technicalSheetStyles = `
   .technical-sheet-subheader {
     text-align: center;
     font-size: 8px;
-    color: #9ca3af;
+    color: #8899a6;
     margin-top: -16px;
     margin-bottom: 20px;
   }
@@ -55,7 +55,7 @@ export const technicalSheetStyles = `
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: #4b5563;
+    color: #0f1419;
     margin-top: 16px;
     margin-bottom: 6px;
     border-bottom: 1px solid #e5e7eb;
@@ -78,9 +78,9 @@ export const technicalSheetStyles = `
     padding: 4px 8px;
     border: 1px solid #e5e7eb;
     text-align: left;
-    background: #f9fafb;
+    background: #f0f4f8;
     font-weight: 600;
-    color: #4b5563;
+    color: #536471;
   }
 
   .technical-sheet td {
@@ -90,7 +90,7 @@ export const technicalSheetStyles = `
   }
 
   .technical-sheet .disclaimer-box {
-    background: #f9fafb;
+    background: #f7f9fa;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     padding: 12px;
@@ -119,7 +119,7 @@ export const technicalSheetStyles = `
     font-weight: 700;
     text-transform: uppercase;
     margin-bottom: 6px;
-    color: #4b5563;
+    color: #0f1419;
   }
 
   .technical-sheet .column-box.valid h5 {
@@ -142,15 +142,15 @@ export const technicalSheetStyles = `
   }
 
   .technical-sheet .formula {
-    font-family: 'Courier New', monospace;
-    background: #f3f4f6;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    background: #f0f4f8;
     padding: 2px 6px;
     border-radius: 2px;
   }
 
   .technical-sheet .report-specific {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    background: rgba(26, 115, 232, 0.05);
+    border: 1px solid rgba(26, 115, 232, 0.2);
     border-radius: 4px;
     padding: 8px;
     margin-bottom: 12px;
@@ -158,7 +158,7 @@ export const technicalSheetStyles = `
 
   .technical-sheet .report-specific h4 {
     border: none;
-    color: #1d4ed8;
+    color: #1a73e8;
     margin-top: 0;
   }
 

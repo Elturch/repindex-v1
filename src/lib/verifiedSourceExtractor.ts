@@ -497,15 +497,16 @@ export function generateBibliographyHtml(
     <section class="bibliography-verified" style="
       margin-top: 40px;
       padding: 24px;
-      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
+      background: #f7f9fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
       page-break-inside: avoid;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     ">
       <h2 style="
-        font-size: 16px;
-        font-weight: 700;
-        color: #1e293b;
+        font-size: 19px;
+        font-weight: 600;
+        color: #0f1419;
         margin: 0 0 12px 0;
         display: flex;
         align-items: center;
@@ -516,13 +517,13 @@ export function generateBibliographyHtml(
       
       <p style="
         font-size: 11px;
-        color: #64748b;
+        color: #536471;
         margin: 0 0 20px 0;
         line-height: 1.6;
         padding: 12px;
         background: #ffffff;
-        border-radius: 8px;
-        border-left: 3px solid #3b82f6;
+        border-radius: 6px;
+        border-left: 3px solid #1a73e8;
       ">
         <strong>Política de Cero Invención:</strong> Esta bibliografía incluye únicamente 
         fuentes con URLs verificables provenientes de modelos con búsqueda web activa 
@@ -540,14 +541,14 @@ export function generateBibliographyHtml(
       <div style="
         margin-bottom: 20px;
         padding: 16px;
-        background: #f0fdf4;
-        border: 1px solid #22c55e;
-        border-radius: 10px;
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
       ">
         <h3 style="
-          font-size: 13px;
+          font-size: 17px;
           font-weight: 600;
-          color: #166534;
+          color: #0f1419;
           margin: 0 0 12px 0;
           display: flex;
           align-items: center;
@@ -557,15 +558,15 @@ export function generateBibliographyHtml(
           <span style="
             font-size: 11px;
             font-weight: 400;
-            color: #15803d;
-            background: #dcfce7;
+            color: #536471;
+            background: #f0f4f8;
             padding: 2px 8px;
             border-radius: 10px;
           ">${windowSources.length} fuentes</span>
         </h3>
         <p style="
           font-size: 10px;
-          color: #166534;
+          color: #536471;
           margin: 0 0 12px 0;
           font-style: italic;
         ">
@@ -576,7 +577,7 @@ export function generateBibliographyHtml(
           list-style: decimal;
           padding-left: 20px;
           margin: 0;
-          color: #374151;
+          color: #0f1419;
         ">
     `;
     
@@ -585,17 +586,17 @@ export function generateBibliographyHtml(
         ? '<span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #10a37f; color: white; border-radius: 3px; font-size: 9px; font-weight: 700; margin-right: 6px;">G</span>'
         : '<span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #20808d; color: white; border-radius: 3px; font-size: 9px; font-weight: 700; margin-right: 6px;">P</span>';
       const dateNote = source.extractedDate 
-        ? ` <span style="color: #059669; font-size: 10px;">(${new Date(source.extractedDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })})</span>` 
+        ? ` <span style="color: #1a73e8; font-size: 10px;">(${new Date(source.extractedDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })})</span>` 
         : '';
       
       html += `
-        <li style="padding: 6px 0; border-bottom: 1px solid #dcfce7;">
+        <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
           ${modelBadge}
-          <span style="font-weight: 500; color: #166534;">${source.domain}</span>${dateNote}
-          ${source.title ? `<br><span style="color: #4b5563; margin-left: 22px;">"${source.title}"</span>` : ''}
+          <span style="font-weight: 500; color: #536471;">${source.domain}</span>${dateNote}
+          ${source.title ? `<br><span style="color: #0f1419; margin-left: 22px;">"${source.title}"</span>` : ''}
           <br>
           <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-            color: #15803d;
+            color: #a16207;
             text-decoration: none;
             word-break: break-all;
             font-size: 10px;
@@ -614,14 +615,14 @@ export function generateBibliographyHtml(
       <div style="
         margin-bottom: 20px;
         padding: 16px;
-        background: #fef9c3;
-        border: 1px solid #eab308;
-        border-radius: 10px;
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
       ">
         <h3 style="
-          font-size: 13px;
+          font-size: 17px;
           font-weight: 600;
-          color: #854d0e;
+          color: #0f1419;
           margin: 0 0 12px 0;
           display: flex;
           align-items: center;
@@ -631,15 +632,15 @@ export function generateBibliographyHtml(
           <span style="
             font-size: 11px;
             font-weight: 400;
-            color: #a16207;
-            background: #fef08a;
+            color: #536471;
+            background: #f0f4f8;
             padding: 2px 8px;
             border-radius: 10px;
           ">${reinforcementSources.length} fuentes</span>
         </h3>
         <p style="
           font-size: 10px;
-          color: #854d0e;
+          color: #536471;
           margin: 0 0 12px 0;
           font-style: italic;
         ">
@@ -650,7 +651,7 @@ export function generateBibliographyHtml(
           list-style: decimal;
           padding-left: 20px;
           margin: 0;
-          color: #374151;
+          color: #0f1419;
         ">
     `;
     
@@ -659,17 +660,17 @@ export function generateBibliographyHtml(
         ? '<span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #10a37f; color: white; border-radius: 3px; font-size: 9px; font-weight: 700; margin-right: 6px;">G</span>'
         : '<span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #20808d; color: white; border-radius: 3px; font-size: 9px; font-weight: 700; margin-right: 6px;">P</span>';
       const dateNote = source.extractedDate 
-        ? ` <span style="color: #ca8a04; font-size: 10px;">(${new Date(source.extractedDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })})</span>` 
+        ? ` <span style="color: #8899a6; font-size: 10px;">(${new Date(source.extractedDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })})</span>` 
         : '';
       
       html += `
-        <li style="padding: 6px 0; border-bottom: 1px solid #fef08a;">
+        <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
           ${modelBadge}
-          <span style="font-weight: 500; color: #854d0e;">${source.domain}</span>${dateNote}
-          ${source.title ? `<br><span style="color: #4b5563; margin-left: 22px;">"${source.title}"</span>` : ''}
+          <span style="font-weight: 500; color: #536471;">${source.domain}</span>${dateNote}
+          ${source.title ? `<br><span style="color: #0f1419; margin-left: 22px;">"${source.title}"</span>` : ''}
           <br>
           <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-            color: #a16207;
+            color: #6b7280;
             text-decoration: none;
             word-break: break-all;
             font-size: 10px;
@@ -717,12 +718,12 @@ export function generateBibliographyHtml(
         
         chatGptSources.forEach(source => {
           html += `
-            <li style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">
-              <span style="font-weight: 500; color: #1e40af;">${source.domain}</span>
-              ${source.title ? `<br><span style="color: #64748b;">"${source.title}"</span>` : ''}
+            <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
+              <span style="font-weight: 500; color: #536471;">${source.domain}</span>
+              ${source.title ? `<br><span style="color: #0f1419;">"${source.title}"</span>` : ''}
               <br>
               <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-                color: #3b82f6;
+                color: #a16207;
                 text-decoration: none;
                 word-break: break-all;
                 font-size: 10px;
@@ -760,12 +761,12 @@ export function generateBibliographyHtml(
         perplexitySources.forEach(source => {
           const citationLabel = source.citationNumber ? ` [${source.citationNumber}]` : '';
           html += `
-            <li style="padding: 6px 0; border-bottom: 1px solid #f1f5f9;">
-              <span style="font-weight: 500; color: #1e40af;">${source.domain}${citationLabel}</span>
-              ${source.title ? `<br><span style="color: #64748b;">"${source.title}"</span>` : ''}
+            <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
+              <span style="font-weight: 500; color: #536471;">${source.domain}${citationLabel}</span>
+              ${source.title ? `<br><span style="color: #0f1419;">"${source.title}"</span>` : ''}
               <br>
               <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-                color: #3b82f6;
+                color: #6b7280;
                 text-decoration: none;
                 word-break: break-all;
                 font-size: 10px;
@@ -782,14 +783,14 @@ export function generateBibliographyHtml(
         <div style="
           margin-bottom: 20px;
           padding: 16px;
-          background: #f1f5f9;
-          border: 1px solid #cbd5e1;
-          border-radius: 10px;
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
         ">
           <h3 style="
-            font-size: 13px;
+            font-size: 17px;
             font-weight: 600;
-            color: #475569;
+            color: #0f1419;
             margin: 0 0 12px 0;
             display: flex;
             align-items: center;
@@ -799,15 +800,15 @@ export function generateBibliographyHtml(
             <span style="
               font-size: 11px;
               font-weight: 400;
-              color: #64748b;
-              background: #e2e8f0;
+              color: #536471;
+              background: #f0f4f8;
               padding: 2px 8px;
               border-radius: 10px;
             ">${unknownSources.length} fuentes</span>
           </h3>
           <p style="
             font-size: 10px;
-            color: #64748b;
+            color: #536471;
             margin: 0 0 12px 0;
             font-style: italic;
           ">
@@ -818,7 +819,7 @@ export function generateBibliographyHtml(
             list-style: decimal;
             padding-left: 20px;
             margin: 0;
-            color: #374151;
+            color: #0f1419;
           ">
       `;
       
@@ -828,10 +829,10 @@ export function generateBibliographyHtml(
           : '<span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #20808d; color: white; border-radius: 3px; font-size: 9px; font-weight: 700; margin-right: 6px;">P</span>';
         
         html += `
-          <li style="padding: 6px 0; border-bottom: 1px solid #e2e8f0;">
+          <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
             ${modelBadge}
-            <span style="font-weight: 500; color: #475569;">${source.domain}</span>
-            ${source.title ? `<br><span style="color: #6b7280; margin-left: 22px;">"${source.title}"</span>` : ''}
+            <span style="font-weight: 500; color: #536471;">${source.domain}</span>
+            ${source.title ? `<br><span style="color: #0f1419; margin-left: 22px;">"${source.title}"</span>` : ''}
             <br>
             <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
               color: #6b7280;
@@ -853,11 +854,11 @@ export function generateBibliographyHtml(
       <div style="
         margin-top: 20px;
         padding: 12px;
-        background: #fffbeb;
-        border: 1px solid #fcd34d;
-        border-radius: 8px;
+        background: #f7f9fa;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
         font-size: 10px;
-        color: #78350f;
+        color: #8899a6;
         line-height: 1.6;
       ">
         <strong>📋 Nota metodológica:</strong> Esta lista incluye únicamente 
