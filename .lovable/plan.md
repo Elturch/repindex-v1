@@ -1,54 +1,80 @@
 
 
-# Añadir perspectiva "Asuntos Públicos" al Agente Rix
+# Tabulación y alineación de resultados con emojis en PDFs
 
-## Resumen
+## Problema
 
-Crear un nuevo rol de enriquecimiento "Asuntos Públicos" que traduzca los datos reputacionales de RepIndex en inteligencia accionable para directores de Relaciones Institucionales y Public Affairs, usando la estructura de 6 bloques proporcionada.
+Cuando el agente genera líneas de resultados con emojis (ej. `✅ NVM: 78.2`, `🔴 CEM: 34.1`, `🟢 Gobierno: Sólido`), estas aparecen como párrafos sueltos o listas normales en el HTML exportado, sin alineación visual. Los emojis se quiebran, los valores no cuadran y el resultado pierde la presentación ejecutiva esperada.
+
+## Solución
+
+Detectar automáticamente bloques de líneas consecutivas con emoji al inicio y convertirlos en una cuadrícula CSS alineada, con el emoji, el label y el valor cada uno en su columna.
 
 ## Cambios
 
-### Archivo: `src/lib/chatRoles.ts`
+### 1. `src/lib/markdownToHtml.ts` -- Detección y conversión de bloques emoji
 
-**1. Ampliar el tipo `category`**
+Añadir una función `processEmojiResultBlocks` que se ejecute antes de `wrapInParagraphs`:
 
-Añadir `"asuntos_publicos"` al union type del interfaz `ChatRole` y al objeto `ROLE_CATEGORIES`:
+- Detectar secuencias de 2+ líneas consecutivas que empiezan con emoji (unicode Emoji_Presentation o Extended_Pictographic).
+- Cada línea se parsea en: **emoji** | **label** (texto antes de `:`) | **valor** (texto después de `:`).
+- Se genera un `<div class="emoji-result-grid">` con cada fila como `<div class="emoji-result-row">`.
+- Si no hay `:` separador, la línea entera va como label (sin columna de valor).
 
+### 2. `src/lib/markdownToHtml.ts` -- CSS para la cuadrícula emoji
+
+Añadir `emojiGridStyles` al export de estilos:
+
+```text
+.emoji-result-grid
+  - display: grid
+  - grid-template-columns: 28px 1fr auto
+  - gap: 6px 12px
+  - margin: 16px 0
+  - padding: 16px
+  - background: #f7f9fa
+  - border: 1px solid #e5e7eb
+  - border-radius: 8px
+
+.emoji-result-row
+  - display: contents (para que cada hijo ocupe su columna del grid)
+
+.emoji-result-icon
+  - text-align: center
+  - font-size: 1.1em
+
+.emoji-result-label
+  - font-weight: 500
+  - color: #0f1419
+
+.emoji-result-value
+  - text-align: right
+  - font-weight: 600
+  - font-variant-numeric: tabular-nums
+  - color: #0f1419
 ```
-asuntos_publicos: "Asuntos Publicos"
-```
 
-**2. Añadir el rol al array `CHAT_ROLES`**
+### 3. `src/contexts/ChatContext.tsx` -- Incluir los nuevos estilos en el HTML de exportación
 
-Nuevo elemento con:
-- `id`: `"asuntos_publicos"`
-- `emoji`: `"🏛️"`
-- `name`: `"Asuntos Publicos"`
-- `shortDescription`: `"Exposicion institucional, licencia social, radar regulatorio"`
-- `category`: `"asuntos_publicos"`
-- `prompt`: El prompt completo con las 6 secciones proporcionadas por el usuario, integradas con las reglas de lenguaje de metricas (`METRIC_LANGUAGE_RULES`):
+Importar `emojiGridStyles` desde `markdownToHtml.ts` y añadirlo dentro del bloque `<style>` del documento HTML exportado, junto a `premiumTableStyles` y `technicalSheetStyles`.
 
-  1. **MAPA DE EXPOSICION INSTITUCIONAL** -- Percepcion de Gobierno como proxy de confianza institucional; Gestion de Controversias como proxy de riesgo de escrutinio publico; lectura de lo que dicen los modelos en contexto regulatorio/politico.
-  2. **LICENCIA SOCIAL PARA OPERAR** -- Cruce de metricas para evaluar capital reputacional; Coherencia Informativa como detector de gaps de opacidad; vulnerabilidades ante comparecencias, comisiones o iniciativas legislativas.
-  3. **RADAR REGULATORIO** -- Patrones en datos que sugieran riesgo de atencion regulatoria; controversias activas que podrian escalar al ambito politico; benchmark de escrutinio competitivo.
-  4. **BENCHMARK INSTITUCIONAL** -- Ranking sectorial por solidez de gobernanza percibida; vulnerabilidad ante cambios regulatorios; oportunidades de posicionamiento proactivo ante la administracion.
-  5. **STAKEHOLDER MAP POLITICO** -- Identificacion de stakeholders institucionales (regulador, supervisores, gobierno, parlamento); narrativa preventiva para cada uno.
-  6. **PLAN DE ACCION INSTITUCIONAL** -- Acciones proactivas (posicionamiento, comparecencias, informes sectoriales); acciones defensivas (preparacion ante escrutinio, argumentarios); priorizacion por urgencia e impacto.
+### 4. `src/lib/markdownToHtml.ts` -- Estilos de impresión
 
-  Formato: Orientado a deliverables de relaciones institucionales. Fichas de accion, mapas de stakeholders, no ensayos teoricos.
-  Tono: Estrategico-institucional, como un consultor senior de asuntos publicos informando al Director de RRII.
+Añadir reglas `@media print` para `.emoji-result-grid`:
+- `break-inside: avoid`
+- Mantener colores con `-webkit-print-color-adjust: exact`
 
-**3. Incluir en `getFeaturedRoles()`**
+## Lógica de detección
 
-Añadir `"asuntos_publicos"` al array `featuredIds` para que aparezca en la barra de enriquecimiento principal.
+Una línea se considera "emoji result" si:
+1. Empieza con un carácter emoji (tras trim).
+2. El resto tiene contenido textual (no es solo emoji).
 
-## Sin cambios adicionales
-
-`RoleEnrichmentBar` y `SessionConfigPanel` ya iteran dinamicamente sobre `CHAT_ROLES`, `ROLE_CATEGORIES` y `getFeaturedRoles()`. El nuevo rol aparecera automaticamente en todos los selectores y menus sin tocar ningun otro archivo.
+Un bloque se forma con 2+ líneas consecutivas que cumplen este criterio. Las líneas sueltas con emoji siguen tratándose como párrafos normales (no se fuerza cuadrícula para una sola línea).
 
 ## Impacto
 
-- 1 archivo modificado: `src/lib/chatRoles.ts`
-- Sin cambios en backend, edge functions ni base de datos
-- El rol se inyecta en el flujo existente de enriquecimiento, disponible inmediatamente en la interfaz
+- 2 archivos modificados: `src/lib/markdownToHtml.ts`, `src/contexts/ChatContext.tsx`
+- Los informes PDF/HTML existentes se benefician automáticamente sin cambio en el backend
+- Compatible con todos los emojis que ya usa el agente (checkmarks, círculos de color, estrellas, flechas, etc.)
 
