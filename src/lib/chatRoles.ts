@@ -6,7 +6,7 @@ export interface ChatRole {
   emoji: string;
   name: string;
   shortDescription: string;
-  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento";
+  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos";
   prompt: string;
 }
 
@@ -17,6 +17,7 @@ export const ROLE_CATEGORIES = {
   pericial: "Peritaje y Legal",
   esg: "ESG y Sostenibilidad",
   talento: "Talento",
+  asuntos_publicos: "Asuntos Publicos",
 } as const;
 
 // REGLA TRANSVERSAL: Todas las perspectivas deben usar nombres completos de metricas,
@@ -172,11 +173,33 @@ ESTRUCTURA DE LA RESPUESTA:
 Formato: Dashboards comparativos, matrices de competitividad de talento, planes de accion.
 Tono: Analitico-estrategico, orientado a la guerra por el talento.`,
   },
+  // ASUNTOS PUBLICOS
+  {
+    id: "asuntos_publicos",
+    emoji: "🏛️",
+    name: "Asuntos Publicos",
+    shortDescription: "Exposicion institucional, licencia social, radar regulatorio",
+    category: "asuntos_publicos",
+    prompt: `${METRIC_LANGUAGE_RULES}
+
+Reformula esta respuesta para un Director de Relaciones Institucionales o Public Affairs que necesita traducir los datos reputacionales en inteligencia accionable para el ambito regulatorio y politico.
+
+ESTRUCTURA DE LA RESPUESTA:
+1. **MAPA DE EXPOSICION INSTITUCIONAL**: Que dicen los modelos de IA sobre la empresa en contexto regulatorio y politico. Percepcion de Gobierno como proxy de confianza institucional: que nivel de solidez perciben los modelos en la gobernanza de esta empresa y que implica para su credibilidad ante reguladores. Gestion de Controversias como proxy de riesgo de escrutinio publico: hay controversias activas que podrian atraer atencion de supervisores, comisiones parlamentarias o medios especializados en regulacion.
+2. **LICENCIA SOCIAL PARA OPERAR**: Cruce de metricas para evaluar si la empresa tiene capital reputacional suficiente para operar sin friccion institucional. Coherencia Informativa: lo que dice la empresa coincide con lo que perciben los modelos. Si hay gap, hay riesgo de acusacion de opacidad o falta de transparencia ante interlocutores publicos. Puntos de vulnerabilidad concretos ante comparecencias, comisiones de investigacion o iniciativas legislativas sectoriales.
+3. **RADAR REGULATORIO**: Que patrones en los datos sugieren que la empresa o el sector esta en riesgo de atencion regulatoria. Controversias activas que podrian escalar del ambito mediatico al ambito politico. Competidores con mejor o peor posicionamiento: quien atrae mas escrutinio regulatorio y por que. Que senales anticipan un cambio de ciclo regulatorio.
+4. **BENCHMARK INSTITUCIONAL**: Ranking de empresas del sector por solidez de gobernanza percibida por los modelos de IA. Quien lidera en confianza institucional y quien es vulnerable ante un cambio regulatorio. Oportunidades de posicionamiento proactivo ante la administracion basadas en fortalezas reputacionales medibles.
+5. **STAKEHOLDER MAP POLITICO**: Identificacion de stakeholders institucionales (regulador sectorial, supervisores, gobierno, parlamento, organismos europeos) que podrian interesarse en estos datos reputacionales. Para cada stakeholder: que narrativa construir preventivamente, que datos de RepIndex respaldan esa narrativa, que riesgo existe si no se actua.
+6. **PLAN DE ACCION INSTITUCIONAL**: Acciones proactivas: posicionamiento ante reguladores, comparecencias voluntarias, informes sectoriales, participacion en consultas publicas. Acciones defensivas: preparacion ante escrutinio, argumentarios basados en datos, simulacion de preguntas parlamentarias. Priorizacion por urgencia e impacto, con calendario sugerido.
+
+Formato: Orientado a deliverables de relaciones institucionales. Fichas de accion, mapas de stakeholders, no ensayos teoricos.
+Tono: Estrategico-institucional, como un consultor senior de asuntos publicos informando al Director de RRII.`,
+  },
 ];
 
 // Featured roles shown prominently in the UI
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ["direccion_general", "dircom", "esg", "talento", "perito_reputacional"];
+  const featuredIds = ["direccion_general", "dircom", "esg", "talento", "perito_reputacional", "asuntos_publicos"];
   return CHAT_ROLES.filter((role) => featuredIds.includes(role.id));
 }
 
