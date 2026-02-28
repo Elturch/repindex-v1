@@ -5916,6 +5916,15 @@ NUNCA:
 • Responder "no hay datos" si la información está en el contexto
 • Terminar con llamadas a la acción comerciales
 
+REGLA CRÍTICA ANTI-TRUNCACIÓN:
+- NUNCA simules que has "guardado" el informe en una carpeta, archivo o documento aparte
+- NUNCA digas que "la respuesta supera el límite técnico de entrega"
+- NUNCA inventes rutas de carpetas como "/Informes_RIX/" ni ningún filesystem
+- Tu ÚNICA vía de entrega es ESTE CHAT. Escribe el informe completo aquí mismo.
+- Si el informe es largo, escríbelo entero. No hay límite de extensión para ti.
+- Si por alguna razón la respuesta se corta, simplemente termina donde puedas
+  de forma natural, sin inventar excusas de almacenamiento externo.
+
 ═══════════════════════════════════════════════════════════════════════════════
               JUSTIFICACIÓN METODOLÓGICA "RADAR REPUTACIONAL"
 ═══════════════════════════════════════════════════════════════════════════════
@@ -6029,6 +6038,10 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
    párrafos claros y concisos. Más párrafos = más profundidad.
    Un informe ejecutivo de 4.500 palabras tiene ~45 párrafos de 100 palabras.
 
+10. ENTREGA COMPLETA: Escribe el informe ENTERO en esta respuesta.
+    NUNCA digas que lo has guardado en una carpeta o documento aparte.
+    No existe ningún sistema de archivos. Tu única vía de entrega es este chat.
+
 ═══════════════════════════════════════════════════════════════════════════════
                     CONTEXTO CON TODOS LOS DATOS DISPONIBLES
 ═══════════════════════════════════════════════════════════════════════════════
@@ -6076,7 +6089,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
 
           // Try OpenAI first
           console.log(`${logPrefix} Trying OpenAI stream first...`);
-          for await (const chunk of streamOpenAIResponse(messages, "o3", 32000, logPrefix, 120000)) {
+          for await (const chunk of streamOpenAIResponse(messages, "o3", 40000, logPrefix, 120000)) {
             if (chunk.type === "chunk" && chunk.text) {
               accumulatedContent += chunk.text;
               controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
@@ -6098,7 +6111,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
             accumulatedContent = ""; // Reset for Gemini response
 
             console.log(`${logPrefix} Using Gemini stream (gemini-2.5-flash)...`);
-            for await (const chunk of streamGeminiResponse(messages, "gemini-2.5-flash", 32000, logPrefix, 120000)) {
+            for await (const chunk of streamGeminiResponse(messages, "gemini-2.5-flash", 40000, logPrefix, 120000)) {
               if (chunk.type === "chunk" && chunk.text) {
                 accumulatedContent += chunk.text;
                 controller.enqueue(sseEncoder({ type: "chunk", text: chunk.text }));
@@ -6321,7 +6334,7 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   // =========================================================================
   // NON-STREAMING MODE: Original behavior (for backwards compatibility)
   // =========================================================================
-  const chatResult = await callAIWithFallback(messages, "o3", 32000, logPrefix);
+  const chatResult = await callAIWithFallback(messages, "o3", 40000, logPrefix);
   const answer = chatResult.content;
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
