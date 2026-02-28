@@ -1,60 +1,99 @@
 
+Objetivo: eliminar por completo (en cualquier caso) respuestas de tipo “supera el límite” y garantizar entrega íntegra del informe en chat, aunque requiera varias continuaciones internas.
 
-# Eliminar la alucinación de "documento guardado en carpeta" del Agente Rix
+Diagnóstico confirmado
+- La alucinación sí sale del modelo durante el stream (session replay lo muestra literalmente, incluyendo “documento aparte” y “/Informes_RIX/...”).  
+- En `supabase/functions/chat-intelligence/index.ts` ya existe regla anti-truncación en prompts y `max_completion_tokens=40000`, pero eso no basta.
+- Causa técnica principal: el backend no detecta truncado por `finish_reason="length"` ni ejecuta continuación automática.
+- Causa técnica secundaria: el stream se reenvía en tiempo real sin “compliance gate”, así que si aparece una frase prohibida, ya llegó al usuario.
 
-## Problema
+Plan de implementación
 
-El modelo o3 genera respuestas largas (4.500+ palabras exigidas por el Embudo Narrativo) y al acercarse al limite de tokens de salida (32.000), en vez de seguir escribiendo, **alucina** un mensaje como:
+1) Detección formal de truncado y fin incompleto
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- Extender `streamOpenAIResponse` y `streamGeminiResponse` para devolver también:
+  - `finishReason` (ej. `length`, `stop`, etc.)
+  - `wasTruncated` (boolean derivado)
+- Extender `callAIWithFallback` (modo no streaming) para devolver `finishReason` y `wasTruncated`.
+- Resultado: el sistema sabrá de forma explícita cuándo el modelo cortó por límite.
 
-> "La respuesta completa supera el limite tecnico de entrega en esta plataforma. He generado el informe ejecutivo completo en un documento aparte y lo he dejado en la carpeta segura /Informes_RIX/..."
+2) Continuación automática multi-tramo (sin intervención del usuario)
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- Crear helper unificado (ej. `generateCompleteReportWithContinuation`) con:
+  - máximo de tramos (p.ej. 4–6),
+  - prompt de continuación estricto: “Continúa exactamente desde la última frase útil, sin repetir, sin prólogos, sin mencionar límites/plataforma/archivos”.
+- Lógica:
+  - generar tramo 1,
+  - si `wasTruncated=true`, pedir tramo 2 y concatenar,
+  - repetir hasta `finishReason !== "length"` o alcanzar tope seguro.
+- Esto aplica a streaming y no-streaming para comportamiento consistente.
 
-Esto es una invención del modelo: no existe ninguna carpeta, ningun archivo guardado, y el usuario se queda sin su informe.
+3) Guardrail anti-alucinación por contenido (regex de cumplimiento)
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- Implementar validador de texto prohibido con variantes amplias:
+  - “supera el límite”, “límite máximo permitido”, “límite técnico”,
+  - “documento aparte”, “carpeta segura”, “/Informes_RIX”, “te lo dejé guardado”, etc.
+- Si detecta patrón prohibido:
+  - no dar por válida la respuesta,
+  - ejecutar regeneración/continuación correctiva automática con instrucción de cumplimiento,
+  - solo cerrar cuando el contenido final esté limpio.
+- Importante: incluir también la variante exacta reportada por ti (“La respuesta supera el límite máximo permitido en esta plataforma.”).
 
-## Causa raíz
+4) Compliance gate en streaming (para que nunca se vea texto prohibido)
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- Cambiar estrategia de emisión:
+  - buffer interno con “holdback window” (cola de caracteres),
+  - validar antes de hacer `enqueue` al cliente,
+  - emitir solo texto que ya pasó el filtro.
+- Si aparece patrón prohibido en buffer:
+  - cortar ese tramo internamente,
+  - lanzar continuación correctiva,
+  - seguir stream sin exponer el texto prohibido.
+- Resultado: aunque el modelo intente esa frase, no llega a UI.
 
-1. **Sin regla anti-truncacion**: El system prompt no tiene ninguna instruccion que prohiba al modelo simular que "guarda el informe en otro sitio"
-2. **max_completion_tokens insuficiente**: El streaming usa 32.000 tokens, pero un informe exhaustivo de 4.500+ palabras en español puede necesitar 35.000-40.000 tokens
+5) Refuerzo adicional de prompts (defensa en profundidad)
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- Mantener reglas actuales y ampliar redacción:
+  - prohibición explícita de “límite máximo permitido en esta plataforma”,
+  - prohibición de prometer exportaciones/ficheros no existentes,
+  - instrucción de continuidad silenciosa (“si falta espacio, continúa directamente en el siguiente tramo interno”).
+- Esto reduce probabilidad; la garantía real la dan los puntos 1–4.
 
-## Cambios propuestos
+6) Metadatos de observabilidad para depurar futuros casos
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- Añadir en logs/metadata:
+  - `segmentsGenerated`,
+  - `hadTruncation`,
+  - `hadForbiddenPattern`,
+  - `finalProvider`,
+  - `finalOutputLength`.
+- Permite auditar rápidamente si hubo cortes internos y cómo se resolvieron.
 
-### 1. `supabase/functions/chat-intelligence/index.ts` — Regla anti-truncacion en el system prompt
+7) Ajuste de UX en frontend para transparencia técnica (sin cambiar experiencia de usuario)
+- Archivo: `src/contexts/ChatContext.tsx` (solo si hace falta mostrar estado)
+- Mantener un único mensaje de asistente.
+- Opcional: mostrar loading más claro (“Completando informe…”) mientras backend encadena tramos.
+- No exponer nunca mensajes de “límite” al usuario.
 
-Anadir un bloque nuevo en la seccion "ESTANDARES DE CALIDAD" (despues de los "NUNCA") con una regla explicita:
+Validación propuesta (criterios de aceptación)
+- Caso A (empresa + respuesta muy larga): nunca aparece texto de límite/carpeta; informe completo entregado.
+- Caso B (forzar truncado): backend concatena automáticamente múltiples tramos en una sola respuesta final visible.
+- Caso C (regex de frase prohibida): el texto prohibido no llega al chat.
+- Caso D (fallback OpenAI→Gemini): mantiene mismas garantías de no-truncación/no-alucinación.
+- Revisar logs de `chat-intelligence` para verificar `hadTruncation=true` y respuesta final correcta cuando aplique.
 
-```text
-REGLA CRITICA ANTI-TRUNCACION:
-- NUNCA simules que has "guardado" el informe en una carpeta, archivo o documento aparte
-- NUNCA digas que "la respuesta supera el limite tecnico de entrega"
-- NUNCA inventes rutas de carpetas como "/Informes_RIX/" ni ningun filesystem
-- Tu UNICA via de entrega es ESTE CHAT. Escribe el informe completo aqui mismo.
-- Si el informe es largo, escríbelo entero. No hay limite de extension para ti.
-- Si por alguna razon la respuesta se corta, simplemente termina donde puedas
-  de forma natural, sin inventar excusas de almacenamiento externo.
-```
+Impacto
+- Archivos principales: 
+  - `supabase/functions/chat-intelligence/index.ts` (núcleo de la solución),
+  - opcional `src/contexts/ChatContext.tsx` (solo UX de carga).
+- Sin cambios de esquema DB.
+- Sin cambios funcionales de negocio: solo robustez de entrega y eliminación de este fallo crítico.
 
-### 2. `supabase/functions/chat-intelligence/index.ts` — Aumentar max_completion_tokens
+Riesgos y mitigación
+- Mayor latencia en respuestas muy largas: mitigado con streaming buffered y mensajes de progreso.
+- Riesgo de bucles de continuación: mitigado con tope de tramos + salida segura.
+- Riesgo de falsos positivos en regex: usar lista acotada y normalización de texto (acentos/case).
 
-Cambiar los 3 puntos donde se usa `32000` como max tokens para el chat estandar:
-
-- Linea ~6079 (streaming OpenAI): `streamOpenAIResponse(messages, "o3", 32000, ...)` a `40000`
-- Linea ~6101 (streaming Gemini fallback): `streamGeminiResponse(messages, "gemini-2.5-flash", 32000, ...)` a `40000`
-- Linea ~6324 (non-streaming fallback): `callAIWithFallback(messages, "o3", 32000, ...)` a `40000`
-
-### 3. `supabase/functions/chat-intelligence/index.ts` — Refuerzo en user prompt
-
-Anadir al final de las "INSTRUCCIONES PARA TU RESPUESTA" (seccion del user prompt, ~linea 6030):
-
-```text
-10. ENTREGA COMPLETA: Escribe el informe ENTERO en esta respuesta.
-    NUNCA digas que lo has guardado en una carpeta o documento aparte.
-    No existe ningun sistema de archivos. Tu unica via de entrega es este chat.
-```
-
-## Resumen de impacto
-
-- **1 archivo** modificado: `supabase/functions/chat-intelligence/index.ts`
-- **3 cambios de max_tokens**: 32000 a 40000
-- **2 bloques de texto** anadidos al prompt (system + user)
-- **Sin cambios funcionales** — solo proteccion contra alucinaciones y mas espacio de generacion
-- Requiere **redespliegue** de la edge function
-
+Resultado esperado
+- Cero apariciones de “supera el límite…” o “guardado en carpeta…”.
+- Entrega exhaustiva real dentro del chat, incluso cuando el contenido exceda un único tramo de generación.
