@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getChatTranslations, t, type ChatUITranslations } from '@/lib/chatTranslations';
 import { technicalSheetStyles, generateTechnicalSheetHtml } from '@/lib/technicalSheetHtml';
 import { VerifiedSource, generateBibliographyHtml } from '@/lib/verifiedSourceExtractor';
+import { convertMarkdownToHtml as sharedConvertMarkdownToHtml, premiumTableStyles, emojiGridStyles } from '@/lib/markdownToHtml';
 
 interface MarkdownMessageProps {
   content: string;
@@ -650,10 +651,12 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
       }
       
       h1, h2, h3, h4, h5, h6 { page-break-after: avoid; }
-      table { page-break-inside: avoid; }
+      table { page-break-inside: auto; }
       table, thead, tbody, tr, th, td {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
       thead { display: table-header-group; }
       tr { page-break-inside: avoid; }
@@ -678,11 +681,17 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
       }
     }
     
+    /* Emoji Result Grids + Section Bands + Metric Tables */
+    ${emojiGridStyles}
+    
+    /* Tables - Premium Styling */
+    ${premiumTableStyles}
+    
     /* Technical Sheet - Legal Fine Print */
     ${technicalSheetStyles}
   `;
 
-  const bodyContent = convertMarkdownToHtml(markdown);
+  const bodyContent = sharedConvertMarkdownToHtml(markdown);
 
   return `<!DOCTYPE html>
 <html lang="${languageCode}">
@@ -735,247 +744,4 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
 </html>`;
 }
 
-// Comprehensive markdown to HTML converter
-function convertMarkdownToHtml(markdown: string): string {
-  let html = markdown;
-  
-  // Process tables first
-  html = processMarkdownTables(html);
-  
-  // Code blocks (before inline code)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/gm, (_, lang, code) => {
-    return `<pre><code class="language-${lang}">${escapeHtml(code.trim())}</code></pre>`;
-  });
-  
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
-  // Headers (h6 to h1)
-  html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
-  html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
-  html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-  
-  // Horizontal rules
-  html = html.replace(/^---$/gim, '<hr>');
-  html = html.replace(/^\*\*\*$/gim, '<hr>');
-  html = html.replace(/^___$/gim, '<hr>');
-  
-  // Blockquotes
-  html = html.replace(/^> (.*$)/gim, '<blockquote><p>$1</p></blockquote>');
-  html = html.replace(/<\/blockquote>\n<blockquote>/g, '');
-  
-  // Bold and italic
-  html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
-  html = html.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-  html = html.replace(/___(.*?)___/gim, '<strong><em>$1</em></strong>');
-  html = html.replace(/__(.*?)__/gim, '<strong>$1</strong>');
-  html = html.replace(/_(.*?)_/gim, '<em>$1</em>');
-  
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-  
-  // Lists
-  html = processOrderedLists(html);
-  html = processUnorderedLists(html);
-  
-  // Wrap remaining text in paragraphs
-  html = wrapInParagraphs(html);
-  
-  return html;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function processMarkdownTables(markdown: string): string {
-  const lines = markdown.split('\n');
-  const result: string[] = [];
-  let tableRows: string[] = [];
-  let inTable = false;
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    const isTableRow = line.includes('|') && line.replace(/\|/g, '').trim().length > 0;
-    const isSeparator = /^\|?[\s\-:|]+\|?$/.test(line) && line.includes('-');
-    
-    if (isTableRow || isSeparator) {
-      if (!inTable) {
-        inTable = true;
-        tableRows = [];
-      }
-      tableRows.push(line);
-    } else {
-      if (inTable && tableRows.length > 0) {
-        result.push(buildTableHtml(tableRows));
-        tableRows = [];
-        inTable = false;
-      }
-      result.push(lines[i]);
-    }
-  }
-  
-  if (inTable && tableRows.length > 0) {
-    result.push(buildTableHtml(tableRows));
-  }
-  
-  return result.join('\n');
-}
-
-function buildTableHtml(rows: string[]): string {
-  if (rows.length < 2) return rows.join('\n');
-  
-  // Find separator index
-  let separatorIdx = rows.findIndex(row => 
-    /^\|?[\s\-:|]+\|?$/.test(row.trim()) && row.includes('-')
-  );
-  
-  if (separatorIdx === -1) separatorIdx = 1;
-  
-  const headerRows = rows.slice(0, separatorIdx);
-  const bodyRows = rows.slice(separatorIdx + 1).filter(row => 
-    row.trim().length > 0 && !/^\|?[\s\-:|]+\|?$/.test(row.trim())
-  );
-  
-  let html = '<div class="table-wrapper">\n<table>\n';
-  
-  // Thead
-  if (headerRows.length > 0) {
-    html += '<thead>\n';
-    for (const row of headerRows) {
-      const cells = parseTableCells(row);
-      html += '<tr>';
-      for (const cell of cells) {
-        // Process emoji in cell content
-        const processedCell = processEmojis(cell);
-        html += `<th>${processedCell}</th>`;
-      }
-      html += '</tr>\n';
-    }
-    html += '</thead>\n';
-  }
-  
-  // Tbody
-  if (bodyRows.length > 0) {
-    html += '<tbody>\n';
-    for (const row of bodyRows) {
-      const cells = parseTableCells(row);
-      html += '<tr>';
-      for (const cell of cells) {
-        // Process emoji in cell content
-        const processedCell = processEmojis(cell);
-        html += `<td>${processedCell}</td>`;
-      }
-      html += '</tr>\n';
-    }
-    html += '</tbody>\n';
-  }
-  
-  html += '</table>\n</div>';
-  return html;
-}
-
-// Process emojis to ensure proper rendering
-function processEmojis(text: string): string {
-  // Emoji unicode ranges pattern
-  const emojiPattern = /(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu;
-  return text.replace(emojiPattern, '<span class="emoji">$1</span>');
-}
-
-function parseTableCells(row: string): string[] {
-  return row
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map(cell => cell.trim());
-}
-
-function processOrderedLists(html: string): string {
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let inList = false;
-  
-  for (const line of lines) {
-    const match = line.match(/^(\d+)\.\s+(.*)$/);
-    if (match) {
-      if (!inList) {
-        result.push('<ol>');
-        inList = true;
-      }
-      result.push(`<li>${match[2]}</li>`);
-    } else {
-      if (inList) {
-        result.push('</ol>');
-        inList = false;
-      }
-      result.push(line);
-    }
-  }
-  
-  if (inList) result.push('</ol>');
-  return result.join('\n');
-}
-
-function processUnorderedLists(html: string): string {
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let inList = false;
-  
-  for (const line of lines) {
-    const match = line.match(/^[\*\-\+]\s+(.*)$/);
-    if (match) {
-      if (!inList) {
-        result.push('<ul>');
-        inList = true;
-      }
-      result.push(`<li>${match[1]}</li>`);
-    } else {
-      if (inList) {
-        result.push('</ul>');
-        inList = false;
-      }
-      result.push(line);
-    }
-  }
-  
-  if (inList) result.push('</ul>');
-  return result.join('\n');
-}
-
-function wrapInParagraphs(html: string): string {
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let paragraphBuffer = '';
-  
-  const blockTags = ['<h', '<table', '<ul', '<ol', '<pre', '<blockquote', '<hr', '</table', '</ul', '</ol', '</pre', '</blockquote'];
-  
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const isBlock = blockTags.some(tag => trimmed.startsWith(tag)) || trimmed === '';
-    
-    if (isBlock) {
-      if (paragraphBuffer) {
-        result.push(`<p>${paragraphBuffer}</p>`);
-        paragraphBuffer = '';
-      }
-      if (trimmed) result.push(line);
-    } else {
-      paragraphBuffer += (paragraphBuffer ? ' ' : '') + trimmed;
-    }
-  }
-  
-  if (paragraphBuffer) {
-    result.push(`<p>${paragraphBuffer}</p>`);
-  }
-  
-  return result.join('\n').replace(/<p>\s*<\/p>/g, '');
-}
+// Local converter removed — using shared convertMarkdownToHtml from @/lib/markdownToHtml
