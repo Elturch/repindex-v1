@@ -625,13 +625,15 @@ async function* streamGeminiResponse(
 // an automatic continuation is triggered.
 
 const FORBIDDEN_PATTERNS: RegExp[] = [
-  /\[?la respuesta\s+(?:completa\s+)?supera\s+el\s+l[ií]mite/i,
+  /\[?la\s+respuesta\s+(?:completa\s+)?supera\s+el\s+l[ií]mite/i,
   /supera\s+el\s+l[ií]mite\s+(?:m[aá]ximo|t[eé]cnico)/i,
   /l[ií]mite\s+m[aá]ximo\s+permitido/i,
   /l[ií]mite\s+t[eé]cnico\s+de\s+entrega/i,
+  /la\s+respuesta[\s\S]{0,120}?l[ií]mite[\s\S]{0,120}?(?:plataforma|entrega)/i,
   /documento\s+aparte/i,
   /carpeta\s+segura/i,
   /\/Informes_RIX\//i,
+  /informes[_\s-]?rix/i,
   /te\s+lo\s+dej[eé]\s+guardado/i,
   /lo\s+he\s+dejado\s+en/i,
   /he\s+generado\s+el\s+informe.*en\s+un\s+documento/i,
@@ -645,29 +647,39 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /saved?\s+(?:it\s+)?(?:to|in)\s+(?:a\s+)?(?:secure\s+)?folder/i,
 ];
 
+function findForbiddenMatchIndex(text: string): number {
+  let earliest = -1;
+  for (const pattern of FORBIDDEN_PATTERNS) {
+    const match = pattern.exec(text);
+    if (match && match.index !== undefined) {
+      earliest = earliest === -1 ? match.index : Math.min(earliest, match.index);
+    }
+  }
+  return earliest;
+}
+
 function containsForbiddenPattern(text: string): boolean {
-  return FORBIDDEN_PATTERNS.some(pattern => pattern.test(text));
+  return findForbiddenMatchIndex(text) !== -1;
 }
 
 function stripForbiddenContent(text: string): string {
-  for (const pattern of FORBIDDEN_PATTERNS) {
-    const match = text.match(pattern);
-    if (match && match.index !== undefined) {
-      const beforeMatch = text.substring(0, match.index);
-      // Find last clean sentence boundary before the forbidden content
-      const lastBoundary = Math.max(
-        beforeMatch.lastIndexOf('. '),
-        beforeMatch.lastIndexOf('.\n'),
-        beforeMatch.lastIndexOf('\n\n'),
-        beforeMatch.lastIndexOf('---'),
-      );
-      if (lastBoundary > text.length * 0.3) {
-        return text.substring(0, lastBoundary + 1).trim();
-      }
-      return beforeMatch.trim();
-    }
+  const matchIndex = findForbiddenMatchIndex(text);
+  if (matchIndex === -1) return text;
+
+  const beforeMatch = text.substring(0, matchIndex);
+  // Find last clean sentence boundary before the forbidden content
+  const lastBoundary = Math.max(
+    beforeMatch.lastIndexOf('. '),
+    beforeMatch.lastIndexOf('.\n'),
+    beforeMatch.lastIndexOf('\n\n'),
+    beforeMatch.lastIndexOf('---'),
+  );
+
+  if (lastBoundary > text.length * 0.3) {
+    return text.substring(0, lastBoundary + 1).trim();
   }
-  return text;
+
+  return beforeMatch.trim();
 }
 
 // =============================================================================
@@ -6161,7 +6173,8 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           let streamFinishReason = "";
 
           // Compliance buffer state for anti-hallucination gate
-          const HOLDBACK_SIZE = 300;
+          const HOLDBACK_SIZE = 1200;
+          const COMPLIANCE_SCAN_OVERLAP = 800;
           let emittedLength = 0;
           let forbiddenDetected = false;
           let segmentsGenerated = 1;
@@ -6175,18 +6188,24 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
             if (checkEnd <= emittedLength) return;
 
             const pendingText = accumulatedContent.substring(emittedLength, checkEnd);
+            const scanStart = Math.max(0, emittedLength - COMPLIANCE_SCAN_OVERLAP);
+            const scanText = accumulatedContent.substring(scanStart, checkEnd);
+            const forbiddenRelativeIndex = findForbiddenMatchIndex(scanText);
 
-            if (containsForbiddenPattern(pendingText)) {
+            if (forbiddenRelativeIndex !== -1) {
               hadForbiddenPattern = true;
               forbiddenDetected = true;
-              // Strip forbidden content
-              const cleanedFull = stripForbiddenContent(accumulatedContent.substring(0, checkEnd));
+              const forbiddenAbsoluteIndex = scanStart + forbiddenRelativeIndex;
+
+              const cleanedFull = stripForbiddenContent(
+                accumulatedContent.substring(0, Math.max(emittedLength, forbiddenAbsoluteIndex)),
+              );
               if (cleanedFull.length > emittedLength) {
                 controller.enqueue(sseEncoder({ type: "chunk", text: cleanedFull.substring(emittedLength) }));
               }
               accumulatedContent = cleanedFull;
               emittedLength = cleanedFull.length;
-              console.warn(`${logPrefix} Forbidden pattern detected and stripped at char ${checkEnd}`);
+              console.warn(`${logPrefix} Forbidden pattern detected and stripped at char ${forbiddenAbsoluteIndex}`);
               return;
             }
 
