@@ -82,6 +82,42 @@ const LOADING_MESSAGES = [
   "Finalizando análisis...",
 ];
 
+const STREAM_FORBIDDEN_PATTERNS: RegExp[] = [
+  /\[?la respuesta\s+(?:completa\s+)?supera\s+el\s+l[ií]mite/i,
+  /l[ií]mite\s+m[aá]ximo\s+permitido/i,
+  /l[ií]mite\s+t[eé]cnico\s+de\s+entrega/i,
+  /documento\s+aparte/i,
+  /carpeta\s+segura/i,
+  /\/Informes_RIX\//i,
+  /informes[_\s-]?rix/i,
+  /te\s+lo\s+dej[eé]\s+guardado/i,
+  /lo\s+he\s+dejado\s+en/i,
+];
+
+function sanitizeStreamContent(text: string): string {
+  let earliest = -1;
+  for (const pattern of STREAM_FORBIDDEN_PATTERNS) {
+    const match = pattern.exec(text);
+    if (match && match.index !== undefined) {
+      earliest = earliest === -1 ? match.index : Math.min(earliest, match.index);
+    }
+  }
+
+  if (earliest === -1) return text;
+
+  const beforeMatch = text.substring(0, earliest);
+  const lastBoundary = Math.max(
+    beforeMatch.lastIndexOf('. '),
+    beforeMatch.lastIndexOf('.\n'),
+    beforeMatch.lastIndexOf('\n\n'),
+    beforeMatch.lastIndexOf('---'),
+  );
+
+  return (lastBoundary > text.length * 0.2
+    ? text.substring(0, lastBoundary + 1)
+    : beforeMatch).trim();
+}
+
 export interface DrumrollQuestion {
   title: string;
   fullQuestion: string;
@@ -529,7 +565,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   
                   if (parsed.type === 'chunk' && parsed.text) {
                     accumulatedContent += parsed.text;
-                    // Update the last message with accumulated content
+                    accumulatedContent = sanitizeStreamContent(accumulatedContent);
+
+                    // Update the last message with accumulated (sanitized) content
                     setMessages(prev => {
                       const updated = [...prev];
                       const lastMsg = updated[updated.length - 1];
