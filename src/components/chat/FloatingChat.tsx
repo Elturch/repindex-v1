@@ -128,14 +128,14 @@ export function FloatingChat() {
     trackChatToggle(false);
   };
 
-  const handleSendMessage = (message: string) => {
+  const handleSendMessage = (message: string, options?: { depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string }) => {
     trackChatMessage(message.length, hasDynamicContext);
-    sendMessage(message);
+    sendMessage(message, options);
   };
 
   const handleSuggestionClick = (suggestion: string) => {
     trackChatSuggestionClick(suggestion);
-    sendMessage(suggestion);
+    sendMessage(suggestion, { depthLevel: 'exhaustive' });
   };
 
   return (
