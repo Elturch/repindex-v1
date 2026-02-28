@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { getRoleById } from "@/lib/chatRoles";
 import { useAuth } from "@/contexts/AuthContext";
-import { convertMarkdownToHtml, premiumTableStyles } from "@/lib/markdownToHtml";
+import { convertMarkdownToHtml, premiumTableStyles, emojiGridStyles } from "@/lib/markdownToHtml";
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
@@ -1192,6 +1192,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
             
             /* Tables - Premium Styling */
             ${premiumTableStyles}
+            
+            /* Emoji Result Grids */
+            ${emojiGridStyles}
             
             /* Technical Sheet - Legal Fine Print */
             ${technicalSheetStyles}
