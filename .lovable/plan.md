@@ -1,99 +1,140 @@
 
-Objetivo: eliminar por completo (en cualquier caso) respuestas de tipo “supera el límite” y garantizar entrega íntegra del informe en chat, aunque requiera varias continuaciones internas.
+Objetivo de esta iteración
+- Mantener la regla de profundidad (mínimo 4.500 palabras cuando aplique análisis corporativo), pero evitar respuestas infladas y, sobre todo, eliminar de forma robusta cualquier fallo de salida (mensajes de límite, carpeta, documento aparte, etc.).
+- Garantizar que el usuario siempre recibe una respuesta válida, continua y útil en chat.
 
-Diagnóstico confirmado
-- La alucinación sí sale del modelo durante el stream (session replay lo muestra literalmente, incluyendo “documento aparte” y “/Informes_RIX/...”).  
-- En `supabase/functions/chat-intelligence/index.ts` ya existe regla anti-truncación en prompts y `max_completion_tokens=40000`, pero eso no basta.
-- Causa técnica principal: el backend no detecta truncado por `finish_reason="length"` ni ejecuta continuación automática.
-- Causa técnica secundaria: el stream se reenvía en tiempo real sin “compliance gate”, así que si aparece una frase prohibida, ya llegó al usuario.
+Diagnóstico técnico confirmado (con evidencia del código y logs)
+1) El filtro anti-frases prohibidas no cubre todas las variantes reales
+- En logs recientes se coló: “supera el máximo de longitud permitido”.
+- Los patrones actuales en `supabase/functions/chat-intelligence/index.ts` y `src/contexts/ChatContext.tsx` buscan sobre todo “límite” y no cubren bien “longitud”.
+- Resultado: `hadForbiddenPattern=false` en ejecuciones donde sí se mostró texto prohibido.
 
-Plan de implementación
+2) Falta normalización robusta antes de validar
+- El matching actual usa regex directas sobre texto crudo.
+- Si el modelo emite acentos combinados/unicode variantes, el patrón puede fallar.
+- Resultado: bypass del compliance gate aunque la frase sea semánticamente igual.
 
-1) Detección formal de truncado y fin incompleto
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-- Extender `streamOpenAIResponse` y `streamGeminiResponse` para devolver también:
-  - `finishReason` (ej. `length`, `stop`, etc.)
-  - `wasTruncated` (boolean derivado)
-- Extender `callAIWithFallback` (modo no streaming) para devolver `finishReason` y `wasTruncated`.
-- Resultado: el sistema sabrá de forma explícita cuándo el modelo cortó por límite.
+3) El embudo está hiperforzado y favorece respuestas excesivas
+- En `handleStandardChat` hay instrucción explícita de mínimo 4.500 palabras para análisis de empresa.
+- La estructura exige muchos bloques obligatorios + tablas + 8 métricas extensas.
+- Resultado: tendencia a “sobreproducción”, mayor latencia y más probabilidad de incidencias de stream/continuaciones.
 
-2) Continuación automática multi-tramo (sin intervención del usuario)
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-- Crear helper unificado (ej. `generateCompleteReportWithContinuation`) con:
-  - máximo de tramos (p.ej. 4–6),
-  - prompt de continuación estricto: “Continúa exactamente desde la última frase útil, sin repetir, sin prólogos, sin mencionar límites/plataforma/archivos”.
-- Lógica:
-  - generar tramo 1,
-  - si `wasTruncated=true`, pedir tramo 2 y concatenar,
-  - repetir hasta `finishReason !== "length"` o alcanzar tope seguro.
-- Esto aplica a streaming y no-streaming para comportamiento consistente.
+4) Continuación automática funcional pero mejorable
+- Existe bucle de continuación, pero no hay control de “presupuesto de salida” por secciones.
+- En continuaciones se arrastra un contexto muy grande, lo que penaliza estabilidad.
+- Resultado: riesgo de degradación narrativa (respuestas largas pero menos “razonadas”).
 
-3) Guardrail anti-alucinación por contenido (regex de cumplimiento)
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-- Implementar validador de texto prohibido con variantes amplias:
-  - “supera el límite”, “límite máximo permitido”, “límite técnico”,
-  - “documento aparte”, “carpeta segura”, “/Informes_RIX”, “te lo dejé guardado”, etc.
-- Si detecta patrón prohibido:
-  - no dar por válida la respuesta,
-  - ejecutar regeneración/continuación correctiva automática con instrucción de cumplimiento,
-  - solo cerrar cuando el contenido final esté limpio.
-- Importante: incluir también la variante exacta reportada por ti (“La respuesta supera el límite máximo permitido en esta plataforma.”).
+5) Clasificación demasiado permisiva a “corporate_analysis”
+- `categorizeQuestion` cae por defecto en `corporate_analysis`.
+- Preguntas de prueba o prompts inyectados pueden acabar en pipeline de informe largo.
+- Resultado: más exposición a respuestas no deseadas.
 
-4) Compliance gate en streaming (para que nunca se vea texto prohibido)
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-- Cambiar estrategia de emisión:
-  - buffer interno con “holdback window” (cola de caracteres),
-  - validar antes de hacer `enqueue` al cliente,
-  - emitir solo texto que ya pasó el filtro.
-- Si aparece patrón prohibido en buffer:
-  - cortar ese tramo internamente,
-  - lanzar continuación correctiva,
-  - seguir stream sin exponer el texto prohibido.
-- Resultado: aunque el modelo intente esa frase, no llega a UI.
+Plan de implementación propuesto
 
-5) Refuerzo adicional de prompts (defensa en profundidad)
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-- Mantener reglas actuales y ampliar redacción:
-  - prohibición explícita de “límite máximo permitido en esta plataforma”,
-  - prohibición de prometer exportaciones/ficheros no existentes,
-  - instrucción de continuidad silenciosa (“si falta espacio, continúa directamente en el siguiente tramo interno”).
-- Esto reduce probabilidad; la garantía real la dan los puntos 1–4.
+Fase 1 — Blindaje real de cumplimiento (no más mensajes de límite)
+Archivo principal: `supabase/functions/chat-intelligence/index.ts`  
+Archivo complementario: `src/contexts/ChatContext.tsx`
 
-6) Metadatos de observabilidad para depurar futuros casos
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-- Añadir en logs/metadata:
-  - `segmentsGenerated`,
-  - `hadTruncation`,
-  - `hadForbiddenPattern`,
-  - `finalProvider`,
-  - `finalOutputLength`.
-- Permite auditar rápidamente si hubo cortes internos y cómo se resolvieron.
+1.1 Normalización previa al filtrado
+- Crear helper único de normalización para compliance:
+  - lower-case,
+  - `normalize("NFD")` + eliminación de diacríticos,
+  - colapso de espacios múltiples,
+  - normalización de comillas/símbolos.
+- Aplicarlo en backend y frontend antes de evaluar patrones.
 
-7) Ajuste de UX en frontend para transparencia técnica (sin cambiar experiencia de usuario)
-- Archivo: `src/contexts/ChatContext.tsx` (solo si hace falta mostrar estado)
-- Mantener un único mensaje de asistente.
-- Opcional: mostrar loading más claro (“Completando informe…”) mientras backend encadena tramos.
-- No exponer nunca mensajes de “límite” al usuario.
+1.2 Ampliación de patrones prohibidos (familias semánticas)
+- Añadir cobertura para variantes con “longitud”, no solo “límite”:
+  - “máximo de longitud permitido”,
+  - “supera la longitud máxima”,
+  - “response generated in this platform exceeds…”, etc.
+- Añadir patrones por intención, no solo frase exacta:
+  - mención de archivo/carpeta/ruta/guardado externo,
+  - promesas de entrega fuera del chat.
 
-Validación propuesta (criterios de aceptación)
-- Caso A (empresa + respuesta muy larga): nunca aparece texto de límite/carpeta; informe completo entregado.
-- Caso B (forzar truncado): backend concatena automáticamente múltiples tramos en una sola respuesta final visible.
-- Caso C (regex de frase prohibida): el texto prohibido no llega al chat.
-- Caso D (fallback OpenAI→Gemini): mantiene mismas garantías de no-truncación/no-alucinación.
-- Revisar logs de `chat-intelligence` para verificar `hadTruncation=true` y respuesta final correcta cuando aplique.
+1.3 Escaneo incremental robusto en stream
+- Mantener holdback, pero validar contra ventana normalizada incremental.
+- Detectar frases aunque crucen chunks y aunque vengan con caracteres raros.
+- Al detectar:
+  - recortar al último boundary limpio,
+  - bloquear emisión del segmento contaminado,
+  - forzar continuación automática sin exponer texto prohibido.
 
-Impacto
-- Archivos principales: 
-  - `supabase/functions/chat-intelligence/index.ts` (núcleo de la solución),
-  - opcional `src/contexts/ChatContext.tsx` (solo UX de carga).
-- Sin cambios de esquema DB.
-- Sin cambios funcionales de negocio: solo robustez de entrega y eliminación de este fallo crítico.
+1.4 Paridad backend/frontend
+- Unificar listas de patrones y criterio de normalización (evitar desalineación).
+- Frontend sigue como “última red de seguridad”, backend como “gate principal”.
+
+Fase 2 — Calidad de salida: 4.500 sí, pero con control de tamaño y densidad
+Archivo principal: `supabase/functions/chat-intelligence/index.ts`
+
+2.1 Política de longitud por tipo de consulta (razonada)
+- Mantener mínimo 4.500 para análisis corporativo completo.
+- Introducir objetivo de rango (ej. 4.500–5.400) para evitar “Biblia en verso”.
+- Si no es análisis corporativo completo, mantener respuesta focalizada (sin forzar macro-informe).
+
+2.2 Presupuesto por secciones del embudo
+- Definir guidance de distribución (resumen, pilares, cierre) para evitar expansión desbalanceada.
+- Priorizar densidad analítica (hechos + interpretación), no repetición decorativa.
+
+2.3 Cierre por suficiencia
+- Añadir instrucción explícita de “terminar cuando el análisis quede completo y accionable”, sin alargar por inercia.
+- Evitar duplicar ideas entre pilares.
+
+Fase 3 — Continuación automática más estable
+Archivo principal: `supabase/functions/chat-intelligence/index.ts`
+
+3.1 Continuaciones con contexto mínimo efectivo
+- En lugar de reinyectar demasiado contenido, usar un prompt de continuación más compacto:
+  - estado de sección actual,
+  - último fragmento limpio,
+  - reglas estrictas de no repetición.
+- Reducir carga y deriva en cada tramo.
+
+3.2 Señales de finalización de contenido
+- Terminar continuaciones cuando:
+  - no hay truncado,
+  - no hay contenido prohibido,
+  - se cumplen mínimos y estructura útil.
+
+3.3 Non-streaming con misma robustez
+- Igualar el comportamiento de continuación y compliance en modo no streaming para que no haya rutas débiles.
+
+Fase 4 — Guardrails de entrada para evitar pipeline incorrecto
+Archivo principal: `supabase/functions/chat-intelligence/index.ts`
+
+4.1 Endurecer categorización
+- Evitar que prompts de prueba/inyección entren por defecto a `corporate_analysis`.
+- Si no hay empresa/sector claro y el prompt parece instrucción de bypass, redirigir a respuesta segura corta.
+
+4.2 Detección de instrucciones “responde literalmente…”
+- Tratar como “test_limits” cuando corresponda, sin activar embudo largo.
+
+Fase 5 — Observabilidad y validación operativa
+Archivo principal: `supabase/functions/chat-intelligence/index.ts`
+
+5.1 Telemetría adicional
+- Registrar:
+  - `forbiddenPatternMatched` (valor normalizado),
+  - `normalizedMatchSample`,
+  - `continuationCount`,
+  - `targetWordRangeHit` (sí/no),
+  - `finalWordCount`.
+
+5.2 Criterios de aceptación
+- Nunca aparece en UI texto de límite/carpeta/documento externo (incluyendo variantes “longitud”).
+- Análisis corporativo completo: >= 4.500 palabras y dentro del rango objetivo sin relleno excesivo.
+- Preguntas no corporativas: respuesta focalizada, sin activar macro-informe.
+- Continuaciones internas transparentes al usuario (una sola respuesta coherente en chat).
 
 Riesgos y mitigación
-- Mayor latencia en respuestas muy largas: mitigado con streaming buffered y mensajes de progreso.
-- Riesgo de bucles de continuación: mitigado con tope de tramos + salida segura.
-- Riesgo de falsos positivos en regex: usar lista acotada y normalización de texto (acentos/case).
+- Riesgo: falsos positivos por regex demasiado agresiva  
+  Mitigación: matching por intención + whitelist de contextos válidos + pruebas con corpus real.
+- Riesgo: incremento de latencia por continuaciones  
+  Mitigación: menor contexto por tramo + topes de continuación + presupuestos de sección.
+- Riesgo: desajuste backend/frontend  
+  Mitigación: fuente única de patrones y normalización equivalente en ambos lados.
 
-Resultado esperado
-- Cero apariciones de “supera el límite…” o “guardado en carpeta…”.
-- Entrega exhaustiva real dentro del chat, incluso cuando el contenido exceda un único tramo de generación.
+Impacto esperado
+- Se elimina el patrón de fallos repetidos de salida.
+- Se conserva profundidad ejecutiva real (4.500+) sin deriva a respuestas innecesariamente interminables.
+- Mejora perceptible de calidad: respuestas “las que tienen que ser”, razonadas y estables.
