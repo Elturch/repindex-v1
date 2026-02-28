@@ -1,39 +1,45 @@
 
 
-# Plan: Permitir lanzar `auto_generate_newsroom` desde el proxy
+# Eliminar boton de Boletin Ejecutivo y codigo relacionado
 
-## Problema
+## Resumen
 
-La edge function `admin-cron-triggers` tiene una lista cerrada de acciones permitidas (`ALLOWED_ACTIONS`) que no incluye `auto_generate_newsroom` ni `auto_sanitize`. Esto impide:
-1. Que yo (Lovable) pueda insertar triggers directamente
-2. Que el panel de Cron Monitor pueda lanzarlo manualmente
-3. Que cualquier operacion administrativa lo dispare sin acceso directo a la BD
+Eliminar el boton de generar boletin ejecutivo (icono FileText) del chat input y limpiar todo el codigo asociado en el frontend. El backend (chat-intelligence) se deja intacto para no romper compatibilidad.
 
-## Solucion
+## Archivos afectados
 
-Agregar las acciones faltantes a la lista `ALLOWED_ACTIONS` en `admin-cron-triggers`.
+### 1. `src/components/chat/ChatInput.tsx`
+- Eliminar el estado `bulletinModeActive` y `setBulletinModeActive`
+- Eliminar la funcion `handleBulletinClick`
+- Eliminar el `useEffect` que resetea el bulletin mode
+- Eliminar el boton con icono `FileText` y su Tooltip
+- Eliminar `bulletinMode` del objeto `options` en `onSend`
+- Eliminar la referencia a `bulletinModeActive` en el placeholder y className del Textarea
+- Eliminar `bulletinMode` de la interfaz `ChatInputProps.onSend`
+- Eliminar el import de `FileText` de lucide-react
 
-## Cambio tecnico
+### 2. `src/components/chat/FloatingChat.tsx`
+- Eliminar `bulletinMode` del tipo de `handleSendMessage`
 
-**Archivo:** `supabase/functions/admin-cron-triggers/index.ts`
+### 3. `src/contexts/ChatContext.tsx`
+- Eliminar `bulletinMode` del tipo de `sendMessage`
+- Eliminar la logica de extraccion de `bulletinCompanyName`
+- Eliminar `bulletinMode` y `bulletinCompanyName` del body enviado a la API
+- Eliminar la funcion helper `getTimeoutForRequest` de su logica de bulletin (mantener timeouts por depth)
+- Eliminar el tipo `'bulletin'` de `MessageMetadata.type`
+- Eliminar el toast de "Boletin generado"
 
-Linea 55, cambiar:
+### 4. `src/components/chat/ChatMessages.tsx`
+- Eliminar el import de `CompanyBulletinViewer`
+- Eliminar la rama condicional que renderiza `CompanyBulletinViewer` para mensajes tipo bulletin
 
-```typescript
-// ANTES
-type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'repair_invalid_responses' | 'get_latest'
+### 5. `src/components/chat/CompanyBulletinViewer.tsx`
+- Eliminar el archivo completo
 
-const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'repair_invalid_responses', 'get_latest']
-```
+### 6. `src/lib/chatTranslations.ts`
+- Eliminar las propiedades `generateBulletin`, `bulletinPromptPrefix` e `inputPlaceholderBulletin` de la interfaz `ChatTranslations` y de los 10 idiomas
 
-```typescript
-// DESPUES
-type AllowedAction = 'repair_analysis' | 'auto_populate_vectors' | 'vector_store_continue' | 'repair_invalid_responses' | 'auto_generate_newsroom' | 'auto_sanitize' | 'get_latest'
+## Lo que NO se toca
 
-const ALLOWED_ACTIONS: AllowedAction[] = ['repair_analysis', 'auto_populate_vectors', 'vector_store_continue', 'repair_invalid_responses', 'auto_generate_newsroom', 'auto_sanitize', 'get_latest']
-```
-
-## Despues del despliegue
-
-Inmediatamente llamare al proxy para insertar el trigger `auto_generate_newsroom` con `attempt: 1` y verificare que el orquestador lo recoge en su siguiente ciclo.
+- **`supabase/functions/chat-intelligence/index.ts`**: La funcion `handleBulletinRequest` y la logica de `bulletinMode` en el backend se mantienen intactas. Simplemente nunca recibira `bulletinMode: true` desde el frontend, asi que el codigo queda inerte pero no rompe nada.
 
