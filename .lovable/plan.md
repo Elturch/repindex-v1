@@ -1,68 +1,77 @@
 
-# Coherencia estetica del informe exportado
 
-## Problemas detectados en el HTML actual
+# Mejoras de coherencia estetica en el informe exportado
 
-### 1. Cabeceras de seccion inconsistentes
-- "RESUMEN EJECUTIVO" y "PILAR 1" se renderizan como `<hr> + <p> + <hr>` (lineas finas grises, texto plano sin fondo).
-- "PILAR 2", "PILAR 3", "CIERRE" y "FUENTES" usan `.section-band` (fondo azul claro, bordes azules, aspecto profesional).
-- Causa: el LLM usa `---` (markdown HR) para las primeras secciones y `════` para las posteriores. El parser solo convierte el patron `════/TITULO/════` a section-band, pero no detecta `---/TITULO/---`.
+## Problemas diagnosticados en el HTML actual
 
-### 2. Emojis de semaforo (colores) mal situados
-- En las celdas de la tabla, emojis como `🟢 🔴 🟡` aparecen inline pegados al texto sin separacion visual.
-- En las lineas de metricas ("61 pts 🟡") cada metrica queda en su propia `<ol>` aislada (con un unico `<li>`), en lugar de agruparse en una tabla de metricas cohesiva. El parser `processNumberedMetricBlocks` requiere 2+ metricas consecutivas dentro de un mismo `<ol>`, pero como cada una esta separada por un parrafo explicativo, no se agrupan.
+### 1. Negritas rotas y mal distribuidas
+El auto-highlighter produce cortes absurdos:
+- `<strong>DICTAMEN</strong> PERICIAL` — parte un titulo
+- `<strong>Grok y</strong> DeepSeek` — parte una frase a mitad
+- `<strong>Foco de</strong> riesgo` — idem
+- Secciones V, VI, VII y VIII no tienen ninguna negrita
 
-### 3. Negritas automaticas rompiendo frases
-- `<strong>RESUMEN</strong> EJECUTIVO` — la auto-negrita partio el titulo.
-- `<strong>Promedio Semana 2026</strong>-03-01` — partio una fecha.
-- `<strong>Cuatro de</strong> seis IAs` — partio una frase a mitad.
-- `<strong>Suba el</strong> ratio` — igual.
-- Causa: el regex de nombres propios detecta "Promedio Semana" o "Cuatro de" como nombres propios por la mayuscula.
+**Causa raiz**: El regex de nombres propios captura "Grok y" o "Foco de" como nombre propio porque "y" y "de" estan en la lista de conectores permitidos. Ademas, el bloque de texto donde esta el titulo "DICTAMEN PERICIAL..." se cuenta como un unico bloque gigante que consume varias negritas, dejando los bloques posteriores sin presupuesto.
 
-### 4. Sub-titulos internos sin formato
-- Lineas como "Las 8 Metricas (promedio ponderado)", "3 Hallazgos", "3 Recomendaciones", "5 Mensajes para la Direccion" quedan como parrafos planos (`<p>`), sin distincion visual respecto al cuerpo de texto.
+### 2. Metricas numeradas no se reagrupan
+Las 8 metricas (lineas tipo `1. Calidad de la Narrativa -- 68 🟡`) quedan cada una en su propio `<ol>` aislado. `regroupIsolatedMetrics` no las detecta porque busca emojis ya envueltos en `<span class="emoji-status">`, pero a esa altura del pipeline los emojis todavia son texto plano.
+
+### 3. Cabecera principal no se convierte a section-band
+El titulo "DICTAMEN PERICIAL DE REPUTACION ALGORITMICA..." esta entre dos `<hr>` pero `unifyHrTitleHeaders` lo rechaza porque el texto contiene minusculas y es demasiado largo. No es un section-band, es un titulo compuesto con subtexto.
+
+### 4. Titulos de seccion con numerales romanos sin formato
+"I. IDENTIFICACION DEL OBJETO", "IV. ANALISIS POR METRICA", "VII. CONCLUSIONES PERICIALES" son parrafos planos sin distincion visual.
 
 ## Plan de cambios
 
 ### Archivo: `src/lib/markdownToHtml.ts`
 
-**Cambio 1 — Detectar patron `<hr>/TITULO/<hr>` como section-band**
-En `processDecorativeSectionHeaders` (o como post-proceso), detectar secuencias `<hr>\n<p>TEXTO</p>\n<hr>` donde TEXTO es un titulo corto en mayusculas y convertirlas a `<div class="section-band">`. Esto unifica el aspecto de todas las cabeceras de seccion.
+**Cambio 1 -- Corregir el regex de nombres propios (lineas ~652-672)**
 
-**Cambio 2 — Mejorar posicionamiento de emojis de semaforo**
-- En tablas: actualizar `processEmojis` para que los emojis de semaforo (circulos de colores) reciban una clase CSS especifica (`.emoji-status`) con separacion izquierda y alineacion vertical.
-- Anadir CSS para `.emoji-status` en `emojiGridStyles` y `premiumTableStyles`.
+El problema principal es que "y", "de", "del" actuan como conectores dentro del match, produciendo capturas como "Grok y" o "Foco de". Fix:
+- Requerir que el match termine en una palabra capitalizada o acronimo (no en un conector).
+- Excluir matches cuyo texto contenga solo 2 palabras y la segunda sea un conector.
+- Tambien excluir matches que incluyan texto en mayusculas que forma parte de un titulo de seccion (todo mayusculas).
 
-**Cambio 3 — Agrupar metricas separadas por parrafos**
-El patron real del LLM es:
-```text
-1. Metrica — 61 pts 🟡
-<parrafo explicativo>
-2. Metrica — 54 pts 🟡
-<parrafo explicativo>
+**Cambio 2 -- Aumentar MAX_HIGHLIGHTS y mejorar distribucion (lineas ~710-785)**
+
+- Subir MAX_HIGHLIGHTS de 15 a 20 para informes largos como este (8+ secciones).
+- Hacer el calculo del presupuesto proporcional al tamano del bloque (no solo al numero de candidatos), para que bloques largos de texto reciban mas cupo.
+- Garantizar minimo 1 highlight en los ultimos 30% del documento aunque la prioridad general ya este agotada.
+
+**Cambio 3 -- Arreglar regroupIsolatedMetrics para emojis sin envolver (lineas ~1275)**
+
+El regex `metricLiPattern` busca `<span class="emoji...">` pero cuando se ejecuta, los emojis aun no se han envuelto. Cambiar el patron para que acepte tanto emojis crudos como emojis ya envueltos en span.
+
+Regex actual:
 ```
-Cada metrica queda en un `<ol>` propio con 1 `<li>`. El fix: detectar este patron post-conversion (multiples `<ol>` de 1 `<li>` con metrica+emoji, separados por `<p>`) y reagruparlos en una tabla `emoji-metrics-table`, dejando los parrafos explicativos debajo de cada fila o como bloque aparte tras la tabla.
+/^<li>(.+?)\s*[—\-:]\s*(.+?)\s*(<span class="emoji[^"]*">(...)<\/span>)\s*<\/li>$/u
+```
+Regex corregido: aceptar tambien emoji crudo directamente:
+```
+/^<li>(.+?)\s*[—\-:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u
+```
 
-**Cambio 4 — Proteger titulos y fechas del auto-negrita**
-En `highlightSmartKeywords`:
-- Excluir matches que empiecen justo despues de `---` o `===` (lineas de cabecera).
-- Excluir matches donde el texto capturado forme parte de una fecha (patron `\d{4}-\d{2}`).
-- Filtrar falsos positivos de nombres propios: requerir que cada palabra tenga 3+ caracteres (excluir "de", "el", "las" como parte del match) y que no sean inicio de frase tras punto.
-- Anadir lista de exclusion: palabras comunes que empiezan con mayuscula por estar al inicio de frase ("Cuatro", "Suba", "Vision", "Cinco", "Solo").
+**Cambio 4 -- Detectar titulos con numerales romanos como section-band o subsection**
 
-**Cambio 5 — Sub-titulos internos con formato visual**
-Detectar lineas cortas (< 60 chars) que son text puro sin puntuacion final y que actuan como sub-titulos (ej. "3 Hallazgos", "Las 8 Metricas"). Convertirlas a `<h3>` o un `<div class="subsection-title">` con estilo editorial (negrita, tamano intermedio, algo de margen superior).
+Detectar lineas que comienzan con numeral romano seguido de titulo en mayusculas:
+- Patron: `^(I|II|III|IV|V|VI|VII|VIII|IX|X)[.\s]+[A-Z][A-Z\s]+`
+- Si el titulo es corto (<60 chars) y todo en mayusculas: convertir a `<div class="subsection-title">`
+- Actualizar `processSubsectionTitles` para incluir este patron.
 
-**Cambio 6 — CSS para coherencia visual**
-- `.subsection-title`: font-size 15px, font-weight 600, margin-top 28px, border-bottom 1px solid, color var(--text).
-- `.emoji-status`: margin-left 6px, vertical-align middle, font-size 1em.
-- Ajustar `.section-band` para que el titulo tenga font-size 13px (no mas grande que los h2 del cuerpo).
+**Cambio 5 -- Mejorar unifyHrTitleHeaders para titulos compuestos**
 
-## Resultado esperado
+Cuando el texto entre dos `<hr>` es largo y contiene mezcla de mayusculas/minusculas, no convertir a section-band sino dejarlo como un bloque destacado con clase `.report-dictamen-header` (un div con fondo gris claro, padding, y tipografia mas grande). Alternativamente, si el texto contiene linebreaks logicos, extraer solo la primera linea (la parte en mayusculas) como section-band y dejar el resto como parrafo normal.
 
-- Todas las cabeceras de seccion (RESUMEN EJECUTIVO, PILAR 1, PILAR 2, PILAR 3, CIERRE, FUENTES) tendran identico formato visual: banda con fondo `#f0f4f8` y bordes azules.
-- Los emojis de semaforo en tablas estaran correctamente separados y alineados.
-- Las metricas numeradas con emoji formaran una tabla cohesiva en lugar de listas de 1 elemento.
-- Las negritas automaticas no partiran frases ni fechas.
-- Los sub-titulos internos tendran distincion visual clara respecto al texto.
-- Coherencia estetica total entre todas las secciones del informe.
+**Cambio 6 -- CSS para nuevo estilo de cabecera de dictamen**
+
+No se necesita un nuevo estilo especial: basta con que `unifyHrTitleHeaders` sea mas flexible. Si el texto entre `<hr>` es largo (>80 chars), tomar solo las primeras palabras en mayusculas como titulo de section-band y dejar el resto como primer parrafo.
+
+## Resumen de impacto
+
+- 1 archivo modificado: `src/lib/markdownToHtml.ts`
+- Cambios en 5 funciones existentes, sin funciones nuevas
+- Las negritas se distribuiran uniformemente en todo el documento
+- Las 8 metricas se agruparan en tabla cohesiva
+- Los titulos con numerales romanos tendran formato visual
+- Sin cambios en backend ni componentes UI
