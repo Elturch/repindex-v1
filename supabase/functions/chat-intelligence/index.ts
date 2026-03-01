@@ -670,6 +670,11 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /(?:adjunto|archivo|fichero)\s+(?:separado|externo|adicional)/,
   /(?:te\s+envio|te\s+mando|te\s+remito)\s+(?:el\s+)?(?:informe|documento|archivo)/,
   /puedes?\s+descargar(?:lo)?\s+(?:desde|en)/,
+  // === Family: meta-commentary about response delivery ===
+  /\[?\s*la\s+respuesta\s+completa\s+se\s+ha\s+entregado/,
+  /debido\s+a\s+la\s+longitud.*lectura\s+puede\s+requerir/,
+  /si\s+necesita\s+aclaraciones\s+sobre\s+alguna\s+seccion.*profundizare/,
+  /siguiendo\s+la\s+estructura.*profundidad\s+requerida/,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
