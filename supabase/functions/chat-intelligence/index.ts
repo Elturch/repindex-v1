@@ -1279,15 +1279,18 @@ La estructura se adapta a lo que el usuario pregunta. Activa solo los bloques
 que aporten valor a la consulta concreta. Si un bloque no aplica, omítelo.
 
 Escala de profundidad según tipo de consulta:
-- Análisis de empresa: máxima profundidad — RANGO OBJETIVO: 4.500–5.400 palabras.
-  No escribas menos de 4.500 ni te extiendas más allá de 5.400 sin motivo analítico claro.
+- SI LA PREGUNTA MENCIONA UNA EMPRESA (nombre, ticker o sector con empresa implícita):
+  SIEMPRE informe completo con Embudo Narrativo — RANGO OBJETIVO: 4.500–5.400 palabras.
+  NO existe la opción "respuesta corta" para consultas sobre empresas.
+  Aunque la pregunta parezca pedir solo un dato o métrica, el análisis corporativo
+  SIEMPRE requiere el contexto completo del Embudo Narrativo.
   Prioriza DENSIDAD ANALÍTICA (hechos + interpretación + recomendación) sobre repetición decorativa.
   Distribución orientativa: Resumen ~600 · Pilar 1 ~1.500 · Pilar 2 ~1.200 · Pilar 3 ~1.000 · Cierre ~200.
   Termina cuando el análisis esté completo y sea accionable. No alargues por inercia.
   No dupliques ideas entre pilares — cada sección aporta información nueva.
-- Análisis sectorial: profundidad media — activa bloques relevantes
-- Comparativa entre empresas: estructura enfrentada — tabla vs. tabla
-- Pregunta concreta (un dato, una métrica): respuesta focalizada — solo lo pedido
+- Análisis sectorial: profundidad media — activa bloques relevantes (mínimo 2.500 palabras)
+- Comparativa entre empresas: estructura enfrentada — tabla vs. tabla (mínimo 3.000 palabras)
+- Pregunta sin empresa (metodología, conceptos, datos generales): respuesta focalizada
 
 El rol del usuario modifica el ÁNGULO/TONO pero NUNCA elimina datos relevantes.
 
@@ -6101,7 +6104,7 @@ El usuario ha solicitado que la respuesta esté adaptada a la perspectiva de ${r
 ## REGLA DE PRIORIDAD
 
 1. PRIORIDAD 1 (ESTRUCTURA): Embudo Narrativo adaptable (activa los bloques relevantes)
-2. PRIORIDAD 2 (PROFUNDIDAD): Si es análisis de empresa → mínimo 2.500 palabras; si es pregunta concreta → respuesta focalizada sin relleno
+2. PRIORIDAD 2 (PROFUNDIDAD): Si menciona empresa → informe completo 4.500-5.400 palabras (OBLIGATORIO). Solo para preguntas SIN empresa → respuesta focalizada
 3. PRIORIDAD 3 (TONO): Adapta el ángulo y enfoque al rol "${roleName}"
 
 El rol "${roleName}" modifica CÓMO presentas el contenido (ángulo, tono), pero NUNCA
@@ -6156,8 +6159,9 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
 6. NARRATIVA: Construye un relato coherente. Fundamenta con datos literales
    del contexto. Explica cada métrica en su primera mención.
 
-7. Para preguntas concretas (un dato, una métrica): respuesta focalizada
-   sin relleno, pero siempre rigurosa y con evidencia.
+7. Solo para preguntas SIN EMPRESA (metodología, conceptos generales): respuesta
+   focalizada sin relleno. Si la pregunta menciona cualquier empresa, SIEMPRE
+   aplica el informe completo de 4.500-5.400 palabras con Embudo Narrativo.
 
 8. MÉTRICAS INDIVIDUALES: Para análisis de empresa, dedica un párrafo
    COMPLETO (4-6 oraciones) a CADA una de las 8 métricas dimensionales.
@@ -6336,26 +6340,42 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           }
 
           // =================================================================
-          // AUTO-CONTINUATION: If truncated or forbidden pattern detected,
-          // automatically continue generation without user intervention
+          // AUTO-CONTINUATION: If truncated, forbidden pattern detected,
+          // or corporate report too short — auto-continue
           // =================================================================
-          const MAX_CONTINUATIONS = 4;
+          const MAX_CONTINUATIONS = 6;
+          const MIN_CORPORATE_CHARS = 18000; // ~4500 palabras en español
+          const isCorporateQuery = detectedCompanies.length > 0;
+
+          const checkTooShort = () => isCorporateQuery && accumulatedContent.length < MIN_CORPORATE_CHARS;
+
           while (
-            (streamFinishReason === "length" || forbiddenDetected) &&
+            (streamFinishReason === "length" || forbiddenDetected || checkTooShort()) &&
             segmentsGenerated <= MAX_CONTINUATIONS
           ) {
+            const isTooShortNow = checkTooShort();
             hadTruncation = true;
             segmentsGenerated++;
             forbiddenDetected = false;
             streamFinishReason = "";
 
-            console.log(`${logPrefix} Auto-continuation #${segmentsGenerated - 1} (reason: ${hadForbiddenPattern ? "forbidden_pattern" : "truncation"}, accumulated: ${accumulatedContent.length} chars)...`);
+            const reason = isTooShortNow ? "too_short" : (hadForbiddenPattern ? "forbidden_pattern" : "truncation");
+            console.log(`${logPrefix} Auto-continuation #${segmentsGenerated - 1} (reason: ${reason}, accumulated: ${accumulatedContent.length} chars)...`);
 
             // Compact continuation: only last 500 chars for context, not the full content
             const lastChunk = accumulatedContent.slice(-500);
+
+            const continuationSystemPrompt = isTooShortNow
+              ? `Eres el Agente Rix. Tu respuesta anterior es DEMASIADO BREVE para un informe corporativo. Debes completar TODAS las secciones del Embudo Narrativo: Resumen Ejecutivo, Pilar 1 (DEFINIR), Pilar 2 (ANALIZAR), Pilar 3 (PROSPECTAR) y Cierre. El informe completo debe alcanzar 4.500-5.400 palabras. REGLAS: 1) No repitas contenido ya escrito. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) Continúa añadiendo las secciones que faltan. Responde en ${languageName}.`
+              : `Eres el Agente Rix continuando un informe de reputación corporativa. Continúa EXACTAMENTE desde el punto donde se interrumpió. REGLAS ESTRICTAS: 1) No repitas contenido. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) No añadas prólogos ni transiciones. 4) Mantén formato, tono y estructura. 5) Si el informe está completo, escribe solo una frase de cierre. Responde en ${languageName}.`;
+
+            const continuationUserPrompt = isTooShortNow
+              ? `Tu informe está incompleto (${accumulatedContent.length} caracteres, necesitas al menos ${MIN_CORPORATE_CHARS}). Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa añadiendo las secciones que faltan del Embudo Narrativo. No repitas nada.`
+              : `El informe se interrumpió. Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa escribiendo desde ahí. No repitas nada.`;
+
             const continuationMessages = [
-              { role: "system", content: `Eres el Agente Rix continuando un informe de reputación corporativa. Continúa EXACTAMENTE desde el punto donde se interrumpió. REGLAS ESTRICTAS: 1) No repitas contenido. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) No añadas prólogos ni transiciones. 4) Mantén formato, tono y estructura. 5) Si el informe está completo, escribe solo una frase de cierre. Responde en ${languageName}.` },
-              { role: "user", content: `El informe se interrumpió. Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa escribiendo desde ahí. No repitas nada.` },
+              { role: "system", content: continuationSystemPrompt },
+              { role: "user", content: continuationUserPrompt },
             ];
 
             const contGen = provider === "gemini"
@@ -6574,31 +6594,50 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   let chatResult = await callAIWithFallback(messages, "o3", 40000, logPrefix);
   let answer = chatResult.content;
 
-  // Non-streaming compliance gate: check for forbidden patterns and auto-continue (up to 4 attempts)
+  // Non-streaming compliance gate: check for forbidden patterns + length enforcement
   let nonStreamSegments = 1;
   let nonStreamHadForbidden = false;
-  const MAX_NS_CONTINUATIONS = 4;
+  const MAX_NS_CONTINUATIONS = 6;
+  const NS_MIN_CORPORATE_CHARS = 18000;
+  const nsIsCorporateQuery = detectedCompanies.length > 0;
+
+  const nsCheckTooShort = () => nsIsCorporateQuery && answer.length < NS_MIN_CORPORATE_CHARS;
   
-  while (containsForbiddenPattern(answer) && nonStreamSegments <= MAX_NS_CONTINUATIONS) {
-    nonStreamHadForbidden = true;
+  while ((containsForbiddenPattern(answer) || nsCheckTooShort()) && nonStreamSegments <= MAX_NS_CONTINUATIONS) {
+    const isTooShort = nsCheckTooShort();
+    const hasForbidden = containsForbiddenPattern(answer);
+    
+    if (hasForbidden) {
+      nonStreamHadForbidden = true;
+      answer = stripForbiddenContent(answer);
+    }
+    
     nonStreamSegments++;
-    console.warn(`${logPrefix} Non-streaming: forbidden pattern detected (attempt ${nonStreamSegments}), stripping and continuing...`);
-    answer = stripForbiddenContent(answer);
+    const reason = isTooShort ? "too_short" : "forbidden_pattern";
+    console.warn(`${logPrefix} Non-streaming: ${reason} detected (attempt ${nonStreamSegments}, chars: ${answer.length}), continuing...`);
+    
     try {
       const lastChunk = answer.slice(-500);
+
+      const sysPrompt = isTooShort
+        ? `Eres el Agente Rix. Tu respuesta anterior es DEMASIADO BREVE para un informe corporativo. Debes completar TODAS las secciones del Embudo Narrativo. El informe debe alcanzar 4.500-5.400 palabras. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.`
+        : `Eres el Agente Rix continuando un informe. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.`;
+
+      const userPrompt = isTooShort
+        ? `Tu informe está incompleto (${answer.length} caracteres, necesitas al menos ${NS_MIN_CORPORATE_CHARS}). Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa añadiendo las secciones que faltan. No repitas.`
+        : `El informe se interrumpió. Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa desde ahí. No repitas.`;
+
       const contMessages = [
-        { role: "system", content: `Eres el Agente Rix continuando un informe. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.` },
-        { role: "user", content: `El informe se interrumpió. Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa desde ahí. No repitas.` },
+        { role: "system", content: sysPrompt },
+        { role: "user", content: userPrompt },
       ];
       const contResult = await callAIWithFallback(contMessages, "o3", 40000, logPrefix);
-      if (!containsForbiddenPattern(contResult.content)) {
-        answer += "\n\n" + contResult.content;
-        chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
-        break; // Clean continuation, done
-      } else {
-        // Strip again and loop
-        answer += "\n\n" + stripForbiddenContent(contResult.content);
-        chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
+      answer += "\n\n" + (containsForbiddenPattern(contResult.content) ? stripForbiddenContent(contResult.content) : contResult.content);
+      chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
+      
+      // If no forbidden and length OK, we're done
+      if (!containsForbiddenPattern(answer) && !nsCheckTooShort()) {
+        break;
       }
     } catch (contError) {
       console.warn(`${logPrefix} Non-streaming continuation failed:`, contError);
@@ -6606,8 +6645,8 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
     }
   }
   
-  if (nonStreamHadForbidden) {
-    console.log(`${logPrefix} Non-streaming compliance: ${nonStreamSegments} segments, final clean: ${!containsForbiddenPattern(answer)}`);
+  if (nonStreamHadForbidden || nonStreamSegments > 1) {
+    console.log(`${logPrefix} Non-streaming compliance: ${nonStreamSegments} segments, final length: ${answer.length}, clean: ${!containsForbiddenPattern(answer)}`);
   }
 
   console.log(`${logPrefix} AI response received (via ${chatResult.provider}), length: ${answer.length}`);
