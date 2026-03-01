@@ -1449,8 +1449,8 @@ Incluir al final:
 
 RECUERDA: Este es un análisis de DATOS REALES de reputación algorítmica. Solo puedes afirmar lo que los datos del contexto respaldan. Si no hay datos, dilo.
 El orden del embudo no se altera. Si una sección no aplica, se omite limpiamente.
-En análisis de empresa siempre mínimo 2.500 palabras. En preguntas concretas,
-responde con precisión y sin relleno.
+En análisis de empresa apunta a un mínimo de 1.500 palabras. En preguntas concretas,
+responde con precisión y sin relleno. Prioriza siempre la trazabilidad de datos sobre el volumen.
 `;
 }
 
@@ -3815,7 +3815,19 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, ""); // Remove accents
 
-  const detectedCompanies: any[] = [];
+  // Confidence-scored detection to avoid false positives
+  const scored: { company: any; score: number }[] = [];
+
+  // Expanded blacklist of generic words that appear in company names but are not distinctive
+  const commonWords = new Set([
+    "banco", "grupo", "empresa", "compania", "sociedad", "holding",
+    "spain", "espana", "corp", "corporation", "energia", "capital",
+    "inmobiliaria", "servicios", "internacional", "industria", "global",
+    "digital", "comunicacion", "financiera", "renovable", "logistica",
+    "gestion", "tecnologia", "infraestructuras", "soluciones", "sistemas",
+    "desarrollo", "construccion", "ingenieria", "medios", "seguros",
+    "inversiones", "recursos", "natural", "properties", "solutions",
+  ]);
 
   for (const company of companiesCache) {
     const companyName =
@@ -3824,46 +3836,23 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "") || "";
     const ticker = company.ticker?.toLowerCase() || "";
+    let bestScore = 0;
 
-    // Full name match
-    if (companyName && normalizedQuestion.includes(companyName)) {
-      detectedCompanies.push(company);
-      continue;
+    // Full name match → score 1.0
+    if (companyName && companyName.length > 3 && normalizedQuestion.includes(companyName)) {
+      bestScore = 1.0;
     }
 
-    // Ticker match (only if ticker is at least 2 chars and appears as a word)
-    if (ticker && ticker.length >= 2) {
+    // Ticker match (word boundary) → score 0.9
+    if (bestScore < 0.9 && ticker && ticker.length >= 2) {
       const tickerRegex = new RegExp(`\\b${ticker}\\b`, "i");
       if (tickerRegex.test(normalizedQuestion)) {
-        detectedCompanies.push(company);
-        continue;
+        bestScore = Math.max(bestScore, 0.9);
       }
     }
 
-    // Partial name match (significant words > 4 chars, avoiding common words)
-    const commonWords = [
-      "banco",
-      "grupo",
-      "empresa",
-      "compañia",
-      "sociedad",
-      "holding",
-      "spain",
-      "españa",
-      "corp",
-      "corporation",
-    ];
-    const nameWords = companyName.split(/\s+/).filter((word) => word.length > 4 && !commonWords.includes(word));
-
-    for (const word of nameWords) {
-      if (normalizedQuestion.includes(word)) {
-        detectedCompanies.push(company);
-        break;
-      }
-    }
-
-    // Check include_terms aliases (e.g. "Acciona Energia" without accent)
-    if (!detectedCompanies.includes(company) && company.include_terms) {
+    // include_terms match → score 0.8
+    if (bestScore < 0.8 && company.include_terms) {
       try {
         const terms = Array.isArray(company.include_terms) ? company.include_terms : JSON.parse(company.include_terms);
         for (const term of terms) {
@@ -3872,7 +3861,7 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
             .normalize("NFD")
             .replace(/[\u0300-\u036f]/g, "");
           if (normalizedTerm.length > 3 && normalizedQuestion.includes(normalizedTerm)) {
-            detectedCompanies.push(company);
+            bestScore = Math.max(bestScore, 0.8);
             break;
           }
         }
@@ -3880,10 +3869,36 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
         /* ignore parse errors */
       }
     }
+
+    // Partial name word match → score 0.5 (only words >= 6 chars, not in blacklist)
+    if (bestScore < 0.5) {
+      const nameWords = companyName.split(/\s+/).filter(
+        (word) => word.length >= 6 && !commonWords.has(word)
+      );
+      for (const word of nameWords) {
+        // Require word boundary match to avoid substring false positives
+        const wordRegex = new RegExp(`\\b${word}\\b`);
+        if (wordRegex.test(normalizedQuestion)) {
+          bestScore = Math.max(bestScore, 0.5);
+          break;
+        }
+      }
+    }
+
+    if (bestScore >= 0.7) {
+      scored.push({ company, score: bestScore });
+    }
   }
 
-  // Deduplicate
-  return [...new Map(detectedCompanies.map((c) => [c.ticker, c])).values()];
+  // Sort by confidence descending, deduplicate
+  scored.sort((a, b) => b.score - a.score);
+  const result = [...new Map(scored.map((s) => [s.company.ticker, s.company])).values()];
+  
+  if (result.length > 0) {
+    console.log(`[CompanyDetect] Detected with scores: ${scored.map(s => `${s.company.issuer_name}(${s.score})`).join(", ")}`);
+  }
+  
+  return result;
 }
 
 async function handleStandardChat(
@@ -4581,14 +4596,29 @@ async function handleStandardChat(
   console.log(`${logPrefix} Performing FULL DATABASE SEARCH across all text fields...`);
 
   let fullTextSearchResults: any[] = [];
-  const searchableKeywords = questionKeywords.filter((k) => k.length > 3).slice(0, 5);
+
+  // Blacklist of generic keywords that generate massive noise
+  const genericKeywordBlacklist = new Set([
+    "analisis", "empresa", "sector", "datos", "modelo", "gestion",
+    "mercado", "digital", "informe", "reputacion", "indice", "puntuacion",
+    "resultado", "metrica", "tendencia", "evolucion", "posicion",
+    "estrategia", "corporativo", "situacion", "perspectiva",
+  ]);
+
+  // Min 6 chars for keywords, exclude generics
+  const searchableKeywords = questionKeywords
+    .filter((k) => k.length >= 6 && !genericKeywordBlacklist.has(k))
+    .slice(0, 4);
+
+  // When a company is detected, limit results aggressively (we already have PASO 3 data)
+  const isCorporateQuery = detectedCompanies.length > 0;
+  const searchLimit = isCorporateQuery ? 50 : 500;
 
   if (searchableKeywords.length > 0) {
     for (const keyword of searchableKeywords) {
       const searchPattern = `%${keyword}%`;
 
-      // BÚSQUEDA EXHAUSTIVA en TODOS los campos de texto de TODA la base de datos
-      const { data: textResults, error: textError } = await supabaseClient
+      let query = supabaseClient
         .from("rix_runs_v2")
         .select(
           `
@@ -4629,13 +4659,30 @@ async function handleStandardChat(
         )
         .or(
           `"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},respuesta_bruto_grok.ilike.${searchPattern},respuesta_bruto_qwen.ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`,
-        )
-        .limit(5000);
+        );
+
+      // If company detected, scope search to that company + its competitors only
+      if (isCorporateQuery) {
+        const companyTickers = detectedCompanies.map((c) => c.ticker);
+        // Also include verified competitors
+        for (const dc of detectedCompanies) {
+          if (dc.verified_competitors) {
+            try {
+              const comps = Array.isArray(dc.verified_competitors) ? dc.verified_competitors : JSON.parse(dc.verified_competitors);
+              companyTickers.push(...comps);
+            } catch (_) {}
+          }
+        }
+        const uniqueTickers = [...new Set(companyTickers)];
+        query = query.in('"05_ticker"', uniqueTickers);
+      }
+
+      const { data: textResults, error: textError } = await query.limit(searchLimit);
 
       if (textError) {
         console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
       } else if (textResults && textResults.length > 0) {
-        console.log(`${logPrefix} Found ${textResults.length} records mentioning "${keyword}"`);
+        console.log(`${logPrefix} Found ${textResults.length} records mentioning "${keyword}" (limit: ${searchLimit})`);
         fullTextSearchResults.push(...textResults.map((r) => ({ ...r, matchedKeyword: keyword })));
       }
     }
@@ -4709,6 +4756,178 @@ async function handleStandardChat(
       console.log(`${logPrefix} Loaded ${companyFullData.length} full records for ${company.issuer_name}`);
       detectedCompanyFullData.push(...companyFullData);
     }
+  }
+
+  // =============================================================================
+  // PASO 3.5: CONSTRUIR DATAPACK SQL ESTRUCTURADO (FUENTE DE VERDAD)
+  // Bloque de datos tabulares que el LLM recibe ANTES de la narrativa.
+  // Cada cifra en la respuesta debe coincidir con estos datos.
+  // =============================================================================
+  let dataPackContext = "";
+
+  if (detectedCompanies.length > 0 && detectedCompanyFullData.length > 0) {
+    console.log(`${logPrefix} Building DataPack SQL for ${detectedCompanies.length} companies...`);
+
+    dataPackContext += `\n🔢 ======================================================================\n`;
+    dataPackContext += `🔢 DATAPACK SQL (FUENTE DE VERDAD)\n`;
+    dataPackContext += `🔢 Estos son los datos REALES de la base de datos. TODA cifra en tu\n`;
+    dataPackContext += `🔢 respuesta DEBE coincidir con estos datos. Si un dato no está aquí,\n`;
+    dataPackContext += `🔢 NO lo inventes — di que no dispones de esa información.\n`;
+    dataPackContext += `🔢 ======================================================================\n\n`;
+
+    for (const company of detectedCompanies.slice(0, 3)) {
+      const companyData = detectedCompanyFullData
+        .filter((r) => r["05_ticker"] === company.ticker)
+        .sort((a, b) => new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime());
+
+      if (companyData.length === 0) continue;
+
+      // --- Query A: Snapshot canónico (última semana, todos los modelos) ---
+      const latestDate = companyData[0]?.batch_execution_date;
+      const latestWeek = companyData.filter((r) => r.batch_execution_date === latestDate);
+
+      dataPackContext += `## 📊 ${company.issuer_name} (${company.ticker}) — Snapshot Última Semana\n`;
+      dataPackContext += `Período: ${latestWeek[0]?.["06_period_from"]} a ${latestWeek[0]?.["07_period_to"]}\n\n`;
+      dataPackContext += `| Modelo | RIX | RIX Adj. | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |\n`;
+      dataPackContext += `|--------|-----|----------|-----|-----|-----|-----|-----|-----|-----|-----|\n`;
+
+      const latestScores: number[] = [];
+      for (const row of latestWeek) {
+        const rix = row["09_rix_score"];
+        const rixAdj = row["51_rix_score_adjusted"] ?? rix;
+        if (rix != null && rix > 0) latestScores.push(rix);
+        dataPackContext += `| ${row["02_model_name"]} | ${rix ?? "—"} | ${rixAdj ?? "—"} | ${row["23_nvm_score"] ?? "—"} | ${row["26_drm_score"] ?? "—"} | ${row["29_sim_score"] ?? "—"} | ${row["32_rmm_score"] ?? "—"} | ${row["35_cem_score"] ?? "—"} | ${row["38_gam_score"] ?? "—"} | ${row["41_dcm_score"] ?? "—"} | ${row["44_cxm_score"] ?? "—"} |\n`;
+      }
+      dataPackContext += `\n`;
+
+      // --- Query B: Promedios sectoriales ---
+      if (company.sector_category && allRixData.length > 0) {
+        const sectorCompanies = (companiesCache || []).filter(
+          (c) => c.sector_category === company.sector_category && c.ticker !== company.ticker
+        );
+        const sectorTickers = new Set(sectorCompanies.map((c) => c.ticker));
+        const sectorLatest = allRixData.filter(
+          (r) => sectorTickers.has(r["05_ticker"]) && r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
+        );
+
+        if (sectorLatest.length > 0) {
+          const sectorAvgRix = sectorLatest.reduce((sum, r) => sum + r["09_rix_score"], 0) / sectorLatest.length;
+          const companyAvgRix = latestScores.length > 0 ? latestScores.reduce((a, b) => a + b, 0) / latestScores.length : 0;
+
+          dataPackContext += `### Comparativa Sectorial (${company.sector_category})\n`;
+          dataPackContext += `- Promedio RIX sector: ${sectorAvgRix.toFixed(1)} (${sectorLatest.length} registros de ${sectorCompanies.length} empresas)\n`;
+          dataPackContext += `- RIX promedio ${company.issuer_name}: ${companyAvgRix.toFixed(1)}\n`;
+          dataPackContext += `- Diferencia: ${(companyAvgRix - sectorAvgRix) > 0 ? "+" : ""}${(companyAvgRix - sectorAvgRix).toFixed(1)} puntos\n\n`;
+        }
+      }
+
+      // --- Query C: Ranking competitivo (top/bottom del sector) ---
+      if (allRixData.length > 0 && latestDate) {
+        const latestByCompany = new Map<string, { name: string; avgRix: number; count: number }>();
+        const latestRecords = allRixData.filter(
+          (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
+        );
+        for (const r of latestRecords) {
+          const t = r["05_ticker"];
+          if (!latestByCompany.has(t)) {
+            latestByCompany.set(t, { name: r["03_target_name"], avgRix: 0, count: 0 });
+          }
+          const entry = latestByCompany.get(t)!;
+          entry.avgRix += r["09_rix_score"];
+          entry.count++;
+        }
+        const ranked = Array.from(latestByCompany.entries())
+          .map(([ticker, data]) => ({ ticker, name: data.name, avgRix: data.avgRix / data.count }))
+          .sort((a, b) => b.avgRix - a.avgRix);
+
+        if (ranked.length > 3) {
+          const companyRank = ranked.findIndex((r) => r.ticker === company.ticker);
+          dataPackContext += `### Ranking Competitivo (${ranked.length} empresas)\n`;
+          dataPackContext += `| Pos | Empresa | RIX Medio |\n`;
+          dataPackContext += `|-----|---------|----------|\n`;
+          ranked.slice(0, 5).forEach((r, i) => {
+            const marker = r.ticker === company.ticker ? " ⬅️" : "";
+            dataPackContext += `| ${i + 1} | ${r.name}${marker} | ${r.avgRix.toFixed(1)} |\n`;
+          });
+          if (companyRank > 4) {
+            dataPackContext += `| ... | ... | ... |\n`;
+            dataPackContext += `| ${companyRank + 1} | ${company.issuer_name} ⬅️ | ${ranked[companyRank].avgRix.toFixed(1)} |\n`;
+          }
+          const bottom = ranked.slice(-3);
+          if (companyRank < ranked.length - 3) {
+            dataPackContext += `| ... | ... | ... |\n`;
+            bottom.forEach((r, i) => {
+              const marker = r.ticker === company.ticker ? " ⬅️" : "";
+              dataPackContext += `| ${ranked.length - 2 + i} | ${r.name}${marker} | ${r.avgRix.toFixed(1)} |\n`;
+            });
+          }
+          dataPackContext += `\n`;
+          if (companyRank >= 0) {
+            dataPackContext += `- Posición: ${companyRank + 1} de ${ranked.length}\n`;
+            dataPackContext += `- Distancia al líder: ${(ranked[0].avgRix - ranked[companyRank].avgRix).toFixed(1)} pts\n`;
+            dataPackContext += `- Distancia al último: +${(ranked[companyRank].avgRix - ranked[ranked.length - 1].avgRix).toFixed(1)} pts\n\n`;
+          }
+        }
+      }
+
+      // --- Query D: Evolución temporal (últimas 4 semanas) ---
+      const uniqueDates = [...new Set(companyData.map((r) => r.batch_execution_date))].sort().reverse().slice(0, 4);
+      if (uniqueDates.length >= 2) {
+        dataPackContext += `### Evolución Temporal (${uniqueDates.length} semanas)\n`;
+        dataPackContext += `| Semana | RIX Promedio | Modelos | Δ vs anterior |\n`;
+        dataPackContext += `|--------|-------------|---------|---------------|\n`;
+
+        let prevAvg: number | null = null;
+        for (const date of [...uniqueDates].reverse()) {
+          const weekData = companyData.filter((r) => r.batch_execution_date === date);
+          const scores = weekData.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
+          if (scores.length === 0) continue;
+          const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+          const delta = prevAvg != null ? avg - prevAvg : null;
+          const deltaStr = delta != null ? `${delta > 0 ? "+" : ""}${delta.toFixed(1)}` : "—";
+          dataPackContext += `| ${date.split("T")[0]} | ${avg.toFixed(1)} | ${scores.length} | ${deltaStr} |\n`;
+          prevAvg = avg;
+        }
+        dataPackContext += `\n`;
+
+        // Trend classification
+        const firstAvg = (() => {
+          const d = companyData.filter((r) => r.batch_execution_date === uniqueDates[uniqueDates.length - 1]);
+          const s = d.map((r) => r["09_rix_score"]).filter((v) => v != null && v > 0);
+          return s.length > 0 ? s.reduce((a, b) => a + b, 0) / s.length : 0;
+        })();
+        const lastAvg = (() => {
+          const d = companyData.filter((r) => r.batch_execution_date === uniqueDates[0]);
+          const s = d.map((r) => r["09_rix_score"]).filter((v) => v != null && v > 0);
+          return s.length > 0 ? s.reduce((a, b) => a + b, 0) / s.length : 0;
+        })();
+        const totalDelta = lastAvg - firstAvg;
+        const trend = Math.abs(totalDelta) < 2 ? "ESTABLE" : totalDelta > 0 ? "SUBIENDO" : "BAJANDO";
+        dataPackContext += `- Tendencia: **${trend}** (${totalDelta > 0 ? "+" : ""}${totalDelta.toFixed(1)} pts en ${uniqueDates.length} semanas)\n\n`;
+      }
+
+      // --- Query E: Divergencia inter-modelo ---
+      if (latestScores.length >= 2) {
+        const mean = latestScores.reduce((a, b) => a + b, 0) / latestScores.length;
+        const variance = latestScores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / latestScores.length;
+        const stdDev = Math.sqrt(variance);
+        const maxScore = Math.max(...latestScores);
+        const minScore = Math.min(...latestScores);
+        const maxModel = latestWeek.find((r) => r["09_rix_score"] === maxScore)?.["02_model_name"] || "?";
+        const minModel = latestWeek.find((r) => r["09_rix_score"] === minScore)?.["02_model_name"] || "?";
+        const divergenceLevel = stdDev < 8 ? "BAJA" : stdDev < 15 ? "MEDIA" : "ALTA";
+
+        dataPackContext += `### Divergencia Inter-Modelo\n`;
+        dataPackContext += `- Desviación estándar: ${stdDev.toFixed(1)} pts → Divergencia **${divergenceLevel}**\n`;
+        dataPackContext += `- Modelo más alto: ${maxModel} (${maxScore})\n`;
+        dataPackContext += `- Modelo más bajo: ${minModel} (${minScore})\n`;
+        dataPackContext += `- Rango: ${(maxScore - minScore).toFixed(1)} pts\n\n`;
+      }
+
+      dataPackContext += `---\n\n`;
+    }
+
+    console.log(`${logPrefix} DataPack built: ${dataPackContext.length} chars`);
   }
 
   // =============================================================================
@@ -5042,11 +5261,18 @@ async function handleStandardChat(
     context += `\n`;
   }
 
-  // 6.0-C RESULTADOS DE BÚSQUEDA FULL-TEXT (PRIORIDAD MÁXIMA)
+  // 6.0-DATAPACK: DATOS SQL ESTRUCTURADOS (FUENTE DE VERDAD — VA PRIMERO)
+  if (dataPackContext) {
+    context += dataPackContext;
+    context += "\n";
+  }
+
+  // 6.0-C RESULTADOS DE BÚSQUEDA FULL-TEXT (evidencia cualitativa complementaria)
   if (fullTextSearchResults.length > 0) {
     context += `🔍 ======================================================================\n`;
-    context += `🔍 RESULTADOS DE BÚSQUEDA EN TEXTOS ORIGINALES DE IA\n`;
-    context += `🔍 Se encontraron ${fullTextSearchResults.length} registros relevantes en la base de datos\n`;
+    context += `🔍 EVIDENCIA CUALITATIVA: BÚSQUEDA EN TEXTOS ORIGINALES DE IA\n`;
+    context += `🔍 Se encontraron ${fullTextSearchResults.length} registros relevantes\n`;
+    context += `🔍 (Usa como soporte narrativo — las cifras canónicas están en el DATAPACK arriba)\n`;
     context += `🔍 ======================================================================\n\n`;
 
     // Group by keyword
@@ -5069,7 +5295,7 @@ async function handleStandardChat(
 
       // Include text excerpts - más extensos para contexto ejecutivo
       context += `\n### Extractos relevantes (fuentes originales de IA):\n`;
-      results.slice(0, 8).forEach((r, idx) => {
+      results.slice(0, 5).forEach((r, idx) => {
         const fields = [
           { name: "ChatGPT", value: r["20_res_gpt_bruto"] },
           { name: "Perplexity", value: r["21_res_perplex_bruto"] },
@@ -5085,8 +5311,8 @@ async function handleStandardChat(
           if (field.value && field.value.toLowerCase().includes(keyword.toLowerCase())) {
             const lowerText = field.value.toLowerCase();
             const pos = lowerText.indexOf(keyword.toLowerCase());
-            const start = Math.max(0, pos - 250);
-            const end = Math.min(field.value.length, pos + keyword.length + 500);
+            const start = Math.max(0, pos - 150);
+            const end = Math.min(field.value.length, pos + keyword.length + 250);
             const snippet = field.value.substring(start, end);
 
             context += `\n**${idx + 1}. ${r["03_target_name"]} (${r["02_model_name"]} - ${field.name}):**\n`;
@@ -6201,11 +6427,11 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
    REGLA DE ORO: Cada dato citado debe tener origen en el contexto.
    Si no hay datos para un pilar, omítelo — NO lo rellenes con ficción.
 
-3. EXTENSIÓN: Para análisis de empresa, rango objetivo 4.500–5.400 palabras.
-   Prioriza densidad analítica sobre volumen. Cada pilar debe aportar valor
-   ejecutivo con datos concretos, no relleno. Termina cuando el análisis
-   esté completo y sea accionable — no alargues por inercia.
-   No dupliques ideas entre pilares.
+3. EXTENSIÓN: Para análisis de empresa, rango objetivo 2.500–4.000 palabras.
+   Prioriza PRECISIÓN y TRAZABILIDAD sobre volumen. Cada pilar debe aportar
+   valor ejecutivo con datos concretos del contexto, no relleno narrativo.
+   Termina cuando el análisis esté completo — no alargues por inercia.
+   No dupliques ideas entre pilares. Si no hay datos para un pilar, omítelo.
 
 4. EVIDENCIA CRUZADA: Cada afirmación importante debe indicar cuántas
    IAs la respaldan. Usa las categorías de métricas (fortaleza/mejora/riesgo)
@@ -6398,38 +6624,29 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
           }
 
           // =================================================================
-          // AUTO-CONTINUATION: If truncated, forbidden pattern detected,
-          // or corporate report too short — auto-continue
+          // AUTO-CONTINUATION: ONLY for real technical truncation or
+          // forbidden pattern detected. NO more "too_short" forcing.
           // =================================================================
-          const MAX_CONTINUATIONS = 6;
-          const MIN_CORPORATE_CHARS = 18000; // ~4500 palabras en español
-          const isCorporateQuery = detectedCompanies.length > 0;
-
-          const checkTooShort = () => isCorporateQuery && accumulatedContent.length < MIN_CORPORATE_CHARS;
+          const MAX_CONTINUATIONS = 4;
 
           while (
-            (streamFinishReason === "length" || forbiddenDetected || checkTooShort()) &&
+            (streamFinishReason === "length" || forbiddenDetected) &&
             segmentsGenerated <= MAX_CONTINUATIONS
           ) {
-            const isTooShortNow = checkTooShort();
             hadTruncation = true;
             segmentsGenerated++;
+            const reason = hadForbiddenPattern ? "forbidden_pattern" : "truncation";
             forbiddenDetected = false;
             streamFinishReason = "";
 
-            const reason = isTooShortNow ? "too_short" : (hadForbiddenPattern ? "forbidden_pattern" : "truncation");
             console.log(`${logPrefix} Auto-continuation #${segmentsGenerated - 1} (reason: ${reason}, accumulated: ${accumulatedContent.length} chars)...`);
 
-            // Compact continuation: only last 500 chars for context, not the full content
+            // Re-inject question + data summary for context continuity
             const lastChunk = accumulatedContent.slice(-500);
 
-            const continuationSystemPrompt = isTooShortNow
-              ? `Eres el Agente Rix. Tu respuesta anterior es DEMASIADO BREVE para un informe corporativo. Debes completar TODAS las secciones del Embudo Narrativo: Resumen Ejecutivo, Pilar 1 (DEFINIR), Pilar 2 (ANALIZAR), Pilar 3 (PROSPECTAR) y Cierre. El informe completo debe alcanzar 4.500-5.400 palabras. REGLAS: 1) No repitas contenido ya escrito. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) Continúa añadiendo las secciones que faltan. Responde en ${languageName}.`
-              : `Eres el Agente Rix continuando un informe de reputación corporativa. Continúa EXACTAMENTE desde el punto donde se interrumpió. REGLAS ESTRICTAS: 1) No repitas contenido. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) No añadas prólogos ni transiciones. 4) Mantén formato, tono y estructura. 5) Si el informe está completo, escribe solo una frase de cierre. Responde en ${languageName}.`;
+            const continuationSystemPrompt = `Eres el Agente Rix continuando un informe de reputación corporativa. Continúa EXACTAMENTE desde el punto donde se interrumpió. REGLAS ESTRICTAS: 1) No repitas contenido ya escrito. 2) NUNCA menciones límites, truncaciones, longitud máxima, carpetas, archivos ni plataformas. 3) No añadas prólogos ni transiciones. 4) Mantén formato, tono y estructura. 5) Si el informe está completo, escribe solo una frase de cierre. Responde en ${languageName}.`;
 
-            const continuationUserPrompt = isTooShortNow
-              ? `Tu informe está incompleto (${accumulatedContent.length} caracteres, necesitas al menos ${MIN_CORPORATE_CHARS}). Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa añadiendo las secciones que faltan del Embudo Narrativo. No repitas nada.`
-              : `El informe se interrumpió. Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa escribiendo desde ahí. No repitas nada.`;
+            const continuationUserPrompt = `Pregunta original del usuario: "${question}"\n\nEl informe se interrumpió por truncación técnica. Último fragmento escrito:\n\n"""${lastChunk}"""\n\nContinúa escribiendo desde ahí. No repitas nada. Si el análisis ya está completo, cierra brevemente.`;
 
             const continuationMessages = [
               { role: "system", content: continuationSystemPrompt },
@@ -6652,51 +6869,34 @@ Responde en ${languageName} usando SOLO información del contexto anterior.`;
   let chatResult = await callAIWithFallback(messages, "o3", 40000, logPrefix);
   let answer = chatResult.content;
 
-  // Non-streaming compliance gate: check for forbidden patterns + length enforcement
+  // Non-streaming compliance gate: ONLY forbidden pattern continuation (no more too_short)
   let nonStreamSegments = 1;
   let nonStreamHadForbidden = false;
-  const MAX_NS_CONTINUATIONS = 6;
-  const NS_MIN_CORPORATE_CHARS = 18000;
-  const nsIsCorporateQuery = detectedCompanies.length > 0;
-
-  const nsCheckTooShort = () => nsIsCorporateQuery && answer.length < NS_MIN_CORPORATE_CHARS;
+  const MAX_NS_CONTINUATIONS = 4;
   
-  while ((containsForbiddenPattern(answer) || nsCheckTooShort()) && nonStreamSegments <= MAX_NS_CONTINUATIONS) {
-    const isTooShort = nsCheckTooShort();
-    const hasForbidden = containsForbiddenPattern(answer);
-    
-    if (hasForbidden) {
-      nonStreamHadForbidden = true;
-      answer = stripForbiddenContent(answer);
-    }
-    
+  while (containsForbiddenPattern(answer) && nonStreamSegments <= MAX_NS_CONTINUATIONS) {
+    nonStreamHadForbidden = true;
+    answer = stripForbiddenContent(answer);
     nonStreamSegments++;
-    const reason = isTooShort ? "too_short" : "forbidden_pattern";
-    console.warn(`${logPrefix} Non-streaming: ${reason} detected (attempt ${nonStreamSegments}, chars: ${answer.length}), continuing...`);
+    
+    console.warn(`${logPrefix} Non-streaming: forbidden_pattern detected (attempt ${nonStreamSegments}, chars: ${answer.length}), continuing...`);
     
     try {
       const lastChunk = answer.slice(-500);
 
-      const sysPrompt = isTooShort
-        ? `Eres el Agente Rix. Tu respuesta anterior es DEMASIADO BREVE para un informe corporativo. Debes completar TODAS las secciones del Embudo Narrativo. El informe debe alcanzar 4.500-5.400 palabras. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.`
-        : `Eres el Agente Rix continuando un informe. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.`;
+      const sysPrompt = `Eres el Agente Rix continuando un informe. NUNCA menciones límites, truncaciones, longitud máxima, carpetas ni archivos. Responde en ${languageName}.`;
 
-      const userPrompt = isTooShort
-        ? `Tu informe está incompleto (${answer.length} caracteres, necesitas al menos ${NS_MIN_CORPORATE_CHARS}). Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa añadiendo las secciones que faltan. No repitas.`
-        : `El informe se interrumpió. Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa desde ahí. No repitas.`;
+      const userPromptCont = `Pregunta original: "${question}"\n\nEl informe se interrumpió. Último fragmento:\n\n"""${lastChunk}"""\n\nContinúa desde ahí. No repitas.`;
 
       const contMessages = [
         { role: "system", content: sysPrompt },
-        { role: "user", content: userPrompt },
+        { role: "user", content: userPromptCont },
       ];
       const contResult = await callAIWithFallback(contMessages, "o3", 40000, logPrefix);
       answer += "\n\n" + (containsForbiddenPattern(contResult.content) ? stripForbiddenContent(contResult.content) : contResult.content);
       chatResult = { ...chatResult, outputTokens: chatResult.outputTokens + contResult.outputTokens };
       
-      // If no forbidden and length OK, we're done
-      if (!containsForbiddenPattern(answer) && !nsCheckTooShort()) {
-        break;
-      }
+      if (!containsForbiddenPattern(answer)) break;
     } catch (contError) {
       console.warn(`${logPrefix} Non-streaming continuation failed:`, contError);
       break;

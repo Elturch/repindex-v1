@@ -262,7 +262,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { toast } = useToast();
   
   // Session configuration state - persists for entire conversation
-  const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('exhaustive');
+  const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('complete');
   const [sessionRoleId, setSessionRoleId] = useState<string>('general');
   const [isSessionConfigured, setIsSessionConfigured] = useState(false);
   
@@ -333,9 +333,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [currentUserId, sessionId, messages.length]);
 
-  // Configure session (role only) - depth is always 'exhaustive'
+  // Configure session (role only) - depth defaults to 'complete' (not forced exhaustive)
   const configureSession = useCallback(async (roleId: string) => {
-    setSessionDepthLevel('exhaustive'); // Always exhaustive
+    setSessionDepthLevel('complete');
     setSessionRoleId(roleId);
     setIsSessionConfigured(true);
     
@@ -345,7 +345,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         await supabase
           .from('user_conversations')
           .update({ 
-            session_depth_level: 'exhaustive',
+            session_depth_level: 'complete',
             session_role_id: roleId 
           })
           .eq('id', conversationId);
@@ -354,7 +354,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
     }
     
-    console.log('[ChatContext] Session configured:', { depthLevel: 'exhaustive', roleId });
+    console.log('[ChatContext] Session configured:', { depthLevel: 'complete', roleId });
   }, [currentUserId, conversationId]);
 
   // Load conversation history from DB on mount
