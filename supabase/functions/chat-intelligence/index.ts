@@ -3829,6 +3829,9 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
     "inversiones", "recursos", "natural", "properties", "solutions",
   ]);
 
+  // Helper to escape regex special characters
+  const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   for (const company of companiesCache) {
     const companyName =
       company.issuer_name
@@ -3845,7 +3848,7 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
 
     // Ticker match (word boundary) → score 0.9
     if (bestScore < 0.9 && ticker && ticker.length >= 2) {
-      const tickerRegex = new RegExp(`\\b${ticker}\\b`, "i");
+      const tickerRegex = new RegExp(`\\b${escapeRegex(ticker)}\\b`, "i");
       if (tickerRegex.test(normalizedQuestion)) {
         bestScore = Math.max(bestScore, 0.9);
       }
@@ -3877,7 +3880,7 @@ function detectCompaniesInQuestion(question: string, companiesCache: any[]): any
       );
       for (const word of nameWords) {
         // Require word boundary match to avoid substring false positives
-        const wordRegex = new RegExp(`\\b${word}\\b`);
+        const wordRegex = new RegExp(`\\b${escapeRegex(word)}\\b`);
         if (wordRegex.test(normalizedQuestion)) {
           bestScore = Math.max(bestScore, 0.5);
           break;
