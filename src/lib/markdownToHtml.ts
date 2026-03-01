@@ -1300,13 +1300,13 @@ function processNumberedMetricBlocks(html: string): string {
     const trimmed = line.trim();
     
     // Track <ol> context
-    if (trimmed === '<ol>') {
+    if (trimmed === '<ol>' || trimmed === '<ul>') {
       insideOl = true;
       olCounter = 0;
       result.push(line);
       continue;
     }
-    if (trimmed === '</ol>') {
+    if (trimmed === '</ol>' || trimmed === '</ul>') {
       flushMetrics();
       insideOl = false;
       olCounter = 0;
@@ -1421,9 +1421,9 @@ function regroupIsolatedMetrics(html: string): string {
   // Pattern: <ol>\n<li>MetricName — value emoji</li>\n</ol>
   // We collect these when separated by <p>...</p> blocks
   // Accept both raw emojis AND emojis already wrapped in <span class="emoji-status">
-  const singleMetricOlPattern = /^<ol>\s*$/;
+  const singleMetricOlPattern = /^<[ou]l>\s*$/;
   const metricLiPattern = /^<li>(?:<strong>)?(.+?)(?:<\/strong>)?\s*[—\-–:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u;
-  const closeOlPattern = /^<\/ol>\s*$/;
+  const closeOlPattern = /^<\/[ou]l>\s*$/;
   
   interface MetricEntry { name: string; value: string; emojiHtml: string; explanations: string[] }
   let metricBuffer: MetricEntry[] = [];
