@@ -1,45 +1,68 @@
 
+# Coherencia estetica del informe exportado
 
-# Distribucion uniforme de negritas inteligentes a lo largo del informe
+## Problemas detectados en el HTML actual
 
-## Problema detectado
+### 1. Cabeceras de seccion inconsistentes
+- "RESUMEN EJECUTIVO" y "PILAR 1" se renderizan como `<hr> + <p> + <hr>` (lineas finas grises, texto plano sin fondo).
+- "PILAR 2", "PILAR 3", "CIERRE" y "FUENTES" usan `.section-band` (fondo azul claro, bordes azules, aspecto profesional).
+- Causa: el LLM usa `---` (markdown HR) para las primeras secciones y `════` para las posteriores. El parser solo convierte el patron `════/TITULO/════` a section-band, pero no detecta `---/TITULO/---`.
 
-La funcion `highlightSmartKeywords` selecciona hasta 15 terminos pero los ordena por prioridad de capa y luego por posicion. Como el bucle de seleccion se detiene al llegar al limite, los terminos del final del documento nunca se seleccionan -- todas las negritas se concentran en los primeros parrafos.
+### 2. Emojis de semaforo (colores) mal situados
+- En las celdas de la tabla, emojis como `🟢 🔴 🟡` aparecen inline pegados al texto sin separacion visual.
+- En las lineas de metricas ("61 pts 🟡") cada metrica queda en su propia `<ol>` aislada (con un unico `<li>`), en lugar de agruparse en una tabla de metricas cohesiva. El parser `processNumberedMetricBlocks` requiere 2+ metricas consecutivas dentro de un mismo `<ol>`, pero como cada una esta separada por un parrafo explicativo, no se agrupan.
 
-## Solucion: distribucion por bloques
+### 3. Negritas automaticas rompiendo frases
+- `<strong>RESUMEN</strong> EJECUTIVO` — la auto-negrita partio el titulo.
+- `<strong>Promedio Semana 2026</strong>-03-01` — partio una fecha.
+- `<strong>Cuatro de</strong> seis IAs` — partio una frase a mitad.
+- `<strong>Suba el</strong> ratio` — igual.
+- Causa: el regex de nombres propios detecta "Promedio Semana" o "Cuatro de" como nombres propios por la mayuscula.
 
-En lugar de un presupuesto global de 15 negritas aplicado de arriba a abajo, dividir el documento en bloques logicos (separados por doble salto de linea o cabeceras markdown) y asignar un presupuesto proporcional a cada bloque, garantizando al menos 1 highlight por bloque si hay candidatos.
+### 4. Sub-titulos internos sin formato
+- Lineas como "Las 8 Metricas (promedio ponderado)", "3 Hallazgos", "3 Recomendaciones", "5 Mensajes para la Direccion" quedan como parrafos planos (`<p>`), sin distincion visual respecto al cuerpo de texto.
 
-## Cambios tecnicos
+## Plan de cambios
 
 ### Archivo: `src/lib/markdownToHtml.ts`
 
-**Modificacion de la seccion "Layer 4: Density control" (lineas ~655-681)**
+**Cambio 1 — Detectar patron `<hr>/TITULO/<hr>` como section-band**
+En `processDecorativeSectionHeaders` (o como post-proceso), detectar secuencias `<hr>\n<p>TEXTO</p>\n<hr>` donde TEXTO es un titulo corto en mayusculas y convertirlas a `<div class="section-band">`. Esto unifica el aspecto de todas las cabeceras de seccion.
 
-Logica nueva:
+**Cambio 2 — Mejorar posicionamiento de emojis de semaforo**
+- En tablas: actualizar `processEmojis` para que los emojis de semaforo (circulos de colores) reciban una clase CSS especifica (`.emoji-status`) con separacion izquierda y alineacion vertical.
+- Anadir CSS para `.emoji-status` en `emojiGridStyles` y `premiumTableStyles`.
 
-1. Dividir el markdown en bloques usando doble salto de linea (`\n\n`) como separador. Calcular los rangos de caracteres de cada bloque.
-2. Clasificar cada match candidato en su bloque correspondiente segun su `index`.
-3. Calcular presupuesto por bloque:
-   - Total: 15 highlights.
-   - Base: 1 highlight garantizado por bloque (si tiene candidatos).
-   - Sobrante: se reparte proporcionalmente al numero de candidatos por bloque.
-4. Dentro de cada bloque, seleccionar candidatos por prioridad de capa (3 > 1 > 2), respetando el presupuesto del bloque.
-5. Seguir respetando las reglas existentes: no solapamientos, no duplicados de texto, no re-negritar lo que el LLM ya marco.
+**Cambio 3 — Agrupar metricas separadas por parrafos**
+El patron real del LLM es:
+```text
+1. Metrica — 61 pts 🟡
+<parrafo explicativo>
+2. Metrica — 54 pts 🟡
+<parrafo explicativo>
+```
+Cada metrica queda en un `<ol>` propio con 1 `<li>`. El fix: detectar este patron post-conversion (multiples `<ol>` de 1 `<li>` con metrica+emoji, separados por `<p>`) y reagruparlos en una tabla `emoji-metrics-table`, dejando los parrafos explicativos debajo de cada fila o como bloque aparte tras la tabla.
 
-**Resultado esperado**: si un informe tiene 10 bloques de texto, cada bloque tendra 1-2 negritas bien escogidas en lugar de 15 negritas amontonadas en los primeros 3 bloques.
+**Cambio 4 — Proteger titulos y fechas del auto-negrita**
+En `highlightSmartKeywords`:
+- Excluir matches que empiecen justo despues de `---` o `===` (lineas de cabecera).
+- Excluir matches donde el texto capturado forme parte de una fecha (patron `\d{4}-\d{2}`).
+- Filtrar falsos positivos de nombres propios: requerir que cada palabra tenga 3+ caracteres (excluir "de", "el", "las" como parte del match) y que no sean inicio de frase tras punto.
+- Anadir lista de exclusion: palabras comunes que empiezan con mayuscula por estar al inicio de frase ("Cuatro", "Suba", "Vision", "Cinco", "Solo").
 
-## Ejemplo
+**Cambio 5 — Sub-titulos internos con formato visual**
+Detectar lineas cortas (< 60 chars) que son text puro sin puntuacion final y que actuan como sub-titulos (ej. "3 Hallazgos", "Las 8 Metricas"). Convertirlas a `<h3>` o un `<div class="subsection-title">` con estilo editorial (negrita, tamano intermedio, algo de margen superior).
 
-Informe con 8 bloques de texto y 25 candidatos totales:
-- Presupuesto: 15 highlights, 8 bloques con candidatos.
-- Garantia: 1 por bloque = 8 usados.
-- Sobrante: 7 se reparten entre los bloques con mas candidatos de alta prioridad.
-- Resultado: cada bloque tiene entre 1 y 3 negritas, distribuidas uniformemente.
+**Cambio 6 — CSS para coherencia visual**
+- `.subsection-title`: font-size 15px, font-weight 600, margin-top 28px, border-bottom 1px solid, color var(--text).
+- `.emoji-status`: margin-left 6px, vertical-align middle, font-size 1em.
+- Ajustar `.section-band` para que el titulo tenga font-size 13px (no mas grande que los h2 del cuerpo).
 
-## Impacto
+## Resultado esperado
 
-- 1 archivo modificado: `src/lib/markdownToHtml.ts`
-- Solo se cambia la logica de seleccion/densidad (lineas ~655-681), no las capas de deteccion
-- Sin cambios en backend ni componentes UI
-
+- Todas las cabeceras de seccion (RESUMEN EJECUTIVO, PILAR 1, PILAR 2, PILAR 3, CIERRE, FUENTES) tendran identico formato visual: banda con fondo `#f0f4f8` y bordes azules.
+- Los emojis de semaforo en tablas estaran correctamente separados y alineados.
+- Las metricas numeradas con emoji formaran una tabla cohesiva en lugar de listas de 1 elemento.
+- Las negritas automaticas no partiran frases ni fechas.
+- Los sub-titulos internos tendran distincion visual clara respecto al texto.
+- Coherencia estetica total entre todas las secciones del informe.
