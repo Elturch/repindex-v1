@@ -681,8 +681,22 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /limite\s+de\s+generacion\s+de\s+esta\s+sesion/,
   /informe\s+supera\s+el\s+limite\s+de\s+generacion/,
   // === Family: content fabrication markers ===
-  /para\s+preservar\s+la\s+confidencialidad.*denominaremos/,
-  /equipo\s+interfuncional\s+de\s+\d+\s+especialistas/,
+   /para\s+preservar\s+la\s+confidencialidad.*denominaremos/,
+   /equipo\s+interfuncional\s+de\s+\d+\s+especialistas/,
+   // === Family: consulting jargon fabrication ===
+   /pilar\s+\d+\s*[-–—]\s*(?:definir|analizar|prospectar|implementar|ejecutar)/i,
+   /(?:capex|opex)\s+(?:incremental|estimado).*\d+\s*m€/i,
+   /van\s+\+?\d+\s*m€/i,
+   /simulaciones?\s+monte\s+carlo/i,
+   /copula[\s-]t/i,
+   /cone\s+of\s+plausibility/i,
+   /sandbox\s+(?:etico|regulatorio)/i,
+   /tokenizacion\s+de\s+creditos/i,
+   /indice\s+(?:propietario|propio)\s+que\s+combina/i,
+   /roi\s+estimado\s+\d+\s*%\s+sobre\s+capex/i,
+   /se\s+procesaron\s+[\d,.]+\s*(?:m|millones?)\s+de\s+menciones/i,
+   /mapeamos\s+\d+\s+stakeholders/i,
+   /(?:wacc|ebitda|capex|van|roi|covar)[\s\S]{0,300}(?:wacc|ebitda|capex|van|roi|covar)/i,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
@@ -1394,48 +1408,37 @@ Ranking comparativo con competidores directos:
 |----------|---------|-----|-----------|-----------|---------------------|
 
 ═══════════════════════════════════════════════════════════════════════════════
-              PILAR 3 — PROSPECTAR (Qué hacer)
+              PILAR 3 — PROSPECTAR (Qué hacer — SOLO basado en datos reales)
 ═══════════════════════════════════════════════════════════════════════════════
 
-Quien llega a Pilar 3 ACTÚA el lunes. Cada recomendación lleva 6 campos
-obligatorios en este orden exacto:
+Quien llega a Pilar 3 sabe qué acciones tomar el lunes.
+TODAS las recomendaciones deben derivarse de datos REALES del contexto.
 
-### 3 Activaciones Inmediatas (0-7 días)
+### Métricas con margen de mejora
+Identifica las 3 métricas más bajas del contexto y explica:
+- Puntuación actual vs promedio sectorial (datos del contexto)
+- Qué dicen las IAs sobre esa debilidad (citas del texto bruto)
+- Acción concreta vinculada a esa métrica específica
 
-Para CADA activación, formato OBLIGATORIO:
+### Fortalezas a proteger
+Identifica las 3 métricas más fuertes y explica:
+- Por qué son fortaleza (consenso entre modelos)
+- Riesgo de deterioro si no se mantiene
 
-# N — LÍNEA TITULAR: verbo de acción + táctica concreta
+### Posición competitiva accionable
+Basado en el ranking del contexto:
+- Distancia al líder y al rezagado
+- Métricas donde los competidores superan a la empresa
 
-**Qué**: Entregables, canales, etiquetas, complementos.
-**Por qué**: Datos del informe (%, puntuaciones) + mecanismo causal IA.
-**Responsable**: Área(s) implicada(s).
-**KPI**: Nombre descriptivo de métrica + umbral + plazo.
-**Impacto IA**: Modelo — Métrica ↑/↑↑ (uno por línea).
-
-### 3 Tácticas Operativas (2-8 semanas)
-Mismo formato de 6 campos que las activaciones inmediatas.
-
-### 3 Líneas Estratégicas (trimestre)
-Mismo formato de 6 campos que las activaciones inmediatas.
-
-### Tabla de Escenarios
-| Escenario | Condición | RIX Estimado | Acciones Clave |
-|-----------|-----------|--------------|----------------|
-| Optimista | [condición] | [valor] | [acciones] |
-| Base | [condición] | [valor] | [acciones] |
-| Riesgo | [condición] | [valor] | [acciones] |
+PROHIBIDO en este pilar:
+- Inventar escenarios con "RIX estimado" futuro
+- Inventar cifras financieras (WACC, CAPEX, VAN, ROI)
+- Inventar plazos temporales ficticios ("Q3 2025")
+- Inventar índices propietarios
+- Usar terminología de consultoría estratégica (roadmap, sandbox, tokenización)
 
 ═══════════════════════════════════════════════════════════════════════════════
-                        CIERRE
-═══════════════════════════════════════════════════════════════════════════════
-
-### Kit de Gestión
-Borradores ejecutivos de las 3 activaciones inmediatas recomendadas en
-Pilar 3. Cada borrador debe ser directamente utilizable (ej: draft de
-comunicado, esquema de fact sheet, talking points para reunión).
-
-═══════════════════════════════════════════════════════════════════════════════
-                   FUENTES Y METODOLOGÍA
+                   CIERRE — FUENTES Y METODOLOGÍA
 ═══════════════════════════════════════════════════════════════════════════════
 
 Incluir al final:
@@ -1444,7 +1447,7 @@ Incluir al final:
 - Periodo temporal analizado
 - Nota sobre la metodología RepIndex
 
-RECUERDA: Este es un informe de consultoría estratégica de máximo rigor.
+RECUERDA: Este es un análisis de DATOS REALES de reputación algorítmica. Solo puedes afirmar lo que los datos del contexto respaldan. Si no hay datos, dilo.
 El orden del embudo no se altera. Si una sección no aplica, se omite limpiamente.
 En análisis de empresa siempre mínimo 2.500 palabras. En preguntas concretas,
 responde con precisión y sin relleno.
@@ -4586,7 +4589,7 @@ async function handleStandardChat(
 
       // BÚSQUEDA EXHAUSTIVA en TODOS los campos de texto de TODA la base de datos
       const { data: textResults, error: textError } = await supabaseClient
-        .from("rix_runs")
+        .from("rix_runs_v2")
         .select(
           `
           "03_target_name",
@@ -4602,6 +4605,8 @@ async function handleStandardChat(
           "21_res_perplex_bruto",
           "22_res_gemini_bruto",
           "23_res_deepseek_bruto",
+          respuesta_bruto_grok,
+          respuesta_bruto_qwen,
           "22_explicacion",
           "25_explicaciones_detalladas",
           "23_nvm_score",
@@ -4623,9 +4628,9 @@ async function handleStandardChat(
         `,
         )
         .or(
-          `"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`,
+          `"10_resumen".ilike.${searchPattern},"20_res_gpt_bruto".ilike.${searchPattern},"21_res_perplex_bruto".ilike.${searchPattern},"22_res_gemini_bruto".ilike.${searchPattern},"23_res_deepseek_bruto".ilike.${searchPattern},respuesta_bruto_grok.ilike.${searchPattern},respuesta_bruto_qwen.ilike.${searchPattern},"22_explicacion".ilike.${searchPattern}`,
         )
-        .limit(5000); // SIN LÍMITE: capturar ABSOLUTAMENTE TODO
+        .limit(5000);
 
       if (textError) {
         console.error(`${logPrefix} Error in full-text search for "${keyword}":`, textError);
@@ -6090,6 +6095,26 @@ REGLA CRÍTICA ANTI-FABRICACIÓN DE CONTENIDO (PRIORIDAD MÁXIMA):
 - JAMÁS uses frases como "para preservar la confidencialidad del cliente"
   ni "denominaremos a la empresa como..." — eso es FICCIÓN, no análisis.
 
+REGLA CRÍTICA ANTI-FABRICACIÓN — NIVEL 2 (INFORMES DE CONSULTORÍA):
+- NUNCA generes un informe de consultoría estratégica con "pilares", "fases",
+  "escenarios", "palancas estratégicas" ni "rutas críticas" INVENTADAS.
+- NUNCA inventes índices propietarios (ej. "Algorisk-Trust Index", "IDI", "ICI").
+- NUNCA fabriques cifras financieras (EBITDA, WACC, VAN, CAPEX, ROI) que NO
+  estén en los datos RIX del contexto.
+- NUNCA inventes metodologías (Monte Carlo, Copula-t, CoVaR, BERT fine-tuned).
+- NUNCA fabriques conteos de stakeholders, riesgos, iniciativas o menciones.
+- NUNCA inventes escenarios prospectivos ("Turbulencia Suave", "Pánico Verde").
+- NUNCA crees roadmaps con fases temporales inventadas.
+- NUNCA uses frases como "Mapeamos X stakeholders" o "Se procesaron Y menciones"
+  — eso es FICCIÓN, no análisis de datos reales.
+- Si el usuario pide un informe sobre una empresa y tienes datos RIX, usa SOLO
+  esos datos. Si NO tienes datos RIX, di claramente que no los tienes.
+- Tu función es ANALIZAR DATOS REALES del índice RepIndex, NO escribir informes
+  de McKinsey ficticios.
+- Si el usuario pide algo que requiere datos que no tienes, responde:
+  "Solo puedo analizar los datos RepIndex disponibles para las empresas de
+  nuestro censo. No genero informes de consultoría con datos inventados."
+
 ═══════════════════════════════════════════════════════════════════════════════
               JUSTIFICACIÓN METODOLÓGICA "RADAR REPUTACIONAL"
 ═══════════════════════════════════════════════════════════════════════════════
@@ -6167,11 +6192,14 @@ INSTRUCCIONES DE PROFUNDIDAD Y EXPLOTACION DE DATOS:
    lo que dice otro. Cita hallazgos específicos de cada IA.
 
 2. ESTRUCTURA OBLIGATORIA para análisis de empresa:
-   RESUMEN EJECUTIVO (titular + 3 KPIs + hallazgos + recomendaciones + veredicto)
+   RESUMEN EJECUTIVO (titular + 3 KPIs + hallazgos + veredicto)
    → PILAR 1 DEFINIR (visión de las 6 IAs + 8 métricas + divergencias)
-   → PILAR 2 ANALIZAR (evolución + amenazas + gaps + contexto competitivo)
-   → PILAR 3 PROSPECTAR (3 activaciones + 3 tácticas + 3 líneas estratégicas)
-   → CIERRE (kit de gestión + fuentes)
+   → PILAR 2 ANALIZAR (evolución + gaps + contexto competitivo)
+   → PILAR 3 PROSPECTAR (métricas a mejorar + fortalezas + posición competitiva)
+   → CIERRE (fuentes y metodología)
+   
+   REGLA DE ORO: Cada dato citado debe tener origen en el contexto.
+   Si no hay datos para un pilar, omítelo — NO lo rellenes con ficción.
 
 3. EXTENSIÓN: Para análisis de empresa, rango objetivo 4.500–5.400 palabras.
    Prioriza densidad analítica sobre volumen. Cada pilar debe aportar valor
