@@ -649,7 +649,9 @@ function highlightSmartKeywords(markdown: string): string {
   };
   
   // Multi-word proper nouns (e.g., "Banco Santander", "IBEX 35")
+  // IMPORTANT: match must END on a capitalized word or acronym, never on a connector
   const properNounPattern = /(?<=[a-záéíóúñ.,;:)\s])\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+|[A-ZÁÉÍÓÚÑ0-9]{2,}|de|del|la|los|las|el|y))+)\b/g;
+  const CONNECTORS = new Set(['de', 'del', 'la', 'los', 'las', 'el', 'y', 'e', 'o', 'u']);
   let pn: RegExpExecArray | null;
   while ((pn = properNounPattern.exec(markdown)) !== null) {
     const key = pn[1].toLowerCase();
@@ -661,13 +663,27 @@ function highlightSmartKeywords(markdown: string): string {
       const words = pn[1].split(/\s+/);
       const firstWord = words[0].toLowerCase();
       if (SENTENCE_START_EXCLUSIONS.has(firstWord)) continue;
+      
+      // Trim trailing connectors from match
+      while (words.length > 1 && CONNECTORS.has(words[words.length - 1].toLowerCase())) {
+        words.pop();
+      }
+      if (words.length < 2) continue; // Need at least 2 words
+      
+      const trimmedText = words.join(' ');
+      const trimmedKey = trimmedText.toLowerCase();
+      if (properNounSeen.has(trimmedKey)) continue;
+      
       // Require all significant words to have 3+ chars
-      const significantWords = words.filter(w => !['de', 'del', 'la', 'los', 'las', 'el', 'y'].includes(w.toLowerCase()));
+      const significantWords = words.filter(w => !CONNECTORS.has(w.toLowerCase()));
       if (significantWords.some(w => w.length < 3)) continue;
       
-      properNounSeen.add(key);
+      // Skip all-uppercase text that looks like a section title
+      if (/^[A-ZÁÉÍÓÚÑ\s]+$/.test(trimmedText) && trimmedText.length > 15) continue;
+      
+      properNounSeen.add(trimmedKey);
       const actualStart = pn.index + (pn[0].length - pn[1].length);
-      matches.push({ text: pn[1], index: actualStart, length: pn[1].length, layer: 1, properNounKey: key });
+      matches.push({ text: trimmedText, index: actualStart, length: trimmedText.length, layer: 1, properNounKey: trimmedKey });
     }
   }
   
@@ -707,7 +723,7 @@ function highlightSmartKeywords(markdown: string): string {
   }
   
   // --- Layer 4: Density control with block-based distribution ---
-  const MAX_HIGHLIGHTS = 15;
+  const MAX_HIGHLIGHTS = 20;
   const priorityOrder = (layer: number) => layer === 3 ? 0 : layer === 1 ? 1 : 2;
 
   // Split markdown into logical blocks and compute character ranges
@@ -734,16 +750,18 @@ function highlightSmartKeywords(markdown: string): string {
     bm.sort((a, b) => priorityOrder(a.layer) - priorityOrder(b.layer) || a.index - b.index);
   }
 
-  // Calculate budget per block
+  // Calculate budget per block — proportional to block CHARACTER SIZE (not just candidate count)
+  const totalDocLength = markdown.length;
   const blocksWithCandidates = matchesByBlock.filter(bm => bm.length > 0).length;
   const guaranteed = Math.min(blocksWithCandidates, MAX_HIGHLIGHTS);
   const surplus = MAX_HIGHLIGHTS - guaranteed;
-  const totalCandidates = matchesByBlock.reduce((s, bm) => s + bm.length, 0);
 
-  const budgets = matchesByBlock.map(bm => {
+  const budgets = matchesByBlock.map((bm, bi) => {
     if (bm.length === 0) return 0;
-    const extra = totalCandidates > 0 ? Math.floor(surplus * bm.length / totalCandidates) : 0;
-    return 1 + extra;
+    const blockSize = blocks[bi].end - blocks[bi].start;
+    const sizeRatio = totalDocLength > 0 ? blockSize / totalDocLength : 0;
+    const extra = Math.floor(surplus * sizeRatio);
+    return Math.min(1 + extra, bm.length); // cap at available candidates
   });
 
   // Distribute any rounding remainder to blocks with the most candidates
@@ -758,6 +776,14 @@ function highlightSmartKeywords(markdown: string): string {
     }
   }
 
+  // Guarantee at least 1 highlight in the last 30% of the document
+  const tail30Start = Math.floor(blocks.length * 0.7);
+  for (let bi = tail30Start; bi < blocks.length; bi++) {
+    if (matchesByBlock[bi].length > 0 && budgets[bi] === 0) {
+      budgets[bi] = 1;
+    }
+  }
+
   // Select within each block respecting overlaps and uniqueness globally
   const selected: KeywordMatch[] = [];
   const usedRanges: { start: number; end: number }[] = [];
@@ -767,7 +793,6 @@ function highlightSmartKeywords(markdown: string): string {
     let blockCount = 0;
     for (const m of matchesByBlock[bi]) {
       if (blockCount >= budgets[bi]) break;
-      if (uniqueTexts.size >= MAX_HIGHLIGHTS) break;
 
       const overlaps = usedRanges.some(r =>
         (m.index >= r.start && m.index < r.end) || (m.index + m.length > r.start && m.index + m.length <= r.end)
@@ -1245,15 +1270,34 @@ function unifyHrTitleHeaders(html: string): string {
       // Strip any <strong> tags that auto-bold may have added
       titleText = titleText.replace(/<\/?strong>/g, '');
       
-      // Check: title is short (<80 chars), mostly uppercase or a section-like title, and followed by <hr>
-      const isShortTitle = titleText.length > 0 && titleText.length < 80;
-      const isSectionTitle = /^[A-ZÁÉÍÓÚÑ\s\d—\-:()]+$/.test(titleText) || 
-                             /^(RESUMEN|PILAR|CIERRE|FUENTES|CONCLUSI[OÓ]N|AN[AÁ]LISIS|EXECUTIVE|SUMMARY)/i.test(titleText);
-      
-      if (isShortTitle && isSectionTitle && afterLine === '<hr>') {
-        result.push(`<div class="section-band"><p class="section-band-title">${processEmojis(titleText.trim())}</p></div>`);
-        i += 3;
-        continue;
+      if (afterLine === '<hr>' && titleText.length > 0) {
+        // Short title (<80 chars) that looks like a section header → section-band
+        const isShortTitle = titleText.length < 80;
+        const isSectionTitle = /^[A-ZÁÉÍÓÚÑ\s\d—\-:()]+$/.test(titleText) || 
+                                /^(RESUMEN|PILAR|CIERRE|FUENTES|CONCLUSI[OÓ]N|AN[AÁ]LISIS|EXECUTIVE|SUMMARY|DICTAMEN|IDENTIFICACI[OÓ]N)/i.test(titleText);
+        
+        if (isShortTitle && isSectionTitle) {
+          result.push(`<div class="section-band"><p class="section-band-title">${processEmojis(titleText.trim())}</p></div>`);
+          i += 3;
+          continue;
+        }
+        
+        // Long title (>80 chars) — extract first uppercase segment as section-band, rest as paragraph
+        if (titleText.length >= 80) {
+          // Try to split at first lowercase word or line break
+          const uppercaseMatch = titleText.match(/^([A-ZÁÉÍÓÚÑ\s]+?)(?=\s+[a-záéíóúñ])/);
+          if (uppercaseMatch && uppercaseMatch[1].length >= 10) {
+            const bandTitle = uppercaseMatch[1].trim();
+            const remainder = titleText.substring(uppercaseMatch[1].length).trim();
+            result.push(`<div class="section-band"><p class="section-band-title">${processEmojis(bandTitle)}</p></div>`);
+            if (remainder) result.push(`<p>${remainder}</p>`);
+          } else {
+            // Fallback: use full text as a styled header block
+            result.push(`<div class="section-band"><p class="section-band-title" style="font-size:11px;letter-spacing:1px;">${processEmojis(titleText.trim())}</p></div>`);
+          }
+          i += 3;
+          continue;
+        }
       }
     }
     
@@ -1271,8 +1315,9 @@ function regroupIsolatedMetrics(html: string): string {
   
   // Pattern: <ol>\n<li>MetricName — value emoji</li>\n</ol>
   // We collect these when separated by <p>...</p> blocks
+  // Accept both raw emojis AND emojis already wrapped in <span class="emoji-status">
   const singleMetricOlPattern = /^<ol>\s*$/;
-  const metricLiPattern = /^<li>(.+?)\s*[—\-:]\s*(.+?)\s*(<span class="emoji[^"]*">(\p{Emoji_Presentation}|\p{Extended_Pictographic})<\/span>)\s*<\/li>$/u;
+  const metricLiPattern = /^<li>(.+?)\s*[—\-–:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u;
   const closeOlPattern = /^<\/ol>\s*$/;
   
   interface MetricEntry { name: string; value: string; emojiHtml: string; explanations: string[] }
@@ -1363,10 +1408,12 @@ function processSubsectionTitles(html: string): string {
   // Patterns for subsection titles:
   // - Start with a number + word: "3 Hallazgos", "5 Mensajes para la Dirección"
   // - Short label lines: "Las 8 Métricas (promedio ponderado)"
+  // - Roman numerals: "I. IDENTIFICACIÓN DEL OBJETO", "IV. ANÁLISIS POR MÉTRICA"
   const subtitlePatterns = [
     /^\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/,  // "3 Hallazgos"
     /^Las?\s+\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s()]+$/i, // "Las 8 Métricas (promedio ponderado)"
     /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+(para|de|del)\s+(la|el|los|las)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/i, // "Mensajes para la Dirección"
+    /^(I{1,3}|IV|VI{0,3}|IX|X)[.\s]+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]+$/,  // "IV. ANÁLISIS POR MÉTRICA"
   ];
   
   for (const line of lines) {
@@ -1379,8 +1426,8 @@ function processSubsectionTitles(html: string): string {
     }
     
     // Check: short line (< 60 chars), no punctuation at end, matches a subtitle pattern
-    const textOnly = trimmed.replace(/<[^>]+>/g, '').trim();
-    if (textOnly.length > 3 && textOnly.length < 60 && !/[.;,!?:]$/.test(textOnly)) {
+    const textOnly = trimmed.replace(/<[^>]+>/g, '').replace(/<\/?strong>/g, '').trim();
+    if (textOnly.length > 3 && textOnly.length < 60 && !/[;,!?]$/.test(textOnly)) {
       const isSubtitle = subtitlePatterns.some(p => p.test(textOnly));
       if (isSubtitle) {
         result.push(`<div class="subsection-title">${trimmed}</div>`);
