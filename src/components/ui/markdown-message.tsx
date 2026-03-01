@@ -225,10 +225,13 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
 function stripLlmMetaCommentary(text: string): string {
   // Remove bracketed meta-text at the start (e.g. "[La respuesta completa se ha entregado...]")
   let cleaned = text.replace(/^\s*\[.*?(?:respuesta\s+completa|longitud|extensi[oó]n|profundidad\s+requerida|lectura\s+puede\s+requerir).*?\]\s*/is, '');
+  // "Elaboración en progreso" variant
+  cleaned = cleaned.replace(/^\s*\[.*?(?:elaboraci[oó]n\s+en\s+progreso|l[ií]mite\s+de\s+generaci[oó]n|pr[oó]xima\s+respuesta).*?\]\s*/is, '');
   // Also catch unbracketed variants
   cleaned = cleaned.replace(/^\s*La\s+respuesta\s+completa\s+se\s+ha\s+entregado[^.]*\.\s*/i, '');
   cleaned = cleaned.replace(/^\s*Debido\s+a\s+la\s+longitud[^.]*\.\s*/i, '');
   cleaned = cleaned.replace(/^\s*Si\s+necesita\s+aclaraciones\s+sobre\s+alguna\s+secci[oó]n[^.]*\.\s*/i, '');
+  cleaned = cleaned.replace(/^\s*Elaboraci[oó]n\s+en\s+progreso[^.]*\.\s*/i, '');
   return cleaned;
 }
 

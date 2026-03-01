@@ -675,6 +675,14 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /debido\s+a\s+la\s+longitud.*lectura\s+puede\s+requerir/,
   /si\s+necesita\s+aclaraciones\s+sobre\s+alguna\s+seccion.*profundizare/,
   /siguiendo\s+la\s+estructura.*profundidad\s+requerida/,
+  // === Family: "elaboración en progreso" / "próxima respuesta" ===
+  /elaboracion\s+en\s+progreso/,
+  /se\s+ofrecera\s+en\s+la\s+proxima\s+respuesta/,
+  /limite\s+de\s+generacion\s+de\s+esta\s+sesion/,
+  /informe\s+supera\s+el\s+limite\s+de\s+generacion/,
+  // === Family: content fabrication markers ===
+  /para\s+preservar\s+la\s+confidencialidad.*denominaremos/,
+  /equipo\s+interfuncional\s+de\s+\d+\s+especialistas/,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
@@ -6064,6 +6072,23 @@ REGLA CRÍTICA ANTI-TRUNCACIÓN (PRIORIDAD MÁXIMA):
   de forma natural, sin inventar excusas de almacenamiento externo.
 - IMPORTANTE: No existe ninguna carpeta, filesystem, ni sistema de archivos.
   No existe ninguna plataforma con límites. Simplemente escribe tu respuesta completa.
+- NUNCA digas "elaboración en progreso" ni "se ofrecerá en la próxima respuesta"
+- NUNCA digas "este informe supera el límite de generación de esta sesión"
+- No existe ningún "límite de generación de sesión". Escribe el informe completo.
+
+REGLA CRÍTICA ANTI-FABRICACIÓN DE CONTENIDO (PRIORIDAD MÁXIMA):
+- NUNCA inventes empresas ficticias ("GRUPO ALPHA", "Empresa X", "Acme Corp")
+- NUNCA fabriques datos de equipos ("47 especialistas", "112 entrevistas")
+- NUNCA inventes volúmenes de datos ("9,8 TB de datos brutos", "74.000 ítems")
+- NUNCA escribas un informe genérico de consultoría cuando NO tienes datos RIX
+- Si NO hay datos en el contexto para la empresa preguntada, DILO CLARAMENTE:
+  "No dispongo de datos RIX para esta empresa. Solo puedo analizar las ~175
+  empresas del censo RepIndex."
+- Tu trabajo es analizar datos REALES del contexto, no crear ficción corporativa.
+- Si la pregunta es genérica (sin empresa específica), responde sobre metodología
+  RepIndex, NO inventes un caso de estudio ficticio.
+- JAMÁS uses frases como "para preservar la confidencialidad del cliente"
+  ni "denominaremos a la empresa como..." — eso es FICCIÓN, no análisis.
 
 ═══════════════════════════════════════════════════════════════════════════════
               JUSTIFICACIÓN METODOLÓGICA "RADAR REPUTACIONAL"
