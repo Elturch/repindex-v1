@@ -696,14 +696,18 @@ function highlightSmartKeywords(markdown: string): string {
     }
   }
   
-  // Acronyms (3+ uppercase letters, word boundary) — first occurrence only
-  const acronymPattern = /\b([A-ZÁÉÍÓÚÑ]{3,})\b/g;
+  // Acronyms (5+ uppercase letters, word boundary) — first occurrence only
+  // Skip short acronyms (2-4 chars like PILAR, III, FEB, EBA, BCE) to avoid noise
+  const acronymPattern = /\b([A-ZÁÉÍÓÚÑ]{5,})\b/g;
   const acronymSeen = new Set<string>();
+  // Also skip section-title words entirely
+  const SECTION_TITLE_WORDS = new Set(['PILAR', 'CIERRE', 'RESUMEN', 'EJECUTIVO', 'DICTAMEN', 'PERICIAL']);
   let ac: RegExpExecArray | null;
   while ((ac = acronymPattern.exec(markdown)) !== null) {
     const acr = ac[1];
-    // Skip common non-acronym words and already-bold
+    // Skip common non-acronym words, section titles, and already-bold
     if (['THE', 'AND', 'FOR', 'NOT', 'ALL', 'BUT', 'HAS', 'HAD', 'ARE', 'WAS', 'HIS', 'HER', 'MAS', 'POR', 'QUE', 'CON', 'UNA', 'UNO', 'LOS', 'LAS', 'DEL', 'SIN', 'SUS'].includes(acr)) continue;
+    if (SECTION_TITLE_WORDS.has(acr)) continue;
     if (!isInBold(ac.index, acr.length) && !isInSpecialContext(ac.index, markdown) && !acronymSeen.has(acr)) {
       acronymSeen.add(acr);
       matches.push({ text: acr, index: ac.index, length: acr.length, layer: 1, properNounKey: acr });
@@ -833,10 +837,48 @@ function highlightSmartKeywords(markdown: string): string {
   return result;
 }
 
+// =============================================================================
+// PRE-PROCESSING: isolate inline structural elements before any conversion
+// =============================================================================
+
+/**
+ * Preprocesses raw markdown to isolate inline structural elements:
+ * 1a) Em-dash decorated headers inline with text
+ * 1b) Inline bullets (• item1 • item2) into separate lines
+ * 1c) Numbered subsections inline (e.g., "1.1 Alcance") 
+ */
+function preprocessRawMarkdown(markdown: string): string {
+  let text = markdown;
+  
+  // 1a) Isolate em-dash decorated headers that are inline with other text
+  // Pattern: text before ——————TITLE—————— text after → separate into 3 lines
+  text = text.replace(/([^—\n])(—{6,})\s*([^—\n]+?)\s*(—{6,})([^—\n])/g, '$1\n$2\n$3\n$4\n$5');
+  
+  // Also handle em-dash headers at the start of a line (no preceding text)
+  text = text.replace(/^(—{6,})\s*([^—\n]+?)\s*(—{6,})/gm, '$1\n$2\n$3');
+  
+  // 1b) Convert inline bullets to separate lines
+  // Only when there are 2+ bullet markers on the same line
+  text = text.split('\n').map(line => {
+    const bulletCount = (line.match(/•/g) || []).length;
+    if (bulletCount >= 2) {
+      // Split on bullet markers, keeping the bullet
+      return line.replace(/\s*•\s*/g, '\n• ').replace(/^\n/, '');
+    }
+    return line;
+  }).join('\n');
+  
+  // 1c) Isolate numbered subsections inline (e.g., "...texto. 1.1 Alcance del informe")
+  // Only when preceded by sentence-ending punctuation + space
+  text = text.replace(/([.;:!?])\s+(\d+\.\d+\s+[A-ZÁÉÍÓÚÑ])/g, '$1\n$2');
+  
+  return text;
+}
+
 // Comprehensive markdown to HTML converter
 export function convertMarkdownToHtml(markdown: string): string {
-  // Smart keyword highlighting on raw markdown (before any HTML conversion)
-  let html = markdown;
+  // Step 0: Preprocess raw markdown to isolate inline structural elements
+  let html = preprocessRawMarkdown(markdown);
   
   // Process tables first
   html = processMarkdownTables(html);
@@ -1103,7 +1145,7 @@ function processUnorderedLists(html: string): string {
   let inList = false;
   
   for (const line of lines) {
-    const match = line.match(/^[\*\-\+]\s+(.*)$/);
+    const match = line.match(/^[\*\-\+•]\s+(.*)$/);
     if (match) {
       if (!inList) {
         result.push('<ul>');
@@ -1128,7 +1170,7 @@ function processDecorativeSectionHeaders(html: string): string {
   const lines = html.split('\n');
   const result: string[] = [];
   // Pattern for decorative separator lines (═, =, ─, -, *, ~) repeated 4+ times
-  const separatorPattern = /^[═=─\-\*~☰▬■□▪▫●○◆◇►◄▲▼]{4,}\s*$/;
+  const separatorPattern = /^[═=─—\-\*~☰▬■□▪▫●○◆◇►◄▲▼]{4,}\s*$/;
   
   let i = 0;
   while (i < lines.length) {
@@ -1476,7 +1518,11 @@ function processSubsectionTitles(html: string): string {
     /^\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/,  // "3 Hallazgos"
     /^Las?\s+\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s()]+$/i, // "Las 8 Métricas (promedio ponderado)"
     /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+(para|de|del)\s+(la|el|los|las)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/i, // "Mensajes para la Dirección"
-    /^(I{1,3}|IV|VI{0,3}|IX|X)[.\s]+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]+$/,  // "IV. ANÁLISIS POR MÉTRICA"
+    /^(I{1,3}|IV|VI{0,3}|IX|X)[.\s]+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑA-Záéíóúña-z\s]+$/,  // "IV. ANÁLISIS POR MÉTRICA"
+    /^PILAR\s+\d+\s*[–—]\s*.+$/i,  // "PILAR 1 – DEFINIR"
+    /^CIERRE$/i,  // "CIERRE"
+    /^RESUMEN\s+EJECUTIVO$/i,  // "RESUMEN EJECUTIVO"
+    /^\d+\.\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/,  // "2.3 Benchmark competitivo"
   ];
   
   for (const line of lines) {
