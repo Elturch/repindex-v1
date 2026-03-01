@@ -1,77 +1,84 @@
 
 
-# Mejoras de coherencia estetica en el informe exportado
+# Enforcement de longitud minima para informes corporativos
 
-## Problemas diagnosticados en el HTML actual
+## Problema diagnosticado
 
-### 1. Negritas rotas y mal distribuidas
-El auto-highlighter produce cortes absurdos:
-- `<strong>DICTAMEN</strong> PERICIAL` — parte un titulo
-- `<strong>Grok y</strong> DeepSeek` — parte una frase a mitad
-- `<strong>Foco de</strong> riesgo` — idem
-- Secciones V, VI, VII y VIII no tienen ninguna negrita
+El sistema prompt del Embudo Narrativo tiene una via de escape: la linea "Pregunta concreta (un dato, una metrica): respuesta focalizada -- solo lo pedido" (linea 1290). Cuando un usuario pregunta por una empresa pero con redaccion que parece "concreta" (ej. "analiza Telefonica", "como esta Inditex esta semana"), el LLM clasifica la consulta como "pregunta concreta" y produce respuestas de 800-2000 palabras en vez de las 4.500 minimas.
 
-**Causa raiz**: El regex de nombres propios captura "Grok y" o "Foco de" como nombre propio porque "y" y "de" estan en la lista de conectores permitidos. Ademas, el bloque de texto donde esta el titulo "DICTAMEN PERICIAL..." se cuenta como un unico bloque gigante que consume varias negritas, dejando los bloques posteriores sin presupuesto.
+Ademas, no existe ningun mecanismo post-generacion que valide la longitud: la auto-continuacion solo se activa por truncacion (`finish_reason: "length"`) o patrones prohibidos, pero nunca por respuesta demasiado corta.
 
-### 2. Metricas numeradas no se reagrupan
-Las 8 metricas (lineas tipo `1. Calidad de la Narrativa -- 68 🟡`) quedan cada una en su propio `<ol>` aislado. `regroupIsolatedMetrics` no las detecta porque busca emojis ya envueltos en `<span class="emoji-status">`, pero a esa altura del pipeline los emojis todavia son texto plano.
+## Solucion: doble refuerzo (prompt + enforcement post-generacion)
 
-### 3. Cabecera principal no se convierte a section-band
-El titulo "DICTAMEN PERICIAL DE REPUTACION ALGORITMICA..." esta entre dos `<hr>` pero `unifyHrTitleHeaders` lo rechaza porque el texto contiene minusculas y es demasiado largo. No es un section-band, es un titulo compuesto con subtexto.
+### Cambio 1 -- Reforzar el prompt para eliminar la ambiguedad (lineas 1277-1291)
 
-### 4. Titulos de seccion con numerales romanos sin formato
-"I. IDENTIFICACION DEL OBJETO", "IV. ANALISIS POR METRICA", "VII. CONCLUSIONES PERICIALES" son parrafos planos sin distincion visual.
+Reescribir la seccion "Extension y adaptacion" para que la regla sea binaria e inequivoca:
 
-## Plan de cambios
+- Si se detecta al menos 1 empresa en la pregunta → SIEMPRE informe completo (4.500-5.400 palabras), sin excepciones. Incluso si la pregunta parece pedir "solo una metrica", el contexto de esa metrica requiere el informe completo.
+- "Pregunta concreta → focalizada" se restringe EXCLUSIVAMENTE a preguntas que NO mencionan ninguna empresa (ej. "que es el RIX", "como funciona la metodologia", "cuantas empresas analizais").
 
-### Archivo: `src/lib/markdownToHtml.ts`
-
-**Cambio 1 -- Corregir el regex de nombres propios (lineas ~652-672)**
-
-El problema principal es que "y", "de", "del" actuan como conectores dentro del match, produciendo capturas como "Grok y" o "Foco de". Fix:
-- Requerir que el match termine en una palabra capitalizada o acronimo (no en un conector).
-- Excluir matches cuyo texto contenga solo 2 palabras y la segunda sea un conector.
-- Tambien excluir matches que incluyan texto en mayusculas que forma parte de un titulo de seccion (todo mayusculas).
-
-**Cambio 2 -- Aumentar MAX_HIGHLIGHTS y mejorar distribucion (lineas ~710-785)**
-
-- Subir MAX_HIGHLIGHTS de 15 a 20 para informes largos como este (8+ secciones).
-- Hacer el calculo del presupuesto proporcional al tamano del bloque (no solo al numero de candidatos), para que bloques largos de texto reciban mas cupo.
-- Garantizar minimo 1 highlight en los ultimos 30% del documento aunque la prioridad general ya este agotada.
-
-**Cambio 3 -- Arreglar regroupIsolatedMetrics para emojis sin envolver (lineas ~1275)**
-
-El regex `metricLiPattern` busca `<span class="emoji...">` pero cuando se ejecuta, los emojis aun no se han envuelto. Cambiar el patron para que acepte tanto emojis crudos como emojis ya envueltos en span.
-
-Regex actual:
+Texto propuesto:
 ```
-/^<li>(.+?)\s*[—\-:]\s*(.+?)\s*(<span class="emoji[^"]*">(...)<\/span>)\s*<\/li>$/u
-```
-Regex corregido: aceptar tambien emoji crudo directamente:
-```
-/^<li>(.+?)\s*[—\-:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u
+Escala de profundidad segun tipo de consulta:
+- SI LA PREGUNTA MENCIONA UNA EMPRESA (nombre, ticker o sector con empresa implicita):
+  SIEMPRE informe completo con Embudo Narrativo — RANGO OBJETIVO: 4.500-5.400 palabras.
+  NO existe la opcion "respuesta corta" para consultas sobre empresas.
+  Aunque la pregunta parezca pedir solo un dato o metrica, el analisis corporativo
+  SIEMPRE requiere el contexto completo del Embudo Narrativo.
+- Analisis sectorial: profundidad media — activa bloques relevantes (minimo 2.500 palabras)
+- Comparativa entre empresas: estructura enfrentada — tabla vs. tabla (minimo 3.000 palabras)
+- Pregunta sin empresa (metodologia, conceptos, datos generales): respuesta focalizada
 ```
 
-**Cambio 4 -- Detectar titulos con numerales romanos como section-band o subsection**
+### Cambio 2 -- Reforzar la misma regla en el user prompt (lineas 6136-6160)
 
-Detectar lineas que comienzan con numeral romano seguido de titulo en mayusculas:
-- Patron: `^(I|II|III|IV|V|VI|VII|VIII|IX|X)[.\s]+[A-Z][A-Z\s]+`
-- Si el titulo es corto (<60 chars) y todo en mayusculas: convertir a `<div class="subsection-title">`
-- Actualizar `processSubsectionTitles` para incluir este patron.
+En la seccion "INSTRUCCIONES PARA TU RESPUESTA", punto 7 dice: "Para preguntas concretas (un dato, una metrica): respuesta focalizada sin relleno". Modificar para que sea coherente:
 
-**Cambio 5 -- Mejorar unifyHrTitleHeaders para titulos compuestos**
+```
+7. Solo para preguntas SIN EMPRESA (metodologia, conceptos generales): respuesta
+   focalizada sin relleno. Si la pregunta menciona cualquier empresa, SIEMPRE
+   aplica el informe completo de 4.500-5.400 palabras.
+```
 
-Cuando el texto entre dos `<hr>` es largo y contiene mezcla de mayusculas/minusculas, no convertir a section-band sino dejarlo como un bloque destacado con clase `.report-dictamen-header` (un div con fondo gris claro, padding, y tipografia mas grande). Alternativamente, si el texto contiene linebreaks logicos, extraer solo la primera linea (la parte en mayusculas) como section-band y dejar el resto como parrafo normal.
+### Cambio 3 -- Reforzar en la regla de prioridad del rol (lineas 6101-6105)
 
-**Cambio 6 -- CSS para nuevo estilo de cabecera de dictamen**
+Cambiar:
+```
+2. PRIORIDAD 2 (PROFUNDIDAD): Si es analisis de empresa → minimo 2.500 palabras
+```
+A:
+```
+2. PRIORIDAD 2 (PROFUNDIDAD): Si menciona empresa → informe completo 4.500-5.400 palabras (OBLIGATORIO)
+```
 
-No se necesita un nuevo estilo especial: basta con que `unifyHrTitleHeaders` sea mas flexible. Si el texto entre `<hr>` es largo (>80 chars), tomar solo las primeras palabras en mayusculas como titulo de section-band y dejar el resto como primer parrafo.
+### Cambio 4 -- Enforcement post-generacion: auto-continuacion por respuesta corta
+
+En la seccion de auto-continuacion (lineas 6338-6366), anadir una condicion adicional: si se detectaron empresas en la pregunta (`detectedCompanies.length > 0`) y la respuesta acumulada tiene menos de ~18.000 caracteres (~4.500 palabras en espanol), forzar auto-continuacion con un prompt especifico que diga "El informe esta incompleto. Faltan secciones del Embudo Narrativo. Continua desde donde lo dejaste."
+
+Logica:
+```
+const MIN_CORPORATE_CHARS = 18000; // ~4500 palabras en espanol
+const isCorporateQuery = detectedCompanies.length > 0;
+const isTooShort = isCorporateQuery && accumulatedContent.length < MIN_CORPORATE_CHARS;
+
+while (
+  (streamFinishReason === "length" || forbiddenDetected || isTooShort) &&
+  segmentsGenerated <= MAX_CONTINUATIONS
+) {
+  // ... continuacion existente + nuevo prompt para caso "too short"
+}
+```
+
+El prompt de continuacion para respuestas cortas sera diferente al de truncacion: en lugar de "continua desde donde lo dejaste", dira "Tu respuesta es demasiado breve para un informe corporativo. Debes completar TODAS las secciones del Embudo Narrativo: Resumen Ejecutivo, Pilar 1, Pilar 2, Pilar 3 y Cierre. Continua anadiendo las secciones que faltan."
+
+### Cambio 5 -- Mismo enforcement para modo no-streaming (lineas 6575-6600)
+
+Aplicar la misma logica de longitud minima en el bloque de compliance gate no-streaming.
 
 ## Resumen de impacto
 
-- 1 archivo modificado: `src/lib/markdownToHtml.ts`
-- Cambios en 5 funciones existentes, sin funciones nuevas
-- Las negritas se distribuiran uniformemente en todo el documento
-- Las 8 metricas se agruparan en tabla cohesiva
-- Los titulos con numerales romanos tendran formato visual
-- Sin cambios en backend ni componentes UI
+- 1 archivo modificado: `supabase/functions/chat-intelligence/index.ts`
+- 3 cambios en el prompt (eliminar escape "pregunta concreta" para consultas con empresa)
+- 2 cambios en logica de auto-continuacion (streaming + no-streaming)
+- Sin cambios en frontend ni en la base de datos
+- Requiere redespliegue de la edge function
