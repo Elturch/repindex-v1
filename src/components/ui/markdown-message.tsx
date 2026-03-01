@@ -22,12 +22,13 @@ interface MarkdownMessageProps {
 export function MarkdownMessage({ content, showDownload = false, languageCode = 'es', roleName, verifiedSources, periodFrom, periodTo }: MarkdownMessageProps) {
   const { toast } = useToast();
   const tr = getChatTranslations(languageCode);
+  const cleanedContent = stripLlmMetaCommentary(content);
 
   const downloadMessage = () => {
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const fileName = `repindex_respuesta_${timestamp}.html`;
 
-    const htmlContent = generateExportHtml(content, tr, languageCode, roleName, verifiedSources, periodFrom, periodTo);
+    const htmlContent = generateExportHtml(cleanedContent, tr, languageCode, roleName, verifiedSources, periodFrom, periodTo);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -213,11 +214,22 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
           ),
         }}
       >
-        {content}
+        {cleanedContent}
       </ReactMarkdown>
       
     </div>
   );
+}
+
+/** Strip LLM meta-commentary blocks that add no value to the report */
+function stripLlmMetaCommentary(text: string): string {
+  // Remove bracketed meta-text at the start (e.g. "[La respuesta completa se ha entregado...]")
+  let cleaned = text.replace(/^\s*\[.*?(?:respuesta\s+completa|longitud|extensi[oó]n|profundidad\s+requerida|lectura\s+puede\s+requerir).*?\]\s*/is, '');
+  // Also catch unbracketed variants
+  cleaned = cleaned.replace(/^\s*La\s+respuesta\s+completa\s+se\s+ha\s+entregado[^.]*\.\s*/i, '');
+  cleaned = cleaned.replace(/^\s*Debido\s+a\s+la\s+longitud[^.]*\.\s*/i, '');
+  cleaned = cleaned.replace(/^\s*Si\s+necesita\s+aclaraciones\s+sobre\s+alguna\s+secci[oó]n[^.]*\.\s*/i, '');
+  return cleaned;
 }
 
 // Generate complete HTML document for export with premium RepIndex report styling
