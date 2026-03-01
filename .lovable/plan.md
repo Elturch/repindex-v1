@@ -1,98 +1,105 @@
 
-# Plan: Correccion integral de la estetica del informe exportado
+# Plan: Refactorizacion profunda del pipeline de conversion HTML
 
-## Problemas concretos encontrados en el HTML
+## Diagnostico real (evidencia del HTML exportado)
 
-1. **Negritas rotas**: `<strong>DICTAMEN</strong> PERICIAL`, `<strong>Grok y</strong> DeepSeek`, `<strong>Foco de</strong> riesgo`, `<strong>III</strong>. CONSTATACION` — el highlighter rompe titulos y frases
-2. **Las 8 metricas NO se agrupan en tabla**: cada metrica queda como `<ol>` aislado de 1 `<li>`. El regex `metricLiPattern` falla porque:
-   - Las metricas contienen `<strong>` tags dentro del `<li>` (ej. `<strong>Calidad de la Narrativa</strong>`)
-   - El formato `68 🟡→ 🟢` tiene flecha y doble emoji que no matchea
-3. **Titulos con numerales romanos (I-VIII) sin formato**: `processSubsectionTitles` no matchea porque el texto contiene `<strong>` inline (ej. `IV. <strong>ANALISIS</strong> POR METRICA`)
-4. **Cabecera DICTAMEN no convertida a section-band**: `unifyHrTitleHeaders` rechaza texto largo con mezcla de mayusculas/minusculas
-5. **Secciones V-VIII sin ninguna negrita**: el presupuesto de highlights se agota en la primera mitad
+El informe exportado tiene **cero section-bands, cero subsection-titles, cero emoji-metrics-tables**. Todo el documento es una sucesion plana de `<p>` sin jerarquia visual. Las causas raiz son:
 
-## Cambios en `src/lib/markdownToHtml.ts`
+1. **Los separadores `——————` (em-dash U+2014) estan inline**, no en lineas separadas. La continuacion de streaming del LLM concatena el texto sin saltos de linea, produciendo: `...activos.—————————— RESUMEN EJECUTIVO —————————— El presente informe...` todo en una sola linea. El detector de cabeceras decorativas busca un patron de 3 lineas y nunca lo encuentra.
 
-### Cambio 1 — Orden del pipeline: highlights DESPUES de procesamiento estructural
+2. **El caracter `—` (em-dash) no esta en el `separatorPattern`**. El regex actual incluye `\-` (guion) pero no `—` (em-dash).
 
-El problema raiz es que `highlightSmartKeywords` opera sobre el markdown crudo ANTES de la conversion HTML, pero genera `**texto**` que luego se convierte a `<strong>` dentro de titulos, metricas y seccion-bands, rompiendo todos los regex posteriores.
+3. **Titulos de seccion como `PILAR 1 – DEFINIR` quedan como `<p>` planos** porque `processSubsectionTitles` no tiene patron para `PILAR \d+` ni para `CIERRE`.
 
-Solucion: mover `highlightSmartKeywords` para que se ejecute SOLO sobre el texto de parrafos (`<p>...</p>`) DESPUES de la conversion HTML completa. Asi:
-- Los titulos de seccion nunca reciben auto-bold
-- Las metricas en `<li>` nunca se rompen
-- Las negritas solo aparecen en prosa narrativa
+4. **Bullets inline (`• item1 • item2`) no se convierten a `<ul><li>`**. Quedan como texto plano dentro de parrafos.
 
-Implementacion concreta:
-- En `convertMarkdownToHtml`, eliminar la llamada a `highlightSmartKeywords` al inicio (linea 828)
-- Crear una nueva funcion `applyHighlightsToParas(html)` que:
-  1. Extraiga el contenido de cada `<p>...</p>`
-  2. Aplique `highlightSmartKeywords` solo a ese contenido
-  3. Reinserte el resultado
+5. **Negritas siguen aplicandose a fragmentos absurdos** como `<strong>PILAR</strong>`, `<strong>III</strong>`, `<strong>FEB</strong>`.
 
-### Cambio 2 — Corregir `metricLiPattern` para aceptar `<strong>` y flechas
+## Solucion: Pre-procesamiento de texto crudo antes de la conversion
 
-El regex actual:
+### Cambio 1 — Nueva funcion `preprocessRawMarkdown(markdown)` al inicio del pipeline
+
+Se ejecuta ANTES de cualquier otra transformacion. Hace tres operaciones:
+
+**1a) Separar cabeceras inline con em-dashes:**
+Detectar el patron `——{6,}\s*TITULO\s*——{6,}` (10+ em-dashes rodeando texto) incluso si esta inline con otro texto. Insertar saltos de linea para aislar la cabecera en 3 lineas propias (separador / titulo / separador).
+
+Regex: `/([^—])(—{6,})\s*([^—]+?)\s*(—{6,})([^—])/g`
+Reemplazo: `$1\n$2\n$3\n$4\n$5`
+
+**1b) Convertir bullets inline a lineas separadas:**
+Detectar `• texto` repetido en la misma linea y separar cada bullet en su propia linea.
+
+Regex: `/\s*•\s*/g` cuando hay 2+ ocurrencias en la misma linea.
+
+**1c) Detectar subsecciones numeradas inline:**
+Patron `\d+\.\d+\s+[A-Z]` (ej. "1.1 Alcance", "2.3 Benchmark") que aparecen pegados al texto anterior. Insertar salto de linea antes de cada subseccion.
+
+### Cambio 2 — Anadir `—` (em-dash) al `separatorPattern`
+
+En `processDecorativeSectionHeaders`, cambiar:
 ```
-/^<li>(.+?)\s*[—\-–:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji}]...)\s*<\/li>$/u
+/^[═=─\-\*~☰▬■□▪▫●○◆◇►◄▲▼]{4,}\s*$/
 ```
-
-Necesita:
-- Aceptar `<strong>` y `</strong>` dentro del nombre de metrica
-- Aceptar `→` como separador entre emojis (ej. `🟡→ 🟢`)
-- Aceptar emojis crudos sin span
-
-Nuevo regex:
+a:
 ```
-/^<li>(?:<strong>)?(.+?)(?:<\/strong>)?\s*[—\-–:]\s*(.+?)\s*([\p{Emoji_Presentation}\p{Extended_Pictographic}](?:\s*→?\s*[\p{Emoji_Presentation}\p{Extended_Pictographic}])?)\s*<\/li>$/u
-```
-
-Aplicar el mismo fix tanto en `processNumberedMetricBlocks` (linea 1171) como en `regroupIsolatedMetrics` (linea 1320).
-
-### Cambio 3 — `processSubsectionTitles`: limpiar `<strong>` antes de matchear
-
-El texto que llega es `IV. <strong>ANALISIS</strong> POR METRICA`. El regex actual no matchea porque tiene tags HTML.
-
-Fix: en `processSubsectionTitles`, antes de hacer el test del patron, limpiar tags `<strong>` y `</strong>` del texto. Esto ya se hace parcialmente (linea 1429) pero el resultado no se usa para el test de Roman numerals — el regex requiere que la linea NO empiece con `<`.
-
-Solucion: mover la comprobacion `trimmed.startsWith('<')` para que solo excluya tags de bloque (`<div`, `<table`, `<ol>`, `<ul>`, `<h1`...) pero permita lineas que empiecen con texto inline como `<strong>`.
-
-### Cambio 4 — `unifyHrTitleHeaders`: manejar cabecera DICTAMEN compuesta
-
-El texto entre los dos `<hr>` es: `DICTAMEN PERICIAL DE REPUTACION ALGORITMICA Snapshot dominical canonico: 1 de marzo de 2026 Cobertura: 167 empresas...`
-
-Esto es largo (>80 chars) y mezcla mayusculas/minusculas. El codigo actual intenta extraer el segmento uppercase inicial pero el regex `^([A-Z\s]+?)(?=\s+[a-z])` no matchea bien porque `ALGORÍTMICA` tiene tilde.
-
-Fix: mejorar el regex para incluir caracteres acentuados en mayusculas: `^([A-ZÁÉÍÓÚÑ\s]+?)(?=\s+[a-záéíóúñ])` (ya esta asi en parte). El problema real es que `<strong>DICTAMEN</strong> PERICIAL...` llega con tags. Limpiar `<strong>` del titulo antes de analizar.
-
-### Cambio 5 — Garantizar negritas en secciones finales
-
-Con el cambio 1 (highlights solo en `<p>`), la distribucion mejora automaticamente porque ya no se desperdician highlights en titulos y metricas. Adicionalmente:
-- Aumentar MAX_HIGHLIGHTS a 25
-- En la garantia del 30% final, asegurar minimo 2 highlights (no solo 1) si hay candidatos disponibles
-
-### Cambio 6 — CSS para emoji-status en tablas de metricas
-
-Anadir regla CSS para que cuando un emoji de semaforo aparece dentro de una celda de tabla o de una `emoji-metrics-table`, tenga margen izquierdo y alineacion vertical correcta:
-
-```css
-.emoji-metrics-table .metric-status .emoji-status {
-  margin-left: 0;
-}
-td .emoji-status {
-  margin-left: 4px;
-  vertical-align: middle;
-}
+/^[═=─—\-\*~☰▬■□▪▫●○◆◇►◄▲▼]{4,}\s*$/
 ```
 
-## Resultado esperado
+### Cambio 3 — Ampliar patrones de `processSubsectionTitles`
 
-- La cabecera DICTAMEN se convierte en section-band (parte uppercase) + parrafo (metadatos)
-- Los titulos I. a VIII. se formatean como `.subsection-title` con fondo y separador
-- Las 8 metricas se agrupan en una unica `emoji-metrics-table` con columnas: #, Nombre, Valor, Semaforo
-- Las negritas automaticas SOLO aparecen en parrafos narrativos, nunca en titulos ni metricas
-- Las secciones V-VIII reciben su cuota proporcional de highlights
-- Los emojis de semaforo estan correctamente alineados en tablas
+Anadir patrones para detectar:
+- `PILAR \d+ [–—] TITULO` (ej. "PILAR 1 – DEFINIR")
+- `CIERRE` como titulo de seccion
+- `RESUMEN EJECUTIVO` como titulo de seccion
+- `\d+\.\d+\s+Texto` como subtitulo interno (ej. "2.3 Benchmark competitivo")
+
+Estos patrones se aplican a lineas que ya fueron aisladas por el preprocesador.
+
+### Cambio 4 — Mejorar `processUnorderedLists` para bullets con `•`
+
+El procesador actual solo detecta `* texto`, `- texto`, `+ texto`. Anadir soporte para `• texto` como marcador de lista.
+
+### Cambio 5 — Refinar `highlightSmartKeywords` para excluir acronimos y titulos
+
+Excluir del auto-bolding:
+- Palabras enteramente en mayusculas de 2-4 letras (acronimos como PILAR, III, FEB, EBA, BCE)
+- Texto que ya es parte de un titulo de seccion (patron PILAR, CIERRE, RESUMEN)
+
+### Cambio 6 — Orden del pipeline en `convertMarkdownToHtml`
+
+El pipeline queda:
+```
+1. preprocessRawMarkdown()     ← NUEVO: separa cabeceras inline, bullets, subsecciones
+2. processMarkdownTables()
+3. Code blocks + inline code
+4. Headers (h1-h6)
+5. Horizontal rules
+6. Blockquotes
+7. Bold/italic
+8. Links
+9. processOrderedLists()
+10. processUnorderedLists()     ← AMPLIADO: soporte para •
+11. processDecorativeSectionHeaders()  ← CORREGIDO: incluye —
+12. unifyHrTitleHeaders()
+13. processEmojiResultBlocks()
+14. processNumberedMetricBlocks()
+15. regroupIsolatedMetrics()
+16. processSubsectionTitles()  ← AMPLIADO: PILAR, CIERRE, subsecciones
+17. wrapInParagraphs()
+18. applyHighlightsToParas()   ← REFINADO: excluye acronimos
+```
 
 ## Archivo modificado
 
 - `src/lib/markdownToHtml.ts` (unico archivo)
+
+## Resultado esperado
+
+- `—————— RESUMEN EJECUTIVO ——————` se convierte en `.section-band` azul con bordes
+- `—————— PILAR 1 — DEFINIR ——————` idem
+- `—————— CIERRE ——————` idem
+- `1.1 Alcance y proposito` se convierte en `.subsection-title` con borde inferior
+- `• item1 • item2 • item3` se convierte en `<ul>` con `<li>` separados
+- Las negritas automaticas solo afectan a prosa narrativa, nunca a acronimos ni titulos
+- El informe pasa de ser un muro de `<p>` a tener jerarquia visual clara con bandas, subtitulos y listas
