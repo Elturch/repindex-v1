@@ -508,9 +508,194 @@ export const baseExportStyles = `
   }
 `;
 
+// =============================================================================
+// SMART KEYWORD HIGHLIGHTING (operates on raw markdown, before any HTML conversion)
+// =============================================================================
+
+/** Curated verdict qualifiers — only highlighted when in evaluative context (noun + adjective) */
+const VERDICT_QUALIFIERS = [
+  // Positive
+  'sólido', 'solido', 'sólida', 'solida', 'excepcional', 'consistente', 'destacada', 'destacado',
+  'robusta', 'robusto', 'líder', 'lider', 'favorable', 'óptimo', 'optimo', 'óptima', 'optima',
+  'notable', 'sobresaliente', 'ejemplar', 'estable', 'fuerte',
+  // Negative
+  'crítico', 'critico', 'crítica', 'critica', 'vulnerable', 'débil', 'debil',
+  'deficiente', 'erosionada', 'erosionado', 'frágil', 'fragil', 'negativa', 'negativo',
+  'preocupante', 'insuficiente', 'deteriorada', 'deteriorado',
+  // High-charge neutral
+  'sin precedentes', 'estructural', 'sistémico', 'sistemico', 'sistémica', 'sistemica',
+  'disruptivo', 'disruptiva', 'significativo', 'significativa', 'relevante',
+];
+
+/** Compound verdict patterns — matched as full phrases (Layer 3, highest priority) */
+const VERDICT_PATTERNS: RegExp[] = [
+  /\b(riesgo|exposición|exposicion|vulnerabilidad)\s+(alto|elevado|cr[ií]tico|significativo|moderado|bajo|considerable|limitado)\b/gi,
+  /\b(posici[oó]n|situaci[oó]n)\s+(dominante|d[eé]bil|s[oó]lida|fr[aá]gil|favorable|desfavorable|ventajosa|comprometida)\b/gi,
+  /\b(tendencia|evoluci[oó]n|trayectoria)\s+(alcista|bajista|positiva|negativa|favorable|desfavorable|ascendente|descendente|estable)\b/gi,
+  /\b(gesti[oó]n|desempe[nñ]o|comportamiento)\s+(ejemplar|deficiente|notable|cr[ií]tico|sobresaliente|irregular|consistente)\b/gi,
+  /\b(impacto|efecto)\s+(significativo|limitado|considerable|moderado|negativo|positivo)\b/gi,
+  /\b(nivel|grado)\s+(elevado|bajo|cr[ií]tico|aceptable|insuficiente|óptimo|optimo)\b/gi,
+  /\b(perspectiva|proyecci[oó]n)\s+(favorable|desfavorable|positiva|negativa|incierta|estable)\b/gi,
+];
+
+/** Context patterns for Layer 2 — qualifier must appear near a noun to be highlighted */
+const CONTEXT_NOUN_PATTERNS = [
+  // noun + qualifier
+  /\b(posición|posicion|situación|situacion|gestión|gestion|reputación|reputacion|percepción|percepcion|evolución|evolucion|desempeño|desempeno|tendencia|trayectoria|resultado|perspectiva|proyección|proyeccion|calidad|nivel|grado|capacidad|fortaleza|debilidad|exposición|exposicion|coherencia|narrativa|evidencia|ejecución|ejecucion|gobernanza|actualidad|autoridad|comportamiento|rendimiento|impacto|efecto|solidez|fragilidad|consistencia|estabilidad|liderazgo|riesgo|puntuación|puntuacion|valoración|valoracion|cobertura|presencia)\s+/i,
+  // qualifier + noun (less common but possible)
+  /\s+(reputacional|corporativa|corporativo|empresarial|institucional|financiera|financiero|bursátil|bursatil|algorítmica|algoritmico|digital|mediática|mediatico|pública|publico)\b/i,
+];
+
+interface KeywordMatch {
+  text: string;
+  index: number;
+  length: number;
+  layer: 1 | 2 | 3;
+  /** For layer 1, track which unique proper noun this is */
+  properNounKey?: string;
+}
+
+/**
+ * Intelligent keyword highlighting on raw markdown.
+ * Operates BEFORE any HTML conversion to avoid breaking tags.
+ * Max 12-15 unique terms per report, prioritized by layer.
+ */
+function highlightSmartKeywords(markdown: string): string {
+  const matches: KeywordMatch[] = [];
+  
+  // Track which regions are already bold (inside **...**)
+  const boldRegions: { start: number; end: number }[] = [];
+  const boldPattern = /\*\*[^*]+\*\*/g;
+  let bm: RegExpExecArray | null;
+  while ((bm = boldPattern.exec(markdown)) !== null) {
+    boldRegions.push({ start: bm.index, end: bm.index + bm[0].length });
+  }
+  
+  const isInBold = (idx: number, len: number): boolean => {
+    return boldRegions.some(r => idx >= r.start && idx + len <= r.end);
+  };
+  
+  // Also skip matches inside markdown headers, links, code
+  const isInSpecialContext = (idx: number, text: string): boolean => {
+    // Find start of line
+    const lineStart = text.lastIndexOf('\n', idx - 1) + 1;
+    const linePrefix = text.substring(lineStart, idx);
+    // Skip if line starts with # (header) or is inside []() or ``
+    if (/^#{1,6}\s/.test(linePrefix)) return true;
+    // Check if inside backticks
+    const before = text.substring(Math.max(0, idx - 100), idx);
+    const backtickCount = (before.match(/`/g) || []).length;
+    if (backtickCount % 2 !== 0) return true;
+    return false;
+  };
+  
+  // --- Layer 3: Compound verdict expressions (highest priority) ---
+  for (const pattern of VERDICT_PATTERNS) {
+    const regex = new RegExp(pattern.source, pattern.flags);
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(markdown)) !== null) {
+      if (!isInBold(m.index, m[0].length) && !isInSpecialContext(m.index, markdown)) {
+        matches.push({ text: m[0], index: m.index, length: m[0].length, layer: 3 });
+      }
+    }
+  }
+  
+  // --- Layer 1: Proper nouns (2+ capitalized words not at sentence start) + acronyms ---
+  const properNounSeen = new Set<string>();
+  
+  // Multi-word proper nouns (e.g., "Banco Santander", "IBEX 35")
+  const properNounPattern = /(?<=[a-záéíóúñ.,;:)\s])\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+|[A-ZÁÉÍÓÚÑ0-9]{2,}|de|del|la|los|las|el|y))+)\b/g;
+  let pn: RegExpExecArray | null;
+  while ((pn = properNounPattern.exec(markdown)) !== null) {
+    const key = pn[1].toLowerCase();
+    if (!isInBold(pn.index + (pn[0].length - pn[1].length), pn[1].length) && 
+        !isInSpecialContext(pn.index, markdown) &&
+        !properNounSeen.has(key)) {
+      properNounSeen.add(key);
+      const actualStart = pn.index + (pn[0].length - pn[1].length);
+      matches.push({ text: pn[1], index: actualStart, length: pn[1].length, layer: 1, properNounKey: key });
+    }
+  }
+  
+  // Acronyms (3+ uppercase letters, word boundary) — first occurrence only
+  const acronymPattern = /\b([A-ZÁÉÍÓÚÑ]{3,})\b/g;
+  const acronymSeen = new Set<string>();
+  let ac: RegExpExecArray | null;
+  while ((ac = acronymPattern.exec(markdown)) !== null) {
+    const acr = ac[1];
+    // Skip common non-acronym words and already-bold
+    if (['THE', 'AND', 'FOR', 'NOT', 'ALL', 'BUT', 'HAS', 'HAD', 'ARE', 'WAS', 'HIS', 'HER', 'MAS', 'POR', 'QUE', 'CON', 'UNA', 'UNO', 'LOS', 'LAS', 'DEL', 'SIN', 'SUS'].includes(acr)) continue;
+    if (!isInBold(ac.index, acr.length) && !isInSpecialContext(ac.index, markdown) && !acronymSeen.has(acr)) {
+      acronymSeen.add(acr);
+      matches.push({ text: acr, index: ac.index, length: acr.length, layer: 1, properNounKey: acr });
+    }
+  }
+  
+  // --- Layer 2: Verdict qualifiers in evaluative context ---
+  for (const qualifier of VERDICT_QUALIFIERS) {
+    const escaped = qualifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const qRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    let qm: RegExpExecArray | null;
+    while ((qm = qRegex.exec(markdown)) !== null) {
+      if (isInBold(qm.index, qm[0].length) || isInSpecialContext(qm.index, markdown)) continue;
+      
+      // Check evaluative context: nearby noun (within ~60 chars before/after)
+      const contextBefore = markdown.substring(Math.max(0, qm.index - 60), qm.index);
+      const contextAfter = markdown.substring(qm.index + qm[0].length, Math.min(markdown.length, qm.index + qm[0].length + 60));
+      const hasContext = CONTEXT_NOUN_PATTERNS.some(np => np.test(contextBefore) || np.test(contextAfter));
+      
+      if (hasContext) {
+        // Only first occurrence per qualifier
+        matches.push({ text: qm[0], index: qm.index, length: qm[0].length, layer: 2 });
+        break; // Move to next qualifier
+      }
+    }
+  }
+  
+  // --- Layer 4: Density control ---
+  // Remove overlapping matches (keep higher priority = lower layer number... but Layer 3 > 1 > 2 in priority)
+  const priorityOrder = (layer: number) => layer === 3 ? 0 : layer === 1 ? 1 : 2;
+  matches.sort((a, b) => priorityOrder(a.layer) - priorityOrder(b.layer) || a.index - b.index);
+  
+  // Remove overlaps
+  const selected: KeywordMatch[] = [];
+  const usedRanges: { start: number; end: number }[] = [];
+  const uniqueTexts = new Set<string>();
+  const MAX_HIGHLIGHTS = 15;
+  
+  for (const m of matches) {
+    if (uniqueTexts.size >= MAX_HIGHLIGHTS) break;
+    
+    const overlaps = usedRanges.some(r => 
+      (m.index >= r.start && m.index < r.end) || (m.index + m.length > r.start && m.index + m.length <= r.end)
+    );
+    if (overlaps) continue;
+    
+    const textKey = m.text.toLowerCase();
+    if (uniqueTexts.has(textKey)) continue;
+    
+    uniqueTexts.add(textKey);
+    selected.push(m);
+    usedRanges.push({ start: m.index, end: m.index + m.length });
+  }
+  
+  // Apply replacements from end to start to preserve indices
+  selected.sort((a, b) => b.index - a.index);
+  
+  let result = markdown;
+  for (const m of selected) {
+    const before = result.substring(0, m.index);
+    const after = result.substring(m.index + m.length);
+    result = before + `**${m.text}**` + after;
+  }
+  
+  return result;
+}
+
 // Comprehensive markdown to HTML converter
 export function convertMarkdownToHtml(markdown: string): string {
-  let html = markdown;
+  // Smart keyword highlighting on raw markdown (before any HTML conversion)
+  let html = highlightSmartKeywords(markdown);
   
   // Process tables first
   html = processMarkdownTables(html);
