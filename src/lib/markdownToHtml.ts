@@ -652,31 +652,82 @@ function highlightSmartKeywords(markdown: string): string {
     }
   }
   
-  // --- Layer 4: Density control ---
-  // Remove overlapping matches (keep higher priority = lower layer number... but Layer 3 > 1 > 2 in priority)
+  // --- Layer 4: Density control with block-based distribution ---
+  const MAX_HIGHLIGHTS = 15;
   const priorityOrder = (layer: number) => layer === 3 ? 0 : layer === 1 ? 1 : 2;
-  matches.sort((a, b) => priorityOrder(a.layer) - priorityOrder(b.layer) || a.index - b.index);
-  
-  // Remove overlaps
+
+  // Split markdown into logical blocks and compute character ranges
+  const blockSplitRegex = /\n\n+/g;
+  const blocks: { start: number; end: number }[] = [];
+  let bStart = 0;
+  let splitMatch: RegExpExecArray | null;
+  while ((splitMatch = blockSplitRegex.exec(markdown)) !== null) {
+    if (splitMatch.index > bStart) blocks.push({ start: bStart, end: splitMatch.index });
+    bStart = splitMatch.index + splitMatch[0].length;
+  }
+  if (bStart < markdown.length) blocks.push({ start: bStart, end: markdown.length });
+  if (blocks.length === 0) blocks.push({ start: 0, end: markdown.length });
+
+  // Classify each match into its block
+  const matchesByBlock: KeywordMatch[][] = blocks.map(() => []);
+  for (const m of matches) {
+    const bi = blocks.findIndex(b => m.index >= b.start && m.index < b.end);
+    if (bi >= 0) matchesByBlock[bi].push(m);
+  }
+
+  // Sort each block's matches by priority
+  for (const bm of matchesByBlock) {
+    bm.sort((a, b) => priorityOrder(a.layer) - priorityOrder(b.layer) || a.index - b.index);
+  }
+
+  // Calculate budget per block
+  const blocksWithCandidates = matchesByBlock.filter(bm => bm.length > 0).length;
+  const guaranteed = Math.min(blocksWithCandidates, MAX_HIGHLIGHTS);
+  const surplus = MAX_HIGHLIGHTS - guaranteed;
+  const totalCandidates = matchesByBlock.reduce((s, bm) => s + bm.length, 0);
+
+  const budgets = matchesByBlock.map(bm => {
+    if (bm.length === 0) return 0;
+    const extra = totalCandidates > 0 ? Math.floor(surplus * bm.length / totalCandidates) : 0;
+    return 1 + extra;
+  });
+
+  // Distribute any rounding remainder to blocks with the most candidates
+  let assigned = budgets.reduce((s, b) => s + b, 0);
+  if (assigned < MAX_HIGHLIGHTS) {
+    const sortedIdxs = matchesByBlock.map((bm, i) => ({ i, len: bm.length }))
+      .filter(x => x.len > 0)
+      .sort((a, b) => b.len - a.len);
+    for (const { i } of sortedIdxs) {
+      if (assigned >= MAX_HIGHLIGHTS) break;
+      if (budgets[i] < matchesByBlock[i].length) { budgets[i]++; assigned++; }
+    }
+  }
+
+  // Select within each block respecting overlaps and uniqueness globally
   const selected: KeywordMatch[] = [];
   const usedRanges: { start: number; end: number }[] = [];
   const uniqueTexts = new Set<string>();
-  const MAX_HIGHLIGHTS = 15;
-  
-  for (const m of matches) {
-    if (uniqueTexts.size >= MAX_HIGHLIGHTS) break;
-    
-    const overlaps = usedRanges.some(r => 
-      (m.index >= r.start && m.index < r.end) || (m.index + m.length > r.start && m.index + m.length <= r.end)
-    );
-    if (overlaps) continue;
-    
-    const textKey = m.text.toLowerCase();
-    if (uniqueTexts.has(textKey)) continue;
-    
-    uniqueTexts.add(textKey);
-    selected.push(m);
-    usedRanges.push({ start: m.index, end: m.index + m.length });
+
+  for (let bi = 0; bi < blocks.length; bi++) {
+    let blockCount = 0;
+    for (const m of matchesByBlock[bi]) {
+      if (blockCount >= budgets[bi]) break;
+      if (uniqueTexts.size >= MAX_HIGHLIGHTS) break;
+
+      const overlaps = usedRanges.some(r =>
+        (m.index >= r.start && m.index < r.end) || (m.index + m.length > r.start && m.index + m.length <= r.end)
+      );
+      if (overlaps) continue;
+
+      const textKey = m.text.toLowerCase();
+      if (uniqueTexts.has(textKey)) continue;
+
+      uniqueTexts.add(textKey);
+      selected.push(m);
+      usedRanges.push({ start: m.index, end: m.index + m.length });
+      blockCount++;
+    }
   }
   
   // Apply replacements from end to start to preserve indices
