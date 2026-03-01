@@ -1,31 +1,44 @@
 
 
-# Fix: Metricas emoji no se agrupan en tabla
+# Fix: Eliminar meta-comentarios del LLM al inicio del informe
 
 ## Problema
 
-Las 8 metricas (lineas 957-989 del HTML exportado) usan `<ul>` en vez de `<ol>`, pero los dos detectores de metricas (`processNumberedMetricBlocks` y `regroupIsolatedMetrics`) solo buscan `<ol>` y `</ol>`. Por eso nunca matchean y las metricas quedan como 8 listas sueltas de 1 item cada una.
+El LLM genera un parrafo de meta-comentario al principio de la respuesta del tipo:
+`[La respuesta completa se ha entregado siguiendo la estructura, extension y profundidad requeridas. Debido a la longitud...]`
 
-## Solucion
+Este texto no aporta valor al informe y rompe la estetica profesional.
 
-Un unico cambio en `src/lib/markdownToHtml.ts`: hacer que ambas funciones acepten tanto `<ol>` como `<ul>`.
+## Solucion: doble barrera (backend + frontend)
 
-### Cambios concretos
+### Cambio 1 — Compliance Gate: nuevos patrones prohibidos (`supabase/functions/chat-intelligence/index.ts`)
 
-**1. `processNumberedMetricBlocks` (lineas 1296-1315)**
+Anadir a `FORBIDDEN_PATTERNS` regexes que detecten este tipo de meta-texto:
 
-- Linea 1303: `trimmed === '<ol>'` cambia a `trimmed === '<ol>' || trimmed === '<ul>'`
-- Linea 1309: `trimmed === '</ol>'` cambia a `trimmed === '</ol>' || trimmed === '</ul>'`
+```
+/\[?\s*la\s+respuesta\s+completa\s+se\s+ha\s+entregado/
+/debido\s+a\s+la\s+longitud.*lectura\s+puede\s+requerir/
+/si\s+necesita\s+aclaraciones\s+sobre\s+alguna\s+seccion.*profundizare/
+```
 
-**2. `regroupIsolatedMetrics` (lineas 1424-1426)**
+Esto hara que el streaming lo detecte y lo corte antes de emitirlo.
 
-- `singleMetricOlPattern`: de `/^<ol>\s*$/` a `/^<[ou]l>\s*$/`
-- `closeOlPattern`: de `/^<\/ol>\s*$/` a `/^<\/[ou]l>\s*$/`
+### Cambio 2 — Sanitizacion en export HTML (`src/components/ui/markdown-message.tsx`)
 
-**3. Trailing whitespace en `metricLiPattern`**
+En `generateExportHtml`, antes de convertir el markdown a HTML, aplicar una limpieza que elimine bloques entre corchetes `[...]` al inicio del texto que contengan palabras clave como "respuesta completa", "longitud", "extension", "profundidad requerida".
 
-El contenido real tiene espacios al final antes de `</li>` (ej. `69 pts 🟡  </li>`). Verificar que el `\s*` antes de `<\/li>` los absorbe (ya lo hace, OK).
+Regex: `/^\s*\[.*?(?:respuesta\s+completa|longitud|extension|profundidad\s+requerida).*?\]\s*/is`
+
+### Cambio 3 — Sanitizacion en el markdown-message para vista en chat
+
+Aplicar la misma limpieza en el componente `MarkdownMessage` antes de renderizar, para que el usuario tampoco vea ese texto en el chat en vivo.
+
+## Archivos modificados
+
+- `supabase/functions/chat-intelligence/index.ts` — nuevos forbidden patterns
+- `src/components/ui/markdown-message.tsx` — strip de meta-comentarios en export y render
 
 ## Resultado
 
-Las 8 metricas se agruparan en una unica `emoji-metrics-table` con columnas: #, Nombre, Valor, Semaforo -- independientemente de si el markdown produce `<ul>` o `<ol>`.
+El meta-comentario del LLM nunca aparecera ni en el chat ni en el informe exportado.
+
