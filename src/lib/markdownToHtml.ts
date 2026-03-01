@@ -121,6 +121,15 @@ export const emojiGridStyles = `
     display: inline-block;
   }
 
+  .emoji-metrics-table .metric-status .emoji-status {
+    margin-left: 0;
+  }
+
+  td .emoji-status {
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
   /* Subsection titles for internal headings */
   .subsection-title {
     font-size: 15px;
@@ -723,7 +732,7 @@ function highlightSmartKeywords(markdown: string): string {
   }
   
   // --- Layer 4: Density control with block-based distribution ---
-  const MAX_HIGHLIGHTS = 20;
+  const MAX_HIGHLIGHTS = 25;
   const priorityOrder = (layer: number) => layer === 3 ? 0 : layer === 1 ? 1 : 2;
 
   // Split markdown into logical blocks and compute character ranges
@@ -776,11 +785,13 @@ function highlightSmartKeywords(markdown: string): string {
     }
   }
 
-  // Guarantee at least 1 highlight in the last 30% of the document
+  // Guarantee at least 2 highlights in the last 30% of the document
   const tail30Start = Math.floor(blocks.length * 0.7);
+  let tailGuaranteed = 0;
   for (let bi = tail30Start; bi < blocks.length; bi++) {
-    if (matchesByBlock[bi].length > 0 && budgets[bi] === 0) {
+    if (matchesByBlock[bi].length > 0 && budgets[bi] === 0 && tailGuaranteed < 2) {
       budgets[bi] = 1;
+      tailGuaranteed++;
     }
   }
 
@@ -825,7 +836,7 @@ function highlightSmartKeywords(markdown: string): string {
 // Comprehensive markdown to HTML converter
 export function convertMarkdownToHtml(markdown: string): string {
   // Smart keyword highlighting on raw markdown (before any HTML conversion)
-  let html = highlightSmartKeywords(markdown);
+  let html = markdown;
   
   // Process tables first
   html = processMarkdownTables(html);
@@ -891,7 +902,59 @@ export function convertMarkdownToHtml(markdown: string): string {
   // Wrap remaining text in paragraphs
   html = wrapInParagraphs(html);
   
+  // Apply smart keyword highlights ONLY to <p> content (after all structural processing)
+  html = applyHighlightsToParas(html);
+  
   return html;
+}
+
+/**
+ * Apply highlightSmartKeywords only to the text inside <p>...</p> tags,
+ * so that titles, metrics, section-bands, and other structural elements
+ * are never broken by auto-bolding.
+ */
+function applyHighlightsToParas(html: string): string {
+  // Collect all <p>...</p> contents, concatenate as pseudo-markdown for unified budget
+  const paraPattern = /<p>([\s\S]*?)<\/p>/g;
+  const paraMatches: { fullMatch: string; content: string; index: number }[] = [];
+  let pm: RegExpExecArray | null;
+  while ((pm = paraPattern.exec(html)) !== null) {
+    paraMatches.push({ fullMatch: pm[0], content: pm[1], index: pm.index });
+  }
+  
+  if (paraMatches.length === 0) return html;
+  
+  // Build a single pseudo-markdown string from all paragraphs (separated by double newlines)
+  // so the highlighter can distribute highlights evenly across the whole document
+  const separator = '\n\n';
+  const combinedMarkdown = paraMatches.map(p => {
+    // Strip existing <strong> tags to get clean text for the highlighter,
+    // then convert back from HTML bold to markdown bold for the highlighter
+    return p.content
+      .replace(/<strong>(.*?)<\/strong>/g, '**$1**')
+      .replace(/<em>(.*?)<\/em>/g, '*$1*');
+  }).join(separator);
+  
+  // Run highlighter on combined text
+  const highlighted = highlightSmartKeywords(combinedMarkdown);
+  
+  // Split back into individual paragraph contents
+  const highlightedParas = highlighted.split(separator);
+  
+  // Reconstruct HTML, replacing each <p> with the highlighted version
+  let result = html;
+  // Replace from end to start to preserve indices
+  for (let i = paraMatches.length - 1; i >= 0; i--) {
+    const para = paraMatches[i];
+    let newContent = highlightedParas[i] || para.content;
+    // Convert markdown bold back to HTML
+    newContent = newContent.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    newContent = newContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    const newPara = `<p>${newContent}</p>`;
+    result = result.substring(0, para.index) + newPara + result.substring(para.index + para.fullMatch.length);
+  }
+  
+  return result;
 }
 
 export function escapeHtml(text: string): string {
@@ -1168,7 +1231,7 @@ function processNumberedMetricBlocks(html: string): string {
   
   // Pattern: inside <li>...</li> or raw numbered line with trailing emoji
   // Matches: "Metric Name — 61 pts 🟡" or "Metric Name: 78.2 ✅"
-  const metricInLiPattern = /^<li>(.+?)\s*[—\-:]\s*(.+?)\s*(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*<\/li>$/u;
+  const metricInLiPattern = /^<li>(?:<strong>)?(.+?)(?:<\/strong>)?\s*[—\-–:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u;
   const rawNumberedPattern = /^(\d+)\.\s+(.+?)\s*[—\-:]\s*(.+?)\s*(\p{Emoji_Presentation}|\p{Extended_Pictographic})\s*$/u;
   
   const flushMetrics = () => {
@@ -1267,8 +1330,8 @@ function unifyHrTitleHeaders(html: string): string {
       const pMatch = nextLine.match(/^<p>(.*?)<\/p>$/);
       if (pMatch) titleText = pMatch[1];
       
-      // Strip any <strong> tags that auto-bold may have added
-      titleText = titleText.replace(/<\/?strong>/g, '');
+      // Strip any inline HTML tags (strong, em, etc.) that auto-bold may have added
+      titleText = titleText.replace(/<\/?(?:strong|em|b|i|span)[^>]*>/gi, '').trim();
       
       if (afterLine === '<hr>' && titleText.length > 0) {
         // Short title (<80 chars) that looks like a section header → section-band
@@ -1317,7 +1380,7 @@ function regroupIsolatedMetrics(html: string): string {
   // We collect these when separated by <p>...</p> blocks
   // Accept both raw emojis AND emojis already wrapped in <span class="emoji-status">
   const singleMetricOlPattern = /^<ol>\s*$/;
-  const metricLiPattern = /^<li>(.+?)\s*[—\-–:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u;
+  const metricLiPattern = /^<li>(?:<strong>)?(.+?)(?:<\/strong>)?\s*[—\-–:]\s*(.+?)\s*((?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?(?:\s*→?\s*(?:<span[^>]*>)?[\p{Emoji_Presentation}\p{Extended_Pictographic}](?:<\/span>)?)?)\s*<\/li>$/u;
   const closeOlPattern = /^<\/ol>\s*$/;
   
   interface MetricEntry { name: string; value: string; emojiHtml: string; explanations: string[] }
@@ -1419,14 +1482,14 @@ function processSubsectionTitles(html: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
     
-    // Skip lines that are already HTML tags
-    if (trimmed.startsWith('<') || trimmed === '') {
+    // Skip lines that are block-level HTML tags (but allow inline tags like <strong>)
+    if (trimmed === '' || /^<(div|table|ol|ul|h[1-6]|pre|blockquote|hr|thead|tbody|tr|td|th|\/)/i.test(trimmed)) {
       result.push(line);
       continue;
     }
     
-    // Check: short line (< 60 chars), no punctuation at end, matches a subtitle pattern
-    const textOnly = trimmed.replace(/<[^>]+>/g, '').replace(/<\/?strong>/g, '').trim();
+    // Strip inline HTML tags for pattern matching
+    const textOnly = trimmed.replace(/<\/?(?:strong|em|b|i|span)[^>]*>/gi, '').trim();
     if (textOnly.length > 3 && textOnly.length < 60 && !/[;,!?]$/.test(textOnly)) {
       const isSubtitle = subtitlePatterns.some(p => p.test(textOnly));
       if (isSubtitle) {
