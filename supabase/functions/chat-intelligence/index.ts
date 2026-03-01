@@ -4761,13 +4761,170 @@ async function handleStandardChat(
     }
   }
 
+  // DataPack will be built after allRixData is loaded (PASO 5.5)
+  let dataPackContext = "";
+
   // =============================================================================
-  // PASO 3.5: CONSTRUIR DATAPACK SQL ESTRUCTURADO (FUENTE DE VERDAD)
+  // PASO 4: GENERAR EMBEDDING Y VECTOR SEARCH (complementario)
+  // =============================================================================
+  console.log(`${logPrefix} Generating embedding for vector search...`);
+  const embeddingResponse = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAIApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-small",
+      input: question,
+    }),
+  });
+
+  if (!embeddingResponse.ok) {
+    throw new Error(`Embedding API error: ${embeddingResponse.statusText}`);
+  }
+
+  const embeddingData = await embeddingResponse.json();
+  const embedding = embeddingData.data[0].embedding;
+
+  // Vector search - máximo absoluto
+  const { data: vectorDocs } = await supabaseClient.rpc("match_documents", {
+    query_embedding: embedding,
+    match_count: 200, // TODOS los documentos relevantes
+    filter: {},
+  });
+
+  console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
+
+  // =============================================================================
+  // PASO 4.5: SIEMPRE CARGAR ANÁLISIS DE REGRESIÓN (NO solo por keywords)
+  // La regresión da contexto de tendencias y correlación precio-métricas
+  // que enriquece TODAS las respuestas del agente
+  // =============================================================================
+
+  interface RegressionAnalysisResult {
+    success: boolean;
+    dataProfile?: {
+      totalRecords: number;
+      companiesWithPrices: number;
+      weeksAnalyzed: number;
+      dateRange: { from: string; to: string };
+      modelsIncluded: string[];
+    };
+    metricAnalysis?: Array<{
+      metric: string;
+      displayName: string;
+      correlationWithPrice: number;
+      pValue: number;
+      isSignificant: boolean;
+      direction: "positive" | "negative" | "none";
+      sampleSize: number;
+    }>;
+    topPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
+    weakPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
+    rSquared?: number;
+    adjustedRSquared?: number;
+    methodology?: string;
+    caveats?: string[];
+  }
+
+  let regressionAnalysis: RegressionAnalysisResult | null = null;
+
+  // Always load regression (always exhaustive mode)
+  const shouldLoadRegression = true;
+
+  if (shouldLoadRegression) {
+    console.log(`${logPrefix} LOADING REGRESSION ANALYSIS (always-on for depth=${depthLevel})...`);
+
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+      // Usar timeout corto para no ralentizar mucho
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s max
+
+      const regressionResponse = await fetch(`${supabaseUrl}/functions/v1/rix-regression-analysis`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ minWeeks: 6 }), // Menos restrictivo para más datos
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (regressionResponse.ok) {
+        regressionAnalysis = await regressionResponse.json();
+        console.log(
+          `${logPrefix} Regression analysis loaded: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records, ${regressionAnalysis?.dataProfile?.companiesWithPrices || 0} companies with prices`,
+        );
+      } else {
+        console.warn(`${logPrefix} Regression analysis failed: ${regressionResponse.status}`);
+      }
+    } catch (regError) {
+      if (regError.name === "AbortError") {
+        console.warn(`${logPrefix} Regression analysis timeout (15s) - continuing without it`);
+      } else {
+        console.error(`${logPrefix} Error loading regression analysis:`, regError);
+      }
+    }
+  } else {
+    console.log(`${logPrefix} Skipping regression for quick depth level`);
+  }
+
+  // =============================================================================
+  // PASO 5: CARGAR DATOS ESTRUCTURADOS (con paginación inteligente)
+  // =============================================================================
+  console.log(`${logPrefix} Loading structured RIX data for rankings - ALL 6 AI MODELS...`);
+
+  // Use pagination for large requests
+  let allRixData: any[] = [];
+  let rixOffset = 0;
+  const rixBatchSize = 3000;
+  const maxRixRecords = depthLevel === "exhaustive" ? 10000 : 5000;
+
+  while (rixOffset < maxRixRecords) {
+    const batch = await fetchUnifiedRixData({
+      supabaseClient,
+      columns: `
+        "01_run_id",
+        "02_model_name",
+        "03_target_name",
+        "05_ticker",
+        "06_period_from",
+        "07_period_to",
+        "09_rix_score",
+        "51_rix_score_adjusted",
+        "32_rmm_score",
+        "10_resumen",
+        "11_puntos_clave",
+        batch_execution_date
+      `,
+      limit: rixBatchSize,
+      offset: rixOffset,
+      logPrefix,
+    });
+
+    if (!batch || batch.length === 0) break;
+
+    allRixData.push(...batch);
+    rixOffset += batch.length;
+
+    if (batch.length < rixBatchSize) break;
+
+    // Always fetch all batches (exhaustive mode)
+  }
+
+  console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0} (depth: ${depthLevel})`);
+
+  // =============================================================================
+  // PASO 5.5: CONSTRUIR DATAPACK SQL ESTRUCTURADO (FUENTE DE VERDAD)
   // Bloque de datos tabulares que el LLM recibe ANTES de la narrativa.
   // Cada cifra en la respuesta debe coincidir con estos datos.
   // =============================================================================
-  let dataPackContext = "";
-
   if (detectedCompanies.length > 0 && detectedCompanyFullData.length > 0) {
     console.log(`${logPrefix} Building DataPack SQL for ${detectedCompanies.length} companies...`);
 
@@ -4933,161 +5090,6 @@ async function handleStandardChat(
     console.log(`${logPrefix} DataPack built: ${dataPackContext.length} chars`);
   }
 
-  // =============================================================================
-  // PASO 4: GENERAR EMBEDDING Y VECTOR SEARCH (complementario)
-  // =============================================================================
-  console.log(`${logPrefix} Generating embedding for vector search...`);
-  const embeddingResponse = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openAIApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "text-embedding-3-small",
-      input: question,
-    }),
-  });
-
-  if (!embeddingResponse.ok) {
-    throw new Error(`Embedding API error: ${embeddingResponse.statusText}`);
-  }
-
-  const embeddingData = await embeddingResponse.json();
-  const embedding = embeddingData.data[0].embedding;
-
-  // Vector search - máximo absoluto
-  const { data: vectorDocs } = await supabaseClient.rpc("match_documents", {
-    query_embedding: embedding,
-    match_count: 200, // TODOS los documentos relevantes
-    filter: {},
-  });
-
-  console.log(`${logPrefix} Vector documents found: ${vectorDocs?.length || 0}`);
-
-  // =============================================================================
-  // PASO 4.5: SIEMPRE CARGAR ANÁLISIS DE REGRESIÓN (NO solo por keywords)
-  // La regresión da contexto de tendencias y correlación precio-métricas
-  // que enriquece TODAS las respuestas del agente
-  // =============================================================================
-
-  interface RegressionAnalysisResult {
-    success: boolean;
-    dataProfile?: {
-      totalRecords: number;
-      companiesWithPrices: number;
-      weeksAnalyzed: number;
-      dateRange: { from: string; to: string };
-      modelsIncluded: string[];
-    };
-    metricAnalysis?: Array<{
-      metric: string;
-      displayName: string;
-      correlationWithPrice: number;
-      pValue: number;
-      isSignificant: boolean;
-      direction: "positive" | "negative" | "none";
-      sampleSize: number;
-    }>;
-    topPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
-    weakPredictors?: Array<{ metric: string; displayName: string; correlation: number }>;
-    rSquared?: number;
-    adjustedRSquared?: number;
-    methodology?: string;
-    caveats?: string[];
-  }
-
-  let regressionAnalysis: RegressionAnalysisResult | null = null;
-
-  // Always load regression (always exhaustive mode)
-  const shouldLoadRegression = true;
-
-  if (shouldLoadRegression) {
-    console.log(`${logPrefix} LOADING REGRESSION ANALYSIS (always-on for depth=${depthLevel})...`);
-
-    try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-      // Usar timeout corto para no ralentizar mucho
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s max
-
-      const regressionResponse = await fetch(`${supabaseUrl}/functions/v1/rix-regression-analysis`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseAnonKey}`,
-        },
-        body: JSON.stringify({ minWeeks: 6 }), // Menos restrictivo para más datos
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (regressionResponse.ok) {
-        regressionAnalysis = await regressionResponse.json();
-        console.log(
-          `${logPrefix} Regression analysis loaded: ${regressionAnalysis?.dataProfile?.totalRecords || 0} records, ${regressionAnalysis?.dataProfile?.companiesWithPrices || 0} companies with prices`,
-        );
-      } else {
-        console.warn(`${logPrefix} Regression analysis failed: ${regressionResponse.status}`);
-      }
-    } catch (regError) {
-      if (regError.name === "AbortError") {
-        console.warn(`${logPrefix} Regression analysis timeout (15s) - continuing without it`);
-      } else {
-        console.error(`${logPrefix} Error loading regression analysis:`, regError);
-      }
-    }
-  } else {
-    console.log(`${logPrefix} Skipping regression for quick depth level`);
-  }
-
-  // =============================================================================
-  // PASO 5: CARGAR DATOS ESTRUCTURADOS (con paginación inteligente)
-  // =============================================================================
-  console.log(`${logPrefix} Loading structured RIX data for rankings - ALL 6 AI MODELS...`);
-
-  // Use pagination for large requests
-  let allRixData: any[] = [];
-  let rixOffset = 0;
-  const rixBatchSize = 3000;
-  const maxRixRecords = depthLevel === "exhaustive" ? 10000 : 5000;
-
-  while (rixOffset < maxRixRecords) {
-    const batch = await fetchUnifiedRixData({
-      supabaseClient,
-      columns: `
-        "01_run_id",
-        "02_model_name",
-        "03_target_name",
-        "05_ticker",
-        "06_period_from",
-        "07_period_to",
-        "09_rix_score",
-        "51_rix_score_adjusted",
-        "32_rmm_score",
-        "10_resumen",
-        "11_puntos_clave",
-        batch_execution_date
-      `,
-      limit: rixBatchSize,
-      offset: rixOffset,
-      logPrefix,
-    });
-
-    if (!batch || batch.length === 0) break;
-
-    allRixData.push(...batch);
-    rixOffset += batch.length;
-
-    if (batch.length < rixBatchSize) break;
-
-    // Always fetch all batches (exhaustive mode)
-  }
-
-  console.log(`${logPrefix} Total unified RIX records loaded: ${allRixData?.length || 0} (depth: ${depthLevel})`);
 
   // =============================================================================
   // PASO 6: CONSTRUIR CONTEXTO COMPLETO PARA EL LLM
