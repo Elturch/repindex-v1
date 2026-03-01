@@ -1,44 +1,87 @@
 
 
-# Fix: Eliminar meta-comentarios del LLM al inicio del informe
+# Fix: Meta-comentarios y alucinaciones de contenido ficticio
 
-## Problema
+## Problema 1 — Meta-comentario no capturado
 
-El LLM genera un parrafo de meta-comentario al principio de la respuesta del tipo:
-`[La respuesta completa se ha entregado siguiendo la estructura, extension y profundidad requeridas. Debido a la longitud...]`
+El texto `[Elaboración en progreso: este informe supera el límite de generación de esta sesión. Se ofrecerá en la próxima respuesta inmediatamente.]` no es detectado por ningun patron existente. Es una variante nueva de la familia "limite/truncacion".
 
-Este texto no aporta valor al informe y rompe la estetica profesional.
+## Problema 2 — Alucinacion de contenido ficticio
 
-## Solucion: doble barrera (backend + frontend)
+El LLM inventa un informe completo sobre "GRUPO ALPHA", con "47 especialistas", "9,8 TB de datos brutos", "112 entrevistas cualitativas". Esto ocurre cuando el LLM no tiene suficiente contexto real y decide fabricar un informe generico de consultoria en vez de usar los datos RIX del contexto.
 
-### Cambio 1 — Compliance Gate: nuevos patrones prohibidos (`supabase/functions/chat-intelligence/index.ts`)
+---
 
-Anadir a `FORBIDDEN_PATTERNS` regexes que detecten este tipo de meta-texto:
+## Solucion
+
+### Cambio 1 — Nuevos FORBIDDEN_PATTERNS (backend)
+
+Archivo: `supabase/functions/chat-intelligence/index.ts`
+
+Anadir 6 nuevos patrones a `FORBIDDEN_PATTERNS` (linea ~677):
 
 ```
-/\[?\s*la\s+respuesta\s+completa\s+se\s+ha\s+entregado/
-/debido\s+a\s+la\s+longitud.*lectura\s+puede\s+requerir/
-/si\s+necesita\s+aclaraciones\s+sobre\s+alguna\s+seccion.*profundizare/
+// Meta-commentary: "elaboración en progreso", "próxima respuesta"
+/elaboracion\s+en\s+progreso/,
+/se\s+ofrecera\s+en\s+la\s+proxima\s+respuesta/,
+/limite\s+de\s+generacion\s+de\s+esta\s+sesion/,
+/informe\s+supera\s+el\s+limite\s+de\s+generacion/,
+// Content fabrication markers
+/para\s+preservar\s+la\s+confidencialidad.*denominaremos/,
+/equipo\s+interfuncional\s+de\s+\d+\s+especialistas/,
 ```
 
-Esto hara que el streaming lo detecte y lo corte antes de emitirlo.
+### Cambio 2 — Ampliar stripLlmMetaCommentary (frontend)
 
-### Cambio 2 — Sanitizacion en export HTML (`src/components/ui/markdown-message.tsx`)
+Archivo: `src/components/ui/markdown-message.tsx`
 
-En `generateExportHtml`, antes de convertir el markdown a HTML, aplicar una limpieza que elimine bloques entre corchetes `[...]` al inicio del texto que contengan palabras clave como "respuesta completa", "longitud", "extension", "profundidad requerida".
+Anadir nuevos patrones de limpieza en `stripLlmMetaCommentary` (linea ~225):
 
-Regex: `/^\s*\[.*?(?:respuesta\s+completa|longitud|extension|profundidad\s+requerida).*?\]\s*/is`
+```typescript
+// "Elaboración en progreso" variant
+cleaned = cleaned.replace(/^\s*\[.*?(?:elaboraci[oó]n\s+en\s+progreso|l[ií]mite\s+de\s+generaci[oó]n|pr[oó]xima\s+respuesta).*?\]\s*/is, '');
+```
 
-### Cambio 3 — Sanitizacion en el markdown-message para vista en chat
+### Cambio 3 — Regla anti-fabricacion en system prompt (backend)
 
-Aplicar la misma limpieza en el componente `MarkdownMessage` antes de renderizar, para que el usuario tampoco vea ese texto en el chat en vivo.
+Archivo: `supabase/functions/chat-intelligence/index.ts`
+
+Anadir un nuevo bloque justo despues de la seccion "REGLA CRITICA ANTI-TRUNCACION" (linea ~6066):
+
+```
+REGLA CRITICA ANTI-FABRICACION DE CONTENIDO (PRIORIDAD MAXIMA):
+- NUNCA inventes empresas ficticias ("GRUPO ALPHA", "Empresa X", "Acme Corp")
+- NUNCA fabriques datos de equipos ("47 especialistas", "112 entrevistas")
+- NUNCA inventes volumenes de datos ("9,8 TB de datos brutos", "74.000 items")
+- NUNCA escribas un informe generico de consultoria cuando NO tienes datos RIX
+- Si NO hay datos en el contexto para la empresa preguntada, DILO CLARAMENTE:
+  "No dispongo de datos RIX para esta empresa. Solo puedo analizar las ~175
+  empresas del censo RepIndex."
+- Tu trabajo es analizar datos REALES del contexto, no crear ficcion corporativa.
+- Si la pregunta es generica (sin empresa especifica), responde sobre metodologia
+  RepIndex, NO inventes un caso de estudio ficticio.
+- JAMAS uses frases como "para preservar la confidencialidad del cliente"
+  ni "denominaremos a la empresa como..." — eso es FICCION, no analisis.
+```
+
+### Cambio 4 — Patron de compliance para "proxima respuesta"
+
+Anadir a la seccion anti-truncacion del system prompt (linea ~6053):
+
+```
+- NUNCA digas "elaboración en progreso" ni "se ofrecerá en la próxima respuesta"
+- NUNCA digas "este informe supera el límite de generación de esta sesión"
+- No existe ningun "limite de generacion de sesion". Escribe el informe completo.
+```
 
 ## Archivos modificados
 
-- `supabase/functions/chat-intelligence/index.ts` — nuevos forbidden patterns
-- `src/components/ui/markdown-message.tsx` — strip de meta-comentarios en export y render
+1. `supabase/functions/chat-intelligence/index.ts` — forbidden patterns + system prompt
+2. `src/components/ui/markdown-message.tsx` — strip de meta-comentarios
 
-## Resultado
+## Resultado esperado
 
-El meta-comentario del LLM nunca aparecera ni en el chat ni en el informe exportado.
-
+- El meta-comentario "Elaboracion en progreso..." sera cortado en streaming por el compliance gate
+- Si alguno escapa, el frontend lo limpiara antes de renderizar
+- El LLM tendra prohibicion explicita de fabricar contenido ficticio
+- Si no hay datos reales, dira "No dispongo de datos RIX" en vez de inventar
