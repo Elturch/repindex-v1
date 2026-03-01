@@ -103,13 +103,33 @@ export const emojiGridStyles = `
   }
 
   .section-band-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 2px;
     color: #0f1419;
     margin: 0;
     line-height: 1.4;
+  }
+
+  /* Emoji status indicators in tables */
+  .emoji-status {
+    margin-left: 6px;
+    vertical-align: middle;
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+    font-size: 1em;
+    display: inline-block;
+  }
+
+  /* Subsection titles for internal headings */
+  .subsection-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0f1419;
+    margin: 28px 0 14px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+    letter-spacing: 0.01em;
   }
 
   @media print {
@@ -128,6 +148,9 @@ export const emojiGridStyles = `
       break-after: avoid;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+    }
+    .subsection-title {
+      break-after: avoid;
     }
   }
 `;
@@ -603,6 +626,28 @@ function highlightSmartKeywords(markdown: string): string {
   // --- Layer 1: Proper nouns (2+ capitalized words not at sentence start) + acronyms ---
   const properNounSeen = new Set<string>();
   
+  // Words that commonly start sentences and should NOT be treated as proper nouns
+  const SENTENCE_START_EXCLUSIONS = new Set([
+    'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez',
+    'suba', 'baje', 'solo', 'visión', 'vision', 'según', 'segun',
+    'promedio', 'durante', 'desde', 'entre', 'sobre', 'todas', 'todos',
+    'ninguna', 'ninguno', 'algunas', 'algunos', 'mientras', 'aunque',
+    'además', 'ademas', 'también', 'tambien', 'incluso', 'apenas',
+  ]);
+  
+  // Check if a match is near a date pattern or decorative line
+  const isNearDateOrHeader = (idx: number, text: string): boolean => {
+    const surroundingText = text.substring(Math.max(0, idx - 5), Math.min(text.length, idx + 40));
+    // Date pattern: 2026-03-01 or similar
+    if (/\d{4}-\d{2}/.test(surroundingText)) return true;
+    // Near decorative lines
+    const lineStart = text.lastIndexOf('\n', idx - 1) + 1;
+    const lineEnd = text.indexOf('\n', idx);
+    const fullLine = text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd);
+    if (/^[═=─\-\*~]{3,}/.test(fullLine.trim()) || /[═=─]{3,}$/.test(fullLine.trim())) return true;
+    return false;
+  };
+  
   // Multi-word proper nouns (e.g., "Banco Santander", "IBEX 35")
   const properNounPattern = /(?<=[a-záéíóúñ.,;:)\s])\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+|[A-ZÁÉÍÓÚÑ0-9]{2,}|de|del|la|los|las|el|y))+)\b/g;
   let pn: RegExpExecArray | null;
@@ -610,7 +655,16 @@ function highlightSmartKeywords(markdown: string): string {
     const key = pn[1].toLowerCase();
     if (!isInBold(pn.index + (pn[0].length - pn[1].length), pn[1].length) && 
         !isInSpecialContext(pn.index, markdown) &&
-        !properNounSeen.has(key)) {
+        !properNounSeen.has(key) &&
+        !isNearDateOrHeader(pn.index, markdown)) {
+      // Check for sentence-start false positives
+      const words = pn[1].split(/\s+/);
+      const firstWord = words[0].toLowerCase();
+      if (SENTENCE_START_EXCLUSIONS.has(firstWord)) continue;
+      // Require all significant words to have 3+ chars
+      const significantWords = words.filter(w => !['de', 'del', 'la', 'los', 'las', 'el', 'y'].includes(w.toLowerCase()));
+      if (significantWords.some(w => w.length < 3)) continue;
+      
       properNounSeen.add(key);
       const actualStart = pn.index + (pn[0].length - pn[1].length);
       matches.push({ text: pn[1], index: actualStart, length: pn[1].length, layer: 1, properNounKey: key });
@@ -794,11 +848,20 @@ export function convertMarkdownToHtml(markdown: string): string {
   // Decorative section headers (════ TITLE ════)
   html = processDecorativeSectionHeaders(html);
   
+  // Convert <hr>+<p>TITLE</p>+<hr> patterns to section-band (post-conversion unification)
+  html = unifyHrTitleHeaders(html);
+  
   // Emoji result blocks (before paragraph wrapping)
   html = processEmojiResultBlocks(html);
   
   // Numbered metric lines with trailing emojis
   html = processNumberedMetricBlocks(html);
+  
+  // Regroup isolated single-item <ol> metric blocks separated by text
+  html = regroupIsolatedMetrics(html);
+  
+  // Detect subsection titles (short lines acting as internal headings)
+  html = processSubsectionTitles(html);
   
   // Wrap remaining text in paragraphs
   html = wrapInParagraphs(html);
@@ -901,9 +964,15 @@ function buildTableHtml(rows: string[]): string {
 }
 
 // Process emojis to ensure proper rendering
+// Status circle emojis get special .emoji-status class for alignment
 function processEmojis(text: string): string {
-  const emojiPattern = /(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu;
-  return text.replace(emojiPattern, '<span class="emoji">$1</span>');
+  const statusEmojis = /([🟢🔴🟡🟠🔵⚪⚫🟤🟣])/gu;
+  const generalEmoji = /(\p{Emoji_Presentation}|\p{Extended_Pictographic})/gu;
+  // First, tag status circles with .emoji-status
+  let result = text.replace(statusEmojis, '<span class="emoji emoji-status">$1</span>');
+  // Then tag remaining emojis (that weren't already wrapped)
+  result = result.replace(/(?<!<span class="emoji[^"]*">)(\p{Emoji_Presentation}|\p{Extended_Pictographic})(?!<\/span>)/gu, '<span class="emoji">$1</span>');
+  return result;
 }
 
 function parseTableCells(row: string): string[] {
@@ -1149,6 +1218,178 @@ function processNumberedMetricBlocks(html: string): string {
     result.push(line);
   }
   flushMetrics();
+  
+  return result.join('\n');
+}
+
+// Convert <hr> + short uppercase text + <hr> sequences into section-band
+function unifyHrTitleHeaders(html: string): string {
+  // Match: <hr> followed by a short text line (possibly wrapped in <p> or not), followed by <hr>
+  // This catches the pattern where --- markdown becomes <hr> and the title sits between two <hr>s
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let i = 0;
+  
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    
+    if (trimmed === '<hr>' && i + 2 < lines.length) {
+      const nextLine = lines[i + 1].trim();
+      const afterLine = lines[i + 2].trim();
+      
+      // Extract text from potential <p>TEXT</p> or raw TEXT
+      let titleText = nextLine;
+      const pMatch = nextLine.match(/^<p>(.*?)<\/p>$/);
+      if (pMatch) titleText = pMatch[1];
+      
+      // Strip any <strong> tags that auto-bold may have added
+      titleText = titleText.replace(/<\/?strong>/g, '');
+      
+      // Check: title is short (<80 chars), mostly uppercase or a section-like title, and followed by <hr>
+      const isShortTitle = titleText.length > 0 && titleText.length < 80;
+      const isSectionTitle = /^[A-ZÁÉÍÓÚÑ\s\d—\-:()]+$/.test(titleText) || 
+                             /^(RESUMEN|PILAR|CIERRE|FUENTES|CONCLUSI[OÓ]N|AN[AÁ]LISIS|EXECUTIVE|SUMMARY)/i.test(titleText);
+      
+      if (isShortTitle && isSectionTitle && afterLine === '<hr>') {
+        result.push(`<div class="section-band"><p class="section-band-title">${processEmojis(titleText.trim())}</p></div>`);
+        i += 3;
+        continue;
+      }
+    }
+    
+    result.push(lines[i]);
+    i++;
+  }
+  
+  return result.join('\n');
+}
+
+// Regroup isolated single-item <ol> blocks that contain metric+emoji, separated by <p> text
+function regroupIsolatedMetrics(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  
+  // Pattern: <ol>\n<li>MetricName — value emoji</li>\n</ol>
+  // We collect these when separated by <p>...</p> blocks
+  const singleMetricOlPattern = /^<ol>\s*$/;
+  const metricLiPattern = /^<li>(.+?)\s*[—\-:]\s*(.+?)\s*(<span class="emoji[^"]*">(\p{Emoji_Presentation}|\p{Extended_Pictographic})<\/span>)\s*<\/li>$/u;
+  const closeOlPattern = /^<\/ol>\s*$/;
+  
+  interface MetricEntry { name: string; value: string; emojiHtml: string; explanations: string[] }
+  let metricBuffer: MetricEntry[] = [];
+  let explanationBuffer: string[] = [];
+  let expectingMetric = false;
+  let i = 0;
+  
+  const flushMetricBuffer = () => {
+    if (metricBuffer.length >= 2) {
+      let table = '<table class="emoji-metrics-table">';
+      let idx = 1;
+      for (const m of metricBuffer) {
+        table += `<tr><td class="metric-idx">${idx}</td><td class="metric-name">${m.name}</td><td class="metric-value">${m.value}</td><td class="metric-status">${m.emojiHtml}</td></tr>`;
+        idx++;
+      }
+      table += '</table>';
+      result.push(table);
+      // Add explanations after the table
+      for (const m of metricBuffer) {
+        for (const exp of m.explanations) {
+          result.push(exp);
+        }
+      }
+    } else {
+      // Re-emit original
+      for (const m of metricBuffer) {
+        result.push('<ol>');
+        result.push(`<li>${m.name} — ${m.value} ${m.emojiHtml}</li>`);
+        result.push('</ol>');
+        for (const exp of m.explanations) {
+          result.push(exp);
+        }
+      }
+    }
+    metricBuffer = [];
+    explanationBuffer = [];
+    expectingMetric = false;
+  };
+  
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    
+    // Detect start of a single-item <ol> with metric
+    if (singleMetricOlPattern.test(trimmed) && i + 2 < lines.length) {
+      const liLine = lines[i + 1].trim();
+      const closeLine = lines[i + 2].trim();
+      const liMatch = liLine.match(metricLiPattern);
+      
+      if (liMatch && closeOlPattern.test(closeLine)) {
+        metricBuffer.push({
+          name: liMatch[1].trim(),
+          value: liMatch[2].trim(),
+          emojiHtml: liMatch[3],
+          explanations: [],
+        });
+        expectingMetric = true;
+        i += 3;
+        continue;
+      }
+    }
+    
+    // If we're collecting metrics and hit a <p>, store as explanation for last metric
+    if (expectingMetric && metricBuffer.length > 0 && /^<p>/.test(trimmed)) {
+      metricBuffer[metricBuffer.length - 1].explanations.push(lines[i]);
+      i++;
+      continue;
+    }
+    
+    // If we hit anything else while expecting metrics, flush
+    if (expectingMetric && !singleMetricOlPattern.test(trimmed)) {
+      flushMetricBuffer();
+    }
+    
+    result.push(lines[i]);
+    i++;
+  }
+  flushMetricBuffer();
+  
+  return result.join('\n');
+}
+
+// Detect short text lines that act as subsection titles
+function processSubsectionTitles(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  
+  // Patterns for subsection titles:
+  // - Start with a number + word: "3 Hallazgos", "5 Mensajes para la Dirección"
+  // - Short label lines: "Las 8 Métricas (promedio ponderado)"
+  const subtitlePatterns = [
+    /^\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/,  // "3 Hallazgos"
+    /^Las?\s+\d+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s()]+$/i, // "Las 8 Métricas (promedio ponderado)"
+    /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+(para|de|del)\s+(la|el|los|las)\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñA-ZÁÉÍÓÚÑ\s]+$/i, // "Mensajes para la Dirección"
+  ];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Skip lines that are already HTML tags
+    if (trimmed.startsWith('<') || trimmed === '') {
+      result.push(line);
+      continue;
+    }
+    
+    // Check: short line (< 60 chars), no punctuation at end, matches a subtitle pattern
+    const textOnly = trimmed.replace(/<[^>]+>/g, '').trim();
+    if (textOnly.length > 3 && textOnly.length < 60 && !/[.;,!?:]$/.test(textOnly)) {
+      const isSubtitle = subtitlePatterns.some(p => p.test(textOnly));
+      if (isSubtitle) {
+        result.push(`<div class="subsection-title">${trimmed}</div>`);
+        continue;
+      }
+    }
+    
+    result.push(line);
+  }
   
   return result.join('\n');
 }
