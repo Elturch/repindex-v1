@@ -1003,6 +1003,7 @@ interface DataPack {
   noticias: { titular: string; fecha: string | null; ticker: string }[];
   raw_texts: { modelo: string; texto: string }[];
   empresa_primaria: { ticker: string; nombre: string; sector: string | null; subsector: string | null } | null;
+  competidores_verificados: { ticker: string; nombre: string; rix_avg: number | null }[];
 }
 
 async function buildDataPack(
@@ -1023,6 +1024,7 @@ async function buildDataPack(
     noticias: [],
     raw_texts: [],
     empresa_primaria: null,
+    competidores_verificados: [],
   };
 
   if (classifier.empresas_detectadas.length === 0) {
@@ -1117,52 +1119,76 @@ async function buildDataPack(
     }
   }
 
-  // Query B: Sector averages
-  if (primaryCompany?.sector_category) {
-    const sectorTickers = (companiesCache || [])
-      .filter((c) => c.sector_category === primaryCompany.sector_category && c.ticker !== primaryTicker)
-      .map((c) => c.ticker);
+  // Query B+C: Verified competitors ONLY (from repindex_root_issuers.verified_competitors)
+  // Read verified_competitors directly from the issuer record
+  const { data: issuerRecord } = await supabaseClient
+    .from("repindex_root_issuers")
+    .select("verified_competitors")
+    .eq("ticker", primaryTicker)
+    .limit(1)
+    .single();
 
-    if (sectorTickers.length > 0) {
-      const sectorData = await fetchUnifiedRixData({
-        supabaseClient,
-        columns: `"05_ticker", "09_rix_score", batch_execution_date`,
-        tickerFilter: sectorTickers,
-        limit: 2000,
-        logPrefix: `${logPrefix} [E2-sector]`,
-      });
-
-      const sectorLatest = sectorData.filter(
-        (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
-      );
-      if (sectorLatest.length > 0) {
-        const avg = sectorLatest.reduce((sum, r) => sum + r["09_rix_score"], 0) / sectorLatest.length;
-        pack.sector_avg = { rix: Math.round(avg * 10) / 10, count: sectorLatest.length };
-      }
+  const verifiedTickers: string[] = [];
+  if (issuerRecord?.verified_competitors) {
+    const raw = issuerRecord.verified_competitors;
+    if (Array.isArray(raw)) {
+      verifiedTickers.push(...raw.filter((t: string) => typeof t === "string" && t.length > 0));
+    } else if (typeof raw === "string") {
+      try { verifiedTickers.push(...JSON.parse(raw)); } catch {}
     }
   }
 
-  // Query C: Ranking (all companies, latest date)
-  const allLatest = await fetchUnifiedRixData({
-    supabaseClient,
-    columns: `"03_target_name", "05_ticker", "09_rix_score", batch_execution_date`,
-    limit: 3000,
-    logPrefix: `${logPrefix} [E2-ranking]`,
-  });
+  console.log(`${logPrefix} [E2] Verified competitors for ${primaryTicker}: ${JSON.stringify(verifiedTickers)}`);
 
-  const latestAll = allLatest.filter(
-    (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
-  );
-  const byCompany = new Map<string, { name: string; scores: number[] }>();
-  for (const r of latestAll) {
-    const t = r["05_ticker"];
-    if (!byCompany.has(t)) byCompany.set(t, { name: r["03_target_name"], scores: [] });
-    byCompany.get(t)!.scores.push(r["09_rix_score"]);
+  if (verifiedTickers.length > 0) {
+    // Fetch RIX data ONLY for verified competitors
+    const compData = await fetchUnifiedRixData({
+      supabaseClient,
+      columns: `"03_target_name", "05_ticker", "09_rix_score", batch_execution_date`,
+      tickerFilter: verifiedTickers,
+      limit: 500,
+      logPrefix: `${logPrefix} [E2-verified-comp]`,
+    });
+
+    const compLatest = compData.filter(
+      (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
+    );
+
+    // Build verified competitors list with their avg RIX
+    const byComp = new Map<string, { name: string; scores: number[] }>();
+    for (const r of compLatest) {
+      const t = r["05_ticker"];
+      if (!byComp.has(t)) byComp.set(t, { name: r["03_target_name"], scores: [] });
+      byComp.get(t)!.scores.push(r["09_rix_score"]);
+    }
+
+    for (const [ticker, d] of byComp.entries()) {
+      const avg = d.scores.reduce((a, b) => a + b, 0) / d.scores.length;
+      pack.competidores_verificados.push({ ticker, nombre: d.name, rix_avg: Math.round(avg * 10) / 10 });
+    }
+
+    // Compute sector_avg from ONLY verified competitors
+    const allCompScores = compLatest.map((r) => r["09_rix_score"]);
+    if (allCompScores.length > 0) {
+      const avg = allCompScores.reduce((a, b) => a + b, 0) / allCompScores.length;
+      pack.sector_avg = { rix: Math.round(avg * 10) / 10, count: allCompScores.length };
+    }
+
+    // Build ranking from verified competitors + primary company
+    const primaryAvg = latestScores.length > 0 ? latestScores.reduce((a, b) => a + b, 0) / latestScores.length : 0;
+    const allForRanking = [
+      { ticker: primaryTicker, nombre: primaryCompany?.issuer_name || primaryTicker, rix_avg: Math.round(primaryAvg * 10) / 10 },
+      ...pack.competidores_verificados,
+    ].sort((a, b) => (b.rix_avg || 0) - (a.rix_avg || 0));
+
+    pack.ranking = allForRanking.map((r, i) => ({ pos: i + 1, ...r, rix_avg: r.rix_avg || 0 }));
+  } else {
+    // No verified competitors → no comparativa at all
+    console.log(`${logPrefix} [E2] No verified competitors for ${primaryTicker}. No sector avg, no ranking.`);
+    pack.sector_avg = null;
+    pack.ranking = [];
+    pack.competidores_verificados = [];
   }
-  const rankedAll = Array.from(byCompany.entries())
-    .map(([ticker, d]) => ({ ticker, nombre: d.name, rix_avg: d.scores.reduce((a, b) => a + b, 0) / d.scores.length }))
-    .sort((a, b) => b.rix_avg - a.rix_avg);
-  pack.ranking = rankedAll.slice(0, 10).map((r, i) => ({ pos: i + 1, ...r, rix_avg: Math.round(r.rix_avg * 10) / 10 }));
 
   // Query D: Evolution (4 weeks)
   const uniqueDates = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse().slice(0, 4);
@@ -1338,11 +1364,13 @@ async function runComparator(
     `${s.modelo}: RIX=${s.rix}, NVM=${s.nvm}, DRM=${s.drm}, SIM=${s.sim}, RMM=${s.rmm}, CEM=${s.cem}, GAM=${s.gam}, DCM=${s.dcm}, CXM=${s.cxm}`
   ).join("\n");
 
-  const sectorInfo = dataPack.sector_avg ? `Promedio sector: RIX ${dataPack.sector_avg.rix} (${dataPack.sector_avg.count} registros)` : "Sin datos sectoriales";
+  const sectorInfo = dataPack.competidores_verificados.length > 0
+    ? `Promedio competidores verificados: RIX ${dataPack.sector_avg?.rix ?? "N/A"} (${dataPack.competidores_verificados.length} competidores: ${dataPack.competidores_verificados.map(c => c.ticker).join(", ")})`
+    : "Sin competidores verificados — NO incluir comparativa competitiva";
 
   const rankingInfo = dataPack.ranking.length > 0
-    ? `Top 5: ${dataPack.ranking.slice(0, 5).map((r) => `${r.pos}. ${r.nombre} (${r.rix_avg})`).join(", ")}`
-    : "Sin ranking";
+    ? `Ranking (solo competidores verificados + empresa): ${dataPack.ranking.map((r) => `${r.pos}. ${r.nombre} (${r.rix_avg})`).join(", ")}`
+    : "Sin ranking (no hay competidores verificados)";
 
   const factsInfo = facts
     ? `Narrativa dominante: ${facts.narrativa_dominante}\nConsensos: ${facts.consensos.map((c) => `${c.tema} (${c.modelos_coincidentes} modelos)`).join(", ")}\nDivergencias: ${facts.divergencias_narrativas.map((d) => d.tema).join(", ")}`
@@ -1374,6 +1402,7 @@ Responde SOLO en JSON válido (sin markdown):
 REGLAS:
 - Solo conclusiones trazables a los datos de arriba.
 - Cada recomendación DEBE citar la métrica y el gap numérico.
+- Solo compara con competidores verificados. Si no hay competidores verificados, omite completamente la comparativa competitiva.
 - Máximo 4 fortalezas, 4 debilidades, 4 recomendaciones.`;
 
   try {
@@ -1417,6 +1446,7 @@ function buildOrchestratorPrompt(
     snapshot: dataPack.snapshot,
     sector_avg: dataPack.sector_avg,
     ranking: dataPack.ranking.slice(0, 10),
+    competidores_verificados: dataPack.competidores_verificados,
     evolucion: dataPack.evolucion,
     divergencia: dataPack.divergencia,
     memento: dataPack.memento,
@@ -1486,6 +1516,12 @@ PROTOCOLO DE DATOS CORPORATIVOS (MEMENTO):
 • RECENT (7-30 días): Con nota temporal.
 • HISTORICAL (30-90 días): Con caveat "según información de [fecha]..."
 • NUNCA menciones nombres de ejecutivos que no estén en el memento corporativo.
+
+COMPETIDORES (REGLA ABSOLUTA):
+• Usa EXCLUSIVAMENTE los competidores del campo "competidores_verificados" del DATAPACK.
+• Si "competidores_verificados" está vacío, NO incluyas NINGUNA comparativa competitiva. Cero. Nada.
+• NUNCA busques competidores por sector, subsector ni categoría. Solo los verificados.
+• NUNCA inventes competidores ni los deduzcas del sector.
 
 REGLAS ANTI-ALUCINACIÓN (PRIORIDAD MÁXIMA):
 • NUNCA inventes WACC, EBITDA, CAPEX, VAN, ROI, Monte Carlo, DOIs, índices propietarios.
