@@ -82,28 +82,22 @@ El boletín estará listo para **descargar o imprimir** en formato profesional.`
     pericial_q2: "¿Hay evolución temporal documentada que muestre deterioro reputacional antes y después de algún evento?",
     pericial_q3: "¿Qué métricas presentan mayor exposición a narrativas de riesgo con valor probatorio?",
     // Depth prompt section headers
-    depth_format_title: "FORMATO: EMBUDO NARRATIVO — La estructura es una guía, no un corsé",
+    depth_format_title: "FORMATO: INFORME ANALÍTICO — Estructura anclada en datos SQL",
     depth_executive_summary: "RESUMEN EJECUTIVO",
-    depth_pillar1: "PILAR 1 — DEFINIR (Qué dice el dato)",
-    depth_pillar2: "PILAR 2 — ANALIZAR (Qué significan)",
-    depth_pillar3: "PILAR 3 — PROSPECTAR (Qué hacer — SOLO basado en datos reales)",
+    depth_section_data: "LOS DATOS",
+    depth_section_analysis: "EL ANÁLISIS",
+    depth_section_actions: "ACCIONES BASADAS EN DATOS",
     depth_closing: "CIERRE — FUENTES Y METODOLOGÍA",
     depth_headline_diagnosis: "Titular-Diagnóstico",
     depth_3kpis: "3 KPIs con Delta",
     depth_3findings: "3 Hallazgos",
-    depth_3recommendations: "3 Recomendaciones (acción + responsable + KPI)",
     depth_verdict: "Veredicto",
-    depth_5messages: "5 Mensajes para la Dirección",
     depth_6ai_vision: "Visión de las 6 IAs",
     depth_8metrics: "Las 8 Métricas",
     depth_model_divergence: "Divergencia entre Modelos",
-    depth_evolution: "Evolución y Comparativas",
-    depth_threats: "Amenazas y Riesgos",
-    depth_gaps: "Gaps: Realidad vs Percepción IA",
+    depth_evolution: "Evolución Temporal",
     depth_competitive: "Contexto Competitivo",
-    depth_improvement_metrics: "Métricas con margen de mejora",
-    depth_strengths: "Fortalezas a proteger",
-    depth_competitive_position: "Posición competitiva accionable",
+    depth_recommendations: "Recomendaciones Basadas en Datos",
     // Fallback questions
     fallback_ceo_q1: "¿Cuáles son los 3 riesgos reputacionales más urgentes?",
     fallback_ceo_q2: "¿Cómo estamos vs la competencia directa?",
@@ -185,28 +179,22 @@ The bulletin will be ready to **download or print** in professional format.`,
     pericial_q1: "What divergences exist between AI models in evaluating this company?",
     pericial_q2: "Is there documented temporal evolution showing reputational deterioration before and after any event?",
     pericial_q3: "Which metrics show the greatest exposure to risk narratives with evidentiary value?",
-    depth_format_title: "FORMAT: NARRATIVE FUNNEL — The structure is a guide, not a constraint",
+    depth_format_title: "FORMAT: ANALYTICAL REPORT — Structure anchored in SQL data",
     depth_executive_summary: "EXECUTIVE SUMMARY",
-    depth_pillar1: "PILLAR 1 — DEFINE (What the data says)",
-    depth_pillar2: "PILLAR 2 — ANALYZE (What they mean)",
-    depth_pillar3: "PILLAR 3 — PROSPECT (What to do — ONLY based on real data)",
+    depth_section_data: "THE DATA",
+    depth_section_analysis: "THE ANALYSIS",
+    depth_section_actions: "DATA-DRIVEN ACTIONS",
     depth_closing: "CLOSING — SOURCES AND METHODOLOGY",
     depth_headline_diagnosis: "Headline Diagnosis",
     depth_3kpis: "3 KPIs with Delta",
     depth_3findings: "3 Findings",
-    depth_3recommendations: "3 Recommendations (action + responsible + KPI)",
     depth_verdict: "Verdict",
-    depth_5messages: "5 Messages for the Board",
     depth_6ai_vision: "Vision of the 6 AIs",
     depth_8metrics: "The 8 Metrics",
     depth_model_divergence: "Model Divergence",
-    depth_evolution: "Evolution and Comparisons",
-    depth_threats: "Threats and Risks",
-    depth_gaps: "Gaps: Reality vs AI Perception",
+    depth_evolution: "Temporal Evolution",
     depth_competitive: "Competitive Context",
-    depth_improvement_metrics: "Metrics with room for improvement",
-    depth_strengths: "Strengths to protect",
-    depth_competitive_position: "Actionable competitive position",
+    depth_recommendations: "Data-Driven Recommendations",
     // Fallback questions
     fallback_ceo_q1: "What are the 3 most urgent reputational risks?",
     fallback_ceo_q2: "How are we doing vs direct competition?",
@@ -286,28 +274,22 @@ Sur quelle entreprise ou quel secteur souhaitez-vous vous concentrer ?`,
     pericial_q1: "Quelles divergences existent entre les modèles d'IA dans l'évaluation de cette entreprise ?",
     pericial_q2: "Y a-t-il une évolution temporelle documentée montrant une détérioration réputationnelle ?",
     pericial_q3: "Quelles métriques présentent la plus grande exposition aux narratifs de risque ?",
-    depth_format_title: "FORMAT : ENTONNOIR NARRATIF — La structure est un guide, pas une contrainte",
+    depth_format_title: "FORMAT : RAPPORT ANALYTIQUE — Structure ancrée dans les données SQL",
     depth_executive_summary: "RÉSUMÉ EXÉCUTIF",
-    depth_pillar1: "PILIER 1 — DÉFINIR (Ce que disent les données)",
-    depth_pillar2: "PILIER 2 — ANALYSER (Ce qu'elles signifient)",
-    depth_pillar3: "PILIER 3 — PROSPECTER (Que faire — UNIQUEMENT basé sur des données réelles)",
+    depth_section_data: "LES DONNÉES",
+    depth_section_analysis: "L'ANALYSE",
+    depth_section_actions: "ACTIONS BASÉES SUR LES DONNÉES",
     depth_closing: "CLÔTURE — SOURCES ET MÉTHODOLOGIE",
     depth_headline_diagnosis: "Diagnostic-titre",
     depth_3kpis: "3 KPI avec Delta",
     depth_3findings: "3 Constats",
-    depth_3recommendations: "3 Recommandations (action + responsable + KPI)",
     depth_verdict: "Verdict",
-    depth_5messages: "5 Messages pour la Direction",
     depth_6ai_vision: "Vision des 6 IA",
     depth_8metrics: "Les 8 Métriques",
     depth_model_divergence: "Divergence entre modèles",
-    depth_evolution: "Évolution et Comparaisons",
-    depth_threats: "Menaces et Risques",
-    depth_gaps: "Écarts : Réalité vs Perception IA",
+    depth_evolution: "Évolution Temporelle",
     depth_competitive: "Contexte Concurrentiel",
-    depth_improvement_metrics: "Métriques à améliorer",
-    depth_strengths: "Forces à protéger",
-    depth_competitive_position: "Position concurrentielle actionnable",
+    depth_recommendations: "Recommandations Basées sur les Données",
     // Fallback questions
     fallback_ceo_q1: "Quels sont les 3 risques réputationnels les plus urgents ?",
     fallback_ceo_q2: "Comment nous situons-nous par rapport à la concurrence directe ?",
@@ -387,28 +369,22 @@ Escreva o nome da empresa e gerarei uma análise detalhada incluindo:
     pericial_q1: "Que divergências existem entre os modelos de IA na avaliação desta empresa?",
     pericial_q2: "Há evolução temporal documentada que mostre deterioração reputacional antes e depois de algum evento?",
     pericial_q3: "Que métricas apresentam maior exposição a narrativas de risco com valor probatório?",
-    depth_format_title: "FORMATO: FUNIL NARRATIVO — A estrutura é um guia, não uma restrição",
+    depth_format_title: "FORMATO: RELATÓRIO ANALÍTICO — Estrutura ancorada em dados SQL",
     depth_executive_summary: "RESUMO EXECUTIVO",
-    depth_pillar1: "PILAR 1 — DEFINIR (O que dizem os dados)",
-    depth_pillar2: "PILAR 2 — ANALISAR (O que significam)",
-    depth_pillar3: "PILAR 3 — PROSPECTAR (O que fazer — APENAS baseado em dados reais)",
+    depth_section_data: "OS DADOS",
+    depth_section_analysis: "A ANÁLISE",
+    depth_section_actions: "AÇÕES BASEADAS EM DADOS",
     depth_closing: "ENCERRAMENTO — FONTES E METODOLOGIA",
     depth_headline_diagnosis: "Diagnóstico-Título",
     depth_3kpis: "3 KPIs com Delta",
     depth_3findings: "3 Descobertas",
-    depth_3recommendations: "3 Recomendações (ação + responsável + KPI)",
     depth_verdict: "Veredito",
-    depth_5messages: "5 Mensagens para a Direção",
     depth_6ai_vision: "Visão das 6 IAs",
     depth_8metrics: "As 8 Métricas",
     depth_model_divergence: "Divergência entre Modelos",
-    depth_evolution: "Evolução e Comparações",
-    depth_threats: "Ameaças e Riscos",
-    depth_gaps: "Gaps: Realidade vs Perceção IA",
+    depth_evolution: "Evolução Temporal",
     depth_competitive: "Contexto Competitivo",
-    depth_improvement_metrics: "Métricas com margem de melhoria",
-    depth_strengths: "Forças a proteger",
-    depth_competitive_position: "Posição competitiva acionável",
+    depth_recommendations: "Recomendações Baseadas em Dados",
     // Fallback questions
     fallback_ceo_q1: "Quais são os 3 riscos reputacionais mais urgentes?",
     fallback_ceo_q2: "Como estamos em relação à concorrência direta?",
@@ -1116,11 +1092,11 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /se\s+ofrecera\s+en\s+la\s+proxima\s+respuesta/,
   /limite\s+de\s+generacion\s+de\s+esta\s+sesion/,
   /informe\s+supera\s+el\s+limite\s+de\s+generacion/,
-  // === Family: content fabrication markers ===
+   // === Family: content fabrication markers ===
    /para\s+preservar\s+la\s+confidencialidad.*denominaremos/,
    /equipo\s+interfuncional\s+de\s+\d+\s+especialistas/,
    // === Family: consulting jargon fabrication ===
-   /pilar\s+\d+\s*[-–—]\s*(?:definir|analizar|prospectar|implementar|ejecutar)/i,
+   /pilar\s+\d+\s*[-–—:]\s*[A-ZÁÉÍÓÚÑA-Z]/i,
    /(?:capex|opex)\s+(?:incremental|estimado).*\d+\s*m€/i,
    /van\s+\+?\d+\s*m€/i,
    /simulaciones?\s+monte\s+carlo/i,
@@ -1133,6 +1109,25 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
    /se\s+procesaron\s+[\d,.]+\s*(?:m|millones?)\s+de\s+menciones/i,
    /mapeamos\s+\d+\s+stakeholders/i,
    /(?:wacc|ebitda|capex|van|roi|covar)[\s\S]{0,300}(?:wacc|ebitda|capex|van|roi|covar)/i,
+   // === Family: fabricated roadmaps, systems, protocols ===
+   /roadmap\s+(?:correctivo|estrategico|de\s+mejora)/i,
+   /plan\s+de\s+accion\s+(?:ejecutivo|institucional)\s*\(/i,
+   /kpi\s+objetivo\s+trim\d/i,
+   /(?:sent-shift|crisis-?ops|gitreg|fitch-?bot|glassscan|auto-?publish)/i,
+   /cobertura\s+24\s*\/?\s*7\s+de\s+\d+\s+fuentes/i,
+   /algoritmo\s+de\s+ponderacion/i,
+   /firma\s+pgp/i,
+   /checksum\s+md5/i,
+   /hash\s+sha-?\d+/i,
+   /coef(?:iciente)?\.?\s+\d+[.,]\d+/i,
+   /\d+[.,]\d+\s*%\s+de\s+volatilidad/i,
+   /brecha\s+\d+\s*-\s*\d+\s*:\s*nucleo\s+causal/i,
+   /matriz\s+de\s+severidad/i,
+   /storytelling\s+compacto/i,
+   /portavocia\s+triple/i,
+   /equipo\s+(?:crisis|comunicacion)\s+con\s+sla/i,
+   /pillar\s+\d+\s*[-–—:]\s*[A-Z]/i,
+   /pilier\s+\d+\s*[-–—:]\s*[A-Z]/i,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
@@ -2213,6 +2208,23 @@ REGLAS ANTI-ALUCINACIÓN (PRIORIDAD MÁXIMA):
 • NUNCA digas "he guardado el informe en..." — tu ÚNICA vía de entrega es este chat.
 • Si no tienes datos, dilo: "Solo puedo analizar los datos RepIndex disponibles."
 
+REGLA DE ESTRUCTURA (PRIORIDAD MÁXIMA):
+• NUNCA uses encabezados de tipo "PILAR X — [nombre]", "PILLAR X —", "PILIER X —". Esta estructura está PROHIBIDA.
+• NUNCA inventes nombres de fases, protocolos, algoritmos ni sistemas internos de la empresa.
+• NUNCA inventes equipos internos (Crisis-Ops, GRC, comité de...), herramientas (GitReg, Auto-Publish, Fitch-Bot, GlassScan) ni algoritmos (Sent-Shift, ponderación).
+• NUNCA inventes coeficientes decimales (coef. 0,87), volatilidades porcentuales, SLAs, encuestas ni benchmarks.
+• NUNCA inventes roadmaps con plazos ("60 días", "Trim3-2026"), certificaciones (ISO, SHA-256, PGP, MD5) ni protocolos técnicos.
+• Cada sección del informe debe empezar citando los datos del DATAPACK que la sustentan.
+• Si una sección no tiene datos en el DATAPACK, OMITE esa sección entera. No la rellenes con invenciones.
+• El informe es un ANÁLISIS DE DATOS, no un plan estratégico ni un informe de consultoría.
+
+EJEMPLO DE RESPUESTA PROHIBIDA (genera contenido ficticio):
+"PILAR 1 — DETECCIÓN TEMPRANA: Cobertura 24/7 de 128 fuentes vía GDELT... Algoritmo Sent-Shift... Crisis-Ops con SLA de 2h..."
+→ Esto es FICCIÓN. Nada de esto existe en los datos. NUNCA generes contenido así.
+
+EJEMPLO DE RESPUESTA CORRECTA:
+"La Gestión de Controversias obtiene 95 puntos, lo que indica que las IAs no detectan riesgos activos. Sin embargo, la Autoridad de Fuentes es de 0 puntos, lo que sugiere que las IAs no encuentran documentación verificable. Esta brecha podría indicar que la empresa gestiona bien las crisis pero no documenta sus actuaciones de forma accesible para los modelos de IA."
+
 FORMATO MARKDOWN:
 • ## para secciones principales, ### para subsecciones.
 • Tablas markdown para datos comparativos (cabeceras: nombres descriptivos abreviados).
@@ -2699,15 +2711,9 @@ function buildCompetitorJustification(
 }
 
 // =============================================================================
-// EMBUDO NARRATIVO — Estructura guía, no corsé. Se adapta a la consulta.
+// INFORME ANALÍTICO — Estructura anclada en datos SQL, sin pilares.
 // =============================================================================
 function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", languageName: string, language: string = "es"): string {
-  // Independientemente del depthLevel recibido, siempre devuelve el Embudo Narrativo.
-  // La estructura se adapta: empresa → máxima profundidad (≥2.500 palabras);
-  // sector → media; comparativa → enfrentada; resto → focalizada.
-  //
-  // Section headers are translated so the LLM replicates them in the output language.
-  // Internal instructions stay in Spanish — the LLM understands them and [IDIOMA OBLIGATORIO] forces output language.
   const H = (key: string) => t(language, key);
 
   return `
@@ -2715,156 +2721,115 @@ function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", langu
      ${H("depth_format_title")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-## EXTENSIÓN Y ADAPTACIÓN
-La estructura se adapta a lo que el usuario pregunta. Activa solo los bloques
-que aporten valor a la consulta concreta. Si un bloque no aplica, omítelo.
+REGLA FUNDAMENTAL: Este informe se construye EXCLUSIVAMENTE a partir de los
+datos del DATAPACK (E2), los HECHOS (E3) y el ANÁLISIS (E4). Cada sección
+debe citar de dónde proceden sus datos. Si una sección no tiene datos en el
+DATAPACK, OMÍTELA por completo. NUNCA la rellenes con contenido inventado.
 
-Escala de profundidad según tipo de consulta:
-- SI LA PREGUNTA MENCIONA UNA EMPRESA (nombre, ticker o sector con empresa implícita):
-  SIEMPRE informe completo con Embudo Narrativo — RANGO OBJETIVO: 4.500–5.400 palabras.
-  NO existe la opción "respuesta corta" para consultas sobre empresas.
-  Aunque la pregunta parezca pedir solo un dato o métrica, el análisis corporativo
-  SIEMPRE requiere el contexto completo del Embudo Narrativo.
-  Prioriza DENSIDAD ANALÍTICA (hechos + interpretación + recomendación) sobre repetición decorativa.
-  Distribución orientativa: Resumen ~600 · Pilar 1 ~1.500 · Pilar 2 ~1.200 · Pilar 3 ~1.000 · Cierre ~200.
-  Termina cuando el análisis esté completo y sea accionable. No alargues por inercia.
-  No dupliques ideas entre pilares — cada sección aporta información nueva.
-- Análisis sectorial: profundidad media — activa bloques relevantes (mínimo 2.500 palabras)
-- Comparativa entre empresas: estructura enfrentada — tabla vs. tabla (mínimo 3.000 palabras)
-- Pregunta sin empresa (metodología, conceptos, datos generales): respuesta focalizada
+EXTENSIÓN según tipo de consulta:
+- Empresa: 2.500–4.000 palabras. Todas las secciones con datos disponibles.
+- Sector: 2.000–3.000 palabras. Secciones relevantes al sector.
+- Comparativa: 2.000–3.000 palabras. Estructura enfrentada con tablas.
+- Pregunta conceptual: respuesta focalizada, sin estructura rígida.
 
-El rol del usuario modifica el ÁNGULO/TONO pero NUNCA elimina datos relevantes.
-
-Orden del embudo (respétalo; omite el bloque completo si no aplica):
+Activa SOLO los bloques que tengan datos en el DATAPACK. Omite el resto.
 
 ═══════════════════════════════════════════════════════════════════════════════
-                        ${H("depth_executive_summary")}
+                        ## ${H("depth_executive_summary")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Quien lee SOLO el Resumen entiende la situación. Debe poder presentarse en
-un comité de dirección sin más contexto.
+Quien lee SOLO el Resumen entiende la situación.
 
 ### ${H("depth_headline_diagnosis")}
-Una frase contundente de 1-2 líneas que sintetice la situación. Ej:
-"[Empresa] consolida su liderazgo narrativo pero pierde terreno en evidencia
-documental frente a [Competidor], abriendo un flanco de vulnerabilidad."
+Una frase contundente de 1-2 líneas que sintetice la situación con datos
+concretos del DATAPACK. Ej: "[Empresa] obtiene un RIX medio de 67 puntos
+según 6 IAs, con fortaleza en Gestión de Controversias (95) pero debilidad
+crítica en Autoridad de Fuentes (0)."
 
 ### ${H("depth_3kpis")}
-Tres indicadores clave con su variación respecto al periodo anterior:
-- **[KPI 1]**: [valor] ([+/- delta] vs anterior)
-- **[KPI 2]**: [valor] ([+/- delta] vs anterior)
-- **[KPI 3]**: [valor] ([+/- delta] vs anterior)
+Tres indicadores clave extraídos del DATAPACK con su variación:
+- **[KPI 1]**: [valor] ([+/- delta] vs anterior — solo si DATAPACK.evolucion tiene datos)
+- **[KPI 2]**: [valor]
+- **[KPI 3]**: [valor]
 
 ### ${H("depth_3findings")}
-Tres descubrimientos principales del análisis, en prosa completa (no bullets
-telegráficos). Cada hallazgo en 2-3 oraciones con datos concretos.
-
-### ${H("depth_3recommendations")}
-Tres recomendaciones ejecutivas, cada una con:
-- Acción concreta
-- Área responsable
-- KPI de seguimiento
+Tres descubrimientos principales derivados de los datos, en prosa de 2-3
+oraciones cada uno. Cada hallazgo cita la fuente (DATAPACK, HECHOS, ANÁLISIS).
 
 ### ${H("depth_verdict")}
-Un párrafo de 3-4 oraciones con la valoración final del analista.
-
-### ${H("depth_5messages")}
-Bloque diferenciado con 5 mensajes directos y accionables que un directivo
-pueda trasladar directamente a su equipo. Redactados como instrucciones
-ejecutivas, no como análisis.
+Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
 
 ═══════════════════════════════════════════════════════════════════════════════
-              ${H("depth_pillar1")}
+                        ## ${H("depth_6ai_vision")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Quien llega a Pilar 1 entiende la situación con detalle factual.
+Para cada modelo de IA que aparezca en DATAPACK.snapshot:
+- Puntuación RIX (dato exacto del DATAPACK)
+- Fortaleza principal (métrica más alta)
+- Debilidad principal (métrica más baja)
+- Párrafo interpretativo de 3-4 oraciones usando HECHOS (E3)
 
-### ${H("depth_6ai_vision")}
-Tarjetas de cada modelo de IA ordenadas de MAYOR a MENOR puntuación RIX.
-Para cada modelo: puntuación RIX, fortaleza principal, debilidad principal,
-y un párrafo interpretativo de 3-4 oraciones.
-
-### ${H("depth_8metrics")}
-Para cada métrica relevante (solo si hay datos):
-- **[Nombre completo] ([Sigla])**: [Puntuación]/100
-  Párrafo explicativo de 2-3 oraciones interpretando qué significa esa
-  puntuación para la empresa, con color semafórico (🟢 >70, 🟡 50-70, 🔴 <50).
-
-### ${H("depth_model_divergence")}
-Análisis de las diferencias entre modelos de IA. Qué modelos coinciden,
-cuáles divergen significativamente (>12 pts) y qué implica esa divergencia.
+Ordenar de MAYOR a MENOR puntuación RIX.
 
 ═══════════════════════════════════════════════════════════════════════════════
-              ${H("depth_pillar2")}
+                        ## ${H("depth_8metrics")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Quien llega a Pilar 2 entiende POR QUÉ la situación es como es.
+Para cada métrica con datos en DATAPACK.snapshot:
+- **[Nombre completo]**: [Puntuación]/100 [semáforo 🟢🟡🔴]
+- Explicación de POR QUÉ usando las EXPLICACIONES POR MÉTRICA del DATAPACK
+- Comparación con competidores verificados (solo si existen en DATAPACK)
 
-### ${H("depth_evolution")}
-Tablas con deltas temporales (vs semana anterior, vs mes anterior).
-| Periodo | RIX | Δ | Evento Clave |
-|---------|-----|---|--------------|
-
-### ${H("depth_threats")}
-Para cada amenaza identificada:
-- Impacto estimado en puntos RIX
-- Métricas afectadas
-- Recomendación de mitigación
-
-### ${H("depth_gaps")}
-Análisis de brechas entre lo que la empresa comunica y lo que las IAs
-perciben. ¿Hay narrativas que no están llegando? ¿Hay percepciones
-erróneas que corregir?
-
-### ${H("depth_competitive")}
-Ranking comparativo con competidores directos:
-| Posición | Empresa | RIX | Fortaleza | Debilidad | Distancia al líder |
-|----------|---------|-----|-----------|-----------|---------------------|
+Si no hay EXPLICACIONES POR MÉTRICA, reporta puntuación y semáforo solamente.
 
 ═══════════════════════════════════════════════════════════════════════════════
-              ${H("depth_pillar3")}
+                        ## ${H("depth_model_divergence")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Quien llega a Pilar 3 sabe qué acciones tomar el lunes.
-TODAS las recomendaciones deben derivarse de datos REALES del contexto.
+Solo si DATAPACK.divergencia muestra sigma > 8:
+- Qué modelos coinciden, cuáles divergen significativamente
+- Datos concretos: "[Modelo A]: 78 pts vs [Modelo B]: 52 pts (Δ 26)"
 
-### ${H("depth_improvement_metrics")}
-Identifica las 3 métricas más bajas del contexto y explica:
-- Puntuación actual vs promedio sectorial (datos del contexto)
-- Qué dicen las IAs sobre esa debilidad (citas del texto bruto)
-- Acción concreta vinculada a esa métrica específica
-
-### ${H("depth_strengths")}
-Identifica las 3 métricas más fuertes y explica:
-- Por qué son fortaleza (consenso entre modelos)
-- Riesgo de deterioro si no se mantiene
-
-### ${H("depth_competitive_position")}
-Basado en el ranking del contexto:
-- Distancia al líder y al rezagado
-- Métricas donde los competidores superan a la empresa
-
-PROHIBIDO en este pilar:
-- Inventar escenarios con "RIX estimado" futuro
-- Inventar cifras financieras (WACC, CAPEX, VAN, ROI)
-- Inventar plazos temporales ficticios ("Q3 2025")
-- Inventar índices propietarios
-- Usar terminología de consultoría estratégica (roadmap, sandbox, tokenización)
+Si sigma ≤ 8, omite esta sección.
 
 ═══════════════════════════════════════════════════════════════════════════════
-                   ${H("depth_closing")}
+                        ## ${H("depth_evolution")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Incluir al final:
+Solo si DATAPACK.evolucion tiene >= 2 semanas de datos:
+| Semana | RIX | Δ |
+|--------|-----|---|
+
+Si no hay datos temporales, omite esta sección.
+
+═══════════════════════════════════════════════════════════════════════════════
+                        ## ${H("depth_competitive")}
+═══════════════════════════════════════════════════════════════════════════════
+
+Solo si DATAPACK.competidores_verificados tiene datos:
+| Posición | Empresa | RIX | Fortaleza | Debilidad |
+|----------|---------|-----|-----------|-----------|
+
+Si competidores_verificados está vacío, omite esta sección COMPLETAMENTE.
+
+═══════════════════════════════════════════════════════════════════════════════
+                        ## ${H("depth_recommendations")}
+═══════════════════════════════════════════════════════════════════════════════
+
+Solo recomendaciones derivadas del ANÁLISIS (E4):
+- Cada recomendación cita la métrica, el gap numérico y la evidencia
+- PROHIBIDO inventar acciones, roadmaps, plazos o certificaciones
+
+═══════════════════════════════════════════════════════════════════════════════
+                   ## ${H("depth_closing")}
+═══════════════════════════════════════════════════════════════════════════════
+
 - Modelos de IA consultados y fecha del análisis
-- Número de documentos cualitativos utilizados del Vector Store
 - Periodo temporal analizado
 - Nota sobre la metodología RepIndex
 
-RECUERDA: Este es un análisis de DATOS REALES de reputación algorítmica. Solo puedes afirmar lo que los datos del contexto respaldan. Si no hay datos, dilo.
-El orden del embudo no se altera. Si una sección no aplica, se omite limpiamente.
-En análisis de empresa apunta a un mínimo de 1.500 palabras. En preguntas concretas,
-responde con precisión y sin relleno. Prioriza siempre la trazabilidad de datos sobre el volumen.
+RECUERDA: Solo puedes afirmar lo que los datos del DATAPACK respaldan.
+Si no hay datos para una sección, omítela. NUNCA rellenes con invenciones.
 `;
 }
 
