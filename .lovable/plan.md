@@ -1,65 +1,108 @@
 
 
-# Fix: E2 DataPack Must Use ONLY Verified Competitors
+# Plan: Enriquecer Recomendaciones con Datos Reales y Razonamiento
 
-## The Problem
+## El problema
 
-The `buildDataPack` function (E2) ignores the existing `getRelevantCompetitors()` function (which correctly reads `verified_competitors` from `repindex_root_issuers`). Instead, E2:
+Las recomendaciones del informe final son pobres o inexistentes porque:
 
-- Uses `sector_category` to find "sector peers" (line 1121-1143) -- this pulls in companies that are NOT direct competitors
-- Fetches ALL companies for ranking (line 1146-1165) -- includes irrelevant companies
-- Never reads the `verified_competitors` column at all
+1. **E2 (DataPack) solo trae el RIX promedio de cada competidor** — no trae las 8 metricas desglosadas (NVM, DRM, SIM, etc.) de los competidores verificados. Sin ese desglose, es imposible saber "tu Autoridad de Fuentes esta 18 pts por debajo de Telefonica".
 
-This means the reports include sector comparisons with companies that have nothing to do with each other, and rankings that mix unrelated businesses.
+2. **E4 (Comparador) esta limitado a 4 recomendaciones y 1.000 tokens** — no tiene espacio para razonar con profundidad. Ademas, sin metricas de competidores, solo puede comparar contra un promedio generico.
 
-## The Fix
+3. **E5 (Orquestador) tiene prohibido razonar** — la regla "Toda recomendacion debe existir en ANALISIS. No inventes nuevas" impide que E5 use su capacidad de razonamiento para proponer soluciones basadas en los gaps que ve en los datos.
 
-### 1. Add `competidores_verificados` to the DataPack interface
+## La solucion
 
-Add a new field to the `DataPack` interface:
+### 1. E2: Traer metricas desglosadas de competidores verificados
+
+Actualmente (linea 1147) E2 solo pide `09_rix_score` para competidores. Ampliar la query para traer tambien las 8 metricas:
+
+```text
+Antes:  columns = "03_target_name", "05_ticker", "09_rix_score", batch_execution_date
+Despues: columns = "03_target_name", "05_ticker", "09_rix_score", 
+         "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
+         "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
+         batch_execution_date
 ```
-competidores_verificados: { ticker: string; nombre: string; rix_avg: number | null }[]
+
+Esto permite calcular:
+- Media por metrica de los competidores verificados
+- Gap empresa vs competidores en CADA metrica (no solo RIX global)
+- Identificar exactamente DONDE esta el gap mas grande
+
+Nuevo campo en DataPack:
+```text
+competidores_metricas_avg: {
+  nvm: number | null, drm: number | null, sim: number | null, rmm: number | null,
+  cem: number | null, gam: number | null, dcm: number | null, cxm: number | null
+}
 ```
 
-### 2. Rewrite E2's competitor/sector logic
+### 2. E4: Ampliar capacidad de analisis
 
-Replace the current "Query B: Sector averages" and "Query C: Ranking" blocks with:
+- Subir max_tokens de 1.000 a 2.000 para dar espacio al razonamiento
+- Subir limite de recomendaciones de 4 a 6
+- Incluir en el prompt de E4 los gaps por metrica vs competidores (dato nuevo de E2)
+- Anadir campo `razonamiento` a cada recomendacion: por que esta accion mejoraria esta metrica, basado en que evidencia
+- Anadir campo `prioridad` (alta/media/baja) basado en el tamano del gap
 
-1. Read `verified_competitors` from `repindex_root_issuers` for the primary ticker
-2. If `verified_competitors` is empty or null: set `competidores_verificados = []`, `sector_avg = null`, `ranking = []` -- no competitor data at all
-3. If `verified_competitors` has entries: fetch RIX data ONLY for those specific tickers, compute `sector_avg` from them, and build ranking ONLY from them plus the primary company
+Nueva estructura de recomendacion en E4:
+```text
+{
+  "accion": "Mejorar la trazabilidad de fuentes primarias",
+  "metrica_objetivo": "SIM (Autoridad de Fuentes)",
+  "gap_numerico": "-18 pts vs competidores",
+  "basado_en": "Solo 2/6 IAs encuentran fuentes institucionales",
+  "razonamiento": "Los competidores (TEF, IBE) tienen SIM 70+ porque sus informes anuales estan indexados...",
+  "prioridad": "alta"
+}
+```
 
-This replaces ~40 lines of sector-based logic with ~30 lines of verified-competitor-based logic.
+### 3. E5: Permitir razonamiento propio basado en datos
 
-### 3. Update E4 (Comparator) prompt
+Cambiar la regla restrictiva:
 
-The comparator prompt currently receives "SECTOR" and "RANKING" blocks. Update:
-- Replace "Promedio sector" with "Promedio competidores verificados" (or "Sin competidores verificados" if empty)
-- Replace "Top 5" ranking with only verified competitors ranking
-- Add explicit instruction: "Solo compara con competidores verificados. Si no hay, omite la comparativa."
+```text
+Antes:  "Toda recomendacion debe existir en ANALISIS. No inventes nuevas."
+Despues: "Las recomendaciones del ANALISIS son tu base. Puedes RAZONAR sobre ellas, 
+          ampliarlas y conectarlas con los datos del DATAPACK para proponer soluciones 
+          concretas. Pero TODA solucion debe estar anclada en un gap numerico real. 
+          NUNCA inventes metricas, cifras ni herramientas que no esten en los datos."
+```
 
-### 4. Update E5 (Orchestrator) system prompt
+Esto permite a E5:
+- Tomar una recomendacion de E4 ("Mejorar SIM, gap -18") y RAZONAR sobre ella
+- Conectarla con datos del memento, noticias, evolución temporal
+- Proponer soluciones concretas ("Si tu SIM paso de 35 a 42 en 3 semanas tras publicar el informe anual, la estrategia de publicacion de documentos trazables funciona")
+- Sin inventar DOIs, convenios ni KPIs ficticios
 
-Add a rule to the system prompt:
-- "COMPETIDORES: Usa EXCLUSIVAMENTE los competidores del DATAPACK. Si el campo competidores_verificados esta vacio, NO incluyas comparativa competitiva. Nunca busques competidores por sector."
+### 4. Inyectar datos de competidores en el userPrompt de E5
 
-### 5. Remove the generic "all companies" ranking query
+Anadir al bloque DATAPACK que recibe E5 los promedios por metrica de competidores:
 
-Delete the current "Query C" block (lines 1146-1165) that fetches 3,000 rows of ALL companies to build a general ranking. This is wasteful and produces irrelevant data.
+```text
+competidores_metricas_avg: {nvm: 68, drm: 72, sim: 65, rmm: 58, cem: 71, gam: 64, dcm: 69, cxm: 61}
+```
 
-## What Changes
+Esto da a E5 la materia prima para escribir cosas como: "Tu Autoridad de Fuentes (42 pts) esta 23 puntos por debajo del promedio de tus competidores directos (65 pts). Solo Gemini y Perplexity encuentran fuentes institucionales de Aena, mientras que para Telefonica las 6 IAs localizan documentos regulatorios."
 
-| Before | After |
-|--------|-------|
-| Sector avg from ALL companies with same `sector_category` | Average from ONLY verified competitors |
-| Ranking of ALL 100+ companies | Ranking of ONLY verified competitors + primary |
-| If no sector match, still shows generic ranking | If no verified competitors, no comparativa at all |
-| `getRelevantCompetitors()` is dead code for E2 | E2 reads `verified_competitors` directly from the issuer record |
+## Archivo modificado
 
-## Files Changed
+`supabase/functions/chat-intelligence/index.ts`:
 
-- `supabase/functions/chat-intelligence/index.ts`:
-  - Update `DataPack` interface (add `competidores_verificados`)
-  - Rewrite E2's Query B + Query C blocks to use `verified_competitors`
-  - Update E4 comparator prompt to reference verified competitors only
-  - Add anti-fabrication rule to E5 system prompt about competitors
+1. **DataPack interface** (linea 996): Anadir `competidores_metricas_avg`
+2. **buildDataPack E2** (linea 1143-1191): Ampliar query de competidores para traer 8 metricas, calcular promedios por metrica
+3. **ComparatorResult interface** (linea 1341): Ampliar estructura de recomendaciones con `razonamiento` y `prioridad`
+4. **runComparator E4** (linea 1350): Subir tokens a 2.000, incluir gaps por metrica en prompt, ampliar a 6 recomendaciones
+5. **buildOrchestratorPrompt E5** (linea 1459): Cambiar regla restrictiva por regla de razonamiento anclado, inyectar `competidores_metricas_avg` en userPrompt
+
+## Resultado esperado
+
+| Antes | Despues |
+|-------|---------|
+| "Mejorar SIM" (sin contexto) | "Tu Autoridad de Fuentes (42) esta 23 pts bajo tus competidores (65). Las IAs no encuentran documentos regulatorios trazables. La subida de 35 a 42 tras el ultimo informe anual sugiere que la publicacion sistematica de documentos indexables es la palanca mas efectiva." |
+| Sin comparativa por metrica | Tabla: Empresa vs Media Competidores en cada metrica, con gaps y semaforos |
+| E5 repite lo de E4 sin anadir valor | E5 conecta gaps con tendencias temporales, noticias y memento para proponer soluciones razonadas |
+| 4 recomendaciones escuetas | 6 recomendaciones con razonamiento, prioridad y evidencia cruzada |
+
