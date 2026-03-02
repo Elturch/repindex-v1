@@ -104,6 +104,22 @@ El boletín estará listo para **descargar o imprimir** en formato profesional.`
     depth_improvement_metrics: "Métricas con margen de mejora",
     depth_strengths: "Fortalezas a proteger",
     depth_competitive_position: "Posición competitiva accionable",
+    // Fallback questions
+    fallback_ceo_q1: "¿Cuáles son los 3 riesgos reputacionales más urgentes?",
+    fallback_ceo_q2: "¿Cómo estamos vs la competencia directa?",
+    fallback_ceo_q3: "¿Qué decisiones debería considerar?",
+    fallback_journalist_q1: "¿Qué empresa tiene la historia más noticiable esta semana?",
+    fallback_journalist_q2: "¿Hay alguna controversia emergente?",
+    fallback_journalist_q3: "¿Qué titular propones para esta información?",
+    fallback_analyst_q1: "¿Hay correlación entre RIX y cotización?",
+    fallback_analyst_q2: "¿Qué señales técnicas detectas?",
+    fallback_analyst_q3: "Comparativa detallada del sector",
+    fallback_investor_q1: "¿Pasa esta empresa el filtro reputacional?",
+    fallback_investor_q2: "¿Cuál es el nivel de riesgo ESG?",
+    fallback_investor_q3: "¿Es buen momento para entrar?",
+    fallback_default_q1: "¿Puedes profundizar más?",
+    fallback_default_q2: "¿Cómo se compara con competidores?",
+    fallback_default_q3: "¿Cuál es la tendencia?",
   },
   en: {
     agent_identity_answer: `I'm **Agent Rix**, an analyst specialized in corporate algorithmic reputation.
@@ -191,6 +207,22 @@ The bulletin will be ready to **download or print** in professional format.`,
     depth_improvement_metrics: "Metrics with room for improvement",
     depth_strengths: "Strengths to protect",
     depth_competitive_position: "Actionable competitive position",
+    // Fallback questions
+    fallback_ceo_q1: "What are the 3 most urgent reputational risks?",
+    fallback_ceo_q2: "How are we doing vs direct competition?",
+    fallback_ceo_q3: "What decisions should I consider?",
+    fallback_journalist_q1: "Which company has the most newsworthy story this week?",
+    fallback_journalist_q2: "Is there an emerging controversy?",
+    fallback_journalist_q3: "What headline do you suggest for this information?",
+    fallback_analyst_q1: "Is there a correlation between RIX and stock price?",
+    fallback_analyst_q2: "What technical signals do you detect?",
+    fallback_analyst_q3: "Detailed sector comparison",
+    fallback_investor_q1: "Does this company pass the reputational filter?",
+    fallback_investor_q2: "What is the ESG risk level?",
+    fallback_investor_q3: "Is it a good time to invest?",
+    fallback_default_q1: "Can you go deeper?",
+    fallback_default_q2: "How does it compare to competitors?",
+    fallback_default_q3: "What's the trend?",
   },
   fr: {
     agent_identity_answer: `Je suis l'**Agent Rix**, un analyste spécialisé en réputation algorithmique d'entreprise.
@@ -276,6 +308,22 @@ Sur quelle entreprise ou quel secteur souhaitez-vous vous concentrer ?`,
     depth_improvement_metrics: "Métriques à améliorer",
     depth_strengths: "Forces à protéger",
     depth_competitive_position: "Position concurrentielle actionnable",
+    // Fallback questions
+    fallback_ceo_q1: "Quels sont les 3 risques réputationnels les plus urgents ?",
+    fallback_ceo_q2: "Comment nous situons-nous par rapport à la concurrence directe ?",
+    fallback_ceo_q3: "Quelles décisions devrais-je considérer ?",
+    fallback_journalist_q1: "Quelle entreprise a l'histoire la plus médiatique cette semaine ?",
+    fallback_journalist_q2: "Y a-t-il une controverse émergente ?",
+    fallback_journalist_q3: "Quel titre proposez-vous pour cette information ?",
+    fallback_analyst_q1: "Y a-t-il une corrélation entre le RIX et le cours de l'action ?",
+    fallback_analyst_q2: "Quels signaux techniques détectez-vous ?",
+    fallback_analyst_q3: "Comparaison détaillée du secteur",
+    fallback_investor_q1: "Cette entreprise passe-t-elle le filtre réputationnel ?",
+    fallback_investor_q2: "Quel est le niveau de risque ESG ?",
+    fallback_investor_q3: "Est-ce le bon moment pour investir ?",
+    fallback_default_q1: "Pouvez-vous approfondir ?",
+    fallback_default_q2: "Comment se compare-t-elle aux concurrents ?",
+    fallback_default_q3: "Quelle est la tendance ?",
   },
   pt: {
     agent_identity_answer: `Sou o **Agente Rix**, um analista especializado em reputação algorítmica corporativa.
@@ -361,6 +409,22 @@ Escreva o nome da empresa e gerarei uma análise detalhada incluindo:
     depth_improvement_metrics: "Métricas com margem de melhoria",
     depth_strengths: "Forças a proteger",
     depth_competitive_position: "Posição competitiva acionável",
+    // Fallback questions
+    fallback_ceo_q1: "Quais são os 3 riscos reputacionais mais urgentes?",
+    fallback_ceo_q2: "Como estamos em relação à concorrência direta?",
+    fallback_ceo_q3: "Que decisões deveria considerar?",
+    fallback_journalist_q1: "Que empresa tem a história mais noticiável esta semana?",
+    fallback_journalist_q2: "Há alguma controvérsia emergente?",
+    fallback_journalist_q3: "Que título propõe para esta informação?",
+    fallback_analyst_q1: "Há correlação entre RIX e cotação?",
+    fallback_analyst_q2: "Que sinais técnicos deteta?",
+    fallback_analyst_q3: "Comparação detalhada do setor",
+    fallback_investor_q1: "Esta empresa passa o filtro reputacional?",
+    fallback_investor_q2: "Qual é o nível de risco ESG?",
+    fallback_investor_q3: "É bom momento para investir?",
+    fallback_default_q1: "Pode aprofundar mais?",
+    fallback_default_q2: "Como se compara com concorrentes?",
+    fallback_default_q3: "Qual é a tendência?",
   },
 };
 
@@ -4269,37 +4333,19 @@ async function generateRoleSpecificQuestions(
     console.warn(`${logPrefix} Error generating role-specific questions:`, error);
   }
 
-  // Fallback questions based on role
-  const fallbackQuestions: Record<string, string[]> = {
-    ceo: [
-      "¿Cuáles son los 3 riesgos reputacionales más urgentes?",
-      "¿Cómo estamos vs la competencia directa?",
-      "¿Qué decisiones debería considerar?",
-    ],
-    periodista: [
-      "¿Qué empresa tiene la historia más noticiable esta semana?",
-      "¿Hay alguna controversia emergente?",
-      "¿Qué titular propones para esta información?",
-    ],
-    analista_mercados: [
-      "¿Hay correlación entre RIX y cotización?",
-      "¿Qué señales técnicas detectas?",
-      "Comparativa detallada del sector",
-    ],
-    inversor: [
-      "¿Pasa esta empresa el filtro reputacional?",
-      "¿Cuál es el nivel de riesgo ESG?",
-      "¿Es buen momento para entrar?",
-    ],
+  // Fallback questions based on role — internationalized via PIPELINE_I18N
+  const roleKeyMap: Record<string, string> = {
+    ceo: "ceo",
+    periodista: "journalist",
+    analista_mercados: "analyst",
+    inversor: "investor",
   };
-
-  return (
-    fallbackQuestions[roleId] || [
-      "¿Puedes profundizar más?",
-      "¿Cómo se compara con competidores?",
-      "¿Cuál es la tendencia?",
-    ]
-  );
+  const roleKey = roleKeyMap[roleId] || "default";
+  return [
+    t(language, `fallback_${roleKey}_q1`),
+    t(language, `fallback_${roleKey}_q2`),
+    t(language, `fallback_${roleKey}_q3`),
+  ];
 }
 
 // =============================================================================
@@ -4315,7 +4361,9 @@ async function handleBulletinRequest(
   logPrefix: string,
   userId: string | null,
   conversationId: string | undefined,
-  streamMode: boolean = false, // NEW: support streaming mode
+  streamMode: boolean = false,
+  language: string = "es",
+  languageName: string = "Español",
 ) {
   console.log(`${logPrefix} Processing bulletin request for: ${companyQuery}`);
 
@@ -4354,16 +4402,17 @@ async function handleBulletinRequest(
 
   if (!matchedCompany) {
     console.log(`${logPrefix} Company not found: ${companyQuery}`);
+    const examplesList = companiesCache
+      ?.slice(0, 10)
+      .map((c) => `${c.issuer_name} (${c.ticker})`)
+      .join(", ") || "";
     return new Response(
       JSON.stringify({
-        answer: `❌ No encontré la empresa "${companyQuery}" en la base de datos de RepIndex.\n\n**Empresas disponibles** (algunas sugerencias):\n${companiesCache
-          ?.slice(0, 10)
-          .map((c) => `- ${c.issuer_name} (${c.ticker})`)
-          .join("\n")}\n\nPor favor, especifica el nombre exacto o el ticker de la empresa.`,
+        answer: `❌ ${t(language, "company_not_found", { query: companyQuery, examples: examplesList })}`,
         suggestedQuestions: [
-          "¿Qué empresas están disponibles en RepIndex?",
-          "Genera un boletín de Telefónica",
-          "Lista las empresas del sector Energía",
+          t(language, "top5_ibex"),
+          t(language, "bulletin_suggest", { company: "Telefónica" }),
+          t(language, "energy_ranking"),
         ],
         metadata: { type: "error", bulletinRequested: true },
       }),
@@ -5387,8 +5436,26 @@ async function handleStandardChat(
   ];
 
   // Compatibility references for downstream code (suggestions, drumroll, session save)
-  const allRixData: any[] = [];
-  const detectedCompanyFullData: any[] = [];
+  // Populate allRixData from dataPack.snapshot mapped to legacy format
+  const allRixData: any[] = (dataPack?.snapshot || []).map((s: any) => ({
+    "02_model_name": s.modelo,
+    "03_target_name": dataPack.empresa_primaria?.nombre || "",
+    "05_ticker": dataPack.empresa_primaria?.ticker || "",
+    "06_period_from": s.period_from,
+    "07_period_to": s.period_to,
+    "09_rix_score": s.rix,
+    "51_rix_score_adjusted": s.rix_adj,
+    "23_nvm_score": s.nvm,
+    "26_drm_score": s.drm,
+    "29_sim_score": s.sim,
+    "32_rmm_score": s.rmm,
+    "35_cem_score": s.cem,
+    "38_gam_score": s.gam,
+    "41_dcm_score": s.dcm,
+    "44_cxm_score": s.cxm,
+    batch_execution_date: s.period_to,
+  }));
+  const detectedCompanyFullData: any[] = allRixData;
 
   // =========================================================================
   // STREAMING MODE: Return SSE stream for real-time text generation
