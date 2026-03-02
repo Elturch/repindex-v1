@@ -999,12 +999,16 @@ interface DataPack {
   ranking: { pos: number; ticker: string; nombre: string; rix_avg: number }[];
   evolucion: { fecha: string; rix_avg: number; modelos: number; delta: number | null }[];
   divergencia: { sigma: number; nivel: string; modelo_alto: string; modelo_bajo: string; rango: number } | null;
-  memento: { ceo: string | null; presidente: string | null; sede: string | null; descripcion: string | null; fecha: string | null } | null;
-  noticias: { titular: string; fecha: string | null; ticker: string }[];
+  memento: { ceo: string | null; presidente: string | null; chairman: string | null; sede: string | null; descripcion: string | null; fecha: string | null; empleados: number | null; fundacion: number | null; ingresos: string | null; ejercicio_fiscal: string | null; mision: string | null; otros_ejecutivos: any[] | null } | null;
+  noticias: { titular: string; fecha: string | null; ticker: string; lead: string | null; categoria: string | null }[];
   raw_texts: { modelo: string; texto: string }[];
   empresa_primaria: { ticker: string; nombre: string; sector: string | null; subsector: string | null } | null;
   competidores_verificados: { ticker: string; nombre: string; rix_avg: number | null }[];
   competidores_metricas_avg: { nvm: number | null; drm: number | null; sim: number | null; rmm: number | null; cem: number | null; gam: number | null; dcm: number | null; cxm: number | null } | null;
+  explicaciones_metricas: { modelo: string; explicacion: string }[];
+  puntos_clave: { modelo: string; puntos: string[] }[];
+  categorias_metricas: { modelo: string; nvm: string | null; drm: string | null; sim: string | null; rmm: string | null; cem: string | null; gam: string | null; dcm: string | null; cxm: string | null }[];
+  mercado: { precio: string | null; reputacion_vs_precio: string | null; variacion_interanual: string | null } | null;
 }
 
 async function buildDataPack(
@@ -1027,6 +1031,10 @@ async function buildDataPack(
     empresa_primaria: null,
     competidores_verificados: [],
     competidores_metricas_avg: null,
+    explicaciones_metricas: [],
+    puntos_clave: [],
+    categorias_metricas: [],
+    mercado: null,
   };
 
   if (classifier.empresas_detectadas.length === 0) {
@@ -1055,10 +1063,12 @@ async function buildDataPack(
     "25_nvm_categoria", "28_drm_categoria", "31_sim_categoria",
     "34_rmm_categoria", "37_cem_categoria", "40_gam_categoria",
     "43_dcm_categoria", "46_cxm_categoria",
-    "10_resumen", "20_res_gpt_bruto", "21_res_perplex_bruto",
+    "10_resumen", "11_puntos_clave",
+    "20_res_gpt_bruto", "21_res_perplex_bruto",
     "22_res_gemini_bruto", "23_res_deepseek_bruto",
     respuesta_bruto_grok, respuesta_bruto_qwen,
     "22_explicacion", "25_explicaciones_detalladas",
+    "48_precio_accion", "49_reputacion_vs_precio", "50_precio_accion_interanual",
     batch_execution_date
   `;
 
@@ -1120,6 +1130,57 @@ async function buildDataPack(
       pack.raw_texts.push({ modelo: modelName, texto: (textRow[field] as string).substring(0, 3000) });
     }
   }
+
+  // Extract explicaciones_metricas, puntos_clave, categorias_metricas, mercado from latestWeek
+  for (const row of latestWeek) {
+    const modelName = row["02_model_name"] || "?";
+
+    // Explicaciones por métrica
+    const explicacion = row["22_explicacion"];
+    if (explicacion && typeof explicacion === "string" && explicacion.length > 10) {
+      pack.explicaciones_metricas.push({ modelo: modelName, explicacion: explicacion.substring(0, 1500) });
+    }
+
+    // Puntos clave
+    const puntosRaw = row["11_puntos_clave"];
+    if (puntosRaw) {
+      let puntos: string[] = [];
+      if (Array.isArray(puntosRaw)) {
+        puntos = puntosRaw.filter((p: any) => typeof p === "string" && p.length > 3).slice(0, 8);
+      } else if (typeof puntosRaw === "string") {
+        try { puntos = JSON.parse(puntosRaw).filter((p: any) => typeof p === "string").slice(0, 8); } catch {}
+      }
+      if (puntos.length > 0) {
+        pack.puntos_clave.push({ modelo: modelName, puntos });
+      }
+    }
+
+    // Categorías por métrica
+    const cats: any = { modelo: modelName };
+    const catFields = [
+      ["25_nvm_categoria", "nvm"], ["28_drm_categoria", "drm"], ["31_sim_categoria", "sim"],
+      ["34_rmm_categoria", "rmm"], ["37_cem_categoria", "cem"], ["40_gam_categoria", "gam"],
+      ["43_dcm_categoria", "dcm"], ["46_cxm_categoria", "cxm"],
+    ];
+    let hasCats = false;
+    for (const [field, key] of catFields) {
+      cats[key] = row[field] || null;
+      if (row[field]) hasCats = true;
+    }
+    if (hasCats) pack.categorias_metricas.push(cats);
+  }
+
+  // Mercado: extract from first row that has price data
+  const precioRow = latestWeek.find((r) => r["48_precio_accion"] || r["49_reputacion_vs_precio"]);
+  if (precioRow) {
+    pack.mercado = {
+      precio: precioRow["48_precio_accion"] || null,
+      reputacion_vs_precio: precioRow["49_reputacion_vs_precio"] ? (precioRow["49_reputacion_vs_precio"] as string).substring(0, 500) : null,
+      variacion_interanual: precioRow["50_precio_accion_interanual"] ? (precioRow["50_precio_accion_interanual"] as string).substring(0, 300) : null,
+    };
+  }
+
+  console.log(`${logPrefix} [E2] Enrichment: ${pack.explicaciones_metricas.length} explanations, ${pack.puntos_clave.length} key-points sets, ${pack.categorias_metricas.length} category sets, market=${!!pack.mercado}`);
 
   // Query B+C: Verified competitors ONLY (from repindex_root_issuers.verified_competitors)
   // Read verified_competitors directly from the issuer record
@@ -1245,10 +1306,10 @@ async function buildDataPack(
     };
   }
 
-  // Query F: Corporate memento
+  // Query F: Corporate memento (expanded)
   const { data: corpData } = await supabaseClient
     .from("corporate_snapshots")
-    .select("ceo_name, president_name, headquarters_city, company_description, snapshot_date_only")
+    .select("ceo_name, president_name, chairman_name, headquarters_city, company_description, snapshot_date_only, employees_approx, founded_year, last_reported_revenue, fiscal_year, mission_statement, other_executives")
     .eq("ticker", primaryTicker)
     .order("snapshot_date_only", { ascending: false })
     .limit(1);
@@ -1258,16 +1319,23 @@ async function buildDataPack(
     pack.memento = {
       ceo: c.ceo_name,
       presidente: c.president_name,
+      chairman: c.chairman_name || null,
       sede: c.headquarters_city,
-      descripcion: c.company_description?.substring(0, 300) || null,
+      descripcion: c.company_description?.substring(0, 500) || null,
       fecha: c.snapshot_date_only,
+      empleados: c.employees_approx || null,
+      fundacion: c.founded_year || null,
+      ingresos: c.last_reported_revenue || null,
+      ejercicio_fiscal: c.fiscal_year || null,
+      mision: c.mission_statement?.substring(0, 300) || null,
+      otros_ejecutivos: Array.isArray(c.other_executives) ? c.other_executives.slice(0, 5) : null,
     };
   }
 
-  // Query G: Recent news
+  // Query G: Recent news (expanded with lead_paragraph and category)
   const { data: newsData } = await supabaseClient
     .from("corporate_news")
-    .select("ticker, headline, published_date")
+    .select("ticker, headline, published_date, lead_paragraph, category")
     .eq("ticker", primaryTicker)
     .order("published_date", { ascending: false })
     .limit(10);
@@ -1277,6 +1345,8 @@ async function buildDataPack(
       titular: n.headline,
       fecha: n.published_date,
       ticker: n.ticker,
+      lead: n.lead_paragraph?.substring(0, 200) || null,
+      categoria: n.category || null,
     }));
   }
 
@@ -1307,10 +1377,26 @@ async function extractQualitativeFacts(
 
   const textsBlock = rawTexts.map((t) => `=== ${t.modelo} ===\n${t.texto.substring(0, 2500)}`).join("\n\n");
 
+  // Build explanations block from DataPack
+  let explicacionesBlock = "";
+  if (dataPack.explicaciones_metricas.length > 0) {
+    explicacionesBlock = "\n\nEXPLICACIONES POR MÉTRICA (razonamiento de cada IA sobre por qué dio cada score):\n" +
+      dataPack.explicaciones_metricas.map((e) => `=== ${e.modelo} ===\n${e.explicacion}`).join("\n\n");
+  }
+
+  // Build key points block from DataPack
+  let puntosClaveBlock = "";
+  if (dataPack.puntos_clave.length > 0) {
+    puntosClaveBlock = "\n\nPUNTOS CLAVE (conclusiones destiladas por cada IA):\n" +
+      dataPack.puntos_clave.map((p) => `=== ${p.modelo} ===\n${p.puntos.map((pt) => `- ${pt}`).join("\n")}`).join("\n\n");
+  }
+
   const prompt = `Analiza estos textos de 6 modelos de IA sobre ${dataPack.empresa_primaria?.nombre || "una empresa"} (${dataPack.empresa_primaria?.ticker || "?"}).
 
 TEXTOS BRUTOS DE LAS IAs:
 ${textsBlock}
+${explicacionesBlock}
+${puntosClaveBlock}
 
 Extrae hechos estructurados. Responde SOLO en JSON válido (sin markdown):
 {
@@ -1330,10 +1416,12 @@ Extrae hechos estructurados. Responde SOLO en JSON válido (sin markdown):
 }
 
 REGLAS:
-- Solo extrae hechos que EXISTAN en los textos. No inventes.
+- Solo extrae hechos que EXISTAN en los textos o explicaciones. No inventes.
+- Las EXPLICACIONES POR MÉTRICA son evidencia directa del razonamiento de cada IA. Extrae las razones concretas que dan para cada score.
+- Los PUNTOS CLAVE son conclusiones ya destiladas. Úsalos para identificar consensos y divergencias.
 - Atribuye cada hecho al modelo que lo dice.
 - Si un modelo no menciona un tema, NO lo incluyas para ese modelo.
-- Máximo 8 temas_clave, 6 menciones_concretas, 5 consensos.`;
+- Máximo 8 temas_clave, 8 menciones_concretas, 6 consensos.`;
 
   try {
     const result = await callAISimple(
@@ -1429,6 +1517,57 @@ async function runComparator(
     ? `Narrativa dominante: ${facts.narrativa_dominante}\nConsensos: ${facts.consensos.map((c) => `${c.tema} (${c.modelos_coincidentes} modelos)`).join(", ")}\nDivergencias: ${facts.divergencias_narrativas.map((d) => d.tema).join(", ")}`
     : "Sin datos cualitativos";
 
+  // Build consensus categories deterministically (no LLM)
+  let consensoCatsBlock = "";
+  if (dataPack.categorias_metricas.length > 0) {
+    const metricKeys = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"];
+    const metricLabels: Record<string, string> = { nvm: "Calidad Narrativa", drm: "Fortaleza Evidencia", sim: "Autoridad Fuentes", rmm: "Actualidad y Empuje", cem: "Gestión Controversias", gam: "Percepción Gobernanza", dcm: "Coherencia Informativa", cxm: "Ejecución Corporativa" };
+    const consensoLines: string[] = [];
+    for (const mk of metricKeys) {
+      const counts: Record<string, number> = {};
+      for (const cm of dataPack.categorias_metricas) {
+        const cat = (cm as any)[mk];
+        if (cat && typeof cat === "string") {
+          const normalized = cat.toLowerCase().trim();
+          counts[normalized] = (counts[normalized] || 0) + 1;
+        }
+      }
+      if (Object.keys(counts).length > 0) {
+        const parts = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(" + ");
+        consensoLines.push(`${metricLabels[mk]} (${mk.toUpperCase()}): ${parts}`);
+      }
+    }
+    if (consensoLines.length > 0) {
+      consensoCatsBlock = `\nCONSENSO DE CATEGORÍAS (dato puro, sin LLM — conteo de clasificaciones entre modelos):\n${consensoLines.join("\n")}`;
+    }
+  }
+
+  // Build market data block
+  let mercadoBlock = "";
+  if (dataPack.mercado) {
+    const parts: string[] = [];
+    if (dataPack.mercado.precio) parts.push(`Precio: ${dataPack.mercado.precio}`);
+    if (dataPack.mercado.reputacion_vs_precio) parts.push(`Reputación vs Precio: ${dataPack.mercado.reputacion_vs_precio}`);
+    if (dataPack.mercado.variacion_interanual) parts.push(`Variación interanual: ${dataPack.mercado.variacion_interanual}`);
+    if (parts.length > 0) mercadoBlock = `\nDATOS DE MERCADO:\n${parts.join("\n")}`;
+  }
+
+  // Build top repeated key points
+  let puntosRepetidosBlock = "";
+  if (dataPack.puntos_clave.length >= 2) {
+    const allPuntos = dataPack.puntos_clave.flatMap((p) => p.puntos.map((pt) => pt.toLowerCase().substring(0, 80)));
+    const puntoCounts = new Map<string, number>();
+    for (const p of allPuntos) {
+      // Group similar points by first 40 chars
+      const key = p.substring(0, 40);
+      puntoCounts.set(key, (puntoCounts.get(key) || 0) + 1);
+    }
+    const repeated = [...puntoCounts.entries()].filter(([_, c]) => c >= 2).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (repeated.length > 0) {
+      puntosRepetidosBlock = `\nPUNTOS CLAVE MÁS REPETIDOS ENTRE MODELOS:\n${repeated.map(([p, c]) => `- "${p}..." (${c} modelos)`).join("\n")}`;
+    }
+  }
+
   const prompt = `Cruza datos cuantitativos con cualitativos para ${dataPack.empresa_primaria?.nombre || "la empresa"}.
 
 DATOS CUANTITATIVOS (DATAPACK):
@@ -1439,6 +1578,9 @@ RANKING: ${rankingInfo}
 EVOLUCIÓN: ${dataPack.evolucion.map((e) => `${e.fecha}: ${e.rix_avg} (Δ${e.delta ?? "—"})`).join(", ")}
 DIVERGENCIA: ${dataPack.divergencia ? `σ=${dataPack.divergencia.sigma}, ${dataPack.divergencia.nivel}` : "N/A"}
 ${metricGapsInfo}
+${consensoCatsBlock}
+${mercadoBlock}
+${puntosRepetidosBlock}
 
 DATOS CUALITATIVOS:
 ${factsInfo}
@@ -1446,16 +1588,20 @@ ${factsInfo}
 Responde SOLO en JSON válido (sin markdown):
 {
   "diagnostico_resumen": "Empresa tiene RIX X, Y pts sobre/bajo media sectorial...",
-  "fortalezas": [{"metrica":"NVM","score":75,"vs_sector":"+12","evidencia_cualitativa":"5/6 IAs destacan..."}],
-  "debilidades": [{"metrica":"SIM","score":35,"vs_sector":"-18","evidencia_cualitativa":"..."}],
+  "fortalezas": [{"metrica":"NVM","score":75,"vs_sector":"+12","evidencia_cualitativa":"5/6 IAs califican como Bueno..."}],
+  "debilidades": [{"metrica":"SIM","score":35,"vs_sector":"-18","evidencia_cualitativa":"Solo 2 IAs encuentran fuentes institucionales..."}],
   "posicion_competitiva": {"ranking":3,"de":8,"lider":"EmpresaY","distancia":-8},
   "recomendaciones": [{"accion":"Mejorar X","metrica_objetivo":"DRM","basado_en":"gap de 18 pts","razonamiento":"Los competidores tienen DRM 72 porque...","prioridad":"alta","gap_numerico":"-18 pts"}],
-  "gaps_percepcion": [{"tema":"ESG","dato_real":"CEM 42","narrativa_ia":"4 modelos positivos","riesgo":"desconexion"}]
+  "gaps_percepcion": [{"tema":"ESG","dato_real":"CEM 42","narrativa_ia":"4 modelos positivos","riesgo":"desconexion"}],
+  "contexto_mercado": "Precio X, PER Y, contraste con RIX..." | null,
+  "consenso_categorias": [{"metrica":"CEM","calificacion_dominante":"Bueno","modelos_coincidentes":5}]
 }
 
 REGLAS:
 - Solo conclusiones trazables a los datos de arriba.
 - Cada recomendación DEBE citar la métrica, el gap numérico, un razonamiento de por qué esa acción mejoraría la métrica, y una prioridad (alta/media/baja) basada en el tamaño del gap.
+- Usa el CONSENSO DE CATEGORÍAS para reforzar evidencia: "5/6 IAs califican CEM como Bueno" es más convincente que solo "CEM=78".
+- Si hay DATOS DE MERCADO, incluye contexto_mercado conectando reputación con cotización.
 - Solo compara con competidores verificados. Si no hay competidores verificados, omite completamente la comparativa competitiva.
 - Máximo 4 fortalezas, 4 debilidades, 6 recomendaciones.`;
 
@@ -1506,15 +1652,58 @@ function buildOrchestratorPrompt(
     divergencia: dataPack.divergencia,
     memento: dataPack.memento,
     noticias: dataPack.noticias.slice(0, 5),
+    mercado: dataPack.mercado,
   }, null, 0);
 
   const factsBlock = facts ? JSON.stringify(facts, null, 0) : "null";
   const analysisBlock = analysis ? JSON.stringify(analysis, null, 0) : "null";
 
+  // Build explicaciones block for E5
+  let explicacionesE5Block = "";
+  if (dataPack.explicaciones_metricas.length > 0) {
+    explicacionesE5Block = "\n\n═══ EXPLICACIONES POR MÉTRICA (E2 — razonamiento de cada IA) ═══\n" +
+      dataPack.explicaciones_metricas.map((e) => `[${e.modelo}]: ${e.explicacion.substring(0, 800)}`).join("\n\n");
+  }
+
+  // Build consenso categorias block for E5
+  let consensoE5Block = "";
+  if (dataPack.categorias_metricas.length > 0) {
+    const metricKeys = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"];
+    const metricLabels: Record<string, string> = { nvm: "Calidad Narrativa", drm: "Fortaleza Evidencia", sim: "Autoridad Fuentes", rmm: "Actualidad y Empuje", cem: "Gestión Controversias", gam: "Percepción Gobernanza", dcm: "Coherencia Informativa", cxm: "Ejecución Corporativa" };
+    const lines: string[] = [];
+    for (const mk of metricKeys) {
+      const counts: Record<string, number> = {};
+      for (const cm of dataPack.categorias_metricas) {
+        const cat = (cm as any)[mk];
+        if (cat && typeof cat === "string") {
+          const normalized = cat.toLowerCase().trim();
+          counts[normalized] = (counts[normalized] || 0) + 1;
+        }
+      }
+      if (Object.keys(counts).length > 0) {
+        const dominant = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+        lines.push(`| ${metricLabels[mk]} | ${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")} | Dominante: ${dominant[0]} (${dominant[1]}/${dataPack.categorias_metricas.length}) |`);
+      }
+    }
+    if (lines.length > 0) {
+      consensoE5Block = "\n\n═══ CONSENSO DE CATEGORÍAS (determinístico, sin LLM) ═══\n| Métrica | Distribución | Dominante |\n|---|---|---|\n" + lines.join("\n");
+    }
+  }
+
+  // Build market block for E5
+  let mercadoE5Block = "";
+  if (dataPack.mercado) {
+    const parts: string[] = [];
+    if (dataPack.mercado.precio) parts.push(`Precio acción: ${dataPack.mercado.precio}`);
+    if (dataPack.mercado.reputacion_vs_precio) parts.push(`Análisis reputación-precio: ${dataPack.mercado.reputacion_vs_precio}`);
+    if (dataPack.mercado.variacion_interanual) parts.push(`Variación interanual: ${dataPack.mercado.variacion_interanual}`);
+    if (parts.length > 0) mercadoE5Block = "\n\n═══ DATOS DE MERCADO (E2) ═══\n" + parts.join("\n");
+  }
+
   const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
 Responde SIEMPRE en ${languageName}. Sin excepciones.
 
-Eres el Agente Rix de RepIndex. Redactas informes ejecutivos para alta dirección usando EXCLUSIVAMENTE los datos de los bloques DATAPACK, HECHOS y ANALISIS que recibes.
+Eres el Agente Rix de RepIndex. Redactas informes ejecutivos para alta dirección usando EXCLUSIVAMENTE los datos de los bloques DATAPACK, HECHOS, ANALISIS, EXPLICACIONES, CONSENSO y MERCADO que recibes.
 
 REGLAS DE INTEGRIDAD (PRIORIDAD MÁXIMA):
 1. Toda cifra debe existir en DATAPACK. Si no está, escribe "dato no disponible".
@@ -1522,6 +1711,14 @@ REGLAS DE INTEGRIDAD (PRIORIDAD MÁXIMA):
 3. Las recomendaciones del ANALISIS son tu base. Puedes RAZONAR sobre ellas, ampliarlas y conectarlas con los datos del DATAPACK (tendencias temporales, memento, noticias) para proponer soluciones concretas y accionables. Pero TODA solución debe estar anclada en un gap numérico real. NUNCA inventes métricas, cifras ni herramientas que no estén en los datos.
 4. NUNCA inventes empresas ficticias, cifras financieras, metodologías, DOIs, convenios ni KPIs inventados.
 5. Si no hay datos suficientes, dilo con transparencia. No rellenes con ficción.
+
+REGLA DE EXPLICACIONES: Cuando cites una métrica débil o fuerte, explica POR QUÉ usando las EXPLICACIONES POR MÉTRICA. Ejemplo: "La Autoridad de Fuentes (41 pts) es baja porque, según DeepSeek, predominan fuentes T1 (75%) pero faltan fuentes T2 diversas." NUNCA digas solo "SIM=41, Mejorable" sin explicar la causa.
+
+REGLA DE MERCADO: Si hay DATOS DE MERCADO (precio, PER, variación), incluye un párrafo breve en el Resumen Ejecutivo conectando reputación con cotización. SOLO datos del bloque MERCADO, nunca inventes ratios ni precios.
+
+REGLA DE CONSENSO CATEGORÍAS: Usa el CONSENSO DE CATEGORÍAS para reforzar la evidencia cruzada. "5 de 6 IAs califican la Gestión de Controversias como Buena" es más convincente que simplemente "CEM = 78". Siempre que tengas consenso disponible, úsalo.
+
+REGLA DE NOTICIAS CON CONTEXTO: Cuando menciones noticias corporativas, incluye el lead_paragraph si existe en los datos. No resumas lo que no has leído. Si solo tienes el titular, di solo el titular.
 
 TONO Y ESTILO:
 • Profesional y analítico, nunca periodístico ni dramático.
@@ -1535,10 +1732,10 @@ TONO Y ESTILO:
 • Sé didáctico: explica el porqué de las cosas, no solo el qué.
 
 ESTRUCTURA (adapta según contenido disponible — OMISIÓN INTELIGENTE):
-- **Resumen Ejecutivo**: titular + 3 KPIs con delta + veredicto en 1 párrafo. Quien lee SOLO esto entiende la situación.
-- **Pilar 1 DEFINIR** (cuando haya datos): visión de las 6 IAs (de mayor a menor RIX), las 8 métricas con interpretación, divergencia entre modelos. Incluye tabla de scores.
+- **Resumen Ejecutivo**: titular + 3 KPIs con delta + veredicto en 1 párrafo. Si hay datos de mercado, añade un párrafo breve conectando reputación con cotización. Quien lee SOLO esto entiende la situación.
+- **Pilar 1 DEFINIR** (cuando haya datos): visión de las 6 IAs (de mayor a menor RIX), las 8 métricas con interpretación Y explicación causal (de las EXPLICACIONES), divergencia entre modelos, consenso de categorías. Incluye tabla de scores.
 - **Pilar 2 ANALIZAR** (cuando haya evolución): evolución temporal con deltas, gaps realidad vs percepción, contexto competitivo con ranking. Incluye tabla comparativa.
-- **Pilar 3 PROSPECTAR** (cuando ANALISIS tenga recomendaciones): métricas a mejorar con gaps numéricos concretos vs competidores, fortalezas a proteger, posición competitiva accionable. Usa los gaps por métrica (competidores_metricas_avg) para razonar sobre qué palancas son más efectivas. Conecta tendencias temporales del DATAPACK con recomendaciones para evidenciar qué ha funcionado antes. TODO anclado en datos reales. NUNCA inventes planes de remediación, responsables, KPIs con plazos, DOIs, convenios universitarios ni "Aena Data Commons".
+- **Pilar 3 PROSPECTAR** (cuando ANALISIS tenga recomendaciones): métricas a mejorar con gaps numéricos concretos vs competidores, fortalezas a proteger, posición competitiva accionable. Usa los gaps por métrica (competidores_metricas_avg) para razonar sobre qué palancas son más efectivas. Conecta tendencias temporales del DATAPACK con recomendaciones para evidenciar qué ha funcionado antes. Usa las EXPLICACIONES para justificar por qué cada recomendación es relevante. TODO anclado en datos reales. NUNCA inventes planes de remediación, responsables, KPIs con plazos, DOIs, convenios universitarios ni "Aena Data Commons".
 - **Cierre**: modelos consultados, periodo, metodología RepIndex.
 
 Si un pilar no tiene datos suficientes, omítelo limpiamente sin mencionarlo. La calidad está en la trazabilidad, no en el volumen.
@@ -1612,8 +1809,11 @@ ${factsBlock}
 
 ═══ ANÁLISIS COMPARATIVO (E4) ═══
 ${analysisBlock}
+${explicacionesE5Block}
+${consensoE5Block}
+${mercadoE5Block}
 
-Redacta el informe ejecutivo completo en ${languageName}. Usa SOLO los datos de arriba.`;
+Redacta el informe ejecutivo completo en ${languageName}. Usa SOLO los datos de arriba. Cuando expliques una métrica, cita la causa usando las EXPLICACIONES. Cuando haya consenso de categorías, menciónalo. Cuando haya datos de mercado, conéctalos con la reputación.`;
 
   return { systemPrompt, userPrompt };
 }
