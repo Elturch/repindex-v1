@@ -1004,6 +1004,7 @@ interface DataPack {
   raw_texts: { modelo: string; texto: string }[];
   empresa_primaria: { ticker: string; nombre: string; sector: string | null; subsector: string | null } | null;
   competidores_verificados: { ticker: string; nombre: string; rix_avg: number | null }[];
+  competidores_metricas_avg: { nvm: number | null; drm: number | null; sim: number | null; rmm: number | null; cem: number | null; gam: number | null; dcm: number | null; cxm: number | null } | null;
 }
 
 async function buildDataPack(
@@ -1025,6 +1026,7 @@ async function buildDataPack(
     raw_texts: [],
     empresa_primaria: null,
     competidores_verificados: [],
+    competidores_metricas_avg: null,
   };
 
   if (classifier.empresas_detectadas.length === 0) {
@@ -1141,10 +1143,10 @@ async function buildDataPack(
   console.log(`${logPrefix} [E2] Verified competitors for ${primaryTicker}: ${JSON.stringify(verifiedTickers)}`);
 
   if (verifiedTickers.length > 0) {
-    // Fetch RIX data ONLY for verified competitors
+    // Fetch RIX data ONLY for verified competitors — including 8 granular metrics
     const compData = await fetchUnifiedRixData({
       supabaseClient,
-      columns: `"03_target_name", "05_ticker", "09_rix_score", batch_execution_date`,
+      columns: `"03_target_name", "05_ticker", "09_rix_score", "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score", batch_execution_date`,
       tickerFilter: verifiedTickers,
       limit: 500,
       logPrefix: `${logPrefix} [E2-verified-comp]`,
@@ -1174,6 +1176,25 @@ async function buildDataPack(
       pack.sector_avg = { rix: Math.round(avg * 10) / 10, count: allCompScores.length };
     }
 
+    // Compute per-metric averages from verified competitors
+    const metricKeys = [
+      { key: "23_nvm_score", out: "nvm" },
+      { key: "26_drm_score", out: "drm" },
+      { key: "29_sim_score", out: "sim" },
+      { key: "32_rmm_score", out: "rmm" },
+      { key: "35_cem_score", out: "cem" },
+      { key: "38_gam_score", out: "gam" },
+      { key: "41_dcm_score", out: "dcm" },
+      { key: "44_cxm_score", out: "cxm" },
+    ] as const;
+    const metricAvgs: Record<string, number | null> = {};
+    for (const mk of metricKeys) {
+      const vals = compLatest.map((r) => r[mk.key]).filter((v) => v != null && v > 0) as number[];
+      metricAvgs[mk.out] = vals.length > 0 ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10 : null;
+    }
+    pack.competidores_metricas_avg = metricAvgs as any;
+    console.log(`${logPrefix} [E2] Competitor metric averages: ${JSON.stringify(pack.competidores_metricas_avg)}`);
+
     // Build ranking from verified competitors + primary company
     const primaryAvg = latestScores.length > 0 ? latestScores.reduce((a, b) => a + b, 0) / latestScores.length : 0;
     const allForRanking = [
@@ -1188,6 +1209,7 @@ async function buildDataPack(
     pack.sector_avg = null;
     pack.ranking = [];
     pack.competidores_verificados = [];
+    pack.competidores_metricas_avg = null;
   }
 
   // Query D: Evolution (4 weeks)
@@ -1343,7 +1365,7 @@ interface ComparatorResult {
   fortalezas: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
   debilidades: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
   posicion_competitiva: { ranking: number; de: number; lider: string; distancia: number } | null;
-  recomendaciones: { accion: string; metrica_objetivo: string; basado_en: string }[];
+  recomendaciones: { accion: string; metrica_objetivo: string; basado_en: string; razonamiento?: string; prioridad?: string; gap_numerico?: string }[];
   gaps_percepcion: { tema: string; dato_real: string; narrativa_ia: string; riesgo: string }[];
 }
 
@@ -1368,6 +1390,37 @@ async function runComparator(
     ? `Promedio competidores verificados: RIX ${dataPack.sector_avg?.rix ?? "N/A"} (${dataPack.competidores_verificados.length} competidores: ${dataPack.competidores_verificados.map(c => c.ticker).join(", ")})`
     : "Sin competidores verificados — NO incluir comparativa competitiva";
 
+  // Build per-metric gaps vs competitors for enriched recommendations
+  let metricGapsInfo = "";
+  if (dataPack.competidores_metricas_avg && dataPack.snapshot.length > 0) {
+    const avgSnap: Record<string, number[]> = { nvm: [], drm: [], sim: [], rmm: [], cem: [], gam: [], dcm: [], cxm: [] };
+    for (const s of dataPack.snapshot) {
+      if (s.nvm != null) avgSnap.nvm.push(s.nvm);
+      if (s.drm != null) avgSnap.drm.push(s.drm);
+      if (s.sim != null) avgSnap.sim.push(s.sim);
+      if (s.rmm != null) avgSnap.rmm.push(s.rmm);
+      if (s.cem != null) avgSnap.cem.push(s.cem);
+      if (s.gam != null) avgSnap.gam.push(s.gam);
+      if (s.dcm != null) avgSnap.dcm.push(s.dcm);
+      if (s.cxm != null) avgSnap.cxm.push(s.cxm);
+    }
+    const cma = dataPack.competidores_metricas_avg;
+    const gaps: string[] = [];
+    const metricNames: Record<string, string> = { nvm: "Calidad Narrativa", drm: "Fortaleza Evidencia", sim: "Autoridad Fuentes", rmm: "Actualidad y Empuje", cem: "Gestión Controversias", gam: "Percepción Gobernanza", dcm: "Coherencia Informativa", cxm: "Ejecución Corporativa" };
+    for (const [key, label] of Object.entries(metricNames)) {
+      const vals = avgSnap[key];
+      const compAvg = (cma as any)[key];
+      if (vals.length > 0 && compAvg != null) {
+        const myAvg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+        const gap = Math.round((myAvg - compAvg) * 10) / 10;
+        gaps.push(`${label} (${key.toUpperCase()}): empresa=${myAvg}, competidores=${compAvg}, gap=${gap > 0 ? "+" : ""}${gap}`);
+      }
+    }
+    if (gaps.length > 0) {
+      metricGapsInfo = `\nGAPS POR MÉTRICA vs COMPETIDORES VERIFICADOS:\n${gaps.join("\n")}`;
+    }
+  }
+
   const rankingInfo = dataPack.ranking.length > 0
     ? `Ranking (solo competidores verificados + empresa): ${dataPack.ranking.map((r) => `${r.pos}. ${r.nombre} (${r.rix_avg})`).join(", ")}`
     : "Sin ranking (no hay competidores verificados)";
@@ -1385,6 +1438,7 @@ SECTOR: ${sectorInfo}
 RANKING: ${rankingInfo}
 EVOLUCIÓN: ${dataPack.evolucion.map((e) => `${e.fecha}: ${e.rix_avg} (Δ${e.delta ?? "—"})`).join(", ")}
 DIVERGENCIA: ${dataPack.divergencia ? `σ=${dataPack.divergencia.sigma}, ${dataPack.divergencia.nivel}` : "N/A"}
+${metricGapsInfo}
 
 DATOS CUALITATIVOS:
 ${factsInfo}
@@ -1395,15 +1449,15 @@ Responde SOLO en JSON válido (sin markdown):
   "fortalezas": [{"metrica":"NVM","score":75,"vs_sector":"+12","evidencia_cualitativa":"5/6 IAs destacan..."}],
   "debilidades": [{"metrica":"SIM","score":35,"vs_sector":"-18","evidencia_cualitativa":"..."}],
   "posicion_competitiva": {"ranking":3,"de":8,"lider":"EmpresaY","distancia":-8},
-  "recomendaciones": [{"accion":"Mejorar X","metrica_objetivo":"DRM","basado_en":"gap de 18 pts"}],
+  "recomendaciones": [{"accion":"Mejorar X","metrica_objetivo":"DRM","basado_en":"gap de 18 pts","razonamiento":"Los competidores tienen DRM 72 porque...","prioridad":"alta","gap_numerico":"-18 pts"}],
   "gaps_percepcion": [{"tema":"ESG","dato_real":"CEM 42","narrativa_ia":"4 modelos positivos","riesgo":"desconexion"}]
 }
 
 REGLAS:
 - Solo conclusiones trazables a los datos de arriba.
-- Cada recomendación DEBE citar la métrica y el gap numérico.
+- Cada recomendación DEBE citar la métrica, el gap numérico, un razonamiento de por qué esa acción mejoraría la métrica, y una prioridad (alta/media/baja) basada en el tamaño del gap.
 - Solo compara con competidores verificados. Si no hay competidores verificados, omite completamente la comparativa competitiva.
-- Máximo 4 fortalezas, 4 debilidades, 4 recomendaciones.`;
+- Máximo 4 fortalezas, 4 debilidades, 6 recomendaciones.`;
 
   try {
     const result = await callAISimple(
@@ -1412,7 +1466,7 @@ REGLAS:
         { role: "user", content: prompt },
       ],
       "gpt-4o-mini",
-      1000,
+      2000,
       `${logPrefix} [E4]`,
     );
 
@@ -1447,6 +1501,7 @@ function buildOrchestratorPrompt(
     sector_avg: dataPack.sector_avg,
     ranking: dataPack.ranking.slice(0, 10),
     competidores_verificados: dataPack.competidores_verificados,
+    competidores_metricas_avg: dataPack.competidores_metricas_avg,
     evolucion: dataPack.evolucion,
     divergencia: dataPack.divergencia,
     memento: dataPack.memento,
@@ -1464,7 +1519,7 @@ Eres el Agente Rix de RepIndex. Redactas informes ejecutivos para alta direcció
 REGLAS DE INTEGRIDAD (PRIORIDAD MÁXIMA):
 1. Toda cifra debe existir en DATAPACK. Si no está, escribe "dato no disponible".
 2. Toda mención temática debe existir en HECHOS. Indica cuántas IAs coinciden.
-3. Toda recomendación debe existir en ANALISIS. No inventes nuevas.
+3. Las recomendaciones del ANALISIS son tu base. Puedes RAZONAR sobre ellas, ampliarlas y conectarlas con los datos del DATAPACK (tendencias temporales, memento, noticias) para proponer soluciones concretas y accionables. Pero TODA solución debe estar anclada en un gap numérico real. NUNCA inventes métricas, cifras ni herramientas que no estén en los datos.
 4. NUNCA inventes empresas ficticias, cifras financieras, metodologías, DOIs, convenios ni KPIs inventados.
 5. Si no hay datos suficientes, dilo con transparencia. No rellenes con ficción.
 
@@ -1483,7 +1538,7 @@ ESTRUCTURA (adapta según contenido disponible — OMISIÓN INTELIGENTE):
 - **Resumen Ejecutivo**: titular + 3 KPIs con delta + veredicto en 1 párrafo. Quien lee SOLO esto entiende la situación.
 - **Pilar 1 DEFINIR** (cuando haya datos): visión de las 6 IAs (de mayor a menor RIX), las 8 métricas con interpretación, divergencia entre modelos. Incluye tabla de scores.
 - **Pilar 2 ANALIZAR** (cuando haya evolución): evolución temporal con deltas, gaps realidad vs percepción, contexto competitivo con ranking. Incluye tabla comparativa.
-- **Pilar 3 PROSPECTAR** (cuando ANALISIS tenga recomendaciones): métricas a mejorar, fortalezas a proteger, posición competitiva accionable. TODO basado en datos reales del ANALISIS. NUNCA inventes planes de remediación, responsables, KPIs con plazos, DOIs, convenios universitarios ni "Aena Data Commons".
+- **Pilar 3 PROSPECTAR** (cuando ANALISIS tenga recomendaciones): métricas a mejorar con gaps numéricos concretos vs competidores, fortalezas a proteger, posición competitiva accionable. Usa los gaps por métrica (competidores_metricas_avg) para razonar sobre qué palancas son más efectivas. Conecta tendencias temporales del DATAPACK con recomendaciones para evidenciar qué ha funcionado antes. TODO anclado en datos reales. NUNCA inventes planes de remediación, responsables, KPIs con plazos, DOIs, convenios universitarios ni "Aena Data Commons".
 - **Cierre**: modelos consultados, periodo, metodología RepIndex.
 
 Si un pilar no tiene datos suficientes, omítelo limpiamente sin mencionarlo. La calidad está en la trazabilidad, no en el volumen.
