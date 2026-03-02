@@ -118,6 +118,9 @@ export interface ChatUITranslations {
   
   // Streaming
   generatingReport: string;
+  
+  // Suggested questions
+  suggestedQuestionsLabel: string;
 }
 
 const translations: Record<string, ChatUITranslations> = {
@@ -209,6 +212,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'De tu historial',
     refreshSuggestions: 'Ver otras sugerencias',
     generatingReport: 'Generando informe...',
+    suggestedQuestionsLabel: 'Preguntas sugeridas:',
   },
   en: {
     pageTitle: 'Rix Agent',
@@ -298,6 +302,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'From your history',
     refreshSuggestions: 'See other suggestions',
     generatingReport: 'Generating report...',
+    suggestedQuestionsLabel: 'Suggested questions:',
   },
   fr: {
     pageTitle: 'Agent Rix',
@@ -387,6 +392,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'De votre historique',
     refreshSuggestions: 'Voir d\'autres suggestions',
     generatingReport: 'Génération du rapport...',
+    suggestedQuestionsLabel: 'Questions suggérées :',
   },
   de: {
     pageTitle: 'Rix Agent',
@@ -476,6 +482,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'Aus Ihrem Verlauf',
     refreshSuggestions: 'Andere Vorschläge anzeigen',
     generatingReport: 'Bericht wird generiert...',
+    suggestedQuestionsLabel: 'Vorgeschlagene Fragen:',
   },
   pt: {
     pageTitle: 'Agente Rix',
@@ -565,6 +572,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'Do seu histórico',
     refreshSuggestions: 'Ver outras sugestões',
     generatingReport: 'Gerando relatório...',
+    suggestedQuestionsLabel: 'Perguntas sugeridas:',
   },
   it: {
     pageTitle: 'Agente Rix',
@@ -654,6 +662,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'Dalla tua cronologia',
     refreshSuggestions: 'Vedi altri suggerimenti',
     generatingReport: 'Generazione del rapporto...',
+    suggestedQuestionsLabel: 'Domande suggerite:',
   },
   ar: {
     pageTitle: 'وكيل ريكس',
@@ -743,6 +752,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'من سجلك',
     refreshSuggestions: 'عرض اقتراحات أخرى',
     generatingReport: 'جاري إنشاء التقرير...',
+    suggestedQuestionsLabel: 'أسئلة مقترحة:',
   },
   zh: {
     pageTitle: 'Rix代理',
@@ -832,6 +842,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: '来自您的历史',
     refreshSuggestions: '查看其他建议',
     generatingReport: '正在生成报告...',
+    suggestedQuestionsLabel: '推荐问题：',
   },
   ja: {
     pageTitle: 'Rixエージェント',
@@ -921,6 +932,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: 'あなたの履歴から',
     refreshSuggestions: '他の提案を見る',
     generatingReport: 'レポートを生成中...',
+    suggestedQuestionsLabel: 'おすすめの質問：',
   },
   ko: {
     pageTitle: 'Rix 에이전트',
@@ -1010,6 +1022,7 @@ const translations: Record<string, ChatUITranslations> = {
     historyLabel: '귀하의 기록에서',
     refreshSuggestions: '다른 제안 보기',
     generatingReport: '보고서 생성 중...',
+    suggestedQuestionsLabel: '추천 질문:',
   },
 };
 

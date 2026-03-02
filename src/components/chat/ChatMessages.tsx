@@ -262,7 +262,7 @@ export function ChatMessages({
               {/* Suggested Questions - only show when NOT streaming */}
               {message.role === 'assistant' && !message.isStreaming && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
                 <div className={`${compact ? 'mt-2 pt-2' : 'mt-4 pt-4'} border-t border-border/50`}>
-                  <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold mb-2 opacity-80`}>Preguntas sugeridas:</p>
+                  <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold mb-2 opacity-80`}>{tr.suggestedQuestionsLabel || 'Preguntas sugeridas:'}</p>
                   <div className="space-y-1">
                     {message.suggestedQuestions.slice(0, compact ? 2 : 3).map((question, qIdx) => (
                       <Button
@@ -352,7 +352,7 @@ export function ChatMessages({
                     className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
                   >
                     <Download className="h-3.5 w-3.5" />
-                    {!compact && <span className="text-[11px] font-medium">Descargar informe</span>}
+                    {!compact && <span className="text-[11px] font-medium">{tr.downloadReport}</span>}
                   </Button>
                 </div>
               )}

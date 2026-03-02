@@ -3503,6 +3503,8 @@ serve(async (req) => {
         logPrefix,
         supabaseClient,
         userId,
+        language,
+        languageName,
       );
     }
 
@@ -3629,7 +3631,9 @@ serve(async (req) => {
         logPrefix,
         userId,
         conversationId,
-        streamMode, // Pass streaming mode to bulletin handler
+        streamMode,
+        language,
+        languageName,
       );
     }
 
@@ -3800,6 +3804,7 @@ async function handlePericialEnrichRequest(
   logPrefix: string,
   supabaseClient: any,
   userId: string | null,
+  language: string = "es",
 ) {
   console.log(`${logPrefix} Generating DICTAMEN PERICIAL for role: ${roleName}`);
 
@@ -4022,11 +4027,11 @@ ${originalQuestion || "(No disponible)"}
       },
     });
 
-    // Pericial-specific follow-up questions (i18n — language not available here, use Spanish as default for pericial)
+    // Pericial-specific follow-up questions (i18n — now uses passed language)
     const suggestedQuestions = [
-      t("es", "pericial_q1"),
-      t("es", "pericial_q2"),
-      t("es", "pericial_q3"),
+      t(language, "pericial_q1"),
+      t(language, "pericial_q2"),
+      t(language, "pericial_q3"),
     ];
 
     return new Response(
@@ -4061,6 +4066,8 @@ async function handleEnrichRequest(
   logPrefix: string,
   supabaseClient: any,
   userId: string | null,
+  language: string = "es",
+  languageName: string = "Español",
 ) {
   // Special branch: forensic/legal expert generates a DICTAMEN PERICIAL, not an executive report
   if (roleId === "perito_reputacional") {
@@ -4072,6 +4079,7 @@ async function handleEnrichRequest(
       logPrefix,
       supabaseClient,
       userId,
+      language,
     );
   }
 
@@ -4117,57 +4125,9 @@ La respuesta original contiene datos que DEBES mantener y EXPANDIR significativa
 3. **ADAPTAR el enfoque** a las prioridades del perfil (sin mencionarlo)
 4. **INCLUIR secciones adicionales** con recomendaciones estratégicas
 
-## ESTRUCTURA OBLIGATORIA DEL INFORME — EMBUDO NARRATIVO (mínimo 2500 palabras):
-
----
-
-# 📋 INFORME EJECUTIVO DE REPUTACIÓN CORPORATIVA
-## Alta Dirección — Análisis RepIndex
-
----
-
-### RESUMEN EJECUTIVO
-- **Titular-diagnóstico**: Frase contundente que sintetice la situación
-- **3 KPIs con delta** (vs periodo anterior)
-- **3 Hallazgos** principales en prosa completa
-- **3 Recomendaciones** (acción + responsable + KPI)
-- **Veredicto**: Párrafo de 3-4 oraciones con valoración final
-- **5 Mensajes para la Dirección**: Instrucciones ejecutivas directas
-
-### PILAR 1 — DEFINIR (Qué dice el dato)
-- Visión de las 6 IAs (tarjetas ordenadas de mayor a menor)
-- Las 8 métricas (puntuación + color semafórico + párrafo explicativo)
-- Divergencia entre modelos
+${buildDepthPrompt("complete", languageName, language)}
 
 ${rolePrompt}
-
-### PILAR 2 — ANALIZAR (Qué significan)
-- Evolución y comparativas (tablas con deltas)
-- Amenazas y riesgos (impacto en pts + métricas + recomendación)
-- Gaps: Realidad vs Percepción IA
-- Contexto competitivo (ranking con competidores)
-
-### PILAR 3 — PROSPECTAR (Qué hacer)
-Cada recomendación lleva 6 campos obligatorios:
-
-# N — LÍNEA TITULAR: verbo de acción + táctica concreta
-**Qué**: Entregables, canales, etiquetas.
-**Por qué**: Datos del informe (%, puntuaciones) + mecanismo causal IA.
-**Responsable**: Área(s) implicada(s).
-**KPI**: Métrica + umbral + plazo.
-**Impacto IA**: Modelo — Métrica ↑/↑↑.
-
-Incluir:
-- 3 Activaciones inmediatas (0-7 días)
-- 3 Tácticas operativas (2-8 semanas)
-- 3 Líneas estratégicas (trimestre)
-- Tabla de escenarios (optimista / base / riesgo)
-
-### CIERRE
-Kit de gestión: borradores ejecutivos de las activaciones inmediatas.
-
-### FUENTES Y METODOLOGÍA
-Modelos consultados, periodo analizado, documentos utilizados.
 
 ---
 
@@ -4227,7 +4187,7 @@ ${originalQuestion || "(No disponible)"}
     });
 
     // Generate role-specific follow-up questions
-    const suggestedQuestions = await generateRoleSpecificQuestions(roleId, roleName, originalQuestion, logPrefix);
+    const suggestedQuestions = await generateRoleSpecificQuestions(roleId, roleName, originalQuestion, logPrefix, language, languageName);
 
     return new Response(
       JSON.stringify({
@@ -4254,6 +4214,8 @@ async function generateRoleSpecificQuestions(
   roleName: string,
   originalQuestion: string,
   logPrefix: string,
+  language: string = "es",
+  languageName: string = "Español",
 ): Promise<string[]> {
   const roleQuestionHints: Record<string, string[]> = {
     ceo: ["impacto en negocio", "decisiones estratégicas", "comparativa competitiva", "riesgos principales"],
@@ -4287,11 +4249,11 @@ async function generateRoleSpecificQuestions(
     const messages = [
       {
         role: "system",
-        content: `Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(", ")}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]`,
+        content: `[IDIOMA OBLIGATORIO: ${languageName}] Genera 3 preguntas de seguimiento para un ${roleName} interesado en datos de reputación corporativa RepIndex. Las preguntas deben ser específicas y responderibles con datos de RIX Score, rankings, y comparativas. Temas relevantes: ${hints.join(", ")}. Responde SOLO con un array JSON: ["pregunta 1", "pregunta 2", "pregunta 3"]. IMPORTANTE: Las preguntas DEBEN estar escritas en ${languageName}.`,
       },
       {
         role: "user",
-        content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}.`,
+        content: `Pregunta original: "${originalQuestion}". Genera 3 preguntas de seguimiento relevantes para un ${roleName}. Responde en ${languageName}.`,
       },
     ];
 
@@ -5104,11 +5066,11 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     }
   }
 
-  // 9. Return bulletin response (i18n — language not available in bulletin handler, use Spanish as default)
+  // 9. Return bulletin response (i18n — now uses passed language)
   const suggestedQuestions = [
-    t("es", "bulletin_post_suggest", { company: competitors[0]?.issuer_name || "otra empresa" }),
-    t("es", "bulletin_post_compare", { company: matchedCompany.issuer_name, sector: matchedCompany.sector_category || "" }),
-    t("es", "bulletin_post_top5", { sector: matchedCompany.sector_category || "" }),
+    t(language, "bulletin_post_suggest", { company: competitors[0]?.issuer_name || "otra empresa" }),
+    t(language, "bulletin_post_compare", { company: matchedCompany.issuer_name, sector: matchedCompany.sector_category || "" }),
+    t(language, "bulletin_post_top5", { sector: matchedCompany.sector_category || "" }),
   ];
 
   return new Response(
