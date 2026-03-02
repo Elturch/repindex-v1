@@ -1,79 +1,149 @@
 
-# Fallos Detectados Antes de Probar
 
-He auditado todo el codigo y encontrado **6 fallos concretos** que afectan la experiencia multiidioma y funcionalidad:
+# Auditoria: Riesgos del Plan Anterior sobre el Pipeline Multi-Experto
 
----
-
-## Fallo 1: Pericial hardcodea `t("es", ...)` — ignora el idioma del usuario
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (linea 4025-4029)
-
-Las preguntas sugeridas del dictamen pericial SIEMPRE salen en espanol porque `handlePericialEnrichRequest` no recibe el parametro `language` y usa `t("es", ...)` con un comentario que dice "language not available here".
-
-**Solucion:** Anadir `language: string = "es"` a la firma de `handlePericialEnrichRequest` y `handleEnrichRequest`, pasarlo desde la llamada (linea 3496/4067), y usar `t(language, ...)` en vez de `t("es", ...)`.
+He revisado todo el flujo E1-E6 y confirmo que el plan anterior tiene **un riesgo real de romper cosas** y hay **bugs existentes graves** que el plan no aborda correctamente. Aqui va el analisis completo:
 
 ---
 
-## Fallo 2: Bulletin post-suggestions hardcodean `t("es", ...)`
+## PROBLEMA CRITICO 1: `allRixData` siempre vacio — rompe drumroll, metadata, insights y verified sources
 
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 5107-5111)
+**Estado actual (lineas 5390-5391):**
+```text
+const allRixData: any[] = [];
+const detectedCompanyFullData: any[] = [];
+```
 
-Mismo patron: `handleBulletinRequest` no recibe `language` y las sugerencias post-boletin siempre salen en espanol. El comentario dice "language not available in bulletin handler".
+Estos arrays NUNCA se llenan. El plan anterior propone poblarlos desde `dataPack.snapshot`, pero hay un problema de **formato incompatible**:
 
-**Solucion:** Anadir `language: string = "es"` a la firma de `handleBulletinRequest`, pasarlo desde la llamada (linea 3622), y usar `t(language, ...)`.
+- `dataPack.snapshot` usa claves como `modelo`, `rix`, `nvm`, `drm`...
+- El codigo downstream (lineas 5650-5750, 5848-5950) espera claves como `"02_model_name"`, `"09_rix_score"`, `"23_nvm_score"`, `"05_ticker"`, `"06_period_from"`, `"07_period_to"`, `batch_execution_date`
 
----
+**Si simplemente mapeamos mal, se rompe:**
+- El drumroll (linea 5632): `allRixData.length > 0` + `extractAnalysisInsights(allRixData, ...)`
+- La metadata de metodologia (lineas 5652-5672): modelos usados, periodos, divergencia
+- `analyzeDataForInsights()` (linea 5848): analisis de divergencias entre modelos
+- `extractSourcesFromRixData()` (linea 5704): fuentes verificadas
+- `structured_data_found` en session save (linea 5691)
 
-## Fallo 3: "Preguntas sugeridas:" hardcoded en espanol en el frontend
-
-**Archivo:** `src/components/chat/ChatMessages.tsx` (linea 265)
-
-El label "Preguntas sugeridas:" esta hardcoded en espanol. Deberia usar `tr.suggestedQuestionsLabel` o similar del sistema de traducciones.
-
-**Solucion:** Anadir clave `suggestedQuestionsLabel` a `chatTranslations.ts` para los 10 idiomas, y usar `{tr.suggestedQuestionsLabel}` en el JSX.
-
----
-
-## Fallo 4: "Descargar informe" hardcoded en espanol en ChatMessages
-
-**Archivo:** `src/components/chat/ChatMessages.tsx` (linea 355)
-
-El boton de descarga en ChatMessages dice "Descargar informe" hardcoded, aunque en `markdown-message.tsx` SI usa `{tr.downloadReport}`. Este es el boton de la burbuja del chat (distinto del de markdown-message).
-
-**Solucion:** Usar `{tr.downloadReport}` en vez del string fijo. El componente ya recibe `languageCode` y tiene acceso a `tr`.
+**Solucion correcta:** Mapear `dataPack.snapshot` al formato legacy con las claves exactas que espera el downstream. Incluir `dataPack.empresa_primaria` para ticker/nombre.
 
 ---
 
-## Fallo 5: `generateRoleSpecificQuestions` genera preguntas en espanol
+## PROBLEMA CRITICO 2: `handleBulletinRequest` — la firma NO tiene `language`/`languageName`
 
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 4252-4340)
+**Estado actual (lineas 4308-4319):**
+La funcion tiene 10 parametros y termina en `streamMode`. La llamada en linea 3634-3637 SI pasa `language` y `languageName` como argumentos 11 y 12, pero **JavaScript los ignora silenciosamente** porque la firma no los declara.
 
-Esta funcion usa un prompt LLM en espanol ("Genera 3 preguntas de seguimiento para un...") y los `roleQuestionHints` estan en espanol ("impacto en negocio", "decisiones estrategicas"...). Los fallback questions (lineas 4311-4340) tambien estan hardcoded en espanol.
+**Consecuencias:**
+- "Company not found" (lineas 4359-4367) siempre en espanol
+- Las post-suggestions del bulletin usan idioma incorrecto
 
-**Solucion:** Pasar `language`/`languageName` a esta funcion, inyectar `[IDIOMA: ${languageName}]` al inicio del system prompt, y traducir los fallback questions con claves i18n o al menos pedir al LLM que genere en el idioma correcto.
-
----
-
-## Fallo 6: El enrich handler tiene headers del Embudo en espanol
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 4120-4170)
-
-El system prompt de `handleEnrichRequest` tiene la estructura del Embudo Narrativo con cabeceras hardcoded en espanol: "RESUMEN EJECUTIVO", "PILAR 1 -- DEFINIR", etc. A diferencia de E5 (que ya usa `buildDepthPrompt` con i18n), el enrich handler no llama a `buildDepthPrompt` y tiene su propia copia de la estructura.
-
-**Solucion:** Reemplazar la estructura hardcoded con una llamada a `buildDepthPrompt("complete", languageName, language)` (igual que E5), o como minimo usar las claves `t(language, "depth_...")` para las cabeceras.
+**Esto NO lo arreglamos en la ronda anterior** — solo se arreglaron pericial y enrich.
 
 ---
 
-## Resumen de cambios
+## PROBLEMA 3: Fallback questions en `generateRoleSpecificQuestions` (lineas 4260-4302)
 
-| Archivo | Cambio |
-|---------|--------|
-| `chat-intelligence/index.ts` | Pasar `language` a `handlePericialEnrichRequest`, `handleEnrichRequest`, `handleBulletinRequest`, `generateRoleSpecificQuestions` |
-| `chat-intelligence/index.ts` | Usar `t(language, ...)` en vez de `t("es", ...)` en pericial y bulletin |
-| `chat-intelligence/index.ts` | Inyectar idioma en `generateRoleSpecificQuestions` prompt |
-| `chat-intelligence/index.ts` | Usar `buildDepthPrompt` o claves i18n en enrich handler |
-| `src/components/chat/ChatMessages.tsx` | Usar `tr.suggestedQuestionsLabel` y `tr.downloadReport` |
-| `src/lib/chatTranslations.ts` | Anadir clave `suggestedQuestionsLabel` en los 10 idiomas |
+Las preguntas de fallback estan hardcoded en espanol para cada rol (CEO, CMO, etc.). Si el LLM falla, el usuario siempre ve preguntas en espanol.
 
-Todos los cambios son compatibles hacia atras (default `"es"` para language).
+---
+
+## PROBLEMA 4: `analyzeDataForInsights` es codigo muerto
+
+Toda la funcion `analyzeDataForInsights()` (lineas 5848-6050+) es efectivamente codigo muerto porque `allRixData` siempre esta vacio. La comprobacion `allRixData.length === 0` en linea 5849 siempre devuelve `{ dataQuality: "insufficient" }`.
+
+Esto significa que:
+- Los "hidden patterns" nunca se detectan
+- Las preguntas sugeridas basadas en anomalias/divergencias nunca se generan
+- El drumroll nunca se genera (porque depende de `allRixData.length > 0`)
+
+---
+
+## PLAN DE CORRECCION (4 cambios)
+
+### Cambio 1: Poblar `allRixData` desde `dataPack.snapshot` con formato correcto
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (linea 5390)
+
+Reemplazar:
+```text
+const allRixData: any[] = [];
+```
+
+Con un mapeo que convierte `dataPack.snapshot` al formato legacy:
+```text
+const allRixData = dataPack.snapshot.map(s => ({
+  "02_model_name": s.modelo,
+  "03_target_name": dataPack.empresa_primaria?.nombre || "",
+  "05_ticker": dataPack.empresa_primaria?.ticker || "",
+  "06_period_from": s.period_from,
+  "07_period_to": s.period_to,
+  "09_rix_score": s.rix,
+  "51_rix_score_adjusted": s.rix_adj,
+  "23_nvm_score": s.nvm,
+  "26_drm_score": s.drm,
+  "29_sim_score": s.sim,
+  "32_rmm_score": s.rmm,
+  "35_cem_score": s.cem,
+  "38_gam_score": s.gam,
+  "41_dcm_score": s.dcm,
+  "44_cxm_score": s.cxm,
+  batch_execution_date: s.period_to,
+}));
+```
+
+Esto restaura:
+- Drumroll generation
+- Methodology metadata (modelos, periodos, divergencia)
+- Session save con `structured_data_found` correcto
+- `analyzeDataForInsights()` funcionando
+
+### Cambio 2: Anadir `language`/`languageName` a la firma de `handleBulletinRequest`
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (linea 4318-4319)
+
+Anadir los parametros que ya se pasan desde la llamada:
+```text
+streamMode: boolean = false,
+language: string = "es",
+languageName: string = "Espanol",
+```
+
+Y reemplazar el bloque "company not found" (lineas 4359-4367) para usar `t(language, ...)` en lugar de strings hardcoded en espanol.
+
+### Cambio 3: Internacionalizar fallback questions en `generateRoleSpecificQuestions`
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 4260-4302)
+
+Anadir claves i18n al diccionario `PIPELINE_I18N` para los fallback por rol y usarlas con `t(language, ...)`.
+
+### Cambio 4: NO tocar `analyzeDataForInsights` ni el drumroll
+
+Estos se arreglan automaticamente al poblar `allRixData` (Cambio 1). No requieren modificacion de codigo, solo de datos.
+
+---
+
+## Verificacion: Que NO se rompe
+
+| Componente | Riesgo | Verificacion |
+|------------|--------|--------------|
+| Pipeline E1-E6 | Ninguno | No se tocan E1, E2, E3, E4, E5 |
+| `buildOrchestratorPrompt` | Ninguno | Ya se arreglo en la ronda anterior |
+| `buildDepthPrompt` | Ninguno | No se toca |
+| Streaming SSE | Ninguno | Solo cambia el contenido de `allRixData` pre-stream |
+| Auto-continuation | Ninguno | No depende de `allRixData` |
+| Compliance gate | Ninguno | Opera sobre texto, no datos |
+| Non-streaming path | Se beneficia | Mismo fix aplica (misma variable) |
+| Session save | Se beneficia | `structured_data_found` reportara dato real |
+| Vector search | Ninguno | No se toca |
+| Graph expansion | Ninguno | No se toca |
+
+## Resumen
+
+| Cambio | Prioridad | Riesgo |
+|--------|-----------|--------|
+| Poblar `allRixData` desde `dataPack.snapshot` | CRITICO | Bajo (mapeo directo) |
+| Firma de `handleBulletinRequest` + i18n | ALTO | Nulo (anadir params al final) |
+| Fallback questions i18n | MEDIO | Nulo (solo texto) |
+
