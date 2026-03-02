@@ -1,76 +1,79 @@
 
-# Plan: Conectar el Embudo Narrativo (buildDepthPrompt) al Pipeline E5
+# Fallos Detectados Antes de Probar
 
-## Problema Identificado
+He auditado todo el codigo y encontrado **6 fallos concretos** que afectan la experiencia multiidioma y funcionalidad:
 
-La funcion `buildDepthPrompt()` (lineas 2646-2810) contiene la estructura detallada completa del Embudo Narrativo con **todas las subsecciones** (Titular-Diagnostico, 3 KPIs, 3 Hallazgos, Vision de las 6 IAs, Las 8 Metricas, Divergencia entre Modelos, etc.) pero **NUNCA se llama desde ninguna parte del codigo**.
+---
 
-El E5 (`buildOrchestratorPrompt`, lineas 2075-2190) solo tiene una version resumida de 7 lineas (lineas 2106-2111) que dice cosas como:
-```
-- Pilar 1 DEFINIR (cuando haya datos): vision de las 6 IAs...
-- Pilar 2 ANALIZAR (cuando haya evolucion): evolucion temporal...
-```
+## Fallo 1: Pericial hardcodea `t("es", ...)` — ignora el idioma del usuario
 
-Esto explica por que las respuestas carecen de estructura rica: el LLM no recibe la guia detallada del Embudo. No sabe que debe incluir subsecciones como "Titular-Diagnostico", "3 KPIs con Delta", "5 Mensajes para la Direccion", "Divergencia entre Modelos", etc.
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (linea 4025-4029)
 
-## Evidencia en los Logs
+Las preguntas sugeridas del dictamen pericial SIEMPRE salen en espanol porque `handlePericialEnrichRequest` no recibe el parametro `language` y usa `t("es", ...)` con un comentario que dice "language not available here".
 
-- `[E5] Prompt built. System: 7752 chars` — el system prompt es corto porque falta el Embudo (~4.000 chars adicionales)
-- `[E4] Comparator: 4 strengths, 4 weaknesses, 4 recommendations` — E4 emite 4 recomendaciones (correcto, el max del prompt dice "Maximo 4 fortalezas, 4 debilidades, 6 recomendaciones" pero el LLM solo genera 4 de cada)
-- El pipeline E1->E2->E3->E4->E5 SI se ejecuta correctamente, pero E5 no tiene suficiente guia estructural
+**Solucion:** Anadir `language: string = "es"` a la firma de `handlePericialEnrichRequest` y `handleEnrichRequest`, pasarlo desde la llamada (linea 3496/4067), y usar `t(language, ...)` en vez de `t("es", ...)`.
 
-## Solucion: 2 Cambios
+---
 
-### Cambio 1: Inyectar `buildDepthPrompt()` en el systemPrompt de E5
+## Fallo 2: Bulletin post-suggestions hardcodean `t("es", ...)`
 
-En `buildOrchestratorPrompt()` (linea ~2005), despues de construir el `systemPrompt`, concatenar el resultado de `buildDepthPrompt()`:
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 5107-5111)
 
-```text
-Antes:
-  const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
-  ... (reglas de integridad, tono, estructura resumida, metricas, formato) ...`;
+Mismo patron: `handleBulletinRequest` no recibe `language` y las sugerencias post-boletin siempre salen en espanol. El comentario dice "language not available in bulletin handler".
 
-Despues:
-  const depthGuide = buildDepthPrompt("complete", languageName, language);
-  const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
-  ... (reglas de integridad, tono, metricas, formato) ...
-  
-  ${depthGuide}`;
-```
+**Solucion:** Anadir `language: string = "es"` a la firma de `handleBulletinRequest`, pasarlo desde la llamada (linea 3622), y usar `t(language, ...)`.
 
-Esto requiere:
-1. Pasar el parametro `language` a `buildOrchestratorPrompt()` (actualmente solo recibe `languageName`)
-2. Llamar a `buildDepthPrompt("complete", languageName, language)` dentro de la funcion
-3. Concatenar el resultado al `systemPrompt`
-4. Eliminar las 7 lineas de estructura resumida (2106-2111) que quedan redundantes
+---
 
-### Cambio 2: Actualizar la firma y la llamada
+## Fallo 3: "Preguntas sugeridas:" hardcoded en espanol en el frontend
 
-En la definicion de `buildOrchestratorPrompt` (linea 2005), anadir `language: string = "es"` como parametro.
+**Archivo:** `src/components/chat/ChatMessages.tsx` (linea 265)
 
-En la llamada (linea 5407), pasar el `language`:
-```text
-Antes:
-  buildOrchestratorPrompt(classifier, dataPack, facts, analysis, question, languageName, roleName, rolePrompt)
+El label "Preguntas sugeridas:" esta hardcoded en espanol. Deberia usar `tr.suggestedQuestionsLabel` o similar del sistema de traducciones.
 
-Despues:
-  buildOrchestratorPrompt(classifier, dataPack, facts, analysis, question, languageName, language, roleName, rolePrompt)
-```
+**Solucion:** Anadir clave `suggestedQuestionsLabel` a `chatTranslations.ts` para los 10 idiomas, y usar `{tr.suggestedQuestionsLabel}` en el JSX.
 
-## Impacto Esperado
+---
 
-| Antes | Despues |
-|-------|---------|
-| System prompt E5: ~7.750 chars | System prompt E5: ~11.500 chars |
-| Sin subsecciones detalladas | Con guia completa: Titular-Diagnostico, 3 KPIs, Vision 6 IAs, 8 Metricas, etc. |
-| Estructura vaga que el LLM interpreta libremente | Estructura precisa que el LLM sigue con fidelidad |
-| Cabeceras en espanol independientemente del idioma | Cabeceras traducidas via i18n (ya implementado en buildDepthPrompt) |
+## Fallo 4: "Descargar informe" hardcoded en espanol en ChatMessages
 
-## Archivo modificado
+**Archivo:** `src/components/chat/ChatMessages.tsx` (linea 355)
 
-Solo `supabase/functions/chat-intelligence/index.ts`:
+El boton de descarga en ChatMessages dice "Descargar informe" hardcoded, aunque en `markdown-message.tsx` SI usa `{tr.downloadReport}`. Este es el boton de la burbuja del chat (distinto del de markdown-message).
 
-1. **`buildOrchestratorPrompt` firma** (linea 2005): anadir parametro `language`
-2. **`buildOrchestratorPrompt` cuerpo** (linea ~2075): llamar a `buildDepthPrompt()` y concatenar al systemPrompt
-3. **Eliminar estructura resumida redundante** (lineas 2106-2111)
-4. **Llamada a buildOrchestratorPrompt** (linea 5407): pasar `language`
+**Solucion:** Usar `{tr.downloadReport}` en vez del string fijo. El componente ya recibe `languageCode` y tiene acceso a `tr`.
+
+---
+
+## Fallo 5: `generateRoleSpecificQuestions` genera preguntas en espanol
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 4252-4340)
+
+Esta funcion usa un prompt LLM en espanol ("Genera 3 preguntas de seguimiento para un...") y los `roleQuestionHints` estan en espanol ("impacto en negocio", "decisiones estrategicas"...). Los fallback questions (lineas 4311-4340) tambien estan hardcoded en espanol.
+
+**Solucion:** Pasar `language`/`languageName` a esta funcion, inyectar `[IDIOMA: ${languageName}]` al inicio del system prompt, y traducir los fallback questions con claves i18n o al menos pedir al LLM que genere en el idioma correcto.
+
+---
+
+## Fallo 6: El enrich handler tiene headers del Embudo en espanol
+
+**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 4120-4170)
+
+El system prompt de `handleEnrichRequest` tiene la estructura del Embudo Narrativo con cabeceras hardcoded en espanol: "RESUMEN EJECUTIVO", "PILAR 1 -- DEFINIR", etc. A diferencia de E5 (que ya usa `buildDepthPrompt` con i18n), el enrich handler no llama a `buildDepthPrompt` y tiene su propia copia de la estructura.
+
+**Solucion:** Reemplazar la estructura hardcoded con una llamada a `buildDepthPrompt("complete", languageName, language)` (igual que E5), o como minimo usar las claves `t(language, "depth_...")` para las cabeceras.
+
+---
+
+## Resumen de cambios
+
+| Archivo | Cambio |
+|---------|--------|
+| `chat-intelligence/index.ts` | Pasar `language` a `handlePericialEnrichRequest`, `handleEnrichRequest`, `handleBulletinRequest`, `generateRoleSpecificQuestions` |
+| `chat-intelligence/index.ts` | Usar `t(language, ...)` en vez de `t("es", ...)` en pericial y bulletin |
+| `chat-intelligence/index.ts` | Inyectar idioma en `generateRoleSpecificQuestions` prompt |
+| `chat-intelligence/index.ts` | Usar `buildDepthPrompt` o claves i18n en enrich handler |
+| `src/components/chat/ChatMessages.tsx` | Usar `tr.suggestedQuestionsLabel` y `tr.downloadReport` |
+| `src/lib/chatTranslations.ts` | Anadir clave `suggestedQuestionsLabel` en los 10 idiomas |
+
+Todos los cambios son compatibles hacia atras (default `"es"` para language).
