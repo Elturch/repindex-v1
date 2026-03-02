@@ -217,6 +217,19 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
         {cleanedContent}
       </ReactMarkdown>
       
+      {showDownload && (
+        <div className="mt-3 pt-3 border-t border-border/30 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={downloadMessage}
+            className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="text-[11px] font-medium">{tr.downloadReport}</span>
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
