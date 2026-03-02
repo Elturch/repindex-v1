@@ -902,6 +902,665 @@ async function callAISimple(
 }
 
 // =============================================================================
+// MULTI-EXPERT PIPELINE (E1-E6) — Replaces monolithic prompt architecture
+// =============================================================================
+
+// --- E1: INTENT CLASSIFIER ---
+interface ClassifierResult {
+  tipo: "empresa" | "sector" | "comparativa" | "metodologia" | "general";
+  empresas_detectadas: { ticker: string; nombre: string; confianza: number }[];
+  intencion: "diagnostico" | "ranking" | "evolucion" | "metrica_especifica" | "prospectiva" | "general";
+  metricas_mencionadas: string[];
+  periodo_solicitado: "ultima_semana" | "ultimo_mes" | "custom";
+  idioma: "es" | "en";
+  requiere_bulletin: boolean;
+}
+
+async function runClassifier(
+  question: string,
+  companiesList: { ticker: string; issuer_name: string; sector_category?: string }[],
+  conversationHistory: any[],
+  language: string,
+  logPrefix: string,
+): Promise<ClassifierResult> {
+  console.log(`${logPrefix} [E1] Running classifier...`);
+
+  const companiesRef = companiesList
+    .slice(0, 200)
+    .map((c) => `${c.ticker}:${c.issuer_name}`)
+    .join(", ");
+
+  const recentHistory = conversationHistory.slice(-4).map((m) => `${m.role}: ${m.content?.substring(0, 100)}`).join("\n");
+
+  const prompt = `Clasifica esta pregunta sobre reputación corporativa.
+
+EMPRESAS DISPONIBLES: ${companiesRef}
+
+HISTORIAL RECIENTE:
+${recentHistory || "(ninguno)"}
+
+PREGUNTA: "${question}"
+
+Responde SOLO con JSON válido (sin markdown):
+{
+  "tipo": "empresa|sector|comparativa|metodologia|general",
+  "empresas_detectadas": [{"ticker":"XXX","nombre":"Nombre","confianza":0.9}],
+  "intencion": "diagnostico|ranking|evolucion|metrica_especifica|prospectiva|general",
+  "metricas_mencionadas": [],
+  "periodo_solicitado": "ultima_semana|ultimo_mes|custom",
+  "idioma": "${language}",
+  "requiere_bulletin": false
+}
+
+REGLAS:
+- Solo detecta empresas que EXISTAN en la lista. No inventes.
+- confianza: 1.0 = mención explícita, 0.8 = referencia indirecta, 0.5 = ambigua
+- requiere_bulletin: true solo si pide "boletín", "informe completo" o "bulletin"
+- Si la pregunta es genérica (metodología, qué es RepIndex, etc.), tipo="general"`;
+
+  try {
+    const result = await callAISimple(
+      [
+        { role: "system", content: "Clasificador de intención para sistema de reputación corporativa. Responde SOLO en JSON válido sin bloques de código." },
+        { role: "user", content: prompt },
+      ],
+      "gpt-4o-mini",
+      400,
+      `${logPrefix} [E1]`,
+    );
+
+    if (result) {
+      const clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const parsed = JSON.parse(clean) as ClassifierResult;
+      console.log(`${logPrefix} [E1] Classified: tipo=${parsed.tipo}, empresas=${parsed.empresas_detectadas.length}, intencion=${parsed.intencion}`);
+      return parsed;
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} [E1] Classifier failed, using fallback:`, e);
+  }
+
+  // Fallback: use legacy regex detection
+  const legacyDetected = detectCompaniesInQuestion(question, companiesList);
+  return {
+    tipo: legacyDetected.length > 0 ? "empresa" : "general",
+    empresas_detectadas: legacyDetected.map((c) => ({ ticker: c.ticker, nombre: c.issuer_name, confianza: 0.7 })),
+    intencion: "diagnostico",
+    metricas_mencionadas: [],
+    periodo_solicitado: "ultima_semana",
+    idioma: language as "es" | "en",
+    requiere_bulletin: /bolet[ií]n|bulletin|informe completo/i.test(question),
+  };
+}
+
+// --- E2: SQL DATAPACK (Deterministic, no LLM) ---
+interface DataPack {
+  snapshot: { modelo: string; rix: number | null; rix_adj: number | null; nvm: number | null; drm: number | null; sim: number | null; rmm: number | null; cem: number | null; gam: number | null; dcm: number | null; cxm: number | null; period_from: string | null; period_to: string | null }[];
+  sector_avg: { rix: number; count: number } | null;
+  ranking: { pos: number; ticker: string; nombre: string; rix_avg: number }[];
+  evolucion: { fecha: string; rix_avg: number; modelos: number; delta: number | null }[];
+  divergencia: { sigma: number; nivel: string; modelo_alto: string; modelo_bajo: string; rango: number } | null;
+  memento: { ceo: string | null; presidente: string | null; sede: string | null; descripcion: string | null; fecha: string | null } | null;
+  noticias: { titular: string; fecha: string | null; ticker: string }[];
+  raw_texts: { modelo: string; texto: string }[];
+  empresa_primaria: { ticker: string; nombre: string; sector: string | null; subsector: string | null } | null;
+}
+
+async function buildDataPack(
+  classifier: ClassifierResult,
+  supabaseClient: any,
+  companiesCache: any[] | null,
+  logPrefix: string,
+): Promise<DataPack> {
+  console.log(`${logPrefix} [E2] Building DataPack...`);
+
+  const pack: DataPack = {
+    snapshot: [],
+    sector_avg: null,
+    ranking: [],
+    evolucion: [],
+    divergencia: null,
+    memento: null,
+    noticias: [],
+    raw_texts: [],
+    empresa_primaria: null,
+  };
+
+  if (classifier.empresas_detectadas.length === 0) {
+    console.log(`${logPrefix} [E2] No companies detected, returning empty DataPack`);
+    return pack;
+  }
+
+  const primaryTicker = classifier.empresas_detectadas[0].ticker;
+  const primaryCompany = (companiesCache || []).find((c) => c.ticker === primaryTicker);
+  
+  if (primaryCompany) {
+    pack.empresa_primaria = {
+      ticker: primaryCompany.ticker,
+      nombre: primaryCompany.issuer_name,
+      sector: primaryCompany.sector_category || null,
+      subsector: primaryCompany.subsector || null,
+    };
+  }
+
+  // Query A: Snapshot (latest week, all models) + raw texts
+  const fullColumns = `
+    "02_model_name", "03_target_name", "05_ticker",
+    "06_period_from", "07_period_to", "09_rix_score", "51_rix_score_adjusted",
+    "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
+    "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
+    "25_nvm_categoria", "28_drm_categoria", "31_sim_categoria",
+    "34_rmm_categoria", "37_cem_categoria", "40_gam_categoria",
+    "43_dcm_categoria", "46_cxm_categoria",
+    "10_resumen", "20_res_gpt_bruto", "21_res_perplex_bruto",
+    "22_res_gemini_bruto", "23_res_deepseek_bruto",
+    respuesta_bruto_grok, respuesta_bruto_qwen,
+    "22_explicacion", "25_explicaciones_detalladas",
+    batch_execution_date
+  `;
+
+  const companyFullData = await fetchUnifiedRixData({
+    supabaseClient,
+    columns: fullColumns,
+    tickerFilter: primaryTicker,
+    limit: 120,
+    logPrefix: `${logPrefix} [E2]`,
+  });
+
+  if (companyFullData.length === 0) {
+    console.log(`${logPrefix} [E2] No data for ${primaryTicker}`);
+    return pack;
+  }
+
+  // Identify latest batch date
+  const sortedByDate = [...companyFullData].sort(
+    (a, b) => new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime()
+  );
+  const latestDate = sortedByDate[0]?.batch_execution_date;
+  const latestWeek = sortedByDate.filter((r) => r.batch_execution_date === latestDate);
+
+  // Build snapshot
+  const latestScores: number[] = [];
+  for (const row of latestWeek) {
+    const rix = row["09_rix_score"];
+    if (rix != null && rix > 0) latestScores.push(rix);
+    pack.snapshot.push({
+      modelo: row["02_model_name"],
+      rix: rix ?? null,
+      rix_adj: row["51_rix_score_adjusted"] ?? rix ?? null,
+      nvm: row["23_nvm_score"] ?? null,
+      drm: row["26_drm_score"] ?? null,
+      sim: row["29_sim_score"] ?? null,
+      rmm: row["32_rmm_score"] ?? null,
+      cem: row["35_cem_score"] ?? null,
+      gam: row["38_gam_score"] ?? null,
+      dcm: row["41_dcm_score"] ?? null,
+      cxm: row["44_cxm_score"] ?? null,
+      period_from: row["06_period_from"] ?? null,
+      period_to: row["07_period_to"] ?? null,
+    });
+  }
+
+  // Extract raw texts (from latest week, first row with each model's text)
+  const modelTextFields: [string, string][] = [
+    ["ChatGPT", "20_res_gpt_bruto"],
+    ["Perplexity", "21_res_perplex_bruto"],
+    ["Gemini", "22_res_gemini_bruto"],
+    ["DeepSeek", "23_res_deepseek_bruto"],
+    ["Grok", "respuesta_bruto_grok"],
+    ["Qwen", "respuesta_bruto_qwen"],
+  ];
+
+  for (const [modelName, field] of modelTextFields) {
+    const textRow = latestWeek.find((r) => r[field]);
+    if (textRow && textRow[field]) {
+      pack.raw_texts.push({ modelo: modelName, texto: (textRow[field] as string).substring(0, 3000) });
+    }
+  }
+
+  // Query B: Sector averages
+  if (primaryCompany?.sector_category) {
+    const sectorTickers = (companiesCache || [])
+      .filter((c) => c.sector_category === primaryCompany.sector_category && c.ticker !== primaryTicker)
+      .map((c) => c.ticker);
+
+    if (sectorTickers.length > 0) {
+      const sectorData = await fetchUnifiedRixData({
+        supabaseClient,
+        columns: `"05_ticker", "09_rix_score", batch_execution_date`,
+        tickerFilter: sectorTickers,
+        limit: 2000,
+        logPrefix: `${logPrefix} [E2-sector]`,
+      });
+
+      const sectorLatest = sectorData.filter(
+        (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
+      );
+      if (sectorLatest.length > 0) {
+        const avg = sectorLatest.reduce((sum, r) => sum + r["09_rix_score"], 0) / sectorLatest.length;
+        pack.sector_avg = { rix: Math.round(avg * 10) / 10, count: sectorLatest.length };
+      }
+    }
+  }
+
+  // Query C: Ranking (all companies, latest date)
+  const allLatest = await fetchUnifiedRixData({
+    supabaseClient,
+    columns: `"03_target_name", "05_ticker", "09_rix_score", batch_execution_date`,
+    limit: 3000,
+    logPrefix: `${logPrefix} [E2-ranking]`,
+  });
+
+  const latestAll = allLatest.filter(
+    (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
+  );
+  const byCompany = new Map<string, { name: string; scores: number[] }>();
+  for (const r of latestAll) {
+    const t = r["05_ticker"];
+    if (!byCompany.has(t)) byCompany.set(t, { name: r["03_target_name"], scores: [] });
+    byCompany.get(t)!.scores.push(r["09_rix_score"]);
+  }
+  const rankedAll = Array.from(byCompany.entries())
+    .map(([ticker, d]) => ({ ticker, nombre: d.name, rix_avg: d.scores.reduce((a, b) => a + b, 0) / d.scores.length }))
+    .sort((a, b) => b.rix_avg - a.rix_avg);
+  pack.ranking = rankedAll.slice(0, 10).map((r, i) => ({ pos: i + 1, ...r, rix_avg: Math.round(r.rix_avg * 10) / 10 }));
+
+  // Query D: Evolution (4 weeks)
+  const uniqueDates = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse().slice(0, 4);
+  let prevAvg: number | null = null;
+  for (const date of [...uniqueDates].reverse()) {
+    const weekData = sortedByDate.filter((r) => r.batch_execution_date === date);
+    const scores = weekData.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
+    if (scores.length === 0) continue;
+    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+    pack.evolucion.push({
+      fecha: date.toString().split("T")[0],
+      rix_avg: Math.round(avg * 10) / 10,
+      modelos: scores.length,
+      delta: prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null,
+    });
+    prevAvg = avg;
+  }
+
+  // Query E: Divergence
+  if (latestScores.length >= 2) {
+    const mean = latestScores.reduce((a, b) => a + b, 0) / latestScores.length;
+    const variance = latestScores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / latestScores.length;
+    const sigma = Math.sqrt(variance);
+    const maxS = Math.max(...latestScores);
+    const minS = Math.min(...latestScores);
+    pack.divergencia = {
+      sigma: Math.round(sigma * 10) / 10,
+      nivel: sigma < 8 ? "BAJA" : sigma < 15 ? "MEDIA" : "ALTA",
+      modelo_alto: latestWeek.find((r) => r["09_rix_score"] === maxS)?.["02_model_name"] || "?",
+      modelo_bajo: latestWeek.find((r) => r["09_rix_score"] === minS)?.["02_model_name"] || "?",
+      rango: Math.round((maxS - minS) * 10) / 10,
+    };
+  }
+
+  // Query F: Corporate memento
+  const { data: corpData } = await supabaseClient
+    .from("corporate_snapshots")
+    .select("ceo_name, president_name, headquarters_city, company_description, snapshot_date_only")
+    .eq("ticker", primaryTicker)
+    .order("snapshot_date_only", { ascending: false })
+    .limit(1);
+
+  if (corpData && corpData[0]) {
+    const c = corpData[0];
+    pack.memento = {
+      ceo: c.ceo_name,
+      presidente: c.president_name,
+      sede: c.headquarters_city,
+      descripcion: c.company_description?.substring(0, 300) || null,
+      fecha: c.snapshot_date_only,
+    };
+  }
+
+  // Query G: Recent news
+  const { data: newsData } = await supabaseClient
+    .from("corporate_news")
+    .select("ticker, headline, published_date")
+    .eq("ticker", primaryTicker)
+    .order("published_date", { ascending: false })
+    .limit(10);
+
+  if (newsData) {
+    pack.noticias = newsData.map((n: any) => ({
+      titular: n.headline,
+      fecha: n.published_date,
+      ticker: n.ticker,
+    }));
+  }
+
+  console.log(`${logPrefix} [E2] DataPack built: ${pack.snapshot.length} models, ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.raw_texts.length} texts`);
+  return pack;
+}
+
+// --- E3: QUALITATIVE READER ---
+interface QualitativeFacts {
+  temas_clave: { tema: string; mencionado_por: string[]; consenso: number }[];
+  menciones_concretas: { modelo: string; cita_textual: string; relevancia: string }[];
+  narrativa_dominante: string;
+  divergencias_narrativas: { tema: string; [modelo: string]: string }[];
+  consensos: { tema: string; modelos_coincidentes: number; fuerza: string }[];
+}
+
+async function extractQualitativeFacts(
+  rawTexts: { modelo: string; texto: string }[],
+  dataPack: DataPack,
+  logPrefix: string,
+): Promise<QualitativeFacts | null> {
+  if (rawTexts.length === 0) {
+    console.log(`${logPrefix} [E3] No raw texts available, skipping`);
+    return null;
+  }
+
+  console.log(`${logPrefix} [E3] Extracting qualitative facts from ${rawTexts.length} AI texts...`);
+
+  const textsBlock = rawTexts.map((t) => `=== ${t.modelo} ===\n${t.texto.substring(0, 2500)}`).join("\n\n");
+
+  const prompt = `Analiza estos textos de 6 modelos de IA sobre ${dataPack.empresa_primaria?.nombre || "una empresa"} (${dataPack.empresa_primaria?.ticker || "?"}).
+
+TEXTOS BRUTOS DE LAS IAs:
+${textsBlock}
+
+Extrae hechos estructurados. Responde SOLO en JSON válido (sin markdown):
+{
+  "temas_clave": [
+    {"tema": "descripción del tema", "mencionado_por": ["ChatGPT","Gemini"], "consenso": 2}
+  ],
+  "menciones_concretas": [
+    {"modelo": "Perplexity", "cita_textual": "texto relevante...", "relevancia": "alta|media|baja"}
+  ],
+  "narrativa_dominante": "Resumen en 1-2 frases de la percepción general",
+  "divergencias_narrativas": [
+    {"tema": "Gobernanza", "ChatGPT": "positivo", "DeepSeek": "crítico"}
+  ],
+  "consensos": [
+    {"tema": "Liderazgo en X", "modelos_coincidentes": 5, "fuerza": "muy_alto|alto|medio"}
+  ]
+}
+
+REGLAS:
+- Solo extrae hechos que EXISTAN en los textos. No inventes.
+- Atribuye cada hecho al modelo que lo dice.
+- Si un modelo no menciona un tema, NO lo incluyas para ese modelo.
+- Máximo 8 temas_clave, 6 menciones_concretas, 5 consensos.`;
+
+  try {
+    const result = await callAISimple(
+      [
+        { role: "system", content: "Extractor de hechos cualitativos. Extrae SOLO lo que dicen los textos. No interpretes ni inventes. Responde SOLO en JSON válido." },
+        { role: "user", content: prompt },
+      ],
+      "gpt-4o-mini",
+      1500,
+      `${logPrefix} [E3]`,
+    );
+
+    if (result) {
+      const clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const parsed = JSON.parse(clean) as QualitativeFacts;
+      console.log(`${logPrefix} [E3] Extracted: ${parsed.temas_clave.length} themes, ${parsed.consensos.length} consensuses`);
+      return parsed;
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} [E3] Qualitative extraction failed:`, e);
+  }
+
+  return null;
+}
+
+// --- E4: ANALYTICAL COMPARATOR ---
+interface ComparatorResult {
+  diagnostico_resumen: string;
+  fortalezas: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
+  debilidades: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
+  posicion_competitiva: { ranking: number; de: number; lider: string; distancia: number } | null;
+  recomendaciones: { accion: string; metrica_objetivo: string; basado_en: string }[];
+  gaps_percepcion: { tema: string; dato_real: string; narrativa_ia: string; riesgo: string }[];
+}
+
+async function runComparator(
+  dataPack: DataPack,
+  facts: QualitativeFacts | null,
+  classifier: ClassifierResult,
+  logPrefix: string,
+): Promise<ComparatorResult | null> {
+  if (dataPack.snapshot.length === 0) {
+    console.log(`${logPrefix} [E4] No snapshot data, skipping comparator`);
+    return null;
+  }
+
+  console.log(`${logPrefix} [E4] Running comparator...`);
+
+  const snapshotTable = dataPack.snapshot.map((s) =>
+    `${s.modelo}: RIX=${s.rix}, NVM=${s.nvm}, DRM=${s.drm}, SIM=${s.sim}, RMM=${s.rmm}, CEM=${s.cem}, GAM=${s.gam}, DCM=${s.dcm}, CXM=${s.cxm}`
+  ).join("\n");
+
+  const sectorInfo = dataPack.sector_avg ? `Promedio sector: RIX ${dataPack.sector_avg.rix} (${dataPack.sector_avg.count} registros)` : "Sin datos sectoriales";
+
+  const rankingInfo = dataPack.ranking.length > 0
+    ? `Top 5: ${dataPack.ranking.slice(0, 5).map((r) => `${r.pos}. ${r.nombre} (${r.rix_avg})`).join(", ")}`
+    : "Sin ranking";
+
+  const factsInfo = facts
+    ? `Narrativa dominante: ${facts.narrativa_dominante}\nConsensos: ${facts.consensos.map((c) => `${c.tema} (${c.modelos_coincidentes} modelos)`).join(", ")}\nDivergencias: ${facts.divergencias_narrativas.map((d) => d.tema).join(", ")}`
+    : "Sin datos cualitativos";
+
+  const prompt = `Cruza datos cuantitativos con cualitativos para ${dataPack.empresa_primaria?.nombre || "la empresa"}.
+
+DATOS CUANTITATIVOS (DATAPACK):
+${snapshotTable}
+
+SECTOR: ${sectorInfo}
+RANKING: ${rankingInfo}
+EVOLUCIÓN: ${dataPack.evolucion.map((e) => `${e.fecha}: ${e.rix_avg} (Δ${e.delta ?? "—"})`).join(", ")}
+DIVERGENCIA: ${dataPack.divergencia ? `σ=${dataPack.divergencia.sigma}, ${dataPack.divergencia.nivel}` : "N/A"}
+
+DATOS CUALITATIVOS:
+${factsInfo}
+
+Responde SOLO en JSON válido (sin markdown):
+{
+  "diagnostico_resumen": "Empresa tiene RIX X, Y pts sobre/bajo media sectorial...",
+  "fortalezas": [{"metrica":"NVM","score":75,"vs_sector":"+12","evidencia_cualitativa":"5/6 IAs destacan..."}],
+  "debilidades": [{"metrica":"SIM","score":35,"vs_sector":"-18","evidencia_cualitativa":"..."}],
+  "posicion_competitiva": {"ranking":3,"de":8,"lider":"EmpresaY","distancia":-8},
+  "recomendaciones": [{"accion":"Mejorar X","metrica_objetivo":"DRM","basado_en":"gap de 18 pts"}],
+  "gaps_percepcion": [{"tema":"ESG","dato_real":"CEM 42","narrativa_ia":"4 modelos positivos","riesgo":"desconexion"}]
+}
+
+REGLAS:
+- Solo conclusiones trazables a los datos de arriba.
+- Cada recomendación DEBE citar la métrica y el gap numérico.
+- Máximo 4 fortalezas, 4 debilidades, 4 recomendaciones.`;
+
+  try {
+    const result = await callAISimple(
+      [
+        { role: "system", content: "Comparador analítico. Cruza datos cuantitativos con cualitativos. Solo conclusiones trazables. Responde SOLO en JSON válido." },
+        { role: "user", content: prompt },
+      ],
+      "gpt-4o-mini",
+      1000,
+      `${logPrefix} [E4]`,
+    );
+
+    if (result) {
+      const clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const parsed = JSON.parse(clean) as ComparatorResult;
+      console.log(`${logPrefix} [E4] Comparator: ${parsed.fortalezas.length} strengths, ${parsed.debilidades.length} weaknesses, ${parsed.recomendaciones.length} recommendations`);
+      return parsed;
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} [E4] Comparator failed:`, e);
+  }
+
+  return null;
+}
+
+// --- E5: MASTER ORCHESTRATOR (prompt builder — actual LLM call happens in handleStandardChat) ---
+function buildOrchestratorPrompt(
+  classifier: ClassifierResult,
+  dataPack: DataPack,
+  facts: QualitativeFacts | null,
+  analysis: ComparatorResult | null,
+  question: string,
+  languageName: string,
+  roleName?: string,
+  rolePrompt?: string,
+): { systemPrompt: string; userPrompt: string } {
+  // Serialize artifacts as compact JSON blocks
+  const dataPackBlock = JSON.stringify({
+    empresa: dataPack.empresa_primaria,
+    snapshot: dataPack.snapshot,
+    sector_avg: dataPack.sector_avg,
+    ranking: dataPack.ranking.slice(0, 10),
+    evolucion: dataPack.evolucion,
+    divergencia: dataPack.divergencia,
+    memento: dataPack.memento,
+    noticias: dataPack.noticias.slice(0, 5),
+  }, null, 0);
+
+  const factsBlock = facts ? JSON.stringify(facts, null, 0) : "null";
+  const analysisBlock = analysis ? JSON.stringify(analysis, null, 0) : "null";
+
+  const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
+
+Eres el Agente Rix de RepIndex. Redacta un informe ejecutivo usando EXCLUSIVAMENTE los datos de los bloques DATAPACK, HECHOS y ANALISIS que recibes.
+
+REGLAS DE INTEGRIDAD:
+1. Toda cifra debe existir en DATAPACK. Si no está, escribe "dato no disponible".
+2. Toda mención temática debe existir en HECHOS. Indica cuántas IAs coinciden.
+3. Toda recomendación debe existir en ANALISIS. No inventes nuevas.
+4. NUNCA inventes empresas ficticias, cifras financieras, ni metodologías.
+5. Si no hay datos suficientes, dilo con transparencia.
+
+ESTRUCTURA (adapta según contenido disponible):
+- Resumen Ejecutivo: titular + 3 KPIs + veredicto en 1 párrafo
+- Pilar 1 DEFINIR: visión de las 6 IAs (de mayor a menor RIX), las 8 métricas con interpretación, divergencia entre modelos. Incluye tabla de scores.
+- Pilar 2 ANALIZAR: evolución temporal con deltas, gaps realidad vs percepción, contexto competitivo con ranking. Incluye tabla comparativa.
+- Pilar 3 PROSPECTAR: 3 métricas a mejorar, 3 fortalezas a proteger, posición competitiva accionable. TODO basado en datos reales del ANALISIS.
+- Cierre: modelos consultados, periodo, metodología RepIndex.
+
+OMISIÓN INTELIGENTE: Si un pilar no tiene datos suficientes, omítelo limpiamente. No rellenes con ficción. La calidad está en la trazabilidad, no en el volumen.
+
+CONSENSO DE IAs: Cuando múltiples modelos coinciden en un tema, destaca el nivel de consenso (ej: "5 de 6 IAs coinciden en..."). El consenso refuerza la señal. Cuando hay divergencia significativa, analízala como incertidumbre epistémica.
+
+EXTENSIÓN: 2.500-4.000 palabras para empresa. Focalizado para otros tipos.
+TONO: Profesional, analítico, presentable a alta dirección.
+${roleName ? `ÁNGULO: Adapta al rol "${roleName}".` : ""}
+
+FORMATO MARKDOWN:
+- Usa ## para secciones principales y ### para subsecciones
+- Usa tablas markdown para datos comparativos
+- Usa blockquotes (>) para notas metodológicas
+- Usa emojis de semáforo: 🟢 >70, 🟡 50-70, 🔴 <50
+- NO uses headers decorativos (═══). Usa ## y ### solamente.
+
+REGLAS ANTI-ALUCINACIÓN:
+- NUNCA menciones nombres de ejecutivos que no estén en el memento corporativo
+- NUNCA inventes WACC, EBITDA, CAPEX, VAN, ROI, Monte Carlo
+- NUNCA inventes empresas ficticias ("GRUPO ALPHA")
+- NUNCA menciones límites de plataforma, carpetas ni archivos
+- Si no tienes datos, dilo claramente
+
+${roleName && rolePrompt ? `PERSPECTIVA: ${roleName}\n${rolePrompt}` : ""}
+
+LAS 8 MÉTRICAS (usa nombres descriptivos):
+• Calidad de la Narrativa (NVM) — coherencia del discurso
+• Fortaleza de Evidencia (DRM) — calidad de fuentes primarias
+• Autoridad de Fuentes (SIM) — jerarquía de fuentes
+• Actualidad y Empuje (RMM) — frescura temporal
+• Gestión de Controversias (CEM) — exposición a riesgos (inversa: 100=sin controversias)
+• Percepción de Gobernanza (GAM) — gobierno corporativo
+• Coherencia Informativa (DCM) — consistencia entre modelos
+• Ejecución Corporativa (CXM) — percepción de ejecución (solo cotizadas)
+
+Escala: 🟢 ≥70 fortaleza · 🟡 50-69 mejora · 🔴 <50 riesgo`;
+
+  const userPrompt = `PREGUNTA: "${question}"
+
+CLASIFICACIÓN (E1): tipo=${classifier.tipo}, intención=${classifier.intencion}
+
+═══ DATAPACK (E2 — FUENTE DE VERDAD) ═══
+${dataPackBlock}
+
+═══ HECHOS CUALITATIVOS (E3) ═══
+${factsBlock}
+
+═══ ANÁLISIS COMPARATIVO (E4) ═══
+${analysisBlock}
+
+Redacta el informe ejecutivo completo en ${languageName}. Usa SOLO los datos de arriba.`;
+
+  return { systemPrompt, userPrompt };
+}
+
+// --- E6: ADAPTIVE LAYOUT FORMATTER ---
+async function formatForExport(
+  rawMarkdown: string,
+  classifier: ClassifierResult,
+  logPrefix: string,
+): Promise<string> {
+  if (rawMarkdown.length < 500) {
+    console.log(`${logPrefix} [E6] Short response, skipping layout formatting`);
+    return rawMarkdown;
+  }
+
+  console.log(`${logPrefix} [E6] Formatting for export (${rawMarkdown.length} chars)...`);
+
+  const prompt = `Recibes un informe en markdown. Optimiza su formato visual para renderizado PDF.
+
+SISTEMA DE RENDERIZADO CSS:
+- "---" entre secciones → section-bands azules
+- Tablas markdown → estilo editorial (zebra striping, headers azules)
+- "1. Nombre — valor pts emoji" → emoji-metrics-table
+- Blockquotes (>) → notas metodológicas con borde azul
+- ### → subsection-titles con borde inferior
+
+TU TRABAJO:
+1. Inserta "---" entre cada sección principal
+2. Si hay métricas como bullets, reformatea como tabla: | Métrica | Score | vs Sector |
+3. Si hay datos de modelos, formatea como tabla con emojis semáforo
+4. Rankings como tablas, no listas
+5. Evolución temporal como tabla: | Semana | RIX | Delta |
+6. Máximo 3-4 blockquotes metodológicos en todo el informe
+7. ## para pilares, ### para subsecciones, #### si necesario
+
+REGLAS:
+- NO cambies contenido, cifras ni redacción. Solo reformatea.
+- NO elimines texto. Solo reorganizas la presentación visual.
+- NO añadas contenido nuevo.
+- Mantén todos los emojis tal cual.
+
+INFORME A FORMATEAR:
+${rawMarkdown}`;
+
+  try {
+    const result = await callAISimple(
+      [
+        { role: "system", content: "Maquetador editorial. Solo reformateas markdown para renderizado PDF. NO cambias contenido." },
+        { role: "user", content: prompt },
+      ],
+      "gpt-4o-mini",
+      8000,
+      `${logPrefix} [E6]`,
+    );
+
+    if (result && result.length > rawMarkdown.length * 0.5) {
+      console.log(`${logPrefix} [E6] Formatted: ${result.length} chars (was ${rawMarkdown.length})`);
+      return result;
+    }
+  } catch (e) {
+    console.warn(`${logPrefix} [E6] Layout formatting failed, using raw markdown:`, e);
+  }
+
+  return rawMarkdown;
+}
+
+// =============================================================================
 // INTELLIGENT COMPETITOR SELECTION (GUARDRAIL SYSTEM)
 // =============================================================================
 
