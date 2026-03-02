@@ -1,149 +1,180 @@
 
+# Plan: Eliminar Pilares y Anclar el Relato a Datos SQL
 
-# Auditoria: Riesgos del Plan Anterior sobre el Pipeline Multi-Experto
+## Diagnostico
 
-He revisado todo el flujo E1-E6 y confirmo que el plan anterior tiene **un riesgo real de romper cosas** y hay **bugs existentes graves** que el plan no aborda correctamente. Aqui va el analisis completo:
+El problema NO es un bug puntual. Es un **fallo de diseno arquitectonico** en el sistema de prompts:
+
+1. La funcion `buildDepthPrompt` (lineas 2704-2868) instruye al LLM a escribir en formato "PILAR 1 / PILAR 2 / PILAR 3" con 4.500-5.400 palabras de objetivo
+2. El LLM interpreta "Pilar" como libertad creativa e inventa sus propios nombres de pilares ("Deteccion Temprana de Eventos Negativos", "Consolidacion de Veracidad Documental")
+3. El FORBIDDEN_PATTERNS (linea 1123) solo atrapa `pilar + definir/analizar/prospectar` pero NO atrapa pilares con nombres inventados
+4. El resultado: informes de consultoria ficticia con sistemas inventados (Sent-Shift, GDELT, Fitch-Bot, Crisis-Ops)
+
+El pipeline E1-E6 esta bien disenado. Los datos SQL de E2 son correctos y completos. El problema es que E5 (Orquestador) ignora los datos y fabrica un informe de consultoria porque el prompt lo alienta con la estructura de "Pilares".
+
+## Cambios (3 archivos, 1 fichero)
+
+Todo se hace en `supabase/functions/chat-intelligence/index.ts`.
 
 ---
 
-## PROBLEMA CRITICO 1: `allRixData` siempre vacio — rompe drumroll, metadata, insights y verified sources
+### Cambio 1: Reemplazar `buildDepthPrompt` — eliminar Pilares, anclar a datos SQL
 
-**Estado actual (lineas 5390-5391):**
+**Lineas afectadas:** 2700-2868
+
+Sustituir toda la funcion `buildDepthPrompt` con una estructura anclada en datos reales, sin "Pilares". La nueva estructura:
+
 ```text
-const allRixData: any[] = [];
-const detectedCompanyFullData: any[] = [];
+ESTRUCTURA DEL INFORME (guia flexible, no rigida):
+
+## RESUMEN EJECUTIVO (~500 palabras)
+- Titular-diagnostico: 1-2 frases que sinteticen la situacion con datos concretos
+- 3 KPIs principales con delta vs periodo anterior (solo si existen en DATAPACK)
+- 3 hallazgos principales derivados de los datos
+- Veredicto: parrafo de 3-4 oraciones con valoracion del analista
+
+## VISION DE LAS 6 IAs (~800 palabras)
+Para cada modelo de IA que aparezca en DATAPACK.snapshot:
+- Puntuacion RIX, fortaleza principal, debilidad principal
+- Parrafo interpretativo de 3-4 oraciones
+
+## LAS 8 METRICAS (~600 palabras)
+Para cada metrica con datos en DATAPACK.snapshot:
+- Nombre completo + puntuacion + semaforo
+- Explicacion de POR QUE (usando EXPLICACIONES POR METRICA de E2)
+- Comparacion con competidores verificados (si existen en DATAPACK)
+
+## DIVERGENCIA ENTRE MODELOS (~400 palabras)
+Solo si DATAPACK.divergencia muestra sigma > 8:
+- Que modelos coinciden, cuales divergen
+- Que implica para la empresa
+
+## EVOLUCION TEMPORAL (~400 palabras)
+Solo si DATAPACK.evolucion tiene >= 2 semanas:
+- Tabla con deltas semanales (datos de E2, no inventados)
+
+## CONTEXTO COMPETITIVO (~400 palabras)
+Solo si DATAPACK.competidores_verificados tiene datos:
+- Ranking de competidores verificados con RIX
+- Gaps por metrica vs competidores
+
+## RECOMENDACIONES BASADAS EN DATOS (~400 palabras)
+Solo las que deriven del ANALISIS (E4):
+- Cada recomendacion cita la metrica, el gap numerico y la evidencia
+- PROHIBIDO inventar acciones sin dato que las respalde
+
+## CIERRE — FUENTES Y METODOLOGIA
+- Modelos consultados, fecha, periodo
 ```
 
-Estos arrays NUNCA se llenan. El plan anterior propone poblarlos desde `dataPack.snapshot`, pero hay un problema de **formato incompatible**:
-
-- `dataPack.snapshot` usa claves como `modelo`, `rix`, `nvm`, `drm`...
-- El codigo downstream (lineas 5650-5750, 5848-5950) espera claves como `"02_model_name"`, `"09_rix_score"`, `"23_nvm_score"`, `"05_ticker"`, `"06_period_from"`, `"07_period_to"`, `batch_execution_date`
-
-**Si simplemente mapeamos mal, se rompe:**
-- El drumroll (linea 5632): `allRixData.length > 0` + `extractAnalysisInsights(allRixData, ...)`
-- La metadata de metodologia (lineas 5652-5672): modelos usados, periodos, divergencia
-- `analyzeDataForInsights()` (linea 5848): analisis de divergencias entre modelos
-- `extractSourcesFromRixData()` (linea 5704): fuentes verificadas
-- `structured_data_found` en session save (linea 5691)
-
-**Solucion correcta:** Mapear `dataPack.snapshot` al formato legacy con las claves exactas que espera el downstream. Incluir `dataPack.empresa_primaria` para ticker/nombre.
+**Diferencias clave vs el diseno actual:**
+- NO hay "Pilares" numerados — cada seccion se llama por lo que describe
+- Cada seccion tiene una referencia explicita a DE DONDE salen los datos (DATAPACK, E2, E4)
+- El rango de palabras baja de 4.500-5.400 a 2.500-4.000
+- Se eliminan las subsecciones que invitan a fabular ("Amenazas y Riesgos", "Gaps: Realidad vs Percepcion IA")
 
 ---
 
-## PROBLEMA CRITICO 2: `handleBulletinRequest` — la firma NO tiene `language`/`languageName`
+### Cambio 2: Reforzar el system prompt del orquestador E5
 
-**Estado actual (lineas 4308-4319):**
-La funcion tiene 10 parametros y termina en `streamMode`. La llamada en linea 3634-3637 SI pasa `language` y `languageName` como argumentos 11 y 12, pero **JavaScript los ignora silenciosamente** porque la firma no los declara.
+**Lineas afectadas:** 2140-2228 (dentro de `buildOrchestratorPrompt`)
 
-**Consecuencias:**
-- "Company not found" (lineas 4359-4367) siempre en espanol
-- Las post-suggestions del bulletin usan idioma incorrecto
+Anadir reglas explicitas:
 
-**Esto NO lo arreglamos en la ronda anterior** — solo se arreglaron pericial y enrich.
-
----
-
-## PROBLEMA 3: Fallback questions en `generateRoleSpecificQuestions` (lineas 4260-4302)
-
-Las preguntas de fallback estan hardcoded en espanol para cada rol (CEO, CMO, etc.). Si el LLM falla, el usuario siempre ve preguntas en espanol.
+```text
+REGLA DE ESTRUCTURA (PRIORIDAD MAXIMA):
+- NUNCA uses encabezados de tipo "PILAR X — [nombre]". Esta estructura esta PROHIBIDA.
+- NUNCA inventes nombres de fases, protocolos, algoritmos ni sistemas internos de la empresa.
+- Cada seccion del informe debe empezar citando los datos del DATAPACK que la sustentan.
+- Si una seccion no tiene datos en el DATAPACK, OMITE esa seccion entera. No la rellenes.
+- El informe es un ANALISIS DE DATOS, no un plan estrategico ni un informe de consultoria.
+```
 
 ---
 
-## PROBLEMA 4: `analyzeDataForInsights` es codigo muerto
+### Cambio 3: Ampliar FORBIDDEN_PATTERNS para atrapar cualquier "Pilar" inventado
 
-Toda la funcion `analyzeDataForInsights()` (lineas 5848-6050+) es efectivamente codigo muerto porque `allRixData` siempre esta vacio. La comprobacion `allRixData.length === 0` en linea 5849 siempre devuelve `{ dataQuality: "insufficient" }`.
+**Lineas afectadas:** 1078-1136
 
-Esto significa que:
-- Los "hidden patterns" nunca se detectan
-- Las preguntas sugeridas basadas en anomalias/divergencias nunca se generan
-- El drumroll nunca se genera (porque depende de `allRixData.length > 0`)
+Anadir estos patrones nuevos:
+
+```text
+// Cualquier "PILAR X —" con CUALQUIER nombre (no solo definir/analizar/prospectar)
+/pilar\s+\d+\s*[-–—:]\s*[A-ZÁÉÍÓÚÑ]/i,
+
+// Frameworks y protocolos inventados
+/roadmap\s+(?:correctivo|estrategico|de\s+mejora)/i,
+/kpi\s+objetivo\s+trim\d/i,
+/(?:sent-shift|crisis-?ops|gitreg|fitch-?bot|glassscan|auto-?publish)/i,
+/algoritmo\s+de\s+ponderacion/i,
+/firma\s+pgp/i,
+/checksum\s+md5/i,
+/hash\s+sha-?\d+/i,
+/cobertura\s+24\s*\/?\s*7\s+de\s+\d+\s+fuentes/i,
+/matriz\s+de\s+severidad/i,
+/storytelling\s+compacto/i,
+/portavocia\s+triple/i,
+/equipo\s+(?:crisis|comunicacion)\s+con\s+sla/i,
+/coef(?:iciente)?\.?\s+\d+[.,]\d+/i,
+/\d+[.,]\d+\s*%\s+de\s+volatilidad/i,
+/brecha\s+\d+\s*-\s*\d+\s*:\s*nucleo\s+causal/i,
+```
 
 ---
 
-## PLAN DE CORRECCION (4 cambios)
+### Cambio 4: Actualizar claves i18n — eliminar referencias a pilares
 
-### Cambio 1: Poblar `allRixData` desde `dataPack.snapshot` con formato correcto
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (linea 5390)
+**Lineas afectadas:** 87-89, 190-192, 291-293, 392-394 (y equivalentes en fr/pt)
 
 Reemplazar:
+
 ```text
-const allRixData: any[] = [];
+// ANTES:
+depth_pillar1: "PILAR 1 — DEFINIR (Que dice el dato)",
+depth_pillar2: "PILAR 2 — ANALIZAR (Que significan)",
+depth_pillar3: "PILAR 3 — PROSPECTAR (Que hacer)",
+
+// DESPUES:
+depth_section_data: "LOS DATOS",
+depth_section_analysis: "EL ANALISIS",
+depth_section_actions: "ACCIONES BASADAS EN DATOS",
 ```
 
-Con un mapeo que convierte `dataPack.snapshot` al formato legacy:
+Tambien actualizar `depth_format_title` para quitar "EMBUDO NARRATIVO":
+
 ```text
-const allRixData = dataPack.snapshot.map(s => ({
-  "02_model_name": s.modelo,
-  "03_target_name": dataPack.empresa_primaria?.nombre || "",
-  "05_ticker": dataPack.empresa_primaria?.ticker || "",
-  "06_period_from": s.period_from,
-  "07_period_to": s.period_to,
-  "09_rix_score": s.rix,
-  "51_rix_score_adjusted": s.rix_adj,
-  "23_nvm_score": s.nvm,
-  "26_drm_score": s.drm,
-  "29_sim_score": s.sim,
-  "32_rmm_score": s.rmm,
-  "35_cem_score": s.cem,
-  "38_gam_score": s.gam,
-  "41_dcm_score": s.dcm,
-  "44_cxm_score": s.cxm,
-  batch_execution_date: s.period_to,
-}));
+// ANTES:
+depth_format_title: "FORMATO: EMBUDO NARRATIVO — La estructura es una guia, no un corse"
+
+// DESPUES:
+depth_format_title: "FORMATO: INFORME ANALITICO — Estructura anclada en datos SQL"
 ```
-
-Esto restaura:
-- Drumroll generation
-- Methodology metadata (modelos, periodos, divergencia)
-- Session save con `structured_data_found` correcto
-- `analyzeDataForInsights()` funcionando
-
-### Cambio 2: Anadir `language`/`languageName` a la firma de `handleBulletinRequest`
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (linea 4318-4319)
-
-Anadir los parametros que ya se pasan desde la llamada:
-```text
-streamMode: boolean = false,
-language: string = "es",
-languageName: string = "Espanol",
-```
-
-Y reemplazar el bloque "company not found" (lineas 4359-4367) para usar `t(language, ...)` en lugar de strings hardcoded en espanol.
-
-### Cambio 3: Internacionalizar fallback questions en `generateRoleSpecificQuestions`
-
-**Archivo:** `supabase/functions/chat-intelligence/index.ts` (lineas 4260-4302)
-
-Anadir claves i18n al diccionario `PIPELINE_I18N` para los fallback por rol y usarlas con `t(language, ...)`.
-
-### Cambio 4: NO tocar `analyzeDataForInsights` ni el drumroll
-
-Estos se arreglan automaticamente al poblar `allRixData` (Cambio 1). No requieren modificacion de codigo, solo de datos.
 
 ---
 
-## Verificacion: Que NO se rompe
+## Que NO se toca
 
-| Componente | Riesgo | Verificacion |
-|------------|--------|--------------|
-| Pipeline E1-E6 | Ninguno | No se tocan E1, E2, E3, E4, E5 |
-| `buildOrchestratorPrompt` | Ninguno | Ya se arreglo en la ronda anterior |
-| `buildDepthPrompt` | Ninguno | No se toca |
-| Streaming SSE | Ninguno | Solo cambia el contenido de `allRixData` pre-stream |
-| Auto-continuation | Ninguno | No depende de `allRixData` |
-| Compliance gate | Ninguno | Opera sobre texto, no datos |
-| Non-streaming path | Se beneficia | Mismo fix aplica (misma variable) |
-| Session save | Se beneficia | `structured_data_found` reportara dato real |
-| Vector search | Ninguno | No se toca |
-| Graph expansion | Ninguno | No se toca |
+| Componente | Estado |
+|------------|--------|
+| E1 Clasificador | Intacto — funciona bien |
+| E2 DataPack SQL | Intacto — es la fuente de verdad |
+| E3 Lector Cualitativo | Intacto — extrae hechos de textos reales |
+| E4 Comparador Analitico | Intacto — cruza datos reales |
+| E6 Layout Formatter | Intacto — solo reformatea |
+| Streaming SSE | Intacto |
+| Auto-continuation | Intacto |
+| Bulletin handler | Intacto |
+| Session save | Intacto |
+| allRixData mapping | Intacto (ya arreglado) |
 
-## Resumen
+## Por que esto resuelve la alucinacion
 
-| Cambio | Prioridad | Riesgo |
-|--------|-----------|--------|
-| Poblar `allRixData` desde `dataPack.snapshot` | CRITICO | Bajo (mapeo directo) |
-| Firma de `handleBulletinRequest` + i18n | ALTO | Nulo (anadir params al final) |
-| Fallback questions i18n | MEDIO | Nulo (solo texto) |
+1. **Sin "Pilares"** el LLM no tiene estructura creativa que rellenar
+2. **Cada seccion cita su fuente** (DATAPACK, E2, E4) — si no hay datos, se omite
+3. **FORBIDDEN_PATTERNS** atrapa cualquier "PILAR X —" con nombre inventado
+4. **Rango de palabras reducido** (2.500-4.000) evita que el LLM necesite inventar para llenar
+5. **Regla explicita** en el system prompt prohibe la estructura de pilares
 
+## Riesgo
+
+Bajo. Los cambios son exclusivamente en prompts y patrones regex. No se toca la logica de datos (E2), el streaming, ni las llamadas a la API. El peor caso es que el formato del informe cambie visualmente, pero siempre anclado en datos reales.
