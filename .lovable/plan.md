@@ -1,148 +1,76 @@
 
+# Plan: Conectar el Embudo Narrativo (buildDepthPrompt) al Pipeline E5
 
-# Plan: Internacionalizar Todos los Textos del Agente Rix
+## Problema Identificado
 
-## El Problema
+La funcion `buildDepthPrompt()` (lineas 2646-2810) contiene la estructura detallada completa del Embudo Narrativo con **todas las subsecciones** (Titular-Diagnostico, 3 KPIs, 3 Hallazgos, Vision de las 6 IAs, Las 8 Metricas, Divergencia entre Modelos, etc.) pero **NUNCA se llama desde ninguna parte del codigo**.
 
-El pipeline `chat-intelligence` recibe `language` y `languageName` del frontend, pero solo E5 (Orquestador) los usa parcialmente. Hay al menos **10 zonas con texto hardcoded en espanol** que se envian tal cual al usuario sin importar el idioma seleccionado:
-
-### Zonas afectadas (todas en `supabase/functions/chat-intelligence/index.ts`)
-
-| Zona | Lineas aprox. | Que esta en espanol |
-|------|---------------|---------------------|
-| 1. `getRedirectResponse()` | 3376-3431 | Respuestas completas de identity, personal, off_topic, test_limits (4 bloques) |
-| 2. Bulletin prompt ("Perfecto! Puedo generar...") | 3230-3233 | Texto de bienvenida al modo boletin |
-| 3. Bulletin suggested questions | 3233 | "Genera un boletin de X" |
-| 4. Company not found error | 4039-4049 | "No encontre la empresa..." + suggested questions |
-| 5. Bulletin post-generation suggestions | 4574-4578 | "Genera un boletin de...", "Como se compara..." |
-| 6. Pericial follow-up questions | 3670-3673 | 3 preguntas sugeridas en espanol |
-| 7. `buildDepthPrompt()` (Embudo Narrativo) | 2278-2433 | Toda la estructura: "RESUMEN EJECUTIVO", "PILAR 1 DEFINIR", "PILAR 2 ANALIZAR", "PILAR 3 PROSPECTAR", instrucciones |
-| 8. Drumroll prompt | 2636-2694 | Instrucciones del generador de drumroll ("TU MISION", "REGLAS CRITICAS") y system message |
-| 9. E3 (Lector) system message | 1429 | "Extractor de hechos cualitativos..." |
-| 10. E4 (Comparador) prompts | 1571-1606, 1611 | "Cruza datos cuantitativos...", "Comparador analitico..." y etiquetas de seccion |
-
-## La Solucion
-
-Crear un diccionario de traducciones centralizado dentro del edge function y usar `languageName`/`language` en TODAS las zonas afectadas.
-
-### Cambio 1: Crear diccionario de traducciones del pipeline
-
-Al inicio del archivo (tras las interfaces), crear un objeto `PIPELINE_I18N` con traducciones para los 10 idiomas soportados. Para mantener el archivo manejable, solo se incluyen los 4 idiomas principales (es, en, fr, pt) con fallback a ingles para el resto:
-
-```text
-const PIPELINE_I18N: Record<string, Record<string, string>> = {
-  es: {
-    agent_identity_answer: "Soy el **Agente Rix**, un analista especializado en reputacion...",
-    personal_query_answer: "Mi especialidad es el analisis de reputacion **corporativa**...",
-    off_topic_answer: "Esa pregunta esta fuera de mi especializacion...",
-    test_limits_answer: "Soy el Agente Rix, un analista de reputacion corporativa...",
-    bulletin_welcome: "Perfecto! Puedo generar un **boletin ejecutivo** completo...",
-    bulletin_suggest: "Genera un boletin de {company}",
-    company_not_found: "No encontre la empresa \"{query}\" en la base de datos...",
-    analyze_company: "Analiza la reputacion de {company}",
-    // ... ~30 keys mas
-  },
-  en: {
-    agent_identity_answer: "I'm **Agent Rix**, an analyst specialized in corporate algorithmic reputation...",
-    // ... todas las traducciones
-  },
-  pt: { ... },
-  fr: { ... },
-}
+El E5 (`buildOrchestratorPrompt`, lineas 2075-2190) solo tiene una version resumida de 7 lineas (lineas 2106-2111) que dice cosas como:
+```
+- Pilar 1 DEFINIR (cuando haya datos): vision de las 6 IAs...
+- Pilar 2 ANALIZAR (cuando haya evolucion): evolucion temporal...
 ```
 
-Funcion helper: `function t(lang: string, key: string, vars?: Record<string, string>): string` que busca en el diccionario y aplica interpolacion de variables ({company}, {query}, etc).
+Esto explica por que las respuestas carecen de estructura rica: el LLM no recibe la guia detallada del Embudo. No sabe que debe incluir subsecciones como "Titular-Diagnostico", "3 KPIs con Delta", "5 Mensajes para la Direccion", "Divergencia entre Modelos", etc.
 
-### Cambio 2: Internacionalizar `getRedirectResponse()`
+## Evidencia en los Logs
 
-Reemplazar los 4 bloques hardcoded con llamadas a `t(language, "agent_identity_answer")`, etc. Las suggested questions tambien se traducen: "Analyze {company}'s reputation" en vez de "Analiza la reputacion de {company}".
+- `[E5] Prompt built. System: 7752 chars` — el system prompt es corto porque falta el Embudo (~4.000 chars adicionales)
+- `[E4] Comparator: 4 strengths, 4 weaknesses, 4 recommendations` — E4 emite 4 recomendaciones (correcto, el max del prompt dice "Maximo 4 fortalezas, 4 debilidades, 6 recomendaciones" pero el LLM solo genera 4 de cada)
+- El pipeline E1->E2->E3->E4->E5 SI se ejecuta correctamente, pero E5 no tiene suficiente guia estructural
 
-### Cambio 3: Internacionalizar el mensaje de bienvenida al boletin
+## Solucion: 2 Cambios
 
-Linea 3232: reemplazar el texto fijo con `t(language, "bulletin_welcome")`.
-Linea 3233: `suggestedCompanies.map(c => t(language, "bulletin_suggest", {company: c}))`.
+### Cambio 1: Inyectar `buildDepthPrompt()` en el systemPrompt de E5
 
-### Cambio 4: Internacionalizar el error "empresa no encontrada"
-
-Lineas 4039-4049: usar `t(language, "company_not_found", {query: companyQuery})` y traducir las suggested questions.
-
-### Cambio 5: Internacionalizar sugerencias post-boletin
-
-Lineas 4574-4578: traducir las 3 suggested questions.
-
-### Cambio 6: Internacionalizar preguntas pericial
-
-Lineas 3670-3673: traducir las 3 preguntas de seguimiento pericial.
-
-### Cambio 7: Internacionalizar `buildDepthPrompt()` (Embudo Narrativo)
-
-Esta es la zona mas grande. Las etiquetas de estructura ("RESUMEN EJECUTIVO", "PILAR 1 DEFINIR", etc.) se traducen pero las INSTRUCCIONES internas para el LLM se mantienen en espanol — el LLM entiende ambos idiomas y la instruccion `[IDIOMA OBLIGATORIO]` de E5 ya fuerza el output. Lo que si se traduce:
-
-- Los nombres de las secciones que el LLM replica en el output: "Resumen Ejecutivo" -> "Executive Summary", "Pilar 1 -- DEFINIR" -> "Pillar 1 -- DEFINE"
-- Los ejemplos de output que el LLM imita
-- Las etiquetas de subsecciones: "Titular-Diagnostico", "3 KPIs con Delta", etc.
-
-Esto se logra pasando `languageName` (que ya recibe la funcion) al diccionario para seleccionar las etiquetas correctas.
-
-### Cambio 8: Internacionalizar el drumroll
-
-Lineas 2636-2694: Las instrucciones internas al LLM pueden quedarse en espanol (el LLM las entiende), pero la linea `IDIOMA: Genera TODO en ${languageName}` ya existe. El system message (linea 2693) se traduce para reforzar.
-
-### Cambio 9: E3 y E4 — system messages
-
-Los system messages de E3 y E4 son instrucciones internas al LLM (no llegan al usuario). Su output es JSON estructurado que luego procesa E5. **No necesitan traduccion** porque el usuario nunca ve esos textos. Solo se refuerza la instruccion de idioma donde el output pueda filtrarse al usuario (como en `diagnostico_resumen` de E4).
-
-### Cambio 10: Pasar `language` a todas las funciones que lo necesitan
-
-Actualmente `getRedirectResponse` recibe `languageName` pero no `language`. Anadir `language` como parametro a:
-- `getRedirectResponse(category, question, language, languageName, companiesCache)`
-- Pasar `language` al handler de bulletins
-- Pasar `language` al handler de pericial
-
-## Estructura del diccionario
-
-El diccionario tendra ~40 claves organizadas en grupos:
+En `buildOrchestratorPrompt()` (linea ~2005), despues de construir el `systemPrompt`, concatenar el resultado de `buildDepthPrompt()`:
 
 ```text
-// Redirect responses (4 categories x 4 idiomas)
-// Bulletin messages (welcome, suggest, not_found)
-// Suggested questions templates (10 templates)
-// Embudo section names (8 secciones)
-// Embudo subsection names (15 subsecciones)
-// Error messages (3 tipos)
-// Pericial follow-ups (3 preguntas)
+Antes:
+  const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
+  ... (reglas de integridad, tono, estructura resumida, metricas, formato) ...`;
+
+Despues:
+  const depthGuide = buildDepthPrompt("complete", languageName, language);
+  const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
+  ... (reglas de integridad, tono, metricas, formato) ...
+  
+  ${depthGuide}`;
 ```
 
-Total: ~40 claves x 4 idiomas = ~160 strings. Para los 6 idiomas restantes (de, it, ar, zh, ja, ko) se usa fallback a ingles.
+Esto requiere:
+1. Pasar el parametro `language` a `buildOrchestratorPrompt()` (actualmente solo recibe `languageName`)
+2. Llamar a `buildDepthPrompt("complete", languageName, language)` dentro de la funcion
+3. Concatenar el resultado al `systemPrompt`
+4. Eliminar las 7 lineas de estructura resumida (2106-2111) que quedan redundantes
+
+### Cambio 2: Actualizar la firma y la llamada
+
+En la definicion de `buildOrchestratorPrompt` (linea 2005), anadir `language: string = "es"` como parametro.
+
+En la llamada (linea 5407), pasar el `language`:
+```text
+Antes:
+  buildOrchestratorPrompt(classifier, dataPack, facts, analysis, question, languageName, roleName, rolePrompt)
+
+Despues:
+  buildOrchestratorPrompt(classifier, dataPack, facts, analysis, question, languageName, language, roleName, rolePrompt)
+```
+
+## Impacto Esperado
+
+| Antes | Despues |
+|-------|---------|
+| System prompt E5: ~7.750 chars | System prompt E5: ~11.500 chars |
+| Sin subsecciones detalladas | Con guia completa: Titular-Diagnostico, 3 KPIs, Vision 6 IAs, 8 Metricas, etc. |
+| Estructura vaga que el LLM interpreta libremente | Estructura precisa que el LLM sigue con fidelidad |
+| Cabeceras en espanol independientemente del idioma | Cabeceras traducidas via i18n (ya implementado en buildDepthPrompt) |
 
 ## Archivo modificado
 
 Solo `supabase/functions/chat-intelligence/index.ts`:
 
-1. **Nuevo bloque**: `PIPELINE_I18N` diccionario + funcion `t()` (~200 lineas, tras las interfaces)
-2. **`getRedirectResponse()`**: Reescribir con llamadas a `t()` (~30 lineas cambiadas)
-3. **Bulletin welcome** (linea 3232): 1 linea
-4. **Bulletin suggestions** (linea 3233): 1 linea
-5. **Company not found** (lineas 4039-4049): ~10 lineas
-6. **Post-bulletin suggestions** (lineas 4574-4578): 3 lineas
-7. **Pericial follow-ups** (lineas 3670-3673): 3 lineas
-8. **`buildDepthPrompt()`**: Internacionalizar etiquetas de seccion (~40 lineas)
-9. **Firmas de funciones**: Anadir parametro `language` donde falte (~5 lineas)
-
-## Resultado esperado
-
-| Antes (usuario en ingles) | Despues |
-|---------------------------|---------|
-| "Soy el Agente Rix, un analista especializado..." | "I'm Agent Rix, an analyst specialized in corporate algorithmic reputation..." |
-| "Genera un boletin de Telefonica" (suggested) | "Generate a report for Telefonica" |
-| "No encontre la empresa..." | "Company not found in the RepIndex database..." |
-| "## Resumen Ejecutivo" en el informe | "## Executive Summary" |
-| "## Pilar 1 -- DEFINIR" | "## Pillar 1 -- DEFINE" |
-| "Que empresas estan disponibles?" (suggested) | "Which companies are available?" |
-
-## Principios
-
-- El diccionario es estatico (no usa LLM para traducir) — rendimiento garantizado
-- Fallback a ingles para idiomas sin traduccion especifica
-- Las instrucciones internas al LLM (system prompts de E3, E4) NO se traducen — son instrucciones de procesamiento, no output al usuario
-- E5 ya tiene `[IDIOMA OBLIGATORIO: ${languageName}]` que fuerza el output del informe
+1. **`buildOrchestratorPrompt` firma** (linea 2005): anadir parametro `language`
+2. **`buildOrchestratorPrompt` cuerpo** (linea ~2075): llamar a `buildDepthPrompt()` y concatenar al systemPrompt
+3. **Eliminar estructura resumida redundante** (lineas 2106-2111)
+4. **Llamada a buildOrchestratorPrompt** (linea 5407): pasar `language`
