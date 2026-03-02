@@ -1,42 +1,65 @@
 
 
-# Plan: Pipeline Multi-Experto E1-E6 — IMPLEMENTADO ✅
+# Fix: E2 DataPack Must Use ONLY Verified Competitors
 
-## Estado: COMPLETADO
+## The Problem
 
-El pipeline multi-experto ha sido conectado y está activo en `handleStandardChat`.
+The `buildDataPack` function (E2) ignores the existing `getRelevantCompetitors()` function (which correctly reads `verified_competitors` from `repindex_root_issuers`). Instead, E2:
 
-## Cambios realizados
+- Uses `sector_category` to find "sector peers" (line 1121-1143) -- this pulls in companies that are NOT direct competitors
+- Fetches ALL companies for ranking (line 1146-1165) -- includes irrelevant companies
+- Never reads the `verified_competitors` column at all
 
-### 1. `handleStandardChat` refactorizado (~160 líneas vs ~2.600 antiguas)
-- E1 `runClassifier` reemplaza `detectCompaniesInQuestion` regex
-- E2 `buildDataPack` reemplaza PASOs 0-5.5 (queries SQL duplicadas)
-- E3 `extractQualitativeFacts` extrae hechos de los 6 textos brutos
-- E4 `runComparator` cruza cuanti + cuali para diagnóstico trazable
-- E5 `buildOrchestratorPrompt` genera prompt limpio (reemplaza 500 líneas monolíticas)
-- Graph expansion, vector search y regression se mantienen como contexto complementario inyectado en E5
+This means the reports include sector comparisons with companies that have nothing to do with each other, and rankings that mix unrelated businesses.
 
-### 2. Prompt E5 enriquecido
-- Reglas de estilo narrativo (frases ≤25 palabras, párrafos ≤4 líneas)
-- Escala de consenso (5-6 IAs = hecho consolidado, 3-4 = señal fuerte)
-- Nombres descriptivos de métricas (no acrónimos)
-- Protocolo de datos corporativos con niveles de confianza
-- Justificación metodológica "Radar Reputacional"
-- Todas las reglas anti-alucinación
-- Adaptación a perspectivas/roles profesionales
-- NO incluye "6 campos obligatorios" ni extensiones contradictorias
+## The Fix
 
-### 3. Eliminado
-- System prompt monolítico de 500 líneas
-- User prompt con extensiones contradictorias (4.500-5.400 vs 2.500-4.000)
-- PASOs 0-6 con queries SQL duplicadas
-- `buildDepthPrompt` (dead code, función aún existe pero no se invoca)
-- Regla "6 campos obligatorios por recomendación" (causaba fabricación)
+### 1. Add `competidores_verificados` to the DataPack interface
 
-### 4. Mantenido sin cambios
-- Streaming SSE con compliance gate
-- Auto-continuation
-- Suggested questions + drumroll
-- Session save
-- Bulletin mode (flujo separado)
-- Graph expansion, vector search, regression (como contexto complementario)
+Add a new field to the `DataPack` interface:
+```
+competidores_verificados: { ticker: string; nombre: string; rix_avg: number | null }[]
+```
+
+### 2. Rewrite E2's competitor/sector logic
+
+Replace the current "Query B: Sector averages" and "Query C: Ranking" blocks with:
+
+1. Read `verified_competitors` from `repindex_root_issuers` for the primary ticker
+2. If `verified_competitors` is empty or null: set `competidores_verificados = []`, `sector_avg = null`, `ranking = []` -- no competitor data at all
+3. If `verified_competitors` has entries: fetch RIX data ONLY for those specific tickers, compute `sector_avg` from them, and build ranking ONLY from them plus the primary company
+
+This replaces ~40 lines of sector-based logic with ~30 lines of verified-competitor-based logic.
+
+### 3. Update E4 (Comparator) prompt
+
+The comparator prompt currently receives "SECTOR" and "RANKING" blocks. Update:
+- Replace "Promedio sector" with "Promedio competidores verificados" (or "Sin competidores verificados" if empty)
+- Replace "Top 5" ranking with only verified competitors ranking
+- Add explicit instruction: "Solo compara con competidores verificados. Si no hay, omite la comparativa."
+
+### 4. Update E5 (Orchestrator) system prompt
+
+Add a rule to the system prompt:
+- "COMPETIDORES: Usa EXCLUSIVAMENTE los competidores del DATAPACK. Si el campo competidores_verificados esta vacio, NO incluyas comparativa competitiva. Nunca busques competidores por sector."
+
+### 5. Remove the generic "all companies" ranking query
+
+Delete the current "Query C" block (lines 1146-1165) that fetches 3,000 rows of ALL companies to build a general ranking. This is wasteful and produces irrelevant data.
+
+## What Changes
+
+| Before | After |
+|--------|-------|
+| Sector avg from ALL companies with same `sector_category` | Average from ONLY verified competitors |
+| Ranking of ALL 100+ companies | Ranking of ONLY verified competitors + primary |
+| If no sector match, still shows generic ranking | If no verified competitors, no comparativa at all |
+| `getRelevantCompetitors()` is dead code for E2 | E2 reads `verified_competitors` directly from the issuer record |
+
+## Files Changed
+
+- `supabase/functions/chat-intelligence/index.ts`:
+  - Update `DataPack` interface (add `competidores_verificados`)
+  - Rewrite E2's Query B + Query C blocks to use `verified_competitors`
+  - Update E4 comparator prompt to reference verified competitors only
+  - Add anti-fabrication rule to E5 system prompt about competitors
