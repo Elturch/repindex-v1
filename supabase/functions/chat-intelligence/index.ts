@@ -2009,6 +2009,7 @@ function buildOrchestratorPrompt(
   analysis: ComparatorResult | null,
   question: string,
   languageName: string,
+  language: string = "es",
   roleName?: string,
   rolePrompt?: string,
 ): { systemPrompt: string; userPrompt: string } {
@@ -2103,14 +2104,7 @@ TONO Y ESTILO:
 • Explica cada concepto la primera vez; después úsalo con naturalidad.
 • Sé didáctico: explica el porqué de las cosas, no solo el qué.
 
-ESTRUCTURA (adapta según contenido disponible — OMISIÓN INTELIGENTE):
-- **Resumen Ejecutivo**: titular + 3 KPIs con delta + veredicto en 1 párrafo. Si hay datos de mercado, añade un párrafo breve conectando reputación con cotización. Quien lee SOLO esto entiende la situación.
-- **Pilar 1 DEFINIR** (cuando haya datos): visión de las 6 IAs (de mayor a menor RIX), las 8 métricas con interpretación Y explicación causal (de las EXPLICACIONES), divergencia entre modelos, consenso de categorías. Incluye tabla de scores.
-- **Pilar 2 ANALIZAR** (cuando haya evolución): evolución temporal con deltas, gaps realidad vs percepción, contexto competitivo con ranking. Incluye tabla comparativa.
-- **Pilar 3 PROSPECTAR** (cuando ANALISIS tenga recomendaciones): métricas a mejorar con gaps numéricos concretos vs competidores, fortalezas a proteger, posición competitiva accionable. Usa los gaps por métrica (competidores_metricas_avg) para razonar sobre qué palancas son más efectivas. Conecta tendencias temporales del DATAPACK con recomendaciones para evidenciar qué ha funcionado antes. Usa las EXPLICACIONES para justificar por qué cada recomendación es relevante. TODO anclado en datos reales. NUNCA inventes planes de remediación, responsables, KPIs con plazos, DOIs, convenios universitarios ni "Aena Data Commons".
-- **Cierre**: modelos consultados, periodo, metodología RepIndex.
-
-Si un pilar no tiene datos suficientes, omítelo limpiamente sin mencionarlo. La calidad está en la trazabilidad, no en el volumen.
+${buildDepthPrompt("complete", languageName, language)}
 
 CONSENSO DE IAs (DENSIDAD DE EVIDENCIA CRUZADA):
 • HECHO CONSOLIDADO (5-6 IAs coinciden): Afirmación directa con autoridad plena. "Las seis IAs coinciden en..."
@@ -5405,7 +5399,7 @@ async function handleStandardChat(
 
   // --- E5: ORQUESTADOR MAESTRO (construir prompt) ---
   const { systemPrompt, userPrompt } = buildOrchestratorPrompt(
-    classifier, dataPack, facts, analysis, question, languageName, roleName, rolePrompt
+    classifier, dataPack, facts, analysis, question, languageName, language, roleName, rolePrompt
   );
 
   // Inject supplementary context into userPrompt
