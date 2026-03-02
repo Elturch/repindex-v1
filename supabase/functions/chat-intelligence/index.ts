@@ -7,6 +7,378 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// =============================================================================
+// PIPELINE I18N — Static translation dictionary for all user-facing text
+// =============================================================================
+const PIPELINE_I18N: Record<string, Record<string, string>> = {
+  es: {
+    // Redirect responses
+    agent_identity_answer: `Soy el **Agente Rix**, un analista especializado en reputación algorítmica corporativa.
+
+Mi función es ayudarte a interpretar cómo los principales modelos de inteligencia artificial (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) perciben a las empresas españolas y su posicionamiento reputacional.
+
+**Puedo hacer por ti:**
+- 📊 Analizar métricas RIX de cualquier empresa
+- 🏆 Comparar empresas con su competencia sectorial
+- 📈 Detectar tendencias y evolución temporal
+- 📋 Generar informes ejecutivos para comité de dirección
+
+¿Sobre qué empresa o sector te gustaría que hiciéramos un análisis?`,
+    personal_query_answer: `Mi especialidad es el análisis de reputación **corporativa**, no individual. Analizo cómo las IAs perciben a empresas como entidades, no a personas físicas.
+
+Sin embargo, si estás vinculado a una empresa específica, puedo analizar cómo la percepción del liderazgo afecta a la reputación corporativa de esa organización.
+
+**¿Te gustaría que analizara la reputación corporativa de alguna empresa en particular?**`,
+    off_topic_answer: `Esa pregunta está fuera de mi especialización. Como Agente Rix, me centro exclusivamente en el **análisis de reputación algorítmica corporativa**.
+
+**Lo que sí puedo ofrecerte:**
+- 📊 Análisis de cualquier empresa del IBEX-35 o del ecosistema español
+- 🏆 Comparativas sectoriales y benchmarking competitivo
+- 📈 Detección de tendencias y alertas reputacionales
+- 📋 Informes ejecutivos sobre la percepción en IAs
+
+¿Hay alguna empresa o sector que te interese analizar?`,
+    test_limits_answer: `Soy el Agente Rix, un analista de reputación corporativa. Mi función es ayudarte a entender cómo las IAs perciben a las empresas españolas.
+
+¿En qué empresa o sector te gustaría que nos centráramos?`,
+    // Suggested questions
+    analyze_company: "Analiza la reputación de {company}",
+    analyze_short: "Analiza {company}",
+    top5_ibex: "Top 5 empresas del IBEX-35 esta semana",
+    sector_comparison: "Comparativa del sector Banca",
+    leadership_perception: "¿Cómo se percibe el liderazgo de {company}?",
+    sector_reputation: "Reputación del sector Tecnología",
+    energy_ranking: "Ranking del sector Energía",
+    top10_week: "Top 10 empresas esta semana",
+    telecom_comparison: "Comparativa sector Telecomunicaciones",
+    // Bulletin
+    bulletin_welcome: `¡Perfecto! 📋 Puedo generar un **boletín ejecutivo** completo para cualquier empresa de nuestra base de datos.
+
+**¿De qué empresa quieres el boletín?**
+
+Escribe el nombre de la empresa (por ejemplo: Telefónica, Inditex, Repsol, BBVA, Iberdrola...) y generaré un análisis detallado incluyendo:
+
+- 📊 **RIX Score** por cada modelo de IA (ChatGPT, Perplexity, Gemini, DeepSeek)
+- 🏆 **Comparativa** con competidores del mismo sector
+- 📈 **Tendencia** de las últimas 4 semanas
+- 💡 **Conclusiones** y recomendaciones
+
+El boletín estará listo para **descargar o imprimir** en formato profesional.`,
+    bulletin_suggest: "Genera un boletín de {company}",
+    // Company not found
+    company_not_found: `No encontré la empresa "{query}" en nuestra base de datos de RepIndex.
+
+**Puedes intentar con:**
+- El nombre oficial de la empresa (ej: "Telefónica" en vez de "Movistar")
+- El ticker bursátil (ej: "TEF", "SAN", "ITX")
+
+**Empresas disponibles incluyen:** {examples}`,
+    // Post-bulletin suggestions
+    bulletin_post_suggest: "Genera un boletín de {company}",
+    bulletin_post_compare: "¿Cómo se compara {company} con el sector {sector}?",
+    bulletin_post_top5: "Top 5 empresas del sector {sector}",
+    // Pericial follow-ups
+    pericial_q1: "¿Qué divergencias existen entre los modelos de IA en la evaluación de esta empresa?",
+    pericial_q2: "¿Hay evolución temporal documentada que muestre deterioro reputacional antes y después de algún evento?",
+    pericial_q3: "¿Qué métricas presentan mayor exposición a narrativas de riesgo con valor probatorio?",
+    // Depth prompt section headers
+    depth_format_title: "FORMATO: EMBUDO NARRATIVO — La estructura es una guía, no un corsé",
+    depth_executive_summary: "RESUMEN EJECUTIVO",
+    depth_pillar1: "PILAR 1 — DEFINIR (Qué dice el dato)",
+    depth_pillar2: "PILAR 2 — ANALIZAR (Qué significan)",
+    depth_pillar3: "PILAR 3 — PROSPECTAR (Qué hacer — SOLO basado en datos reales)",
+    depth_closing: "CIERRE — FUENTES Y METODOLOGÍA",
+    depth_headline_diagnosis: "Titular-Diagnóstico",
+    depth_3kpis: "3 KPIs con Delta",
+    depth_3findings: "3 Hallazgos",
+    depth_3recommendations: "3 Recomendaciones (acción + responsable + KPI)",
+    depth_verdict: "Veredicto",
+    depth_5messages: "5 Mensajes para la Dirección",
+    depth_6ai_vision: "Visión de las 6 IAs",
+    depth_8metrics: "Las 8 Métricas",
+    depth_model_divergence: "Divergencia entre Modelos",
+    depth_evolution: "Evolución y Comparativas",
+    depth_threats: "Amenazas y Riesgos",
+    depth_gaps: "Gaps: Realidad vs Percepción IA",
+    depth_competitive: "Contexto Competitivo",
+    depth_improvement_metrics: "Métricas con margen de mejora",
+    depth_strengths: "Fortalezas a proteger",
+    depth_competitive_position: "Posición competitiva accionable",
+  },
+  en: {
+    agent_identity_answer: `I'm **Agent Rix**, an analyst specialized in corporate algorithmic reputation.
+
+My role is to help you understand how the leading AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) perceive Spanish companies and their reputational positioning.
+
+**I can help you with:**
+- 📊 Analyzing RIX metrics for any company
+- 🏆 Comparing companies against their sector competitors
+- 📈 Detecting trends and temporal evolution
+- 📋 Generating executive reports for board meetings
+
+Which company or sector would you like me to analyze?`,
+    personal_query_answer: `My specialty is **corporate** reputation analysis, not individual. I analyze how AIs perceive companies as entities, not individuals.
+
+However, if you're associated with a specific company, I can analyze how leadership perception affects that organization's corporate reputation.
+
+**Would you like me to analyze the corporate reputation of a specific company?**`,
+    off_topic_answer: `That question falls outside my area of expertise. As Agent Rix, I focus exclusively on **corporate algorithmic reputation analysis**.
+
+**What I can offer you:**
+- 📊 Analysis of any IBEX-35 company or the Spanish ecosystem
+- 🏆 Sector comparisons and competitive benchmarking
+- 📈 Trend detection and reputational alerts
+- 📋 Executive reports on AI perception
+
+Is there a company or sector you'd like me to analyze?`,
+    test_limits_answer: `I'm Agent Rix, a corporate reputation analyst. My role is to help you understand how AIs perceive Spanish companies.
+
+Which company or sector would you like to focus on?`,
+    analyze_company: "Analyze {company}'s reputation",
+    analyze_short: "Analyze {company}",
+    top5_ibex: "Top 5 IBEX-35 companies this week",
+    sector_comparison: "Banking sector comparison",
+    leadership_perception: "How is {company}'s leadership perceived?",
+    sector_reputation: "Technology sector reputation",
+    energy_ranking: "Energy sector ranking",
+    top10_week: "Top 10 companies this week",
+    telecom_comparison: "Telecom sector comparison",
+    bulletin_welcome: `Great! 📋 I can generate a complete **executive bulletin** for any company in our database.
+
+**Which company do you want the bulletin for?**
+
+Type the company name (e.g., Telefónica, Inditex, Repsol, BBVA, Iberdrola...) and I'll generate a detailed analysis including:
+
+- 📊 **RIX Score** for each AI model (ChatGPT, Perplexity, Gemini, DeepSeek)
+- 🏆 **Comparison** with sector competitors
+- 📈 **Trend** over the last 4 weeks
+- 💡 **Conclusions** and recommendations
+
+The bulletin will be ready to **download or print** in professional format.`,
+    bulletin_suggest: "Generate a bulletin for {company}",
+    company_not_found: `I couldn't find the company "{query}" in our RepIndex database.
+
+**You can try:**
+- The official company name (e.g., "Telefónica" instead of "Movistar")
+- The stock ticker (e.g., "TEF", "SAN", "ITX")
+
+**Available companies include:** {examples}`,
+    bulletin_post_suggest: "Generate a bulletin for {company}",
+    bulletin_post_compare: "How does {company} compare to the {sector} sector?",
+    bulletin_post_top5: "Top 5 companies in the {sector} sector",
+    pericial_q1: "What divergences exist between AI models in evaluating this company?",
+    pericial_q2: "Is there documented temporal evolution showing reputational deterioration before and after any event?",
+    pericial_q3: "Which metrics show the greatest exposure to risk narratives with evidentiary value?",
+    depth_format_title: "FORMAT: NARRATIVE FUNNEL — The structure is a guide, not a constraint",
+    depth_executive_summary: "EXECUTIVE SUMMARY",
+    depth_pillar1: "PILLAR 1 — DEFINE (What the data says)",
+    depth_pillar2: "PILLAR 2 — ANALYZE (What they mean)",
+    depth_pillar3: "PILLAR 3 — PROSPECT (What to do — ONLY based on real data)",
+    depth_closing: "CLOSING — SOURCES AND METHODOLOGY",
+    depth_headline_diagnosis: "Headline Diagnosis",
+    depth_3kpis: "3 KPIs with Delta",
+    depth_3findings: "3 Findings",
+    depth_3recommendations: "3 Recommendations (action + responsible + KPI)",
+    depth_verdict: "Verdict",
+    depth_5messages: "5 Messages for the Board",
+    depth_6ai_vision: "Vision of the 6 AIs",
+    depth_8metrics: "The 8 Metrics",
+    depth_model_divergence: "Model Divergence",
+    depth_evolution: "Evolution and Comparisons",
+    depth_threats: "Threats and Risks",
+    depth_gaps: "Gaps: Reality vs AI Perception",
+    depth_competitive: "Competitive Context",
+    depth_improvement_metrics: "Metrics with room for improvement",
+    depth_strengths: "Strengths to protect",
+    depth_competitive_position: "Actionable competitive position",
+  },
+  fr: {
+    agent_identity_answer: `Je suis l'**Agent Rix**, un analyste spécialisé en réputation algorithmique d'entreprise.
+
+Mon rôle est de vous aider à comprendre comment les principaux modèles d'IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) perçoivent les entreprises espagnoles et leur positionnement réputationnel.
+
+**Je peux vous aider à :**
+- 📊 Analyser les métriques RIX de toute entreprise
+- 🏆 Comparer les entreprises avec leurs concurrents sectoriels
+- 📈 Détecter les tendances et l'évolution temporelle
+- 📋 Générer des rapports exécutifs pour les comités de direction
+
+Quelle entreprise ou quel secteur souhaitez-vous analyser ?`,
+    personal_query_answer: `Ma spécialité est l'analyse de réputation **d'entreprise**, pas individuelle. J'analyse la perception des entreprises par les IA, pas des personnes physiques.
+
+Cependant, si vous êtes lié à une entreprise spécifique, je peux analyser comment la perception du leadership affecte la réputation de cette organisation.
+
+**Souhaitez-vous que j'analyse la réputation d'une entreprise en particulier ?**`,
+    off_topic_answer: `Cette question est en dehors de mon domaine d'expertise. En tant qu'Agent Rix, je me concentre exclusivement sur l'**analyse de réputation algorithmique d'entreprise**.
+
+**Ce que je peux vous offrir :**
+- 📊 Analyse de toute entreprise de l'IBEX-35 ou de l'écosystème espagnol
+- 🏆 Comparaisons sectorielles et benchmarking concurrentiel
+- 📈 Détection de tendances et alertes réputationnelles
+- 📋 Rapports exécutifs sur la perception IA
+
+Y a-t-il une entreprise ou un secteur que vous aimeriez analyser ?`,
+    test_limits_answer: `Je suis l'Agent Rix, un analyste de réputation d'entreprise. Mon rôle est de vous aider à comprendre comment les IA perçoivent les entreprises espagnoles.
+
+Sur quelle entreprise ou quel secteur souhaitez-vous vous concentrer ?`,
+    analyze_company: "Analyser la réputation de {company}",
+    analyze_short: "Analyser {company}",
+    top5_ibex: "Top 5 entreprises IBEX-35 cette semaine",
+    sector_comparison: "Comparaison du secteur bancaire",
+    leadership_perception: "Comment le leadership de {company} est-il perçu ?",
+    sector_reputation: "Réputation du secteur technologie",
+    energy_ranking: "Classement du secteur énergie",
+    top10_week: "Top 10 entreprises cette semaine",
+    telecom_comparison: "Comparaison secteur télécommunications",
+    bulletin_welcome: `Parfait ! 📋 Je peux générer un **bulletin exécutif** complet pour toute entreprise de notre base de données.
+
+**Pour quelle entreprise souhaitez-vous le bulletin ?**
+
+Écrivez le nom de l'entreprise et je générerai une analyse détaillée incluant :
+
+- 📊 **Score RIX** par modèle d'IA
+- 🏆 **Comparaison** avec les concurrents du secteur
+- 📈 **Tendance** des 4 dernières semaines
+- 💡 **Conclusions** et recommandations`,
+    bulletin_suggest: "Générer un bulletin pour {company}",
+    company_not_found: `Je n'ai pas trouvé l'entreprise « {query} » dans notre base de données RepIndex.
+
+**Vous pouvez essayer avec :**
+- Le nom officiel de l'entreprise
+- Le ticker boursier (ex : "TEF", "SAN", "ITX")
+
+**Les entreprises disponibles incluent :** {examples}`,
+    bulletin_post_suggest: "Générer un bulletin pour {company}",
+    bulletin_post_compare: "Comment {company} se compare-t-elle au secteur {sector} ?",
+    bulletin_post_top5: "Top 5 entreprises du secteur {sector}",
+    pericial_q1: "Quelles divergences existent entre les modèles d'IA dans l'évaluation de cette entreprise ?",
+    pericial_q2: "Y a-t-il une évolution temporelle documentée montrant une détérioration réputationnelle ?",
+    pericial_q3: "Quelles métriques présentent la plus grande exposition aux narratifs de risque ?",
+    depth_format_title: "FORMAT : ENTONNOIR NARRATIF — La structure est un guide, pas une contrainte",
+    depth_executive_summary: "RÉSUMÉ EXÉCUTIF",
+    depth_pillar1: "PILIER 1 — DÉFINIR (Ce que disent les données)",
+    depth_pillar2: "PILIER 2 — ANALYSER (Ce qu'elles signifient)",
+    depth_pillar3: "PILIER 3 — PROSPECTER (Que faire — UNIQUEMENT basé sur des données réelles)",
+    depth_closing: "CLÔTURE — SOURCES ET MÉTHODOLOGIE",
+    depth_headline_diagnosis: "Diagnostic-titre",
+    depth_3kpis: "3 KPI avec Delta",
+    depth_3findings: "3 Constats",
+    depth_3recommendations: "3 Recommandations (action + responsable + KPI)",
+    depth_verdict: "Verdict",
+    depth_5messages: "5 Messages pour la Direction",
+    depth_6ai_vision: "Vision des 6 IA",
+    depth_8metrics: "Les 8 Métriques",
+    depth_model_divergence: "Divergence entre modèles",
+    depth_evolution: "Évolution et Comparaisons",
+    depth_threats: "Menaces et Risques",
+    depth_gaps: "Écarts : Réalité vs Perception IA",
+    depth_competitive: "Contexte Concurrentiel",
+    depth_improvement_metrics: "Métriques à améliorer",
+    depth_strengths: "Forces à protéger",
+    depth_competitive_position: "Position concurrentielle actionnable",
+  },
+  pt: {
+    agent_identity_answer: `Sou o **Agente Rix**, um analista especializado em reputação algorítmica corporativa.
+
+A minha função é ajudá-lo a interpretar como os principais modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) percebem as empresas espanholas e o seu posicionamento reputacional.
+
+**Posso ajudá-lo com:**
+- 📊 Analisar métricas RIX de qualquer empresa
+- 🏆 Comparar empresas com a sua concorrência setorial
+- 📈 Detetar tendências e evolução temporal
+- 📋 Gerar relatórios executivos para conselho de administração
+
+Que empresa ou setor gostaria de analisar?`,
+    personal_query_answer: `A minha especialidade é a análise de reputação **corporativa**, não individual. Analiso como as IAs percebem empresas como entidades, não pessoas físicas.
+
+No entanto, se estiver vinculado a uma empresa específica, posso analisar como a perceção da liderança afeta a reputação corporativa dessa organização.
+
+**Gostaria que analisasse a reputação corporativa de alguma empresa em particular?**`,
+    off_topic_answer: `Essa pergunta está fora da minha especialização. Como Agente Rix, concentro-me exclusivamente na **análise de reputação algorítmica corporativa**.
+
+**O que posso oferecer:**
+- 📊 Análise de qualquer empresa do IBEX-35 ou do ecossistema espanhol
+- 🏆 Comparações setoriais e benchmarking competitivo
+- 📈 Deteção de tendências e alertas reputacionais
+- 📋 Relatórios executivos sobre a perceção nas IAs
+
+Há alguma empresa ou setor que gostaria de analisar?`,
+    test_limits_answer: `Sou o Agente Rix, um analista de reputação corporativa. A minha função é ajudá-lo a compreender como as IAs percebem as empresas espanholas.
+
+Em que empresa ou setor gostaria de nos concentrarmos?`,
+    analyze_company: "Analise a reputação de {company}",
+    analyze_short: "Analise {company}",
+    top5_ibex: "Top 5 empresas do IBEX-35 esta semana",
+    sector_comparison: "Comparação do setor bancário",
+    leadership_perception: "Como é percebida a liderança de {company}?",
+    sector_reputation: "Reputação do setor tecnologia",
+    energy_ranking: "Ranking do setor energia",
+    top10_week: "Top 10 empresas esta semana",
+    telecom_comparison: "Comparação setor telecomunicações",
+    bulletin_welcome: `Perfeito! 📋 Posso gerar um **boletim executivo** completo para qualquer empresa da nossa base de dados.
+
+**De que empresa quer o boletim?**
+
+Escreva o nome da empresa e gerarei uma análise detalhada incluindo:
+
+- 📊 **Score RIX** por modelo de IA
+- 🏆 **Comparação** com concorrentes do setor
+- 📈 **Tendência** das últimas 4 semanas
+- 💡 **Conclusões** e recomendações`,
+    bulletin_suggest: "Gerar um boletim de {company}",
+    company_not_found: `Não encontrei a empresa "{query}" na nossa base de dados RepIndex.
+
+**Pode tentar com:**
+- O nome oficial da empresa
+- O ticker bolsista (ex: "TEF", "SAN", "ITX")
+
+**As empresas disponíveis incluem:** {examples}`,
+    bulletin_post_suggest: "Gerar um boletim de {company}",
+    bulletin_post_compare: "Como se compara {company} com o setor {sector}?",
+    bulletin_post_top5: "Top 5 empresas do setor {sector}",
+    pericial_q1: "Que divergências existem entre os modelos de IA na avaliação desta empresa?",
+    pericial_q2: "Há evolução temporal documentada que mostre deterioração reputacional antes e depois de algum evento?",
+    pericial_q3: "Que métricas apresentam maior exposição a narrativas de risco com valor probatório?",
+    depth_format_title: "FORMATO: FUNIL NARRATIVO — A estrutura é um guia, não uma restrição",
+    depth_executive_summary: "RESUMO EXECUTIVO",
+    depth_pillar1: "PILAR 1 — DEFINIR (O que dizem os dados)",
+    depth_pillar2: "PILAR 2 — ANALISAR (O que significam)",
+    depth_pillar3: "PILAR 3 — PROSPECTAR (O que fazer — APENAS baseado em dados reais)",
+    depth_closing: "ENCERRAMENTO — FONTES E METODOLOGIA",
+    depth_headline_diagnosis: "Diagnóstico-Título",
+    depth_3kpis: "3 KPIs com Delta",
+    depth_3findings: "3 Descobertas",
+    depth_3recommendations: "3 Recomendações (ação + responsável + KPI)",
+    depth_verdict: "Veredito",
+    depth_5messages: "5 Mensagens para a Direção",
+    depth_6ai_vision: "Visão das 6 IAs",
+    depth_8metrics: "As 8 Métricas",
+    depth_model_divergence: "Divergência entre Modelos",
+    depth_evolution: "Evolução e Comparações",
+    depth_threats: "Ameaças e Riscos",
+    depth_gaps: "Gaps: Realidade vs Perceção IA",
+    depth_competitive: "Contexto Competitivo",
+    depth_improvement_metrics: "Métricas com margem de melhoria",
+    depth_strengths: "Forças a proteger",
+    depth_competitive_position: "Posição competitiva acionável",
+  },
+};
+
+/**
+ * Translation helper with variable interpolation.
+ * Falls back to English, then Spanish if key not found.
+ */
+function t(lang: string, key: string, vars?: Record<string, string>): string {
+  const dict = PIPELINE_I18N[lang] || PIPELINE_I18N["en"] || PIPELINE_I18N["es"];
+  let text = dict[key] || PIPELINE_I18N["en"]?.[key] || PIPELINE_I18N["es"]?.[key] || key;
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      text = text.replaceAll(`{${k}}`, v);
+    }
+  }
+  return text;
+}
+
 // In-memory cache for company data
 let companiesCache: any[] | null = null;
 let cacheTimestamp = 0;
@@ -2271,13 +2643,18 @@ function buildCompetitorJustification(
 // =============================================================================
 // EMBUDO NARRATIVO — Estructura guía, no corsé. Se adapta a la consulta.
 // =============================================================================
-function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", languageName: string): string {
+function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", languageName: string, language: string = "es"): string {
   // Independientemente del depthLevel recibido, siempre devuelve el Embudo Narrativo.
   // La estructura se adapta: empresa → máxima profundidad (≥2.500 palabras);
   // sector → media; comparativa → enfrentada; resto → focalizada.
+  //
+  // Section headers are translated so the LLM replicates them in the output language.
+  // Internal instructions stay in Spanish — the LLM understands them and [IDIOMA OBLIGATORIO] forces output language.
+  const H = (key: string) => t(language, key);
+
   return `
 ═══════════════════════════════════════════════════════════════════════════════
-     FORMATO: EMBUDO NARRATIVO — La estructura es una guía, no un corsé
+     ${H("depth_format_title")}
 ═══════════════════════════════════════════════════════════════════════════════
 
 ## EXTENSIÓN Y ADAPTACIÓN
@@ -2303,108 +2680,108 @@ El rol del usuario modifica el ÁNGULO/TONO pero NUNCA elimina datos relevantes.
 Orden del embudo (respétalo; omite el bloque completo si no aplica):
 
 ═══════════════════════════════════════════════════════════════════════════════
-                        RESUMEN EJECUTIVO
+                        ${H("depth_executive_summary")}
 ═══════════════════════════════════════════════════════════════════════════════
 
 Quien lee SOLO el Resumen entiende la situación. Debe poder presentarse en
 un comité de dirección sin más contexto.
 
-### Titular-Diagnóstico
+### ${H("depth_headline_diagnosis")}
 Una frase contundente de 1-2 líneas que sintetice la situación. Ej:
 "[Empresa] consolida su liderazgo narrativo pero pierde terreno en evidencia
 documental frente a [Competidor], abriendo un flanco de vulnerabilidad."
 
-### 3 KPIs con Delta
+### ${H("depth_3kpis")}
 Tres indicadores clave con su variación respecto al periodo anterior:
 - **[KPI 1]**: [valor] ([+/- delta] vs anterior)
 - **[KPI 2]**: [valor] ([+/- delta] vs anterior)
 - **[KPI 3]**: [valor] ([+/- delta] vs anterior)
 
-### 3 Hallazgos
+### ${H("depth_3findings")}
 Tres descubrimientos principales del análisis, en prosa completa (no bullets
 telegráficos). Cada hallazgo en 2-3 oraciones con datos concretos.
 
-### 3 Recomendaciones (acción + responsable + KPI)
+### ${H("depth_3recommendations")}
 Tres recomendaciones ejecutivas, cada una con:
 - Acción concreta
 - Área responsable
 - KPI de seguimiento
 
-### Veredicto
+### ${H("depth_verdict")}
 Un párrafo de 3-4 oraciones con la valoración final del analista.
 
-### 5 Mensajes para la Dirección
+### ${H("depth_5messages")}
 Bloque diferenciado con 5 mensajes directos y accionables que un directivo
 pueda trasladar directamente a su equipo. Redactados como instrucciones
 ejecutivas, no como análisis.
 
 ═══════════════════════════════════════════════════════════════════════════════
-              PILAR 1 — DEFINIR (Qué dice el dato)
+              ${H("depth_pillar1")}
 ═══════════════════════════════════════════════════════════════════════════════
 
 Quien llega a Pilar 1 entiende la situación con detalle factual.
 
-### Visión de las 6 IAs
+### ${H("depth_6ai_vision")}
 Tarjetas de cada modelo de IA ordenadas de MAYOR a MENOR puntuación RIX.
 Para cada modelo: puntuación RIX, fortaleza principal, debilidad principal,
 y un párrafo interpretativo de 3-4 oraciones.
 
-### Las 8 Métricas
+### ${H("depth_8metrics")}
 Para cada métrica relevante (solo si hay datos):
 - **[Nombre completo] ([Sigla])**: [Puntuación]/100
   Párrafo explicativo de 2-3 oraciones interpretando qué significa esa
   puntuación para la empresa, con color semafórico (🟢 >70, 🟡 50-70, 🔴 <50).
 
-### Divergencia entre Modelos
+### ${H("depth_model_divergence")}
 Análisis de las diferencias entre modelos de IA. Qué modelos coinciden,
 cuáles divergen significativamente (>12 pts) y qué implica esa divergencia.
 
 ═══════════════════════════════════════════════════════════════════════════════
-              PILAR 2 — ANALIZAR (Qué significan)
+              ${H("depth_pillar2")}
 ═══════════════════════════════════════════════════════════════════════════════
 
 Quien llega a Pilar 2 entiende POR QUÉ la situación es como es.
 
-### Evolución y Comparativas
+### ${H("depth_evolution")}
 Tablas con deltas temporales (vs semana anterior, vs mes anterior).
 | Periodo | RIX | Δ | Evento Clave |
 |---------|-----|---|--------------|
 
-### Amenazas y Riesgos
+### ${H("depth_threats")}
 Para cada amenaza identificada:
 - Impacto estimado en puntos RIX
 - Métricas afectadas
 - Recomendación de mitigación
 
-### Gaps: Realidad vs Percepción IA
+### ${H("depth_gaps")}
 Análisis de brechas entre lo que la empresa comunica y lo que las IAs
 perciben. ¿Hay narrativas que no están llegando? ¿Hay percepciones
 erróneas que corregir?
 
-### Contexto Competitivo
+### ${H("depth_competitive")}
 Ranking comparativo con competidores directos:
 | Posición | Empresa | RIX | Fortaleza | Debilidad | Distancia al líder |
 |----------|---------|-----|-----------|-----------|---------------------|
 
 ═══════════════════════════════════════════════════════════════════════════════
-              PILAR 3 — PROSPECTAR (Qué hacer — SOLO basado en datos reales)
+              ${H("depth_pillar3")}
 ═══════════════════════════════════════════════════════════════════════════════
 
 Quien llega a Pilar 3 sabe qué acciones tomar el lunes.
 TODAS las recomendaciones deben derivarse de datos REALES del contexto.
 
-### Métricas con margen de mejora
+### ${H("depth_improvement_metrics")}
 Identifica las 3 métricas más bajas del contexto y explica:
 - Puntuación actual vs promedio sectorial (datos del contexto)
 - Qué dicen las IAs sobre esa debilidad (citas del texto bruto)
 - Acción concreta vinculada a esa métrica específica
 
-### Fortalezas a proteger
+### ${H("depth_strengths")}
 Identifica las 3 métricas más fuertes y explica:
 - Por qué son fortaleza (consenso entre modelos)
 - Riesgo de deterioro si no se mantiene
 
-### Posición competitiva accionable
+### ${H("depth_competitive_position")}
 Basado en el ranking del contexto:
 - Distancia al líder y al rezagado
 - Métricas donde los competidores superan a la empresa
@@ -2417,7 +2794,7 @@ PROHIBIDO en este pilar:
 - Usar terminología de consultoría estratégica (roadmap, sandbox, tokenización)
 
 ═══════════════════════════════════════════════════════════════════════════════
-                   CIERRE — FUENTES Y METODOLOGÍA
+                   ${H("depth_closing")}
 ═══════════════════════════════════════════════════════════════════════════════
 
 Incluir al final:
@@ -3165,7 +3542,7 @@ serve(async (req) => {
     console.log(`${logPrefix} Question category: ${questionCategory}`);
 
     if (questionCategory !== "corporate_analysis") {
-      const redirectResponse = getRedirectResponse(questionCategory, question, languageName, companiesCache || []);
+      const redirectResponse = getRedirectResponse(questionCategory, question, language, languageName, companiesCache || []);
 
       // Save to database
       if (sessionId) {
@@ -3229,8 +3606,8 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          answer: `¡Perfecto! 📋 Puedo generar un **boletín ejecutivo** completo para cualquier empresa de nuestra base de datos.\n\n**¿De qué empresa quieres el boletín?**\n\nEscribe el nombre de la empresa (por ejemplo: Telefónica, Inditex, Repsol, BBVA, Iberdrola...) y generaré un análisis detallado incluyendo:\n\n- 📊 **RIX Score** por cada modelo de IA (ChatGPT, Perplexity, Gemini, DeepSeek)\n- 🏆 **Comparativa** con competidores del mismo sector\n- 📈 **Tendencia** de las últimas 4 semanas\n- 💡 **Conclusiones** y recomendaciones\n\nEl boletín estará listo para **descargar o imprimir** en formato profesional.`,
-          suggestedQuestions: suggestedCompanies.map((c) => `Genera un boletín de ${c}`),
+          answer: t(language, "bulletin_welcome"),
+          suggestedQuestions: suggestedCompanies.map((c) => t(language, "bulletin_suggest", { company: c })),
           metadata: {
             type: "standard",
             documentsFound: 0,
@@ -3365,6 +3742,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
 function getRedirectResponse(
   category: QuestionCategory,
   question: string,
+  language: string,
   languageName: string,
   companiesCache: any[],
 ): { answer: string; suggestedQuestions: string[] } {
@@ -3375,55 +3753,39 @@ function getRedirectResponse(
 
   const responses: Record<QuestionCategory, { answer: string; suggestedQuestions: string[] }> = {
     agent_identity: {
-      answer: `Soy el **Agente Rix**, un analista especializado en reputación algorítmica corporativa.
-
-Mi función es ayudarte a interpretar cómo los principales modelos de inteligencia artificial (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) perciben a las empresas españolas y su posicionamiento reputacional.
-
-**Puedo hacer por ti:**
-- 📊 Analizar métricas RIX de cualquier empresa
-- 🏆 Comparar empresas con su competencia sectorial
-- 📈 Detectar tendencias y evolución temporal
-- 📋 Generar informes ejecutivos para comité de dirección
-
-¿Sobre qué empresa o sector te gustaría que hiciéramos un análisis?`,
+      answer: t(language, "agent_identity_answer"),
       suggestedQuestions: [
-        `Analiza la reputación de ${ibexCompanies[0]}`,
-        `Top 5 empresas del IBEX-35 esta semana`,
-        `Comparativa del sector Banca`,
+        t(language, "analyze_company", { company: ibexCompanies[0] }),
+        t(language, "top5_ibex"),
+        t(language, "sector_comparison"),
       ],
     },
     personal_query: {
-      answer: `Mi especialidad es el análisis de reputación **corporativa**, no individual. Analizo cómo las IAs perciben a empresas como entidades, no a personas físicas.
-
-Sin embargo, si estás vinculado a una empresa específica, puedo analizar cómo la percepción del liderazgo afecta a la reputación corporativa de esa organización.
-
-**¿Te gustaría que analizara la reputación corporativa de alguna empresa en particular?**`,
+      answer: t(language, "personal_query_answer"),
       suggestedQuestions: [
-        `Analiza ${ibexCompanies[0]}`,
-        `¿Cómo se percibe el liderazgo de ${ibexCompanies[1]}?`,
-        `Reputación del sector Tecnología`,
+        t(language, "analyze_short", { company: ibexCompanies[0] }),
+        t(language, "leadership_perception", { company: ibexCompanies[1] }),
+        t(language, "sector_reputation"),
       ],
     },
     off_topic: {
-      answer: `Esa pregunta está fuera de mi especialización. Como Agente Rix, me centro exclusivamente en el **análisis de reputación algorítmica corporativa**.
-
-**Lo que sí puedo ofrecerte:**
-- 📊 Análisis de cualquier empresa del IBEX-35 o del ecosistema español
-- 🏆 Comparativas sectoriales y benchmarking competitivo
-- 📈 Detección de tendencias y alertas reputacionales
-- 📋 Informes ejecutivos sobre la percepción en IAs
-
-¿Hay alguna empresa o sector que te interese analizar?`,
-      suggestedQuestions: [`Ranking del sector Energía`, `Top 10 empresas esta semana`, `Analiza ${ibexCompanies[2]}`],
+      answer: t(language, "off_topic_answer"),
+      suggestedQuestions: [
+        t(language, "energy_ranking"),
+        t(language, "top10_week"),
+        t(language, "analyze_short", { company: ibexCompanies[2] }),
+      ],
     },
     test_limits: {
-      answer: `Soy el Agente Rix, un analista de reputación corporativa. Mi función es ayudarte a entender cómo las IAs perciben a las empresas españolas.
-
-¿En qué empresa o sector te gustaría que nos centráramos?`,
-      suggestedQuestions: [`Analiza ${ibexCompanies[0]}`, `Top 5 del IBEX-35`, `Comparativa sector Telecomunicaciones`],
+      answer: t(language, "test_limits_answer"),
+      suggestedQuestions: [
+        t(language, "analyze_short", { company: ibexCompanies[0] }),
+        t(language, "top5_ibex"),
+        t(language, "telecom_comparison"),
+      ],
     },
     corporate_analysis: {
-      answer: "", // Not used for this category
+      answer: "",
       suggestedQuestions: [],
     },
   };
@@ -3666,11 +4028,11 @@ ${originalQuestion || "(No disponible)"}
       },
     });
 
-    // Pericial-specific follow-up questions
+    // Pericial-specific follow-up questions (i18n — language not available here, use Spanish as default for pericial)
     const suggestedQuestions = [
-      `¿Qué divergencias existen entre los modelos de IA en la evaluación de esta empresa?`,
-      `¿Hay evolución temporal documentada que muestre deterioro reputacional antes y después de algún evento?`,
-      `¿Qué métricas presentan mayor exposición a narrativas de riesgo con valor probatorio?`,
+      t("es", "pericial_q1"),
+      t("es", "pericial_q2"),
+      t("es", "pericial_q3"),
     ];
 
     return new Response(
@@ -4748,11 +5110,11 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
     }
   }
 
-  // 9. Return bulletin response
+  // 9. Return bulletin response (i18n — language not available in bulletin handler, use Spanish as default)
   const suggestedQuestions = [
-    `Genera un boletín de ${competitors[0]?.issuer_name || "otra empresa"}`,
-    `¿Cómo se compara ${matchedCompany.issuer_name} con el sector ${matchedCompany.sector_category}?`,
-    `Top 5 empresas del sector ${matchedCompany.sector_category}`,
+    t("es", "bulletin_post_suggest", { company: competitors[0]?.issuer_name || "otra empresa" }),
+    t("es", "bulletin_post_compare", { company: matchedCompany.issuer_name, sector: matchedCompany.sector_category || "" }),
+    t("es", "bulletin_post_top5", { sector: matchedCompany.sector_category || "" }),
   ];
 
   return new Response(
