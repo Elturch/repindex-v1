@@ -1,103 +1,140 @@
 
 
-# Plan: Skills-Based System — Phase 1 (New Files Only)
+# Plan: Phase 2 — Wire Skills Orchestrator into chat-intelligence
 
 ## Summary
 
-Create a modular skills system in `src/lib/skills/` and `src/lib/` with 7 data skills, 1 logic skill, an orchestrator, a registry, and an admin page. No existing files are modified.
+Modify `supabase/functions/chat-intelligence/index.ts` to use skills as the PRIMARY data source, with existing E1+F2+E2 as fallback. The file is ~7169 lines. Changes are surgical insertions, not rewrites.
 
-## New Files to Create
+## Changes
 
-### 1. `src/lib/rixSkills.ts` — Types and Registry
+### 1. Feature flag (top of file, after imports ~line 8)
 
-- Define `RixSkill` interface with `id`, `name`, `description`, `layer`, `inputSchema`, `outputSchema`, `status`, `execute`
-- Define typed input/output interfaces for each skill
-- Export a `SKILLS_REGISTRY: Map<string, RixSkill>` populated by importing all skills
-- Export helper: `getSkillsByLayer(layer)`, `getActiveSkills()`
-
-### 2. Data Skills (`src/lib/skills/`)
-
-All 7 data skills share the same pattern:
-- Accept a typed params object + Supabase client
-- Query the DB using the Supabase JS client (not raw SQL)
-- Apply Sunday snapshot rule: filter `batch_execution_date` on Sundays with >=180 records
-- Return typed JSON with `{success: boolean, data?: T, error?: string}`
-- Never throw — always return structured errors
-
-| File | Table(s) | Key Logic |
-|------|----------|-----------|
-| `skillGetCompanyScores.ts` | `rix_runs_v2` | Scores per model for one company, latest valid Sunday |
-| `skillGetCompanyRanking.ts` | `rix_runs_v2` + `repindex_root_issuers` | Median RIX ranking, filterable by sector/family |
-| `skillGetCompanyEvolution.ts` | `rix_trends` | Temporal series, paginated to avoid 1000-row limit |
-| `skillGetCompanyDetail.ts` | `repindex_root_issuers` + `corporate_snapshots` | Master data + corporate info |
-| `skillGetSectorComparison.ts` | `rix_runs_v2` + `repindex_root_issuers` | All companies in a sector with per-model scores |
-| `skillGetDivergenceAnalysis.ts` | `rix_runs_v2` | Inter-model spread per metric for one company |
-| `skillGetRawTexts.ts` | `rix_runs_v2` | Raw `10_resumen`, `11_puntos_clave` per model |
-
-**Sunday snapshot helper** (shared): A reusable function `getLatestValidSunday(supabase)` that finds the most recent `batch_execution_date` where `EXTRACT(dow) = 0` and `COUNT(*) >= 180`. Used by all skills that query `rix_runs_v2`.
-
-### 3. `src/lib/skills/skillInterpretQuery.ts` — Logic Skill
-
-- Regex-first classification for known patterns (IBEX, sector names, company tickers from a static list)
-- Returns `{intent, entities[], time_range, filters, recommended_skills[]}`
-- Intent enum: `company_analysis | ranking | evolution | sector_comparison | divergence | general_question | off_topic`
-- Maps intents to skill IDs deterministically (no LLM needed for most cases)
-- Optional Gemini call (temperature 0.1) only for ambiguous queries that regex can't classify
-
-### 4. `src/lib/skillOrchestrator.ts` — Deterministic Orchestrator
-
-Three-layer execution:
-1. **Layer 1 (Skills)**: Run `skillInterpretQuery` → get `recommended_skills[]` → execute them in parallel via `Promise.allSettled` → merge results into a unified DataPack
-2. **Layer 2 (F2 SQL Expert)**: If Layer 1 returns insufficient data, delegate to existing `generateAndExecuteSQLQueries` (will be wired in Phase 2)
-3. **Layer 3 (Graceful fallback)**: If both fail, return `skillGetCompanyDetail` context + honest "limited data" message
-
-Output: A `UnifiedDataPack` object compatible with the existing E5/E6 stages.
-
-All routing is pure TypeScript (switch/if). No LLM decides which skills to call.
-
-### 5. `src/pages/SkillsAdmin.tsx` — Admin Panel
-
-- Table listing all skills from `SKILLS_REGISTRY`
-- Columns: name, layer (badge), status (badge), description
-- "Test" button per skill → opens dialog with JSON input textarea + "Run" button → displays raw JSON output
-- Uses existing `Card`, `Badge`, `Button`, `Dialog` components
-- Route: `/admin/skills` added to `App.tsx` — **exception**: this is the one existing file we add a route to (inside the existing `isDevOrPreview()` block)
-
-**Note**: Adding the route to App.tsx is a minimal 2-line change. If strict "no existing file changes" is required, we skip the route and the page is only accessible by direct URL navigation.
-
-### 6. File Tree
-
-```text
-src/lib/
-  rixSkills.ts              ← types + registry
-  skillOrchestrator.ts      ← 3-layer orchestrator
-  skills/
-    shared.ts               ← getLatestValidSunday, types
-    skillGetCompanyScores.ts
-    skillGetCompanyRanking.ts
-    skillGetCompanyEvolution.ts
-    skillGetCompanyDetail.ts
-    skillGetSectorComparison.ts
-    skillGetDivergenceAnalysis.ts
-    skillGetRawTexts.ts
-    skillInterpretQuery.ts
-src/pages/
-  SkillsAdmin.tsx
+```typescript
+const USE_SKILLS_PIPELINE = true;
 ```
 
-## Technical Decisions
+### 2. Inline skill functions (~line 10, after flag)
 
-- **Client-side Supabase queries**: Skills use the anon client (`@/integrations/supabase/client`). All tables queried have public SELECT RLS policies, so no service_role needed.
-- **Sunday snapshot**: Each skill that needs it calls `getLatestValidSunday()` which does a single query to find the valid date, then passes it as filter.
-- **PostgREST 1000-row limit**: Skills use `.range()` for large datasets (evolution, ranking). Ranking caps at `top_n` (default 50). Evolution uses pagination like `getLatestRixTrendWeeks.ts`.
-- **Column names with numbers**: Queries use exact column names like `09_rix_score` with proper quoting in `.select()`.
-- **No edge function changes**: Everything runs client-side. Phase 2 will port skills to the edge function.
+Insert ~400 lines of inlined skill code adapted for Deno (using `supabaseAdmin` instead of imported client). These are direct copies from `src/lib/skills/` with import statements removed:
 
-## Constraints Respected
+- `getLatestValidSundayEdge(supabase)` — cached Sunday resolver
+- `buildDateFilterEdge(dateStr)` — date range helper  
+- `medianEdge(values)` — median calculator
+- `METRIC_COLUMNS_EDGE` — metric column map
+- `SCORE_SELECT_EDGE` — select string
+- `executeSkillGetCompanyScores(supabase, params)`
+- `executeSkillGetCompanyRanking(supabase, params)`
+- `executeSkillGetCompanyEvolution(supabase, params)`
+- `executeSkillGetCompanyDetail(supabase, params)`
+- `executeSkillGetSectorComparison(supabase, params)`
+- `executeSkillGetDivergenceAnalysis(supabase, params)`
+- `executeSkillGetRawTexts(supabase, params)`
+- `interpretQueryEdge(question)` — regex classifier (no LLM, deterministic)
 
-- No existing files modified (except minimal App.tsx route addition)
-- Current pipeline continues working untouched
-- All new code in new files
-- Strict TypeScript types throughout
-- Structured error handling, never throws
+All functions suffixed with `Edge` or prefixed with `execute` to avoid name collisions with existing code.
+
+### 3. New function `buildDataPackFromSkills()` (~after the inlined skills)
+
+```typescript
+async function buildDataPackFromSkills(
+  question: string,
+  supabaseClient: any,
+  companiesCache: any[] | null,
+  logPrefix: string
+): Promise<DataPack | null>
+```
+
+Logic:
+1. Call `interpretQueryEdge(question)` → get `{intent, entities, filters, recommended_skills}`
+2. Resolve ticker from `companiesCache` if entities found
+3. Based on `recommended_skills[]`, call skill functions in parallel via `Promise.allSettled`
+4. Map results into existing `DataPack` structure:
+   - `pack.snapshot` ← scores from `executeSkillGetCompanyScores` (mapped: `model_name→modelo`, `rix_score→rix`, etc.)
+   - `pack.ranking` ← from `executeSkillGetCompanyRanking` (mapped: `company→nombre`, `median_rix→rix_avg`)
+   - `pack.evolucion` ← from `executeSkillGetCompanyEvolution` (aggregated by week)
+   - `pack.divergencia` ← from `executeSkillGetDivergenceAnalysis` (pick rix_score divergence)
+   - `pack.raw_texts` ← from `executeSkillGetRawTexts`
+   - `pack.empresa_primaria` ← from `executeSkillGetCompanyDetail`
+   - `pack.memento` ← from company detail's corporate data
+   - `pack.competidores_verificados` ← from company detail's verified_competitors + scores
+   - NEW `pack.divergencias_detalle` ← full divergence array for E5
+5. If all skills fail → return `null` (triggers fallback)
+6. Console.log every skill call with timing
+
+### 4. Modify `handleStandardChat()` (~line 5949)
+
+Insert skills-first block BEFORE the existing E1 classifier:
+
+```typescript
+// --- SKILLS PIPELINE (primary) ---
+let dataPack: DataPack | null = null;
+let usedSkillsPipeline = false;
+
+if (USE_SKILLS_PIPELINE) {
+  console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
+  const skillsStart = Date.now();
+  dataPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix);
+  if (dataPack && (dataPack.snapshot.length > 0 || dataPack.ranking.length > 0)) {
+    usedSkillsPipeline = true;
+    console.log(`${logPrefix} [SKILLS] Success in ${Date.now() - skillsStart}ms`);
+  } else {
+    console.log(`${logPrefix} [SKILLS] Insufficient data, falling back to legacy pipeline`);
+    dataPack = null;
+  }
+}
+
+if (!usedSkillsPipeline) {
+  // --- LEGACY: E1 + F2 + E2 (existing code, unchanged) ---
+  const classifier = await runClassifier(...);
+  ...
+  dataPack = await buildDataPack(...);
+  // ... existing F2 merge, graph expansion, etc.
+}
+```
+
+The existing E1→F2→E2 block becomes the `else` branch. E3, E5, E6 remain identical — they just receive `dataPack`.
+
+The `classifier` variable must still be available for downstream code (suggestions, drumroll). When skills pipeline is used, we create a minimal classifier from the interpret result.
+
+### 5. Add divergence support to E5 prompt (~line 2730)
+
+In `buildOrchestratorPrompt`, add divergence data to the serialized DataPack:
+
+```typescript
+divergencias_detalle: (dataPack as any).divergencias_detalle || null,
+```
+
+And in the E5 systemPrompt (~line 2800), add a new section:
+
+```
+DIVERGENCIAS INTER-MODELO (si disponibles):
+Cuando el DataPack incluya datos de divergencia entre modelos de IA, ÚSALOS:
+- Consenso "alto" (rango < 10): "Las seis IAs coinciden..."
+- Consenso "bajo" (rango > 20): "Existe divergencia significativa..."
+- Prioriza divergencias en rix_score y métricas con mayor rango
+- NUNCA ignores las divergencias
+```
+
+### 6. DataPack interface extension (~line 1649)
+
+Add optional field to existing `DataPack` interface:
+
+```typescript
+divergencias_detalle?: Array<{metric: string; max_model: string; max_value: number; min_model: string; min_value: number; range: number; consensus: string}>;
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `supabase/functions/chat-intelligence/index.ts` | Feature flag, inlined skills, `buildDataPackFromSkills()`, modified `handleStandardChat()`, extended DataPack interface, E5 divergence prompt |
+
+## Risk Mitigation
+
+- Feature flag `USE_SKILLS_PIPELINE` toggles instantly
+- Old pipeline is the `else` branch, completely intact
+- If skills return insufficient data, automatic fallback
+- All skill calls wrapped in try/catch, never throw
+- Console.log for every skill execution
 
