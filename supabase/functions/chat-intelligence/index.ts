@@ -386,7 +386,7 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   } else if (IBEX_PATTERNS_EDGE.test(lower)) {
     intent = "ranking"; filters.ibex_family_code = "IBEX35"; recommended_skills.push("skillGetCompanyRanking"); confidence = 0.9;
   } else if (COMPANY_QUESTION_PATTERNS_EDGE.test(lower)) {
-    intent = "company_analysis"; recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"); confidence = 0.75;
+    intent = "company_analysis"; recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution", "skillGetDivergenceAnalysis"); confidence = 0.75;
   }
 
   if (["company_analysis", "evolution", "divergence"].includes(intent) && !recommended_skills.includes("skillGetCompanyDetail")) {
