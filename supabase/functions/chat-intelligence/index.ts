@@ -1704,32 +1704,32 @@ async function buildDataPack(
       const modelo = row["02_model_name"] || "unknown";
       const empresa = row["03_target_name"] || row["05_ticker"];
       if (resumen && typeof resumen === "string" && resumen.length > 20) {
-        pack.raw_texts.push(`[${modelo} → ${empresa}] ${resumen}`);
+        pack.raw_texts.push({ modelo: `${modelo} → ${empresa}`, texto: resumen });
       }
       if (explicacion && typeof explicacion === "string" && explicacion.length > 20) {
-        pack.raw_texts.push(`[${modelo} → ${empresa} / Explicación] ${explicacion}`);
+        pack.raw_texts.push({ modelo: `${modelo} → ${empresa} / Explicación`, texto: explicacion });
       }
       // Puntos clave
       const puntos = row["11_puntos_clave"];
       if (puntos) {
         const puntosArr = Array.isArray(puntos) ? puntos : (typeof puntos === "string" ? [puntos] : []);
-        for (const p of puntosArr) {
-          if (typeof p === "string" && p.length > 10) {
-            if (!pack.puntos_clave) pack.puntos_clave = [];
-            (pack.puntos_clave as string[]).push(`[${modelo} → ${empresa}] ${p}`);
-          }
+        const validPuntos = puntosArr.filter((p: unknown) => typeof p === "string" && (p as string).length > 10) as string[];
+        if (validPuntos.length > 0) {
+          pack.puntos_clave.push({ modelo: `${modelo} → ${empresa}`, puntos: validPuntos });
         }
       }
       // Explicaciones detalladas
       const expDet = row["25_explicaciones_detalladas"];
       if (expDet && typeof expDet === "object") {
-        if (!pack.explicaciones_metricas) pack.explicaciones_metricas = {};
         const expObj = expDet as Record<string, unknown>;
+        const parts: string[] = [];
         for (const [metricKey, explanation] of Object.entries(expObj)) {
           if (typeof explanation === "string" && explanation.length > 10) {
-            const key = `${empresa}_${metricKey}`;
-            (pack.explicaciones_metricas as Record<string, string>)[key] = `[${modelo}] ${explanation}`;
+            parts.push(`${metricKey}: ${explanation}`);
           }
+        }
+        if (parts.length > 0) {
+          pack.explicaciones_metricas.push({ modelo: `${modelo} → ${empresa}`, explicacion: parts.join("\n") });
         }
       }
     }
