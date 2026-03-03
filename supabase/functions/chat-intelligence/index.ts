@@ -1126,8 +1126,39 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
    /storytelling\s+compacto/i,
    /portavocia\s+triple/i,
    /equipo\s+(?:crisis|comunicacion)\s+con\s+sla/i,
-   /pillar\s+\d+\s*[-–—:]\s*[A-Z]/i,
-   /pilier\s+\d+\s*[-–—:]\s*[A-Z]/i,
+    /pillar\s+\d+\s*[-–—:]\s*[A-Z]/i,
+    /pilier\s+\d+\s*[-–—:]\s*[A-Z]/i,
+    // === Family: fabricated action plans (without parenthesis requirement) ===
+    /plan\s+de\s+acci[oó]n\s+institucional/i,
+    /plan\s+de\s+acci[oó]n\s+ejecutiv[oa]/i,
+    // === Family: stakeholder maps / influence maps ===
+    /stakeholder\s+map/i,
+    /mapa\s+de\s+influencia/i,
+    /nodo\s+institucional/i,
+    /patrocinador\s+interno/i,
+    /socio\s+externo\s+ancla/i,
+    // === Family: fabricated quarterly roadmaps ===
+    /hoja\s+de\s+ruta\s+trimestral/i,
+    /T[1-4][\s\-]+202[0-5]/i,
+    // === Family: consulting KPIs ===
+    /share\s+of\s+voice\s+(?:institucional|>=|≥)/i,
+    /engagement\s+digital.*ppm/i,
+    /secnewgate/i,
+    // === Family: fabricated budgets ===
+    /presupuesto\s+(?:total\s+)?estimado/i,
+    // === Family: fabricated stock/market data ===
+    /(?:sabadell|bbva|caixabank|repsol|cellnex|colonial)\s+[+-]\d+\s*%/i,
+    /indice:\s*[\d.,]+\s*pts/i,
+    /volatilidad\s+impl[ií]cita/i,
+    /ratio\s+put\s*\/\s*call/i,
+    // === Family: fabricated task forces / training ===
+    /task\s+force\s+sectorial/i,
+    /formaci[oó]n\s+(?:anual\s+)?de\s+portavoces/i,
+    /dashboard\s+reputacional\s+en\s+comit[eé]/i,
+    /cisne\s+negro\s+sanitario/i,
+    // === Family: fabricated campaigns / certifications ===
+    /campa[nñ]a\s+multicanal/i,
+    /certificaci[oó]n\s+iso\s+37000/i,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
@@ -1566,17 +1597,31 @@ async function buildDataPack(
     console.log(`${logPrefix} [E2] Latest week: ${latestDate}, ${latestWeek.length} rows`);
 
     // Build ranking: average RIX per company in latest week
-    const byCompany = new Map<string, { name: string; scores: number[]; sector?: string }>();
+    const metricKeys = ["23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score"] as const;
+    const metricShort = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
+
+    const byCompany = new Map<string, { name: string; scores: number[]; sector?: string; metrics: Record<string, number[]> }>();
     for (const row of latestWeek) {
       const ticker = row["05_ticker"];
       const rix = row["09_rix_score"];
       if (!ticker || rix == null || rix <= 0) continue;
       if (!byCompany.has(ticker)) {
         const compInfo = (companiesCache || []).find((c: any) => c.ticker === ticker);
-        byCompany.set(ticker, { name: row["03_target_name"] || ticker, scores: [], sector: compInfo?.sector_category });
+        const metricsInit: Record<string, number[]> = {};
+        for (const k of metricShort) metricsInit[k] = [];
+        byCompany.set(ticker, { name: row["03_target_name"] || ticker, scores: [], sector: compInfo?.sector_category, metrics: metricsInit });
       }
-      byCompany.get(ticker)!.scores.push(rix);
+      const entry = byCompany.get(ticker)!;
+      entry.scores.push(rix);
+      for (let mi = 0; mi < metricKeys.length; mi++) {
+        const val = row[metricKeys[mi]];
+        if (val != null && typeof val === "number" && val > 0) {
+          entry.metrics[metricShort[mi]].push(val);
+        }
+      }
     }
+
+    const avgArr = (arr: number[]) => arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
 
     const rankingEntries = Array.from(byCompany.entries())
       .map(([ticker, d]) => ({
@@ -1585,6 +1630,7 @@ async function buildDataPack(
         rix_avg: Math.round((d.scores.reduce((a, b) => a + b, 0) / d.scores.length) * 10) / 10,
         sector: d.sector,
         modelos: d.scores.length,
+        metrics: Object.fromEntries(metricShort.map(k => [k, avgArr(d.metrics[k])])),
       }))
       .sort((a, b) => b.rix_avg - a.rix_avg);
 
@@ -1593,7 +1639,14 @@ async function buildDataPack(
     // Build snapshot as aggregate stats (top/bottom/average)
     const allScores = rankingEntries.map((r) => r.rix_avg);
     const globalAvg = allScores.length > 0 ? Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10 : 0;
-    pack.sector_avg = { rix: globalAvg, count: rankingEntries.length };
+
+    // Compute global metric averages for sector_avg
+    const globalMetricAvgs: Record<string, number | null> = {};
+    for (const k of metricShort) {
+      const allVals = rankingEntries.map(r => r.metrics[k]).filter((v): v is number => v != null);
+      globalMetricAvgs[k] = allVals.length > 0 ? Math.round((allVals.reduce((a, b) => a + b, 0) / allVals.length) * 10) / 10 : null;
+    }
+    pack.sector_avg = { rix: globalAvg, count: rankingEntries.length, ...globalMetricAvgs };
 
     // Pack the top 5 and bottom 5 as "snapshot" entries for the orchestrator
     const top5 = rankingEntries.slice(0, 5);
@@ -1603,8 +1656,8 @@ async function buildDataPack(
         modelo: `${entry.nombre} (${entry.ticker})`,
         rix: entry.rix_avg,
         rix_adj: entry.rix_avg,
-        nvm: null, drm: null, sim: null, rmm: null,
-        cem: null, gam: null, dcm: null, cxm: null,
+        nvm: entry.metrics.nvm, drm: entry.metrics.drm, sim: entry.metrics.sim, rmm: entry.metrics.rmm,
+        cem: entry.metrics.cem, gam: entry.metrics.gam, dcm: entry.metrics.dcm, cxm: entry.metrics.cxm,
         period_from: null,
         period_to: latestDate?.toString().split("T")[0] || null,
       });
@@ -2460,6 +2513,16 @@ REGLA DE ESTRUCTURA (PRIORIDAD MÁXIMA):
 • Cada sección del informe debe empezar citando los datos del DATAPACK que la sustentan.
 • Si una sección no tiene datos en el DATAPACK, OMITE esa sección entera. No la rellenes con invenciones.
 • El informe es un ANÁLISIS DE DATOS, no un plan estratégico ni un informe de consultoría.
+${dataPack?.empresa_primaria?.ticker === "IBEX-35" ? `
+REGLAS ESPECÍFICAS PARA CONSULTAS DE ÍNDICE (IBEX-35):
+• Tu ÚNICO contenido permitido es: ranking RIX, métricas por empresa, promedios sectoriales, evolución temporal, divergencia entre modelos.
+• NUNCA generes planes de acción, hojas de ruta, stakeholder maps, KPIs de gestión ni escenarios.
+• NUNCA inventes datos bursátiles (cotizaciones, variaciones YTD, volatilidad, ratios put/call, índice en pts).
+• NUNCA inventes organizaciones externas (WindEurope, Airlines for Europe, CEOE) ni responsables internos.
+• NUNCA inventes presupuestos, campañas multicanal ni certificaciones.
+• Si una métrica es null en el DataPack, di "métrica no disponible en esta consulta agregada" y PASA A LA SIGUIENTE. No rellenes.
+• Extensión máxima: 2.000 palabras. Este es un resumen de índice, no un informe de consultoría.
+` : ""}
 
 EJEMPLO DE RESPUESTA PROHIBIDA (genera contenido ficticio):
 "PILAR 1 — DETECCIÓN TEMPRANA: Cobertura 24/7 de 128 fuentes vía GDELT... Algoritmo Sent-Shift... Crisis-Ops con SLA de 2h..."
