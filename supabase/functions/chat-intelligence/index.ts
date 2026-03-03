@@ -1429,7 +1429,8 @@ REGLAS:
 - Solo detecta empresas que EXISTAN en la lista. No inventes.
 - confianza: 1.0 = mención explícita, 0.8 = referencia indirecta, 0.5 = ambigua
 - requiere_bulletin: true solo si pide "boletín", "informe completo" o "bulletin"
-- Si la pregunta es genérica (metodología, qué es RepIndex, etc.), tipo="general"`;
+- Si la pregunta es genérica (metodología, qué es RepIndex, etc.), tipo="general"
+- Si la pregunta menciona "IBEX-35", "IBEX", un índice bursátil o pide un "panorama" / "ranking" de un grupo de empresas, tipo="sector" e intencion="ranking". Palabras clave de índice: ibex, panorama, mercado, índice, ranking general, selectivo.`;
 
   try {
     const result = await callAISimple(
@@ -1518,12 +1519,16 @@ async function buildDataPack(
   if (classifier.empresas_detectadas.length === 0) {
     console.log(`${logPrefix} [E2] No companies detected — checking for index/sector route...`);
 
+    // Regex safety net: detect index mentions BEFORE evaluating classifier output
+    const originalQ = (classifier as any)._originalQuestion || "";
+    const regexIndexMatch = /ibex[\s-]*35|índice\s+bursátil|panorama\s+(completo|general|del\s+mercado)|ranking\s+general|selectivo\s+español/i.test(originalQ);
+
     // Detect if the question is about an index or sector
-    const isIndexQuery = classifier.tipo === "sector" || classifier.tipo === "comparativa" ||
+    const isIndexQuery = regexIndexMatch || classifier.tipo === "sector" || classifier.tipo === "comparativa" ||
       classifier.intencion === "ranking" || classifier.intencion === "evolucion";
 
     if (!isIndexQuery) {
-      console.log(`${logPrefix} [E2] Not an index/sector query — returning empty DataPack`);
+      console.log(`${logPrefix} [E2] Not an index/sector query — returning empty DataPack. Question: "${originalQ.substring(0, 120)}"`);
       // Log telemetry
       try {
         await supabaseClient.from("pipeline_logs").insert({
