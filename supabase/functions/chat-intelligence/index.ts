@@ -1468,11 +1468,234 @@ async function buildDataPack(
     mercado: null,
   };
 
+  // =========================================================================
+  // ROUTE B: Index/sector queries WITHOUT specific company
+  // =========================================================================
+  const IBEX35_CODE = "IBEX-35";
+
   if (classifier.empresas_detectadas.length === 0) {
-    console.log(`${logPrefix} [E2] No companies detected, returning empty DataPack`);
+    console.log(`${logPrefix} [E2] No companies detected — checking for index/sector route...`);
+
+    // Detect if the question is about an index or sector
+    const isIndexQuery = classifier.tipo === "sector" || classifier.tipo === "comparativa" ||
+      classifier.intencion === "ranking" || classifier.intencion === "evolucion";
+
+    if (!isIndexQuery) {
+      console.log(`${logPrefix} [E2] Not an index/sector query — returning empty DataPack`);
+      // Log telemetry
+      try {
+        await supabaseClient.from("pipeline_logs").insert({
+          stage: "E2_datapack",
+          status: "empty",
+          metadata: { phase: "E2", intent: classifier.intencion, tipo: classifier.tipo, empty_reason: "no_companies_no_index", row_count: 0 },
+        });
+      } catch (_) {}
+      return pack;
+    }
+
+    console.log(`${logPrefix} [E2] INDEX/SECTOR ROUTE activated (tipo=${classifier.tipo}, intencion=${classifier.intencion})`);
+
+    // Determine the universe of tickers to query
+    let universeTickers: string[] = [];
+    let universeLabel = "all";
+
+    // Check for IBEX-35 mentions in the question
+    const questionLower = (classifier as any)._originalQuestion || "";
+    const isIbexQuery = /ibex[\s-]*35/i.test(questionLower) || classifier.tipo === "sector";
+
+    if (isIbexQuery && companiesCache) {
+      universeTickers = companiesCache
+        .filter((c: any) => c.ibex_family_code === IBEX35_CODE)
+        .map((c: any) => c.ticker);
+      universeLabel = IBEX35_CODE;
+      console.log(`${logPrefix} [E2] IBEX-35 universe: ${universeTickers.length} tickers`);
+    }
+
+    // If no specific universe, use all active companies
+    if (universeTickers.length === 0 && companiesCache) {
+      universeTickers = companiesCache
+        .filter((c: any) => c.status === "active" || !c.status)
+        .map((c: any) => c.ticker);
+      universeLabel = "all_active";
+      console.log(`${logPrefix} [E2] Full universe: ${universeTickers.length} tickers`);
+    }
+
+    if (universeTickers.length === 0) {
+      console.log(`${logPrefix} [E2] No tickers in universe — returning empty DataPack`);
+      return pack;
+    }
+
+    // Fetch aggregated data for the universe
+    const indexColumns = `
+      "02_model_name", "03_target_name", "05_ticker",
+      "06_period_from", "07_period_to", "09_rix_score", "51_rix_score_adjusted",
+      "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
+      "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
+      batch_execution_date
+    `;
+
+    const indexData = await fetchUnifiedRixData({
+      supabaseClient,
+      columns: indexColumns,
+      tickerFilter: universeTickers,
+      limit: 5500,
+      logPrefix: `${logPrefix} [E2-INDEX]`,
+    });
+
+    if (indexData.length === 0) {
+      console.log(`${logPrefix} [E2] Index query returned 0 rows from DB`);
+      try {
+        await supabaseClient.from("pipeline_logs").insert({
+          stage: "E2_datapack",
+          status: "empty",
+          metadata: { phase: "E2", intent: classifier.intencion, tipo: classifier.tipo, empty_reason: "sql_zero_rows", universe: universeLabel, tickers_queried: universeTickers.length, row_count: 0 },
+        });
+      } catch (_) {}
+      return pack;
+    }
+
+    console.log(`${logPrefix} [E2] Index data: ${indexData.length} rows for ${universeLabel}`);
+
+    // Identify latest batch date
+    const sortedByDate = [...indexData].sort(
+      (a, b) => new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime()
+    );
+    const latestDate = sortedByDate[0]?.batch_execution_date;
+    const latestWeek = sortedByDate.filter((r) => r.batch_execution_date === latestDate);
+
+    console.log(`${logPrefix} [E2] Latest week: ${latestDate}, ${latestWeek.length} rows`);
+
+    // Build ranking: average RIX per company in latest week
+    const byCompany = new Map<string, { name: string; scores: number[]; sector?: string }>();
+    for (const row of latestWeek) {
+      const ticker = row["05_ticker"];
+      const rix = row["09_rix_score"];
+      if (!ticker || rix == null || rix <= 0) continue;
+      if (!byCompany.has(ticker)) {
+        const compInfo = (companiesCache || []).find((c: any) => c.ticker === ticker);
+        byCompany.set(ticker, { name: row["03_target_name"] || ticker, scores: [], sector: compInfo?.sector_category });
+      }
+      byCompany.get(ticker)!.scores.push(rix);
+    }
+
+    const rankingEntries = Array.from(byCompany.entries())
+      .map(([ticker, d]) => ({
+        ticker,
+        nombre: d.name,
+        rix_avg: Math.round((d.scores.reduce((a, b) => a + b, 0) / d.scores.length) * 10) / 10,
+        sector: d.sector,
+        modelos: d.scores.length,
+      }))
+      .sort((a, b) => b.rix_avg - a.rix_avg);
+
+    pack.ranking = rankingEntries.map((r, i) => ({ pos: i + 1, ticker: r.ticker, nombre: r.nombre, rix_avg: r.rix_avg }));
+
+    // Build snapshot as aggregate stats (top/bottom/average)
+    const allScores = rankingEntries.map((r) => r.rix_avg);
+    const globalAvg = allScores.length > 0 ? Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10 : 0;
+    pack.sector_avg = { rix: globalAvg, count: rankingEntries.length };
+
+    // Pack the top 5 and bottom 5 as "snapshot" entries for the orchestrator
+    const top5 = rankingEntries.slice(0, 5);
+    const bottom5 = rankingEntries.slice(-5).reverse();
+    for (const entry of [...top5, ...bottom5]) {
+      pack.snapshot.push({
+        modelo: `${entry.nombre} (${entry.ticker})`,
+        rix: entry.rix_avg,
+        rix_adj: entry.rix_avg,
+        nvm: null, drm: null, sim: null, rmm: null,
+        cem: null, gam: null, dcm: null, cxm: null,
+        period_from: null,
+        period_to: latestDate?.toString().split("T")[0] || null,
+      });
+    }
+
+    // Build sector breakdown
+    const bySector = new Map<string, { scores: number[]; companies: string[] }>();
+    for (const entry of rankingEntries) {
+      const sector = entry.sector || "Sin sector";
+      if (!bySector.has(sector)) bySector.set(sector, { scores: [], companies: [] });
+      bySector.get(sector)!.scores.push(entry.rix_avg);
+      bySector.get(sector)!.companies.push(entry.nombre);
+    }
+
+    // Add sector data as competidores_verificados (repurposed for index view)
+    for (const [sector, data] of bySector.entries()) {
+      const avg = Math.round((data.scores.reduce((a, b) => a + b, 0) / data.scores.length) * 10) / 10;
+      pack.competidores_verificados.push({
+        ticker: sector,
+        nombre: `Sector ${sector} (${data.companies.length} empresas)`,
+        rix_avg: avg,
+      });
+    }
+    pack.competidores_verificados.sort((a, b) => (b.rix_avg || 0) - (a.rix_avg || 0));
+
+    // Build evolution (4 weeks aggregate)
+    const uniqueDates = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse().slice(0, 4);
+    let prevAvg: number | null = null;
+    for (const date of [...uniqueDates].reverse()) {
+      const weekData = sortedByDate.filter((r) => r.batch_execution_date === date);
+      const scores = weekData.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
+      if (scores.length === 0) continue;
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const uniqueCompanies = new Set(weekData.map((r) => r["05_ticker"])).size;
+      pack.evolucion.push({
+        fecha: date.toString().split("T")[0],
+        rix_avg: Math.round(avg * 10) / 10,
+        modelos: uniqueCompanies,
+        delta: prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null,
+      });
+      prevAvg = avg;
+    }
+
+    // Divergence at index level
+    if (allScores.length >= 2) {
+      const mean = allScores.reduce((a, b) => a + b, 0) / allScores.length;
+      const variance = allScores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / allScores.length;
+      const sigma = Math.sqrt(variance);
+      pack.divergencia = {
+        sigma: Math.round(sigma * 10) / 10,
+        nivel: sigma < 8 ? "BAJA" : sigma < 15 ? "MEDIA" : "ALTA",
+        modelo_alto: top5[0]?.nombre || "?",
+        modelo_bajo: bottom5[0]?.nombre || "?",
+        rango: Math.round((Math.max(...allScores) - Math.min(...allScores)) * 10) / 10,
+      };
+    }
+
+    // Set empresa_primaria to the index label
+    pack.empresa_primaria = {
+      ticker: universeLabel,
+      nombre: universeLabel === IBEX35_CODE ? "IBEX-35" : "Mercado completo",
+      sector: null,
+      subsector: null,
+    };
+
+    // Log telemetry
+    try {
+      await supabaseClient.from("pipeline_logs").insert({
+        stage: "E2_datapack",
+        status: "ok",
+        metadata: {
+          phase: "E2",
+          intent: classifier.intencion,
+          tipo: classifier.tipo,
+          route: "index",
+          universe: universeLabel,
+          row_count: indexData.length,
+          companies_ranked: rankingEntries.length,
+          sectors_found: bySector.size,
+          weeks_found: uniqueDates.length,
+        },
+      });
+    } catch (_) {}
+
+    console.log(`${logPrefix} [E2] INDEX DataPack built: ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.competidores_verificados.length} sectors, ${pack.snapshot.length} snapshot entries`);
     return pack;
   }
 
+  // =========================================================================
+  // ROUTE A: Specific company query (existing behavior)
+  // =========================================================================
   const primaryTicker = classifier.empresas_detectadas[0].ticker;
   const primaryCompany = (companiesCache || []).find((c) => c.ticker === primaryTicker);
   
@@ -1513,6 +1736,14 @@ async function buildDataPack(
 
   if (companyFullData.length === 0) {
     console.log(`${logPrefix} [E2] No data for ${primaryTicker}`);
+    // Log telemetry
+    try {
+      await supabaseClient.from("pipeline_logs").insert({
+        stage: "E2_datapack",
+        status: "empty",
+        metadata: { phase: "E2", intent: classifier.intencion, tipo: classifier.tipo, empty_reason: "company_no_data", ticker: primaryTicker, row_count: 0 },
+      });
+    } catch (_) {}
     return pack;
   }
 
@@ -1614,7 +1845,6 @@ async function buildDataPack(
   console.log(`${logPrefix} [E2] Enrichment: ${pack.explicaciones_metricas.length} explanations, ${pack.puntos_clave.length} key-points sets, ${pack.categorias_metricas.length} category sets, market=${!!pack.mercado}`);
 
   // Query B+C: Verified competitors ONLY (from repindex_root_issuers.verified_competitors)
-  // Read verified_competitors directly from the issuer record
   const { data: issuerRecord } = await supabaseClient
     .from("repindex_root_issuers")
     .select("verified_competitors")
@@ -1635,7 +1865,6 @@ async function buildDataPack(
   console.log(`${logPrefix} [E2] Verified competitors for ${primaryTicker}: ${JSON.stringify(verifiedTickers)}`);
 
   if (verifiedTickers.length > 0) {
-    // Fetch RIX data ONLY for verified competitors — including 8 granular metrics
     const compData = await fetchUnifiedRixData({
       supabaseClient,
       columns: `"03_target_name", "05_ticker", "09_rix_score", "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score", batch_execution_date`,
@@ -1648,7 +1877,6 @@ async function buildDataPack(
       (r) => r.batch_execution_date === latestDate && r["09_rix_score"] != null && r["09_rix_score"] > 0
     );
 
-    // Build verified competitors list with their avg RIX
     const byComp = new Map<string, { name: string; scores: number[] }>();
     for (const r of compLatest) {
       const t = r["05_ticker"];
@@ -1661,14 +1889,12 @@ async function buildDataPack(
       pack.competidores_verificados.push({ ticker, nombre: d.name, rix_avg: Math.round(avg * 10) / 10 });
     }
 
-    // Compute sector_avg from ONLY verified competitors
     const allCompScores = compLatest.map((r) => r["09_rix_score"]);
     if (allCompScores.length > 0) {
       const avg = allCompScores.reduce((a, b) => a + b, 0) / allCompScores.length;
       pack.sector_avg = { rix: Math.round(avg * 10) / 10, count: allCompScores.length };
     }
 
-    // Compute per-metric averages from verified competitors
     const metricKeys = [
       { key: "23_nvm_score", out: "nvm" },
       { key: "26_drm_score", out: "drm" },
@@ -1687,7 +1913,6 @@ async function buildDataPack(
     pack.competidores_metricas_avg = metricAvgs as any;
     console.log(`${logPrefix} [E2] Competitor metric averages: ${JSON.stringify(pack.competidores_metricas_avg)}`);
 
-    // Build ranking from verified competitors + primary company
     const primaryAvg = latestScores.length > 0 ? latestScores.reduce((a, b) => a + b, 0) / latestScores.length : 0;
     const allForRanking = [
       { ticker: primaryTicker, nombre: primaryCompany?.issuer_name || primaryTicker, rix_avg: Math.round(primaryAvg * 10) / 10 },
@@ -1696,7 +1921,6 @@ async function buildDataPack(
 
     pack.ranking = allForRanking.map((r, i) => ({ pos: i + 1, ...r, rix_avg: r.rix_avg || 0 }));
   } else {
-    // No verified competitors → no comparativa at all
     console.log(`${logPrefix} [E2] No verified competitors for ${primaryTicker}. No sector avg, no ranking.`);
     pack.sector_avg = null;
     pack.ranking = [];
@@ -1780,6 +2004,25 @@ async function buildDataPack(
       categoria: n.category || null,
     }));
   }
+
+  // Log telemetry
+  try {
+    await supabaseClient.from("pipeline_logs").insert({
+      stage: "E2_datapack",
+      status: "ok",
+      metadata: {
+        phase: "E2",
+        intent: classifier.intencion,
+        tipo: classifier.tipo,
+        route: "company",
+        ticker: primaryTicker,
+        row_count: companyFullData.length,
+        snapshot_models: pack.snapshot.length,
+        ranking_size: pack.ranking.length,
+        evolution_weeks: pack.evolucion.length,
+      },
+    });
+  } catch (_) {}
 
   console.log(`${logPrefix} [E2] DataPack built: ${pack.snapshot.length} models, ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.raw_texts.length} texts`);
   return pack;
@@ -2640,14 +2883,14 @@ async function getRelevantCompetitors(
     console.warn(`${logPrefix} NO COMPETITORS FOUND for ${company.ticker} - using fallback IBEX35`);
 
     const ibex35Fallback = allCompanies
-      .filter((c) => c.ibex_family_code === "IBEX35" && c.ticker !== company.ticker)
+      .filter((c) => c.ibex_family_code === "IBEX-35" && c.ticker !== company.ticker)
       .slice(0, limit);
 
     for (const c of ibex35Fallback) {
       addCompetitor(c);
     }
 
-    tierUsed = "TIER7-FALLBACK-IBEX35";
+    tierUsed = "TIER7-FALLBACK-IBEX-35";
   }
 
   console.log(`${logPrefix} Final competitor list (${collected.length}): ${collected.map((c) => c.ticker).join(", ")}`);
@@ -2675,7 +2918,7 @@ function buildCompetitorJustification(
     "TIER4-SUBSECTOR": `mismo subsector (${company.subsector})`,
     "TIER5-SECTOR-IBEX": `mismo sector (${company.sector_category}) y familia IBEX (${company.ibex_family_code})`,
     "TIER6-SECTOR": `mismo sector (${company.sector_category}) con filtrado de incompatibilidades`,
-    "TIER7-FALLBACK-IBEX35": "fallback a empresas del IBEX-35 (sin competidores directos identificados)",
+    "TIER7-FALLBACK-IBEX-35": "fallback a empresas del IBEX-35 (sin competidores directos identificados)",
     NONE: "metodología no determinada",
   };
 
@@ -3623,7 +3866,7 @@ serve(async (req) => {
       const exampleCompanies = companiesCache?.slice(0, 20).map((c) => c.issuer_name) || [];
       const ibexCompanies =
         companiesCache
-          ?.filter((c) => c.ibex_family_code === "IBEX35")
+          ?.filter((c) => c.ibex_family_code === "IBEX-35")
           .slice(0, 10)
           .map((c) => c.issuer_name) || [];
 
@@ -3774,7 +4017,7 @@ function getRedirectResponse(
   companiesCache: any[],
 ): { answer: string; suggestedQuestions: string[] } {
   const ibexCompanies = companiesCache
-    ?.filter((c) => c.ibex_family_code === "IBEX35")
+    ?.filter((c) => c.ibex_family_code === "IBEX-35")
     .slice(0, 5)
     .map((c) => c.issuer_name) || ["Telefónica", "BBVA", "Santander", "Iberdrola", "Inditex"];
 
@@ -5240,6 +5483,8 @@ async function handleStandardChat(
   // --- E1: CLASIFICADOR DE INTENCIÓN ---
   console.log(`${logPrefix} [PIPELINE] Starting E1-E6 multi-expert pipeline...`);
   const classifier = await runClassifier(question, companiesCache || [], conversationHistory, language, logPrefix);
+  // Attach original question for downstream use in buildDataPack (IBEX detection)
+  (classifier as any)._originalQuestion = question;
 
   // Legacy fallback reference for downstream compatibility (suggestions, drumroll, session save)
   const detectedCompanies = classifier.empresas_detectadas.map(e => {
@@ -6051,7 +6296,7 @@ async function handleStandardChat(
 
         const avgRix = validScores.reduce((a, b) => a + b, 0) / validScores.length;
 
-        if (companyInfo.ibex_family_code === "IBEX35") {
+        if (companyInfo.ibex_family_code === "IBEX-35") {
           ibex35Companies.push({ company, avgRix });
         } else if (!companyInfo.cotiza_en_bolsa) {
           nonTradedCompanies.push({ company, avgRix });
