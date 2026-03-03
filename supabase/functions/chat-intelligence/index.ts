@@ -176,7 +176,44 @@ async function executeSkillGetCompanyEvolution(supabase: any, params: { ticker: 
       for (const row of data) { seenWeeks.add(String(row.batch_week ?? "")); allData.push(row); }
       if (data.length < 1500 || seenWeeks.size >= weeksBack) break;
     }
-    if (allData.length === 0) return { success: false, error: `No evolution for ${params.ticker}` };
+    // Fallback to rix_runs_v2 if rix_trends has no data
+    if (allData.length === 0) {
+      console.log(`[SKILL] CompanyEvolution: rix_trends empty for ${params.ticker}, falling back to rix_runs_v2`);
+      const seenDates = new Set<string>();
+      for (let page = 0; page < 5; page++) {
+        const { data: runs, error: runErr } = await supabase.from("rix_runs_v2")
+          .select("batch_execution_date,02_model_name,03_target_name,09_rix_score")
+          .eq("05_ticker", params.ticker)
+          .order("batch_execution_date", { ascending: false })
+          .range(page * 1000, (page + 1) * 1000 - 1);
+        if (runErr || !runs || runs.length === 0) break;
+        for (const row of runs) {
+          const raw = row.batch_execution_date;
+          if (!raw) continue;
+          const dateKey = new Date(raw).toISOString().split("T")[0];
+          seenDates.add(dateKey);
+          allData.push({
+            batch_week: dateKey,
+            model_name: row["02_model_name"] || "",
+            rix_score: row["09_rix_score"],
+            stock_price: null,
+            company_name: row["03_target_name"] || params.ticker,
+          });
+        }
+        if (runs.length < 1000 || seenDates.size >= weeksBack) break;
+      }
+      if (allData.length === 0) return { success: false, error: `No evolution for ${params.ticker}` };
+      // Use seenDates instead of seenWeeks for the fallback
+      const sortedDates = Array.from(seenDates).sort().reverse().slice(0, weeksBack);
+      const dateSet = new Set(sortedDates);
+      const evolution = allData.filter(r => dateSet.has(String(r.batch_week ?? ""))).map(r => ({
+        batch_week: String(r.batch_week ?? ""), model_name: String(r.model_name ?? ""),
+        rix_score: r.rix_score, stock_price: r.stock_price,
+      })).sort((a, b) => a.batch_week.localeCompare(b.batch_week));
+      console.log(`[SKILL] CompanyEvolution for ${params.ticker} (v2 fallback): ${evolution.length} points in ${Date.now() - start}ms`);
+      return { success: true, data: { ticker: params.ticker, company_name: allData[0].company_name || params.ticker, weeks_requested: weeksBack, evolution } };
+    }
+
     const sortedWeeks = Array.from(seenWeeks).sort().reverse().slice(0, weeksBack);
     const weekSet = new Set(sortedWeeks);
     const evolution = allData.filter(r => weekSet.has(String(r.batch_week ?? ""))).map(r => ({
@@ -387,6 +424,20 @@ async function buildDataPackFromSkills(
         resolvedName = detected[0].issuer_name;
         console.log(`${logPrefix} [SKILLS] Resolved company: ${resolvedName} (${resolvedTicker})`);
       }
+      // IMPROVEMENT 6: Fuzzy fallback — match partial company names
+      if (!resolvedTicker) {
+        const qLower = question.toLowerCase();
+        for (const entry of companiesCacheLocal) {
+          const name = (entry.issuer_name || "").toLowerCase();
+          const shortName = name.split(" ")[0]; // first word e.g. "airtificial" from "Airtificial Intelligence Structures"
+          if (name && (qLower.includes(name) || (shortName.length >= 4 && qLower.includes(shortName)))) {
+            resolvedTicker = entry.ticker;
+            resolvedName = entry.issuer_name;
+            console.log(`${logPrefix} [SKILLS] Fuzzy resolved: ${resolvedName} (${resolvedTicker})`);
+            break;
+          }
+        }
+      }
     }
 
     // Build skill call promises
@@ -445,6 +496,23 @@ async function buildDataPackFromSkills(
     }
 
     console.log(`${logPrefix} [SKILLS] Completed: ${Object.keys(resultMap).join(",")} (${Object.keys(skillCalls).length - Object.keys(resultMap).length} failed) in ${Date.now() - totalStart}ms`);
+
+    // IMPROVEMENT 5: Auto-fetch sector comparison for company_analysis
+    if (interpret.intent === "company_analysis" && resolvedTicker && !resultMap.sector && resultMap.detail) {
+      const detailSector = resultMap.detail.sector_category;
+      if (detailSector) {
+        console.log(`${logPrefix} [SKILLS] Auto-fetching sector comparison for ${detailSector}`);
+        try {
+          const sectorResult = await executeSkillGetSectorComparison(supabaseClient, { sector_category: detailSector });
+          if (sectorResult.success && sectorResult.data) {
+            resultMap.sector = sectorResult.data;
+            console.log(`${logPrefix} [SKILLS] Sector comparison added: ${sectorResult.data.companies?.length || 0} companies`);
+          }
+        } catch (e: any) {
+          console.warn(`${logPrefix} [SKILLS] Auto sector comparison failed: ${e.message}`);
+        }
+      }
+    }
 
     // Build DataPack from skill results
     const pack: DataPack & { divergencias_detalle?: any[] } = {
@@ -507,11 +575,19 @@ async function buildDataPackFromSkills(
       const weeks = Array.from(byWeek.entries()).sort((a, b) => a[0].localeCompare(b[0]));
       let prevAvg: number | null = null;
       pack.evolucion = weeks.map(([fecha, scores]) => {
-        const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10;
+        const avg = Math.round(medianEdge(scores) * 10) / 10;
         const delta = prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null;
         prevAvg = avg;
         return { fecha, rix_avg: avg, modelos: scores.length, delta };
       });
+      // IMPROVEMENT 3: Auto-compute delta_rix
+      if (pack.evolucion.length >= 2) {
+        const last = pack.evolucion[pack.evolucion.length - 1];
+        const prev = pack.evolucion[pack.evolucion.length - 2];
+        (pack as any).delta_rix = { current: last.rix_avg, previous: prev.rix_avg, delta: Math.round((last.rix_avg - prev.rix_avg) * 10) / 10 };
+      } else if (pack.evolucion.length === 1) {
+        (pack as any).delta_rix = { current: pack.evolucion[0].rix_avg, previous: null, delta: 0, note: "single_week" };
+      }
     }
 
     // Map divergence
@@ -2219,6 +2295,7 @@ interface DataPack {
   categorias_metricas: { modelo: string; nvm: string | null; drm: string | null; sim: string | null; rmm: string | null; cem: string | null; gam: string | null; dcm: string | null; cxm: string | null }[];
   mercado: { precio: string | null; reputacion_vs_precio: string | null; variacion_interanual: string | null } | null;
   divergencias_detalle?: Array<{metric: string; max_model: string; max_value: number; min_model: string; min_value: number; range: number; consensus: string}>;
+  delta_rix?: { current: number; previous: number | null; delta: number; note?: string };
 }
 
 async function buildDataPack(
@@ -3997,34 +4074,39 @@ function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", langu
 
 REGLA FUNDAMENTAL: Este informe se construye EXCLUSIVAMENTE a partir de los
 datos proporcionados por el sistema de análisis. Cada sección debe estar
-anclada en datos reales. Si una sección no tiene datos disponibles,
-OMÍTELA por completo. NUNCA la rellenes con contenido inventado.
+anclada en datos reales. NUNCA rellenes con contenido inventado.
 
 EXTENSIÓN según tipo de consulta:
-- Empresa: 2.500–4.000 palabras. Todas las secciones con datos disponibles.
-- Sector: 2.000–3.000 palabras. Secciones relevantes al sector.
-- Comparativa: 2.000–3.000 palabras. Estructura enfrentada con tablas.
+- Empresa: 2.500–4.000 palabras.
+- Sector: 2.000–3.000 palabras.
+- Comparativa: 2.000–3.000 palabras.
 - Pregunta conceptual: respuesta focalizada, sin estructura rígida.
 
-Activa SOLO los bloques que tengan datos en el DATAPACK. Omite el resto.
-
 ═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_executive_summary")}
+ESTRUCTURA OBLIGATORIA DEL INFORME (8 SECCIONES)
 ═══════════════════════════════════════════════════════════════════════════════
 
-Quien lee SOLO el Resumen entiende la situación.
+REGLA CRÍTICA: NUNCA omitas las secciones 1, 2, 3, 7 y 8. Son OBLIGATORIAS.
+Las secciones 4, 5 y 6 son CONDICIONALES (solo si hay datos disponibles).
+
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 1: ${H("depth_executive_summary")} — OBLIGATORIA
+───────────────────────────────────────────────────────────────────────────────
 
 ### ${H("depth_headline_diagnosis")}
 Una frase contundente de 1-2 líneas que sintetice la situación con datos
-concretos del DATAPACK. Ej: "[Empresa] obtiene un RIX medio de 67 puntos
+concretos del DATAPACK. Ej: "[Empresa] obtiene un RIX mediano de 67 puntos
 según 6 IAs, con fortaleza en Gestión de Controversias (95) pero debilidad
 crítica en Autoridad de Fuentes (0)."
 
 ### ${H("depth_3kpis")}
 Tres indicadores clave extraídos del DATAPACK con su variación:
-- **[KPI 1]**: [valor] ([+/- delta] vs anterior — solo si DATAPACK.evolucion tiene datos)
-- **[KPI 2]**: [valor]
-- **[KPI 3]**: [valor]
+- **RIX Mediano**: [valor] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
+- **[KPI 2]**: [valor] (la métrica más fuerte)
+- **[KPI 3]**: [valor] (la métrica más débil o con mayor divergencia)
+
+Si delta_rix está disponible en el DATAPACK, SIEMPRE muestra la variación.
+Si no hay delta, indica "sin datos de variación temporal".
 
 ### ${H("depth_3findings")}
 Tres descubrimientos principales derivados de los datos, en prosa de 2-3
@@ -4033,77 +4115,84 @@ oraciones cada uno. Cada hallazgo cita la evidencia concreta que lo sustenta.
 ### ${H("depth_verdict")}
 Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
 
-═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_6ai_vision")}
-═══════════════════════════════════════════════════════════════════════════════
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 2: ${H("depth_6ai_vision")} — OBLIGATORIA
+───────────────────────────────────────────────────────────────────────────────
 
-Para cada modelo de IA que aparezca en los datos del snapshot:
-- Puntuación RIX (dato exacto del DATAPACK)
-- Fortaleza principal (métrica más alta)
-- Debilidad principal (métrica más baja)
-- Párrafo interpretativo de 3-4 oraciones usando los hechos cualitativos
+Tabla con TODOS los modelos de IA del snapshot, ORDENADOS por RIX mediano DESCENDENTE:
 
-Ordenar de MAYOR a MENOR puntuación RIX.
+| Modelo | RIX | Fortaleza principal | Debilidad principal |
+|--------|-----|---------------------|---------------------|
 
-═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_8metrics")}
-═══════════════════════════════════════════════════════════════════════════════
+Para cada modelo: párrafo interpretativo de 3-4 oraciones.
 
-Para cada métrica con datos en el snapshot:
-- **[Nombre completo]**: [Puntuación]/100 [semáforo 🟢🟡🔴]
-- Explicación de POR QUÉ usando las explicaciones por métrica proporcionadas
-- Comparación con competidores verificados (solo si existen en los datos)
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 3: ${H("depth_8metrics")} — OBLIGATORIA
+───────────────────────────────────────────────────────────────────────────────
 
-Si no hay explicaciones por métrica, reporta puntuación y semáforo solamente.
+Tabla con las 8 métricas del sistema RIX:
 
-═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_model_divergence")}
-═══════════════════════════════════════════════════════════════════════════════
+| Métrica | Puntuación | Semáforo | Explicación |
+|---------|------------|----------|-------------|
 
-Solo si los datos de divergencia muestran sigma > 8:
-- Qué modelos coinciden, cuáles divergen significativamente
-- Datos concretos: "[Modelo A]: 78 pts vs [Modelo B]: 52 pts (Δ 26)"
+Semáforo: 🟢 ≥ 70, 🟡 40-69, 🔴 < 40.
+Para cada métrica: explicación de POR QUÉ basada en las explicaciones por métrica del DATAPACK.
+Si hay datos de competidores, comparar con la media sectorial.
 
-Si sigma ≤ 8, omite esta sección.
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 4: ${H("depth_model_divergence")} — CONDICIONAL
+───────────────────────────────────────────────────────────────────────────────
+INCLUIR SOLO SI: DATAPACK.divergencias_detalle está disponible Y alguna métrica tiene rango > 10.
 
-═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_evolution")}
-═══════════════════════════════════════════════════════════════════════════════
+- Para cada métrica con divergencia significativa (rango > 10):
+  "[Modelo A]: [valor_max] pts vs [Modelo B]: [valor_min] pts (Δ [rango])"
+- Interpretar qué significa la divergencia para la empresa
+- Si rango ≤ 10 en todas las métricas: OMITIR esta sección completamente
 
-Solo si los datos de evolución tienen >= 2 semanas:
-| Semana | RIX | Δ |
-|--------|-----|---|
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 5: ${H("depth_evolution")} — CONDICIONAL
+───────────────────────────────────────────────────────────────────────────────
+INCLUIR SOLO SI: DATAPACK.evolucion tiene > 1 semana de datos.
 
-Si no hay datos temporales, omite esta sección.
+| Semana | RIX Mediano | Δ vs anterior |
+|--------|-------------|---------------|
 
-═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_competitive")}
-═══════════════════════════════════════════════════════════════════════════════
+Análisis de la tendencia: ¿mejora, empeora, estable?
+Si hay delta_rix, destacarlo prominentemente.
+Si evolucion tiene ≤ 1 semana: OMITIR esta sección completamente.
 
-Solo si hay competidores verificados en los datos:
-| Posición | Empresa | RIX | Fortaleza | Debilidad |
-|----------|---------|-----|-----------|-----------|
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 6: ${H("depth_competitive")} — CONDICIONAL
+───────────────────────────────────────────────────────────────────────────────
+INCLUIR SOLO SI: es una consulta de empresa (no ranking/sector genérico) Y hay competidores o datos sectoriales.
 
-Si competidores_verificados está vacío, omite esta sección COMPLETAMENTE.
+| Posición | Empresa | RIX Mediano | Fortaleza | Debilidad |
+|----------|---------|-------------|-----------|-----------|
 
-═══════════════════════════════════════════════════════════════════════════════
-                        ## ${H("depth_recommendations")}
-═══════════════════════════════════════════════════════════════════════════════
+Situar a la empresa analizada en contexto con sus peers.
+Si no hay competidores_verificados ni sector_avg: OMITIR esta sección completamente.
 
-Solo recomendaciones derivadas del análisis comparativo:
-- Cada recomendación cita la métrica, el gap numérico y la evidencia
-- PROHIBIDO inventar acciones, roadmaps, plazos o certificaciones
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
+───────────────────────────────────────────────────────────────────────────────
 
-═══════════════════════════════════════════════════════════════════════════════
-                   ## ${H("depth_closing")}
-═══════════════════════════════════════════════════════════════════════════════
+Máximo 4 recomendaciones, cada una con:
+1. **Gap identificado**: qué métrica está por debajo y cuánto
+2. **Evidencia**: datos concretos del DATAPACK que sustentan el gap
+3. **Acción sugerida**: qué puede hacer la empresa para mejorar
+
+PROHIBIDO inventar acciones, roadmaps, plazos o certificaciones.
+
+───────────────────────────────────────────────────────────────────────────────
+SECCIÓN 8: ${H("depth_closing")} — OBLIGATORIA
+───────────────────────────────────────────────────────────────────────────────
 
 - Modelos de IA consultados y fecha del análisis
 - Periodo temporal analizado
 - Nota sobre la metodología RepIndex
 
 RECUERDA: Solo puedes afirmar lo que los datos proporcionados respaldan.
-Si no hay datos para una sección, omítela. NUNCA rellenes con invenciones.
+NUNCA rellenes con invenciones. Las secciones 1, 2, 3, 7 y 8 son OBLIGATORIAS.
 `;
 }
 
