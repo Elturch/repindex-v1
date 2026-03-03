@@ -820,6 +820,7 @@ async function* streamOpenAIResponse(
         max_completion_tokens: maxTokens,
         stream: true,
         stream_options: { include_usage: true },
+        ...(model === "o3" ? { reasoning_effort: "medium" } : {}),
       }),
       signal: controller.signal,
     });
@@ -943,7 +944,7 @@ async function* streamGeminiResponse(
         body: JSON.stringify({
           contents,
           systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-          generationConfig: { maxOutputTokens: maxTokens },
+          generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
         }),
         signal: controller.signal,
       },
@@ -1466,7 +1467,185 @@ REGLAS:
   };
 }
 
-// --- E2: SQL DATAPACK (Deterministic, no LLM) ---
+// --- F2: SQL EXPERT (NL→SQL via gpt-4o-mini) ---
+interface SQLQueryResult {
+  label: string;
+  query: string;
+  data: any[] | null;
+  error?: string;
+}
+
+async function generateAndExecuteSQLQueries(
+  question: string,
+  classifier: ClassifierResult,
+  supabaseClient: any,
+  logPrefix: string,
+): Promise<SQLQueryResult[]> {
+  console.log(`${logPrefix} [F2] Starting SQL Expert...`);
+
+  const schemaPrompt = `Eres un experto SQL. Genera consultas SELECT de solo lectura para PostgreSQL.
+
+ESQUEMA DE TABLAS DISPONIBLES:
+
+=== rix_runs_v2 ===
+Tabla principal de análisis reputacionales semanales. Una fila por empresa×modelo×semana.
+Columnas clave:
+- "02_model_name" text: nombre del modelo de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen)
+- "03_target_name" text: nombre de la empresa
+- "05_ticker" text: ticker bursátil (ej: TEF, SAN, ITX, BBVA, IBE)
+- "09_rix_score" numeric: puntuación RIX global (0-100)
+- "51_rix_score_adjusted" numeric: RIX ajustado
+- "23_nvm_score" numeric: Calidad de la Narrativa (0-100)
+- "26_drm_score" numeric: Fortaleza de Evidencia (0-100)
+- "29_sim_score" numeric: Autoridad de Fuentes (0-100)
+- "32_rmm_score" numeric: Actualidad y Empuje (0-100)
+- "35_cem_score" numeric: Gestión de Controversias (0-100)
+- "38_gam_score" numeric: Percepción de Gobernanza (0-100)
+- "41_dcm_score" numeric: Coherencia Informativa (0-100)
+- "44_cxm_score" numeric: Ejecución Corporativa (0-100)
+- "10_resumen" text: resumen textual del análisis
+- "11_puntos_clave" jsonb: array de puntos clave
+- "22_explicacion" text: explicación detallada
+- "25_explicaciones_detalladas" jsonb: explicaciones por métrica
+- "48_precio_accion" text: precio de la acción
+- "49_reputacion_vs_precio" text: análisis reputación vs precio
+- batch_execution_date date: fecha del barrido semanal (domingos)
+- "25_nvm_categoria","28_drm_categoria","31_sim_categoria","34_rmm_categoria","37_cem_categoria","40_gam_categoria","43_dcm_categoria","46_cxm_categoria" text: categoría cualitativa
+
+=== repindex_root_issuers ===
+Catálogo maestro de empresas monitorizadas.
+- ticker text PK
+- issuer_name text: nombre oficial
+- sector_category text: sector (ej: Financiero, Energía y Utilities, Telecomunicaciones y Tecnología)
+- subsector text
+- ibex_family_code text: familia de índice (ej: IBEX-35)
+- ibex_status text
+- verified_competitors jsonb: array de tickers de competidores directos verificados
+- website text
+- status text
+
+=== corporate_snapshots ===
+Información corporativa scrapeada periódicamente.
+- ticker text, snapshot_date_only date, ceo_name text, company_description text
+- headquarters_city text, employees_approx int, founded_year int, last_reported_revenue text
+- mission_statement text, other_executives jsonb
+
+=== corporate_news ===
+Noticias corporativas.
+- ticker text, headline text, published_date date, lead_paragraph text, category text, article_url text
+
+=== rix_composite_scores ===
+Scores compuestos RIXc precalculados.
+- ticker text, week_start date, rixc_score numeric, sigma_intermodelo numeric, ic_score numeric, consensus_level text
+
+REGLAS CRÍTICAS:
+1. SOLO sentencias SELECT. Nunca INSERT, UPDATE, DELETE, DROP, ALTER.
+2. Máximo 5 queries. Cada una con un "label" descriptivo.
+3. REGLA DEL SNAPSHOT DOMINICAL: Los barridos válidos son los de domingo (batch_execution_date). Para encontrar la semana más reciente, ordena por batch_execution_date DESC y filtra domingos con ≥180 registros (30 empresas × 6 modelos).
+4. Usa LIMIT razonables (nunca >500 por query). Para rankings, LIMIT 50 es suficiente.
+5. Usa medianas (PERCENTILE_CONT(0.5)) en vez de AVG cuando agregues scores entre modelos.
+6. Los nombres de columna con números llevan comillas dobles: "09_rix_score", "02_model_name", etc.
+7. Nunca uses subconsultas con más de 2 niveles de anidamiento.
+8. Para comparativas sectoriales, usa repindex_root_issuers.sector_category.
+9. Para competidores verificados, usa repindex_root_issuers.verified_competitors (jsonb array).
+
+Responde SOLO con un JSON array (sin markdown):
+[
+  {"label": "descripción del dato", "query": "SELECT ..."}
+]`;
+
+  const userPrompt = `PREGUNTA DEL USUARIO: "${question}"
+
+CLASIFICACIÓN: tipo=${classifier.tipo}, intención=${classifier.intencion}, empresas=${classifier.empresas_detectadas.map(e => e.ticker).join(",") || "ninguna"}, métricas_mencionadas=${classifier.metricas_mencionadas.join(",") || "ninguna"}, periodo=${classifier.periodo_solicitado}
+
+Genera las queries SQL óptimas para responder esta pregunta con la mayor riqueza de datos posible.`;
+
+  try {
+    const result = await callAISimple(
+      [
+        { role: "system", content: schemaPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      "gpt-4o-mini",
+      2000,
+      `${logPrefix} [F2]`,
+    );
+
+    if (!result) {
+      console.warn(`${logPrefix} [F2] No response from SQL Expert`);
+      return [];
+    }
+
+    const clean = result.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    let queries: { label: string; query: string }[];
+    try {
+      queries = JSON.parse(clean);
+    } catch (e) {
+      console.warn(`${logPrefix} [F2] Failed to parse SQL Expert response: ${clean.substring(0, 200)}`);
+      return [];
+    }
+
+    if (!Array.isArray(queries) || queries.length === 0) {
+      console.warn(`${logPrefix} [F2] Empty queries array`);
+      return [];
+    }
+
+    // Validate: only SELECT queries, max 5
+    queries = queries.filter(q => {
+      const trimmed = q.query?.trim().toUpperCase() || "";
+      return trimmed.startsWith("SELECT") && !trimmed.includes("INSERT") && !trimmed.includes("UPDATE") && !trimmed.includes("DELETE") && !trimmed.includes("DROP") && !trimmed.includes("ALTER");
+    }).slice(0, 5);
+
+    console.log(`${logPrefix} [F2] Generated ${queries.length} valid queries: ${queries.map(q => q.label).join(", ")}`);
+
+    // Execute each query via execute_sql RPC with timeout
+    const results: SQLQueryResult[] = [];
+    for (const q of queries) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        const { data, error } = await supabaseClient.rpc("execute_sql", { sql_query: q.query });
+        clearTimeout(timeoutId);
+
+        if (error) {
+          console.warn(`${logPrefix} [F2] Query "${q.label}" failed: ${error.message}`);
+          results.push({ label: q.label, query: q.query, data: null, error: error.message });
+        } else {
+          const rows = Array.isArray(data) ? data : (data ? [data] : []);
+          console.log(`${logPrefix} [F2] Query "${q.label}": ${rows.length} rows`);
+          results.push({ label: q.label, query: q.query, data: rows });
+        }
+      } catch (e) {
+        console.warn(`${logPrefix} [F2] Query "${q.label}" exception: ${e.message}`);
+        results.push({ label: q.label, query: q.query, data: null, error: e.message });
+      }
+    }
+
+    // Log telemetry
+    try {
+      await supabaseClient.from("pipeline_logs").insert({
+        stage: "F2_sql_expert",
+        status: results.some(r => r.data && r.data.length > 0) ? "ok" : "empty",
+        metadata: {
+          phase: "F2",
+          queries_generated: queries.length,
+          queries_successful: results.filter(r => r.data && r.data.length > 0).length,
+          queries_failed: results.filter(r => r.error).length,
+          total_rows: results.reduce((sum, r) => sum + (r.data?.length || 0), 0),
+          labels: results.map(r => r.label),
+        },
+      });
+    } catch (_) {}
+
+    return results;
+  } catch (e) {
+    console.error(`${logPrefix} [F2] SQL Expert failed entirely: ${e.message}`);
+    return [];
+  }
+}
+
+// --- E2: SQL DATAPACK (Deterministic queries + F2 dynamic enrichment) ---
 interface DataPack {
   snapshot: { modelo: string; rix: number | null; rix_adj: number | null; nvm: number | null; drm: number | null; sim: number | null; rmm: number | null; cem: number | null; gam: number | null; dcm: number | null; cxm: number | null; period_from: string | null; period_to: string | null }[];
   sector_avg: { rix: number; count: number } | null;
@@ -2554,6 +2733,7 @@ function buildOrchestratorPrompt(
     memento: dataPack.memento,
     noticias: dataPack.noticias.slice(0, 5),
     mercado: dataPack.mercado,
+    ...((dataPack as any).f2_dynamic ? { datos_dinamicos: (dataPack as any).f2_dynamic } : {}),
   }, null, 0);
 
   const factsBlock = facts ? JSON.stringify(facts, null, 0) : "null";
@@ -2744,7 +2924,16 @@ FORMATO MARKDOWN:
 
 EXTENSIÓN: 2.500-4.000 palabras para empresa. Focalizado para otros tipos.
 ${roleName ? `PERSPECTIVA: Adapta el ángulo al rol "${roleName}". El rol modifica CÓMO presentas el contenido pero NUNCA omite datos relevantes.` : ""}
-${roleName && rolePrompt ? `\nINSTRUCCIONES DEL ROL:\n${rolePrompt}` : ""}
+${roleName && rolePrompt ? `
+REGLA SUPREMA SOBRE ROLES (PREVALECE SOBRE LAS INSTRUCCIONES DEL ROL):
+El rol modifica el ÁNGULO de presentación pero NUNCA autoriza a fabricar contenido.
+Si las instrucciones del rol piden "protocolos", "kits de respuesta", "planes de acción",
+"roadmaps", "argumentarios", "stakeholder maps" o "simulaciones", interprétalos SOLO como
+identificación de gaps numéricos y señales relevantes para ese perfil profesional.
+NUNCA redactes mensajes literales, guiones, scripts, respuestas modelo ni calendarios.
+
+INSTRUCCIONES DEL ROL:
+${rolePrompt}` : ""}
 
 JUSTIFICACIÓN METODOLÓGICA:
 RepIndex mide la PROBABILIDAD de que una narrativa gane tracción en el ecosistema informativo algorítmico. Las IAs son el primer filtro cognitivo en 2026. Al final de cada sección principal con scores, incluye un breve blockquote metodológico (qué mide, nivel de consenso, señal estratégica).`;
@@ -3242,9 +3431,9 @@ function buildDepthPrompt(depthLevel: "quick" | "complete" | "exhaustive", langu
 ═══════════════════════════════════════════════════════════════════════════════
 
 REGLA FUNDAMENTAL: Este informe se construye EXCLUSIVAMENTE a partir de los
-datos del DATAPACK (E2), los HECHOS (E3) y el ANÁLISIS (E4). Cada sección
-debe citar de dónde proceden sus datos. Si una sección no tiene datos en el
-DATAPACK, OMÍTELA por completo. NUNCA la rellenes con contenido inventado.
+datos proporcionados por el sistema de análisis. Cada sección debe estar
+anclada en datos reales. Si una sección no tiene datos disponibles,
+OMÍTELA por completo. NUNCA la rellenes con contenido inventado.
 
 EXTENSIÓN según tipo de consulta:
 - Empresa: 2.500–4.000 palabras. Todas las secciones con datos disponibles.
@@ -3274,7 +3463,7 @@ Tres indicadores clave extraídos del DATAPACK con su variación:
 
 ### ${H("depth_3findings")}
 Tres descubrimientos principales derivados de los datos, en prosa de 2-3
-oraciones cada uno. Cada hallazgo cita la fuente (DATAPACK, HECHOS, ANÁLISIS).
+oraciones cada uno. Cada hallazgo cita la evidencia concreta que lo sustenta.
 
 ### ${H("depth_verdict")}
 Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
@@ -3283,11 +3472,11 @@ Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
                         ## ${H("depth_6ai_vision")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Para cada modelo de IA que aparezca en DATAPACK.snapshot:
+Para cada modelo de IA que aparezca en los datos del snapshot:
 - Puntuación RIX (dato exacto del DATAPACK)
 - Fortaleza principal (métrica más alta)
 - Debilidad principal (métrica más baja)
-- Párrafo interpretativo de 3-4 oraciones usando HECHOS (E3)
+- Párrafo interpretativo de 3-4 oraciones usando los hechos cualitativos
 
 Ordenar de MAYOR a MENOR puntuación RIX.
 
@@ -3295,18 +3484,18 @@ Ordenar de MAYOR a MENOR puntuación RIX.
                         ## ${H("depth_8metrics")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Para cada métrica con datos en DATAPACK.snapshot:
+Para cada métrica con datos en el snapshot:
 - **[Nombre completo]**: [Puntuación]/100 [semáforo 🟢🟡🔴]
-- Explicación de POR QUÉ usando las EXPLICACIONES POR MÉTRICA del DATAPACK
-- Comparación con competidores verificados (solo si existen en DATAPACK)
+- Explicación de POR QUÉ usando las explicaciones por métrica proporcionadas
+- Comparación con competidores verificados (solo si existen en los datos)
 
-Si no hay EXPLICACIONES POR MÉTRICA, reporta puntuación y semáforo solamente.
+Si no hay explicaciones por métrica, reporta puntuación y semáforo solamente.
 
 ═══════════════════════════════════════════════════════════════════════════════
                         ## ${H("depth_model_divergence")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Solo si DATAPACK.divergencia muestra sigma > 8:
+Solo si los datos de divergencia muestran sigma > 8:
 - Qué modelos coinciden, cuáles divergen significativamente
 - Datos concretos: "[Modelo A]: 78 pts vs [Modelo B]: 52 pts (Δ 26)"
 
@@ -3316,7 +3505,7 @@ Si sigma ≤ 8, omite esta sección.
                         ## ${H("depth_evolution")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Solo si DATAPACK.evolucion tiene >= 2 semanas de datos:
+Solo si los datos de evolución tienen >= 2 semanas:
 | Semana | RIX | Δ |
 |--------|-----|---|
 
@@ -3326,7 +3515,7 @@ Si no hay datos temporales, omite esta sección.
                         ## ${H("depth_competitive")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Solo si DATAPACK.competidores_verificados tiene datos:
+Solo si hay competidores verificados en los datos:
 | Posición | Empresa | RIX | Fortaleza | Debilidad |
 |----------|---------|-----|-----------|-----------|
 
@@ -3336,7 +3525,7 @@ Si competidores_verificados está vacío, omite esta sección COMPLETAMENTE.
                         ## ${H("depth_recommendations")}
 ═══════════════════════════════════════════════════════════════════════════════
 
-Solo recomendaciones derivadas del ANÁLISIS (E4):
+Solo recomendaciones derivadas del análisis comparativo:
 - Cada recomendación cita la métrica, el gap numérico y la evidencia
 - PROHIBIDO inventar acciones, roadmaps, plazos o certificaciones
 
@@ -3348,7 +3537,7 @@ Solo recomendaciones derivadas del ANÁLISIS (E4):
 - Periodo temporal analizado
 - Nota sobre la metodología RepIndex
 
-RECUERDA: Solo puedes afirmar lo que los datos del DATAPACK respaldan.
+RECUERDA: Solo puedes afirmar lo que los datos proporcionados respaldan.
 Si no hay datos para una sección, omítela. NUNCA rellenes con invenciones.
 `;
 }
@@ -5770,8 +5959,25 @@ async function handleStandardChat(
   });
   console.log(`${logPrefix} [E1] Detected companies: ${detectedCompanies.map(c => c.issuer_name).join(", ") || "none"}`);
 
-  // --- E2: DATAPACK SQL DETERMINISTA ---
+  // --- F2: SQL EXPERT (dynamic queries) ---
+  const f2Results = await generateAndExecuteSQLQueries(question, classifier, supabaseClient, logPrefix);
+
+  // --- E2: DATAPACK SQL (hardcoded + F2 enrichment) ---
   const dataPack = await buildDataPack(classifier, supabaseClient, companiesCache, logPrefix);
+
+  // Merge F2 dynamic data into DataPack as supplementary context
+  if (f2Results.length > 0) {
+    const f2SuccessfulData = f2Results.filter(r => r.data && r.data.length > 0);
+    if (f2SuccessfulData.length > 0) {
+      // Attach F2 results as a new field for E5 consumption
+      (dataPack as any).f2_dynamic = f2SuccessfulData.map(r => ({
+        label: r.label,
+        rows: r.data!.slice(0, 100), // Cap at 100 rows per query
+        row_count: r.data!.length,
+      }));
+      console.log(`${logPrefix} [F2→E2] Merged ${f2SuccessfulData.length} dynamic datasets into DataPack`);
+    }
+  }
 
   // --- CONTEXTO COMPLEMENTARIO: Graph Expansion ---
   let graphContextString = "";
