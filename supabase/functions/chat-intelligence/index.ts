@@ -1157,8 +1157,19 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
     /dashboard\s+reputacional\s+en\s+comit[eé]/i,
     /cisne\s+negro\s+sanitario/i,
     // === Family: fabricated campaigns / certifications ===
-    /campa[nñ]a\s+multicanal/i,
-    /certificaci[oó]n\s+iso\s+37000/i,
+     /campa[nñ]a\s+multicanal/i,
+     /certificaci[oó]n\s+iso\s+37000/i,
+     // === Family: fabricated risk radars / positioning recommendations ===
+     /radar\s+de\s+riesgos/i,
+     /riesgos?\s+inminentes?/i,
+     /recomendaciones?\s+de\s+posicionamiento/i,
+     /gravamen\s+fiscal/i,
+     /subidas?\s+(?:adicionales?\s+)?del\s+bce/i,
+     /investor\s+day/i,
+     /campa[nñ]a\s+de\s+verano/i,
+     /narrativa\s+fintech/i,
+     /compromisos?\s+esg\s+externos?/i,
+     /reservas?\s+anticipadas?/i,
 ];
 
 function findForbiddenMatchIndex(text: string): number {
@@ -1562,6 +1573,7 @@ async function buildDataPack(
       "06_period_from", "07_period_to", "09_rix_score", "51_rix_score_adjusted",
       "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
       "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
+      "10_resumen", "11_puntos_clave", "22_explicacion", "25_explicaciones_detalladas",
       batch_execution_date
     `;
 
@@ -1634,7 +1646,25 @@ async function buildDataPack(
       }))
       .sort((a, b) => b.rix_avg - a.rix_avg);
 
-    pack.ranking = rankingEntries.map((r, i) => ({ pos: i + 1, ticker: r.ticker, nombre: r.nombre, rix_avg: r.rix_avg }));
+    // --- Cambio 2: Calcular deltas POR EMPRESA comparando última semana vs penúltima ---
+    const uniqueDatesForDelta = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse();
+    const prevDate = uniqueDatesForDelta.length >= 2 ? uniqueDatesForDelta[1] : null;
+    const prevWeekData = prevDate ? sortedByDate.filter((r) => r.batch_execution_date === prevDate) : [];
+    const prevByCompany = new Map<string, number[]>();
+    for (const row of prevWeekData) {
+      const t = row["05_ticker"];
+      const rix = row["09_rix_score"];
+      if (!t || rix == null || rix <= 0) continue;
+      if (!prevByCompany.has(t)) prevByCompany.set(t, []);
+      prevByCompany.get(t)!.push(rix);
+    }
+
+    pack.ranking = rankingEntries.map((r, i) => {
+      const prevScores = prevByCompany.get(r.ticker);
+      const prevAvgCompany = prevScores && prevScores.length > 0 ? prevScores.reduce((a, b) => a + b, 0) / prevScores.length : null;
+      const delta = prevAvgCompany != null ? Math.round((r.rix_avg - Math.round(prevAvgCompany * 10) / 10) * 10) / 10 : null;
+      return { pos: i + 1, ticker: r.ticker, nombre: r.nombre, rix_avg: r.rix_avg, delta };
+    });
 
     // Build snapshot as aggregate stats (top/bottom/average)
     const allScores = rankingEntries.map((r) => r.rix_avg);
@@ -1662,6 +1692,48 @@ async function buildDataPack(
         period_to: latestDate?.toString().split("T")[0] || null,
       });
     }
+
+    // --- Cambio 1: Enriquecer Route B con datos cualitativos de top-5 y bottom-5 ---
+    const qualitativeTickers = [...top5, ...bottom5].map(e => e.ticker);
+    const qualitativeRows = latestWeek.filter(r => qualitativeTickers.includes(r["05_ticker"]));
+    
+    // Populate raw_texts with resumen + explicacion from each model for these companies
+    for (const row of qualitativeRows) {
+      const resumen = row["10_resumen"];
+      const explicacion = row["22_explicacion"];
+      const modelo = row["02_model_name"] || "unknown";
+      const empresa = row["03_target_name"] || row["05_ticker"];
+      if (resumen && typeof resumen === "string" && resumen.length > 20) {
+        pack.raw_texts.push(`[${modelo} → ${empresa}] ${resumen}`);
+      }
+      if (explicacion && typeof explicacion === "string" && explicacion.length > 20) {
+        pack.raw_texts.push(`[${modelo} → ${empresa} / Explicación] ${explicacion}`);
+      }
+      // Puntos clave
+      const puntos = row["11_puntos_clave"];
+      if (puntos) {
+        const puntosArr = Array.isArray(puntos) ? puntos : (typeof puntos === "string" ? [puntos] : []);
+        for (const p of puntosArr) {
+          if (typeof p === "string" && p.length > 10) {
+            if (!pack.puntos_clave) pack.puntos_clave = [];
+            (pack.puntos_clave as string[]).push(`[${modelo} → ${empresa}] ${p}`);
+          }
+        }
+      }
+      // Explicaciones detalladas
+      const expDet = row["25_explicaciones_detalladas"];
+      if (expDet && typeof expDet === "object") {
+        if (!pack.explicaciones_metricas) pack.explicaciones_metricas = {};
+        const expObj = expDet as Record<string, unknown>;
+        for (const [metricKey, explanation] of Object.entries(expObj)) {
+          if (typeof explanation === "string" && explanation.length > 10) {
+            const key = `${empresa}_${metricKey}`;
+            (pack.explicaciones_metricas as Record<string, string>)[key] = `[${modelo}] ${explanation}`;
+          }
+        }
+      }
+    }
+    console.log(`${logPrefix} [E2] Qualitative enrichment: ${pack.raw_texts.length} raw_texts from ${qualitativeTickers.length} companies`);
 
     // Build sector breakdown
     const bySector = new Map<string, { scores: number[]; companies: string[] }>();
@@ -4478,7 +4550,7 @@ ${originalQuestion || "(No disponible)"}
 ## REGLAS CRÍTICAS:
 
 1. **MÍNIMO 2500 PALABRAS** - Este es un informe ejecutivo premium
-2. **ESTRUCTURA EMBUDO** - Resumen → Pilar 1 → Pilar 2 → Pilar 3 → Cierre
+2. **ESTRUCTURA** — Resumen Ejecutivo → Análisis de Datos → Contexto Competitivo → Cierre
 3. **USAR TODOS LOS DATOS** - No omitir cifras ni empresas mencionadas
 4. **TABLAS Y FORMATO** - Usar Markdown: tablas, negritas, listas, quotes
 5. **NUNCA MENCIONAR EL PERFIL** - Adapta el contenido sin decir "para el CEO"
