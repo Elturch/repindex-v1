@@ -2601,10 +2601,24 @@ Responde SIEMPRE en ${languageName}. Sin excepciones.
 
 Eres el Agente Rix de RepIndex. Redactas informes ejecutivos para alta dirección usando EXCLUSIVAMENTE los datos de los bloques DATAPACK, HECHOS, ANALISIS, EXPLICACIONES, CONSENSO y MERCADO que recibes.
 
-REGLAS DE INTEGRIDAD (PRIORIDAD MÁXIMA):
-1. Toda cifra debe existir en DATAPACK. Si no está, escribe "dato no disponible".
-2. Toda mención temática debe existir en HECHOS. Indica cuántas IAs coinciden.
-3. Las recomendaciones del ANALISIS son tu base. Puedes RAZONAR sobre ellas, ampliarlas y conectarlas con los datos del DATAPACK (tendencias temporales, memento, noticias) para proponer soluciones concretas y accionables. Pero TODA solución debe estar anclada en un gap numérico real. NUNCA inventes métricas, cifras ni herramientas que no estén en los datos.
+REGLA ANTI-FILTRACIÓN INTERNA (PRIORIDAD MÁXIMA):
+• NUNCA menciones "DATAPACK", "HECHOS", "ANALISIS", "E1", "E2", "E3", "E4", "E5", "E6", "DataPack", "snapshot", "pack", "classifier" ni ningún nombre de componente interno del pipeline.
+• NUNCA escribas líneas como "(Fuentes: DATAPACK.ranking...)" ni "(Fuentes: HECHOS.temas_clave)".
+• El usuario NO sabe que existen estos bloques internos. Para él, los datos vienen de "las seis IAs analizadas" o "el análisis RepIndex de esta semana".
+• Si necesitas citar la fuente de un dato, di: "Según el análisis de [nombre de IA]" o "Los datos de esta semana muestran...".
+
+CONSISTENCIA NARRATIVA (OBLIGATORIO):
+• Cada sección debe tener un HILO CONDUCTOR claro: arranca con una afirmación de contexto, desarrolla con evidencia y cierra con una implicación.
+• NO listes empresas como bullets sueltos. Agrupa por SEÑAL TEMÁTICA: "Tres compañías del sector financiero comparten una señal positiva..." es mejor que tres bullets separados.
+• Conecta las secciones entre sí: el cierre de una sección debe anticipar la siguiente. Ejemplo: "Esta fortaleza en banca contrasta con la fragilidad del sector energético, que analizamos a continuación."
+• Prioriza la PANORÁMICA antes del DETALLE: primero el estado general del índice, después los casos destacados.
+• Las empresas que solo aparecen para rellenar NO deben mencionarse. Mejor profundizar en 5-6 casos con contexto que listar 15 con un bullet cada uno.
+• Cada párrafo debe responder a "¿y qué significa esto?" — nunca dejes un dato sin interpretación.
+
+REGLAS DE INTEGRIDAD:
+1. Toda cifra debe existir en los datos proporcionados. Si no está, escribe "dato no disponible".
+2. Toda mención temática debe estar respaldada por las IAs. Indica cuántas IAs coinciden.
+3. Las recomendaciones son tu base. Puedes RAZONAR sobre ellas, ampliarlas y conectarlas con los datos (tendencias temporales, memento, noticias) para proponer soluciones concretas y accionables. Pero TODA solución debe estar anclada en un gap numérico real. NUNCA inventes métricas, cifras ni herramientas que no estén en los datos.
 4. NUNCA inventes empresas ficticias, cifras financieras, metodologías, DOIs, convenios ni KPIs inventados.
 5. Si no hay datos suficientes, dilo con transparencia. No rellenes con ficción.
 
@@ -2746,7 +2760,9 @@ ${explicacionesE5Block}
 ${consensoE5Block}
 ${mercadoE5Block}
 
-Redacta el informe ejecutivo completo en ${languageName}. Usa SOLO los datos de arriba. Cuando expliques una métrica, cita la causa usando las EXPLICACIONES. Cuando haya consenso de categorías, menciónalo. Cuando haya datos de mercado, conéctalos con la reputación.`;
+Redacta el informe ejecutivo completo en ${languageName}. Usa SOLO los datos de arriba. Cuando expliques una métrica, cita la causa usando las EXPLICACIONES. Cuando haya consenso de categorías, menciónalo. Cuando haya datos de mercado, conéctalos con la reputación.
+
+RECORDATORIO FINAL: Las etiquetas DATAPACK, HECHOS, ANALISIS son bloques internos para tu consumo. NUNCA las menciones ni las cites en tu respuesta. El usuario solo debe ver "según las IAs", "los datos de esta semana" o "el análisis RepIndex".`;
 
   return { systemPrompt, userPrompt };
 }
@@ -2757,6 +2773,14 @@ async function formatForExport(
   classifier: ClassifierResult,
   logPrefix: string,
 ): Promise<string> {
+  // --- POST-PROCESAMIENTO: Limpiar referencias internas filtradas ---
+  const internalRefPattern = /\(?\s*(?:Fuentes?|Sources?)\s*:\s*(?:DATAPACK|HECHOS|ANALISIS|DataPack|E[1-6])[^)]*\)?/gi;
+  rawMarkdown = rawMarkdown.replace(internalRefPattern, '');
+  const internalTerms = /\b(DATAPACK|DataPack|HECHOS|ANALISIS|EXPLICACIONES|CONSENSO)\b\.?\w*/g;
+  rawMarkdown = rawMarkdown.replace(internalTerms, 'los datos de esta semana');
+  // Clean up double spaces left by removals
+  rawMarkdown = rawMarkdown.replace(/  +/g, ' ').replace(/\n{3,}/g, '\n\n');
+
   if (rawMarkdown.length < 500) {
     console.log(`${logPrefix} [E6] Short response, skipping layout formatting`);
     return rawMarkdown;
