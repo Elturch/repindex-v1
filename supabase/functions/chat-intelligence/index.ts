@@ -8,6 +8,562 @@ const corsHeaders = {
 };
 
 // =============================================================================
+// SKILLS PIPELINE — Feature flag and inlined skill functions
+// =============================================================================
+const USE_SKILLS_PIPELINE = true;
+
+// ── Shared helpers (Edge versions) ──────────────────────────────────
+let cachedSundayEdge: { date: string; fetched_at: number } | null = null;
+const CACHE_TTL_EDGE = 5 * 60 * 1000;
+
+async function getLatestValidSundayEdge(supabase: any): Promise<{ success: boolean; data?: string; error?: string }> {
+  if (cachedSundayEdge && Date.now() - cachedSundayEdge.fetched_at < CACHE_TTL_EDGE) {
+    return { success: true, data: cachedSundayEdge.date };
+  }
+  try {
+    const { data, error } = await supabase
+      .from("rix_runs_v2")
+      .select("batch_execution_date")
+      .order("batch_execution_date", { ascending: false })
+      .limit(2000);
+    if (error) return { success: false, error: error.message };
+    if (!data || data.length === 0) return { success: false, error: "No rix_runs_v2 records" };
+    const dateCounts = new Map<string, number>();
+    for (const row of data) {
+      const raw = row.batch_execution_date;
+      if (!raw) continue;
+      const d = new Date(raw);
+      const dateKey = d.toISOString().split("T")[0];
+      dateCounts.set(dateKey, (dateCounts.get(dateKey) || 0) + 1);
+    }
+    const sorted = Array.from(dateCounts.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+    for (const [dateStr, count] of sorted) {
+      const d = new Date(dateStr + "T00:00:00Z");
+      if (d.getUTCDay() === 0 && count >= 180) {
+        cachedSundayEdge = { date: dateStr, fetched_at: Date.now() };
+        return { success: true, data: dateStr };
+      }
+    }
+    for (const [dateStr, count] of sorted) {
+      if (count >= 180) {
+        cachedSundayEdge = { date: dateStr, fetched_at: Date.now() };
+        return { success: true, data: dateStr };
+      }
+    }
+    return { success: false, error: "No valid batch date found" };
+  } catch (e: any) {
+    return { success: false, error: e.message || String(e) };
+  }
+}
+
+function buildDateFilterEdge(dateStr: string) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const next = new Date(d);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return { gte: d.toISOString(), lt: next.toISOString() };
+}
+
+function medianEdge(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
+const METRIC_COLUMNS_EDGE: Record<string, string> = {
+  rix_score: "09_rix_score", nvm_score: "23_nvm_score", drm_score: "26_drm_score",
+  sim_score: "29_sim_score", rmm_score: "32_rmm_score", cem_score: "35_cem_score",
+  gam_score: "38_gam_score", dcm_score: "41_dcm_score", cxm_score: "44_cxm_score",
+};
+
+const SCORE_SELECT_EDGE = "02_model_name,03_target_name,05_ticker,09_rix_score,23_nvm_score,26_drm_score,29_sim_score,32_rmm_score,35_cem_score,38_gam_score,41_dcm_score,44_cxm_score,batch_execution_date";
+
+// ── Inlined skill: Company Scores ───────────────────────────────────
+async function executeSkillGetCompanyScores(supabase: any, params: { ticker?: string; target_name?: string; batch_date?: string }) {
+  const start = Date.now();
+  try {
+    if (!params.ticker && !params.target_name) return { success: false, error: "ticker or target_name required" };
+    let batchDate = params.batch_date;
+    if (!batchDate) {
+      const sr = await getLatestValidSundayEdge(supabase);
+      if (!sr.success || !sr.data) return { success: false, error: sr.error };
+      batchDate = sr.data;
+    }
+    const { gte, lt } = buildDateFilterEdge(batchDate!);
+    let query = supabase.from("rix_runs_v2").select(SCORE_SELECT_EDGE).gte("batch_execution_date", gte).lt("batch_execution_date", lt);
+    if (params.ticker) query = query.eq("05_ticker", params.ticker);
+    else query = query.ilike("03_target_name", `%${params.target_name}%`);
+    const { data, error } = await query.limit(20);
+    if (error) return { success: false, error: error.message };
+    if (!data || data.length === 0) return { success: false, error: `No scores for ${params.ticker || params.target_name}` };
+    const scores = data.map((r: any) => ({
+      model_name: r["02_model_name"] || "", rix_score: r["09_rix_score"], nvm_score: r["23_nvm_score"],
+      drm_score: r["26_drm_score"], sim_score: r["29_sim_score"], rmm_score: r["32_rmm_score"],
+      cem_score: r["35_cem_score"], gam_score: r["38_gam_score"], dcm_score: r["41_dcm_score"], cxm_score: r["44_cxm_score"],
+    }));
+    console.log(`[SKILL] CompanyScores for ${params.ticker || params.target_name}: ${scores.length} models in ${Date.now() - start}ms`);
+    return { success: true, data: { company: data[0]["03_target_name"] || "", ticker: data[0]["05_ticker"] || "", batch_date: batchDate, scores } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Company Ranking ──────────────────────────────────
+async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string }) {
+  const start = Date.now();
+  try {
+    const topN = params.top_n ?? 50;
+    let batchDate = params.batch_date;
+    if (!batchDate) {
+      const sr = await getLatestValidSundayEdge(supabase);
+      if (!sr.success || !sr.data) return { success: false, error: sr.error };
+      batchDate = sr.data;
+    }
+    const { gte, lt } = buildDateFilterEdge(batchDate!);
+    let tickerFilter: string[] | null = null;
+    if (params.sector_category || params.ibex_family_code) {
+      let iq = supabase.from("repindex_root_issuers").select("ticker");
+      if (params.sector_category) iq = iq.eq("sector_category", params.sector_category);
+      if (params.ibex_family_code) iq = iq.eq("ibex_family_code", params.ibex_family_code);
+      const { data: issuers, error: ie } = await iq.limit(200);
+      if (ie) return { success: false, error: ie.message };
+      tickerFilter = (issuers || []).map((r: any) => r.ticker);
+      if (tickerFilter!.length === 0) return { success: false, error: "No issuers for filter" };
+    }
+    let allData: any[] = [];
+    for (let page = 0; page < 6; page++) {
+      let q = supabase.from("rix_runs_v2").select("02_model_name,03_target_name,05_ticker,09_rix_score")
+        .gte("batch_execution_date", gte).lt("batch_execution_date", lt).range(page * 1000, (page + 1) * 1000 - 1);
+      if (tickerFilter) q = q.in("05_ticker", tickerFilter);
+      const { data, error } = await q;
+      if (error) return { success: false, error: error.message };
+      if (!data || data.length === 0) break;
+      allData = allData.concat(data);
+      if (data.length < 1000) break;
+    }
+    if (allData.length === 0) return { success: false, error: `No ranking data for ${batchDate}` };
+    const grouped = new Map<string, { company: string; ticker: string; scores: { model: string; rix_score: number | null }[] }>();
+    for (const row of allData) {
+      const t = row["05_ticker"] || "";
+      if (!grouped.has(t)) grouped.set(t, { company: row["03_target_name"] || "", ticker: t, scores: [] });
+      grouped.get(t)!.scores.push({ model: row["02_model_name"] || "", rix_score: row["09_rix_score"] });
+    }
+    const ranking = Array.from(grouped.values()).map(g => {
+      const valid = g.scores.map(s => s.rix_score).filter((v): v is number => v != null);
+      const med = medianEdge(valid);
+      const min = valid.length > 0 ? Math.min(...valid) : 0;
+      const max = valid.length > 0 ? Math.max(...valid) : 0;
+      const range = max - min;
+      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo", scores_by_model: g.scores };
+    }).sort((a, b) => b.median_rix - a.median_rix).slice(0, topN);
+    console.log(`[SKILL] CompanyRanking: ${ranking.length} companies in ${Date.now() - start}ms`);
+    return { success: true, data: { batch_date: batchDate, filter: params.sector_category || params.ibex_family_code || "all", ranking } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Company Evolution ────────────────────────────────
+async function executeSkillGetCompanyEvolution(supabase: any, params: { ticker: string; weeks_back?: number }) {
+  const start = Date.now();
+  try {
+    if (!params.ticker) return { success: false, error: "ticker required" };
+    const weeksBack = params.weeks_back ?? 12;
+    let allData: any[] = [];
+    const seenWeeks = new Set<string>();
+    for (let page = 0; page < 5; page++) {
+      const { data, error } = await supabase.from("rix_trends")
+        .select("batch_week,model_name,rix_score,stock_price,company_name")
+        .eq("ticker", params.ticker).order("batch_week", { ascending: false }).range(page * 1500, (page + 1) * 1500 - 1);
+      if (error) return { success: false, error: error.message };
+      if (!data || data.length === 0) break;
+      for (const row of data) { seenWeeks.add(String(row.batch_week ?? "")); allData.push(row); }
+      if (data.length < 1500 || seenWeeks.size >= weeksBack) break;
+    }
+    if (allData.length === 0) return { success: false, error: `No evolution for ${params.ticker}` };
+    const sortedWeeks = Array.from(seenWeeks).sort().reverse().slice(0, weeksBack);
+    const weekSet = new Set(sortedWeeks);
+    const evolution = allData.filter(r => weekSet.has(String(r.batch_week ?? ""))).map(r => ({
+      batch_week: String(r.batch_week ?? ""), model_name: String(r.model_name ?? ""),
+      rix_score: r.rix_score, stock_price: r.stock_price,
+    })).sort((a, b) => a.batch_week.localeCompare(b.batch_week));
+    console.log(`[SKILL] CompanyEvolution for ${params.ticker}: ${evolution.length} points in ${Date.now() - start}ms`);
+    return { success: true, data: { ticker: params.ticker, company_name: allData[0].company_name || params.ticker, weeks_requested: weeksBack, evolution } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Company Detail ───────────────────────────────────
+async function executeSkillGetCompanyDetail(supabase: any, params: { ticker?: string; issuer_name?: string }) {
+  const start = Date.now();
+  try {
+    if (!params.ticker && !params.issuer_name) return { success: false, error: "ticker or issuer_name required" };
+    let q = supabase.from("repindex_root_issuers").select("*");
+    if (params.ticker) q = q.eq("ticker", params.ticker);
+    else q = q.ilike("issuer_name", `%${params.issuer_name}%`);
+    const { data, error } = await q.limit(1).maybeSingle();
+    if (error) return { success: false, error: error.message };
+    if (!data) return { success: false, error: `No issuer for ${params.ticker || params.issuer_name}` };
+    let corporate: any = null;
+    const { data: snap } = await supabase.from("corporate_snapshots")
+      .select("ceo_name,company_description,headquarters_city,headquarters_country,employees_approx,founded_year,last_reported_revenue")
+      .eq("ticker", data.ticker).order("snapshot_date", { ascending: false }).limit(1).maybeSingle();
+    if (snap) corporate = snap;
+    console.log(`[SKILL] CompanyDetail for ${data.ticker} in ${Date.now() - start}ms`);
+    return { success: true, data: { ...data, corporate } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Sector Comparison ────────────────────────────────
+async function executeSkillGetSectorComparison(supabase: any, params: { sector_category: string; batch_date?: string }) {
+  const start = Date.now();
+  try {
+    if (!params.sector_category) return { success: false, error: "sector_category required" };
+    let batchDate = params.batch_date;
+    if (!batchDate) {
+      const sr = await getLatestValidSundayEdge(supabase);
+      if (!sr.success || !sr.data) return { success: false, error: sr.error };
+      batchDate = sr.data;
+    }
+    const { data: issuers, error: ie } = await supabase.from("repindex_root_issuers").select("ticker,issuer_name").eq("sector_category", params.sector_category).limit(100);
+    if (ie) return { success: false, error: ie.message };
+    if (!issuers || issuers.length === 0) return { success: false, error: `No companies in sector ${params.sector_category}` };
+    const tickers = issuers.map((r: any) => r.ticker);
+    const { gte, lt } = buildDateFilterEdge(batchDate!);
+    let allData: any[] = [];
+    for (let page = 0; page < 3; page++) {
+      const { data, error } = await supabase.from("rix_runs_v2").select("02_model_name,03_target_name,05_ticker,09_rix_score")
+        .in("05_ticker", tickers).gte("batch_execution_date", gte).lt("batch_execution_date", lt).range(page * 1000, (page + 1) * 1000 - 1);
+      if (error) return { success: false, error: error.message };
+      if (!data || data.length === 0) break;
+      allData = allData.concat(data);
+      if (data.length < 1000) break;
+    }
+    const grouped = new Map<string, { company: string; ticker: string; scores: { model: string; rix_score: number | null }[] }>();
+    for (const row of allData) {
+      const t = row["05_ticker"] || "";
+      if (!grouped.has(t)) grouped.set(t, { company: row["03_target_name"] || "", ticker: t, scores: [] });
+      grouped.get(t)!.scores.push({ model: row["02_model_name"] || "", rix_score: row["09_rix_score"] });
+    }
+    const companies = Array.from(grouped.values()).map(g => {
+      const valid = g.scores.map(s => s.rix_score).filter((v): v is number => v != null);
+      return { company: g.company, ticker: g.ticker, median_rix: medianEdge(valid), scores_by_model: g.scores };
+    }).sort((a, b) => b.median_rix - a.median_rix);
+    console.log(`[SKILL] SectorComparison for ${params.sector_category}: ${companies.length} companies in ${Date.now() - start}ms`);
+    return { success: true, data: { sector: params.sector_category, batch_date: batchDate, companies } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Divergence Analysis ──────────────────────────────
+async function executeSkillGetDivergenceAnalysis(supabase: any, params: { ticker: string; batch_date?: string }) {
+  const start = Date.now();
+  try {
+    if (!params.ticker) return { success: false, error: "ticker required" };
+    let batchDate = params.batch_date;
+    if (!batchDate) {
+      const sr = await getLatestValidSundayEdge(supabase);
+      if (!sr.success || !sr.data) return { success: false, error: sr.error };
+      batchDate = sr.data;
+    }
+    const { gte, lt } = buildDateFilterEdge(batchDate!);
+    const cols = ["02_model_name", "03_target_name", ...Object.values(METRIC_COLUMNS_EDGE)].join(",");
+    const { data, error } = await supabase.from("rix_runs_v2").select(cols).eq("05_ticker", params.ticker)
+      .gte("batch_execution_date", gte).lt("batch_execution_date", lt).limit(20);
+    if (error) return { success: false, error: error.message };
+    if (!data || data.length === 0) return { success: false, error: `No data for ${params.ticker}` };
+    const divergences: any[] = [];
+    for (const [metricKey, colName] of Object.entries(METRIC_COLUMNS_EDGE)) {
+      let maxModel = "", maxVal = -Infinity, minModel = "", minVal = Infinity;
+      for (const row of data) {
+        const val = row[colName]; if (val == null) continue;
+        const model = row["02_model_name"] || "";
+        if (val > maxVal) { maxVal = val; maxModel = model; }
+        if (val < minVal) { minVal = val; minModel = model; }
+      }
+      if (maxVal === -Infinity) continue;
+      const range = maxVal - minVal;
+      divergences.push({ metric: metricKey, max_model: maxModel, max_value: maxVal, min_model: minModel, min_value: minVal, range, consensus: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo" });
+    }
+    const avgRange = divergences.length > 0 ? divergences.reduce((s: number, d: any) => s + d.range, 0) / divergences.length : 0;
+    console.log(`[SKILL] DivergenceAnalysis for ${params.ticker}: ${divergences.length} metrics in ${Date.now() - start}ms`);
+    return { success: true, data: { ticker: params.ticker, company: data[0]["03_target_name"] || "", batch_date: batchDate, divergences, overall_consensus: avgRange <= 5 ? "alto" : avgRange <= 12 ? "medio" : "bajo" } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Raw Texts ────────────────────────────────────────
+async function executeSkillGetRawTexts(supabase: any, params: { ticker: string; batch_date?: string }) {
+  const start = Date.now();
+  try {
+    if (!params.ticker) return { success: false, error: "ticker required" };
+    let batchDate = params.batch_date;
+    if (!batchDate) {
+      const sr = await getLatestValidSundayEdge(supabase);
+      if (!sr.success || !sr.data) return { success: false, error: sr.error };
+      batchDate = sr.data;
+    }
+    const { gte, lt } = buildDateFilterEdge(batchDate!);
+    const { data, error } = await supabase.from("rix_runs_v2").select("02_model_name,03_target_name,10_resumen,11_puntos_clave")
+      .eq("05_ticker", params.ticker).gte("batch_execution_date", gte).lt("batch_execution_date", lt).limit(20);
+    if (error) return { success: false, error: error.message };
+    if (!data || data.length === 0) return { success: false, error: `No texts for ${params.ticker}` };
+    const texts = data.map((r: any) => ({ model_name: r["02_model_name"] || "", resumen: r["10_resumen"], puntos_clave: r["11_puntos_clave"] }));
+    console.log(`[SKILL] RawTexts for ${params.ticker}: ${texts.length} models in ${Date.now() - start}ms`);
+    return { success: true, data: { ticker: params.ticker, company: data[0]["03_target_name"] || "", batch_date: batchDate, texts } };
+  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+}
+
+// ── Inlined skill: Interpret Query (regex, no LLM) ─────────────────
+const IBEX_PATTERNS_EDGE = /\b(ibex[- ]?35|ibex|índice|indice)\b/i;
+const EVOLUTION_PATTERNS_EDGE = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)/i;
+const RANKING_PATTERNS_EDGE = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)/i;
+const SECTOR_PATTERNS_EDGE = /\b(sector|sectorial|comparar sectores?|banca|energ[ií]a|tecnolog[ií]a|telecomunicacion|utilities|construcci[oó]n|inmobiliaria|alimentaci[oó]n|seguros?|turismo|textil|pharma|salud)/i;
+const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
+const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
+const SECTOR_MAP_EDGE: Record<string, string> = {
+  banca: "Banca", banco: "Banca", bancos: "Banca", energía: "Energía", energia: "Energía",
+  tecnología: "Tecnología", tecnologia: "Tecnología", telecomunicaciones: "Telecomunicaciones", telecom: "Telecomunicaciones",
+  construcción: "Construcción", construccion: "Construcción", inmobiliaria: "Inmobiliaria",
+  alimentación: "Alimentación", alimentacion: "Alimentación", seguros: "Seguros",
+  turismo: "Turismo y Ocio", textil: "Textil y Moda", pharma: "Pharma y Salud", salud: "Pharma y Salud", utilities: "Utilities",
+};
+
+function interpretQueryEdge(question: string): { intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number } {
+  const lower = question.toLowerCase();
+  const entities: string[] = [];
+  const filters: Record<string, string> = {};
+  let intent = "general_question";
+  const recommended_skills: string[] = [];
+  let confidence = 0.6;
+
+  const sectorMatch = lower.match(SECTOR_PATTERNS_EDGE);
+  if (sectorMatch) {
+    const key = sectorMatch[0].toLowerCase();
+    if (SECTOR_MAP_EDGE[key]) { filters.sector_category = SECTOR_MAP_EDGE[key]; entities.push(SECTOR_MAP_EDGE[key]); }
+  }
+
+  if (EVOLUTION_PATTERNS_EDGE.test(lower)) {
+    intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
+  } else if (DIVERGENCE_PATTERNS_EDGE.test(lower)) {
+    intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
+  } else if (RANKING_PATTERNS_EDGE.test(lower)) {
+    intent = "ranking"; recommended_skills.push("skillGetCompanyRanking");
+    if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
+    confidence = 0.85;
+  } else if (SECTOR_PATTERNS_EDGE.test(lower) && filters.sector_category) {
+    intent = "sector_comparison"; recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking"); confidence = 0.8;
+  } else if (IBEX_PATTERNS_EDGE.test(lower)) {
+    intent = "ranking"; filters.ibex_family_code = "IBEX35"; recommended_skills.push("skillGetCompanyRanking"); confidence = 0.9;
+  } else if (COMPANY_QUESTION_PATTERNS_EDGE.test(lower)) {
+    intent = "company_analysis"; recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"); confidence = 0.75;
+  }
+
+  if (["company_analysis", "evolution", "divergence"].includes(intent) && !recommended_skills.includes("skillGetCompanyDetail")) {
+    recommended_skills.push("skillGetCompanyDetail");
+  }
+  if (intent === "general_question") { recommended_skills.push("skillGetCompanyDetail"); confidence = 0.3; }
+
+  return { intent, entities, filters, recommended_skills, confidence };
+}
+
+// ── buildDataPackFromSkills — Skills-first DataPack builder ─────────
+async function buildDataPackFromSkills(
+  question: string,
+  supabaseClient: any,
+  companiesCacheLocal: any[] | null,
+  logPrefix: string,
+): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
+  const totalStart = Date.now();
+  try {
+    const interpret = interpretQueryEdge(question);
+    console.log(`${logPrefix} [SKILLS] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}, skills=[${interpret.recommended_skills.join(",")}]`);
+
+    if (interpret.intent === "general_question" && interpret.confidence < 0.4) {
+      console.log(`${logPrefix} [SKILLS] Low confidence (${interpret.confidence}), skipping skills pipeline`);
+      return null;
+    }
+
+    // Resolve ticker from question using companiesCache
+    let resolvedTicker: string | null = null;
+    let resolvedName: string | null = null;
+    if (companiesCacheLocal && companiesCacheLocal.length > 0) {
+      const detected = detectCompaniesInQuestion(question, companiesCacheLocal);
+      if (detected.length > 0) {
+        resolvedTicker = detected[0].ticker;
+        resolvedName = detected[0].issuer_name;
+        console.log(`${logPrefix} [SKILLS] Resolved company: ${resolvedName} (${resolvedTicker})`);
+      }
+    }
+
+    // Build skill call promises
+    const skillCalls: Record<string, Promise<any>> = {};
+
+    for (const skillId of interpret.recommended_skills) {
+      switch (skillId) {
+        case "skillGetCompanyScores":
+          if (resolvedTicker) skillCalls.scores = executeSkillGetCompanyScores(supabaseClient, { ticker: resolvedTicker });
+          break;
+        case "skillGetCompanyRanking":
+          skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
+            sector_category: interpret.filters.sector_category,
+            ibex_family_code: interpret.filters.ibex_family_code,
+          });
+          break;
+        case "skillGetCompanyEvolution":
+          if (resolvedTicker) skillCalls.evolution = executeSkillGetCompanyEvolution(supabaseClient, { ticker: resolvedTicker });
+          break;
+        case "skillGetCompanyDetail":
+          if (resolvedTicker) skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
+          break;
+        case "skillGetSectorComparison":
+          if (interpret.filters.sector_category) skillCalls.sector = executeSkillGetSectorComparison(supabaseClient, { sector_category: interpret.filters.sector_category });
+          break;
+        case "skillGetDivergenceAnalysis":
+          if (resolvedTicker) skillCalls.divergence = executeSkillGetDivergenceAnalysis(supabaseClient, { ticker: resolvedTicker });
+          break;
+        case "skillGetRawTexts":
+          if (resolvedTicker) skillCalls.rawTexts = executeSkillGetRawTexts(supabaseClient, { ticker: resolvedTicker });
+          break;
+      }
+    }
+
+    // Also fetch raw texts and scores if we have a ticker but they weren't recommended
+    if (resolvedTicker && !skillCalls.scores) skillCalls.scores = executeSkillGetCompanyScores(supabaseClient, { ticker: resolvedTicker });
+    if (resolvedTicker && !skillCalls.rawTexts) skillCalls.rawTexts = executeSkillGetRawTexts(supabaseClient, { ticker: resolvedTicker });
+
+    if (Object.keys(skillCalls).length === 0) {
+      console.log(`${logPrefix} [SKILLS] No skill calls to make`);
+      return null;
+    }
+
+    // Execute all in parallel
+    const keys = Object.keys(skillCalls);
+    const results = await Promise.allSettled(Object.values(skillCalls));
+    const resultMap: Record<string, any> = {};
+    for (let i = 0; i < keys.length; i++) {
+      const r = results[i];
+      if (r.status === "fulfilled" && r.value?.success) {
+        resultMap[keys[i]] = r.value.data;
+      } else {
+        const err = r.status === "rejected" ? r.reason : r.value?.error;
+        console.warn(`${logPrefix} [SKILLS] ${keys[i]} failed: ${err}`);
+      }
+    }
+
+    console.log(`${logPrefix} [SKILLS] Completed: ${Object.keys(resultMap).join(",")} (${Object.keys(skillCalls).length - Object.keys(resultMap).length} failed) in ${Date.now() - totalStart}ms`);
+
+    // Build DataPack from skill results
+    const pack: DataPack & { divergencias_detalle?: any[] } = {
+      snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
+      memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
+      competidores_verificados: [], competidores_metricas_avg: null,
+      explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
+    };
+
+    // Map scores → snapshot
+    if (resultMap.scores) {
+      const sd = resultMap.scores;
+      pack.empresa_primaria = { ticker: sd.ticker, nombre: sd.company, sector: null, subsector: null };
+      pack.snapshot = sd.scores.map((s: any) => ({
+        modelo: s.model_name, rix: s.rix_score, rix_adj: null,
+        nvm: s.nvm_score, drm: s.drm_score, sim: s.sim_score, rmm: s.rmm_score,
+        cem: s.cem_score, gam: s.gam_score, dcm: s.dcm_score, cxm: s.cxm_score,
+        period_from: null, period_to: null,
+      }));
+    }
+
+    // Map detail → empresa_primaria + memento
+    if (resultMap.detail) {
+      const d = resultMap.detail;
+      pack.empresa_primaria = { ticker: d.ticker, nombre: d.issuer_name, sector: d.sector_category, subsector: d.subsector };
+      if (d.corporate) {
+        pack.memento = {
+          ceo: d.corporate.ceo_name, presidente: null, chairman: null,
+          sede: d.corporate.headquarters_city ? `${d.corporate.headquarters_city}, ${d.corporate.headquarters_country || ""}` : null,
+          descripcion: d.corporate.company_description, fecha: null,
+          empleados: d.corporate.employees_approx, fundacion: d.corporate.founded_year,
+          ingresos: d.corporate.last_reported_revenue, ejercicio_fiscal: null, mision: null, otros_ejecutivos: null,
+        };
+      }
+      // Map verified competitors
+      if (d.verified_competitors && Array.isArray(d.verified_competitors)) {
+        pack.competidores_verificados = d.verified_competitors.map((t: string) => {
+          const comp = (companiesCacheLocal || []).find((c: any) => c.ticker === t);
+          return { ticker: t, nombre: comp?.issuer_name || t, rix_avg: null };
+        });
+      }
+    }
+
+    // Map ranking
+    if (resultMap.ranking) {
+      pack.ranking = resultMap.ranking.ranking.map((r: any, i: number) => ({
+        pos: i + 1, ticker: r.ticker, nombre: r.company, rix_avg: r.median_rix,
+        scores_por_modelo: r.scores_by_model,
+      }));
+    }
+
+    // Map evolution → evolucion (aggregated by week)
+    if (resultMap.evolution) {
+      const byWeek = new Map<string, number[]>();
+      for (const pt of resultMap.evolution.evolution) {
+        if (pt.rix_score == null) continue;
+        if (!byWeek.has(pt.batch_week)) byWeek.set(pt.batch_week, []);
+        byWeek.get(pt.batch_week)!.push(pt.rix_score);
+      }
+      const weeks = Array.from(byWeek.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      let prevAvg: number | null = null;
+      pack.evolucion = weeks.map(([fecha, scores]) => {
+        const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10;
+        const delta = prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null;
+        prevAvg = avg;
+        return { fecha, rix_avg: avg, modelos: scores.length, delta };
+      });
+    }
+
+    // Map divergence
+    if (resultMap.divergence) {
+      const div = resultMap.divergence;
+      const rixDiv = div.divergences.find((d: any) => d.metric === "rix_score");
+      if (rixDiv) {
+        pack.divergencia = {
+          sigma: Math.round(rixDiv.range / 2),
+          nivel: rixDiv.consensus,
+          modelo_alto: rixDiv.max_model,
+          modelo_bajo: rixDiv.min_model,
+          rango: rixDiv.range,
+        };
+      }
+      pack.divergencias_detalle = div.divergences;
+    }
+
+    // Map raw texts
+    if (resultMap.rawTexts) {
+      pack.raw_texts = resultMap.rawTexts.texts.map((t: any) => ({
+        modelo: t.model_name,
+        texto: t.resumen || "",
+      }));
+      pack.puntos_clave = resultMap.rawTexts.texts
+        .filter((t: any) => t.puntos_clave)
+        .map((t: any) => {
+          const puntos = Array.isArray(t.puntos_clave) ? t.puntos_clave : typeof t.puntos_clave === "string" ? [t.puntos_clave] : [];
+          return { modelo: t.model_name, puntos };
+        });
+    }
+
+    // Map sector comparison → sector_avg
+    if (resultMap.sector) {
+      const sc = resultMap.sector;
+      const allMedians = sc.companies.map((c: any) => c.median_rix).filter((v: number) => v > 0);
+      if (allMedians.length > 0) {
+        pack.sector_avg = {
+          rix: Math.round(allMedians.reduce((a: number, b: number) => a + b, 0) / allMedians.length * 10) / 10,
+          count: allMedians.length,
+        };
+      }
+    }
+
+    return pack;
+  } catch (e: any) {
+    console.error(`${logPrefix} [SKILLS] buildDataPackFromSkills failed: ${e.message || e}`);
+    return null;
+  }
+}
+
+// =============================================================================
 // PIPELINE I18N — Static translation dictionary for all user-facing text
 // =============================================================================
 const PIPELINE_I18N: Record<string, Record<string, string>> = {
@@ -1662,6 +2218,7 @@ interface DataPack {
   puntos_clave: { modelo: string; puntos: string[] }[];
   categorias_metricas: { modelo: string; nvm: string | null; drm: string | null; sim: string | null; rmm: string | null; cem: string | null; gam: string | null; dcm: string | null; cxm: string | null }[];
   mercado: { precio: string | null; reputacion_vs_precio: string | null; variacion_interanual: string | null } | null;
+  divergencias_detalle?: Array<{metric: string; max_model: string; max_value: number; min_model: string; min_value: number; range: number; consensus: string}>;
 }
 
 async function buildDataPack(
@@ -2730,6 +3287,7 @@ function buildOrchestratorPrompt(
     competidores_metricas_avg: dataPack.competidores_metricas_avg,
     evolucion: dataPack.evolucion,
     divergencia: dataPack.divergencia,
+    divergencias_detalle: (dataPack as any).divergencias_detalle || null,
     memento: dataPack.memento,
     noticias: dataPack.noticias.slice(0, 5),
     mercado: dataPack.mercado,
@@ -2810,6 +3368,13 @@ REGLAS DE INTEGRIDAD:
 REGLA DE EXPLICACIONES: Cuando cites una métrica débil o fuerte, explica POR QUÉ usando las EXPLICACIONES POR MÉTRICA. Ejemplo: "La Autoridad de Fuentes (41 pts) es baja porque, según DeepSeek, predominan fuentes T1 (75%) pero faltan fuentes T2 diversas." NUNCA digas solo "SIM=41, Mejorable" sin explicar la causa.
 
 REGLA DE MERCADO: Si hay DATOS DE MERCADO (precio, PER, variación), incluye un párrafo breve en el Resumen Ejecutivo conectando reputación con cotización. SOLO datos del bloque MERCADO, nunca inventes ratios ni precios.
+
+DIVERGENCIAS INTER-MODELO (si disponibles):
+Cuando el DataPack incluya datos de divergencia entre modelos de IA, ÚSALOS para enriquecer el análisis:
+- Si una métrica tiene consenso "alto" (rango < 10): "Las seis IAs coinciden en que [empresa] tiene un [métrica] sólido de [valor]"
+- Si tiene consenso "bajo" (rango > 20): "Existe una divergencia significativa: [modelo_max] otorga [valor_max] mientras que [modelo_min] solo concede [valor_min], lo que sugiere [interpretación]"
+- Prioriza las divergencias en rix_score y las métricas con mayor rango
+- NUNCA ignores las divergencias — son la señal analítica más valiosa
 
 REGLA DE CONSENSO CATEGORÍAS: Usa el CONSENSO DE CATEGORÍAS para reforzar la evidencia cruzada. "5 de 6 IAs califican la Gestión de Controversias como Buena" es más convincente que simplemente "CEM = 78". Siempre que tengas consenso disponible, úsalo.
 
@@ -5946,36 +6511,74 @@ async function handleStandardChat(
   // PIPELINE MULTI-EXPERTO E1-E6
   // =============================================================================
 
-  // --- E1: CLASIFICADOR DE INTENCIÓN ---
-  console.log(`${logPrefix} [PIPELINE] Starting E1-E6 multi-expert pipeline...`);
-  const classifier = await runClassifier(question, companiesCache || [], conversationHistory, language, logPrefix);
-  // Attach original question for downstream use in buildDataPack (IBEX detection)
-  (classifier as any)._originalQuestion = question;
+  // --- SKILLS PIPELINE (primary) or LEGACY E1+F2+E2 (fallback) ---
+  let dataPack: DataPack;
+  let classifier: ClassifierResult;
+  let detectedCompanies: any[];
+  let usedSkillsPipeline = false;
 
-  // Legacy fallback reference for downstream compatibility (suggestions, drumroll, session save)
-  const detectedCompanies = classifier.empresas_detectadas.map(e => {
-    const found = (companiesCache || []).find(c => c.ticker === e.ticker);
-    return found || { ticker: e.ticker, issuer_name: e.nombre, sector_category: null, subsector: null, ibex_family_code: null, cotiza_en_bolsa: true };
-  });
-  console.log(`${logPrefix} [E1] Detected companies: ${detectedCompanies.map(c => c.issuer_name).join(", ") || "none"}`);
+  if (USE_SKILLS_PIPELINE) {
+    console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
+    const skillsStart = Date.now();
+    const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix);
+    if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0)) {
+      usedSkillsPipeline = true;
+      dataPack = skillsPack;
+      console.log(`${logPrefix} [SKILLS] Success in ${Date.now() - skillsStart}ms — snapshot:${skillsPack.snapshot.length}, ranking:${skillsPack.ranking.length}`);
 
-  // --- F2: SQL EXPERT (dynamic queries) ---
-  const f2Results = await generateAndExecuteSQLQueries(question, classifier, supabaseClient, logPrefix);
+      // Create a minimal classifier for downstream compatibility (suggestions, drumroll, session save)
+      const interpretResult = interpretQueryEdge(question);
+      const detectedFromCache = detectCompaniesInQuestion(question, companiesCache || []);
+      classifier = {
+        tipo: interpretResult.intent === "ranking" || interpretResult.intent === "sector_comparison" ? "sector" : "empresa",
+        empresas_detectadas: detectedFromCache.map((c: any) => ({ ticker: c.ticker, nombre: c.issuer_name, confianza: 0.9 })),
+        intencion: interpretResult.intent === "ranking" ? "ranking" : interpretResult.intent === "evolution" ? "evolucion" : "diagnostico",
+        metricas_mencionadas: [],
+        periodo_solicitado: "ultima_semana",
+        idioma: language === "en" ? "en" : "es",
+        requiere_bulletin: false,
+      } as ClassifierResult;
+      (classifier as any)._originalQuestion = question;
 
-  // --- E2: DATAPACK SQL (hardcoded + F2 enrichment) ---
-  const dataPack = await buildDataPack(classifier, supabaseClient, companiesCache, logPrefix);
+      detectedCompanies = detectedFromCache.length > 0
+        ? detectedFromCache
+        : skillsPack.empresa_primaria
+          ? [{ ticker: skillsPack.empresa_primaria.ticker, issuer_name: skillsPack.empresa_primaria.nombre, sector_category: skillsPack.empresa_primaria.sector, subsector: skillsPack.empresa_primaria.subsector, ibex_family_code: null, cotiza_en_bolsa: true }]
+          : [];
+    } else {
+      console.log(`${logPrefix} [SKILLS] Insufficient data, falling back to legacy pipeline`);
+    }
+  }
 
-  // Merge F2 dynamic data into DataPack as supplementary context
-  if (f2Results.length > 0) {
-    const f2SuccessfulData = f2Results.filter(r => r.data && r.data.length > 0);
-    if (f2SuccessfulData.length > 0) {
-      // Attach F2 results as a new field for E5 consumption
-      (dataPack as any).f2_dynamic = f2SuccessfulData.map(r => ({
-        label: r.label,
-        rows: r.data!.slice(0, 100), // Cap at 100 rows per query
-        row_count: r.data!.length,
-      }));
-      console.log(`${logPrefix} [F2→E2] Merged ${f2SuccessfulData.length} dynamic datasets into DataPack`);
+  if (!usedSkillsPipeline) {
+    // --- LEGACY: E1 + F2 + E2 (unchanged) ---
+    console.log(`${logPrefix} [PIPELINE] Starting E1-E6 multi-expert pipeline...`);
+    classifier = await runClassifier(question, companiesCache || [], conversationHistory, language, logPrefix);
+    (classifier as any)._originalQuestion = question;
+
+    detectedCompanies = classifier.empresas_detectadas.map(e => {
+      const found = (companiesCache || []).find(c => c.ticker === e.ticker);
+      return found || { ticker: e.ticker, issuer_name: e.nombre, sector_category: null, subsector: null, ibex_family_code: null, cotiza_en_bolsa: true };
+    });
+    console.log(`${logPrefix} [E1] Detected companies: ${detectedCompanies.map(c => c.issuer_name).join(", ") || "none"}`);
+
+    // --- F2: SQL EXPERT (dynamic queries) ---
+    const f2Results = await generateAndExecuteSQLQueries(question, classifier, supabaseClient, logPrefix);
+
+    // --- E2: DATAPACK SQL (hardcoded + F2 enrichment) ---
+    dataPack = await buildDataPack(classifier, supabaseClient, companiesCache, logPrefix);
+
+    // Merge F2 dynamic data into DataPack as supplementary context
+    if (f2Results.length > 0) {
+      const f2SuccessfulData = f2Results.filter(r => r.data && r.data.length > 0);
+      if (f2SuccessfulData.length > 0) {
+        (dataPack as any).f2_dynamic = f2SuccessfulData.map(r => ({
+          label: r.label,
+          rows: r.data!.slice(0, 100),
+          row_count: r.data!.length,
+        }));
+        console.log(`${logPrefix} [F2→E2] Merged ${f2SuccessfulData.length} dynamic datasets into DataPack`);
+      }
     }
   }
 
