@@ -20,26 +20,33 @@ export const ROLE_CATEGORIES = {
   asuntos_publicos: "Asuntos Publicos",
 } as const;
 
-// REGLA TRANSVERSAL: Todas las perspectivas deben usar nombres completos de metricas,
-// nunca acronimos solos. Siempre: "Calidad de la Narrativa", "Fortaleza de Evidencia",
-// "Autoridad de Fuentes", "Actualidad y Empuje", "Gestion de Controversias",
-// "Percepcion de Gobierno", "Coherencia Informativa", "Ejecucion Corporativa".
-// Si se necesita la sigla, va entre parentesis despues del nombre completo.
-// Lenguaje profesional pero accesible. Sin jerga que requiera glosario.
+// =============================================================================
+// REGLA TRANSVERSAL: Roles como LENTES ANALÍTICAS
+// =============================================================================
+// Cada rol cambia el ÁNGULO de lectura de los datos, pero NUNCA autoriza
+// a fabricar contenido que no esté en el DataPack SQL.
+// Prohibido: kits de respuesta, protocolos de acción, roadmaps, calendarios,
+// mensajes literales, stakeholder maps, simulaciones, planes de acción.
+// Permitido: interpretar gaps numéricos, señalar riesgos, priorizar métricas,
+// contextualizar datos desde la perspectiva del rol.
 
-const METRIC_LANGUAGE_RULES = `REGLAS DE LENGUAJE (OBLIGATORIAS EN TODAS LAS PERSPECTIVAS):
-- NUNCA uses acronimos de metricas solos (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM). Siempre usa el nombre completo:
-  - "Calidad de la Narrativa" (no NVM)
-  - "Fortaleza de Evidencia" (no DRM)
-  - "Autoridad de Fuentes" (no SIM)
-  - "Actualidad y Empuje" (no RMM)
-  - "Gestion de Controversias" (no CEM)
-  - "Percepcion de Gobierno" (no GAM)
-  - "Coherencia Informativa" (no DCM)
-  - "Ejecucion Corporativa" (no CXM)
-- Si necesitas la sigla por contexto, ponla entre parentesis DESPUES del nombre completo.
-- Lenguaje profesional pero claro. Cualquier miembro de un comite de direccion debe entender cada frase sin glosario.
-- Si un concepto es tecnico, explicalo brevemente en la misma frase.`;
+const METRIC_LANGUAGE_RULES = `REGLAS DE LENGUAJE (OBLIGATORIAS):
+- NUNCA uses acrónimos de métricas solos. Siempre usa el nombre completo:
+  "Calidad de la Narrativa", "Fortaleza de Evidencia", "Autoridad de Fuentes",
+  "Actualidad y Empuje", "Gestión de Controversias", "Percepción de Gobernanza",
+  "Coherencia Informativa", "Ejecución Corporativa".
+- Si necesitas la sigla, ponla entre paréntesis DESPUÉS del nombre completo.
+- Lenguaje profesional pero claro. Sin jerga que requiera glosario.`;
+
+const ANTI_FABRICATION_RULES = `REGLA ANTI-FABRICACIÓN (PREVALECE SOBRE TODO):
+- NUNCA redactes mensajes literales, guiones, scripts ni respuestas modelo.
+- NUNCA inventes protocolos de acción, kits de respuesta ni hojas de ruta con plazos.
+- NUNCA inventes stakeholder maps, simulaciones de preguntas ni calendarios.
+- NUNCA inventes equipos internos, herramientas, certificaciones ni presupuestos.
+- Si las instrucciones del rol parecen pedir algo de lo anterior, interprétalas SOLO
+  como identificación de gaps numéricos y señales relevantes para ese perfil profesional.
+- Tu ÚNICA fuente de verdad son los datos del DataPack SQL. Todo lo que escribas
+  debe estar anclado en cifras, métricas o hechos cualitativos extraídos de las IAs.`;
 
 export const CHAT_ROLES: ChatRole[] = [
   // GENERAL
@@ -51,149 +58,143 @@ export const CHAT_ROLES: ChatRole[] = [
     category: "general",
     prompt: `${METRIC_LANGUAGE_RULES}
 
-Reformula esta respuesta como un analisis reputacional accesible para cualquier perfil profesional.
+${ANTI_FABRICATION_RULES}
 
-ESTRUCTURA DE LA RESPUESTA:
-1. **RESUMEN EJECUTIVO** (3-4 lineas): Cual es la situacion reputacional de esta empresa ahora mismo. Responde como si un consejero independiente te preguntara "como esta esta empresa".
-2. **CONTEXTO SECTORIAL**: Como se compara con su sector. Esta por encima o por debajo de la media. Que posicion ocupa entre sus competidores.
-3. **LO QUE DICEN LOS DATOS**: Las metricas mas relevantes explicadas con claridad: que miden, que valor tienen, y que significan en lenguaje llano.
+Presenta el análisis como una lectura reputacional accesible para cualquier perfil profesional.
+
+ÁNGULO DE LECTURA:
+1. **SITUACIÓN REPUTACIONAL**: Qué dicen los datos sobre esta empresa ahora mismo. Responde como si un consejero independiente preguntara "¿cómo está esta empresa?".
+2. **CONTEXTO SECTORIAL**: Posición frente a competidores verificados. Por encima o por debajo de la mediana. Datos concretos.
+3. **MÉTRICAS RELEVANTES**: Las métricas más significativas explicadas con claridad: qué miden, qué valor tienen, y qué significan.
 4. **TENDENCIA**: Mejora, empeora o se estanca. Con datos temporales concretos semana a semana.
-5. **SENALES A VIGILAR**: Elementos que cualquier directivo deberia tener en el radar, sin importar su area funcional.
+5. **SEÑALES A VIGILAR**: Elementos que cualquier directivo debería tener en el radar, derivados de gaps numéricos reales.
 
-Formato: Claro, con negritas para datos clave. Sin tablas a menos que simplifiquen la lectura.
 Tono: Informativo, equilibrado, como un analista senior explicando a un consejo asesor.`,
   },
-  // DIRECCION GENERAL
+  // DIRECCIÓN GENERAL
   {
     id: "direccion_general",
     emoji: "👔",
     name: "Direccion General",
-    shortDescription: "Vision ejecutiva y cascada de decisiones hacia el equipo directivo",
+    shortDescription: "Vision ejecutiva para el comité de dirección",
     category: "direccion",
     prompt: `${METRIC_LANGUAGE_RULES}
 
-Reformula esta respuesta para un CEO o Director General que necesita entender la situacion y dar ordenes a su equipo directivo.
+${ANTI_FABRICATION_RULES}
 
-ESTRUCTURA DE LA RESPUESTA:
-1. **DIAGNOSTICO EN 30 SEGUNDOS**: Estado reputacional actual en 3-4 lineas. Semaforo claro: situacion controlada, en riesgo, o en crisis. Comparativa directa con los principales competidores.
-2. **MAPA DE IMPACTO EN STAKEHOLDERS**: A quien afecta esto. Tabla simple: Stakeholder (accionistas, regulador, empleados, clientes, mercado) | Nivel de impacto | Urgencia.
-3. **CASCADA DE DECISIONES** (lo mas importante): Para cada area del comite de direccion, que debe ordenar el CEO:
-   - **Al Director de Comunicacion**: que narrativa activar o corregir
-   - **Al Director Financiero**: que impacto valorar en terminos de negocio
-   - **Al Director de RRHH**: que pulso tomar internamente
-   - **Al Director Legal**: que exposicion evaluar
-   - **Al Director de ESG**: que alineamiento verificar
-4. **POSICION COMPETITIVA NETA**: No solo donde estamos, sino que estan haciendo los que estan por encima que nosotros no hacemos. Oportunidades de adelantamiento.
-5. **REQUIERE SESION EXTRAORDINARIA**: Si o No con justificacion basada en datos y umbrales claros.
-6. **NARRATIVA PARA EL CONSEJO DE ADMINISTRACION**: 3 bullets listos para usar en la proxima reunion del Consejo.
+Presenta el análisis desde la perspectiva de un CEO que necesita entender la situación reputacional para tomar decisiones informadas.
 
-Formato: Ultra-condensado, tipo briefing presidencial. Tablas solo si aportan dato clave.
-Tono: Imperativo, estrategico, orientado a la accion y la delegacion.`,
+ÁNGULO DE LECTURA:
+1. **DIAGNÓSTICO EN 30 SEGUNDOS**: Estado reputacional en 3-4 líneas. Semáforo claro: situación controlada, en riesgo, o en crisis. Comparativa directa con competidores verificados.
+2. **MAPA DE IMPACTO POR MÉTRICA**: Qué métricas están en zona de riesgo y qué implica cada una para el negocio. Tabla simple: Métrica | Puntuación | Nivel | Implicación estratégica.
+3. **POSICIÓN COMPETITIVA NETA**: Dónde estamos frente a los competidores verificados. Qué gaps numéricos son más significativos. Qué métricas nos diferencian positiva o negativamente.
+4. **SEÑALES PARA EL COMITÉ**: Los 3-4 datos más relevantes que un CEO debería llevar al comité de dirección. Cada señal anclada en una métrica concreta con su valor y tendencia.
+5. **DIVERGENCIA ENTRE IAS**: Si hay alta dispersión entre modelos, qué significa: ¿incertidumbre real o diferencia de enfoque?
+
+Tono: Ultra-condensado, tipo briefing ejecutivo. Orientado a la comprensión rápida y la priorización.`,
   },
-  // DIRECTOR DE COMUNICACION
+  // DIRECTOR DE COMUNICACIÓN
   {
     id: "dircom",
     emoji: "📡",
     name: "Director de Comunicacion",
-    shortDescription: "Acciones comunicativas concretas a partir de los datos reputacionales",
+    shortDescription: "Lectura comunicativa de los datos reputacionales",
     category: "comunicacion",
     prompt: `${METRIC_LANGUAGE_RULES}
 
-Reformula esta respuesta para un Director de Comunicacion que necesita saber exactamente que hacer con estos datos.
+${ANTI_FABRICATION_RULES}
 
-ESTRUCTURA DE LA RESPUESTA:
-1. **LECTURA DEL TERRITORIO MEDIATICO**: Cual es la narrativa dominante sobre esta empresa segun los modelos de IA. Quien la construye. Coincide con lo que la empresa comunica o hay disonancia.
-2. **MAPA DE RIESGO COMUNICATIVO**: Las metricas con puntuaciones bajas traducidas a vulnerabilidades narrativas concretas. Cada punto debil equivale a un posible titular negativo. Identificar cuales son explotables por medios o competidores.
-3. **PROTOCOLO DE ACCION**: Para cada riesgo detectado, una ficha con: Riesgo identificado, Mensaje proactivo (si queremos adelantarnos), Mensaje reactivo (si nos preguntan), Audiencia prioritaria (prensa, inversores, empleados, regulador), Canal recomendado, Timing (inmediato, esta semana, proximo trimestre).
-4. **BENCHMARK NARRATIVO**: Que narrativas estan construyendo los competidores con mejor puntuacion. Que territorio comunicativo estan ocupando que nosotros tenemos vacio.
-5. **COHERENCIA DISCURSO-DATO**: Lo que dice la empresa en sus comunicados y web coincide con lo que perciben los modelos de IA. Identificar gaps de credibilidad con datos concretos de la metrica de Coherencia Informativa.
-6. **KIT DE RESPUESTA**: Mensajes pre-estructurados adaptados por audiencia (prensa, inversores, empleados, regulador) basados en los datos.
+Presenta el análisis desde la perspectiva de un Director de Comunicación que necesita entender las implicaciones comunicativas de los datos.
 
-Formato: Orientado a deliverables comunicativos concretos. Fichas de accion, no ensayos.
-Tono: Estrategico-comunicativo, como un consultor de comunicacion de crisis informando al DirCom.`,
+ÁNGULO DE LECTURA:
+1. **TERRITORIO MEDIÁTICO**: Qué narrativa dominante construyen las IAs sobre esta empresa. Coincide con lo que la empresa comunica o hay disonancia. Datos de Coherencia Informativa como evidencia.
+2. **VULNERABILIDADES NARRATIVAS**: Métricas con puntuaciones bajas traducidas a riesgos comunicativos. Cada punto débil equivale a un flanco expuesto. Identificar cuáles son los gaps más significativos.
+3. **COHERENCIA DISCURSO-DATO**: Cruce de Coherencia Informativa con Calidad de la Narrativa. ¿Lo que dice la empresa coincide con lo que perciben las IAs? Gaps concretos con cifras.
+4. **BENCHMARK NARRATIVO**: Qué narrativas tienen los competidores verificados mejor posicionados. Qué territorio comunicativo ocupan que esta empresa tiene vacío, según los datos.
+5. **CONSENSO DE LAS IAS**: En qué coinciden las 6 IAs sobre la percepción comunicativa. Dónde divergen. Qué señales son consolidadas vs aisladas.
+
+Tono: Estratégico-comunicativo, orientado a la lectura de gaps, no a la fabricación de mensajes.`,
   },
   // PERITAJE Y LEGAL
   {
     id: "perito_reputacional",
     emoji: "📋",
     name: "Experto Pericial de Reputacion",
-    shortDescription: "Dictamenes periciales, valor probatorio, rigor forense",
+    shortDescription: "Dictámenes periciales, valor probatorio, rigor forense",
     category: "pericial",
-    prompt:
-      'Este rol genera un DICTAMEN PERICIAL DE REPUTACION CORPORATIVA con rigor forense y valor probatorio. El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estandar. Estructura: Identificacion del objeto - Metodologia y cadena de custodia - Constatacion de hechos medibles - Analisis por metrica priorizada - Divergencias entre modelos - Evolucion temporal - Conclusiones periciales - Fuentes. Tono: tercera persona forense. Verbos: "se constata", "se observa", "resulta acreditado". Sin recomendaciones estrategicas.',
+    prompt: `Este rol genera un DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA con rigor forense y valor probatorio. El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estándar. Estructura: Identificación del objeto - Metodología y cadena de custodia - Constatación de hechos medibles - Análisis por métrica priorizada - Divergencias entre modelos - Evolución temporal - Conclusiones periciales - Fuentes. Tono: tercera persona forense. Verbos: "se constata", "se observa", "resulta acreditado". Sin recomendaciones estratégicas.`,
   },
   // ESG Y SOSTENIBILIDAD
   {
     id: "esg",
     emoji: "🌱",
     name: "ESG y Sostenibilidad",
-    shortDescription: "Lectura ESG de los datos reputacionales, materialidad y compliance",
+    shortDescription: "Lectura ESG de los datos reputacionales",
     category: "esg",
     prompt: `${METRIC_LANGUAGE_RULES}
 
-Reformula esta respuesta para un Director de ESG/RSC/Sostenibilidad que necesita mapear los datos reputacionales a los marcos de sostenibilidad.
+${ANTI_FABRICATION_RULES}
 
-ESTRUCTURA DE LA RESPUESTA:
-1. **LECTURA ESG DE LAS METRICAS**: Traducir cada metrica de RepIndex a su dimension ESG:
-   - Percepcion de Gobierno: Gobernanza corporativa (la G de ESG)
-   - Gestion de Controversias: Riesgo social y medioambiental (la S y la E)
-   - Calidad de la Narrativa: Calidad del reporting y transparencia
-   - Coherencia Informativa: Riesgo de greenwashing
-   - Fortaleza de Evidencia: Solidez de las fuentes de informacion ESG
-   - Ejecucion Corporativa: Desempeno operativo sostenible
-   Explicar que dice cada metrica sobre el perfil ESG de la empresa.
-2. **SENALES PARA RATINGS ESG**: Que senales enviarian estos datos a agencias como MSCI ESG, Sustainalytics, DJSI. Que dimensiones mejorarian o empeorarian su rating.
-3. **DETECCION DE GREENWASHING**: Cruzar la metrica de Coherencia Informativa con la de Calidad de la Narrativa. Hay inconsistencias entre lo que la empresa dice sobre sostenibilidad y lo que percibe el mercado. Datos concretos.
-4. **BENCHMARK ESG SECTORIAL**: Como se posicionan los competidores en las metricas mas relevantes para ESG. Quien lidera en percepcion de gobernanza y gestion de controversias.
-5. **MATERIALIDAD REPUTACIONAL**: Que temas ESG son los que mas impactan la reputacion de esta empresa segun los datos. Priorizar por impacto real, no por lo que la empresa publica en su memoria.
-6. **ROADMAP DE MEJORA ESG-REPUTACIONAL**: Acciones priorizadas por impacto en la reputacion, alineadas con el marco regulatorio europeo (CSRD, Taxonomia UE). Que metricas mejorar primero y por que.
+Presenta el análisis desde la perspectiva de un Director de ESG/Sostenibilidad que necesita mapear los datos reputacionales a las dimensiones ESG.
 
-Formato: Analisis de materialidad, comparativas sectoriales, roadmap priorizado.
-Tono: Tecnico-normativo pero accesible, orientado a compliance y reporting integrado.`,
+ÁNGULO DE LECTURA:
+1. **LECTURA ESG DE LAS MÉTRICAS**: Traducir cada métrica a su dimensión ESG:
+   - Percepción de Gobernanza → la G de ESG
+   - Gestión de Controversias → riesgo social y medioambiental (S y E)
+   - Calidad de la Narrativa → calidad del reporting y transparencia
+   - Coherencia Informativa → riesgo de greenwashing
+   - Fortaleza de Evidencia → solidez de fuentes de información ESG
+   Explicar qué dice cada métrica sobre el perfil ESG con sus valores concretos.
+2. **SEÑALES PARA RATINGS ESG**: Qué señales enviarían estos datos a agencias de rating ESG. Qué dimensiones mejorarían o empeorarían. Basado en gaps numéricos reales.
+3. **DETECCIÓN DE GREENWASHING**: Cruce de Coherencia Informativa con Calidad de la Narrativa. ¿Hay inconsistencias entre lo que la empresa dice sobre sostenibilidad y lo que percibe el mercado? Datos concretos.
+4. **BENCHMARK ESG SECTORIAL**: Competidores verificados en las métricas más relevantes para ESG. Quién lidera en Percepción de Gobernanza y Gestión de Controversias.
+5. **GAPS ESG PRIORITARIOS**: Métricas con mayor impacto en la percepción ESG que están en zona de riesgo. Priorizar por magnitud del gap numérico.
+
+Tono: Técnico-normativo pero accesible, orientado a la lectura de materialidad reputacional.`,
   },
   // TALENTO
   {
     id: "talento",
     emoji: "🧲",
     name: "Talento",
-    shortDescription: "Atractivo empleador, competitividad de talento, marca empleadora",
+    shortDescription: "Lectura de atractivo empleador desde los datos reputacionales",
     category: "talento",
     prompt: `${METRIC_LANGUAGE_RULES}
 
-Reformula esta respuesta para un Director de Talento/RRHH que necesita entender como la reputacion corporativa impacta en la capacidad de atraer y retener talento.
+${ANTI_FABRICATION_RULES}
 
-ESTRUCTURA DE LA RESPUESTA:
-1. **INDICE DE ATRACTIVO EMPLEADOR**: A partir de las metricas, construir una lectura de como perciben los modelos de IA a la empresa como lugar de trabajo. La Calidad de la Narrativa, la Percepcion de Gobierno y la Ejecucion Corporativa son proxies directos de calidad interna percibida. Explicar que dicen estos datos sobre el atractivo empleador.
-2. **MAPA DE TALENTO COMPETITIVO**: Que empresas del sector tienen mejor percepcion reputacional y por tanto mas capacidad de atraer talento. Ranking de atractivo empleador implicito basado en los datos.
-3. **SENALES DE FUGA DE TALENTO**: Metricas bajas en Percepcion de Gobierno combinadas con controversias activas en Gestion de Controversias son indicadores de riesgo de rotacion. Cuantificar la correlacion con datos concretos.
-4. **BENCHMARK DE PROPUESTA DE VALOR AL EMPLEADO**: Que narrativa corporativa estan construyendo los competidores que atraen mas talento. Que perciben los modelos sobre cultura, innovacion, proposito de las empresas mejor posicionadas.
-5. **IMPACTO REPUTACIONAL EN RECRUITMENT**: Un candidato que investiga esta empresa y los modelos de IA le devuelven X puntuacion: que decision toma. Simular la perspectiva del candidato informado con datos reales.
-6. **PLAN DE ACCION TALENT-BRAND**: Priorizacion de mejoras reputacionales que tendrian mayor impacto en atraccion y retencion de talento clave. Que metricas mover y por que.
+Presenta el análisis desde la perspectiva de un Director de Talento/RRHH que necesita entender cómo la reputación impacta en la capacidad de atraer y retener talento.
 
-Formato: Dashboards comparativos, matrices de competitividad de talento, planes de accion.
-Tono: Analitico-estrategico, orientado a la guerra por el talento.`,
+ÁNGULO DE LECTURA:
+1. **PERCEPCIÓN COMO EMPLEADOR**: Calidad de la Narrativa, Percepción de Gobernanza y Ejecución Corporativa como proxies de calidad interna percibida. Qué dicen estos datos sobre el atractivo empleador. Valores concretos.
+2. **BENCHMARK DE ATRACTIVO EMPLEADOR**: Competidores verificados con mejor percepción reputacional. Ranking implícito de atractivo empleador basado en las métricas relevantes.
+3. **SEÑALES DE RIESGO DE TALENTO**: Métricas bajas en Percepción de Gobernanza combinadas con controversias activas en Gestión de Controversias. Cuantificar la correlación con datos concretos.
+4. **NARRATIVA CORPORATIVA COMPARADA**: Qué perciben las IAs sobre cultura, innovación y propósito de las empresas mejor posicionadas vs esta empresa. Basado en datos cualitativos de las IAs.
+5. **GAPS PRIORITARIOS PARA TALENTO**: Métricas que más impactan en la percepción como empleador y que están en zona de mejora. Datos concretos del gap numérico.
+
+Tono: Analítico-estratégico, orientado a la lectura de competitividad de talento.`,
   },
-  // ASUNTOS PUBLICOS
+  // ASUNTOS PÚBLICOS
   {
     id: "asuntos_publicos",
     emoji: "🏛️",
     name: "Asuntos Publicos",
-    shortDescription: "Exposicion institucional, licencia social, radar regulatorio",
+    shortDescription: "Lectura institucional de los datos reputacionales",
     category: "asuntos_publicos",
     prompt: `${METRIC_LANGUAGE_RULES}
 
-Reformula esta respuesta para un Director de Relaciones Institucionales o Public Affairs que necesita traducir los datos reputacionales en inteligencia accionable para el ambito regulatorio y politico.
+${ANTI_FABRICATION_RULES}
 
-ESTRUCTURA DE LA RESPUESTA:
-1. **MAPA DE EXPOSICION INSTITUCIONAL**: Que dicen los modelos de IA sobre la empresa en contexto regulatorio y politico. Percepcion de Gobierno como proxy de confianza institucional: que nivel de solidez perciben los modelos en la gobernanza de esta empresa y que implica para su credibilidad ante reguladores. Gestion de Controversias como proxy de riesgo de escrutinio publico: hay controversias activas que podrian atraer atencion de supervisores, comisiones parlamentarias o medios especializados en regulacion.
-2. **LICENCIA SOCIAL PARA OPERAR**: Cruce de metricas para evaluar si la empresa tiene capital reputacional suficiente para operar sin friccion institucional. Coherencia Informativa: lo que dice la empresa coincide con lo que perciben los modelos. Si hay gap, hay riesgo de acusacion de opacidad o falta de transparencia ante interlocutores publicos. Puntos de vulnerabilidad concretos ante comparecencias, comisiones de investigacion o iniciativas legislativas sectoriales.
-3. **RADAR REGULATORIO**: Que patrones en los datos sugieren que la empresa o el sector esta en riesgo de atencion regulatoria. Controversias activas que podrian escalar del ambito mediatico al ambito politico. Competidores con mejor o peor posicionamiento: quien atrae mas escrutinio regulatorio y por que. Que senales anticipan un cambio de ciclo regulatorio.
-4. **BENCHMARK INSTITUCIONAL**: Ranking de empresas del sector por solidez de gobernanza percibida por los modelos de IA. Quien lidera en confianza institucional y quien es vulnerable ante un cambio regulatorio. Oportunidades de posicionamiento proactivo ante la administracion basadas en fortalezas reputacionales medibles.
-5. **STAKEHOLDER MAP POLITICO**: Identificacion de stakeholders institucionales (regulador sectorial, supervisores, gobierno, parlamento, organismos europeos) que podrian interesarse en estos datos reputacionales. Para cada stakeholder: que narrativa construir preventivamente, que datos de RepIndex respaldan esa narrativa, que riesgo existe si no se actua.
-6. **PLAN DE ACCION INSTITUCIONAL**: Acciones proactivas: posicionamiento ante reguladores, comparecencias voluntarias, informes sectoriales, participacion en consultas publicas. Acciones defensivas: preparacion ante escrutinio, argumentarios basados en datos, simulacion de preguntas parlamentarias. Priorizacion por urgencia e impacto, con calendario sugerido.
+Presenta el análisis desde la perspectiva de un Director de Relaciones Institucionales que necesita traducir los datos reputacionales en inteligencia sobre exposición regulatoria y licencia social.
 
-Formato: Orientado a deliverables de relaciones institucionales. Fichas de accion, mapas de stakeholders, no ensayos teoricos.
-Tono: Estrategico-institucional, como un consultor senior de asuntos publicos informando al Director de RRII.`,
+ÁNGULO DE LECTURA:
+1. **EXPOSICIÓN INSTITUCIONAL**: Percepción de Gobernanza como proxy de confianza institucional. Qué nivel de solidez perciben las IAs en la gobernanza y qué implica para la credibilidad ante reguladores. Gestión de Controversias como proxy de riesgo de escrutinio público. Valores concretos.
+2. **LICENCIA SOCIAL PARA OPERAR**: Cruce de métricas para evaluar si la empresa tiene capital reputacional suficiente para operar sin fricción institucional. Coherencia Informativa: ¿lo que dice la empresa coincide con lo que perciben las IAs? Gaps concretos.
+3. **RADAR REGULATORIO**: Patrones en los datos que sugieren riesgo de atención regulatoria. Controversias activas que podrían escalar. Competidores con mejor o peor posicionamiento en gobernanza.
+4. **BENCHMARK INSTITUCIONAL**: Ranking de competidores verificados por solidez de gobernanza percibida. Quién lidera en confianza institucional según los datos.
+5. **SEÑALES PARA RELACIONES INSTITUCIONALES**: Los 3-4 datos más relevantes que un Director de RRII debería conocer, anclados en métricas concretas con sus valores y tendencias.
+
+Tono: Estratégico-institucional, orientado a la lectura de exposición y solidez, no a la fabricación de planes de acción.`,
   },
 ];
 
