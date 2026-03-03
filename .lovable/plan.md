@@ -1,95 +1,128 @@
 
-Diagnóstico confirmado (con evidencia):
-1) El sistema sí tiene datos del IBEX-35 en base de datos, pero el pipeline los está perdiendo antes de narrar.
-   - rix_runs_v2: última semana 2026-03-01 con 1050 filas, 175 compañías, 6 modelos.
-   - IBEX-35 en esa semana: 210 filas.
-2) La petición que falló fue panorámica de índice (sin empresa explícita): “haz una valoración panorámica del IBEX…”.
-3) En el código actual, E2 devuelve DataPack vacío cuando no hay empresa detectada:
-   - `buildDataPack()` corta en `if (classifier.empresas_detectadas.length === 0) return pack;`
-   - Resultado: consultas de índice/sector quedan sin datos aunque sí existan.
-4) Hay inconsistencias de código IBEX que empeoran el problema:
-   - se usa `"IBEX35"` en varios sitios, pero en DB el valor canónico es `"IBEX-35"`.
 
-Objetivo del arreglo:
-- Garantizar que consultas “IBEX-35 / sector / ganadores-perdedores” construyan DataPack real desde SQL (sin invención).
-- Reestructurar el flujo en 8 pasos con traductor lenguaje natural → SQL + ejecución validada.
-- Eliminar definitivamente respuestas tipo “no hay datos” cuando sí hay datos disponibles.
+# Plan: Corregir metricas nulas en Ruta B y eliminar alucinaciones de planes de accion
 
-Plan de implementación (secuenciado):
+## Diagnostico del informe
 
-Bloque 1 — Contención urgente (hotfix para que vuelva a responder bien ya)
-1. Añadir rama de DataPack para consultas sin empresa (índice/sector/comparativa)
-   - Archivo: `supabase/functions/chat-intelligence/index.ts`
-   - En E2 (`buildDataPack`), reemplazar el early return por enrutado:
-     - Ruta A: empresa específica (comportamiento actual).
-     - Ruta B: análisis de índice/sector (nueva), construyendo snapshot/ranking/evolución agregados del universo objetivo.
-2. Normalizar código canónico IBEX
-   - Sustituir comparaciones `IBEX35` por `IBEX-35` en filtros de `companiesCache` y fallbacks.
-   - Centralizar constantes:
-     - `const IBEX35_CODE = "IBEX-35"`
-     - `const IBEX35_LABEL = "IBEX-35"`
-3. Endurecer mensaje “sin datos”
-   - Solo permitir “no dispongo de datos” si SQL devuelve cero filas tras ejecutar consultas válidas (no por ausencia de empresa detectada).
+El informe descargado muestra DOS fallos criticos:
 
-Bloque 2 — Refactor a pipeline de 8 pasos (anclado a SQL)
-4. Reorganizar pipeline actual E1-E6 a 8 fases explícitas:
-   - F1 Router de intención (empresa/índice/sector/comparativa/metodología)
-   - F2 Traductor NL→SQL (plantillas + parámetros, sin SQL libre del LLM)
-   - F3 Validador SQL (solo SELECT, tablas permitidas, columnas permitidas, límites/rangos)
-   - F4 Ejecutor SQL (RPC `execute_sql` read-only o query builder equivalente)
-   - F5 Ensamblador DataPack (snapshot, ranking, evolución, divergencia, competidores verificados)
-   - F6 Lector cualitativo (raw texts + explicaciones)
-   - F7 Comparador analítico (gaps reales y evidencia)
-   - F8 Orquestador/maquetador (narrativa final + compliance gate)
-5. Contratos de datos entre fases
-   - Definir estructuras tipadas por fase para evitar silencios:
-     - `QueryPlan`, `ValidatedQueryPlan`, `SqlResultBundle`, `DataPack`.
-   - Si una fase devuelve vacío, registrar causa estructurada (no dejarlo implícito).
+### Fallo 1: Las 8 metricas aparecen como "dato no disponible"
 
-Bloque 3 — Catálogo SQL para consultas panorámicas (evitar alucinación)
-6. Implementar plantillas SQL deterministas por intención:
-   - “Top N IBEX-35 semana actual”
-   - “Ganadores/perdedores por sector en IBEX-35”
-   - “Ranking por métrica”
-   - “Evolución 4 semanas del IBEX-35”
-   - “Divergencia entre modelos”
-7. Añadir guardrails funcionales:
-   - Si no hay empresa y la intención es índice/sector, usar catálogo SQL de índice (no ruta empresa).
-   - Si usuario pide IBEX-35, forzar `ibex_family_code = 'IBEX-35'`.
-   - Validar cobertura mínima de modelos antes de afirmar conclusiones.
+**Causa raiz exacta** (linea 1606 de `chat-intelligence/index.ts`):
 
-Bloque 4 — Observabilidad y pruebas de no regresión
-8. Telemetría por fase (en `pipeline_logs`):
-   - `phase`, `intent`, `query_template_id`, `row_count`, `empty_reason`.
-9. Pruebas funcionales (mínimo):
-   - Caso A: pregunta panorámica IBEX-35 sin empresa → debe devolver ranking y sectores.
-   - Caso B: pregunta de empresa concreta → debe mantener comportamiento actual.
-   - Caso C: IBEX-35 con filtros de sector → no debe responder “sin datos” si hay filas.
-   - Caso D: ausencia real de datos (semana vacía) → mensaje transparente correcto.
-10. Pruebas de integridad anti-fabricación:
-   - Verificar que salida solo cite métricas presentes en DataPack.
-   - Mantener compliance gate anti “pilares/fake frameworks” activo.
+```
+nvm: null, drm: null, sim: null, rmm: null,
+cem: null, gam: null, dcm: null, cxm: null,
+```
 
-Archivos/zonas a tocar en implementación:
-- `supabase/functions/chat-intelligence/index.ts`
-  - `runClassifier` (enrutado robusto índice/sector)
-  - `buildDataPack` (rama sin empresa + agregados IBEX/sector)
-  - constantes y filtros `IBEX35` → `IBEX-35`
-  - orquestador: reglas de “sin datos” basadas en resultado SQL real
-  - introducción de fases F2/F3/F4 (planner/validator/executor)
-- (si procede) nuevo módulo interno en la misma función para catálogo SQL y validación de plantillas.
+La Ruta B ya descarga las columnas de metricas (`23_nvm_score`, `26_drm_score`, etc. en linea 1532), pero al construir el snapshot solo calcula el RIX promedio y descarta las metricas. El LLM recibe `null` para las 8 metricas y escribe "dato no disponible" en cada seccion.
 
-Criterios de aceptación:
-1) La consulta “valoración panorámica del IBEX-35, ganadores y perdedores por sector” devuelve datos reales (no DataPack vacío).
-2) Nunca aparece “no hay datos del IBEX-35” mientras existan filas en `rix_runs_v2` para esa semana.
-3) Todas las secciones del informe quedan trazables a resultados SQL de fases F2-F4.
-4) Se elimina la dependencia de “empresa detectada” para análisis de índice/sector.
-5) Se mantiene el protocolo anti-alucinación ya aplicado (sin pilares, sin frameworks inventados).
+### Fallo 2: Alucinacion masiva — "Plan de Accion Institucional"
 
-Riesgos y mitigación:
-- Riesgo: ampliar demasiado consultas y subir latencia.
-  - Mitigación: plantillas SQL acotadas, límites explícitos, índices existentes, paginación/range.
-- Riesgo: romper flujo actual de empresa.
-  - Mitigación: mantener ruta empresa intacta y añadir pruebas A/B por intención.
-- Riesgo: inconsistencia de códigos de familia.
-  - Mitigación: constante única `IBEX35_CODE = 'IBEX-35'` usada en todo el flujo.
+El informe contiene **6 paginas de contenido 100% fabricado**:
+- "Plan de Accion Institucional" con objetivos 2024-2025 (fechas inventadas)
+- "Mapa de Influencia y Alianzas" con nodos institucionales falsos (Caixabank-CEOE, Iberdrola-WindEurope)
+- "Hoja de Ruta Trimestral" T3-2024 a T2-2025 con responsables inventados
+- "Stakeholder Map Politico" con CNMV, Ministerio, Banco de Espana
+- KPIs fabricados: "Share of Voice >=35%", "Engagement digital >=3 ppm", "SECNewgate score >=7"
+- Escenarios ficticios: "cisne negro sanitario", "tasa extraordinaria a electricas"
+
+**Por que los FORBIDDEN_PATTERNS no lo detectaron:** Los patrones actuales exigen formatos especificos que el LLM evita. Por ejemplo `plan\s+de\s+accion\s+(?:ejecutivo|institucional)\s*\(` exige un parentesis final, pero el LLM no lo pone. No hay patrones para stakeholder maps, hojas de ruta, ni KPIs de share-of-voice.
+
+---
+
+## Solucion: 3 cambios en `supabase/functions/chat-intelligence/index.ts`
+
+### Cambio 1: Acumular y promediar las 8 metricas en Route B (lineas 1569-1611)
+
+Ampliar la estructura `byCompany` para acumular arrays de cada metrica por empresa. Calcular promedios e inyectarlos en el snapshot en lugar de `null`.
+
+```text
+// Estructura actual:
+byCompany = Map<ticker, { name, scores[], sector }>
+
+// Nueva estructura:
+byCompany = Map<ticker, { 
+  name, scores[], sector,
+  nvm[], drm[], sim[], rmm[], cem[], gam[], dcm[], cxm[] 
+}>
+```
+
+Luego en el snapshot (linea 1602-1611), reemplazar `null` por los promedios reales:
+```text
+nvm: avg(entry.nvm), drm: avg(entry.drm), ...
+```
+
+Tambien calcular promedios de metricas por sector en `sector_avg` para que el LLM tenga referencia.
+
+### Cambio 2: Ampliar FORBIDDEN_PATTERNS (lineas 1054-1131)
+
+Anadir ~15 patrones nuevos para detectar las fabricaciones que se colaron:
+
+```text
+// Plan de accion sin parentesis
+/plan\s+de\s+acci[oó]n\s+institucional/i,
+
+// Stakeholder maps inventados
+/stakeholder\s+map/i,
+/mapa\s+de\s+influencia/i,
+/nodo\s+institucional/i,
+/patrocinador\s+interno/i,
+/socio\s+externo\s+ancla/i,
+
+// Hojas de ruta trimestrales
+/hoja\s+de\s+ruta\s+trimestral/i,
+/hoja\s+de\s+ruta\s+\(T\s*\+/i,
+
+// Trimestres con fechas pasadas (fabricacion)
+/T[1-4][\s-]+202[0-5]/i,
+
+// KPIs de consultoria
+/share\s+of\s+voice\s+(?:institucional|>=|≥)/i,
+/engagement\s+digital.*ppm/i,
+/secnewgate/i,
+
+// Presupuestos fabricados
+/presupuesto\s+(?:total\s+)?estimado.*\d+[.,]?\d*\s*m\s*[€e]/i,
+
+// Datos bursatiles inventados
+/(?:sabadell|bbva|caixabank|repsol|cellnex|colonial)\s+[+-]\d+\s*%/i,
+/indice:\s*[\d.,]+\s*pts/i,
+
+// Task Force / capacitacion inventada
+/task\s+force\s+sectorial/i,
+/formacion\s+(?:anual\s+)?de\s+portavoces/i,
+/dashboard\s+reputacional\s+en\s+comit[eé]/i,
+/cisne\s+negro\s+sanitario/i,
+
+// Campanas inventadas
+/campana\s+multicanal.*(?:earned|paid|owned)/i,
+/certificaci[oó]n\s+iso\s+37000/i,
+```
+
+### Cambio 3: Reforzar el system prompt del orquestador para consultas de indice
+
+Anadir un bloque condicional en `buildOrchestratorPrompt` (linea ~2454) que detecte cuando `dataPack.empresa_primaria.ticker` es "IBEX-35" y anada reglas especificas:
+
+```text
+CUANDO EL DATAPACK SEA DE TIPO ÍNDICE (IBEX-35):
+- Tu ÚNICO contenido permitido es: ranking, métricas por empresa, promedios sectoriales, evolución temporal, divergencia.
+- NUNCA generes planes de acción, hojas de ruta, stakeholder maps, KPIs de gestión ni escenarios.
+- NUNCA inventes datos bursátiles (cotizaciones, variaciones YTD, volatilidad, ratios).
+- NUNCA inventes organizaciones externas (WindEurope, Airlines for Europe, CEOE) ni responsables internos.
+- Si una métrica es null, di "dato no disponible" y PASA A LA SIGUIENTE. No rellenes.
+- Extensión máxima: 2.000 palabras. Este es un resumen de índice, no un informe de consultoría.
+```
+
+---
+
+## Resumen de impacto
+
+| Cambio | Que resuelve | Riesgo |
+|--------|-------------|--------|
+| Metricas en Route B | Elimina "dato no disponible" en las 8 metricas | Bajo: usa datos que ya se descargan |
+| FORBIDDEN_PATTERNS | Corta el stream ante planes de accion y stakeholder maps fabricados | Bajo: solo regex adicionales |
+| Prompt para indice | Reduce la libertad creativa del LLM en consultas panoramicas | Bajo: solo texto en prompt |
+
+No se toca: streaming, sesion, Ruta A (empresa), E1-E4, bulletin handler.
+
