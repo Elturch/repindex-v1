@@ -1,89 +1,68 @@
 
 
-# Plan: Eliminar promedios, mostrar datos por IA individual con consenso temático
+# Plan: Eliminar referencias al DataPack y mejorar la consistencia narrativa
 
-## El problema fundamental
+## Problemas detectados en el informe generado
 
-El sistema actual promedia los scores de 6 IAs para crear un ranking de empresas. Esto es metodológicamente incorrecto:
+1. **Referencias internas filtradas**: El informe incluye líneas como `(Fuentes: DATAPACK.ranking, DATAPACK.sector_avg, HECHOS.temas_clave)` que son artefactos internos del pipeline. El usuario no sabe qué es un "DATAPACK" ni "HECHOS".
 
-1. **No todas las IAs tienen el mismo peso de audiencia** -- ChatGPT tiene cientos de millones de usuarios, DeepSeek tiene una fracción. Un promedio aritmético trata ambas como iguales.
-2. **Un promedio ponderado real requiere datos de audiencia actualizados** que no tenemos (cuotas de mercado, usuarios activos por geografía, etc.).
-3. **El usuario espera ver qué dice CADA IA**, no una media aritmética sin sentido.
-4. **El informe debe buscar coherencia temática** (¿en qué coinciden las IAs? ¿en qué divergen?) en lugar de promediar números.
+2. **Estructura de bullets dispersa**: El informe salta de empresa en empresa con bullets sueltos sin hilo conductor. Falta un relato que conecte las señales en una narrativa coherente (contexto → hallazgo → implicación).
 
 ## Cambios en `supabase/functions/chat-intelligence/index.ts`
 
-### Cambio 1: Reestructurar el ranking de Route B -- datos por modelo individual
+### Cambio 1: Prohibir referencias internas en el prompt E5
 
-Actualmente (lineas 1611-1667): se agrupan scores por empresa y se promedian. 
-
-**Nuevo enfoque:**
-- El `pack.ranking` dejará de contener `rix_avg` (promedio). En su lugar, cada entrada del ranking incluirá los scores individuales de cada modelo como un objeto `scores_por_modelo: { ChatGPT: 72, Gemini: 65, ... }`.
-- Ordenar el ranking por la **mediana** (no la media), que es más robusta a valores extremos. La mediana ya se usa en RIXc Lite.
-- Incluir el campo `rango` (max - min) como indicador de dispersión.
-- Incluir `consenso_nivel`: "alto" si rango < 10, "medio" si < 20, "bajo" si >= 20.
-
-Esto permite que el orquestador (E5) explique: "Solaria obtiene 84 según Grok pero solo 57 según ChatGPT — alta dispersión inter-modelo" en vez de "Solaria: 67.7 puntos".
-
-### Cambio 2: Reestructurar el snapshot de Route B -- una fila por modelo, no por empresa promediada
-
-Actualmente (lineas 1681-1694): el snapshot contiene entradas tipo `"Solaria (SOL)": rix_avg=67.7` con métricas promediadas.
-
-**Nuevo enfoque:**
-- Cada entrada del snapshot será `{ modelo: "ChatGPT → Solaria", rix: 57, nvm: X, drm: Y, ... }` -- una fila por modelo por empresa (solo top-5 y bottom-5).
-- Esto da al E5 la granularidad para explicar POR QUÉ Grok ve Solaria tan positivamente vs ChatGPT.
-- Limitar a top-5 + bottom-5 × 6 modelos = máx 60 filas (controlado).
-
-### Cambio 3: Actualizar el prompt del orquestador (E5) con instrucciones anti-promedio
-
-En el system prompt del E5 (lineas 2528-2643), añadir reglas explícitas:
+En el bloque de reglas del `systemPrompt` (líneas ~2604-2728), añadir una regla explícita:
 
 ```
-REGLA ANTI-PROMEDIO (PRIORIDAD MÁXIMA):
-• NUNCA calcules ni presentes promedios aritméticos de scores entre modelos de IA.
-• Cada IA tiene audiencia, arquitectura y sesgos distintos. Un promedio sin ponderación de audiencia es metodológicamente incorrecto.
-• En su lugar, presenta los datos POR MODELO INDIVIDUAL y busca CONSENSO TEMÁTICO:
-  - ¿En qué coinciden 5-6 IAs? → Señal consolidada
-  - ¿Dónde divergen significativamente? → Señal de incertidumbre
-  - ¿Qué modelo es outlier y por qué?
-• Usa la MEDIANA como referencia de tendencia central (no la media).
-• El ranking usa la mediana como criterio de ordenación, pero SIEMPRE muestra los scores individuales.
-• NUNCA digas "RIX promedio de 67.7" → Sí puedes decir "Mediana RIX: 67, rango: 57-84 (alta dispersión)"
+REGLA ANTI-FILTRACIÓN INTERNA (PRIORIDAD MÁXIMA):
+• NUNCA menciones "DATAPACK", "HECHOS", "ANALISIS", "E1", "E2", "E3", "E4", "E5", "E6", "DataPack", "snapshot", "pack", "classifier" ni ningún nombre de componente interno del pipeline.
+• NUNCA escribas líneas como "(Fuentes: DATAPACK.ranking...)" ni "(Fuentes: HECHOS.temas_clave)".
+• El usuario NO sabe que existen estos bloques internos. Para él, los datos vienen de "las seis IAs analizadas" o "el análisis RepIndex de esta semana".
+• Si necesitas citar la fuente de un dato, di: "Según el análisis de [nombre de IA]" o "Los datos de esta semana muestran...".
 ```
 
-### Cambio 4: Actualizar `sector_avg` y `evolucion` para usar mediana
+### Cambio 2: Regla de consistencia narrativa en el prompt E5
 
-- `sector_avg` (linea 1679): cambiar de media a mediana.
-- `evolucion` (lineas 1758-1774): cambiar de media a mediana para el agregado semanal del índice.
-- Añadir `rango` a cada punto de evolución para mostrar la dispersión temporal.
-
-### Cambio 5: Actualizar E3 con max_tokens y pre-filtrado (del plan anterior pendiente)
-
-- Linea 2257: `max_tokens` de 1500 a 4000.
-- Linea 2202: si hay más de 40 textos normalizados, seleccionar máximo 3 por empresa (priorizando modelos distintos) y truncar a 1500 chars.
-- En el catch (linea 2267): intentar reparar JSON truncado antes de devolver null.
-
-### Cambio 6: Actualizar las reglas IBEX-35 específicas en E5
-
-En las lineas 2613-2622, reescribir las reglas de índice para reflejar la filosofía anti-promedio:
+Añadir instrucciones de estructura narrativa que sustituyan los bullets dispersos por un relato conectado:
 
 ```
-REGLAS ESPECÍFICAS PARA CONSULTAS DE ÍNDICE:
-• Presenta SIEMPRE los scores de cada IA por separado para las empresas destacadas.
-• Busca COHERENCIA TEMÁTICA: ¿las 6 IAs coinciden en que X empresa lidera? ¿O solo 2 la ponen arriba?
-• Si una empresa tiene alta dispersión (rango > 15), dedica un párrafo a explicar por qué las IAs discrepan.
-• La mediana es tu referencia de tendencia central. Nunca uses "promedio" ni "media".
-• Para el ranking general, ordena por mediana pero muestra: Mediana | Min | Max | Consenso.
+CONSISTENCIA NARRATIVA (OBLIGATORIO):
+• Cada sección debe tener un HILO CONDUCTOR claro: arranca con una afirmación de contexto, desarrolla con evidencia y cierra con una implicación.
+• NO listes empresas como bullets sueltos. Agrupa por SEÑAL TEMÁTICA: "Tres compañías del sector financiero comparten una señal positiva..." es mejor que tres bullets separados.
+• Conecta las secciones entre sí: el cierre de una sección debe anticipar la siguiente. Ejemplo: "Esta fortaleza en banca contrasta con la fragilidad del sector energético, que analizamos a continuación."
+• Prioriza la PANORÁMICA antes del DETALLE: primero el estado general del índice, después los casos destacados.
+• Las empresas que solo aparecen para rellenar NO deben mencionarse. Mejor profundizar en 5-6 casos con contexto que listar 15 con un bullet cada uno.
+• Cada párrafo debe responder a "¿y qué significa esto?" — nunca dejes un dato sin interpretación.
 ```
 
-## Resumen de impacto
+### Cambio 3: Limpiar el userPrompt de etiquetas internas visibles
 
-| Cambio | Qué resuelve | Riesgo |
-|--------|-------------|--------|
-| Ranking por modelo individual | El usuario ve lo que ve en el dashboard | Bajo: más datos pero estructura clara |
-| Snapshot granular por modelo | E5 puede explicar divergencias reales | Medio: más filas, controlar tamaño |
-| Prompt anti-promedio en E5 | Elimina promedios sin sentido del informe | Bajo: solo instrucciones |
-| Mediana en vez de media | Referencia estadística robusta sin necesitar pesos | Bajo: cambio determinista |
-| E3 max_tokens + pre-filtrado | Resuelve el timeout/truncado de E3 | Bajo: ya planificado |
-| Reglas IBEX-35 actualizadas | Informes con perspectiva por IA, no listados | Bajo: solo prompt |
+En el `userPrompt` (líneas 2737-2749), las etiquetas `═══ DATAPACK (E2 — FUENTE DE VERDAD) ═══` son útiles para el LLM pero el problema es que el LLM las copia al output. Añadir al final del userPrompt una línea de refuerzo:
+
+```
+RECORDATORIO FINAL: Las etiquetas DATAPACK, HECHOS, ANALISIS son bloques internos para tu consumo. NUNCA las menciones ni las cites en tu respuesta. El usuario solo debe ver "según las IAs", "los datos de esta semana" o "el análisis RepIndex".
+```
+
+### Cambio 4: Filtro de post-procesamiento en backend
+
+Después de recibir la respuesta del E5 y antes de pasarla al E6 (maquetador), añadir un regex de limpieza que elimine cualquier referencia interna que se haya filtrado:
+
+```typescript
+// Limpiar referencias internas filtradas
+const internalRefPattern = /\(?\s*(?:Fuentes?|Sources?)\s*:\s*(?:DATAPACK|HECHOS|ANALISIS|DataPack|E[1-6])[^)]*\)?/gi;
+cleanedMarkdown = rawMarkdown.replace(internalRefPattern, '');
+// También limpiar menciones sueltas
+const internalTerms = /\b(DATAPACK|DataPack|HECHOS|ANALISIS)\b\.?\w*/g;
+cleanedMarkdown = cleanedMarkdown.replace(internalTerms, 'los datos de esta semana');
+```
+
+## Resumen
+
+| Cambio | Qué resuelve |
+|--------|-------------|
+| Regla anti-filtración | Elimina "DATAPACK", "HECHOS" del output |
+| Regla de consistencia narrativa | Transforma bullets dispersos en relato conectado |
+| Refuerzo en userPrompt | Doble barrera contra filtraciones |
+| Regex post-procesamiento | Barrera final: limpia lo que el LLM haya dejado pasar |
 
