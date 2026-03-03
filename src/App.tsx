@@ -32,6 +32,7 @@ import PrivacyPolicy from "./pages/legal/PrivacyPolicy";
 import GdprForm from "./pages/legal/GdprForm";
 import ComplaintsForm from "./pages/legal/ComplaintsForm";
 import Qualification from "./pages/Qualification";
+import SkillsAdmin from "./pages/SkillsAdmin";
 import { isDevOrPreview } from "@/lib/env";
 
 const queryClient = new QueryClient();
@@ -90,6 +91,7 @@ const App = () => (
                   <>
                     <Route path="/insert-rix" element={<InsertRixResults />} />
                     <Route path="/admin" element={<Admin />} />
+                    <Route path="/admin/skills" element={<SkillsAdmin />} />
                   </>
                 )}
                 
