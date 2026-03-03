@@ -497,29 +497,42 @@ async function buildDataPackFromSkills(
 
     console.log(`${logPrefix} [SKILLS] Completed: ${Object.keys(resultMap).join(",")} (${Object.keys(skillCalls).length - Object.keys(resultMap).length} failed) in ${Date.now() - totalStart}ms`);
 
-    // IMPROVEMENT 5: Auto-fetch sector comparison for company_analysis
-    if (interpret.intent === "company_analysis" && resolvedTicker && !resultMap.sector && resultMap.detail) {
-      const detailSector = resultMap.detail.sector_category;
-      if (detailSector) {
-        console.log(`${logPrefix} [SKILLS] Auto-fetching sector comparison for ${detailSector}`);
-        try {
-          const sectorResult = await executeSkillGetSectorComparison(supabaseClient, { sector_category: detailSector });
-          if (sectorResult.success && sectorResult.data) {
-            resultMap.sector = sectorResult.data;
-            console.log(`${logPrefix} [SKILLS] Sector comparison added: ${sectorResult.data.companies?.length || 0} companies`);
+    // VERIFIED COMPETITORS: Fetch scores for each verified competitor (NOT sector-based)
+    let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number}> = [];
+    let competidoresNota: string | undefined;
+    if (interpret.intent === "company_analysis" && resultMap.detail) {
+      const vc = resultMap.detail.verified_competitors;
+      const vcArray: string[] = Array.isArray(vc) ? vc : [];
+      if (vcArray.length > 0) {
+        console.log(`${logPrefix} [SKILLS] Fetching verified competitors: ${vcArray.join(",")}`);
+        const compPromises = vcArray.map((t: string) => executeSkillGetCompanyScores(supabaseClient, { ticker: t }));
+        const compResults = await Promise.allSettled(compPromises);
+        for (let ci = 0; ci < vcArray.length; ci++) {
+          const cr = compResults[ci];
+          if (cr.status === "fulfilled" && cr.value?.success && cr.value.data) {
+            const cd = cr.value.data;
+            const rixScores = cd.scores.map((s: any) => s.rix_score).filter((v: number | null): v is number => v != null);
+            const medRix = rixScores.length > 0 ? medianEdge(rixScores) : 0;
+            competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.company, median_rix: Math.round(medRix * 10) / 10 });
+          } else {
+            console.warn(`${logPrefix} [SKILLS] Competitor ${vcArray[ci]} fetch failed`);
           }
-        } catch (e: any) {
-          console.warn(`${logPrefix} [SKILLS] Auto sector comparison failed: ${e.message}`);
         }
+        console.log(`${logPrefix} [SKILLS] Verified competitors resolved: ${competidoresDirectos.length}/${vcArray.length}`);
+      } else {
+        competidoresNota = "No se han verificado competidores directos para esta empresa";
+        console.log(`${logPrefix} [SKILLS] No verified competitors for this company`);
       }
     }
 
     // Build DataPack from skill results
-    const pack: DataPack & { divergencias_detalle?: any[] } = {
+    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: Array<{ticker: string, issuer_name: string, median_rix: number}>; competidores_nota?: string } = {
       snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
       memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
       competidores_verificados: [], competidores_metricas_avg: null,
       explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
+      competidores_directos: competidoresDirectos,
+      competidores_nota: competidoresNota,
     };
 
     // Map scores → snapshot
@@ -620,17 +633,7 @@ async function buildDataPackFromSkills(
         });
     }
 
-    // Map sector comparison → sector_avg
-    if (resultMap.sector) {
-      const sc = resultMap.sector;
-      const allMedians = sc.companies.map((c: any) => c.median_rix).filter((v: number) => v > 0);
-      if (allMedians.length > 0) {
-        pack.sector_avg = {
-          rix: Math.round(allMedians.reduce((a: number, b: number) => a + b, 0) / allMedians.length * 10) / 10,
-          count: allMedians.length,
-        };
-      }
-    }
+    // sector_avg mapping removed — now using verified competitors only
 
     return pack;
   } catch (e: any) {
@@ -4164,13 +4167,15 @@ Si evolucion tiene ≤ 1 semana: OMITIR esta sección completamente.
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 6: ${H("depth_competitive")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
-INCLUIR SOLO SI: es una consulta de empresa (no ranking/sector genérico) Y hay competidores o datos sectoriales.
+INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío).
+Estos son competidores directos VERIFICADOS de la empresa, NO una clasificación sectorial genérica.
 
-| Posición | Empresa | RIX Mediano | Fortaleza | Debilidad |
-|----------|---------|-------------|-----------|-----------|
+| Competidor | Ticker | RIX Mediano | Δ vs empresa |
+|------------|--------|-------------|--------------|
 
-Situar a la empresa analizada en contexto con sus peers.
-Si no hay competidores_verificados ni sector_avg: OMITIR esta sección completamente.
+Compara la mediana RIX de la empresa analizada con cada competidor directo verificado.
+Si DATAPACK.competidores_directos está vacío, OMITIR esta sección completamente.
+NUNCA inventes competidores ni uses clasificaciones sectoriales como proxy.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
