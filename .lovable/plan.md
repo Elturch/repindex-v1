@@ -1,80 +1,103 @@
 
 
-# Plan: Insertar un Experto SQL (F2) en el pipeline del Agente Rix
+# Plan: Skills-Based System — Phase 1 (New Files Only)
 
-## Problema actual
+## Summary
 
-El E2 (DataPack) es **100% hardcoded**. Ejecuta las mismas consultas fijas para todas las preguntas, independientemente de lo que pregunte el usuario. No hay ningún paso NL→SQL en el pipeline actual.
+Create a modular skills system in `src/lib/skills/` and `src/lib/` with 7 data skills, 1 logic skill, an orchestrator, a registry, and an admin page. No existing files are modified.
 
-Existe `execute_sql` en la base de datos (RPC, read-only, timeout 5s), pero el pipeline nunca lo usa.
+## New Files to Create
 
-Resultado: si el usuario pregunta algo que no encaja en las 2 rutas fijas (Route A: empresa, Route B: índice), el sistema devuelve un DataPack vacío o irrelevante.
+### 1. `src/lib/rixSkills.ts` — Types and Registry
 
-## Arquitectura propuesta
+- Define `RixSkill` interface with `id`, `name`, `description`, `layer`, `inputSchema`, `outputSchema`, `status`, `execute`
+- Define typed input/output interfaces for each skill
+- Export a `SKILLS_REGISTRY: Map<string, RixSkill>` populated by importing all skills
+- Export helper: `getSkillsByLayer(layer)`, `getActiveSkills()`
 
-Insertar una fase **F2: SQL Expert** entre el clasificador (E1) y el ensamblador de DataPack (E2). El flujo queda:
+### 2. Data Skills (`src/lib/skills/`)
+
+All 7 data skills share the same pattern:
+- Accept a typed params object + Supabase client
+- Query the DB using the Supabase JS client (not raw SQL)
+- Apply Sunday snapshot rule: filter `batch_execution_date` on Sundays with >=180 records
+- Return typed JSON with `{success: boolean, data?: T, error?: string}`
+- Never throw — always return structured errors
+
+| File | Table(s) | Key Logic |
+|------|----------|-----------|
+| `skillGetCompanyScores.ts` | `rix_runs_v2` | Scores per model for one company, latest valid Sunday |
+| `skillGetCompanyRanking.ts` | `rix_runs_v2` + `repindex_root_issuers` | Median RIX ranking, filterable by sector/family |
+| `skillGetCompanyEvolution.ts` | `rix_trends` | Temporal series, paginated to avoid 1000-row limit |
+| `skillGetCompanyDetail.ts` | `repindex_root_issuers` + `corporate_snapshots` | Master data + corporate info |
+| `skillGetSectorComparison.ts` | `rix_runs_v2` + `repindex_root_issuers` | All companies in a sector with per-model scores |
+| `skillGetDivergenceAnalysis.ts` | `rix_runs_v2` | Inter-model spread per metric for one company |
+| `skillGetRawTexts.ts` | `rix_runs_v2` | Raw `10_resumen`, `11_puntos_clave` per model |
+
+**Sunday snapshot helper** (shared): A reusable function `getLatestValidSunday(supabase)` that finds the most recent `batch_execution_date` where `EXTRACT(dow) = 0` and `COUNT(*) >= 180`. Used by all skills that query `rix_runs_v2`.
+
+### 3. `src/lib/skills/skillInterpretQuery.ts` — Logic Skill
+
+- Regex-first classification for known patterns (IBEX, sector names, company tickers from a static list)
+- Returns `{intent, entities[], time_range, filters, recommended_skills[]}`
+- Intent enum: `company_analysis | ranking | evolution | sector_comparison | divergence | general_question | off_topic`
+- Maps intents to skill IDs deterministically (no LLM needed for most cases)
+- Optional Gemini call (temperature 0.1) only for ambiguous queries that regex can't classify
+
+### 4. `src/lib/skillOrchestrator.ts` — Deterministic Orchestrator
+
+Three-layer execution:
+1. **Layer 1 (Skills)**: Run `skillInterpretQuery` → get `recommended_skills[]` → execute them in parallel via `Promise.allSettled` → merge results into a unified DataPack
+2. **Layer 2 (F2 SQL Expert)**: If Layer 1 returns insufficient data, delegate to existing `generateAndExecuteSQLQueries` (will be wired in Phase 2)
+3. **Layer 3 (Graceful fallback)**: If both fail, return `skillGetCompanyDetail` context + honest "limited data" message
+
+Output: A `UnifiedDataPack` object compatible with the existing E5/E6 stages.
+
+All routing is pure TypeScript (switch/if). No LLM decides which skills to call.
+
+### 5. `src/pages/SkillsAdmin.tsx` — Admin Panel
+
+- Table listing all skills from `SKILLS_REGISTRY`
+- Columns: name, layer (badge), status (badge), description
+- "Test" button per skill → opens dialog with JSON input textarea + "Run" button → displays raw JSON output
+- Uses existing `Card`, `Badge`, `Button`, `Dialog` components
+- Route: `/admin/skills` added to `App.tsx` — **exception**: this is the one existing file we add a route to (inside the existing `isDevOrPreview()` block)
+
+**Note**: Adding the route to App.tsx is a minimal 2-line change. If strict "no existing file changes" is required, we skip the route and the page is only accessible by direct URL navigation.
+
+### 6. File Tree
 
 ```text
-E1 (Clasificador)
-  ↓
-F2 (SQL Expert) ← NUEVO: LLM genera queries SQL óptimas según la pregunta
-  ↓
-E2 (DataPack Builder) ← Ahora recibe datos dinámicos de F2 además de sus queries fijas
-  ↓
-E3-E5-E6 (sin cambios)
+src/lib/
+  rixSkills.ts              ← types + registry
+  skillOrchestrator.ts      ← 3-layer orchestrator
+  skills/
+    shared.ts               ← getLatestValidSunday, types
+    skillGetCompanyScores.ts
+    skillGetCompanyRanking.ts
+    skillGetCompanyEvolution.ts
+    skillGetCompanyDetail.ts
+    skillGetSectorComparison.ts
+    skillGetDivergenceAnalysis.ts
+    skillGetRawTexts.ts
+    skillInterpretQuery.ts
+src/pages/
+  SkillsAdmin.tsx
 ```
 
-### F2: SQL Expert - Diseño
+## Technical Decisions
 
-**Modelo**: `gpt-4o-mini` (rápido, barato, excelente en SQL)
+- **Client-side Supabase queries**: Skills use the anon client (`@/integrations/supabase/client`). All tables queried have public SELECT RLS policies, so no service_role needed.
+- **Sunday snapshot**: Each skill that needs it calls `getLatestValidSunday()` which does a single query to find the valid date, then passes it as filter.
+- **PostgREST 1000-row limit**: Skills use `.range()` for large datasets (evolution, ranking). Ranking caps at `top_n` (default 50). Evolution uses pagination like `getLatestRixTrendWeeks.ts`.
+- **Column names with numbers**: Queries use exact column names like `09_rix_score` with proper quoting in `.select()`.
+- **No edge function changes**: Everything runs client-side. Phase 2 will port skills to the edge function.
 
-**Input**: La pregunta original + el resultado del clasificador (E1) + el esquema de tablas disponibles
+## Constraints Respected
 
-**Output**: Un array de queries SQL de solo lectura, cada una con un `label` que indica qué dato aporta al DataPack
-
-**Prompt del SQL Expert** incluirá:
-- Esquema completo de `rix_runs_v2` (columnas, tipos, significado de cada campo)
-- Esquema de `repindex_root_issuers` (tickers, sectores, competidores verificados)
-- Esquema de `corporate_snapshots`, `corporate_news`, `rix_trends`
-- Reglas: solo SELECT, máx 5 queries, timeout 5s cada una, usar `.range()` patterns
-- Ejemplos de queries bien formadas para cada tipo de intención (diagnóstico, ranking, evolución, comparativa, métrica específica)
-- Regla del Snapshot Dominical: solo considerar `batch_execution_date` de domingos con ≥180 registros
-- Regla anti-truncamiento: LIMIT con valores razonables, usar medianas no promedios
-
-**Ejecución**: Cada query generada se ejecuta via `supabase.rpc('execute_sql', { sql_query })` con timeout y validación de resultado.
-
-**Fallback**: Si F2 falla (LLM no responde, SQL inválido, timeout), se ejecuta el E2 hardcoded actual como safety net.
-
-### Cambios en E2 (DataPack Builder)
-
-E2 pasa de ser el generador de queries a ser el **ensamblador**:
-1. Recibe los resultados de F2 (datos dinámicos)
-2. Los mapea al DataPack existente (snapshot, ranking, evolucion, etc.)
-3. Si F2 no trajo ciertos datos, complementa con las queries fijas actuales (fallback parcial)
-4. El DataPack resultante es idéntico en estructura -- E3/E4/E5/E6 no cambian
-
-### Cambios en roles (`src/lib/chatRoles.ts`)
-
-Reescribir los 6 roles para eliminar fabricación de contenido (aprobado en plan anterior, se ejecuta en paralelo):
-- Eliminar "Kit de Respuesta", "Protocolo de Acción", "Cascada de Decisiones", "Roadmap ESG", "Stakeholder Map Político", "Plan Talent-Brand"
-- Cada rol pasa a ser una **lente analítica**: cambia el ángulo de lectura pero nunca autoriza a inventar
-
-### Control de temperatura
-
-- Gemini: `temperature: 0.3` en `streamGeminiResponse`
-- o3: `reasoning_effort: "medium"` en `streamOpenAIResponse`
-
-## Archivos afectados
-
-| Archivo | Cambio |
-|---------|--------|
-| `supabase/functions/chat-intelligence/index.ts` | Nueva función `generateSQLQueries()` (F2), modificar `buildDataPack()` para usar resultados de F2, temperature/reasoning_effort |
-| `src/lib/chatRoles.ts` | Reescribir los 6 roles como lentes analíticas |
-
-## Riesgos y mitigaciones
-
-- **SQL injection**: `execute_sql` ya valida solo SELECT. F2 genera queries, no las recibe del usuario.
-- **Timeout**: Cada query tiene 5s de timeout. Si falla, fallback al E2 hardcoded.
-- **Coste**: `gpt-4o-mini` para F2 añade ~$0.001 por consulta. Negligible.
-- **Regresión**: El E2 hardcoded se mantiene como fallback completo. Si F2 falla, el sistema funciona igual que antes.
+- No existing files modified (except minimal App.tsx route addition)
+- Current pipeline continues working untouched
+- All new code in new files
+- Strict TypeScript types throughout
+- Structured error handling, never throws
 
