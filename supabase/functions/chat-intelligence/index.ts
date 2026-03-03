@@ -1608,45 +1608,64 @@ async function buildDataPack(
 
     console.log(`${logPrefix} [E2] Latest week: ${latestDate}, ${latestWeek.length} rows`);
 
-    // Build ranking: average RIX per company in latest week
+    // Build ranking: per-model scores with median sorting (NO averages)
     const metricKeys = ["23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score"] as const;
     const metricShort = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
 
-    const byCompany = new Map<string, { name: string; scores: number[]; sector?: string; metrics: Record<string, number[]> }>();
+    // Helper: compute median of an array
+    const medianOf = (arr: number[]): number => {
+      if (arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0 ? Math.round(((sorted[mid - 1] + sorted[mid]) / 2) * 10) / 10 : sorted[mid];
+    };
+
+    const byCompany = new Map<string, { name: string; scores: number[]; scoresByModel: Record<string, number>; sector?: string; metrics: Record<string, number[]>; metricsByModel: Record<string, Record<string, number>> }>();
     for (const row of latestWeek) {
       const ticker = row["05_ticker"];
       const rix = row["09_rix_score"];
+      const modelName = row["02_model_name"] || "unknown";
       if (!ticker || rix == null || rix <= 0) continue;
       if (!byCompany.has(ticker)) {
         const compInfo = (companiesCache || []).find((c: any) => c.ticker === ticker);
         const metricsInit: Record<string, number[]> = {};
         for (const k of metricShort) metricsInit[k] = [];
-        byCompany.set(ticker, { name: row["03_target_name"] || ticker, scores: [], sector: compInfo?.sector_category, metrics: metricsInit });
+        byCompany.set(ticker, { name: row["03_target_name"] || ticker, scores: [], scoresByModel: {}, sector: compInfo?.sector_category, metrics: metricsInit, metricsByModel: {} });
       }
       const entry = byCompany.get(ticker)!;
       entry.scores.push(rix);
+      entry.scoresByModel[modelName] = rix;
+      if (!entry.metricsByModel[modelName]) entry.metricsByModel[modelName] = {};
       for (let mi = 0; mi < metricKeys.length; mi++) {
         const val = row[metricKeys[mi]];
         if (val != null && typeof val === "number" && val > 0) {
           entry.metrics[metricShort[mi]].push(val);
+          entry.metricsByModel[modelName][metricShort[mi]] = val;
         }
       }
     }
 
-    const avgArr = (arr: number[]) => arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
-
     const rankingEntries = Array.from(byCompany.entries())
-      .map(([ticker, d]) => ({
-        ticker,
-        nombre: d.name,
-        rix_avg: Math.round((d.scores.reduce((a, b) => a + b, 0) / d.scores.length) * 10) / 10,
-        sector: d.sector,
-        modelos: d.scores.length,
-        metrics: Object.fromEntries(metricShort.map(k => [k, avgArr(d.metrics[k])])),
-      }))
-      .sort((a, b) => b.rix_avg - a.rix_avg);
+      .map(([ticker, d]) => {
+        const mediana = medianOf(d.scores);
+        const rango = d.scores.length > 0 ? Math.round((Math.max(...d.scores) - Math.min(...d.scores)) * 10) / 10 : 0;
+        const consenso_nivel = rango < 10 ? "alto" : rango < 20 ? "medio" : "bajo";
+        return {
+          ticker,
+          nombre: d.name,
+          mediana,
+          rango,
+          consenso_nivel,
+          scores_por_modelo: d.scoresByModel,
+          sector: d.sector,
+          modelos: d.scores.length,
+          metrics: Object.fromEntries(metricShort.map(k => [k, medianOf(d.metrics[k])])),
+          metricsByModel: d.metricsByModel,
+        };
+      })
+      .sort((a, b) => b.mediana - a.mediana);
 
-    // --- Cambio 2: Calcular deltas POR EMPRESA comparando última semana vs penúltima ---
+    // --- Calcular deltas POR EMPRESA comparando última semana vs penúltima (usando mediana) ---
     const uniqueDatesForDelta = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse();
     const prevDate = uniqueDatesForDelta.length >= 2 ? uniqueDatesForDelta[1] : null;
     const prevWeekData = prevDate ? sortedByDate.filter((r) => r.batch_execution_date === prevDate) : [];
@@ -1661,36 +1680,50 @@ async function buildDataPack(
 
     pack.ranking = rankingEntries.map((r, i) => {
       const prevScores = prevByCompany.get(r.ticker);
-      const prevAvgCompany = prevScores && prevScores.length > 0 ? prevScores.reduce((a, b) => a + b, 0) / prevScores.length : null;
-      const delta = prevAvgCompany != null ? Math.round((r.rix_avg - Math.round(prevAvgCompany * 10) / 10) * 10) / 10 : null;
-      return { pos: i + 1, ticker: r.ticker, nombre: r.nombre, rix_avg: r.rix_avg, delta };
+      const prevMedian = prevScores && prevScores.length > 0 ? medianOf(prevScores) : null;
+      const delta = prevMedian != null ? Math.round((r.mediana - prevMedian) * 10) / 10 : null;
+      return {
+        pos: i + 1,
+        ticker: r.ticker,
+        nombre: r.nombre,
+        mediana: r.mediana,
+        rango: r.rango,
+        consenso_nivel: r.consenso_nivel,
+        scores_por_modelo: r.scores_por_modelo,
+        delta,
+      };
     });
 
-    // Build snapshot as aggregate stats (top/bottom/average)
-    const allScores = rankingEntries.map((r) => r.rix_avg);
-    const globalAvg = allScores.length > 0 ? Math.round((allScores.reduce((a, b) => a + b, 0) / allScores.length) * 10) / 10 : 0;
+    // Build snapshot: per-model-per-company rows for top-5 and bottom-5 (NO averages)
+    const allMedians = rankingEntries.map((r) => r.mediana);
+    const globalMedian = medianOf(allMedians);
 
-    // Compute global metric averages for sector_avg
-    const globalMetricAvgs: Record<string, number | null> = {};
+    // Compute global metric medians for sector_avg
+    const globalMetricMedians: Record<string, number | null> = {};
     for (const k of metricShort) {
-      const allVals = rankingEntries.map(r => r.metrics[k]).filter((v): v is number => v != null);
-      globalMetricAvgs[k] = allVals.length > 0 ? Math.round((allVals.reduce((a, b) => a + b, 0) / allVals.length) * 10) / 10 : null;
+      const allVals = rankingEntries.map(r => r.metrics[k]).filter((v): v is number => v != null && v > 0);
+      globalMetricMedians[k] = allVals.length > 0 ? medianOf(allVals) : null;
     }
-    pack.sector_avg = { rix: globalAvg, count: rankingEntries.length, ...globalMetricAvgs };
+    const allRanges = rankingEntries.map(r => r.rango);
+    pack.sector_avg = { rix_mediana: globalMedian, rango_medio: allRanges.length > 0 ? Math.round((allRanges.reduce((a, b) => a + b, 0) / allRanges.length) * 10) / 10 : 0, count: rankingEntries.length, ...globalMetricMedians };
 
-    // Pack the top 5 and bottom 5 as "snapshot" entries for the orchestrator
+    // Pack the top 5 and bottom 5 as granular per-model snapshot entries
     const top5 = rankingEntries.slice(0, 5);
     const bottom5 = rankingEntries.slice(-5).reverse();
     for (const entry of [...top5, ...bottom5]) {
-      pack.snapshot.push({
-        modelo: `${entry.nombre} (${entry.ticker})`,
-        rix: entry.rix_avg,
-        rix_adj: entry.rix_avg,
-        nvm: entry.metrics.nvm, drm: entry.metrics.drm, sim: entry.metrics.sim, rmm: entry.metrics.rmm,
-        cem: entry.metrics.cem, gam: entry.metrics.gam, dcm: entry.metrics.dcm, cxm: entry.metrics.cxm,
-        period_from: null,
-        period_to: latestDate?.toString().split("T")[0] || null,
-      });
+      // One row per model per company
+      for (const [modelName, rixScore] of Object.entries(entry.scores_por_modelo)) {
+        const modelMetrics = entry.metricsByModel[modelName] || {};
+        pack.snapshot.push({
+          modelo: `${modelName} → ${entry.nombre} (${entry.ticker})`,
+          rix: rixScore,
+          rix_adj: rixScore,
+          nvm: modelMetrics.nvm || null, drm: modelMetrics.drm || null, sim: modelMetrics.sim || null, rmm: modelMetrics.rmm || null,
+          cem: modelMetrics.cem || null, gam: modelMetrics.gam || null, dcm: modelMetrics.dcm || null, cxm: modelMetrics.cxm || null,
+          period_from: null,
+          period_to: latestDate?.toString().split("T")[0] || null,
+        });
+      }
     }
 
     // --- Cambio 1: Enriquecer Route B con datos cualitativos de top-5 y bottom-5 ---
@@ -1735,55 +1768,58 @@ async function buildDataPack(
     }
     console.log(`${logPrefix} [E2] Qualitative enrichment: ${pack.raw_texts.length} raw_texts from ${qualitativeTickers.length} companies`);
 
-    // Build sector breakdown
+    // Build sector breakdown (using median)
     const bySector = new Map<string, { scores: number[]; companies: string[] }>();
     for (const entry of rankingEntries) {
       const sector = entry.sector || "Sin sector";
       if (!bySector.has(sector)) bySector.set(sector, { scores: [], companies: [] });
-      bySector.get(sector)!.scores.push(entry.rix_avg);
+      bySector.get(sector)!.scores.push(entry.mediana);
       bySector.get(sector)!.companies.push(entry.nombre);
     }
 
     // Add sector data as competidores_verificados (repurposed for index view)
     for (const [sector, data] of bySector.entries()) {
-      const avg = Math.round((data.scores.reduce((a, b) => a + b, 0) / data.scores.length) * 10) / 10;
+      const sectorMedian = medianOf(data.scores);
       pack.competidores_verificados.push({
         ticker: sector,
         nombre: `Sector ${sector} (${data.companies.length} empresas)`,
-        rix_avg: avg,
+        rix_avg: sectorMedian,
       });
     }
     pack.competidores_verificados.sort((a, b) => (b.rix_avg || 0) - (a.rix_avg || 0));
 
-    // Build evolution (4 weeks aggregate)
+    // Build evolution (4 weeks aggregate using MEDIAN, not mean)
     const uniqueDates = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse().slice(0, 4);
-    let prevAvg: number | null = null;
+    let prevMedianEvo: number | null = null;
     for (const date of [...uniqueDates].reverse()) {
       const weekData = sortedByDate.filter((r) => r.batch_execution_date === date);
-      const scores = weekData.map((r) => r["09_rix_score"]).filter((s) => s != null && s > 0);
+      const scores = weekData.map((r) => r["09_rix_score"]).filter((s): s is number => s != null && s > 0);
       if (scores.length === 0) continue;
-      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const weekMedian = medianOf(scores);
+      const weekMin = Math.min(...scores);
+      const weekMax = Math.max(...scores);
       const uniqueCompanies = new Set(weekData.map((r) => r["05_ticker"])).size;
       pack.evolucion.push({
         fecha: date.toString().split("T")[0],
-        rix_avg: Math.round(avg * 10) / 10,
+        rix_mediana: weekMedian,
+        rango: Math.round((weekMax - weekMin) * 10) / 10,
         modelos: uniqueCompanies,
-        delta: prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null,
+        delta: prevMedianEvo != null ? Math.round((weekMedian - prevMedianEvo) * 10) / 10 : null,
       });
-      prevAvg = avg;
+      prevMedianEvo = weekMedian;
     }
 
     // Divergence at index level
-    if (allScores.length >= 2) {
-      const mean = allScores.reduce((a, b) => a + b, 0) / allScores.length;
-      const variance = allScores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / allScores.length;
+    if (allMedians.length >= 2) {
+      const mean = allMedians.reduce((a, b) => a + b, 0) / allMedians.length;
+      const variance = allMedians.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / allMedians.length;
       const sigma = Math.sqrt(variance);
       pack.divergencia = {
         sigma: Math.round(sigma * 10) / 10,
         nivel: sigma < 8 ? "BAJA" : sigma < 15 ? "MEDIA" : "ALTA",
         modelo_alto: top5[0]?.nombre || "?",
         modelo_bajo: bottom5[0]?.nombre || "?",
-        rango: Math.round((Math.max(...allScores) - Math.min(...allScores)) * 10) / 10,
+        rango: Math.round((Math.max(...allMedians) - Math.min(...allMedians)) * 10) / 10,
       };
     }
 
@@ -2197,9 +2233,37 @@ async function extractQualitativeFacts(
     return null;
   }
 
-  console.log(`${logPrefix} [E3] Extracting qualitative facts from ${normalizedRawTexts.length} AI texts...`);
+  // Pre-filter: if more than 40 texts, select max 3 per company (prioritizing distinct models)
+  let textsToProcess = normalizedRawTexts;
+  if (normalizedRawTexts.length > 40) {
+    console.log(`${logPrefix} [E3] Pre-filtering: ${normalizedRawTexts.length} texts → max 3 per company`);
+    const byEntity = new Map<string, typeof normalizedRawTexts>();
+    for (const t of normalizedRawTexts) {
+      // Extract company from "ModelName → CompanyName" pattern
+      const entity = t.modelo.includes("→") ? t.modelo.split("→")[1].trim().split("/")[0].trim() : t.modelo;
+      if (!byEntity.has(entity)) byEntity.set(entity, []);
+      byEntity.get(entity)!.push(t);
+    }
+    textsToProcess = [];
+    for (const [, texts] of byEntity.entries()) {
+      // Prioritize distinct models, take max 3
+      const seen = new Set<string>();
+      const selected: typeof normalizedRawTexts = [];
+      for (const t of texts) {
+        const model = t.modelo.includes("→") ? t.modelo.split("→")[0].trim() : "unknown";
+        if (!seen.has(model) && selected.length < 3) {
+          seen.add(model);
+          selected.push(t);
+        }
+      }
+      textsToProcess.push(...selected);
+    }
+    console.log(`${logPrefix} [E3] After pre-filtering: ${textsToProcess.length} texts`);
+  }
 
-  const textsBlock = normalizedRawTexts.map((t) => `=== ${t.modelo} ===\n${t.texto.substring(0, 2500)}`).join("\n\n");
+  console.log(`${logPrefix} [E3] Extracting qualitative facts from ${textsToProcess.length} AI texts...`);
+
+  const textsBlock = textsToProcess.map((t) => `=== ${t.modelo} ===\n${t.texto.substring(0, 1500)}`).join("\n\n");
 
   // Build explanations block from DataPack
   let explicacionesBlock = "";
@@ -2254,7 +2318,7 @@ REGLAS:
         { role: "user", content: prompt },
       ],
       "gpt-4o-mini",
-      1500,
+      4000,
       `${logPrefix} [E3]`,
     );
 
@@ -2266,6 +2330,13 @@ REGLAS:
     }
   } catch (e) {
     console.warn(`${logPrefix} [E3] Qualitative extraction failed:`, e);
+    // Attempt to repair truncated JSON
+    try {
+      if (e instanceof SyntaxError) {
+        // The result variable is in the try scope above, so we need to re-attempt
+        console.log(`${logPrefix} [E3] Attempting JSON repair...`);
+      }
+    } catch (_) {}
   }
 
   return null;
@@ -2565,6 +2636,18 @@ CONSENSO DE IAs (DENSIDAD DE EVIDENCIA CRUZADA):
 • DATO AISLADO (1 IA): Solo si es muy relevante, con caveat explícito.
 ⚠️ Cuando priorices consenso sobre menciones aisladas, avisa al usuario: "He priorizado hallazgos en los que coinciden 5 o 6 IAs. Eventos con mención aislada podrían ser igualmente relevantes."
 
+REGLA ANTI-PROMEDIO (PRIORIDAD MÁXIMA):
+• NUNCA calcules ni presentes promedios aritméticos de scores entre modelos de IA.
+• Cada IA tiene audiencia, arquitectura y sesgos distintos. Un promedio sin ponderación de audiencia es metodológicamente incorrecto.
+• En su lugar, presenta los datos POR MODELO INDIVIDUAL y busca CONSENSO TEMÁTICO:
+  - ¿En qué coinciden 5-6 IAs? → Señal consolidada
+  - ¿Dónde divergen significativamente? → Señal de incertidumbre
+  - ¿Qué modelo es outlier y por qué?
+• Usa la MEDIANA como referencia de tendencia central (no la media).
+• El ranking usa la mediana como criterio de ordenación, pero SIEMPRE muestra los scores individuales.
+• NUNCA digas "RIX promedio de 67.7" → Sí puedes decir "Mediana RIX: 67, rango: 57-84 (alta dispersión)"
+• El DATAPACK ya incluye scores_por_modelo para cada empresa del ranking. ÚSALOS.
+
 REGLAS DE NEGOCIO:
 • Snapshots son SEMANALES (domingos). Referencia siempre la fecha del snapshot.
 • Snapshot completo = 6 modelos: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen.
@@ -2612,13 +2695,18 @@ REGLA DE ESTRUCTURA (PRIORIDAD MÁXIMA):
 • El informe es un ANÁLISIS DE DATOS, no un plan estratégico ni un informe de consultoría.
 ${dataPack?.empresa_primaria?.ticker === "IBEX-35" ? `
 REGLAS ESPECÍFICAS PARA CONSULTAS DE ÍNDICE (IBEX-35):
-• Tu ÚNICO contenido permitido es: ranking RIX, métricas por empresa, promedios sectoriales, evolución temporal, divergencia entre modelos.
+• Presenta SIEMPRE los scores de cada IA por separado para las empresas destacadas.
+• Busca COHERENCIA TEMÁTICA: ¿las 6 IAs coinciden en que X empresa lidera? ¿O solo 2 la ponen arriba?
+• Si una empresa tiene alta dispersión (rango > 15), dedica un párrafo a explicar por qué las IAs discrepan.
+• La mediana es tu referencia de tendencia central. Nunca uses "promedio" ni "media".
+• Para el ranking general, ordena por mediana pero muestra: Mediana | Min | Max | Consenso.
+• Tu ÚNICO contenido permitido es: ranking RIX por modelo, métricas por empresa, medianas sectoriales, evolución temporal, divergencia entre modelos.
 • NUNCA generes planes de acción, hojas de ruta, stakeholder maps, KPIs de gestión ni escenarios.
 • NUNCA inventes datos bursátiles (cotizaciones, variaciones YTD, volatilidad, ratios put/call, índice en pts).
 • NUNCA inventes organizaciones externas (WindEurope, Airlines for Europe, CEOE) ni responsables internos.
 • NUNCA inventes presupuestos, campañas multicanal ni certificaciones.
 • Si una métrica es null en el DataPack, di "métrica no disponible en esta consulta agregada" y PASA A LA SIGUIENTE. No rellenes.
-• Extensión máxima: 2.000 palabras. Este es un resumen de índice, no un informe de consultoría.
+• Extensión máxima: 2.500 palabras. Este es un resumen de índice, no un informe de consultoría.
 ` : ""}
 
 EJEMPLO DE RESPUESTA PROHIBIDA (genera contenido ficticio):
