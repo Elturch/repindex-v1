@@ -2167,14 +2167,39 @@ async function extractQualitativeFacts(
   dataPack: DataPack,
   logPrefix: string,
 ): Promise<QualitativeFacts | null> {
-  if (rawTexts.length === 0) {
-    console.log(`${logPrefix} [E3] No raw texts available, skipping`);
+  const normalizedRawTexts = (rawTexts || [])
+    .map((entry: any, idx: number) => {
+      if (typeof entry === "string") {
+        return { modelo: `Fuente ${idx + 1}`, texto: entry };
+      }
+      if (!entry || typeof entry !== "object") return null;
+
+      const modelo = typeof entry.modelo === "string" && entry.modelo.trim().length > 0
+        ? entry.modelo.trim()
+        : `Fuente ${idx + 1}`;
+
+      let texto = entry.texto;
+      if (typeof texto !== "string") {
+        if (typeof entry.content === "string") texto = entry.content;
+        else if (texto == null) texto = "";
+        else texto = String(texto);
+      }
+
+      texto = texto.trim();
+      if (!texto) return null;
+
+      return { modelo, texto };
+    })
+    .filter((t): t is { modelo: string; texto: string } => !!t);
+
+  if (normalizedRawTexts.length === 0) {
+    console.log(`${logPrefix} [E3] No valid raw texts after normalization, skipping`);
     return null;
   }
 
-  console.log(`${logPrefix} [E3] Extracting qualitative facts from ${rawTexts.length} AI texts...`);
+  console.log(`${logPrefix} [E3] Extracting qualitative facts from ${normalizedRawTexts.length} AI texts...`);
 
-  const textsBlock = rawTexts.map((t) => `=== ${t.modelo} ===\n${t.texto.substring(0, 2500)}`).join("\n\n");
+  const textsBlock = normalizedRawTexts.map((t) => `=== ${t.modelo} ===\n${t.texto.substring(0, 2500)}`).join("\n\n");
 
   // Build explanations block from DataPack
   let explicacionesBlock = "";
