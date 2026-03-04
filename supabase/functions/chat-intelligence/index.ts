@@ -246,43 +246,110 @@ async function executeSkillGetCompanyDetail(supabase: any, params: { ticker?: st
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
-// ── Inlined skill: Sector Comparison ────────────────────────────────
+// ── Inlined skill: Sector Comparison (multi-week) ───────────────────
 async function executeSkillGetSectorComparison(supabase: any, params: { sector_category: string; batch_date?: string }) {
   const start = Date.now();
+  const WEEKS_TO_FETCH = 4;
   try {
     if (!params.sector_category) return { success: false, error: "sector_category required" };
-    let batchDate = params.batch_date;
-    if (!batchDate) {
-      const sr = await getLatestValidSundayEdge(supabase);
-      if (!sr.success || !sr.data) return { success: false, error: sr.error };
-      batchDate = sr.data;
-    }
+
+    // 1. Get sector tickers
     const { data: issuers, error: ie } = await supabase.from("repindex_root_issuers").select("ticker,issuer_name").eq("sector_category", params.sector_category).limit(100);
     if (ie) return { success: false, error: ie.message };
     if (!issuers || issuers.length === 0) return { success: false, error: `No companies in sector ${params.sector_category}` };
     const tickers = issuers.map((r: any) => r.ticker);
-    const { gte, lt } = buildDateFilterEdge(batchDate!);
+
+    // 2. Discover the last N distinct batch_execution_date values for these tickers
+    const { data: dateRows, error: dateErr } = await supabase.from("rix_runs_v2")
+      .select("batch_execution_date")
+      .in("05_ticker", tickers)
+      .order("batch_execution_date", { ascending: false })
+      .limit(2000);
+    if (dateErr) return { success: false, error: dateErr.message };
+
+    const distinctDates: string[] = [];
+    const seenDates = new Set<string>();
+    for (const row of (dateRows || [])) {
+      const raw = row.batch_execution_date;
+      if (!raw) continue;
+      const key = new Date(raw).toISOString().split("T")[0];
+      if (!seenDates.has(key)) { seenDates.add(key); distinctDates.push(key); }
+      if (distinctDates.length >= WEEKS_TO_FETCH) break;
+    }
+    if (distinctDates.length === 0) return { success: false, error: `No data for sector ${params.sector_category}` };
+
+    const latestDate = distinctDates[0];
+    const earliestDate = distinctDates[distinctDates.length - 1];
+
+    // 3. Fetch ALL rows across the date range in one paginated sweep
+    const { gte: rangeGte } = buildDateFilterEdge(earliestDate);
+    const { lt: rangeLt } = buildDateFilterEdge(latestDate);
+    // lt should be day after latest
+    const dayAfterLatest = new Date(latestDate + "T00:00:00Z");
+    dayAfterLatest.setUTCDate(dayAfterLatest.getUTCDate() + 1);
+    const rangeLtFinal = dayAfterLatest.toISOString();
+
     let allData: any[] = [];
-    for (let page = 0; page < 3; page++) {
-      const { data, error } = await supabase.from("rix_runs_v2").select("02_model_name,03_target_name,05_ticker,09_rix_score")
-        .in("05_ticker", tickers).gte("batch_execution_date", gte).lt("batch_execution_date", lt).range(page * 1000, (page + 1) * 1000 - 1);
+    for (let page = 0; page < 6; page++) {
+      const { data, error } = await supabase.from("rix_runs_v2")
+        .select("02_model_name,03_target_name,05_ticker,09_rix_score,batch_execution_date")
+        .in("05_ticker", tickers)
+        .gte("batch_execution_date", rangeGte)
+        .lt("batch_execution_date", rangeLtFinal)
+        .range(page * 1000, (page + 1) * 1000 - 1);
       if (error) return { success: false, error: error.message };
       if (!data || data.length === 0) break;
       allData = allData.concat(data);
       if (data.length < 1000) break;
     }
+
+    // 4. Group by ticker for LATEST week snapshot (current ranking)
+    const latestFilter = buildDateFilterEdge(latestDate);
+    const latestRows = allData.filter((r: any) => {
+      const d = new Date(r.batch_execution_date).toISOString().split("T")[0];
+      return d === latestDate;
+    });
     const grouped = new Map<string, { company: string; ticker: string; scores: { model: string; rix_score: number | null }[] }>();
-    for (const row of allData) {
+    for (const row of latestRows) {
       const t = row["05_ticker"] || "";
       if (!grouped.has(t)) grouped.set(t, { company: row["03_target_name"] || "", ticker: t, scores: [] });
       grouped.get(t)!.scores.push({ model: row["02_model_name"] || "", rix_score: row["09_rix_score"] });
     }
     const companies = Array.from(grouped.values()).map(g => {
-      const valid = g.scores.map(s => s.rix_score).filter((v): v is number => v != null);
+      const valid = g.scores.map((s: any) => s.rix_score).filter((v: any): v is number => v != null);
       return { company: g.company, ticker: g.ticker, median_rix: medianEdge(valid), scores_by_model: g.scores };
     }).sort((a, b) => b.median_rix - a.median_rix);
-    console.log(`[SKILL] SectorComparison for ${params.sector_category}: ${companies.length} companies in ${Date.now() - start}ms`);
-    return { success: true, data: { sector: params.sector_category, batch_date: batchDate, companies } };
+
+    // 5. Build evolution_by_company: { [ticker]: [ { week, median_rix } ] }
+    const evoMap = new Map<string, Map<string, number[]>>();
+    for (const row of allData) {
+      const t = row["05_ticker"] || "";
+      const score = row["09_rix_score"];
+      if (score == null) continue;
+      const weekKey = new Date(row.batch_execution_date).toISOString().split("T")[0];
+      if (!evoMap.has(t)) evoMap.set(t, new Map());
+      const weekMap = evoMap.get(t)!;
+      if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
+      weekMap.get(weekKey)!.push(score);
+    }
+    const evolution_by_company: Record<string, Array<{ week: string; median_rix: number }>> = {};
+    for (const [ticker, weekMap] of evoMap.entries()) {
+      evolution_by_company[ticker] = Array.from(weekMap.entries())
+        .map(([week, scores]) => ({ week, median_rix: medianEdge(scores) }))
+        .sort((a, b) => a.week.localeCompare(b.week));
+    }
+
+    console.log(`[SKILL] SectorComparison for ${params.sector_category}: ${companies.length} companies, ${distinctDates.length} weeks in ${Date.now() - start}ms`);
+    return {
+      success: true,
+      data: {
+        sector: params.sector_category,
+        batch_date: latestDate,
+        weeks_available: distinctDates.sort(),
+        companies,
+        evolution_by_company,
+      },
+    };
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
@@ -378,11 +445,11 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   } else if (DIVERGENCE_PATTERNS_EDGE.test(lower)) {
     intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
   } else if (RANKING_PATTERNS_EDGE.test(lower)) {
-    intent = "ranking"; recommended_skills.push("skillGetCompanyRanking");
+    intent = "ranking"; recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
     if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
     confidence = 0.85;
   } else if (SECTOR_PATTERNS_EDGE.test(lower) && filters.sector_category) {
-    intent = "sector_comparison"; recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking"); confidence = 0.8;
+    intent = "sector_comparison"; recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"); confidence = 0.8;
   } else if (IBEX_PATTERNS_EDGE.test(lower)) {
     intent = "ranking"; filters.ibex_family_code = "IBEX35"; recommended_skills.push("skillGetCompanyRanking"); confidence = 0.9;
   } else if (COMPANY_QUESTION_PATTERNS_EDGE.test(lower)) {
@@ -575,6 +642,29 @@ async function buildDataPackFromSkills(
         pos: i + 1, ticker: r.ticker, nombre: r.company, rix_avg: r.median_rix,
         scores_por_modelo: r.scores_by_model,
       }));
+    }
+
+    // Map sector evolution → evolucion (when no single-company evolution available)
+    if (!resultMap.evolution && resultMap.sector?.evolution_by_company) {
+      const evoByCompany = resultMap.sector.evolution_by_company;
+      // Aggregate all companies' weekly medians into a sector-level weekly average
+      const weekAgg = new Map<string, number[]>();
+      for (const ticker of Object.keys(evoByCompany)) {
+        for (const pt of evoByCompany[ticker]) {
+          if (!weekAgg.has(pt.week)) weekAgg.set(pt.week, []);
+          weekAgg.get(pt.week)!.push(pt.median_rix);
+        }
+      }
+      const weeks = Array.from(weekAgg.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+      let prevAvg: number | null = null;
+      pack.evolucion = weeks.map(([fecha, scores]) => {
+        const avg = Math.round(medianEdge(scores) * 10) / 10;
+        const delta = prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null;
+        prevAvg = avg;
+        return { fecha, rix_avg: avg, modelos: scores.length, delta };
+      });
+      // Also store per-company evolution for the prompt
+      (pack as any).evolucion_por_empresa = evoByCompany;
     }
 
     // Map evolution → evolucion (aggregated by week)
@@ -4663,11 +4753,11 @@ Los titulares deben ser:
 
 ---
 
-## 📈 5. CRÓNICA: 4 SEMANAS DE [EMPRESA]
+## 📈 5. CRÓNICA: ÚLTIMAS SEMANAS DE [EMPRESA/SECTOR]
 
 ### [TITULAR sobre tendencia - ej: "El mes que lo cambió todo para [Empresa]" o "Cuatro semanas de montaña rusa"]
 
-[Crónica periodística semana a semana: 4-5 párrafos narrando la evolución como una historia]
+[Crónica periodística semana a semana: 3-5 párrafos narrando la evolución como una historia. Usa todas las semanas disponibles (mínimo 2). Si hay datos de evolución por empresa del sector, incluye las tendencias más relevantes.]
 
 | Semana | RIX Promedio | ChatGPT | Perplexity | Gemini | DeepSeek | Grok | Qwen | Evento Clave |
 |--------|--------------|---------|------------|--------|----------|------|------|--------------|
