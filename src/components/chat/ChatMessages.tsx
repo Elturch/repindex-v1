@@ -7,11 +7,10 @@ import { MarkdownMessage, generateExportHtml } from "@/components/ui/markdown-me
 
 import { ResponseFeedback } from "./ResponseFeedback";
 import { MethodologyFooter } from "./MethodologyFooter";
-import { RoleEnrichmentBar } from "./RoleEnrichmentBar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, RefreshCw, Loader2, Theater, ArrowRight, Download } from "lucide-react";
-import { Message, useChatContext } from "@/contexts/ChatContext";
+import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -47,7 +46,7 @@ export function ChatMessages({
   const vectorStoreStatus = useVectorStoreStatus();
   const tr = getChatTranslations(languageCode);
   const { user } = useAuth();
-  const { configureSession } = useChatContext();
+  
   const { toast } = useToast();
 
   const downloadMessage = (message: Message) => {
@@ -300,14 +299,6 @@ export function ChatMessages({
                 />
               )}
 
-              {/* Role Enrichment Bar - allows changing perspective for next questions */}
-              {message.role === 'assistant' && !message.isStreaming && !compact && (
-                <RoleEnrichmentBar
-                  onEnrich={(roleId) => configureSession(roleId)}
-                  disabled={isLoading}
-                  languageCode={languageCode}
-                />
-              )}
 
               {/* Drumroll Question - only show when NOT streaming */}
               {message.role === 'assistant' && !message.isStreaming && message.drumrollQuestion && !compact && (
