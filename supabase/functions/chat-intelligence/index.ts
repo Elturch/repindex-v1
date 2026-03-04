@@ -499,13 +499,17 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
       return { rix_mediano: rixMedian, metricas: result };
     }
 
-    // Build evolution (all weeks)
-    const evolucion: Array<{ semana: string; rix_mediano: number }> = [];
+    // Build evolution (all weeks) with full metric medians
+    const evolucion: Array<{ semana: string; rix_mediano: number; metricas?: Record<string, number> }> = [];
     const weekStats: Array<{ semana: string; stats: ReturnType<typeof weekMetrics> }> = [];
     for (const week of sortedWeeks) {
       const wRows = weekMap.get(week)!;
       const stats = weekMetrics(wRows);
-      evolucion.push({ semana: week, rix_mediano: stats.rix_mediano });
+      const metricMeds: Record<string, number> = {};
+      for (const m of METRIC_KEYS) {
+        if (stats.metricas[m.key]?.mediano != null) metricMeds[m.key] = stats.metricas[m.key].mediano;
+      }
+      evolucion.push({ semana: week, rix_mediano: stats.rix_mediano, metricas: metricMeds });
       weekStats.push({ semana: week, stats });
     }
 
@@ -531,9 +535,19 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
     const modelos = latestWeekRows.map((r: any) => ({
       nombre: r["02_model_name"] || "",
       rix: r["09_rix_score"],
+      nvm: r["23_nvm_score"], drm: r["26_drm_score"], sim: r["29_sim_score"],
+      rmm: r["32_rmm_score"], cem: r["35_cem_score"], gam: r["38_gam_score"],
+      dcm: r["41_dcm_score"], cxm: r["44_cxm_score"],
       resumen: r["10_resumen"] || "",
       puntos_clave: r["11_puntos_clave"],
+      flags: r["17_flags"],
       precio_accion: r["48_precio_accion"],
+      period_from: r["06_period_from"],
+      period_to: r["07_period_to"],
+      nvm_cat: r["25_nvm_categoria"], drm_cat: r["28_drm_categoria"],
+      sim_cat: r["31_sim_categoria"], rmm_cat: r["34_rmm_categoria"],
+      cem_cat: r["37_cem_categoria"], gam_cat: r["40_gam_categoria"],
+      dcm_cat: r["43_dcm_categoria"], cxm_cat: r["46_cxm_categoria"],
     }));
 
     // Dominant flags (appear in >3 models)
@@ -987,12 +1001,16 @@ async function buildDataPackFromSkills(
     if (cp) {
       pack.empresa_primaria = { ticker: cp.ticker, nombre: cp.empresa, sector: null, subsector: null };
 
-      // snapshot: per-model detail from latest week
+      // snapshot: per-model detail from latest week (with all metric scores)
       pack.snapshot = (cp.modelos || []).map((m: any) => ({
         modelo: m.nombre, rix: m.rix, rix_adj: null,
-        nvm: null, drm: null, sim: null, rmm: null,
-        cem: null, gam: null, dcm: null, cxm: null,
-        period_from: null, period_to: cp.semana_actual,
+        nvm: m.nvm, drm: m.drm, sim: m.sim, rmm: m.rmm,
+        cem: m.cem, gam: m.gam, dcm: m.dcm, cxm: m.cxm,
+        resumen: m.resumen, flags: m.flags, puntos_clave: m.puntos_clave,
+        nvm_cat: m.nvm_cat, drm_cat: m.drm_cat, sim_cat: m.sim_cat,
+        rmm_cat: m.rmm_cat, cem_cat: m.cem_cat, gam_cat: m.gam_cat,
+        dcm_cat: m.dcm_cat, cxm_cat: m.cxm_cat, precio: m.precio_accion,
+        period_from: m.period_from, period_to: m.period_to || cp.semana_actual,
       }));
 
       // raw_texts from modelos
