@@ -121,7 +121,7 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
     let tickerFilter: string[] | null = null;
     if (params.sector_category || params.ibex_family_code) {
       let iq = supabase.from("repindex_root_issuers").select("ticker");
-      if (params.sector_category) iq = iq.eq("sector_category", params.sector_category);
+      if (params.sector_category) iq = iq.ilike("sector_category", `%${params.sector_category}%`);
       if (params.ibex_family_code) iq = iq.eq("ibex_family_code", params.ibex_family_code);
       const { data: issuers, error: ie } = await iq.limit(200);
       if (ie) return { success: false, error: ie.message };
@@ -254,7 +254,7 @@ async function executeSkillGetSectorComparison(supabase: any, params: { sector_c
     if (!params.sector_category) return { success: false, error: "sector_category required" };
 
     // 1. Get sector tickers
-    const { data: issuers, error: ie } = await supabase.from("repindex_root_issuers").select("ticker,issuer_name").eq("sector_category", params.sector_category).limit(100);
+    const { data: issuers, error: ie } = await supabase.from("repindex_root_issuers").select("ticker,issuer_name").ilike("sector_category", `%${params.sector_category}%`).limit(100);
     if (ie) return { success: false, error: ie.message };
     if (!issuers || issuers.length === 0) return { success: false, error: `No companies in sector ${params.sector_category}` };
     const tickers = issuers.map((r: any) => r.ticker);
@@ -419,17 +419,41 @@ const SECTOR_PATTERNS_EDGE = /\b(sector|sectorial|comparar sectores?|banc[a-z]*|
 const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 const SECTOR_MAP_EDGE: Record<string, string> = {
-  banca: "Banca", banco: "Banca", bancos: "Banca", bancario: "Banca", bancaria: "Banca", bancarias: "Banca", bancarios: "Banca",
-  energía: "Energía", energia: "Energía", energética: "Energía", energetica: "Energía", energéticas: "Energía", energeticas: "Energía", energético: "Energía", energetico: "Energía", energéticos: "Energía", energeticos: "Energía",
-  tecnología: "Tecnología", tecnologia: "Tecnología", tecnológica: "Tecnología", tecnologica: "Tecnología", tecnológicas: "Tecnología", tecnologicas: "Tecnología", tecnológico: "Tecnología", tecnologico: "Tecnología",
-  telecomunicaciones: "Telecomunicaciones", telecom: "Telecomunicaciones", telecomunicación: "Telecomunicaciones", telecomunicacion: "Telecomunicaciones",
-  construcción: "Construcción", construccion: "Construcción", constructora: "Construcción", constructoras: "Construcción",
-  inmobiliaria: "Inmobiliaria", inmobiliarias: "Inmobiliaria", inmobiliario: "Inmobiliaria",
+  // Banca y Servicios Financieros
+  banca: "Banca y Servicios Financieros", banco: "Banca y Servicios Financieros", bancos: "Banca y Servicios Financieros", bancario: "Banca y Servicios Financieros", bancaria: "Banca y Servicios Financieros", bancarias: "Banca y Servicios Financieros", bancarios: "Banca y Servicios Financieros", financiero: "Banca y Servicios Financieros", financiera: "Banca y Servicios Financieros", financieros: "Banca y Servicios Financieros", financieras: "Banca y Servicios Financieros",
+  // Energía y Gas
+  energía: "Energía y Gas", energia: "Energía y Gas", energética: "Energía y Gas", energetica: "Energía y Gas", energéticas: "Energía y Gas", energeticas: "Energía y Gas", energético: "Energía y Gas", energetico: "Energía y Gas", energéticos: "Energía y Gas", energeticos: "Energía y Gas", utilities: "Energía y Gas", gas: "Energía y Gas",
+  // Telecomunicaciones y Tecnología
+  tecnología: "Telecomunicaciones y Tecnología", tecnologia: "Telecomunicaciones y Tecnología", tecnológica: "Telecomunicaciones y Tecnología", tecnologica: "Telecomunicaciones y Tecnología", tecnológicas: "Telecomunicaciones y Tecnología", tecnologicas: "Telecomunicaciones y Tecnología", tecnológico: "Telecomunicaciones y Tecnología", tecnologico: "Telecomunicaciones y Tecnología",
+  telecomunicaciones: "Telecomunicaciones y Tecnología", telecom: "Telecomunicaciones y Tecnología", telecomunicación: "Telecomunicaciones y Tecnología", telecomunicacion: "Telecomunicaciones y Tecnología",
+  // Construcción e Infraestructuras
+  construcción: "Construcción e Infraestructuras", construccion: "Construcción e Infraestructuras", constructora: "Construcción e Infraestructuras", constructoras: "Construcción e Infraestructuras", infraestructura: "Construcción e Infraestructuras", infraestructuras: "Construcción e Infraestructuras",
+  // Inmobiliaria (maps to Construcción e Infraestructuras as closest match)
+  inmobiliaria: "Construcción e Infraestructuras", inmobiliarias: "Construcción e Infraestructuras", inmobiliario: "Construcción e Infraestructuras",
+  // Alimentación
   alimentación: "Alimentación", alimentacion: "Alimentación", alimentaria: "Alimentación", alimentarias: "Alimentación", alimentario: "Alimentación",
-  seguros: "Seguros", aseguradora: "Seguros", aseguradoras: "Seguros",
-  turismo: "Turismo y Ocio", turística: "Turismo y Ocio", turistica: "Turismo y Ocio", turísticas: "Turismo y Ocio", turisticas: "Turismo y Ocio", turístico: "Turismo y Ocio", turistico: "Turismo y Ocio",
-  textil: "Textil y Moda", pharma: "Pharma y Salud", salud: "Pharma y Salud", farmacéutica: "Pharma y Salud", farmaceutica: "Pharma y Salud", farmacéuticas: "Pharma y Salud", farmaceuticas: "Pharma y Salud",
-  utilities: "Utilities",
+  // Seguros
+  seguros: "Seguros", aseguradora: "Seguros", aseguradoras: "Seguros", asegurador: "Seguros",
+  // Hoteles y Turismo
+  turismo: "Hoteles y Turismo", turística: "Hoteles y Turismo", turistica: "Hoteles y Turismo", turísticas: "Hoteles y Turismo", turisticas: "Hoteles y Turismo", turístico: "Hoteles y Turismo", turistico: "Hoteles y Turismo", hoteles: "Hoteles y Turismo", hotel: "Hoteles y Turismo", hotelera: "Hoteles y Turismo", hoteleras: "Hoteles y Turismo", hotelero: "Hoteles y Turismo",
+  // Moda y Distribución
+  textil: "Moda y Distribución", moda: "Moda y Distribución", distribución: "Moda y Distribución", distribucion: "Moda y Distribución",
+  // Salud y Farmacéutico
+  pharma: "Salud y Farmacéutico", salud: "Salud y Farmacéutico", farmacéutica: "Salud y Farmacéutico", farmaceutica: "Salud y Farmacéutico", farmacéuticas: "Salud y Farmacéutico", farmaceuticas: "Salud y Farmacéutico", farmacéutico: "Salud y Farmacéutico", farmaceutico: "Salud y Farmacéutico", sanitario: "Salud y Farmacéutico", sanitaria: "Salud y Farmacéutico",
+  // Petróleo y Energía
+  petróleo: "Petróleo y Energía", petroleo: "Petróleo y Energía", petrolera: "Petróleo y Energía", petroleras: "Petróleo y Energía", petrolero: "Petróleo y Energía",
+  // Materias Primas y Siderurgia
+  siderurgia: "Materias Primas y Siderurgia", siderúrgica: "Materias Primas y Siderurgia", siderurgica: "Materias Primas y Siderurgia", acero: "Materias Primas y Siderurgia",
+  // Automoción
+  automoción: "Automoción", automocion: "Automoción", automotriz: "Automoción",
+  // Transporte
+  transporte: "Transporte", transportes: "Transporte", logística: "Logística", logistica: "Logística",
+  // Industria
+  industria: "Industria", industrial: "Industria", industriales: "Industria",
+  // Consultoría y Auditoría
+  consultoría: "Consultoría y Auditoría", consultoria: "Consultoría y Auditoría", auditoría: "Consultoría y Auditoría", auditoria: "Consultoría y Auditoría",
+  // Restauración
+  restauración: "Restauración", restauracion: "Restauración",
 };
 
 function interpretQueryEdge(question: string): { intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number } {

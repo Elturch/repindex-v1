@@ -52,7 +52,7 @@ export async function skillGetCompanyRanking(
         .select("ticker");
 
       if (params.sector_category) {
-        issuerQuery = issuerQuery.eq("sector_category", params.sector_category);
+        issuerQuery = issuerQuery.ilike("sector_category", `%${params.sector_category}%`);
       }
       if (params.ibex_family_code) {
         issuerQuery = issuerQuery.eq("ibex_family_code", params.ibex_family_code);

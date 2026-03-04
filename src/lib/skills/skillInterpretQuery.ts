@@ -37,17 +37,25 @@ const COMPANY_QUESTION_PATTERNS = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis
 
 // Common sector names → sector_category values
 const SECTOR_MAP: Record<string, string> = {
-  banca: "Banca", banco: "Banca", bancos: "Banca", bancario: "Banca", bancaria: "Banca", bancarias: "Banca", bancarios: "Banca",
-  energía: "Energía", energia: "Energía", energética: "Energía", energetica: "Energía", energéticas: "Energía", energeticas: "Energía", energético: "Energía", energetico: "Energía", energéticos: "Energía", energeticos: "Energía",
-  tecnología: "Tecnología", tecnologia: "Tecnología", tecnológica: "Tecnología", tecnologica: "Tecnología", tecnológicas: "Tecnología", tecnologicas: "Tecnología", tecnológico: "Tecnología", tecnologico: "Tecnología",
-  telecomunicaciones: "Telecomunicaciones", telecom: "Telecomunicaciones", telecomunicación: "Telecomunicaciones", telecomunicacion: "Telecomunicaciones",
-  construcción: "Construcción", construccion: "Construcción", constructora: "Construcción", constructoras: "Construcción",
-  inmobiliaria: "Inmobiliaria", inmobiliarias: "Inmobiliaria", inmobiliario: "Inmobiliaria",
+  banca: "Banca y Servicios Financieros", banco: "Banca y Servicios Financieros", bancos: "Banca y Servicios Financieros", bancario: "Banca y Servicios Financieros", bancaria: "Banca y Servicios Financieros", bancarias: "Banca y Servicios Financieros", bancarios: "Banca y Servicios Financieros", financiero: "Banca y Servicios Financieros", financiera: "Banca y Servicios Financieros",
+  energía: "Energía y Gas", energia: "Energía y Gas", energética: "Energía y Gas", energetica: "Energía y Gas", energéticas: "Energía y Gas", energeticas: "Energía y Gas", energético: "Energía y Gas", energetico: "Energía y Gas", energéticos: "Energía y Gas", energeticos: "Energía y Gas", utilities: "Energía y Gas", gas: "Energía y Gas",
+  tecnología: "Telecomunicaciones y Tecnología", tecnologia: "Telecomunicaciones y Tecnología", tecnológica: "Telecomunicaciones y Tecnología", tecnologica: "Telecomunicaciones y Tecnología", tecnológicas: "Telecomunicaciones y Tecnología", tecnologicas: "Telecomunicaciones y Tecnología", tecnológico: "Telecomunicaciones y Tecnología", tecnologico: "Telecomunicaciones y Tecnología",
+  telecomunicaciones: "Telecomunicaciones y Tecnología", telecom: "Telecomunicaciones y Tecnología", telecomunicación: "Telecomunicaciones y Tecnología", telecomunicacion: "Telecomunicaciones y Tecnología",
+  construcción: "Construcción e Infraestructuras", construccion: "Construcción e Infraestructuras", constructora: "Construcción e Infraestructuras", constructoras: "Construcción e Infraestructuras", infraestructura: "Construcción e Infraestructuras", infraestructuras: "Construcción e Infraestructuras",
+  inmobiliaria: "Construcción e Infraestructuras", inmobiliarias: "Construcción e Infraestructuras", inmobiliario: "Construcción e Infraestructuras",
   alimentación: "Alimentación", alimentacion: "Alimentación", alimentaria: "Alimentación", alimentarias: "Alimentación", alimentario: "Alimentación",
-  seguros: "Seguros", aseguradora: "Seguros", aseguradoras: "Seguros",
-  turismo: "Turismo y Ocio", turística: "Turismo y Ocio", turistica: "Turismo y Ocio", turísticas: "Turismo y Ocio", turisticas: "Turismo y Ocio", turístico: "Turismo y Ocio", turistico: "Turismo y Ocio",
-  textil: "Textil y Moda", pharma: "Pharma y Salud", salud: "Pharma y Salud", farmacéutica: "Pharma y Salud", farmaceutica: "Pharma y Salud", farmacéuticas: "Pharma y Salud", farmaceuticas: "Pharma y Salud",
-  utilities: "Utilities",
+  seguros: "Seguros", aseguradora: "Seguros", aseguradoras: "Seguros", asegurador: "Seguros",
+  turismo: "Hoteles y Turismo", turística: "Hoteles y Turismo", turistica: "Hoteles y Turismo", turísticas: "Hoteles y Turismo", turisticas: "Hoteles y Turismo", turístico: "Hoteles y Turismo", turistico: "Hoteles y Turismo", hoteles: "Hoteles y Turismo", hotel: "Hoteles y Turismo", hotelera: "Hoteles y Turismo", hotelero: "Hoteles y Turismo",
+  textil: "Moda y Distribución", moda: "Moda y Distribución",
+  pharma: "Salud y Farmacéutico", salud: "Salud y Farmacéutico", farmacéutica: "Salud y Farmacéutico", farmaceutica: "Salud y Farmacéutico", farmacéuticas: "Salud y Farmacéutico", farmaceuticas: "Salud y Farmacéutico", farmacéutico: "Salud y Farmacéutico", farmaceutico: "Salud y Farmacéutico",
+  petróleo: "Petróleo y Energía", petroleo: "Petróleo y Energía", petrolera: "Petróleo y Energía", petroleras: "Petróleo y Energía",
+  siderurgia: "Materias Primas y Siderurgia", acero: "Materias Primas y Siderurgia",
+  automoción: "Automoción", automocion: "Automoción", automotriz: "Automoción",
+  transporte: "Transporte", transportes: "Transporte",
+  logística: "Logística", logistica: "Logística",
+  industria: "Industria", industrial: "Industria", industriales: "Industria",
+  consultoría: "Consultoría y Auditoría", consultoria: "Consultoría y Auditoría",
+  restauración: "Restauración", restauracion: "Restauración",
 };
 
 // ── Main classifier ─────────────────────────────────────────────────
