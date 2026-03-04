@@ -530,27 +530,45 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
       }
     }
 
-    // Per-model detail for latest week
-    const latestWeekRows = weekMap.get(sortedWeeks[0]) || [];
-    const modelos = latestWeekRows.map((r: any) => ({
-      nombre: r["02_model_name"] || "",
-      rix: r["09_rix_score"],
-      nvm: r["23_nvm_score"], drm: r["26_drm_score"], sim: r["29_sim_score"],
-      rmm: r["32_rmm_score"], cem: r["35_cem_score"], gam: r["38_gam_score"],
-      dcm: r["41_dcm_score"], cxm: r["44_cxm_score"],
-      resumen: r["10_resumen"] || "",
-      puntos_clave: r["11_puntos_clave"],
-      flags: r["17_flags"],
-      precio_accion: r["48_precio_accion"],
-      period_from: r["06_period_from"],
-      period_to: r["07_period_to"],
-      nvm_cat: r["25_nvm_categoria"], drm_cat: r["28_drm_categoria"],
-      sim_cat: r["31_sim_categoria"], rmm_cat: r["34_rmm_categoria"],
-      cem_cat: r["37_cem_categoria"], gam_cat: r["40_gam_categoria"],
-      dcm_cat: r["43_dcm_categoria"], cxm_cat: r["46_cxm_categoria"],
-    }));
+    // ── Build raw_runs: ALL 24 rows with full granularity ──────
+    const rawTextCols = ["20_res_gpt_bruto", "21_res_perplex_bruto", "22_res_gemini_bruto", "23_res_deepseek_bruto", "respuesta_bruto_grok", "respuesta_bruto_qwen"];
+    const raw_runs = rows.map((r: any) => {
+      // Pick the non-null raw text for this row's model, truncated to 2000 chars
+      let texto_bruto = "";
+      for (const col of rawTextCols) {
+        const txt = r[col];
+        if (typeof txt === "string" && txt.length > texto_bruto.length) {
+          texto_bruto = txt;
+        }
+      }
+      return {
+        model_name: r["02_model_name"] || "",
+        rix_score: r["09_rix_score"],
+        nvm: r["23_nvm_score"], drm: r["26_drm_score"], sim: r["29_sim_score"],
+        rmm: r["32_rmm_score"], cem: r["35_cem_score"], gam: r["38_gam_score"],
+        dcm: r["41_dcm_score"], cxm: r["44_cxm_score"],
+        nvm_cat: r["25_nvm_categoria"], drm_cat: r["28_drm_categoria"],
+        sim_cat: r["31_sim_categoria"], rmm_cat: r["34_rmm_categoria"],
+        cem_cat: r["37_cem_categoria"], gam_cat: r["40_gam_categoria"],
+        dcm_cat: r["43_dcm_categoria"], cxm_cat: r["46_cxm_categoria"],
+        resumen: r["10_resumen"] || "",
+        puntos_clave: r["11_puntos_clave"],
+        flags: r["17_flags"],
+        period_from: r["06_period_from"],
+        period_to: r["07_period_to"],
+        precio_accion: r["48_precio_accion"],
+        texto_bruto: texto_bruto.substring(0, 2000),
+      };
+    });
 
-    // Dominant flags (appear in >3 models)
+    // Per-model detail for latest week (subset of raw_runs for convenience)
+    const latestWeekRows = weekMap.get(sortedWeeks[0]) || [];
+    const modelos = raw_runs.filter((r: any) => {
+      const w = String(r.period_to || "").split("T")[0];
+      return w === sortedWeeks[0];
+    });
+
+    // Dominant flags (appear in >=3 models in latest week)
     const flagCounts = new Map<string, number>();
     for (const r of latestWeekRows) {
       const flags = r["17_flags"];
@@ -564,34 +582,25 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
       .filter(([_, count]) => count >= 3)
       .map(([flag]) => flag);
 
-    // Longest raw text for qualitative context
-    let textoReferencia = "";
-    const rawTextCols = ["20_res_gpt_bruto", "21_res_perplex_bruto", "22_res_gemini_bruto", "23_res_deepseek_bruto", "respuesta_bruto_grok", "respuesta_bruto_qwen"];
-    for (const r of latestWeekRows) {
-      for (const col of rawTextCols) {
-        const txt = r[col];
-        if (typeof txt === "string" && txt.length > textoReferencia.length) {
-          textoReferencia = txt;
-        }
-      }
-    }
-
     const result = {
       skill: "company_profile",
       ticker,
       empresa: companyName,
       semana_actual: sortedWeeks[0] || "",
+      // Raw runs: ALL 24 rows with full per-model granularity (6 models × 4 weeks)
+      raw_runs,
+      // Medians as reference aggregates (NOT the central data)
       rix_mediano: currentStats?.rix_mediano || 0,
       delta_rix: previousStats ? (currentStats?.rix_mediano || 0) - previousStats.rix_mediano : 0,
-      metricas: metricasConDelta,
+      medianas_por_metrica: metricasConDelta,
+      // Latest week models (convenience shortcut into raw_runs)
       modelos,
+      // Weekly evolution of medians (useful for trend narrative)
       evolucion: evolucion.reverse(), // chronological order
       flags_dominantes: flagsDominantes,
-      texto_bruto_referencia: textoReferencia.substring(0, 4000), // cap for prompt size
-      raw_runs: latestWeekRows, // for verified source extraction
     };
 
-    console.log(`[SKILL] CompanyProfile for ${ticker}: ${rows.length} rows, ${sortedWeeks.length} weeks in ${Date.now() - start}ms`);
+    console.log(`[SKILL] CompanyProfile for ${ticker}: ${rows.length} raw_runs, ${sortedWeeks.length} weeks in ${Date.now() - start}ms`);
     return { success: true, data: result };
   } catch (e: any) {
     return { success: false, error: `skillCompanyProfile exception: ${e.message || String(e)}` };
@@ -616,10 +625,10 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
     const tickers = issuers.map((r: any) => String(r.ticker));
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
 
-    // 2. Get latest week runs for all sector tickers
+    // 2. Get latest week runs for all sector tickers (all model-level detail)
     const { data: runs, error: runErr } = await supabase
       .from("rix_runs_v2")
-      .select("05_ticker, 02_model_name, 09_rix_score, 10_resumen, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 07_period_to, 17_flags")
+      .select("05_ticker, 02_model_name, 09_rix_score, 10_resumen, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 07_period_to, 17_flags, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria")
       .in("05_ticker", tickers)
       .order("07_period_to", { ascending: false })
       .limit(tickers.length * 6);
@@ -640,17 +649,18 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
       return w === latestWeek;
     });
 
-    // 3. Group by ticker
-    const grouped = new Map<string, number[]>();
+    // 3. Group by ticker — keep per-model detail
+    const grouped = new Map<string, any[]>();
     const METRIC_COLS = ["23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score"];
+    const METRIC_NAMES = ["NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"];
+    const CAT_COLS = ["25_nvm_categoria", "28_drm_categoria", "31_sim_categoria", "34_rmm_categoria", "37_cem_categoria", "40_gam_categoria", "43_dcm_categoria", "46_cxm_categoria"];
     const sectorMetricAccum: Record<string, number[]> = {};
     for (const col of METRIC_COLS) sectorMetricAccum[col] = [];
 
     for (const row of latestRows) {
       const t = String(row["05_ticker"] || "");
-      const rix = row["09_rix_score"];
       if (!grouped.has(t)) grouped.set(t, []);
-      if (rix != null) grouped.get(t)!.push(rix);
+      grouped.get(t)!.push(row);
       // Accumulate sector-level metrics
       for (const col of METRIC_COLS) {
         const v = row[col];
@@ -658,13 +668,29 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
       }
     }
 
-    // Build ranking
+    // Build ranking with per-model granularity
     const ranking = Array.from(grouped.entries())
-      .map(([t, scores]) => ({
-        ticker: t,
-        empresa: nameMap.get(t) || t,
-        rix_mediano: medianEdge(scores),
-      }))
+      .map(([t, tickerRows]) => {
+        const rixVals = tickerRows.map((r: any) => r["09_rix_score"]).filter((v: any) => v != null) as number[];
+        const scores_por_modelo = tickerRows.map((r: any) => {
+          const modelMetrics: Record<string, any> = {};
+          METRIC_COLS.forEach((col, i) => { modelMetrics[METRIC_NAMES[i]] = r[col]; });
+          CAT_COLS.forEach((col, i) => { modelMetrics[METRIC_NAMES[i] + "_cat"] = r[col]; });
+          return {
+            model_name: r["02_model_name"] || "",
+            rix: r["09_rix_score"],
+            ...modelMetrics,
+            resumen: (r["10_resumen"] || "").substring(0, 500),
+            flags: r["17_flags"],
+          };
+        });
+        return {
+          ticker: t,
+          empresa: nameMap.get(t) || t,
+          rix_mediano: medianEdge(rixVals),
+          scores_por_modelo,
+        };
+      })
       .sort((a, b) => b.rix_mediano - a.rix_mediano)
       .map((r, i) => ({ pos: i + 1, ...r }));
 
@@ -675,7 +701,6 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
     const colista = ranking[ranking.length - 1] || null;
 
     // Sector-level metric medians
-    const METRIC_NAMES = ["NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"];
     const metricasSector: Record<string, number> = {};
     METRIC_COLS.forEach((col, i) => {
       metricasSector[METRIC_NAMES[i]] = medianEdge(sectorMetricAccum[col]);
@@ -694,7 +719,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
       brecha_lider_mediana: lider ? lider.rix_mediano - medianaSectorial : 0,
     };
 
-    console.log(`[SKILL] SectorSnapshot for ${sectorCategory}: ${ranking.length} companies in ${Date.now() - start}ms`);
+    console.log(`[SKILL] SectorSnapshot for ${sectorCategory}: ${ranking.length} companies (with per-model detail) in ${Date.now() - start}ms`);
     return { success: true, data: result };
   } catch (e: any) {
     return { success: false, error: `skillSectorSnapshot exception: ${e.message || String(e)}` };
@@ -1059,17 +1084,17 @@ async function buildDataPackFromSkills(
         };
       }
 
-      // Pass consolidated metrics (metricas) and flags as extra fields
-      (pack as any).metricas_consolidadas = cp.metricas;
+      // Pass consolidated metrics (medianas) and flags as extra fields
+      (pack as any).metricas_consolidadas = cp.medianas_por_metrica;
       (pack as any).flags_dominantes = cp.flags_dominantes;
-      (pack as any).texto_bruto_referencia = cp.texto_bruto_referencia;
       (pack as any).rix_mediano = cp.rix_mediano;
       (pack as any).delta_rix_value = cp.delta_rix;
       (pack as any).precio_accion = cp.modelos?.[0]?.precio_accion || null;
 
-      // Pass raw_runs for verified source extraction
+      // Pass ALL raw_runs (24 rows, 6 models × 4 weeks) for full granularity
       if (cp.raw_runs) {
         (pack as any)._rawRunsForSources = cp.raw_runs;
+        (pack as any).raw_runs_completos = cp.raw_runs;
       }
     }
 
@@ -3935,6 +3960,15 @@ Cuando el DataPack incluya datos de divergencia entre modelos de IA, ÚSALOS par
 - Si tiene consenso "bajo" (rango > 20): "Existe una divergencia significativa: [modelo_max] otorga [valor_max] mientras que [modelo_min] solo concede [valor_min], lo que sugiere [interpretación]"
 - Prioriza las divergencias en rix_score y las métricas con mayor rango
 - NUNCA ignores las divergencias — son la señal analítica más valiosa
+
+GRANULARIDAD POR MODELO (OBLIGATORIO):
+Tienes acceso a los datos COMPLETOS de cada modelo de IA por separado (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen). Usa esta granularidad para enriquecer el análisis:
+- Identifica consensos y disensos entre modelos: "ChatGPT otorga 59 mientras Perplexity da 67, una divergencia de 8 puntos"
+- Señala qué modelo es más crítico en cada métrica y por qué
+- Compara métricas individuales modelo a modelo: "Grok penaliza especialmente en SIM (32) frente a la mediana de 45"
+- Usa los resúmenes y puntos clave de cada modelo para extraer insights cualitativos diferenciados
+- La mediana es un indicador de REFERENCIA, pero tu análisis debe aprovechar TODA la información disponible por modelo
+- Cuanto más desgranado sea tu análisis por modelo, más valor aporta el informe
 
 REGLA DE CONSENSO CATEGORÍAS: Usa el CONSENSO DE CATEGORÍAS para reforzar la evidencia cruzada. "5 de 6 IAs califican la Gestión de Controversias como Buena" es más convincente que simplemente "CEM = 78". Siempre que tengas consenso disponible, úsalo.
 
