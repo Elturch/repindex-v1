@@ -31,31 +31,22 @@ export interface InterpretQueryInput {
 const IBEX_PATTERNS = /\b(ibex[- ]?35|ibex|índice|indice)\b/i;
 const EVOLUTION_PATTERNS = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)/i;
 const RANKING_PATTERNS = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)/i;
-const SECTOR_PATTERNS = /\b(sector|sectorial|comparar sectores?|banca|energ[ií]a|tecnolog[ií]a|telecomunicacion|utilities|construcci[oó]n|inmobiliaria|alimentaci[oó]n|seguros?|turismo|textil|pharma|salud)/i;
+const SECTOR_PATTERNS = /\b(sector|sectorial|comparar sectores?|banc[a-z]*|energ[ií\u00e9][a-z]*|tecnol[oó\u00f3]g[a-z]*|telecomunicaci[a-z]*|utilities|construcci[oó]n|constructora[s]?|inmobiliaria[s]?|alimentaci[oó]n|alimentaria[s]?|seguros?|aseguradora[s]?|turismo|tur[ií]stic[a-z]*|textil|pharma|salud|farmac[eé]utic[a-z]*)/i;
 const DIVERGENCE_PATTERNS = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
 const COMPANY_QUESTION_PATTERNS = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 
 // Common sector names → sector_category values
 const SECTOR_MAP: Record<string, string> = {
-  banca: "Banca",
-  banco: "Banca",
-  bancos: "Banca",
-  energía: "Energía",
-  energia: "Energía",
-  tecnología: "Tecnología",
-  tecnologia: "Tecnología",
-  telecomunicaciones: "Telecomunicaciones",
-  telecom: "Telecomunicaciones",
-  construcción: "Construcción",
-  construccion: "Construcción",
-  inmobiliaria: "Inmobiliaria",
-  alimentación: "Alimentación",
-  alimentacion: "Alimentación",
-  seguros: "Seguros",
-  turismo: "Turismo y Ocio",
-  textil: "Textil y Moda",
-  pharma: "Pharma y Salud",
-  salud: "Pharma y Salud",
+  banca: "Banca", banco: "Banca", bancos: "Banca", bancario: "Banca", bancaria: "Banca", bancarias: "Banca", bancarios: "Banca",
+  energía: "Energía", energia: "Energía", energética: "Energía", energetica: "Energía", energéticas: "Energía", energeticas: "Energía", energético: "Energía", energetico: "Energía", energéticos: "Energía", energeticos: "Energía",
+  tecnología: "Tecnología", tecnologia: "Tecnología", tecnológica: "Tecnología", tecnologica: "Tecnología", tecnológicas: "Tecnología", tecnologicas: "Tecnología", tecnológico: "Tecnología", tecnologico: "Tecnología",
+  telecomunicaciones: "Telecomunicaciones", telecom: "Telecomunicaciones", telecomunicación: "Telecomunicaciones", telecomunicacion: "Telecomunicaciones",
+  construcción: "Construcción", construccion: "Construcción", constructora: "Construcción", constructoras: "Construcción",
+  inmobiliaria: "Inmobiliaria", inmobiliarias: "Inmobiliaria", inmobiliario: "Inmobiliaria",
+  alimentación: "Alimentación", alimentacion: "Alimentación", alimentaria: "Alimentación", alimentarias: "Alimentación", alimentario: "Alimentación",
+  seguros: "Seguros", aseguradora: "Seguros", aseguradoras: "Seguros",
+  turismo: "Turismo y Ocio", turística: "Turismo y Ocio", turistica: "Turismo y Ocio", turísticas: "Turismo y Ocio", turisticas: "Turismo y Ocio", turístico: "Turismo y Ocio", turistico: "Turismo y Ocio",
+  textil: "Textil y Moda", pharma: "Pharma y Salud", salud: "Pharma y Salud", farmacéutica: "Pharma y Salud", farmaceutica: "Pharma y Salud", farmacéuticas: "Pharma y Salud", farmaceuticas: "Pharma y Salud",
   utilities: "Utilities",
 };
 
