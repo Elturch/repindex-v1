@@ -625,35 +625,56 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
     const tickers = issuers.map((r: any) => String(r.ticker));
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
 
-    // 2. Get latest week runs for all sector tickers (all model-level detail)
-    const { data: runs, error: runErr } = await supabase
-      .from("rix_runs_v2")
-      .select("05_ticker, 02_model_name, 09_rix_score, 10_resumen, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 07_period_to, 17_flags, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria")
-      .in("05_ticker", tickers)
-      .order("07_period_to", { ascending: false })
-      .limit(tickers.length * 6);
+    // 2. Fetch LAST 4 WEEKS of data (not just latest) — paginated
+    const FULL_SELECT = "05_ticker, 02_model_name, 03_target_name, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 06_period_from, 07_period_to, batch_execution_date";
 
-    if (runErr) return { success: false, error: `Runs query failed: ${runErr.message}` };
-    if (!runs || runs.length === 0) return { success: false, error: `No runs for sector ${sectorCategory}` };
-
-    // Detect the latest week from the data
-    let latestWeek = "";
-    for (const r of runs) {
-      const w = String(r["07_period_to"] || "").split("T")[0];
-      if (w > latestWeek) latestWeek = w;
+    let allRuns: any[] = [];
+    for (let page = 0; page < 8; page++) {
+      const { data: pageData, error: pageErr } = await supabase
+        .from("rix_runs_v2")
+        .select(FULL_SELECT)
+        .in("05_ticker", tickers)
+        .order("batch_execution_date", { ascending: false })
+        .range(page * 1000, (page + 1) * 1000 - 1);
+      if (pageErr) return { success: false, error: `Runs query failed: ${pageErr.message}` };
+      if (!pageData || pageData.length === 0) break;
+      allRuns = allRuns.concat(pageData);
+      // Check if we have 4 distinct weeks
+      const weeks = new Set(allRuns.map((r: any) => String(r["07_period_to"] || "").split("T")[0]).filter(Boolean));
+      if (weeks.size >= 4 && pageData.length < 1000) break;
+      if (weeks.size >= 4) break;
     }
 
-    // Filter to only latest week
-    const latestRows = (runs as any[]).filter(r => {
+    if (allRuns.length === 0) return { success: false, error: `No runs for sector ${sectorCategory}` };
+
+    // Detect distinct weeks
+    const weekSet = new Set<string>();
+    for (const r of allRuns) {
+      const w = String(r["07_period_to"] || "").split("T")[0];
+      if (w) weekSet.add(w);
+    }
+    const sortedWeeks = Array.from(weekSet).sort().reverse().slice(0, 4);
+    const latestWeek = sortedWeeks[0];
+
+    // Filter rows to only these 4 weeks
+    const validWeeks = new Set(sortedWeeks);
+    const filteredRuns = allRuns.filter((r: any) => {
+      const w = String(r["07_period_to"] || "").split("T")[0];
+      return validWeeks.has(w);
+    });
+
+    // Latest week rows
+    const latestRows = filteredRuns.filter((r: any) => {
       const w = String(r["07_period_to"] || "").split("T")[0];
       return w === latestWeek;
     });
 
-    // 3. Group by ticker — keep per-model detail
-    const grouped = new Map<string, any[]>();
+    // 3. Group latest week by ticker — build ranking with per-model detail
     const METRIC_COLS = ["23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score"];
     const METRIC_NAMES = ["NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"];
     const CAT_COLS = ["25_nvm_categoria", "28_drm_categoria", "31_sim_categoria", "34_rmm_categoria", "37_cem_categoria", "40_gam_categoria", "43_dcm_categoria", "46_cxm_categoria"];
+
+    const grouped = new Map<string, any[]>();
     const sectorMetricAccum: Record<string, number[]> = {};
     for (const col of METRIC_COLS) sectorMetricAccum[col] = [];
 
@@ -661,14 +682,13 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
       const t = String(row["05_ticker"] || "");
       if (!grouped.has(t)) grouped.set(t, []);
       grouped.get(t)!.push(row);
-      // Accumulate sector-level metrics
       for (const col of METRIC_COLS) {
         const v = row[col];
         if (v != null) sectorMetricAccum[col].push(v);
       }
     }
 
-    // Build ranking with per-model granularity
+    // Build ranking with scores_por_modelo
     const ranking = Array.from(grouped.entries())
       .map(([t, tickerRows]) => {
         const rixVals = tickerRows.map((r: any) => r["09_rix_score"]).filter((v: any) => v != null) as number[];
@@ -681,7 +701,11 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
             rix: r["09_rix_score"],
             ...modelMetrics,
             resumen: (r["10_resumen"] || "").substring(0, 500),
+            puntos_clave: r["11_puntos_clave"],
             flags: r["17_flags"],
+            period_from: r["06_period_from"],
+            period_to: r["07_period_to"],
+            precio_accion: r["48_precio_accion"],
           };
         });
         return {
@@ -696,7 +720,6 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
 
     const allMedians = ranking.map(r => r.rix_mediano);
     const medianaSectorial = medianEdge(allMedians);
-
     const lider = ranking[0] || null;
     const colista = ranking[ranking.length - 1] || null;
 
@@ -706,20 +729,67 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
       metricasSector[METRIC_NAMES[i]] = medianEdge(sectorMetricAccum[col]);
     });
 
+    // 4. per_model_detail: ALL raw rows from latest week, grouped by ticker
+    // This gives E3/E4 the full granularity they need
+    const per_model_detail = latestRows.map((r: any) => ({
+      ticker: r["05_ticker"] || "",
+      empresa: nameMap.get(r["05_ticker"] || "") || r["03_target_name"] || "",
+      model_name: r["02_model_name"] || "",
+      rix: r["09_rix_score"],
+      nvm: r["23_nvm_score"], drm: r["26_drm_score"], sim: r["29_sim_score"],
+      rmm: r["32_rmm_score"], cem: r["35_cem_score"], gam: r["38_gam_score"],
+      dcm: r["41_dcm_score"], cxm: r["44_cxm_score"],
+      nvm_cat: r["25_nvm_categoria"], drm_cat: r["28_drm_categoria"],
+      sim_cat: r["31_sim_categoria"], rmm_cat: r["34_rmm_categoria"],
+      cem_cat: r["37_cem_categoria"], gam_cat: r["40_gam_categoria"],
+      dcm_cat: r["43_dcm_categoria"], cxm_cat: r["46_cxm_categoria"],
+      resumen: (r["10_resumen"] || "").substring(0, 800),
+      puntos_clave: r["11_puntos_clave"],
+      flags: r["17_flags"],
+      period_from: r["06_period_from"],
+      period_to: r["07_period_to"],
+      precio_accion: r["48_precio_accion"],
+    }));
+
+    // 5. evolucion_sector: weekly medians per ticker across 4 weeks
+    const evoMap = new Map<string, Map<string, number[]>>();
+    for (const row of filteredRuns) {
+      const t = String(row["05_ticker"] || "");
+      const score = row["09_rix_score"];
+      if (score == null) continue;
+      const weekKey = String(row["07_period_to"] || "").split("T")[0];
+      if (!weekKey) continue;
+      if (!evoMap.has(t)) evoMap.set(t, new Map());
+      const weekMap = evoMap.get(t)!;
+      if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
+      weekMap.get(weekKey)!.push(score);
+    }
+    const evolucion_sector: Record<string, Array<{ semana: string; rix_mediano: number }>> = {};
+    for (const [ticker, weekMap] of evoMap.entries()) {
+      evolucion_sector[ticker] = Array.from(weekMap.entries())
+        .map(([week, scores]) => ({ semana: week, rix_mediano: medianEdge(scores) }))
+        .sort((a, b) => a.semana.localeCompare(b.semana));
+    }
+
     const result = {
       skill: "sector_snapshot",
       sector: sectorCategory,
       semana: latestWeek,
+      semanas_disponibles: sortedWeeks,
       mediana_sectorial: medianaSectorial,
       num_empresas: ranking.length,
       ranking,
       metricas_sector: metricasSector,
-      lider: lider ? { empresa: lider.empresa, rix: lider.rix_mediano } : null,
-      colista: colista ? { empresa: colista.empresa, rix: colista.rix_mediano } : null,
+      lider: lider ? { empresa: lider.empresa, ticker: lider.ticker, rix: lider.rix_mediano } : null,
+      colista: colista ? { empresa: colista.empresa, ticker: colista.ticker, rix: colista.rix_mediano } : null,
       brecha_lider_mediana: lider ? lider.rix_mediano - medianaSectorial : 0,
+      // NEW: Full per-model detail for all companies in latest week
+      per_model_detail,
+      // NEW: Evolution by company across 4 weeks
+      evolucion_sector,
     };
 
-    console.log(`[SKILL] SectorSnapshot for ${sectorCategory}: ${ranking.length} companies (with per-model detail) in ${Date.now() - start}ms`);
+    console.log(`[SKILL] SectorSnapshot for ${sectorCategory}: ${ranking.length} companies, ${per_model_detail.length} model rows, ${sortedWeeks.length} weeks in ${Date.now() - start}ms`);
     return { success: true, data: result };
   } catch (e: any) {
     return { success: false, error: `skillSectorSnapshot exception: ${e.message || String(e)}` };
@@ -1124,13 +1194,84 @@ async function buildDataPackFromSkills(
       }
     }
 
-    // ── Map sectorSnapshot → ranking ─────────────────────────────
+    // ── Map sectorSnapshot → ranking + snapshot/raw_texts when no companyProfile ─
     const ss = resultMap.sectorSnapshot;
     if (ss) {
       pack.ranking = (ss.ranking || []).map((r: any) => ({
         pos: r.pos, ticker: r.ticker, nombre: r.empresa, rix_avg: r.rix_mediano,
       }));
       (pack as any).sector_snapshot = ss;
+
+      // When there's NO companyProfile (sector-only query), fill snapshot + raw_texts
+      // from the sector leader's per_model_detail so E3/E4 don't skip
+      if (!cp && ss.per_model_detail && ss.per_model_detail.length > 0) {
+        const leaderTicker = ss.lider?.ticker || ss.ranking?.[0]?.ticker;
+        if (leaderTicker) {
+          // Fill snapshot with leader's per-model detail
+          const leaderModels = ss.per_model_detail.filter((r: any) => r.ticker === leaderTicker);
+          pack.snapshot = leaderModels.map((m: any) => ({
+            modelo: m.model_name, rix: m.rix, rix_adj: null,
+            nvm: m.nvm, drm: m.drm, sim: m.sim, rmm: m.rmm,
+            cem: m.cem, gam: m.gam, dcm: m.dcm, cxm: m.cxm,
+            resumen: m.resumen, flags: m.flags, puntos_clave: m.puntos_clave,
+            nvm_cat: m.nvm_cat, drm_cat: m.drm_cat, sim_cat: m.sim_cat,
+            rmm_cat: m.rmm_cat, cem_cat: m.cem_cat, gam_cat: m.gam_cat,
+            dcm_cat: m.dcm_cat, cxm_cat: m.cxm_cat, precio: m.precio_accion,
+            period_from: m.period_from, period_to: m.period_to,
+          }));
+
+          // Fill raw_texts from leader models
+          pack.raw_texts = leaderModels.map((m: any) => ({
+            modelo: m.model_name, texto: m.resumen || "",
+          }));
+
+          // Fill puntos_clave
+          pack.puntos_clave = leaderModels
+            .filter((m: any) => m.puntos_clave)
+            .map((m: any) => ({
+              modelo: m.model_name,
+              puntos: Array.isArray(m.puntos_clave) ? m.puntos_clave : typeof m.puntos_clave === "string" ? [m.puntos_clave] : [],
+            }));
+
+          // Fill divergencia from leader's RIX scores
+          const rixScores = leaderModels.map((m: any) => m.rix).filter((v: any) => v != null) as number[];
+          if (rixScores.length >= 2) {
+            const maxRix = Math.max(...rixScores);
+            const minRix = Math.min(...rixScores);
+            const range = maxRix - minRix;
+            const maxModel = leaderModels.find((m: any) => m.rix === maxRix)?.model_name || "";
+            const minModel = leaderModels.find((m: any) => m.rix === minRix)?.model_name || "";
+            pack.divergencia = {
+              sigma: Math.round(range / 2),
+              nivel: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo",
+              modelo_alto: maxModel, modelo_bajo: minModel, rango: range,
+            };
+          }
+
+          // Set empresa_primaria to sector leader
+          pack.empresa_primaria = { ticker: leaderTicker, nombre: ss.lider?.empresa || leaderTicker, sector: ss.sector, subsector: null };
+          (pack as any).rix_mediano = ss.lider?.rix || ss.mediana_sectorial;
+          (pack as any).metricas_consolidadas = ss.metricas_sector;
+
+          // Pass ALL per_model_detail (all companies) for full sector granularity
+          (pack as any).raw_runs_completos = ss.per_model_detail;
+          (pack as any)._rawRunsForSources = ss.per_model_detail;
+        }
+
+        // Fill evolucion from evolucion_sector (leader or all)
+        if (ss.evolucion_sector) {
+          const leaderEvo = leaderTicker && ss.evolucion_sector[leaderTicker];
+          if (leaderEvo && leaderEvo.length > 0) {
+            pack.evolucion = leaderEvo.map((e: any, i: number, arr: any[]) => ({
+              fecha: e.semana, rix_avg: e.rix_mediano, modelos: 6,
+              delta: i > 0 ? Math.round((e.rix_mediano - arr[i - 1].rix_mediano) * 10) / 10 : null,
+            }));
+          }
+          (pack as any).evolucion_sector = ss.evolucion_sector;
+        }
+      }
+
+      pack.sector_avg = ss.mediana_sectorial || null;
     }
 
     // ── Map IBEX ranking fallback ────────────────────────────────
