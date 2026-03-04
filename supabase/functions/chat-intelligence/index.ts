@@ -429,27 +429,262 @@ async function executeSkillGetDivergenceAnalysis(supabase: any, params: { ticker
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
-// ── Inlined skill: Raw Texts ────────────────────────────────────────
-async function executeSkillGetRawTexts(supabase: any, params: { ticker: string; batch_date?: string }) {
+// ── NEW SKILL 1: skillCompanyProfile — Consolidated company profile ─
+async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
-    if (!params.ticker) return { success: false, error: "ticker required" };
-    let batchDate = params.batch_date;
-    if (!batchDate) {
-      const sr = await getLatestValidSundayEdge(supabase);
-      if (!sr.success || !sr.data) return { success: false, error: sr.error };
-      batchDate = sr.data;
+    if (!ticker) return { success: false, error: "ticker required" };
+
+    const { data, error } = await supabase
+      .from("rix_runs_v2")
+      .select("02_model_name, 03_target_name, 07_period_to, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen, 06_period_from")
+      .eq("05_ticker", ticker)
+      .order("07_period_to", { ascending: false })
+      .limit(24);
+
+    if (error) return { success: false, error: `Query failed: ${error.message}` };
+    if (!data || data.length === 0) return { success: false, error: `No data for ${ticker}` };
+
+    const rows = data as any[];
+    const companyName = rows[0]["03_target_name"] || ticker;
+
+    // Group by week (07_period_to)
+    const weekMap = new Map<string, any[]>();
+    for (const row of rows) {
+      const week = String(row["07_period_to"] || "").split("T")[0];
+      if (!week) continue;
+      if (!weekMap.has(week)) weekMap.set(week, []);
+      weekMap.get(week)!.push(row);
     }
-    const { gte, lt } = buildDateFilterEdge(batchDate!);
-    const { data, error } = await supabase.from("rix_runs_v2").select("02_model_name,03_target_name,10_resumen,11_puntos_clave,20_res_gpt_bruto,21_res_perplex_bruto,06_period_from,07_period_to")
-      .eq("05_ticker", params.ticker).gte("batch_execution_date", gte).lt("batch_execution_date", lt).limit(20);
-    if (error) return { success: false, error: error.message };
-    if (!data || data.length === 0) return { success: false, error: `No texts for ${params.ticker}` };
-    const texts = data.map((r: any) => ({ model_name: r["02_model_name"] || "", resumen: r["10_resumen"], puntos_clave: r["11_puntos_clave"] }));
-    console.log(`[SKILL] RawTexts for ${params.ticker}: ${texts.length} models in ${Date.now() - start}ms`);
-    // Return raw_runs with full rows for source extraction (includes 20_res_gpt_bruto, 21_res_perplex_bruto)
-    return { success: true, data: { ticker: params.ticker, company: data[0]["03_target_name"] || "", batch_date: batchDate, texts, raw_runs: data } };
-  } catch (e: any) { return { success: false, error: e.message || String(e) }; }
+
+    const sortedWeeks = Array.from(weekMap.keys()).sort().reverse();
+    const METRIC_KEYS = [
+      { key: "NVM", col: "23_nvm_score", catCol: "25_nvm_categoria" },
+      { key: "DRM", col: "26_drm_score", catCol: "28_drm_categoria" },
+      { key: "SIM", col: "29_sim_score", catCol: "31_sim_categoria" },
+      { key: "RMM", col: "32_rmm_score", catCol: "34_rmm_categoria" },
+      { key: "CEM", col: "35_cem_score", catCol: "37_cem_categoria" },
+      { key: "GAM", col: "38_gam_score", catCol: "40_gam_categoria" },
+      { key: "DCM", col: "41_dcm_score", catCol: "43_dcm_categoria" },
+      { key: "CXM", col: "44_cxm_score", catCol: "46_cxm_categoria" },
+    ];
+
+    // Helper: compute metric stats for a week's rows
+    function weekMetrics(weekRows: any[]) {
+      const result: Record<string, any> = {};
+      // RIX median
+      const rixVals = weekRows.map(r => r["09_rix_score"]).filter((v: any) => v != null) as number[];
+      const rixMedian = medianEdge(rixVals);
+
+      for (const m of METRIC_KEYS) {
+        const vals = weekRows.map(r => r[m.col]).filter((v: any) => v != null) as number[];
+        if (vals.length === 0) { result[m.key] = null; continue; }
+        // Find dominant category
+        const catCounts = new Map<string, number>();
+        for (const r of weekRows) {
+          const cat = r[m.catCol];
+          if (cat) catCounts.set(cat, (catCounts.get(cat) || 0) + 1);
+        }
+        let dominantCat = "";
+        let maxCount = 0;
+        for (const [cat, count] of catCounts) { if (count > maxCount) { maxCount = count; dominantCat = cat; } }
+
+        result[m.key] = {
+          mediano: medianEdge(vals),
+          min: Math.min(...vals),
+          max: Math.max(...vals),
+          categoria_dominante: dominantCat || null,
+        };
+      }
+      return { rix_mediano: rixMedian, metricas: result };
+    }
+
+    // Build evolution (all weeks)
+    const evolucion: Array<{ semana: string; rix_mediano: number }> = [];
+    const weekStats: Array<{ semana: string; stats: ReturnType<typeof weekMetrics> }> = [];
+    for (const week of sortedWeeks) {
+      const wRows = weekMap.get(week)!;
+      const stats = weekMetrics(wRows);
+      evolucion.push({ semana: week, rix_mediano: stats.rix_mediano });
+      weekStats.push({ semana: week, stats });
+    }
+
+    // Current week metrics with delta vs previous
+    const currentStats = weekStats[0]?.stats;
+    const previousStats = weekStats.length > 1 ? weekStats[1].stats : null;
+
+    const metricasConDelta: Record<string, any> = {};
+    if (currentStats) {
+      for (const m of METRIC_KEYS) {
+        const curr = currentStats.metricas[m.key];
+        if (!curr) continue;
+        const prevM = previousStats?.metricas?.[m.key];
+        metricasConDelta[m.key] = {
+          ...curr,
+          delta: prevM ? curr.mediano - prevM.mediano : 0,
+        };
+      }
+    }
+
+    // Per-model detail for latest week
+    const latestWeekRows = weekMap.get(sortedWeeks[0]) || [];
+    const modelos = latestWeekRows.map((r: any) => ({
+      nombre: r["02_model_name"] || "",
+      rix: r["09_rix_score"],
+      resumen: r["10_resumen"] || "",
+      puntos_clave: r["11_puntos_clave"],
+      precio_accion: r["48_precio_accion"],
+    }));
+
+    // Dominant flags (appear in >3 models)
+    const flagCounts = new Map<string, number>();
+    for (const r of latestWeekRows) {
+      const flags = r["17_flags"];
+      if (Array.isArray(flags)) {
+        for (const f of flags) { flagCounts.set(f, (flagCounts.get(f) || 0) + 1); }
+      } else if (typeof flags === "string" && flags.length > 0) {
+        flagCounts.set(flags, (flagCounts.get(flags) || 0) + 1);
+      }
+    }
+    const flagsDominantes = Array.from(flagCounts.entries())
+      .filter(([_, count]) => count >= 3)
+      .map(([flag]) => flag);
+
+    // Longest raw text for qualitative context
+    let textoReferencia = "";
+    const rawTextCols = ["20_res_gpt_bruto", "21_res_perplex_bruto", "22_res_gemini_bruto", "23_res_deepseek_bruto", "respuesta_bruto_grok", "respuesta_bruto_qwen"];
+    for (const r of latestWeekRows) {
+      for (const col of rawTextCols) {
+        const txt = r[col];
+        if (typeof txt === "string" && txt.length > textoReferencia.length) {
+          textoReferencia = txt;
+        }
+      }
+    }
+
+    const result = {
+      skill: "company_profile",
+      ticker,
+      empresa: companyName,
+      semana_actual: sortedWeeks[0] || "",
+      rix_mediano: currentStats?.rix_mediano || 0,
+      delta_rix: previousStats ? (currentStats?.rix_mediano || 0) - previousStats.rix_mediano : 0,
+      metricas: metricasConDelta,
+      modelos,
+      evolucion: evolucion.reverse(), // chronological order
+      flags_dominantes: flagsDominantes,
+      texto_bruto_referencia: textoReferencia.substring(0, 4000), // cap for prompt size
+      raw_runs: latestWeekRows, // for verified source extraction
+    };
+
+    console.log(`[SKILL] CompanyProfile for ${ticker}: ${rows.length} rows, ${sortedWeeks.length} weeks in ${Date.now() - start}ms`);
+    return { success: true, data: result };
+  } catch (e: any) {
+    return { success: false, error: `skillCompanyProfile exception: ${e.message || String(e)}` };
+  }
+}
+
+// ── NEW SKILL 2: skillSectorSnapshot — Sector-level consolidated view ─
+async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  const start = Date.now();
+  try {
+    if (!sectorCategory) return { success: false, error: "sector_category required" };
+
+    // 1. Get tickers in sector
+    const { data: issuers, error: ie } = await supabase
+      .from("repindex_root_issuers")
+      .select("ticker, issuer_name")
+      .ilike("sector_category", `%${sectorCategory}%`)
+      .limit(100);
+    if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
+    if (!issuers || issuers.length === 0) return { success: false, error: `No companies in sector ${sectorCategory}` };
+
+    const tickers = issuers.map((r: any) => String(r.ticker));
+    const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
+
+    // 2. Get latest week runs for all sector tickers
+    const { data: runs, error: runErr } = await supabase
+      .from("rix_runs_v2")
+      .select("05_ticker, 02_model_name, 09_rix_score, 10_resumen, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 07_period_to, 17_flags")
+      .in("05_ticker", tickers)
+      .order("07_period_to", { ascending: false })
+      .limit(tickers.length * 6);
+
+    if (runErr) return { success: false, error: `Runs query failed: ${runErr.message}` };
+    if (!runs || runs.length === 0) return { success: false, error: `No runs for sector ${sectorCategory}` };
+
+    // Detect the latest week from the data
+    let latestWeek = "";
+    for (const r of runs) {
+      const w = String(r["07_period_to"] || "").split("T")[0];
+      if (w > latestWeek) latestWeek = w;
+    }
+
+    // Filter to only latest week
+    const latestRows = (runs as any[]).filter(r => {
+      const w = String(r["07_period_to"] || "").split("T")[0];
+      return w === latestWeek;
+    });
+
+    // 3. Group by ticker
+    const grouped = new Map<string, number[]>();
+    const METRIC_COLS = ["23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score", "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score"];
+    const sectorMetricAccum: Record<string, number[]> = {};
+    for (const col of METRIC_COLS) sectorMetricAccum[col] = [];
+
+    for (const row of latestRows) {
+      const t = String(row["05_ticker"] || "");
+      const rix = row["09_rix_score"];
+      if (!grouped.has(t)) grouped.set(t, []);
+      if (rix != null) grouped.get(t)!.push(rix);
+      // Accumulate sector-level metrics
+      for (const col of METRIC_COLS) {
+        const v = row[col];
+        if (v != null) sectorMetricAccum[col].push(v);
+      }
+    }
+
+    // Build ranking
+    const ranking = Array.from(grouped.entries())
+      .map(([t, scores]) => ({
+        ticker: t,
+        empresa: nameMap.get(t) || t,
+        rix_mediano: medianEdge(scores),
+      }))
+      .sort((a, b) => b.rix_mediano - a.rix_mediano)
+      .map((r, i) => ({ pos: i + 1, ...r }));
+
+    const allMedians = ranking.map(r => r.rix_mediano);
+    const medianaSectorial = medianEdge(allMedians);
+
+    const lider = ranking[0] || null;
+    const colista = ranking[ranking.length - 1] || null;
+
+    // Sector-level metric medians
+    const METRIC_NAMES = ["NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"];
+    const metricasSector: Record<string, number> = {};
+    METRIC_COLS.forEach((col, i) => {
+      metricasSector[METRIC_NAMES[i]] = medianEdge(sectorMetricAccum[col]);
+    });
+
+    const result = {
+      skill: "sector_snapshot",
+      sector: sectorCategory,
+      semana: latestWeek,
+      mediana_sectorial: medianaSectorial,
+      num_empresas: ranking.length,
+      ranking,
+      metricas_sector: metricasSector,
+      lider: lider ? { empresa: lider.empresa, rix: lider.rix_mediano } : null,
+      colista: colista ? { empresa: colista.empresa, rix: colista.rix_mediano } : null,
+      brecha_lider_mediana: lider ? lider.rix_mediano - medianaSectorial : 0,
+    };
+
+    console.log(`[SKILL] SectorSnapshot for ${sectorCategory}: ${ranking.length} companies in ${Date.now() - start}ms`);
+    return { success: true, data: result };
+  } catch (e: any) {
+    return { success: false, error: `skillSectorSnapshot exception: ${e.message || String(e)}` };
+  }
 }
 
 // ── Lexicon-based normalizeQuery ────────────────────────────────────
@@ -625,7 +860,7 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   return { intent, entities, filters, recommended_skills, confidence };
 }
 
-// ── buildDataPackFromSkills — Skills-first DataPack builder ─────────
+// ── buildDataPackFromSkills — Skills-first DataPack builder (v2: consolidated skills) ─
 async function buildDataPackFromSkills(
   question: string,
   supabaseClient: any,
@@ -635,14 +870,14 @@ async function buildDataPackFromSkills(
   const totalStart = Date.now();
   try {
     const interpret = interpretQueryEdge(question);
-    console.log(`${logPrefix} [SKILLS] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}, skills=[${interpret.recommended_skills.join(",")}]`);
+    console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
     if (interpret.intent === "general_question" && interpret.confidence < 0.4) {
-      console.log(`${logPrefix} [SKILLS] Low confidence (${interpret.confidence}), skipping skills pipeline`);
+      console.log(`${logPrefix} [SKILLS-v2] Low confidence (${interpret.confidence}), skipping`);
       return null;
     }
 
-    // Resolve ticker from question using companiesCache
+    // Resolve ticker from question
     let resolvedTicker: string | null = null;
     let resolvedName: string | null = null;
     if (companiesCacheLocal && companiesCacheLocal.length > 0) {
@@ -650,62 +885,47 @@ async function buildDataPackFromSkills(
       if (detected.length > 0) {
         resolvedTicker = detected[0].ticker;
         resolvedName = detected[0].issuer_name;
-        console.log(`${logPrefix} [SKILLS] Resolved company: ${resolvedName} (${resolvedTicker})`);
+        console.log(`${logPrefix} [SKILLS-v2] Resolved: ${resolvedName} (${resolvedTicker})`);
       }
-      // IMPROVEMENT 6: Fuzzy fallback — match partial company names
       if (!resolvedTicker) {
         const qLower = question.toLowerCase();
         for (const entry of companiesCacheLocal) {
           const name = (entry.issuer_name || "").toLowerCase();
-          const shortName = name.split(" ")[0]; // first word e.g. "airtificial" from "Airtificial Intelligence Structures"
+          const shortName = name.split(" ")[0];
           if (name && (qLower.includes(name) || (shortName.length >= 4 && qLower.includes(shortName)))) {
             resolvedTicker = entry.ticker;
             resolvedName = entry.issuer_name;
-            console.log(`${logPrefix} [SKILLS] Fuzzy resolved: ${resolvedName} (${resolvedTicker})`);
+            console.log(`${logPrefix} [SKILLS-v2] Fuzzy resolved: ${resolvedName} (${resolvedTicker})`);
             break;
           }
         }
       }
     }
 
-    // Build skill call promises
+    // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
-    for (const skillId of interpret.recommended_skills) {
-      switch (skillId) {
-        case "skillGetCompanyScores":
-          if (resolvedTicker) skillCalls.scores = executeSkillGetCompanyScores(supabaseClient, { ticker: resolvedTicker });
-          break;
-        case "skillGetCompanyRanking":
-          skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
-            sector_category: interpret.filters.sector_category,
-            ibex_family_code: interpret.filters.ibex_family_code,
-          });
-          break;
-        case "skillGetCompanyEvolution":
-          if (resolvedTicker) skillCalls.evolution = executeSkillGetCompanyEvolution(supabaseClient, { ticker: resolvedTicker });
-          break;
-        case "skillGetCompanyDetail":
-          if (resolvedTicker) skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
-          break;
-        case "skillGetSectorComparison":
-          if (interpret.filters.sector_category) skillCalls.sector = executeSkillGetSectorComparison(supabaseClient, { sector_category: interpret.filters.sector_category });
-          break;
-        case "skillGetDivergenceAnalysis":
-          if (resolvedTicker) skillCalls.divergence = executeSkillGetDivergenceAnalysis(supabaseClient, { ticker: resolvedTicker });
-          break;
-        case "skillGetRawTexts":
-          if (resolvedTicker) skillCalls.rawTexts = executeSkillGetRawTexts(supabaseClient, { ticker: resolvedTicker });
-          break;
-      }
+    // Company profile: always when we have a ticker
+    if (resolvedTicker) {
+      skillCalls.companyProfile = skillCompanyProfile(supabaseClient, resolvedTicker);
+      skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
-    // Also fetch raw texts and scores if we have a ticker but they weren't recommended
-    if (resolvedTicker && !skillCalls.scores) skillCalls.scores = executeSkillGetCompanyScores(supabaseClient, { ticker: resolvedTicker });
-    if (resolvedTicker && !skillCalls.rawTexts) skillCalls.rawTexts = executeSkillGetRawTexts(supabaseClient, { ticker: resolvedTicker });
+    // Sector snapshot: when sector detected or ranking intent
+    const sectorCategory = interpret.filters.sector_category;
+    if (sectorCategory) {
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory);
+    }
+
+    // IBEX ranking fallback
+    if (interpret.filters.ibex_family_code && !sectorCategory) {
+      skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
+        ibex_family_code: interpret.filters.ibex_family_code,
+      });
+    }
 
     if (Object.keys(skillCalls).length === 0) {
-      console.log(`${logPrefix} [SKILLS] No skill calls to make`);
+      console.log(`${logPrefix} [SKILLS-v2] No skill calls to make`);
       return null;
     }
 
@@ -719,13 +939,12 @@ async function buildDataPackFromSkills(
         resultMap[keys[i]] = r.value.data;
       } else {
         const err = r.status === "rejected" ? r.reason : r.value?.error;
-        console.warn(`${logPrefix} [SKILLS] ${keys[i]} failed: ${err}`);
+        console.warn(`${logPrefix} [SKILLS-v2] ${keys[i]} failed: ${err}`);
       }
     }
+    console.log(`${logPrefix} [SKILLS-v2] Completed: ${Object.keys(resultMap).join(",")} in ${Date.now() - totalStart}ms`);
 
-    console.log(`${logPrefix} [SKILLS] Completed: ${Object.keys(resultMap).join(",")} (${Object.keys(skillCalls).length - Object.keys(resultMap).length} failed) in ${Date.now() - totalStart}ms`);
-
-    // VERIFIED COMPETITORS: Use getCompetitorTickers helper for ALL intents with a resolved ticker
+    // ── Resolve verified competitors ─────────────────────────────
     let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number}> = [];
     let competidoresNota: string | undefined;
     let competitorSource: "verified" | "sector_fallback" | "none" = "none";
@@ -733,32 +952,27 @@ async function buildDataPackFromSkills(
       const compInfo = await getCompetitorTickers(supabaseClient, resolvedTicker, logPrefix);
       competitorSource = compInfo.source;
       if (compInfo.tickers.length > 0) {
-        console.log(`${logPrefix} [SKILLS] Fetching competitor scores (source: ${compInfo.source}): ${compInfo.tickers.join(",")}`);
-        const compPromises = compInfo.tickers.map((t: string) => executeSkillGetCompanyScores(supabaseClient, { ticker: t }));
+        console.log(`${logPrefix} [SKILLS-v2] Fetching competitor profiles (source: ${compInfo.source}): ${compInfo.tickers.join(",")}`);
+        const compPromises = compInfo.tickers.map((t: string) => skillCompanyProfile(supabaseClient, t));
         const compResults = await Promise.allSettled(compPromises);
         for (let ci = 0; ci < compInfo.tickers.length; ci++) {
           const cr = compResults[ci];
           if (cr.status === "fulfilled" && cr.value?.success && cr.value.data) {
             const cd = cr.value.data;
-            const rixScores = cd.scores.map((s: any) => s.rix_score).filter((v: number | null): v is number => v != null);
-            const medRix = rixScores.length > 0 ? medianEdge(rixScores) : 0;
-            competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.company, median_rix: Math.round(medRix * 10) / 10 });
-          } else {
-            console.warn(`${logPrefix} [SKILLS] Competitor ${compInfo.tickers[ci]} fetch failed`);
+            competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.empresa, median_rix: cd.rix_mediano });
           }
         }
-        console.log(`${logPrefix} [SKILLS] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length} (source: ${compInfo.source})`);
+        console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}`);
         if (compInfo.source === "sector_fallback") {
           competidoresNota = `Sin competidores directos verificados. Se muestran ${competidoresDirectos.length} empresas del mismo sector (${compInfo.sector_category}) como referencia`;
         }
       } else {
         competidoresNota = "No se han verificado competidores directos para esta empresa";
-        console.log(`${logPrefix} [SKILLS] No competitors found for ${resolvedTicker}`);
       }
     }
 
-    // Build DataPack from skill results
-    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: Array<{ticker: string, issuer_name: string, median_rix: number}>; competidores_nota?: string; competidores_fuente?: string } = {
+    // ── Build DataPack from consolidated results ─────────────────
+    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: any[]; competidores_nota?: string; competidores_fuente?: string } = {
       snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
       memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
       competidores_verificados: [], competidores_metricas_avg: null,
@@ -768,22 +982,88 @@ async function buildDataPackFromSkills(
       competidores_fuente: competitorSource,
     };
 
-    // Map scores → snapshot
-    if (resultMap.scores) {
-      const sd = resultMap.scores;
-      pack.empresa_primaria = { ticker: sd.ticker, nombre: sd.company, sector: null, subsector: null };
-      pack.snapshot = sd.scores.map((s: any) => ({
-        modelo: s.model_name, rix: s.rix_score, rix_adj: null,
-        nvm: s.nvm_score, drm: s.drm_score, sim: s.sim_score, rmm: s.rmm_score,
-        cem: s.cem_score, gam: s.gam_score, dcm: s.dcm_score, cxm: s.cxm_score,
-        period_from: null, period_to: null,
+    // ── Map companyProfile → snapshot, evolucion, raw_texts, divergencia ──
+    const cp = resultMap.companyProfile;
+    if (cp) {
+      pack.empresa_primaria = { ticker: cp.ticker, nombre: cp.empresa, sector: null, subsector: null };
+
+      // snapshot: per-model detail from latest week
+      pack.snapshot = (cp.modelos || []).map((m: any) => ({
+        modelo: m.nombre, rix: m.rix, rix_adj: null,
+        nvm: null, drm: null, sim: null, rmm: null,
+        cem: null, gam: null, dcm: null, cxm: null,
+        period_from: null, period_to: cp.semana_actual,
       }));
+
+      // raw_texts from modelos
+      pack.raw_texts = (cp.modelos || []).map((m: any) => ({
+        modelo: m.nombre,
+        texto: m.resumen || "",
+      }));
+
+      // puntos_clave from modelos
+      pack.puntos_clave = (cp.modelos || [])
+        .filter((m: any) => m.puntos_clave)
+        .map((m: any) => {
+          const puntos = Array.isArray(m.puntos_clave) ? m.puntos_clave : typeof m.puntos_clave === "string" ? [m.puntos_clave] : [];
+          return { modelo: m.nombre, puntos };
+        });
+
+      // evolucion from consolidated weekly medians
+      pack.evolucion = (cp.evolucion || []).map((e: any, i: number, arr: any[]) => ({
+        fecha: e.semana,
+        rix_avg: e.rix_mediano,
+        modelos: 6,
+        delta: i > 0 ? Math.round((e.rix_mediano - arr[i - 1].rix_mediano) * 10) / 10 : null,
+      }));
+
+      // delta_rix
+      if (cp.evolucion && cp.evolucion.length >= 2) {
+        const last = cp.evolucion[cp.evolucion.length - 1];
+        const prev = cp.evolucion[cp.evolucion.length - 2];
+        (pack as any).delta_rix = { current: last.rix_mediano, previous: prev.rix_mediano, delta: Math.round((last.rix_mediano - prev.rix_mediano) * 10) / 10 };
+      }
+
+      // divergencia: compute from per-model RIX scores
+      const rixScores = (cp.modelos || []).map((m: any) => m.rix).filter((v: any) => v != null) as number[];
+      if (rixScores.length >= 2) {
+        const maxRix = Math.max(...rixScores);
+        const minRix = Math.min(...rixScores);
+        const range = maxRix - minRix;
+        const maxModel = cp.modelos.find((m: any) => m.rix === maxRix)?.nombre || "";
+        const minModel = cp.modelos.find((m: any) => m.rix === minRix)?.nombre || "";
+        pack.divergencia = {
+          sigma: Math.round(range / 2),
+          nivel: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo",
+          modelo_alto: maxModel,
+          modelo_bajo: minModel,
+          rango: range,
+        };
+      }
+
+      // Pass consolidated metrics (metricas) and flags as extra fields
+      (pack as any).metricas_consolidadas = cp.metricas;
+      (pack as any).flags_dominantes = cp.flags_dominantes;
+      (pack as any).texto_bruto_referencia = cp.texto_bruto_referencia;
+      (pack as any).rix_mediano = cp.rix_mediano;
+      (pack as any).delta_rix_value = cp.delta_rix;
+      (pack as any).precio_accion = cp.modelos?.[0]?.precio_accion || null;
+
+      // Pass raw_runs for verified source extraction
+      if (cp.raw_runs) {
+        (pack as any)._rawRunsForSources = cp.raw_runs;
+      }
     }
 
-    // Map detail → empresa_primaria + memento
+    // ── Map detail → memento, sector info ────────────────────────
     if (resultMap.detail) {
       const d = resultMap.detail;
-      pack.empresa_primaria = { ticker: d.ticker, nombre: d.issuer_name, sector: d.sector_category, subsector: d.subsector };
+      if (pack.empresa_primaria) {
+        pack.empresa_primaria.sector = d.sector_category;
+        pack.empresa_primaria.subsector = d.subsector;
+      } else {
+        pack.empresa_primaria = { ticker: d.ticker, nombre: d.issuer_name, sector: d.sector_category, subsector: d.subsector };
+      }
       if (d.corporate) {
         pack.memento = {
           ceo: d.corporate.ceo_name, presidente: null, chairman: null,
@@ -793,7 +1073,6 @@ async function buildDataPackFromSkills(
           ingresos: d.corporate.last_reported_revenue, ejercicio_fiscal: null, mision: null, otros_ejecutivos: null,
         };
       }
-      // Map verified competitors
       if (d.verified_competitors && Array.isArray(d.verified_competitors)) {
         pack.competidores_verificados = d.verified_competitors.map((t: string) => {
           const comp = (companiesCacheLocal || []).find((c: any) => c.ticker === t);
@@ -802,102 +1081,25 @@ async function buildDataPackFromSkills(
       }
     }
 
-    // Map ranking
-    if (resultMap.ranking) {
+    // ── Map sectorSnapshot → ranking ─────────────────────────────
+    const ss = resultMap.sectorSnapshot;
+    if (ss) {
+      pack.ranking = (ss.ranking || []).map((r: any) => ({
+        pos: r.pos, ticker: r.ticker, nombre: r.empresa, rix_avg: r.rix_mediano,
+      }));
+      (pack as any).sector_snapshot = ss;
+    }
+
+    // ── Map IBEX ranking fallback ────────────────────────────────
+    if (resultMap.ranking && !ss) {
       pack.ranking = resultMap.ranking.ranking.map((r: any, i: number) => ({
         pos: i + 1, ticker: r.ticker, nombre: r.company, rix_avg: r.median_rix,
-        scores_por_modelo: r.scores_by_model,
       }));
     }
-
-    // Map sector evolution → evolucion (when no single-company evolution available)
-    if (!resultMap.evolution && resultMap.sector?.evolution_by_company) {
-      const evoByCompany = resultMap.sector.evolution_by_company;
-      // Aggregate all companies' weekly medians into a sector-level weekly average
-      const weekAgg = new Map<string, number[]>();
-      for (const ticker of Object.keys(evoByCompany)) {
-        for (const pt of evoByCompany[ticker]) {
-          if (!weekAgg.has(pt.week)) weekAgg.set(pt.week, []);
-          weekAgg.get(pt.week)!.push(pt.median_rix);
-        }
-      }
-      const weeks = Array.from(weekAgg.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-      let prevAvg: number | null = null;
-      pack.evolucion = weeks.map(([fecha, scores]) => {
-        const avg = Math.round(medianEdge(scores) * 10) / 10;
-        const delta = prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null;
-        prevAvg = avg;
-        return { fecha, rix_avg: avg, modelos: scores.length, delta };
-      });
-      // Also store per-company evolution for the prompt
-      (pack as any).evolucion_por_empresa = evoByCompany;
-    }
-
-    // Map evolution → evolucion (aggregated by week)
-    if (resultMap.evolution) {
-      const byWeek = new Map<string, number[]>();
-      for (const pt of resultMap.evolution.evolution) {
-        if (pt.rix_score == null) continue;
-        if (!byWeek.has(pt.batch_week)) byWeek.set(pt.batch_week, []);
-        byWeek.get(pt.batch_week)!.push(pt.rix_score);
-      }
-      const weeks = Array.from(byWeek.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-      let prevAvg: number | null = null;
-      pack.evolucion = weeks.map(([fecha, scores]) => {
-        const avg = Math.round(medianEdge(scores) * 10) / 10;
-        const delta = prevAvg != null ? Math.round((avg - prevAvg) * 10) / 10 : null;
-        prevAvg = avg;
-        return { fecha, rix_avg: avg, modelos: scores.length, delta };
-      });
-      // IMPROVEMENT 3: Auto-compute delta_rix
-      if (pack.evolucion.length >= 2) {
-        const last = pack.evolucion[pack.evolucion.length - 1];
-        const prev = pack.evolucion[pack.evolucion.length - 2];
-        (pack as any).delta_rix = { current: last.rix_avg, previous: prev.rix_avg, delta: Math.round((last.rix_avg - prev.rix_avg) * 10) / 10 };
-      } else if (pack.evolucion.length === 1) {
-        (pack as any).delta_rix = { current: pack.evolucion[0].rix_avg, previous: null, delta: 0, note: "single_week" };
-      }
-    }
-
-    // Map divergence
-    if (resultMap.divergence) {
-      const div = resultMap.divergence;
-      const rixDiv = div.divergences.find((d: any) => d.metric === "rix_score");
-      if (rixDiv) {
-        pack.divergencia = {
-          sigma: Math.round(rixDiv.range / 2),
-          nivel: rixDiv.consensus,
-          modelo_alto: rixDiv.max_model,
-          modelo_bajo: rixDiv.min_model,
-          rango: rixDiv.range,
-        };
-      }
-      pack.divergencias_detalle = div.divergences;
-    }
-
-    // Map raw texts
-    if (resultMap.rawTexts) {
-      pack.raw_texts = resultMap.rawTexts.texts.map((t: any) => ({
-        modelo: t.model_name,
-        texto: t.resumen || "",
-      }));
-      pack.puntos_clave = resultMap.rawTexts.texts
-        .filter((t: any) => t.puntos_clave)
-        .map((t: any) => {
-          const puntos = Array.isArray(t.puntos_clave) ? t.puntos_clave : typeof t.puntos_clave === "string" ? [t.puntos_clave] : [];
-          return { modelo: t.model_name, puntos };
-        });
-      // Pass through raw DB rows for verified source extraction (contains 20_res_gpt_bruto, 21_res_perplex_bruto)
-      if (resultMap.rawTexts.raw_runs) {
-        (pack as any)._rawRunsForSources = resultMap.rawTexts.raw_runs;
-      }
-    }
-
-    // sector_avg mapping removed — now using verified competitors only
 
     return pack;
   } catch (e: any) {
-    console.error(`${logPrefix} [SKILLS] buildDataPackFromSkills failed: ${e.message || e}`);
+    console.error(`${logPrefix} [SKILLS-v2] buildDataPackFromSkills failed: ${e.message || e}`);
     return null;
   }
 }
