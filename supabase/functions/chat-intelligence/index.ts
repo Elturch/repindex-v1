@@ -613,10 +613,10 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
   try {
     if (!sectorCategory) return { success: false, error: "sector_category required" };
 
-    // 1. Get tickers in sector
+    // 1. Get tickers in sector (including verified_competitors)
     const { data: issuers, error: ie } = await supabase
       .from("repindex_root_issuers")
-      .select("ticker, issuer_name")
+      .select("ticker, issuer_name, verified_competitors")
       .ilike("sector_category", `%${sectorCategory}%`)
       .limit(100);
     if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
@@ -624,6 +624,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
 
     const tickers = issuers.map((r: any) => String(r.ticker));
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
+    const competitorsMap = new Map<string, string[]>(issuers.map((r: any) => [r.ticker, Array.isArray(r.verified_competitors) ? r.verified_competitors : []]));
 
     // 2. Fetch LAST 4 WEEKS of data (not just latest) — paginated
     const FULL_SELECT = "05_ticker, 02_model_name, 03_target_name, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 06_period_from, 07_period_to, batch_execution_date";
@@ -713,6 +714,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
           empresa: nameMap.get(t) || t,
           rix_mediano: medianEdge(rixVals),
           scores_por_modelo,
+          verified_competitors: competitorsMap.get(t) || [],
         };
       })
       .sort((a, b) => b.rix_mediano - a.rix_mediano)
@@ -1274,6 +1276,76 @@ async function buildDataPackFromSkills(
       }
 
       pack.sector_avg = ss.mediana_sectorial || null;
+
+      // ── Build competidores_por_empresa from ranking verified_competitors ──
+      const competidoresPorEmpresa: Record<string, string[]> = {};
+      for (const r of (ss.ranking || [])) {
+        if (r.verified_competitors && Array.isArray(r.verified_competitors) && r.verified_competitors.length > 0) {
+          competidoresPorEmpresa[r.ticker] = r.verified_competitors;
+        }
+      }
+      (pack as any).competidores_por_empresa = competidoresPorEmpresa;
+
+      // ── Build divergencias_detalle from per_model_detail ──
+      if (ss.per_model_detail && ss.per_model_detail.length > 0) {
+        const METRIC_KEYS = [
+          { key: "rix", label: "RIX" },
+          { key: "nvm", label: "Calidad Narrativa (NVM)" },
+          { key: "drm", label: "Fortaleza Evidencia (DRM)" },
+          { key: "sim", label: "Autoridad Fuentes (SIM)" },
+          { key: "rmm", label: "Actualidad y Empuje (RMM)" },
+          { key: "cem", label: "Gestión Controversias (CEM)" },
+          { key: "gam", label: "Percepción Gobernanza (GAM)" },
+          { key: "dcm", label: "Coherencia Informativa (DCM)" },
+          { key: "cxm", label: "Ejecución Corporativa (CXM)" },
+        ];
+        // Group per_model_detail by ticker
+        const byTicker = new Map<string, any[]>();
+        for (const row of ss.per_model_detail) {
+          const t = row.ticker || "";
+          if (!byTicker.has(t)) byTicker.set(t, []);
+          byTicker.get(t)!.push(row);
+        }
+        const divergencias: any[] = [];
+        for (const [ticker, rows] of byTicker.entries()) {
+          for (const mk of METRIC_KEYS) {
+            const vals = rows.map((r: any) => ({ model: r.modelo || r.model_name, value: r[mk.key] })).filter((v: any) => v.value != null);
+            if (vals.length < 2) continue;
+            const maxEntry = vals.reduce((a: any, b: any) => b.value > a.value ? b : a);
+            const minEntry = vals.reduce((a: any, b: any) => b.value < a.value ? b : a);
+            const range = maxEntry.value - minEntry.value;
+            if (range > 0) {
+              divergencias.push({
+                ticker,
+                metric: mk.label,
+                max_model: maxEntry.model,
+                max_value: maxEntry.value,
+                min_model: minEntry.model,
+                min_value: minEntry.value,
+                range,
+                consensus: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo",
+              });
+            }
+          }
+        }
+        (pack as any).divergencias_detalle = divergencias;
+
+        // Also set pack.divergencia from the leader's RIX range
+        const leaderTicker2 = ss.lider?.ticker || ss.ranking?.[0]?.ticker;
+        if (leaderTicker2) {
+          const leaderDivs = divergencias.filter((d: any) => d.ticker === leaderTicker2 && d.metric === "RIX");
+          if (leaderDivs.length > 0) {
+            const ld = leaderDivs[0];
+            pack.divergencia = {
+              sigma: Math.round(ld.range / 2),
+              nivel: ld.consensus === "alto" ? "alto" : ld.consensus === "medio" ? "medio" : "bajo",
+              modelo_alto: ld.max_model,
+              modelo_bajo: ld.min_model,
+              rango: ld.range,
+            };
+          }
+        }
+      }
     }
 
     // ── Map IBEX ranking fallback ────────────────────────────────
@@ -4010,15 +4082,17 @@ function buildOrchestratorPrompt(
     empresa: dataPack.empresa_primaria,
     snapshot: dataPack.snapshot,
     sector_avg: dataPack.sector_avg,
-    ranking: dataPack.ranking.slice(0, 10),
+    ranking: dataPack.ranking.slice(0, 15),
     competidores_verificados: dataPack.competidores_verificados,
     competidores_metricas_avg: dataPack.competidores_metricas_avg,
+    competidores_por_empresa: (dataPack as any).competidores_por_empresa || null,
     evolucion: dataPack.evolucion,
     divergencia: dataPack.divergencia,
     divergencias_detalle: (dataPack as any).divergencias_detalle || null,
     memento: dataPack.memento,
     noticias: dataPack.noticias.slice(0, 5),
     mercado: dataPack.mercado,
+    evolucion_sector: (dataPack as any).evolucion_sector || null,
     ...((dataPack as any).f2_dynamic ? { datos_dinamicos: (dataPack as any).f2_dynamic } : {}),
   }, null, 0);
 
@@ -4208,6 +4282,18 @@ REGLAS ESPECÍFICAS PARA CONSULTAS DE ÍNDICE (IBEX-35):
 • NUNCA inventes presupuestos, campañas multicanal ni certificaciones.
 • Si una métrica es null en el DataPack, di "métrica no disponible en esta consulta agregada" y PASA A LA SIGUIENTE. No rellenes.
 • Extensión máxima: 2.500 palabras. Este es un resumen de índice, no un informe de consultoría.
+` : ""}
+${dataPack.ranking && dataPack.ranking.length > 3 && dataPack?.empresa_primaria?.ticker !== "IBEX-35" ? `
+REGLAS ESPECÍFICAS PARA RANKINGS/COMPARATIVAS SECTORIALES:
+• Este informe es un RANKING SECTORIAL. NO te centres solo en la empresa líder. Cubre el TOP 5-10 empresas de forma EQUILIBRADA.
+• RESUMEN EJECUTIVO: Visión panorámica del sector con las 5 primeras y las 3 últimas posiciones, no solo el líder.
+• SECCIÓN 2 (Tabla comparativa): Tabla del TOP 10 empresas con Posición, Empresa, Ticker, RIX Mediano, y al menos 3 métricas clave.
+• SECCIONES 3-4: Compara métricas ENTRE las top 5 empresas. Ej: "Empresa A lidera en CEM con 95 mientras Empresa C solo obtiene 42".
+• COMPETIDORES VERIFICADOS POR EMPRESA: Si el campo "competidores_por_empresa" está disponible, para cada empresa del top 5, menciona sus competidores directos verificados. Esto permite al lector entender las dinámicas competitivas intrasectoriales.
+• DIVERGENCIA POR EMPRESA: Si "divergencias_detalle" está disponible, analiza las empresas con mayor rango en RIX (mayor disenso entre IAs) y las de menor rango (mayor consenso). Esto es información analítica clave.
+• EVOLUCIÓN SECTORIAL: Si "evolucion_sector" está disponible, comenta qué empresas suben y cuáles bajan en las últimas 4 semanas.
+• Dedica al menos 1 párrafo a CADA empresa del top 5. No dejes ninguna sin analizar.
+• El sector como un todo es el protagonista, no una empresa individual.
 ` : ""}
 
 EJEMPLO DE RESPUESTA PROHIBIDA (genera contenido ficticio):
@@ -4803,11 +4889,14 @@ Si hay datos de competidores, comparar con la media sectorial.
 SECCIÓN 4: ${H("depth_model_divergence")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
 INCLUIR SOLO SI: DATAPACK.divergencias_detalle está disponible Y alguna métrica tiene rango > 10.
+INCLUIR TAMBIÉN SI: DATAPACK.divergencia existe con rango > 0.
 
 - Para cada métrica con divergencia significativa (rango > 10):
   "[Modelo A]: [valor_max] pts vs [Modelo B]: [valor_min] pts (Δ [rango])"
 - Interpretar qué significa la divergencia para la empresa
-- Si rango ≤ 10 en todas las métricas: OMITIR esta sección completamente
+- En RANKINGS SECTORIALES: mostrar las empresas con MAYOR y MENOR consenso entre IAs (mayor y menor rango RIX). Esto indica qué empresas generan más debate entre las IAs.
+- Si hay divergencias_detalle con múltiples tickers, agrupa por empresa las divergencias más relevantes.
+- Si rango ≤ 10 en todas las métricas Y no hay datos de divergencia: OMITIR esta sección completamente
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 5: ${H("depth_evolution")} — CONDICIONAL
