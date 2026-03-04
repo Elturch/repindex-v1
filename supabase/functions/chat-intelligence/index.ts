@@ -558,6 +558,11 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
         period_to: r["07_period_to"],
         precio_accion: r["48_precio_accion"],
         texto_bruto: texto_bruto.substring(0, 2000),
+        // Preserve original bruto fields for source extraction (extractSourcesFromRixData)
+        "20_res_gpt_bruto": r["20_res_gpt_bruto"] ?? null,
+        "21_res_perplex_bruto": r["21_res_perplex_bruto"] ?? null,
+        "06_period_from": r["06_period_from"] ?? null,
+        "07_period_to": r["07_period_to"] ?? null,
       };
     });
 
@@ -627,7 +632,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
     const competitorsMap = new Map<string, string[]>(issuers.map((r: any) => [r.ticker, Array.isArray(r.verified_competitors) ? r.verified_competitors : []]));
 
     // 2. Fetch LAST 4 WEEKS of data (not just latest) — paginated
-    const FULL_SELECT = "05_ticker, 02_model_name, 03_target_name, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 06_period_from, 07_period_to, batch_execution_date";
+    const FULL_SELECT = "05_ticker, 02_model_name, 03_target_name, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 06_period_from, 07_period_to, batch_execution_date, 20_res_gpt_bruto, 21_res_perplex_bruto";
 
     let allRuns: any[] = [];
     for (let page = 0; page < 8; page++) {
@@ -752,6 +757,11 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promi
       flags: row["12_flags"] ?? row["17_flags"],
       period_from: row["06_period_from"] ?? row["07_period_to"],
       period_to: row["07_period_to"],
+      // Preserve raw AI responses for bibliography/source extraction
+      "20_res_gpt_bruto": row["20_res_gpt_bruto"] ?? null,
+      "21_res_perplex_bruto": row["21_res_perplex_bruto"] ?? null,
+      "06_period_from": row["06_period_from"] ?? null,
+      "07_period_to": row["07_period_to"] ?? null,
     }));
 
     // 5. evolucion_sector: array semanal por ticker (últimas 4 semanas)
@@ -1255,6 +1265,10 @@ async function buildDataPackFromSkills(
 
           (pack as any).rix_mediano = leaderRanking?.rix_mediano ?? ss.lider?.rix ?? ss.mediana_sectorial;
           (pack as any).metricas_consolidadas = ss.metricas_sector;
+
+          // Populate _rawRunsForSources from per_model_detail (contains 20_res_gpt_bruto, 21_res_perplex_bruto)
+          // so extractSourcesFromRixData can find bibliography URLs for sector queries
+          (pack as any)._rawRunsForSources = ss.per_model_detail;
         }
 
         // Fill evolucion from evolucion_sector for leader
