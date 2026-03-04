@@ -225,6 +225,46 @@ async function executeSkillGetCompanyEvolution(supabase: any, params: { ticker: 
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
+// ── Helper: Resolve competitor tickers (verified-first, sector fallback) ─────
+async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: string): Promise<{ tickers: string[]; source: "verified" | "sector_fallback" | "none"; sector_category: string | null }> {
+  try {
+    const { data, error } = await supabase.from("repindex_root_issuers")
+      .select("verified_competitors,sector_category")
+      .eq("ticker", ticker)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return { tickers: [], source: "none", sector_category: null };
+
+    const vc = data.verified_competitors;
+    const vcArray: string[] = Array.isArray(vc) ? vc.filter((t: any) => typeof t === "string" && t.length > 0) : [];
+
+    if (vcArray.length > 0) {
+      console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified competitors: ${vcArray.join(",")}`);
+      return { tickers: vcArray, source: "verified", sector_category: data.sector_category };
+    }
+
+    // Fallback: same sector_category (excluding self), limited to 10
+    if (data.sector_category) {
+      const { data: peers, error: pe } = await supabase.from("repindex_root_issuers")
+        .select("ticker")
+        .eq("sector_category", data.sector_category)
+        .neq("ticker", ticker)
+        .limit(10);
+      if (!pe && peers && peers.length > 0) {
+        const peerTickers = peers.map((p: any) => p.ticker);
+        console.log(`${logPrefix} [COMPETITORS] ${ticker}: no verified competitors, fallback to ${peerTickers.length} sector peers (${data.sector_category})`);
+        return { tickers: peerTickers, source: "sector_fallback", sector_category: data.sector_category };
+      }
+    }
+
+    console.log(`${logPrefix} [COMPETITORS] ${ticker}: no competitors found`);
+    return { tickers: [], source: "none", sector_category: data.sector_category };
+  } catch (e: any) {
+    console.error(`${logPrefix} [COMPETITORS] Error resolving competitors for ${ticker}: ${e.message}`);
+    return { tickers: [], source: "none", sector_category: null };
+  }
+}
+
 // ── Inlined skill: Company Detail ───────────────────────────────────
 async function executeSkillGetCompanyDetail(supabase: any, params: { ticker?: string; issuer_name?: string }) {
   const start = Date.now();
@@ -685,17 +725,18 @@ async function buildDataPackFromSkills(
 
     console.log(`${logPrefix} [SKILLS] Completed: ${Object.keys(resultMap).join(",")} (${Object.keys(skillCalls).length - Object.keys(resultMap).length} failed) in ${Date.now() - totalStart}ms`);
 
-    // VERIFIED COMPETITORS: Fetch scores for each verified competitor (NOT sector-based)
+    // VERIFIED COMPETITORS: Use getCompetitorTickers helper for ALL intents with a resolved ticker
     let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number}> = [];
     let competidoresNota: string | undefined;
-    if (interpret.intent === "company_analysis" && resultMap.detail) {
-      const vc = resultMap.detail.verified_competitors;
-      const vcArray: string[] = Array.isArray(vc) ? vc : [];
-      if (vcArray.length > 0) {
-        console.log(`${logPrefix} [SKILLS] Fetching verified competitors: ${vcArray.join(",")}`);
-        const compPromises = vcArray.map((t: string) => executeSkillGetCompanyScores(supabaseClient, { ticker: t }));
+    let competitorSource: "verified" | "sector_fallback" | "none" = "none";
+    if (resolvedTicker) {
+      const compInfo = await getCompetitorTickers(supabaseClient, resolvedTicker, logPrefix);
+      competitorSource = compInfo.source;
+      if (compInfo.tickers.length > 0) {
+        console.log(`${logPrefix} [SKILLS] Fetching competitor scores (source: ${compInfo.source}): ${compInfo.tickers.join(",")}`);
+        const compPromises = compInfo.tickers.map((t: string) => executeSkillGetCompanyScores(supabaseClient, { ticker: t }));
         const compResults = await Promise.allSettled(compPromises);
-        for (let ci = 0; ci < vcArray.length; ci++) {
+        for (let ci = 0; ci < compInfo.tickers.length; ci++) {
           const cr = compResults[ci];
           if (cr.status === "fulfilled" && cr.value?.success && cr.value.data) {
             const cd = cr.value.data;
@@ -703,24 +744,28 @@ async function buildDataPackFromSkills(
             const medRix = rixScores.length > 0 ? medianEdge(rixScores) : 0;
             competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.company, median_rix: Math.round(medRix * 10) / 10 });
           } else {
-            console.warn(`${logPrefix} [SKILLS] Competitor ${vcArray[ci]} fetch failed`);
+            console.warn(`${logPrefix} [SKILLS] Competitor ${compInfo.tickers[ci]} fetch failed`);
           }
         }
-        console.log(`${logPrefix} [SKILLS] Verified competitors resolved: ${competidoresDirectos.length}/${vcArray.length}`);
+        console.log(`${logPrefix} [SKILLS] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length} (source: ${compInfo.source})`);
+        if (compInfo.source === "sector_fallback") {
+          competidoresNota = `Sin competidores directos verificados. Se muestran ${competidoresDirectos.length} empresas del mismo sector (${compInfo.sector_category}) como referencia`;
+        }
       } else {
         competidoresNota = "No se han verificado competidores directos para esta empresa";
-        console.log(`${logPrefix} [SKILLS] No verified competitors for this company`);
+        console.log(`${logPrefix} [SKILLS] No competitors found for ${resolvedTicker}`);
       }
     }
 
     // Build DataPack from skill results
-    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: Array<{ticker: string, issuer_name: string, median_rix: number}>; competidores_nota?: string } = {
+    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: Array<{ticker: string, issuer_name: string, median_rix: number}>; competidores_nota?: string; competidores_fuente?: string } = {
       snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
       memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
       competidores_verificados: [], competidores_metricas_avg: null,
       explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
       competidores_directos: competidoresDirectos,
       competidores_nota: competidoresNota,
+      competidores_fuente: competitorSource,
     };
 
     // Map scores → snapshot
@@ -4383,14 +4428,17 @@ Si evolucion tiene ≤ 1 semana: OMITIR esta sección completamente.
 SECCIÓN 6: ${H("depth_competitive")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
 INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío).
-Estos son competidores directos VERIFICADOS de la empresa, NO una clasificación sectorial genérica.
+
+REGLA FUNDAMENTAL DE COMPETIDORES:
+- Si DATAPACK.competidores_fuente === "verified": estos son competidores directos VERIFICADOS. Preséntalo como "Competidores Directos Verificados".
+- Si DATAPACK.competidores_fuente === "sector_fallback": son empresas del mismo sector (NO competidores directos). Preséntalo como "Empresas del Mismo Sector (referencia)" e incluye DATAPACK.competidores_nota como disclaimer.
+- Si DATAPACK.competidores_directos está vacío: OMITIR esta sección completamente.
+- NUNCA inventes competidores ni mezcles fuentes verificadas con sectoriales.
 
 | Competidor | Ticker | RIX Mediano | Δ vs empresa |
 |------------|--------|-------------|--------------|
 
-Compara la mediana RIX de la empresa analizada con cada competidor directo verificado.
-Si DATAPACK.competidores_directos está vacío, OMITIR esta sección completamente.
-NUNCA inventes competidores ni uses clasificaciones sectoriales como proxy.
+Compara la mediana RIX de la empresa analizada con cada competidor.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
