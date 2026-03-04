@@ -401,13 +401,14 @@ async function executeSkillGetRawTexts(supabase: any, params: { ticker: string; 
       batchDate = sr.data;
     }
     const { gte, lt } = buildDateFilterEdge(batchDate!);
-    const { data, error } = await supabase.from("rix_runs_v2").select("02_model_name,03_target_name,10_resumen,11_puntos_clave")
+    const { data, error } = await supabase.from("rix_runs_v2").select("02_model_name,03_target_name,10_resumen,11_puntos_clave,20_res_gpt_bruto,21_res_perplex_bruto,06_period_from,07_period_to")
       .eq("05_ticker", params.ticker).gte("batch_execution_date", gte).lt("batch_execution_date", lt).limit(20);
     if (error) return { success: false, error: error.message };
     if (!data || data.length === 0) return { success: false, error: `No texts for ${params.ticker}` };
     const texts = data.map((r: any) => ({ model_name: r["02_model_name"] || "", resumen: r["10_resumen"], puntos_clave: r["11_puntos_clave"] }));
     console.log(`[SKILL] RawTexts for ${params.ticker}: ${texts.length} models in ${Date.now() - start}ms`);
-    return { success: true, data: { ticker: params.ticker, company: data[0]["03_target_name"] || "", batch_date: batchDate, texts } };
+    // Return raw_runs with full rows for source extraction (includes 20_res_gpt_bruto, 21_res_perplex_bruto)
+    return { success: true, data: { ticker: params.ticker, company: data[0]["03_target_name"] || "", batch_date: batchDate, texts, raw_runs: data } };
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
@@ -751,6 +752,10 @@ async function buildDataPackFromSkills(
           const puntos = Array.isArray(t.puntos_clave) ? t.puntos_clave : typeof t.puntos_clave === "string" ? [t.puntos_clave] : [];
           return { modelo: t.model_name, puntos };
         });
+      // Pass through raw DB rows for verified source extraction (contains 20_res_gpt_bruto, 21_res_perplex_bruto)
+      if (resultMap.rawTexts.raw_runs) {
+        (pack as any)._rawRunsForSources = resultMap.rawTexts.raw_runs;
+      }
     }
 
     // sector_avg mapping removed — now using verified competitors only
@@ -6965,7 +6970,8 @@ async function handleStandardChat(
     "44_cxm_score": s.cxm,
     batch_execution_date: s.period_to,
   }));
-  const detectedCompanyFullData: any[] = allRixData;
+  // Use raw runs from skills pipeline for source extraction (they contain 20_res_gpt_bruto, 21_res_perplex_bruto)
+  const detectedCompanyFullData: any[] = (dataPack as any)?._rawRunsForSources || allRixData;
 
   // =========================================================================
   // STREAMING MODE: Return SSE stream for real-time text generation
