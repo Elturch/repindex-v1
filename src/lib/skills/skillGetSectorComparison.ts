@@ -42,7 +42,7 @@ export async function skillGetSectorComparison(
     const { data: issuers, error: issuerError } = await supabase
       .from("repindex_root_issuers")
       .select("ticker,issuer_name")
-      .eq("sector_category", params.sector_category)
+      .ilike("sector_category", `%${params.sector_category}%`)
       .limit(100);
 
     if (issuerError) {
