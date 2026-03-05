@@ -845,28 +845,117 @@ for (const [sector, terms] of Object.entries(SECTOR_LEXICON)) {
 SECTOR_REVERSE_MAP.sort((a, b) => b[0].length - a[0].length);
 
 const COMPANY_TICKER_MAP: Record<string, string> = {
-  santander: "SAN.MC", bbva: "BBVA.MC", caixabank: "CABK.MC", bankinter: "BKT.MC", sabadell: "SAB.MC", unicaja: "UNI.MC",
-  "telefónica": "TEF.MC", telefonica: "TEF.MC", movistar: "TEF.MC",
-  inditex: "ITX.MC", zara: "ITX.MC",
-  repsol: "REP.MC", iberdrola: "IBE.MC", endesa: "ELE.MC", naturgy: "NTGY.MC", "enagás": "ENG.MC", enagas: "ENG.MC",
-  amadeus: "AMS.MC", acciona: "ANA.MC", acs: "ACS.MC", ferrovial: "FER.MC",
-  grifols: "GRF.MC", mapfre: "MAP.MC", merlin: "MRL.MC",
-  aena: "AENA.MC", cellnex: "CLNX.MC", colonial: "COL.MC",
-  fluidra: "FDR.MC", indra: "IDR.MC", redeia: "RED.MC", "red eléctrica": "RED.MC", "red electrica": "RED.MC",
-  sacyr: "SCYR.MC", solaria: "SLR.MC", acerinox: "ACX.MC", arcelormittal: "MTS.MC",
-  logista: "LOG.MC", viscofan: "VIS.MC", caf: "CAF.MC",
-  "meliá": "MEL.MC", melia: "MEL.MC", iag: "IAG.MC", iberia: "IAG.MC",
-  pharmamar: "PHM.MC", "pharma mar": "PHM.MC", rovi: "ROVI.MC", almirall: "ALM.MC",
-  grenergy: "GRE.MC", audax: "ADX.MC", ence: "ENC.MC",
-  "faes farma": "FAE.MC", faes: "FAE.MC",
-  airtificial: "AI.MC", altia: "ALTIA.MC", gigas: "GIGA.MC",
-  telepizza: "TPZ.MC", ebro: "EBRO.MC", "ebro foods": "EBRO.MC",
-  cie: "CIE.MC", "cie automotive": "CIE.MC",
-  "global dominion": "DOM.MC", dominion: "DOM.MC", talgo: "TLGO.MC",
+  // ── Banca ──
+  santander: "SAN", "banco santander": "SAN",
+  bbva: "BBVA",
+  caixabank: "CABK", "la caixa": "CABK",
+  bankinter: "BKT",
+  sabadell: "SAB", "banco sabadell": "SAB",
+  unicaja: "UNI", "unicaja banco": "UNI",
+  // ── Telecomunicaciones / Tech ──
+  "telefónica": "TEF", telefonica: "TEF", movistar: "TEF",
+  inditex: "ITX", zara: "ITX",
+  amadeus: "AMS", "amadeus it": "AMS", "amadeus it group": "AMS",
+  cellnex: "CLNX", "cellnex telecom": "CLNX",
+  indra: "IDR", "indra sistemas": "IDR",
+  altia: "ALT", "altia consultores": "ALT",
+  gigas: "GIGA", "gigas hosting": "GIGA",
+  airtificial: "ART",
+  amper: "AMP",
+  // ── Energía ──
+  repsol: "REP",
+  iberdrola: "IBE",
+  endesa: "ELE",
+  naturgy: "NTGY", "naturgy energy": "NTGY",
+  "enagás": "ENG", enagas: "ENG",
+  acciona: "ANA",
+  "acciona energía": "ANE.MC", "acciona energia": "ANE.MC",
+  solaria: "SLR",
+  audax: "ADX", "audax renovables": "ADX",
+  grenergy: "GRE",
+  ence: "ENC", "ence energía": "ENC",
+  redeia: "RED", "red eléctrica": "RED", "red electrica": "RED", "redeia corporación": "RED", "redeia corporacion": "RED",
+  elecnor: "ENO",
+  eidf: "EIDF", "eidf solar": "EIDF",
+  enerside: "ENS", "enerside energy": "ENS",
+  berkeley: "BKY", "berkeley energía": "BKY", "berkeley energia": "BKY",
+  ecoener: "ECR",
+  // ── Construcción / Infraestructuras ──
+  acs: "ACS", "grupo acs": "ACS",
+  ferrovial: "FER",
+  sacyr: "SCYR",
+  "global dominion": "DOM", dominion: "DOM",
+  talgo: "TLGO",
+  caf: "CAF", "construcciones y auxiliar de ferrocarriles": "CAF",
+  ohla: "OHLA", ohl: "OHLA",
+  fcc: "FCC-PRIV",
+  clerhp: "CLE",
+  // ── Inmobiliarias / SOCIMI ──
+  merlin: "MRL", "merlin properties": "MRL",
+  colonial: "COL", "inmobiliaria colonial": "COL",
+  "árima": "ARM", arima: "ARM", "arima real estate": "ARM",
+  castellana: "CAST", "castellana properties": "CAST",
+  aedas: "AED", "aedas homes": "AED",
+  // ── Aerolineas / Turismo ──
+  iag: "IAG", iberia: "IAG", "international airlines group": "IAG",
+  "meliá": "MEL", melia: "MEL", "meliá hotels": "MEL",
+  edreams: "EDR", "edreams odigeo": "EDR",
+  "all iron": "AIRON",
+  // ── Alimentación / Distribución ──
+  dia: "DIA", "supermercados dia": "DIA", "grupo dia": "DIA",
+  ebro: "EBR", "ebro foods": "EBR",
+  viscofan: "VIS",
+  deoleo: "OLE",
+  telepizza: "TPZ",
+  // ── Farmacéuticas / Salud ──
+  grifols: "GRF",
+  pharmamar: "PHM", "pharma mar": "PHM",
+  rovi: "ROVI", "laboratorios rovi": "ROVI",
+  almirall: "ALM",
+  "faes farma": "FAE", faes: "FAE",
+  "atrys health": "ATR", atrys: "ATR",
+  "clínica baviera": "CBAV", "clinica baviera": "CBAV",
+  // ── Seguros ──
+  mapfre: "MAP",
   catalana: "GCO.MC", "catalana occidente": "GCO.MC",
-  "línea directa": "LDA.MC", "linea directa": "LDA.MC",
-  prosegur: "PSG.MC", edreams: "EDR.MC", puig: "PUIG.MC",
-  cepsa: "CEPSA", moeve: "MOV.MC", exolum: "EXOLUM",
+  "línea directa": "LDA", "linea directa": "LDA",
+  prosegur: "PSG",
+  // ── Industrial / Automoción ──
+  acerinox: "ACX",
+  arcelormittal: "MTS",
+  cie: "CIE", "cie automotive": "CIE",
+  gestamp: "GEST",
+  fluidra: "FDR",
+  azkoyen: "AZK",
+  "duro felguera": "MDF",
+  ercros: "ECR2",
+  arteche: "ART2",
+  // ── Transporte / Logística ──
+  aena: "AENA",
+  logista: "LOG", "logista holdings": "LOG",
+  // ── Medios ──
+  atresmedia: "A3M",
+  // ── Varios ──
+  puig: "PUIG", "puig brands": "PUIG",
+  "alantra": "ALTR", "alantra partners": "ALTR",
+  ezentis: "EZE",
+  "coca-cola europacific": "CCEP", "coca cola": "CCEP",
+  "applus": "AS", "applus services": "AS",
+  gam: "GAM",
+  cepsa: "CEPSA", moeve: "MOV.MC", exolum: "EXOLUM-PRIV",
+  // ── Empresas privadas relevantes ──
+  "el corte inglés": "ECI-PRIV", "el corte ingles": "ECI-PRIV",
+  mercadona: "MERCADONA-PRIV",
+  correos: "CORREOS-PRIV",
+  eroski: "EROSKI-PRIV",
+  abertis: "ABERTIS-PRIV",
+  cosentino: "CSN.MC",
+  damm: "DAMM-PRIV",
+  "escribano": "EME-PRIV",
+  fever: "FEVER-PRIV",
+  airbus: "AIR",
+  agile: "AGIL", "agile content": "AGIL",
+  cevasa: "CEVA",
 };
 const COMPANY_KEYS_SORTED = Object.keys(COMPANY_TICKER_MAP).sort((a, b) => b.length - a.length);
 
@@ -934,7 +1023,57 @@ interface SemanticBridgeResult {
   detected_metrics: string[];
   detected_intent: string | null;
   detected_temporal: string | null;
+  detected_companies: Array<{ ticker: string; issuer_name: string }>;
   used_llm_fallback: boolean;
+}
+
+// ── AMBIGUOUS COMPANY NAMES — short names that collide with common words ──
+const AMBIGUOUS_COMPANY_NAMES = new Set([
+  "dia", "acs", "ohl", "ohla", "iag", "cie", "caf", "gam", "ree", "ree",
+  "air", "amp", "art", "dom", "ole", "log", "map", "red", "sal",
+  "colonial", "indra", "merlin", "solaria", "puig", "faes", "ence",
+  "audax", "amper", "talgo", "arima", "rovi", "alma",
+]);
+
+// Common-word false-positive patterns (article + ambiguous name NOT in company context)
+const NOT_COMPANY_PATTERNS = [
+  /\b(un|el|al|del|cada|otro|alg[uú]n|buen|mal|primer|todo|cada)\s+d[ií]a\b/i,
+  /\bbuen[oa]s?\s+d[ií]as?\b/i,
+  /\bhoy\s+(en\s+)?d[ií]a\b/i,
+  /\bd[ií]a\s+(a\s+d[ií]a|tras\s+d[ií]a|de\s+hoy|de\s+mañana|siguiente|anterior|festivo|laborable)\b/i,
+  /\b(el|un)\s+mapa?\b/i,
+  /\b(el|un|al)\s+aire?\b/i,
+  /\b(el|un)\s+arte?\b/i,
+  /\b(el|un)\s+log\b/i,
+];
+
+const COMPANY_CONTEXT_PATTERNS = [
+  /\b(empresa|compañ[ií]a|compa[nñ][ií]a|emisor[a]?|cotizada|analiza|reputaci[oó]n\s+de|informe\s+de|c[oó]mo\s+est[aá]|qu[eé]\s+tal|score\s+de|puntuaci[oó]n\s+de|rix\s+de|datos?\s+de|ficha\s+de|perfil\s+de|an[aá]lisis\s+de|situaci[oó]n\s+de|bolet[ií]n\s+de)\b/i,
+  /\b(acciones|acci[oó]n|cotizaci[oó]n|bolsa|ibex|ticker|burs[aá]til)\b/i,
+];
+
+function isCompanyMention(word: string, question: string, pos: number): boolean {
+  const lower = question.toLowerCase();
+  const wordLower = word.toLowerCase();
+  
+  if (!AMBIGUOUS_COMPANY_NAMES.has(wordLower)) return true; // not ambiguous → always company
+  
+  // Check if it's uppercase in the original question → likely company
+  const originalWord = question.substring(pos, pos + word.length);
+  if (originalWord === originalWord.toUpperCase() && originalWord.length >= 2) return true;
+  
+  // Check false-positive patterns
+  for (const pat of NOT_COMPANY_PATTERNS) {
+    if (pat.test(lower)) return false;
+  }
+  
+  // Check company context
+  for (const pat of COMPANY_CONTEXT_PATTERNS) {
+    if (pat.test(lower)) return true;
+  }
+  
+  // DEFAULT: assume company (better to analyze DIA than ignore it)
+  return true;
 }
 
 // ── CONCEPT THESAURUS (Layer 1 — deterministic, 0ms) ─────────────────
@@ -1184,9 +1323,94 @@ Solo devuelve el JSON, nada más.` },
 }
 
 // ── Main semanticBridge function ─────────────────────────────────────
-async function semanticBridge(question: string): Promise<SemanticBridgeResult> {
+async function semanticBridge(
+  question: string,
+  companiesList?: Array<{ ticker: string; issuer_name: string; include_terms?: any }> | null,
+): Promise<SemanticBridgeResult> {
   const lower = question.toLowerCase();
   const lowerNA = removeAccentsEdge(lower);
+  
+  // ── Phase 0: Dynamic company detection from DB list ──────────────
+  const detectedCompanies: Array<{ ticker: string; issuer_name: string }> = [];
+  
+  if (companiesList && companiesList.length > 0) {
+    // Build a dynamic lookup from DB companies
+    const candidates: Array<{ term: string; ticker: string; issuer_name: string; priority: number }> = [];
+    
+    for (const co of companiesList) {
+      const name = co.issuer_name || "";
+      const nameLower = name.toLowerCase();
+      const nameNA = removeAccentsEdge(nameLower);
+      
+      // Full name (highest priority)
+      if (nameNA.length > 0) candidates.push({ term: nameNA, ticker: co.ticker, issuer_name: name, priority: 100 });
+      
+      // include_terms
+      try {
+        const terms = Array.isArray(co.include_terms) ? co.include_terms : (co.include_terms ? JSON.parse(co.include_terms) : []);
+        for (const t of terms) {
+          const tNA = removeAccentsEdge((t as string).toLowerCase());
+          if (tNA.length >= 2 && tNA !== nameNA) candidates.push({ term: tNA, ticker: co.ticker, issuer_name: name, priority: 90 });
+        }
+      } catch { /* ignore */ }
+      
+      // First word of name (if >= 3 chars)
+      const firstWord = nameNA.split(/\s+/)[0];
+      if (firstWord && firstWord.length >= 3 && firstWord !== nameNA) {
+        candidates.push({ term: firstWord, ticker: co.ticker, issuer_name: name, priority: 50 });
+      }
+      
+      // Ticker without .MC suffix
+      const tickerClean = removeAccentsEdge(co.ticker.toLowerCase().replace(/\.mc$/i, "").replace(/-priv$/i, ""));
+      if (tickerClean.length >= 2) candidates.push({ term: tickerClean, ticker: co.ticker, issuer_name: name, priority: 80 });
+    }
+    
+    // Sort by term length desc (greedy matching), then priority desc
+    candidates.sort((a, b) => b.term.length - a.term.length || b.priority - a.priority);
+    
+    const seenTickers = new Set<string>();
+    for (const cand of candidates) {
+      if (seenTickers.has(cand.ticker)) continue;
+      const idx = lowerNA.indexOf(cand.term);
+      if (idx === -1) continue;
+      const end = idx + cand.term.length;
+      const before = idx === 0 || /[\s,;:.!?¿¡()\[\]{}'"\/\-]/.test(lowerNA[idx - 1]);
+      const after = end >= lowerNA.length || /[\s,;:.!?¿¡()\[\]{}'"\/\-]/.test(lowerNA[end]);
+      if (!before || !after) continue;
+      
+      // Disambiguation check for short/ambiguous names
+      if (isCompanyMention(cand.term, question, idx)) {
+        detectedCompanies.push({ ticker: cand.ticker, issuer_name: cand.issuer_name });
+        seenTickers.add(cand.ticker);
+      }
+    }
+    
+    if (detectedCompanies.length > 0) {
+      console.log(`[SEMANTIC_BRIDGE] Dynamic company detection: ${detectedCompanies.map(c => `${c.issuer_name}(${c.ticker})`).join(", ")}`);
+    }
+  }
+  
+  // ── Fallback: static COMPANY_TICKER_MAP for companies not in DB ──
+  if (detectedCompanies.length === 0) {
+    for (const key of COMPANY_KEYS_SORTED) {
+      const keyNA = removeAccentsEdge(key);
+      const idx = lowerNA.indexOf(keyNA);
+      if (idx === -1) continue;
+      const end = idx + keyNA.length;
+      const before = idx === 0 || /[\s,;:.!?¿¡()\[\]{}'"\/\-]/.test(lowerNA[idx - 1]);
+      const after = end >= lowerNA.length || /[\s,;:.!?¿¡()\[\]{}'"\/\-]/.test(lowerNA[end]);
+      if (!before || !after) continue;
+      if (isCompanyMention(key, question, idx)) {
+        const ticker = COMPANY_TICKER_MAP[key];
+        if (!detectedCompanies.some(c => c.ticker === ticker)) {
+          detectedCompanies.push({ ticker, issuer_name: key });
+        }
+      }
+    }
+    if (detectedCompanies.length > 0) {
+      console.log(`[SEMANTIC_BRIDGE] Static map company detection: ${detectedCompanies.map(c => `${c.issuer_name}(${c.ticker})`).join(", ")}`);
+    }
+  }
   
   // Layer 1: Deterministic thesaurus matching
   const detectedMetrics = thesaurusMatch(lower, lowerNA, ALL_METRIC_KEYS, METRIC_REVERSE);
@@ -1208,6 +1432,12 @@ async function semanticBridge(question: string): Promise<SemanticBridgeResult> {
     if (llmResult.metrics.length > 0) finalMetrics = llmResult.metrics;
     if (llmResult.intent) finalIntent = llmResult.intent;
     console.log(`[SEMANTIC_BRIDGE] LLM fallback: metrics=${llmResult.metrics.join(",")}, intent=${llmResult.intent}`);
+  }
+  
+  // If we detected companies but no intent, default to company_analysis
+  if (detectedCompanies.length > 0 && !finalIntent) {
+    finalIntent = "company_analysis";
+    console.log(`[SEMANTIC_BRIDGE] Auto-set intent=company_analysis (company detected, no explicit intent)`);
   }
   
   // Build enriched question with canonical tags appended
@@ -1240,8 +1470,8 @@ async function semanticBridge(question: string): Promise<SemanticBridgeResult> {
     ? `${question} ${canonicalTerms.join(" ")} ${tags.join(" ")}`
     : question;
   
-  if (finalMetrics.length > 0 || finalIntent) {
-    console.log(`[SEMANTIC_BRIDGE] Detected metrics=[${finalMetrics.join(",")}], intent=${finalIntent}, temporal=${temporal}, llm=${usedLLM}`);
+  if (finalMetrics.length > 0 || finalIntent || detectedCompanies.length > 0) {
+    console.log(`[SEMANTIC_BRIDGE] Detected metrics=[${finalMetrics.join(",")}], intent=${finalIntent}, temporal=${temporal}, companies=${detectedCompanies.length}, llm=${usedLLM}`);
   }
   
   return {
@@ -1249,6 +1479,7 @@ async function semanticBridge(question: string): Promise<SemanticBridgeResult> {
     detected_metrics: finalMetrics,
     detected_intent: finalIntent,
     detected_temporal: temporal,
+    detected_companies: detectedCompanies,
     used_llm_fallback: usedLLM,
   };
 }
@@ -1325,9 +1556,9 @@ async function buildDataPackFromSkills(
   const totalStart = Date.now();
   try {
     // ── Semantic Bridge: enrich question with canonical terms ──────
-    const bridge = await semanticBridge(question);
+    const bridge = await semanticBridge(question, companiesCacheLocal);
     const enrichedQuestion = bridge.enriched_question;
-    console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, llm=${bridge.used_llm_fallback}`);
+    console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, companies=${bridge.detected_companies.map(c=>c.issuer_name).join(",")}, llm=${bridge.used_llm_fallback}`);
     
     const interpret = interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
@@ -1337,15 +1568,24 @@ async function buildDataPackFromSkills(
       return null;
     }
 
-    // Resolve ticker from question
+    // Resolve ticker: prefer semanticBridge detected companies, then legacy detection
     let resolvedTicker: string | null = null;
     let resolvedName: string | null = null;
-    if (companiesCacheLocal && companiesCacheLocal.length > 0) {
+    
+    // Priority 1: semanticBridge dynamic detection (handles DIA, ACS, etc. with disambiguation)
+    if (bridge.detected_companies.length > 0) {
+      resolvedTicker = bridge.detected_companies[0].ticker;
+      resolvedName = bridge.detected_companies[0].issuer_name;
+      console.log(`${logPrefix} [SKILLS-v2] Resolved via semanticBridge: ${resolvedName} (${resolvedTicker})`);
+    }
+    
+    // Priority 2: legacy detectCompaniesInQuestion
+    if (!resolvedTicker && companiesCacheLocal && companiesCacheLocal.length > 0) {
       const detected = detectCompaniesInQuestion(question, companiesCacheLocal);
       if (detected.length > 0) {
         resolvedTicker = detected[0].ticker;
         resolvedName = detected[0].issuer_name;
-        console.log(`${logPrefix} [SKILLS-v2] Resolved: ${resolvedName} (${resolvedTicker})`);
+        console.log(`${logPrefix} [SKILLS-v2] Resolved via legacy: ${resolvedName} (${resolvedTicker})`);
       }
       if (!resolvedTicker) {
         const qLower = question.toLowerCase();
