@@ -165,6 +165,18 @@ export interface MethodologyMetadata {
   uniqueWeeks?: number;
 }
 
+export interface ReportContext {
+  company?: string | null;
+  sector?: string | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  timezone?: string;
+  models?: string[];
+  sample_size?: number;
+  models_count?: number;
+  weeks_analyzed?: number;
+}
+
 export interface MessageMetadata {
   type?: 'standard' | 'enriched';
   companyName?: string;
@@ -178,6 +190,8 @@ export interface MessageMetadata {
   methodology?: MethodologyMetadata;
   // Verified sources from ChatGPT and Perplexity for bibliography
   verifiedSources?: VerifiedSource[];
+  // Report context for InfoBar
+  reportContext?: ReportContext;
 }
 
 export interface Message {
@@ -649,6 +663,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 questionCategory: finalMetadata?.questionCategory,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
+                // Report context for InfoBar
+                reportContext: finalMetadata?.reportContext || undefined,
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: finalMetadata?.methodology || {
                   hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,

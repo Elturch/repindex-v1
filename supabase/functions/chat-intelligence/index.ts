@@ -1947,6 +1947,46 @@ async function buildDataPackFromSkills(
       (pack as any).metricas_enfatizar = bridge.detected_metrics;
     }
 
+    // ── Build report_context for InfoBar ─────────────────────────
+    const reportContext: Record<string, unknown> = {
+      company: resolvedTicker ? (cp?.empresa || resolvedName || resolvedTicker) : null,
+      sector: interpret.filters.sector_category || (cp ? resultMap.detail?.sector_category : ss?.sector) || null,
+      date_from: null,
+      date_to: null,
+      timezone: "Europe/Madrid (CET/CEST)",
+      models: ["ChatGPT", "Perplexity", "Google Gemini", "DeepSeek", "Grok", "Qwen"],
+      sample_size: 0,
+      models_count: 6,
+      weeks_analyzed: 0,
+    };
+
+    // Extract date range and sample size from companyProfile raw_runs
+    if (cp?.raw_runs && Array.isArray(cp.raw_runs) && cp.raw_runs.length > 0) {
+      const periodsFrom = cp.raw_runs.map((r: any) => r["06_period_from"]).filter(Boolean).sort();
+      const periodsTo = cp.raw_runs.map((r: any) => r["07_period_to"]).filter(Boolean).sort();
+      if (periodsFrom.length > 0) reportContext.date_from = periodsFrom[0];
+      if (periodsTo.length > 0) reportContext.date_to = periodsTo[periodsTo.length - 1];
+      reportContext.sample_size = cp.raw_runs.length;
+      const uniqueWeeks = new Set(cp.raw_runs.map((r: any) => {
+        const d = r.batch_execution_date || r["06_period_from"];
+        return d ? String(d).slice(0, 10) : null;
+      }).filter(Boolean));
+      reportContext.weeks_analyzed = uniqueWeeks.size;
+    }
+    // Fallback: sectorSnapshot per_model_detail
+    else if (ss?.per_model_detail && Array.isArray(ss.per_model_detail) && ss.per_model_detail.length > 0) {
+      const batchDates = ss.per_model_detail.map((r: any) => r.batch_execution_date || r.period_from).filter(Boolean).sort();
+      if (batchDates.length > 0) {
+        reportContext.date_from = batchDates[0];
+        reportContext.date_to = batchDates[batchDates.length - 1];
+      }
+      reportContext.sample_size = ss.per_model_detail.length;
+      const uniqueWeeks = new Set(batchDates.map((d: string) => String(d).slice(0, 10)));
+      reportContext.weeks_analyzed = uniqueWeeks.size;
+    }
+
+    (pack as any).report_context = reportContext;
+
     return pack;
   } catch (e: any) {
     console.error(`${logPrefix} [SKILLS-v2] buildDataPackFromSkills failed: ${e.message || e}`);
@@ -7661,6 +7701,18 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
                 aiProvider: provider,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: verifiedSources.length > 0 ? verifiedSources : undefined,
+                // Report context for InfoBar
+                reportContext: {
+                  company: matchedCompany.issuer_name,
+                  sector: matchedCompany.sector_category,
+                  date_from: periodFrom,
+                  date_to: periodTo,
+                  timezone: "Europe/Madrid (CET/CEST)",
+                  models: modelsUsed,
+                  sample_size: rixData?.length || 0,
+                  models_count: modelsUsed.length,
+                  weeks_analyzed: uniquePeriods.length,
+                },
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: {
                   hasRixData: (rixData?.length || 0) > 0,
@@ -8545,6 +8597,8 @@ async function handleStandardChat(
                 uniqueWeeks: uniqueWeeksCount,
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: verifiedSourcesStandard.length > 0 ? verifiedSourcesStandard : undefined,
+                // Report context for InfoBar
+                reportContext: dataPack?.report_context || null,
                 // Observability: anti-truncation metrics
                 segmentsGenerated,
                 hadTruncation,

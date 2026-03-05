@@ -8,6 +8,7 @@ import { getChatTranslations, t, type ChatUITranslations } from '@/lib/chatTrans
 import { technicalSheetStyles, generateTechnicalSheetHtml } from '@/lib/technicalSheetHtml';
 import { VerifiedSource, generateBibliographyHtml } from '@/lib/verifiedSourceExtractor';
 import { convertMarkdownToHtml as sharedConvertMarkdownToHtml, premiumTableStyles, emojiGridStyles } from '@/lib/markdownToHtml';
+import { generateInfoBarHtml } from '@/components/chat/ReportInfoBar';
 
 interface MarkdownMessageProps {
   content: string;
@@ -249,7 +250,7 @@ function stripLlmMetaCommentary(text: string): string {
 }
 
 // Generate complete HTML document for export with premium RepIndex report styling
-export function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string, verifiedSources?: VerifiedSource[], periodFrom?: string, periodTo?: string): string {
+export function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string, verifiedSources?: VerifiedSource[], periodFrom?: string, periodTo?: string, reportContext?: Record<string, unknown> | null): string {
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
   const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
@@ -751,6 +752,7 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
   </header>
   
   <main class="content">
+    ${generateInfoBarHtml(reportContext as any, languageCode)}
     ${bodyContent}
   </main>
   
