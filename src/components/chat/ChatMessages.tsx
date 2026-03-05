@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { MarkdownMessage, generateExportHtml } from "@/components/ui/markdown-message";
 
 import { ResponseFeedback } from "./ResponseFeedback";
+import { ReportInfoBar } from "./ReportInfoBar";
 import { MethodologyFooter } from "./MethodologyFooter";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,7 @@ export function ChatMessages({
       message.metadata?.verifiedSources,
       message.metadata?.methodology?.periodFrom,
       message.metadata?.methodology?.periodTo,
+      message.metadata?.reportContext as Record<string, unknown> | undefined,
     );
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -232,6 +234,10 @@ export function ChatMessages({
                 <div className={`whitespace-pre-wrap ${compact ? 'text-xs' : 'text-sm'}`}>{message.content}</div>
               ) : (
                 <div className="relative">
+                  {/* Report InfoBar — rendered from DataPack metadata, not LLM output */}
+                  {message.metadata?.reportContext && !message.isStreaming && (
+                    <ReportInfoBar context={message.metadata.reportContext} compact={compact} languageCode={languageCode} />
+                  )}
                 <MarkdownMessage 
                     content={message.content} 
                     showDownload={!message.isStreaming}
