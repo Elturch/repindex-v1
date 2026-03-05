@@ -925,6 +925,334 @@ function normalizeQuery(question: string): { sector_categories: string[]; compan
   return { sector_categories: Array.from(foundSectors), company_tickers: foundTickers, company_names: foundNames, intent_hints: hints };
 }
 
+// =============================================================================
+// SEMANTIC BRIDGE — Hybrid 2-layer synonym resolution
+// =============================================================================
+
+interface SemanticBridgeResult {
+  enriched_question: string;
+  detected_metrics: string[];
+  detected_intent: string | null;
+  detected_temporal: string | null;
+  used_llm_fallback: boolean;
+}
+
+// ── CONCEPT THESAURUS (Layer 1 — deterministic, 0ms) ─────────────────
+
+const METRIC_THESAURUS: Record<string, string[]> = {
+  "35_cem_score": [
+    "crisis","escándalo","escandalo","demanda","litigio","problema legal","pleito","polémica","polemica",
+    "conflicto","cancelación","cancelacion","boicot","denuncia","multa","sanción","sancion",
+    "investigación judicial","investigacion judicial","fraude","corrupción","corrupcion",
+    "quiebra","bancarrota","impago","irregularidad","mala praxis","accidente","desastre",
+    "contaminación","contaminacion","vertido","fuga","explosión","explosion","muerte","víctima","victima",
+    "negligencia","despido masivo","ere","huelga","protesta","manifestación","manifestacion",
+    "acoso","discriminación","discriminacion","machismo","abuso","robo","espionaje",
+    "hackeo","brecha de datos","ciberseguridad","cierre","clausura","embargo",
+    "queja","reclamación","reclamacion","problemática","problematica","riesgo reputacional",
+    "controversia","controversias","riesgo","riesgos","problema","problemas",
+    "escándalos","escandalos","demandas","litigios","multas","sanciones","denuncias",
+    "conflictos","polémicas","polemicas","irregularidades","huelgas","protestas",
+    "accidentes","negligencias","abusos","quejas","reclamaciones"
+  ],
+  "29_sim_score": [
+    "fuentes","credibilidad","fiabilidad","referencias","documentos oficiales","regulador",
+    "cnmv","boe","informes","auditoría","auditoria","verificación","verificacion",
+    "transparencia documental","evidencia documental","pruebas documentales",
+    "certificación","certificacion","acreditación","acreditacion","homologación","homologacion",
+    "sello","estándar","estandar","norma","iso","compliance","cumplimiento normativo",
+    "quien lo dice","de donde sale","origen información","origen informacion",
+    "base documental","soporte documental","respaldo","garantía informativa","garantia informativa",
+    "fuentes oficiales","fuente primaria","fuentes primarias","tier 1","tier 2",
+    "prensa financiera","bloomberg","reuters","financial times","sec","reguladores",
+    "documentación","documentacion","trazabilidad","corroboración","corroboracion",
+    "autoridad de fuentes","calidad de fuentes","jerarquía de fuentes","jerarquia de fuentes"
+  ],
+  "23_nvm_score": [
+    "relato","comunicación","comunicacion","mensaje","historia","storytelling","discurso",
+    "narrativa","branding","imagen","percepción pública","percepcion publica",
+    "opinión","opinion","reputación general","reputacion general","marca","posicionamiento",
+    "cómo se cuenta","como se cuenta","cómo comunica","como comunica",
+    "estrategia comunicativa","pr","relaciones públicas","relaciones publicas",
+    "prensa","medios","cobertura mediática","cobertura mediatica",
+    "presencia mediática","presencia mediatica","visibilidad","notoriedad","awareness",
+    "calidad de la narrativa","calidad narrativa","coherencia del discurso",
+    "sentimiento","sentimiento positivo","sentimiento negativo","tono","percepción","percepcion",
+    "imagen corporativa","imagen pública","imagen publica","opinión pública","opinion publica",
+    "comunicación corporativa","comunicacion corporativa","relato corporativo"
+  ],
+  "26_drm_score": [
+    "evidencia","datos","pruebas","hechos","cifras","números","numeros",
+    "resultados","métricas duras","metricas duras","kpis","indicadores",
+    "estadísticas","estadisticas","informes financieros","cuentas","balance",
+    "ebitda","beneficio","facturación","facturacion","ingresos","deuda",
+    "dividendo","cotización","cotizacion","bursátil","bursatil","bolsa",
+    "acción","accion","valor","capitalización","capitalizacion","fundamentales",
+    "fortaleza de evidencia","calidad de evidencia","solidez","verificable",
+    "datos duros","cifras concretas","hechos verificables","documentación financiera","documentacion financiera",
+    "cuentas anuales","informe anual","resultados financieros","memoria anual",
+    "ratios","ratio","margen","rentabilidad","roi","roa","roe"
+  ],
+  "32_rmm_score": [
+    "actualidad","reciente","últimas noticias","ultimas noticias","trending","momento",
+    "impulso","momentum","ahora","esta semana","últimos días","ultimos dias",
+    "tendencia","novedad","breaking","flash","inmediato","fresco","vigente",
+    "dinámico","dinamico","activo","caliente","viral","actualizado",
+    "empuje","frescura","temporalidad","ventana temporal","recencia",
+    "últimas semanas","ultimas semanas","recientemente","nuevo","novedades",
+    "de actualidad","al día","al dia","última hora","ultima hora",
+    "noticias recientes","información reciente","informacion reciente"
+  ],
+  "38_gam_score": [
+    "gobernanza","gobierno corporativo","consejo","directivos","ceo","presidente",
+    "gestión","gestion","administración","administracion","ética","etica",
+    "valores","rsc","rse","esg","sostenibilidad","responsabilidad social",
+    "diversidad","inclusión","inclusion","paridad","independencia",
+    "accionista","accionistas","junta","comité","comite","retribución","retribucion",
+    "bonus","stock options","conflicto de intereses","conflicto intereses",
+    "nepotismo","puertas giratorias","consejero","consejeros","consejo de administración","consejo de administracion",
+    "buen gobierno","gobierno","autonomía","autonomia","independencia directiva",
+    "transparencia","estructura directiva","equipo directivo","alta dirección","alta direccion",
+    "gobernanza corporativa","percepción de gobierno","percepcion de gobierno"
+  ],
+  "41_dcm_score": [
+    "coherencia","consistencia","contradicción","contradiccion","discrepancia informativa",
+    "alineación","alineacion","congruencia","uniformidad","armonía","armonia",
+    "coincidencia","concordancia","lo mismo en todos lados","versión única","version unica",
+    "un solo mensaje","fragmentación","fragmentacion","confusión","confusion",
+    "desorden","caos informativo","ruido","incoherencia","inconsistencia",
+    "coherencia informativa","datos contradictorios","información contradictoria","informacion contradictoria",
+    "versiones distintas","cada modelo dice algo diferente","no coinciden",
+    "información fragmentada","informacion fragmentada","datos dispersos",
+    "misma información","misma informacion","datos alineados","consenso de datos"
+  ],
+  "44_cxm_score": [
+    "ejecución","ejecucion","resultados","operaciones","rendimiento","performance",
+    "eficiencia","productividad","entrega","cumplimiento","objetivos",
+    "plan estratégico","plan estrategico","hitos","inversiones",
+    "m&a","adquisiciones","fusiones","expansión","expansion","crecimiento",
+    "liderazgo operativo","cuota de mercado","cuota mercado",
+    "ejecución corporativa","ejecucion corporativa","desempeño","desempeno",
+    "resultados operativos","capacidad de ejecución","capacidad de ejecucion",
+    "estrategia corporativa","plan de negocio","operativa","operativo",
+    "capacidad operativa","excelencia operativa","resultados empresariales"
+  ],
+};
+
+const INTENT_THESAURUS: Record<string, string[]> = {
+  company_analysis: [
+    "analízame","analizame","diagnostica","evalúa","evalua","cómo está","como esta",
+    "qué tal","que tal","situación de","situacion de","estado de",
+    "informe de","reporte de","dime sobre","cuéntame de","cuentame de",
+    "ficha de","perfil de","resúmeme","resumeme","análisis de","analisis de",
+    "cómo le va","como le va","cómo va","como va","qué pasa con","que pasa con",
+    "háblame de","hablame de","explícame","explicame","detállame","detallame",
+    "radiografía","radiografia","diagnóstico","diagnostico","auditoría reputacional","auditoria reputacional"
+  ],
+  ranking: [
+    "ranking","clasificación","clasificacion","top","mejores","peores",
+    "líderes","lideres","colistas","comparativa","quién gana","quien gana",
+    "quién pierde","quien pierde","primero","último","ultimo","posición","posicion",
+    "puesto","orden","lista","tabla","escalafón","escalafon",
+    "quién lidera","quien lidera","quién está primero","quien esta primero",
+    "las mejores","las peores","cuáles destacan","cuales destacan"
+  ],
+  evolution: [
+    "evolución","evolucion","histórico","historico","tendencia","trayectoria",
+    "progreso","cambio","delta","subió","subio","bajó","bajo",
+    "mejoró","mejoro","empeoró","empeoro","últimas semanas","ultimas semanas",
+    "temporal","serie","cómo ha ido","como ha ido","comparar periodos",
+    "variación","variacion","crecimiento","caída","caida","recuperación","recuperacion",
+    "ha mejorado","ha empeorado","ha subido","ha bajado","cómo ha evolucionado","como ha evolucionado",
+    "tendencia temporal","serie temporal","progresión","progresion"
+  ],
+  sector_comparison: [
+    "sector","sectorial","industria","todas las de","empresas de","compañías de","companias de",
+    "comparar sectores","comparación sectorial","comparacion sectorial",
+    "todo el sector","panorama del sector","cómo va el sector","como va el sector"
+  ],
+  divergence: [
+    "divergencia","desacuerdo","consenso","disenso","discrepancia entre ias",
+    "diferencia entre modelos","quién tiene razón","quien tiene razon",
+    "por qué difieren","por que difieren","opinión dividida","opinion dividida",
+    "no se ponen de acuerdo","modelos discrepan","las ias no coinciden",
+    "cada ia dice algo diferente","spread entre modelos","dispersión","dispersion"
+  ],
+  metric_deep_dive: [
+    "métrica","metrica","score","puntuación","puntuacion","nota","calificación","calificacion",
+    "valoración","valoracion","indicador","índice","indice","kpi",
+    "desglose","detalle","profundizar","zoom","por qué tiene","por que tiene",
+    "explícame la métrica","explicame la metrica","qué mide","que mide",
+    "cómo se calcula","como se calcula","significado de","qué significa","que significa"
+  ],
+};
+
+const TEMPORAL_THESAURUS: Record<string, string[]> = {
+  latest: [
+    "última","ultima","reciente","actual","ahora","hoy","esta semana",
+    "último barrido","ultimo barrido","última recogida","ultima recogida",
+    "datos actuales","último dato","ultimo dato"
+  ],
+  evolution_4w: [
+    "últimas 4","ultimas 4","último mes","ultimo mes","4 semanas","cuatro semanas",
+    "un mes","mensual","últimas cuatro","ultimas cuatro"
+  ],
+  evolution_all: [
+    "todo el histórico","todo el historico","desde el principio","toda la serie",
+    "completo","todas las semanas","desde siempre","serie completa"
+  ],
+};
+
+// Build reverse lookup maps for O(1) matching
+const METRIC_REVERSE: Map<string, string> = new Map();
+for (const [metric, synonyms] of Object.entries(METRIC_THESAURUS)) {
+  for (const syn of synonyms) METRIC_REVERSE.set(syn, metric);
+}
+
+const INTENT_REVERSE: Map<string, string> = new Map();
+for (const [intent, synonyms] of Object.entries(INTENT_THESAURUS)) {
+  for (const syn of synonyms) INTENT_REVERSE.set(syn, intent);
+}
+
+const TEMPORAL_REVERSE: Map<string, string> = new Map();
+for (const [temporal, synonyms] of Object.entries(TEMPORAL_THESAURUS)) {
+  for (const syn of synonyms) TEMPORAL_REVERSE.set(syn, temporal);
+}
+
+// Sort all synonym keys by length descending for greedy matching
+const ALL_METRIC_KEYS = Array.from(METRIC_REVERSE.keys()).sort((a, b) => b.length - a.length);
+const ALL_INTENT_KEYS = Array.from(INTENT_REVERSE.keys()).sort((a, b) => b.length - a.length);
+const ALL_TEMPORAL_KEYS = Array.from(TEMPORAL_REVERSE.keys()).sort((a, b) => b.length - a.length);
+
+function thesaurusMatch(lower: string, lowerNoAccent: string, keys: string[], reverseMap: Map<string, string>): string[] {
+  const found = new Set<string>();
+  for (const key of keys) {
+    const keyNA = removeAccentsEdge(key);
+    const idx = lowerNoAccent.indexOf(keyNA);
+    if (idx === -1) continue;
+    const end = idx + keyNA.length;
+    const before = idx === 0 || /[\s,;:.!?¿¡()\[\]{}'"\/\-]/.test(lowerNoAccent[idx - 1]);
+    const after = end >= lowerNoAccent.length || /[\s,;:.!?¿¡()\[\]{}'"\/\-]/.test(lowerNoAccent[end]);
+    if (before && after) {
+      found.add(reverseMap.get(key)!);
+    }
+  }
+  return Array.from(found);
+}
+
+// ── Layer 2: Micro-LLM fallback ─────────────────────────────────────
+async function semanticBridgeLLMFallback(question: string): Promise<{ metrics: string[]; intent: string | null }> {
+  try {
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    if (!OPENAI_API_KEY) return { metrics: [], intent: null };
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 80,
+        messages: [
+          { role: "system", content: `Eres un clasificador. Dada una pregunta sobre reputación corporativa, devuelve JSON con:
+- metrics: array de métricas relevantes. Valores válidos: 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score
+- intent: uno de: company_analysis, ranking, evolution, sector_comparison, divergence, metric_deep_dive, null
+Solo devuelve el JSON, nada más.` },
+          { role: "user", content: question }
+        ],
+      }),
+    });
+    clearTimeout(timeout);
+    
+    if (!resp.ok) return { metrics: [], intent: null };
+    const data = await resp.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    const parsed = JSON.parse(content);
+    const validMetrics = ["23_nvm_score","26_drm_score","29_sim_score","32_rmm_score","35_cem_score","38_gam_score","41_dcm_score","44_cxm_score"];
+    const validIntents = ["company_analysis","ranking","evolution","sector_comparison","divergence","metric_deep_dive"];
+    return {
+      metrics: (parsed.metrics || []).filter((m: string) => validMetrics.includes(m)),
+      intent: validIntents.includes(parsed.intent) ? parsed.intent : null,
+    };
+  } catch {
+    return { metrics: [], intent: null };
+  }
+}
+
+// ── Main semanticBridge function ─────────────────────────────────────
+async function semanticBridge(question: string): Promise<SemanticBridgeResult> {
+  const lower = question.toLowerCase();
+  const lowerNA = removeAccentsEdge(lower);
+  
+  // Layer 1: Deterministic thesaurus matching
+  const detectedMetrics = thesaurusMatch(lower, lowerNA, ALL_METRIC_KEYS, METRIC_REVERSE);
+  const detectedIntents = thesaurusMatch(lower, lowerNA, ALL_INTENT_KEYS, INTENT_REVERSE);
+  const detectedTemporals = thesaurusMatch(lower, lowerNA, ALL_TEMPORAL_KEYS, TEMPORAL_REVERSE);
+  
+  const intent = detectedIntents.length > 0 ? detectedIntents[0] : null;
+  const temporal = detectedTemporals.length > 0 ? detectedTemporals[0] : null;
+  
+  let usedLLM = false;
+  let finalMetrics = detectedMetrics;
+  let finalIntent = intent;
+  
+  // Layer 2: LLM fallback only if Layer 1 found nothing useful
+  if (detectedMetrics.length === 0 && !intent) {
+    console.log(`[SEMANTIC_BRIDGE] Layer 1 found nothing, trying LLM fallback...`);
+    const llmResult = await semanticBridgeLLMFallback(question);
+    usedLLM = true;
+    if (llmResult.metrics.length > 0) finalMetrics = llmResult.metrics;
+    if (llmResult.intent) finalIntent = llmResult.intent;
+    console.log(`[SEMANTIC_BRIDGE] LLM fallback: metrics=${llmResult.metrics.join(",")}, intent=${llmResult.intent}`);
+  }
+  
+  // Build enriched question with canonical tags appended
+  const tags: string[] = [];
+  for (const m of finalMetrics) tags.push(`[${m}]`);
+  if (finalIntent) tags.push(`[${finalIntent}]`);
+  if (temporal) tags.push(`[${temporal}]`);
+  
+  // Map metrics to regex-friendly canonical terms that interpretQueryEdge already understands
+  const canonicalTerms: string[] = [];
+  for (const m of finalMetrics) {
+    if (m === "35_cem_score") canonicalTerms.push("controversias");
+    if (m === "29_sim_score") canonicalTerms.push("fuentes");
+    if (m === "23_nvm_score") canonicalTerms.push("narrativa");
+    if (m === "26_drm_score") canonicalTerms.push("evidencia");
+    if (m === "32_rmm_score") canonicalTerms.push("actualidad");
+    if (m === "38_gam_score") canonicalTerms.push("gobernanza");
+    if (m === "41_dcm_score") canonicalTerms.push("coherencia");
+    if (m === "44_cxm_score") canonicalTerms.push("ejecución");
+  }
+  // Map intents to regex-friendly terms
+  if (finalIntent === "company_analysis") canonicalTerms.push("análisis");
+  if (finalIntent === "ranking") canonicalTerms.push("ranking");
+  if (finalIntent === "evolution") canonicalTerms.push("evolución");
+  if (finalIntent === "sector_comparison") canonicalTerms.push("sectorial");
+  if (finalIntent === "divergence") canonicalTerms.push("divergencia");
+  if (finalIntent === "metric_deep_dive") canonicalTerms.push("métrica");
+  
+  const enriched = canonicalTerms.length > 0
+    ? `${question} ${canonicalTerms.join(" ")} ${tags.join(" ")}`
+    : question;
+  
+  if (finalMetrics.length > 0 || finalIntent) {
+    console.log(`[SEMANTIC_BRIDGE] Detected metrics=[${finalMetrics.join(",")}], intent=${finalIntent}, temporal=${temporal}, llm=${usedLLM}`);
+  }
+  
+  return {
+    enriched_question: enriched,
+    detected_metrics: finalMetrics,
+    detected_intent: finalIntent,
+    detected_temporal: temporal,
+    used_llm_fallback: usedLLM,
+  };
+}
+
 // ── Interpret Query (lexicon + regex, no LLM) ───────────────────────
 const IBEX_PATTERNS_EDGE = /\b(ibex[- ]?35|ibex|índice|indice|panorama general|ranking general)\b/i;
 const EVOLUTION_PATTERNS_EDGE = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)/i;
@@ -996,7 +1324,12 @@ async function buildDataPackFromSkills(
 ): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
   const totalStart = Date.now();
   try {
-    const interpret = interpretQueryEdge(question);
+    // ── Semantic Bridge: enrich question with canonical terms ──────
+    const bridge = await semanticBridge(question);
+    const enrichedQuestion = bridge.enriched_question;
+    console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, llm=${bridge.used_llm_fallback}`);
+    
+    const interpret = interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
     if (interpret.intent === "general_question" && interpret.confidence < 0.4) {
@@ -1367,6 +1700,11 @@ async function buildDataPackFromSkills(
       pack.ranking = resultMap.ranking.ranking.map((r: any, i: number) => ({
         pos: i + 1, ticker: r.ticker, nombre: r.company, rix_avg: r.median_rix,
       }));
+    }
+
+    // Attach semantic bridge results for downstream prompt emphasis
+    if (bridge.detected_metrics.length > 0) {
+      (pack as any).metricas_enfatizar = bridge.detected_metrics;
     }
 
     return pack;
@@ -7568,6 +7906,25 @@ async function handleStandardChat(
 
   // Inject supplementary context into userPrompt
   let enrichedUserPrompt = userPrompt;
+  
+  // Inject metric emphasis from Semantic Bridge
+  const metricasEnfatizar = (dataPack as any)?.metricas_enfatizar as string[] | undefined;
+  if (metricasEnfatizar && metricasEnfatizar.length > 0) {
+    const metricNameMap: Record<string, string> = {
+      "23_nvm_score": "NVM (Calidad de la Narrativa)",
+      "26_drm_score": "DRM (Fortaleza de Evidencia)",
+      "29_sim_score": "SIM (Autoridad de Fuentes)",
+      "32_rmm_score": "RMM (Actualidad y Empuje)",
+      "35_cem_score": "CEM (Gestión de Controversias)",
+      "38_gam_score": "GAM (Percepción de Gobernanza)",
+      "41_dcm_score": "DCM (Coherencia Informativa)",
+      "44_cxm_score": "CXM (Ejecución Corporativa)",
+    };
+    const names = metricasEnfatizar.map(m => metricNameMap[m] || m).join(", ");
+    enrichedUserPrompt += `\n\n═══ ÉNFASIS TEMÁTICO DETECTADO ═══\nEl usuario pregunta específicamente sobre: ${names}.\nDedica mayor profundidad analítica a estas métricas en tu informe. Explica qué dicen los datos sobre estas dimensiones concretas, modelo por modelo, y qué implicaciones tienen para la empresa.`;
+    console.log(`${logPrefix} [SEMANTIC_BRIDGE] Injected metric emphasis: ${names}`);
+  }
+  
   if (graphContextString) {
     enrichedUserPrompt += `\n\n═══ GRAFO DE CONOCIMIENTO (complementario) ═══\n${graphContextString}`;
   }
