@@ -278,7 +278,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Session configuration state - persists for entire conversation
   const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('complete');
   const [sessionRoleId, setSessionRoleId] = useState<string>('general');
-  const [isSessionConfigured, setIsSessionConfigured] = useState(false);
+  const [isSessionConfigured, setIsSessionConfigured] = useState(true);
   
   // Use auth context for user ID - this syncs properly with AuthProvider
   const { user, isAuthenticated } = useAuth();
@@ -884,7 +884,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Reset session configuration for new conversation
     setSessionDepthLevel('complete');
     setSessionRoleId('general');
-    setIsSessionConfigured(false);
+    setIsSessionConfigured(true);
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
@@ -898,7 +898,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setIsStarred(false);
     setIsLoadingHistory(true);
     // Reset session config - will be loaded from DB in loadHistory
-    setIsSessionConfigured(false);
+    setIsSessionConfigured(true);
   }, []);
 
   // Toggle star status for current conversation
