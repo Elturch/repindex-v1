@@ -278,7 +278,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // Session configuration state - persists for entire conversation
   const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('complete');
   const [sessionRoleId, setSessionRoleId] = useState<string>('general');
-  const [isSessionConfigured, setIsSessionConfigured] = useState(false);
+  const [isSessionConfigured, setIsSessionConfigured] = useState(true);
   
   // Use auth context for user ID - this syncs properly with AuthProvider
   const { user, isAuthenticated } = useAuth();

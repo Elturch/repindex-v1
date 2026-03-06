@@ -20,7 +20,7 @@ export function SessionConfigPanel() {
   } = useChatContext();
   
   const [localRoleId, setLocalRoleId] = useState<string>(sessionRoleId);
-  const [isExpanded, setIsExpanded] = useState(!isSessionConfigured);
+  const [isExpanded, setIsExpanded] = useState(false);
   
   const tr = getChatTranslations(language.code);
   const featuredRoles = getEnabledRoles().filter(r => FEATURED_ROLE_IDS.includes(r.id));
