@@ -154,13 +154,14 @@ Presenta el análisis desde la perspectiva de un Director de ESG/Sostenibilidad 
 
 Tono: Técnico-normativo pero accesible, orientado a la lectura de materialidad reputacional.`,
   },
-  // TALENTO
+  // TALENTO (disabled: no specific metrics yet)
   {
     id: "talento",
     emoji: "🧲",
     name: "Talento",
     shortDescription: "Lectura de atractivo empleador desde los datos reputacionales",
     category: "talento",
+    enabled: false,
     prompt: `${METRIC_LANGUAGE_RULES}
 
 ${ANTI_FABRICATION_RULES}
