@@ -23,8 +23,8 @@ export function SessionConfigPanel() {
   const [isExpanded, setIsExpanded] = useState(!isSessionConfigured);
   
   const tr = getChatTranslations(language.code);
-  const featuredRoles = CHAT_ROLES.filter(r => FEATURED_ROLE_IDS.includes(r.id));
-  const allRoles = CHAT_ROLES;
+  const featuredRoles = getEnabledRoles().filter(r => FEATURED_ROLE_IDS.includes(r.id));
+  const allRoles = getEnabledRoles();
   const selectedRole = getRoleById(localRoleId);
   const isRoleSelected = localRoleId !== 'general';
   

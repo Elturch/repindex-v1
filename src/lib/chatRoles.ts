@@ -202,10 +202,15 @@ Tono: Estratégico-institucional, orientado a la lectura de exposición y solide
   },
 ];
 
-// Featured roles shown prominently in the UI
+// Returns only roles where enabled !== false
+export function getEnabledRoles(): ChatRole[] {
+  return CHAT_ROLES.filter((role) => role.enabled !== false);
+}
+
+// Featured roles shown prominently in the UI (only enabled ones)
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ["direccion_general", "dircom", "esg", "talento", "perito_reputacional", "asuntos_publicos"];
-  return CHAT_ROLES.filter((role) => featuredIds.includes(role.id));
+  const featuredIds = ["direccion_general", "dircom", "esg", "perito_reputacional"];
+  return CHAT_ROLES.filter((role) => featuredIds.includes(role.id) && role.enabled !== false);
 }
 
 // Get a role by its ID
