@@ -1689,7 +1689,7 @@ async function buildDataPackFromSkills(
 
       // snapshot: per-model detail from latest week (with all metric scores)
       pack.snapshot = (cp.modelos || []).map((m: any) => ({
-        modelo: m.nombre, rix: m.rix, rix_adj: null,
+        modelo: m.nombre, rix: m.rix_score, rix_adj: null,
         nvm: m.nvm, drm: m.drm, sim: m.sim, rmm: m.rmm,
         cem: m.cem, gam: m.gam, dcm: m.dcm, cxm: m.cxm,
         resumen: m.resumen, flags: m.flags, puntos_clave: m.puntos_clave,
@@ -1729,13 +1729,13 @@ async function buildDataPackFromSkills(
       }
 
       // divergencia: compute from per-model RIX scores
-      const rixScores = (cp.modelos || []).map((m: any) => m.rix).filter((v: any) => v != null) as number[];
+      const rixScores = (cp.modelos || []).map((m: any) => m.rix_score).filter((v: any) => v != null) as number[];
       if (rixScores.length >= 2) {
         const maxRix = Math.max(...rixScores);
         const minRix = Math.min(...rixScores);
         const range = maxRix - minRix;
-        const maxModel = cp.modelos.find((m: any) => m.rix === maxRix)?.nombre || "";
-        const minModel = cp.modelos.find((m: any) => m.rix === minRix)?.nombre || "";
+        const maxModel = cp.modelos.find((m: any) => m.rix_score === maxRix)?.nombre || "";
+        const minModel = cp.modelos.find((m: any) => m.rix_score === minRix)?.nombre || "";
         pack.divergencia = {
           sigma: Math.round(range / 2),
           nivel: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo",
