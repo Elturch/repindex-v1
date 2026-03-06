@@ -6455,14 +6455,14 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return "agent_identity";
   }
 
-  // Personal query patterns (asking about themselves or specific people without company context)
-  if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analiza(me)?|sobre m[ií]|analyze me|about me/i.test(q)) {
-    return "personal_query";
-  }
-
-  // If mentions known companies, it's corporate analysis
+  // If mentions known companies, it's corporate analysis — check BEFORE personal_query
   if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
     return "corporate_analysis";
+  }
+
+  // Personal query patterns (asking about themselves or specific people without company context)
+  if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analizame|analiza\s+me\b|sobre m[ií]|analyze me|about me/i.test(q)) {
+    return "personal_query";
   }
 
   // Off-topic patterns
