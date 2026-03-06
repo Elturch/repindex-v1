@@ -1689,7 +1689,7 @@ async function buildDataPackFromSkills(
 
       // snapshot: per-model detail from latest week (with all metric scores)
       pack.snapshot = (cp.modelos || []).map((m: any) => ({
-        modelo: m.nombre, rix: m.rix_score, rix_adj: null,
+        modelo: m.model_name, rix: m.rix_score, rix_adj: null,
         nvm: m.nvm, drm: m.drm, sim: m.sim, rmm: m.rmm,
         cem: m.cem, gam: m.gam, dcm: m.dcm, cxm: m.cxm,
         resumen: m.resumen, flags: m.flags, puntos_clave: m.puntos_clave,
@@ -4836,6 +4836,13 @@ DIVERGENCIAS INTER-MODELO (OBLIGATORIO):
 • NUNCA ignores las divergencias — son la señal analítica más valiosa
 • Cuando cites datos de la TABLA CRUZADA, indica modelo por modelo
 
+REGLA CRÍTICA DE NOMBRES DE MODELOS (OBLIGATORIO):
+· SIEMPRE usa los nombres REALES de los modelos tal como aparecen en la TABLA CRUZADA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).
+· NUNCA uses "Modelo 1", "Modelo 2", "IA-1", "IA-2" ni numeraciones genéricas.
+· En la sección "Visión de las 6 IAs", cada subsección DEBE titularse con el nombre real: "### ChatGPT (RIX XX)", "### Perplexity (RIX XX)", etc.
+· En TODAS las secciones (métricas, divergencias, recomendaciones), referencia siempre por nombre: "ChatGPT otorga 59" NO "el Modelo 1 otorga 59".
+· Si un modelo aparece como "?" o vacío en la tabla, usa el nombre de la columna 02_model_name del datapack.
+
 GRANULARIDAD POR MODELO (OBLIGATORIO):
 • Para cada métrica, identifica qué modelo da el valor más alto y más bajo, y razona POR QUÉ.
 • Usa los resúmenes y puntos clave de cada modelo para extraer insights cualitativos diferenciados.
@@ -4912,19 +4919,43 @@ REGLAS PARA RANKINGS SECTORIALES:
 • Compara métricas ENTRE las top 5. Analiza divergencias y evolución por empresa.
 ` : ""}
 
-═══ EJEMPLO DE ANÁLISIS CORRECTO (sección 2 - Visión de las 6 IAs) ═══
+═══ EJEMPLO DE ANÁLISIS CORRECTO (sección 2 — Visión de las 6 IAs) ═══
 
-ChatGPT (RIX 72): Percibe fortaleza en gestión de controversias (88) pero es el más crítico con el empuje temporal (15), sugiriendo que su ventana de datos no captura la actividad reciente. Es el único modelo que penaliza tan duramente el momentum.
+### ChatGPT (RIX 72)
+- **Fortalezas**: Gestión de Controversias (88), Coherencia Informativa (80)
+- **Debilidades**: Actualidad y Empuje (15), Autoridad de Fuentes (0)
+- **Insight diferencial**: Es el único modelo que detecta "cobertura mediática directa nula", sugiriendo que su crawler no alcanza prensa económica en tiempo real.
+- **Por qué diverge**: El flag "datos_antiguos" limita su ventana temporal → RMM penalizado.
 
-Perplexity (RIX 68): Coincide con ChatGPT en la debilidad de Autoridad de Fuentes (29) pero detecta mejor el empuje (78). Su acceso a búsqueda web en tiempo real le permite capturar noticias más recientes.
+### Perplexity (RIX 68)
+- **Fortalezas**: Fortaleza de Evidencia (78), Ejecución Corporativa (85)
+- **Debilidades**: Autoridad de Fuentes (29)
+- **Insight diferencial**: Única IA que cuantifica la subida bursátil (+6-10%) vinculando mejora reputacional al precio objetivo.
+- **Por qué diverge**: Buenas fuentes periodísticas (Reuters, Expansión) elevan DRM, pero la carencia de documentos oficiales frena SIM.
 
-Gemini (RIX 71): Se alinea con la mayoría en métricas generales pero otorga la puntuación más alta en Coherencia Informativa (82), probablemente porque su integración con Google Search le permite verificar datos cruzados.
+### Gemini (RIX 71)
+- **Fortalezas**: Coherencia Informativa (82), Calidad de Narrativa (76)
+- **Debilidades**: SIM (35)
+- **Insight diferencial**: Su integración con Google Search le permite verificar datos cruzados, otorgando la puntuación más alta en coherencia.
+- **Por qué diverge**: Fuerte en verificación factual, débil en documentación regulatoria.
 
-DeepSeek (RIX 65): Es el modelo más crítico globalmente. Prioriza Calidad de Narrativa (89) sobre el resto, pero penaliza duramente SIM (22), lo que sugiere que sus fuentes chinas tienen menor acceso a documentación regulatoria española.
+### DeepSeek (RIX 65)
+- **Fortalezas**: Calidad de Narrativa (89)
+- **Debilidades**: SIM (22), GAM (40)
+- **Insight diferencial**: Es el modelo más crítico globalmente. Prioriza la calidad narrativa sobre métricas documentales.
+- **Por qué diverge**: Sus fuentes tienen menor acceso a documentación regulatoria española → SIM penalizado.
 
-Grok (RIX 74): Otorga la puntuación más alta en RIX gracias a su percepción positiva en RMM (81), probablemente influida por la actividad en X/Twitter. Diverge significativamente de DeepSeek en SIM (+30 pts).
+### Grok (RIX 74)
+- **Fortalezas**: RMM (81), CEM (77)
+- **Debilidades**: NVM (45)
+- **Insight diferencial**: Su percepción positiva en RMM probablemente está influida por la actividad en X/Twitter. Diverge de DeepSeek en SIM (+30 pts).
+- **Por qué diverge**: Acceso privilegiado a conversación social en tiempo real eleva métricas de momentum.
 
-Qwen (RIX 63): El más conservador. Penaliza especialmente GAM (38), detectando riesgos de gobernanza que otros modelos no capturan. Su perspectiva asiática aporta un ángulo diferencial.
+### Qwen (RIX 63)
+- **Fortalezas**: Análisis de riesgos de gobernanza
+- **Debilidades**: GAM (38), NVM (41)
+- **Insight diferencial**: El más conservador. Detecta riesgos de gobernanza que otros modelos no capturan. Su perspectiva asiática aporta un ángulo diferencial.
+- **Por qué diverge**: Modelo entrenado con corpus asiático, más sensible a riesgos ESG.
 
 PATRÓN DETECTADO: 4 de 6 IAs coinciden en que Autoridad de Fuentes es la métrica crítica (<40). Solo DeepSeek diverge, priorizando Calidad de Narrativa. Esto sugiere un consenso robusto sobre el déficit documental.
 ═══ FIN DEL EJEMPLO ═══`;
