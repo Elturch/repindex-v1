@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, User, AlertCircle, ChevronDown, ChevronUp, Settings2, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatContext } from "@/contexts/ChatContext";
-import { CHAT_ROLES, getRoleById, getEnabledRoles } from "@/lib/chatRoles";
+import { getRoleById, getEnabledRoles } from "@/lib/chatRoles";
 import { getChatTranslations } from "@/lib/chatTranslations";
 
 // Featured roles for quick selection
