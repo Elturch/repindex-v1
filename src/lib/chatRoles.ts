@@ -8,6 +8,8 @@ export interface ChatRole {
   shortDescription: string;
   category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos";
   prompt: string;
+  /** Feature flag: role is only shown when true. Defaults to true if omitted. */
+  enabled?: boolean;
 }
 
 export const ROLE_CATEGORIES = {
@@ -152,13 +154,14 @@ Presenta el análisis desde la perspectiva de un Director de ESG/Sostenibilidad 
 
 Tono: Técnico-normativo pero accesible, orientado a la lectura de materialidad reputacional.`,
   },
-  // TALENTO
+  // TALENTO (disabled: no specific metrics yet)
   {
     id: "talento",
     emoji: "🧲",
     name: "Talento",
     shortDescription: "Lectura de atractivo empleador desde los datos reputacionales",
     category: "talento",
+    enabled: false,
     prompt: `${METRIC_LANGUAGE_RULES}
 
 ${ANTI_FABRICATION_RULES}
@@ -181,6 +184,7 @@ Tono: Analítico-estratégico, orientado a la lectura de competitividad de talen
     name: "Asuntos Publicos",
     shortDescription: "Lectura institucional de los datos reputacionales",
     category: "asuntos_publicos",
+    enabled: false,
     prompt: `${METRIC_LANGUAGE_RULES}
 
 ${ANTI_FABRICATION_RULES}
@@ -198,10 +202,15 @@ Tono: Estratégico-institucional, orientado a la lectura de exposición y solide
   },
 ];
 
-// Featured roles shown prominently in the UI
+// Returns only roles where enabled !== false
+export function getEnabledRoles(): ChatRole[] {
+  return CHAT_ROLES.filter((role) => role.enabled !== false);
+}
+
+// Featured roles shown prominently in the UI (only enabled ones)
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ["direccion_general", "dircom", "esg", "talento", "perito_reputacional", "asuntos_publicos"];
-  return CHAT_ROLES.filter((role) => featuredIds.includes(role.id));
+  const featuredIds = ["direccion_general", "dircom", "esg", "perito_reputacional"];
+  return CHAT_ROLES.filter((role) => featuredIds.includes(role.id) && role.enabled !== false);
 }
 
 // Get a role by its ID

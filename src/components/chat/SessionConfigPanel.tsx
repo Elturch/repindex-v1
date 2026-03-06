@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { BookOpen, User, AlertCircle, ChevronDown, ChevronUp, Settings2, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatContext } from "@/contexts/ChatContext";
-import { CHAT_ROLES, getRoleById } from "@/lib/chatRoles";
+import { getRoleById, getEnabledRoles } from "@/lib/chatRoles";
 import { getChatTranslations } from "@/lib/chatTranslations";
 
 // Featured roles for quick selection
@@ -23,8 +23,8 @@ export function SessionConfigPanel() {
   const [isExpanded, setIsExpanded] = useState(!isSessionConfigured);
   
   const tr = getChatTranslations(language.code);
-  const featuredRoles = CHAT_ROLES.filter(r => FEATURED_ROLE_IDS.includes(r.id));
-  const allRoles = CHAT_ROLES;
+  const featuredRoles = getEnabledRoles().filter(r => FEATURED_ROLE_IDS.includes(r.id));
+  const allRoles = getEnabledRoles();
   const selectedRole = getRoleById(localRoleId);
   const isRoleSelected = localRoleId !== 'general';
   
