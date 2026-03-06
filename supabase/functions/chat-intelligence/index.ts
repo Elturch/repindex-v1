@@ -1734,8 +1734,8 @@ async function buildDataPackFromSkills(
         const maxRix = Math.max(...rixScores);
         const minRix = Math.min(...rixScores);
         const range = maxRix - minRix;
-        const maxModel = cp.modelos.find((m: any) => m.rix_score === maxRix)?.nombre || "";
-        const minModel = cp.modelos.find((m: any) => m.rix_score === minRix)?.nombre || "";
+        const maxModel = cp.modelos.find((m: any) => m.rix_score === maxRix)?.model_name || "";
+        const minModel = cp.modelos.find((m: any) => m.rix_score === minRix)?.model_name || "";
         pack.divergencia = {
           sigma: Math.round(range / 2),
           nivel: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo",
