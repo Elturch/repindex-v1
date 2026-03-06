@@ -8,6 +8,8 @@ export interface ChatRole {
   shortDescription: string;
   category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos";
   prompt: string;
+  /** Feature flag: role is only shown when true. Defaults to true if omitted. */
+  enabled?: boolean;
 }
 
 export const ROLE_CATEGORIES = {
