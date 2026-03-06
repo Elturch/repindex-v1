@@ -1092,7 +1092,11 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "controversia","controversias","riesgo","riesgos","problema","problemas",
     "escándalos","escandalos","demandas","litigios","multas","sanciones","denuncias",
     "conflictos","polémicas","polemicas","irregularidades","huelgas","protestas",
-    "accidentes","negligencias","abusos","quejas","reclamaciones"
+    "accidentes","negligencias","abusos","quejas","reclamaciones",
+    "crisis","crisis reputacional","crisis de imagen","escándalo","escandalo",
+    "soborno","blanqueo","estafa","manipulación","manipulacion",
+    "sanción","sancion","expediente","cese","dimisión","dimision",
+    "destitución","destitucion","imputación","imputacion"
   ],
   "29_sim_score": [
     "fuentes","credibilidad","fiabilidad","referencias","documentos oficiales","regulador",
