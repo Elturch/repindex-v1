@@ -884,7 +884,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Reset session configuration for new conversation
     setSessionDepthLevel('complete');
     setSessionRoleId('general');
-    setIsSessionConfigured(false);
+    setIsSessionConfigured(true);
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
