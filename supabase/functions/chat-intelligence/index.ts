@@ -1777,11 +1777,37 @@ async function buildDataPackFromSkills(
           ingresos: d.corporate.last_reported_revenue, ejercicio_fiscal: null, mision: null, otros_ejecutivos: null,
         };
       }
-      if (d.verified_competitors && Array.isArray(d.verified_competitors)) {
-        pack.competidores_verificados = d.verified_competitors.map((t: string) => {
+      if (competidoresDirectos && competidoresDirectos.length > 0) {
+        pack.competidores_verificados = competidoresDirectos.map((cd: any) => ({
+          ticker: cd.ticker,
+          nombre: cd.issuer_name || cd.ticker,
+          rix_avg: cd.median_rix ?? null,
+        }));
+      } else if (d.verified_competitors && Array.isArray(d.verified_competitors) && d.verified_competitors.length > 0) {
+        // Fallback: query rix_runs_v2 for each competitor
+        const compWithRix = [];
+        for (const t of d.verified_competitors) {
           const comp = (companiesCacheLocal || []).find((c: any) => c.ticker === t);
-          return { ticker: t, nombre: comp?.issuer_name || t, rix_avg: null };
-        });
+          const { data: compRows } = await supabaseClient
+            .from('rix_runs_v2')
+            .select('"09_rix_score"')
+            .eq('05_ticker', t)
+            .not('09_rix_score', 'is', null)
+            .order('batch_execution_date', { ascending: false })
+            .limit(6);
+          let rixMedian = null;
+          if (compRows && compRows.length > 0) {
+            const scores = compRows.map((r: any) => r["09_rix_score"]).filter((v: any) => v != null).sort((a: number, b: number) => a - b);
+            if (scores.length > 0) {
+              const mid = Math.floor(scores.length / 2);
+              rixMedian = scores.length % 2 ? scores[mid] : Math.round((scores[mid - 1] + scores[mid]) / 2);
+            }
+          }
+          compWithRix.push({ ticker: t, nombre: comp?.issuer_name || t, rix_avg: rixMedian });
+        }
+        pack.competidores_verificados = compWithRix;
+      } else {
+        pack.competidores_verificados = [];
       }
     }
 
