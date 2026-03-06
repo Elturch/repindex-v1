@@ -184,6 +184,7 @@ Tono: Analítico-estratégico, orientado a la lectura de competitividad de talen
     name: "Asuntos Publicos",
     shortDescription: "Lectura institucional de los datos reputacionales",
     category: "asuntos_publicos",
+    enabled: false,
     prompt: `${METRIC_LANGUAGE_RULES}
 
 ${ANTI_FABRICATION_RULES}
