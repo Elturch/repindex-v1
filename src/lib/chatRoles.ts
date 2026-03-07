@@ -120,11 +120,11 @@ Tono: Estratégico-comunicativo, orientado a la lectura de gaps, no a la fabrica
   // PERITAJE Y LEGAL
   {
     id: "perito_reputacional",
-    emoji: "📋",
+    emoji: "⚖️",
     name: "Experto Pericial de Reputacion",
-    shortDescription: "Dictámenes periciales, valor probatorio, rigor forense",
+    shortDescription: "Dictámenes periciales con valor probatorio para contextos judiciales, arbitrajes y mediaciones",
     category: "pericial",
-    prompt: `Este rol genera un DICTAMEN PERICIAL DE REPUTACIÓN CORPORATIVA con rigor forense y valor probatorio. El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estándar. Estructura: Identificación del objeto - Metodología y cadena de custodia - Constatación de hechos medibles - Análisis por métrica priorizada - Divergencias entre modelos - Evolución temporal - Conclusiones periciales - Fuentes. Tono: tercera persona forense. Verbos: "se constata", "se observa", "resulta acreditado". Sin recomendaciones estratégicas.`,
+    prompt: `Perito judicial y de parte especializado en reputación algorítmica corporativa. Genera DICTÁMENES PERICIALES con valor probatorio para procedimientos judiciales, arbitrajes, mediaciones y reclamaciones extrajudiciales. El edge function utiliza un system prompt especializado que reemplaza completamente el Embudo Narrativo estándar. Estructura: Identificación del objeto — Metodología y cadena de custodia — Constatación de hechos medibles — Análisis por métrica priorizada (DCM, DRM, CEM, NVM) — Divergencias entre modelos — Evolución temporal (antes/después) — Conclusiones periciales — Fuentes y trazabilidad. Tono: forense, objetivo, impersonal, tercera persona SIEMPRE. Verbos: "se constata", "se observa", "resulta acreditado", "no se dispone de evidencia suficiente para". NUNCA valoraciones subjetivas, recomendaciones estratégicas, cuantificación económica del daño ni lenguaje comercial. Solo hechos constatables con cadena de custodia: dato + modelo + fecha exacta.`,
   },
   // ESG Y SOSTENIBILIDAD
   {
