@@ -5682,12 +5682,12 @@ SECCIÓN 6: ${H("depth_competitive")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
 INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío) O DATAPACK.competidores_sin_datos tiene tickers.
 
-REGLA FUNDAMENTAL DE COMPETIDORES:
-- Si DATAPACK.competidores_fuente === "verified": estos son competidores directos VERIFICADOS. Preséntalo como "Competidores Directos Verificados".
-- Si DATAPACK.competidores_fuente === "verified_plus_sector": hay competidores verificados COMPLEMENTADOS con empresas del sector. Presenta PRIMERO los verificados claramente identificados, y DESPUÉS los sectoriales como referencia. Incluye DATAPACK.competidores_nota.
-- Si DATAPACK.competidores_fuente === "sector_fallback": son empresas del mismo sector (NO competidores directos). Preséntalo como "Empresas del Mismo Sector (referencia)" e incluye DATAPACK.competidores_nota como disclaimer.
-- Si DATAPACK.competidores_directos está vacío Y competidores_sin_datos también: OMITIR esta sección completamente.
-- NUNCA inventes competidores ni mezcles fuentes verificadas con sectoriales sin explicar.
+REGLA FUNDAMENTAL DE COMPETIDORES (ESTRICTA — NO NEGOCIABLE):
+- Los ÚNICOS competidores válidos son los declarados en la columna verified_competitors de la empresa. Son una decisión editorial/estratégica, NO una inferencia automática.
+- Si DATAPACK.competidores_fuente === "verified": preséntalo como "Competidores Directos Verificados".
+- Si DATAPACK.competidores_directos está vacío Y competidores_sin_datos también vacío: incluir DATAPACK.competidores_nota ("No se han definido competidores directos para esta empresa") y NO inventar comparativas.
+- NUNCA añadir competidores que no estén en la columna verified_competitors, aunque sean del mismo sector.
+- NUNCA inferir, sugerir ni inventar competidores basándote en el sector o subsector.
 
 COMPETIDORES SIN DATOS RIX:
 Si DATAPACK.competidores_sin_datos contiene tickers, DOCUMENTAR EXPLÍCITAMENTE cada uno:
@@ -5697,7 +5697,7 @@ Esto es información valiosa: indica que el competidor NO está siendo monitoriz
 | Competidor | Ticker | RIX Mediano | Δ vs empresa |
 |------------|--------|-------------|--------------|
 
-Compara la mediana RIX de la empresa analizada con cada competidor.
+Compara la mediana RIX de la empresa analizada con cada competidor que tenga datos.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
