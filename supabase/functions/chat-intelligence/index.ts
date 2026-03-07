@@ -4996,6 +4996,36 @@ REGLAS ANTI-ALUCINACIÓN:
 • Si no tienes datos, dilo: "Solo puedo analizar los datos RepIndex disponibles."
 • NUNCA uses encabezados "PILAR X —". NUNCA inventes equipos internos ni algoritmos.
 
+VOCABULARIO CORPORATIVO (RECONOCIMIENTO DE CONTEXTO):
+Cuando el usuario mencione cualquiera de estos términos, entiende su contexto y responde con métricas RIX relevantes.
+
+CARGOS CORPORATIVOS (afectan a NVM narrativa, GAM gobernanza, CEM controversias):
+• Presidente/Chairman, CEO/Consejero Delegado, CFO/Director Financiero, COO/Director Operaciones
+• CMO/Director Marketing, CCO/Director Comunicación, CTO, CIO, CISO
+• CLO/Director Jurídico, CHRO/Director RRHH, CSO/Director Sostenibilidad, CDO/Director Digital
+• Director General, Secretario del Consejo, Director IR (Relaciones con Inversores)
+• Director de Asuntos Públicos, Fundador/Co-fundador
+• Accionista de referencia, Consejero independiente, Consejero dominical
+→ Preguntas sobre cargos ejecutivos → analiza NVM + GAM + CEM. Cambios de CEO/Presidente impactan especialmente GAM y NVM.
+
+CONCEPTOS FINANCIEROS/LEGALES/REGULATORIOS (contexto para CEM, DRM, CXM):
+• Stakeholder, Due diligence, Compliance, Buen gobierno/Good governance, Accountability
+• Regulador (CNMC, CNMV, Banco de España), Sanción, Multa antimonopolio, Investigación regulatoria
+• Enmienda, Lobby/Lobbying, Relaciones institucionales
+• Litigio, Demanda colectiva/Class action, Alfa (inversión), Buy-side/Sell-side
+• Equity research, Screening sectorial
+→ Preguntas regulatorias/legales → analiza CEM + SIM + DRM.
+
+CONCEPTOS REPUTACIONALES PROPIOS DE REPINDEX:
+• Reputación algorítmica = percepción que los modelos de IA tienen de una empresa. Núcleo de lo que mide RepIndex.
+• Brecha narrativa = diferencia entre relato emitido por la empresa y percepción de las IAs. Vinculada a NVM y DCM.
+• Cuota de voz algorítmica = presencia relativa en respuestas de IAs vs competidores. Vinculada a SIM.
+• Delta reputacional = variación RIX entre periodos. Usa datos de evolución temporal.
+• Señal predictiva = indicador que anticipa riesgo/oportunidad antes de materializarse. Analiza tendencias en CEM + RMM.
+• Solicitud de corrección formal = comunicación oficial a operador de IA para rectificar información errónea. Vinculada a DCM.
+• Análisis forense reputacional = examen técnico de percepción algorítmica en momento concreto del pasado, con fines legales. Requiere datos históricos completos.
+→ Cuando el usuario use estos conceptos propios, responde con datos reales de las métricas vinculadas.
+
 FORMATO MARKDOWN:
 • ## para secciones principales, ### para subsecciones. Tablas markdown para datos comparativos.
 • Emojis semáforo: 🟢 ≥70, 🟡 50-69, 🔴 <50. NO uses headers decorativos (═══).
