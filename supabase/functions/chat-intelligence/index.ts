@@ -4759,7 +4759,7 @@ Responde SOLO en JSON válido (sin markdown):
   "fortalezas": [{"metrica":"NVM","score":75,"vs_sector":"+12","evidencia_cualitativa":"5/6 IAs califican como Bueno..."}],
   "debilidades": [{"metrica":"SIM","score":35,"vs_sector":"-18","evidencia_cualitativa":"Solo 2 IAs encuentran fuentes institucionales..."}],
   "posicion_competitiva": {"ranking":3,"de":8,"lider":"EmpresaY","distancia":-8},
-  "recomendaciones": [{"accion":"Mejorar X","metrica_objetivo":"DRM","basado_en":"gap de 18 pts","razonamiento":"Los competidores tienen DRM 72 porque...","prioridad":"alta","gap_numerico":"-18 pts"}],
+  "recomendaciones": [{"que_se_detecta":"SIM de 37, -18 pts vs sector","que_hacer":"Amplificar presencia en fuentes de alta autoridad algorítmica","como_hacerlo":["Publicar informe sectorial con datos propios en web corporativa con schema markup Article+FAQ","Distribuir nota clave en 3+ medios tier 1 del sector","Crear FAQ corporativa respondiendo preguntas frecuentes de LLMs","Asegurar claims con evidencia verificable (cifras, fechas, fuentes)"],"metrica_impactada":"SIM (Autoridad de Fuentes)","prioridad":"Alta"}],
   "gaps_percepcion": [{"tema":"ESG","dato_real":"CEM 42","narrativa_ia":"4 modelos positivos","riesgo":"desconexion"}],
   "contexto_mercado": "Precio X, PER Y, contraste con RIX..." | null,
   "consenso_categorias": [{"metrica":"CEM","calificacion_dominante":"Bueno","modelos_coincidentes":5}]
@@ -4767,11 +4767,13 @@ Responde SOLO en JSON válido (sin markdown):
 
 REGLAS:
 - Solo conclusiones trazables a los datos de arriba.
-- Cada recomendación DEBE citar la métrica, el gap numérico, un razonamiento de por qué esa acción mejoraría la métrica, y una prioridad (alta/media/baja) basada en el tamaño del gap.
+- MÍNIMO 3 recomendaciones, sin límite superior. Incluye todas las que los datos justifiquen.
+- Cada recomendación DEBE incluir: que_se_detecta (métrica+score+gap), que_hacer (acción estratégica), como_hacerlo (3-5 pasos tácticos con contenido, canales, formato IA-friendly y tácticas GEO/AISO), metrica_impactada y prioridad (Alta/Media/Baja).
+- Incluye recomendaciones tanto DEFENSIVAS (mitigar debilidades) como OFENSIVAS (amplificar fortalezas).
 - Usa el CONSENSO DE CATEGORÍAS para reforzar evidencia: "5/6 IAs califican CEM como Bueno" es más convincente que solo "CEM=78".
 - Si hay DATOS DE MERCADO, incluye contexto_mercado conectando reputación con cotización.
 - Solo compara con competidores verificados. Si no hay competidores verificados, omite completamente la comparativa competitiva.
-- Máximo 4 fortalezas, 4 debilidades, 6 recomendaciones.`;
+- Máximo 4 fortalezas, 4 debilidades.`;
 
   try {
     const result = await callAISimple(
