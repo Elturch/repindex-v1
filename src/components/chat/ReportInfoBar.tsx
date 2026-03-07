@@ -1,4 +1,4 @@
-import { Building2, Calendar, Clock, Brain, Database } from "lucide-react";
+import { Building2, Calendar, Clock, Brain, Database, MessageCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es, enUS } from "date-fns/locale";
 
