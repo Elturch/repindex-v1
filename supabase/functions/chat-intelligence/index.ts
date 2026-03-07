@@ -9354,33 +9354,8 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
 
     // =============================================================================
     // GENERATE DRUMROLL QUESTION (Complementary Report Suggestion)
-    // Always active in exhaustive mode
-    // =============================================================================
-    // Extract structured insights from the rix data for drumroll generation
-    let drumrollQuestion: DrumrollQuestion | null = null;
-    if (detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
-      console.log(`${logPrefix} Extracting analysis insights for ${detectedCompanies[0]?.issuer_name}...`);
-
-      const insights = extractAnalysisInsights(allRixData, detectedCompanies[0], answer);
-
-      if (insights) {
-        console.log(
-          `${logPrefix} Insights extracted: RIX=${insights.overallScore}, weakest=${insights.weakestMetrics[0]?.name}, trend=${insights.trend}(${insights.trendDelta}pts), divergence=${insights.divergenceLevel}`,
-        );
-
-        drumrollQuestion = await generateDrumrollQuestion(
-          question,
-          insights,
-          detectedCompanies,
-          companiesCache,
-          language,
-          languageName,
-          logPrefix,
-        );
-      } else {
-        console.log(`${logPrefix} No insights extracted - skipping drumroll`);
-      }
-    }
+    // Drumroll question generation disabled
+    const drumrollQuestion: DrumrollQuestion | null = null;
 
     // Determine question category (simplified classification)
     const questionCategory = detectedCompanies.length > 0 ? "corporate_analysis" : "general_query";
