@@ -2280,7 +2280,7 @@ The bulletin will be ready to **download or print** in professional format.`,
     depth_model_divergence: "Model Divergence",
     depth_evolution: "Temporal Evolution",
     depth_competitive: "Competitive Context",
-    depth_recommendations: "Data-Driven Recommendations",
+    depth_recommendations: "Strategic & Tactical Recommendations",
     // Fallback questions
     fallback_ceo_q1: "What are the 3 most urgent reputational risks?",
     fallback_ceo_q2: "How are we doing vs direct competition?",
