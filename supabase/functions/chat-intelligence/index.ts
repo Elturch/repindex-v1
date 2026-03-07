@@ -5692,13 +5692,17 @@ NO generar subsección "Veredicto" separada. Su contenido ya está integrado en 
 SECCIÓN 2: ${H("depth_6ai_vision")} — OBLIGATORIA (SECCIÓN CORE)
 ───────────────────────────────────────────────────────────────────────────────
 
-Para cada modelo de IA, analizar en profundidad:
-1. Su RIX individual y cómo se compara con los demás
-2. Sus 2 métricas más fuertes y las 2 más débiles (con puntuaciones)
-3. QUÉ DICE este modelo que los otros no dicen (insights únicos de su resumen/puntos_clave)
-4. POR QUÉ este modelo puntúa diferente (su arquitectura, fuentes, ventana temporal)
+RESUMEN COMPARATIVO PRIMERO (tabla antes del detalle narrativo):
 
-Después de analizar todos los modelos individualmente, incluir un bloque PATRONES DETECTADOS con subsecciones SEPARADAS:
+| Modelo | RIX | Lectura |
+|--------|-----|---------|
+| [nombre real] | [score] | [ej: "más positiva", "neutral", "más crítica"] |
+
+Después de la tabla, detalle narrativo CONDENSADO: MÁXIMO 2 líneas por modelo
+(fortaleza principal + debilidad principal). NO extenderse más. El valor está
+en la comparación, no en la repetición.
+
+Después del detalle, incluir bloque PATRONES DETECTADOS con subsecciones SEPARADAS:
 
 #### Consensos
 (>=4 IAs coinciden en la misma señal — cada consenso como bullet •)
