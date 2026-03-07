@@ -2470,7 +2470,7 @@ Escreva o nome da empresa e gerarei uma análise detalhada incluindo:
     depth_model_divergence: "Divergência entre Modelos",
     depth_evolution: "Evolução Temporal",
     depth_competitive: "Contexto Competitivo",
-    depth_recommendations: "Recomendações Baseadas em Dados",
+    depth_recommendations: "Recomendações Estratégicas e Táticas",
     // Fallback questions
     fallback_ceo_q1: "Quais são os 3 riscos reputacionais mais urgentes?",
     fallback_ceo_q2: "Como estamos em relação à concorrência direta?",
