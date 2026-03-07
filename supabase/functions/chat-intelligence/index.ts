@@ -1736,9 +1736,10 @@ async function buildDataPackFromSkills(
     console.log(`${logPrefix} [SKILLS-v2] Completed: ${Object.keys(resultMap).join(",")} in ${Date.now() - totalStart}ms`);
 
     // ── Resolve verified competitors ─────────────────────────────
-    let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number}> = [];
+    let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number | null}> = [];
+    let competidoresSinDatos: string[] = [];
     let competidoresNota: string | undefined;
-    let competitorSource: "verified" | "sector_fallback" | "none" = "none";
+    let competitorSource: "verified" | "sector_fallback" | "verified_plus_sector" | "none" = "none";
     if (resolvedTicker) {
       const compInfo = await getCompetitorTickers(supabaseClient, resolvedTicker, logPrefix);
       competitorSource = compInfo.source;
@@ -1751,11 +1752,18 @@ async function buildDataPackFromSkills(
           if (cr.status === "fulfilled" && cr.value?.success && cr.value.data) {
             const cd = cr.value.data;
             competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.empresa, median_rix: cd.rix_mediano });
+          } else {
+            // Track competitors without RIX data — don't silently drop them
+            competidoresSinDatos.push(compInfo.tickers[ci]);
           }
         }
-        console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}`);
+        console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}, without data: ${competidoresSinDatos.length}`);
         if (compInfo.source === "sector_fallback") {
           competidoresNota = `Sin competidores directos verificados. Se muestran ${competidoresDirectos.length} empresas del mismo sector (${compInfo.sector_category}) como referencia`;
+        } else if (compInfo.source === "verified_plus_sector") {
+          const vc = (await supabaseClient.from("repindex_root_issuers").select("verified_competitors").eq("ticker", resolvedTicker).maybeSingle())?.data?.verified_competitors;
+          const vcArray: string[] = Array.isArray(vc) ? vc : [];
+          competidoresNota = `${vcArray.length} competidor(es) directo(s) verificado(s) (${vcArray.join(", ")}), complementados con empresas del mismo sector (${compInfo.sector_category}) como referencia adicional`;
         }
       } else {
         competidoresNota = "No se han verificado competidores directos para esta empresa";
