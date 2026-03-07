@@ -2,7 +2,7 @@ import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
+
 import { MarkdownMessage, generateExportHtml } from "@/components/ui/markdown-message";
 
 import { ResponseFeedback } from "./ResponseFeedback";
