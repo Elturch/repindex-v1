@@ -5747,6 +5747,14 @@ Si rango <=10 en todas las métricas: indicar CONSENSO ROBUSTO y qué significa 
 En RANKINGS SECTORIALES: mostrar las empresas con MAYOR y MENOR consenso entre IAs.
 Si hay divergencias_detalle con múltiples tickers, agrupa por empresa las divergencias más relevantes.
 
+#### Interpretación estratégica de las divergencias
+Incluir SIEMPRE un párrafo final que explique el POR QUÉ ESTRUCTURAL de las divergencias entre modelos. Factores a considerar:
+• Modelos con acceso a noticias en tiempo real (Perplexity, Grok) tienden a percepciones más actualizadas
+• Modelos que dependen de corpus histórico (ChatGPT, DeepSeek) penalizan la falta de eventos datados recientes
+• Diferencias en ventana temporal de entrenamiento afectan la lectura de tendencias
+• Diferencias en el peso que cada modelo da a fuentes oficiales vs mediáticas
+Ejemplo: "Los modelos con acceso a noticias en tiempo real muestran una percepción más positiva; los que dependen de corpus histórico penalizan la ausencia de eventos datados recientes."
+
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 5: ${H("depth_evolution")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
