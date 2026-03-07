@@ -1257,6 +1257,45 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     "explícame la métrica","explicame la metrica","qué mide","que mide",
     "cómo se calcula","como se calcula","significado de","qué significa","que significa"
   ],
+  // P2/3 — New intents
+  due_diligence: [
+    "due diligence","due diligence reputacional","screening sectorial","screening",
+    "análisis pre-operación","analisis pre-operacion","evaluación de riesgo reputacional",
+    "evaluacion de riesgo reputacional","diligencia debida","análisis previo","analisis previo",
+    "informe pre-adquisición","informe pre-adquisicion","risk assessment","reputational due diligence"
+  ],
+  corporate_event: [
+    "opa","m&a","fusión","fusion","adquisición","adquisicion","ipo","salida a bolsa",
+    "desinversión","desinversion","profit warning","guidance","oferta pública","oferta publica",
+    "takeover","merger","acquisition","operación corporativa","operacion corporativa",
+    "evento corporativo","hecho relevante","cnmv hecho relevante",
+    "ampliación de capital","ampliacion de capital","split","contrasplit",
+    "reestructuración","reestructuracion","spinoff","spin-off","carve-out"
+  ],
+  forensic_analysis: [
+    "informe pericial","perito","análisis forense","analisis forense",
+    "prueba documental","medición longitudinal","medicion longitudinal",
+    "nexo causal","cuantificación del daño","cuantificacion del dano",
+    "imputabilidad","periodo de afectación","periodo de afectacion",
+    "comparativa sectorial forense","dictamen pericial","peritaje",
+    "evidencia forense","análisis causal","analisis causal",
+    "antes y después","antes y despues","impacto medible","daño reputacional cuantificado"
+  ],
+  risk_signal: [
+    "señal predictiva","senal predictiva","riesgo reputacional algorítmico","riesgo reputacional algoritmico",
+    "inteligencia regulatoria","tendencia regulatoria","alerta temprana",
+    "early warning","risk signal","señal de riesgo","senal de riesgo",
+    "detección de riesgo","deteccion de riesgo","indicador adelantado",
+    "predicción","prediccion","pronóstico","pronostico","anticipación","anticipacion"
+  ],
+  talent_reputation: [
+    "employer branding","marca empleadora","glassdoor","ere",
+    "huelga laboral","conflicto laboral","cultura corporativa",
+    "diversidad","d&i","diversidad e inclusión","diversidad e inclusion",
+    "reputación como empleador","reputacion como empleador",
+    "atracción de talento","atraccion de talento","retención de talento","retencion de talento",
+    "clima laboral","great place to work","bienestar laboral"
+  ],
 };
 
 const TEMPORAL_THESAURUS: Record<string, string[]> = {
