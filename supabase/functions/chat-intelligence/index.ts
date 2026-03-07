@@ -1232,7 +1232,11 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     "temporal","serie","cómo ha ido","como ha ido","comparar periodos",
     "variación","variacion","crecimiento","caída","caida","recuperación","recuperacion",
     "ha mejorado","ha empeorado","ha subido","ha bajado","cómo ha evolucionado","como ha evolucionado",
-    "tendencia temporal","serie temporal","progresión","progresion"
+    "tendencia temporal","serie temporal","progresión","progresion",
+    // P1/3 additions
+    "delta reputacional","variación del índice","variacion del indice",
+    "línea base","linea base","baseline","recuperación reputacional","recuperacion reputacional",
+    "periodo de afectación","periodo de afectacion","hecho desencadenante","trigger event"
   ],
   sector_comparison: [
     "sector","sectorial","industria","todas las de","empresas de","compañías de","companias de",
