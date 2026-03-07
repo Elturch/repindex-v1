@@ -2183,7 +2183,7 @@ El boletín estará listo para **descargar o imprimir** en formato profesional.`
     depth_model_divergence: "Divergencia entre Modelos",
     depth_evolution: "Evolución Temporal",
     depth_competitive: "Contexto Competitivo",
-    depth_recommendations: "Recomendaciones Basadas en Datos",
+    depth_recommendations: "Recomendaciones Estratégicas y Tácticas",
     // Fallback questions
     fallback_ceo_q1: "¿Cuáles son los 3 riesgos reputacionales más urgentes?",
     fallback_ceo_q2: "¿Cómo estamos vs la competencia directa?",
