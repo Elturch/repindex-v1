@@ -4997,8 +4997,9 @@ REGLAS ANTI-ALUCINACIÓN:
 RIGOR EPISTEMOLÓGICO — CAUSALIDAD RIX ↔ COTIZACIÓN:
 • NUNCA afirmes ni insinues relación causal entre el RIX y la cotización bursátil. El RIX mide percepción algorítmica, no predice ni explica movimientos de mercado.
 • Cuando menciones precio de acción junto a datos RIX, usa SIEMPRE lenguaje de coincidencia temporal, nunca de causalidad.
+• NUNCA uses los verbos "provoca", "causa", "genera", "impulsa" referidos a relaciones RIX↔bolsa o métricas↔mercado. SOLO usar: "coincide temporalmente", "puede haber influido", "no se puede inferir causalidad". Esto es OBLIGATORIO sin excepciones.
 • Ejemplos CORRECTOS: "coincide temporalmente con el rebote bursátil", "en paralelo, la acción subió…".
-• Ejemplos PROHIBIDOS: "se refleja en el mercado", "el RIX positivo impulsa la cotización", "la mejora reputacional explica la subida".
+• Ejemplos PROHIBIDOS: "se refleja en el mercado", "el RIX positivo impulsa la cotización", "la mejora reputacional explica la subida", "provoca una caída bursátil", "genera presión vendedora".
 
 RIGOR EPISTEMOLÓGICO — BENCHMARKS Y COMPARATIVAS:
 • NUNCA inventes benchmarks sectoriales ni uses la palabra "hipotético" para referirte a datos que no existen.
@@ -5016,6 +5017,13 @@ RIGOR EPISTEMOLÓGICO — INCERTIDUMBRE INTERMODELO:
   - En la comparativa competitiva: incluir el ± tanto para la empresa como para el competidor
 • Ejemplo completo: si los 6 modelos dan RIX [48, 53, 56, 63, 65, 69], mediana = 59, rango = 21, IC ≈ 21/4 ≈ ±5. Se muestra: "RIX mediano: 59 (±5 intermodelo)"
 • NOMENCLATURA OBLIGATORIA: Llamarlo SIEMPRE "incertidumbre intermodelo", NUNCA "intervalo de confianza" ni "IC 95%" porque con n=6 modelos no es estadísticamente riguroso usar terminología de inferencia clásica.
+• INCERTIDUMBRE DE COMPETIDORES: Si hay datos de rango del competidor (RIX máximo - RIX mínimo de las 6 IAs), calcular su ±X con la misma fórmula (rango/4). Si no hay datos suficientes, declarar: "Sin datos suficientes para calcular dispersión inter-modelo del competidor."
+
+RIGOR EPISTEMOLÓGICO — CONTRADICCIONES INTERNAS:
+• El agente DEBE detectar y declarar tensiones internas entre métricas cuando las haya.
+• Ejemplo: si CEM es excelente pero hay controversia laboral activa en las narrativas, debe decir: "Existe tensión entre la estabilidad percibida (CEM alto) y la narrativa laboral negativa detectada. Esta discrepancia merece seguimiento."
+• Si NVM es alta pero SIM es baja: "Buena narrativa pero sin respaldo de fuentes autoritativas — riesgo de percepción superficial."
+• Detectar y declarar estas tensiones añade valor analítico y diferencia el informe de un simple listado de métricas.
 
 Cuando el usuario mencione cualquiera de estos términos, entiende su contexto y responde con métricas RIX relevantes.
 
@@ -5625,59 +5633,76 @@ TITULAR-RESPUESTA (ANTES DE TODA SECCIÓN — OBLIGATORIO)
 ───────────────────────────────────────────────────────────────────────────────
 
 La PRIMERA LÍNEA del informe SIEMPRE es un **TITULAR EN NEGRITA** que responde
-DIRECTAMENTE a la pregunta del usuario en 1-2 frases. Sin jerga técnica, sin
-acrónimos. Lenguaje claro que cualquier directivo entienda al instante.
-Debe estar destacado visualmente con negrita (** **).
+DIRECTAMENTE a la pregunta del usuario en LENGUAJE NATURAL, SIN MÉTRICAS.
+La primera frase SOLO contiene la respuesta directa. Las métricas aparecen
+en la SEGUNDA frase como evidencia. Estructura obligatoria:
+1) Respuesta directa en lenguaje natural (sin siglas, sin números)
+2) Evidencia con métricas que sustenta la respuesta
+3) Contexto breve
 
 Ejemplos:
 - Pregunta "Analiza el daño reputacional de Telefónica" →
-  **"El daño reputacional de Telefónica es moderado y concentrado en autoridad de fuentes (SIM 37/100), mientras mantiene fortaleza en gestión de controversias."**
+  **"No se detecta daño reputacional significativo en Telefónica en el último periodo. La percepción algorítmica se mantiene estable (RIX 62 ±4), con fortaleza en gestión de controversias pero debilidad en autoridad de fuentes."**
 - Pregunta "¿Cómo está Inditex?" →
-  **"Inditex presenta una reputación algorítmica sólida (RIX 74) con consenso alto entre las 6 IAs, aunque con margen de mejora en diversificación de fuentes."**
+  **"Inditex goza de una reputación algorítmica sólida con alto consenso entre las 6 IAs. Su RIX mediano de 74 (±3) la sitúa en zona verde, aunque con margen de mejora en diversificación de fuentes."**
 
 Este titular va ANTES del "## 1. RESUMEN EJECUTIVO". Es lo primero que lee el usuario.
+
+METADATOS DE CABECERA (inmediatamente después del titular):
+Incluir una línea con los metadatos del informe:
+> 📊 **Consulta**: [pregunta del usuario] | **Perspectiva**: [rol seleccionado, ej: "Director de Comunicación" o "General"] | **Periodo**: [fecha] | **Modelos**: [lista de IAs]
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 1: ${H("depth_executive_summary")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
+
+FLUJO NARRATIVO OBLIGATORIO: Insight → Por qué → Qué dicen las IAs → Métricas.
+NUNCA empezar por métricas. El directivo piensa en insights, no en siglas.
 
 ### ${H("depth_headline_diagnosis")}
 Diagnóstico en LENGUAJE CLARO: 2-3 frases sin jerga técnica que respondan
 a la pregunta del usuario. Primero la respuesta, luego los datos que la
 sustentan. NO empezar con cifras ni acrónimos. Empezar con la conclusión
 en lenguaje natural y luego anclarla en datos.
+Incluir aquí la VALORACIÓN del analista (NO generar sección "Veredicto" separada).
+La valoración se fusiona con el diagnóstico en un solo párrafo cohesivo.
 Ej: "La reputación algorítmica de [Empresa] es sólida pero presenta un punto
 ciego importante: las IAs no encuentran fuentes autoritativas que respalden
 sus narrativas. Esto se refleja en un SIM de 37/100, muy por debajo del
-sector (55). En contraste, su gestión de controversias es excelente (CEM 95)."
+umbral verde (70). En contraste, su gestión de controversias es excelente (CEM 95).
+En definitiva, la empresa tiene una base reputacional sana pero vulnerable
+en credibilidad de fuentes."
 
 ### ${H("depth_3kpis")}
 MÍNIMO tres indicadores clave extraídos del DATAPACK con su variación. Si hay más métricas relevantes para la pregunta, incluirlas TODAS. No limitar artificialmente:
-- **RIX Mediano**: [valor] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
+- **RIX Mediano**: [valor] ±[incertidumbre] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
 - **[KPI 2]**: [valor] (la métrica más fuerte)
 - **[KPI 3]**: [valor] (la métrica más débil o con mayor divergencia)
 - **[KPI N]**: incluir tantos KPIs adicionales como sean relevantes para el análisis
 
 Si delta_rix está disponible en el DATAPACK, SIEMPRE muestra la variación.
-Si no hay delta, indica "sin datos de variación temporal".
+REGLA DELTA HONESTO: Cuando no hay datos históricos para calcular el delta de métricas individuales, declarar UNA SOLA nota al pie de la tabla: "Delta semanal disponible solo para RIX global." NO repetir "sin datos de variación temporal" en cada fila.
 
 ### ${H("depth_3findings")}
 MÍNIMO tres descubrimientos principales derivados de los datos, sin límite superior. Incluir todos los hallazgos relevantes que el análisis revele. Cada hallazgo en prosa de 2-3 oraciones, citando la evidencia concreta. IMPORTANTE: usar bullets simples (•), NO enumerar con "1.", "2.", "3.".
 
-### ${H("depth_verdict")}
-Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
+NO generar subsección "Veredicto" separada. Su contenido ya está integrado en el Diagnóstico.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 2: ${H("depth_6ai_vision")} — OBLIGATORIA (SECCIÓN CORE)
 ───────────────────────────────────────────────────────────────────────────────
 
-Para cada modelo de IA, analizar en profundidad:
-1. Su RIX individual y cómo se compara con los demás
-2. Sus 2 métricas más fuertes y las 2 más débiles (con puntuaciones)
-3. QUÉ DICE este modelo que los otros no dicen (insights únicos de su resumen/puntos_clave)
-4. POR QUÉ este modelo puntúa diferente (su arquitectura, fuentes, ventana temporal)
+RESUMEN COMPARATIVO PRIMERO (tabla antes del detalle narrativo):
 
-Después de analizar todos los modelos individualmente, incluir un bloque PATRONES DETECTADOS con subsecciones SEPARADAS:
+| Modelo | RIX | Lectura |
+|--------|-----|---------|
+| [nombre real] | [score] | [ej: "más positiva", "neutral", "más crítica"] |
+
+Después de la tabla, detalle narrativo CONDENSADO: MÁXIMO 2 líneas por modelo
+(fortaleza principal + debilidad principal). NO extenderse más. El valor está
+en la comparación, no en la repetición.
+
+Después del detalle, incluir bloque PATRONES DETECTADOS con subsecciones SEPARADAS:
 
 #### Consensos
 (>=4 IAs coinciden en la misma señal — cada consenso como bullet •)
@@ -5722,6 +5747,14 @@ Si rango <=10 en todas las métricas: indicar CONSENSO ROBUSTO y qué significa 
 En RANKINGS SECTORIALES: mostrar las empresas con MAYOR y MENOR consenso entre IAs.
 Si hay divergencias_detalle con múltiples tickers, agrupa por empresa las divergencias más relevantes.
 
+#### Interpretación estratégica de las divergencias
+Incluir SIEMPRE un párrafo final que explique el POR QUÉ ESTRUCTURAL de las divergencias entre modelos. Factores a considerar:
+• Modelos con acceso a noticias en tiempo real (Perplexity, Grok) tienden a percepciones más actualizadas
+• Modelos que dependen de corpus histórico (ChatGPT, DeepSeek) penalizan la falta de eventos datados recientes
+• Diferencias en ventana temporal de entrenamiento afectan la lectura de tendencias
+• Diferencias en el peso que cada modelo da a fuentes oficiales vs mediáticas
+Ejemplo: "Los modelos con acceso a noticias en tiempo real muestran una percepción más positiva; los que dependen de corpus histórico penalizan la ausencia de eventos datados recientes."
+
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 5: ${H("depth_evolution")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
@@ -5760,50 +5793,36 @@ Compara la mediana RIX de la empresa analizada con cada competidor que tenga dat
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
 
-MÍNIMO 3 recomendaciones, sin límite superior. Incluye todas las que los datos justifiquen.
-Incluye tanto recomendaciones DEFENSIVAS (mitigar riesgos, proteger métricas débiles) como OFENSIVAS (amplificar fortalezas, ganar posicionamiento algorítmico).
-Si una métrica es fuerte, recomienda cómo MANTENERLA o AMPLIFICARLA, no solo corregir debilidades.
+MÁXIMO 3 recomendaciones por bloque (no 5). Calidad sobre cantidad.
+Incluye tanto DEFENSIVAS (mitigar riesgos) como OFENSIVAS (amplificar fortalezas).
 
-Cada recomendación DEBE seguir esta estructura completa:
+REGLA CLAVE: Cada recomendación EMPIEZA POR LA ACCIÓN, no por la métrica.
+El directivo quiere saber QUÉ HACER primero, luego POR QUÉ.
 
-• **Qué se detecta**: Qué métrica o hallazgo del DATAPACK motiva esta recomendación. Incluye el score actual y el gap vs sector/competidores si existe. Ejemplo: "SIM de 37 — baja autoridad en fuentes algorítmicas, 18 puntos por debajo del sector."
+Estructura obligatoria de cada recomendación:
 
-• **Qué hacer**: Acción estratégica concreta y específica para el caso. NO genérica.
+• **Acción concreta**: Qué hacer exactamente (verbo de acción primero). Específica para el caso, NO genérica.
+
+• **Qué implica**: Por qué esta acción importa para la empresa en este momento.
+
+• **Evidencia (métrica)**: Qué métrica o hallazgo del DATAPACK motiva esta recomendación. Score actual y gap.
 
 • **Cómo hacerlo** (3-5 pasos tácticos ejecutables):
-  Aquí es donde debes aportar MÁXIMO VALOR. Cada paso debe ser concreto y accionable. Incluye:
-  - **Tipo de contenido** a crear o modificar (notas de prensa con datos propios, informes sectoriales, FAQ corporativas, comunicados regulatorios, artículos de opinión del CEO, etc.)
-  - **Canales recomendados** (web corporativa, medios tier 1 del sector, LinkedIn corporativo, relaciones con inversores, etc.)
-  - **Formato IA-friendly**: cómo estructurar el contenido para que los modelos de IA lo procesen bien:
-    · Datos verificables con cifras concretas y fechas
-    · Fuentes citadas explícitamente
-    · Schema markup (Article, FAQ, Organization)
-    · Respuestas directas a preguntas frecuentes sobre la empresa
-  - **Tácticas GEO/AISO específicas** (Generative Engine Optimization / AI Search Optimization):
-    · Publicar en fuentes que los LLMs priorizan (medios de referencia, documentos regulatorios, bases de datos sectoriales)
-    · Crear claims verificables con evidencia adjunta para que los LLMs los prioricen frente a opiniones
-    · Estructurar FAQ corporativas que respondan directamente a las preguntas que los usuarios hacen a los LLMs sobre la empresa
-    · Generar contenido que los crawlers de IA puedan extraer fácilmente (párrafos autocontenidos, datos estructurados)
+  - **Tipo de contenido** a crear o modificar
+  - **Canales recomendados**
+  - **Formato IA-friendly**: datos verificables, fuentes citadas, Schema markup, FAQ corporativas
+  - **Tácticas GEO/AISO específicas**: publicar en fuentes que los LLMs priorizan, crear claims verificables, estructurar FAQ, generar contenido extraíble por crawlers de IA
 
-• **Métrica RIX impactada**: Qué métrica mejorará si se ejecuta (usa el nombre ejecutivo y el acrónimo).
+• **KPI Objetivo y Plazo**: Formato obligatorio: "**Métrica: valor actual → objetivo → plazo**"
+  Los objetivos son ORIENTATIVOS. NUNCA prometer resultados.
 
-• **KPI Objetivo y Plazo**: Para cada recomendación, incluir la MÉTRICA ACTUAL → OBJETIVO → PLAZO ESTIMADO.
-  Formato obligatorio: "**Métrica: valor actual → objetivo → plazo**"
-  Ejemplos:
-  - **SIM: 37 → 55 en 30 días**
-  - **DCM: 61 → 70 en 45 días**
-  - **NVM: 48 → 60 en 60 días**
-  Los objetivos son ORIENTATIVOS, basados en: (1) la brecha detectada respecto al benchmark sectorial o competidores, (2) el potencial de mejora razonable según la métrica, (3) la velocidad típica de actualización de los modelos de IA. Si no hay benchmark sectorial, usar como referencia la zona verde (≥70). NUNCA prometer resultados, siempre presentar como estimación orientativa.
-
-• **Prioridad**: Alta / Media / Baja — según el impacto potencial en el RIX global y la urgencia del gap.
+• **Prioridad**: Alta / Media / Baja
 
 REGLAS DE RECOMENDACIONES:
 - Cada recomendación DEBE estar ANCLADA en datos reales del DATAPACK. PROHIBIDO inventar.
 - Las tácticas GEO/AISO deben ser ESPECÍFICAS para el caso de la empresa, NO genéricas.
 - El tono debe ser de consultor estratégico senior, no de checklist genérico.
 - PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
-- Los KPIs objetivo son ESTIMACIONES ORIENTATIVAS, no compromisos. Dejar claro que dependen de la ejecución.
-- Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
 - OBLIGATORIO: CADA recomendación DEBE terminar con una línea en formato exacto:
   **KPI objetivo**: [Sigla]: [valor actual] → [objetivo] en [plazo] días.
   Esta línea NO puede omitirse en NINGUNA recomendación. Si falta, la recomendación está INCOMPLETA.
