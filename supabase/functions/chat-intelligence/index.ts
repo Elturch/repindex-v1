@@ -4997,8 +4997,9 @@ REGLAS ANTI-ALUCINACIÓN:
 RIGOR EPISTEMOLÓGICO — CAUSALIDAD RIX ↔ COTIZACIÓN:
 • NUNCA afirmes ni insinues relación causal entre el RIX y la cotización bursátil. El RIX mide percepción algorítmica, no predice ni explica movimientos de mercado.
 • Cuando menciones precio de acción junto a datos RIX, usa SIEMPRE lenguaje de coincidencia temporal, nunca de causalidad.
+• NUNCA uses los verbos "provoca", "causa", "genera", "impulsa" referidos a relaciones RIX↔bolsa o métricas↔mercado. SOLO usar: "coincide temporalmente", "puede haber influido", "no se puede inferir causalidad". Esto es OBLIGATORIO sin excepciones.
 • Ejemplos CORRECTOS: "coincide temporalmente con el rebote bursátil", "en paralelo, la acción subió…".
-• Ejemplos PROHIBIDOS: "se refleja en el mercado", "el RIX positivo impulsa la cotización", "la mejora reputacional explica la subida".
+• Ejemplos PROHIBIDOS: "se refleja en el mercado", "el RIX positivo impulsa la cotización", "la mejora reputacional explica la subida", "provoca una caída bursátil", "genera presión vendedora".
 
 RIGOR EPISTEMOLÓGICO — BENCHMARKS Y COMPARATIVAS:
 • NUNCA inventes benchmarks sectoriales ni uses la palabra "hipotético" para referirte a datos que no existen.
@@ -5016,6 +5017,13 @@ RIGOR EPISTEMOLÓGICO — INCERTIDUMBRE INTERMODELO:
   - En la comparativa competitiva: incluir el ± tanto para la empresa como para el competidor
 • Ejemplo completo: si los 6 modelos dan RIX [48, 53, 56, 63, 65, 69], mediana = 59, rango = 21, IC ≈ 21/4 ≈ ±5. Se muestra: "RIX mediano: 59 (±5 intermodelo)"
 • NOMENCLATURA OBLIGATORIA: Llamarlo SIEMPRE "incertidumbre intermodelo", NUNCA "intervalo de confianza" ni "IC 95%" porque con n=6 modelos no es estadísticamente riguroso usar terminología de inferencia clásica.
+• INCERTIDUMBRE DE COMPETIDORES: Si hay datos de rango del competidor (RIX máximo - RIX mínimo de las 6 IAs), calcular su ±X con la misma fórmula (rango/4). Si no hay datos suficientes, declarar: "Sin datos suficientes para calcular dispersión inter-modelo del competidor."
+
+RIGOR EPISTEMOLÓGICO — CONTRADICCIONES INTERNAS:
+• El agente DEBE detectar y declarar tensiones internas entre métricas cuando las haya.
+• Ejemplo: si CEM es excelente pero hay controversia laboral activa en las narrativas, debe decir: "Existe tensión entre la estabilidad percibida (CEM alto) y la narrativa laboral negativa detectada. Esta discrepancia merece seguimiento."
+• Si NVM es alta pero SIM es baja: "Buena narrativa pero sin respaldo de fuentes autoritativas — riesgo de percepción superficial."
+• Detectar y declarar estas tensiones añade valor analítico y diferencia el informe de un simple listado de métricas.
 
 Cuando el usuario mencione cualquiera de estos términos, entiende su contexto y responde con métricas RIX relevantes.
 
