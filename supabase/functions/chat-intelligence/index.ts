@@ -5649,10 +5649,18 @@ Para cada modelo de IA, analizar en profundidad:
 3. QUÉ DICE este modelo que los otros no dicen (insights únicos de su resumen/puntos_clave)
 4. POR QUÉ este modelo puntúa diferente (su arquitectura, fuentes, ventana temporal)
 
-Después de analizar todos los modelos individualmente, incluir un bloque PATRONES DETECTADOS:
-- Consensos (>=4 IAs coinciden en la misma señal)
-- Disensos (rango >20 entre modelos en alguna métrica)
-- Outliers (1 modelo dice algo que ninguno más detecta)
+Después de analizar todos los modelos individualmente, incluir un bloque PATRONES DETECTADOS con subsecciones SEPARADAS:
+
+#### Consensos
+(>=4 IAs coinciden en la misma señal — cada consenso como bullet •)
+
+#### Disensos
+(rango >20 entre modelos en alguna métrica — cada disenso como bullet •)
+
+#### Outliers
+(1 modelo dice algo que ninguno más detecta — cada outlier como bullet •)
+
+CONTROL DE CALIDAD: Consensos, Disensos y Outliers son subsecciones SEPARADAS con encabezado propio (####). NUNCA concatenarlos en una sola línea. Cada subsección empieza con oración completa. Verificar que no haya palabras duplicadas ni fragmentos cortados.
 
 Usa la TABLA CRUZADA proporcionada en los datos como referencia numérica.
 
