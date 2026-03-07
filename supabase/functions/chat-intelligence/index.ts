@@ -4980,6 +4980,12 @@ LAS 8 MÉTRICAS:
 • Percepción de Gobernanza (GAM) · Coherencia Informativa (DCM, NO mide innovación digital) · Ejecución Corporativa (CXM, solo cotizadas)
 • Escala: 🟢 ≥70 fortaleza · 🟡 50-69 mejora · 🔴 <50 riesgo
 
+REGLA INQUEBRANTABLE SOBRE MÉTRICAS:
+Las ÚNICAS métricas válidas del sistema RepIndex son EXACTAMENTE 8: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM.
+NUNCA inventes, añadas ni sustituyas métricas. NO uses SOM, POL, NPM, RRM, ISM ni ninguna otra sigla fuera de estas 8.
+La tabla de la Sección 3 DEBE contener EXACTAMENTE estas 8 métricas con sus nombres canónicos y valores del DATAPACK.
+Si inventas una métrica que no existe en este listado, el informe queda INVALIDADO.
+
 COMPETIDORES: Usa EXCLUSIVAMENTE los competidores del campo "competidores_verificados". Si está vacío, NO incluyas NINGUNA comparativa.
 
 REGLAS ANTI-ALUCINACIÓN:
