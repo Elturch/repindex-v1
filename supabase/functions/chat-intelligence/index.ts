@@ -5633,47 +5633,60 @@ TITULAR-RESPUESTA (ANTES DE TODA SECCIÓN — OBLIGATORIO)
 ───────────────────────────────────────────────────────────────────────────────
 
 La PRIMERA LÍNEA del informe SIEMPRE es un **TITULAR EN NEGRITA** que responde
-DIRECTAMENTE a la pregunta del usuario en 1-2 frases. Sin jerga técnica, sin
-acrónimos. Lenguaje claro que cualquier directivo entienda al instante.
-Debe estar destacado visualmente con negrita (** **).
+DIRECTAMENTE a la pregunta del usuario en LENGUAJE NATURAL, SIN MÉTRICAS.
+La primera frase SOLO contiene la respuesta directa. Las métricas aparecen
+en la SEGUNDA frase como evidencia. Estructura obligatoria:
+1) Respuesta directa en lenguaje natural (sin siglas, sin números)
+2) Evidencia con métricas que sustenta la respuesta
+3) Contexto breve
 
 Ejemplos:
 - Pregunta "Analiza el daño reputacional de Telefónica" →
-  **"El daño reputacional de Telefónica es moderado y concentrado en autoridad de fuentes (SIM 37/100), mientras mantiene fortaleza en gestión de controversias."**
+  **"No se detecta daño reputacional significativo en Telefónica en el último periodo. La percepción algorítmica se mantiene estable (RIX 62 ±4), con fortaleza en gestión de controversias pero debilidad en autoridad de fuentes."**
 - Pregunta "¿Cómo está Inditex?" →
-  **"Inditex presenta una reputación algorítmica sólida (RIX 74) con consenso alto entre las 6 IAs, aunque con margen de mejora en diversificación de fuentes."**
+  **"Inditex goza de una reputación algorítmica sólida con alto consenso entre las 6 IAs. Su RIX mediano de 74 (±3) la sitúa en zona verde, aunque con margen de mejora en diversificación de fuentes."**
 
 Este titular va ANTES del "## 1. RESUMEN EJECUTIVO". Es lo primero que lee el usuario.
+
+METADATOS DE CABECERA (inmediatamente después del titular):
+Incluir una línea con los metadatos del informe:
+> 📊 **Consulta**: [pregunta del usuario] | **Perspectiva**: [rol seleccionado, ej: "Director de Comunicación" o "General"] | **Periodo**: [fecha] | **Modelos**: [lista de IAs]
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 1: ${H("depth_executive_summary")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
+
+FLUJO NARRATIVO OBLIGATORIO: Insight → Por qué → Qué dicen las IAs → Métricas.
+NUNCA empezar por métricas. El directivo piensa en insights, no en siglas.
 
 ### ${H("depth_headline_diagnosis")}
 Diagnóstico en LENGUAJE CLARO: 2-3 frases sin jerga técnica que respondan
 a la pregunta del usuario. Primero la respuesta, luego los datos que la
 sustentan. NO empezar con cifras ni acrónimos. Empezar con la conclusión
 en lenguaje natural y luego anclarla en datos.
+Incluir aquí la VALORACIÓN del analista (NO generar sección "Veredicto" separada).
+La valoración se fusiona con el diagnóstico en un solo párrafo cohesivo.
 Ej: "La reputación algorítmica de [Empresa] es sólida pero presenta un punto
 ciego importante: las IAs no encuentran fuentes autoritativas que respalden
 sus narrativas. Esto se refleja en un SIM de 37/100, muy por debajo del
-sector (55). En contraste, su gestión de controversias es excelente (CEM 95)."
+umbral verde (70). En contraste, su gestión de controversias es excelente (CEM 95).
+En definitiva, la empresa tiene una base reputacional sana pero vulnerable
+en credibilidad de fuentes."
 
 ### ${H("depth_3kpis")}
 MÍNIMO tres indicadores clave extraídos del DATAPACK con su variación. Si hay más métricas relevantes para la pregunta, incluirlas TODAS. No limitar artificialmente:
-- **RIX Mediano**: [valor] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
+- **RIX Mediano**: [valor] ±[incertidumbre] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
 - **[KPI 2]**: [valor] (la métrica más fuerte)
 - **[KPI 3]**: [valor] (la métrica más débil o con mayor divergencia)
 - **[KPI N]**: incluir tantos KPIs adicionales como sean relevantes para el análisis
 
 Si delta_rix está disponible en el DATAPACK, SIEMPRE muestra la variación.
-Si no hay delta, indica "sin datos de variación temporal".
+REGLA DELTA HONESTO: Cuando no hay datos históricos para calcular el delta de métricas individuales, declarar UNA SOLA nota al pie de la tabla: "Delta semanal disponible solo para RIX global." NO repetir "sin datos de variación temporal" en cada fila.
 
 ### ${H("depth_3findings")}
 MÍNIMO tres descubrimientos principales derivados de los datos, sin límite superior. Incluir todos los hallazgos relevantes que el análisis revele. Cada hallazgo en prosa de 2-3 oraciones, citando la evidencia concreta. IMPORTANTE: usar bullets simples (•), NO enumerar con "1.", "2.", "3.".
 
-### ${H("depth_verdict")}
-Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
+NO generar subsección "Veredicto" separada. Su contenido ya está integrado en el Diagnóstico.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 2: ${H("depth_6ai_vision")} — OBLIGATORIA (SECCIÓN CORE)
