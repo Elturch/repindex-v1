@@ -10,7 +10,7 @@ import { ReportInfoBar } from "./ReportInfoBar";
 import { MethodologyFooter } from "./MethodologyFooter";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, Loader2, Theater, ArrowRight, Download } from "lucide-react";
+import { Sparkles, RefreshCw, Loader2, Theater, Download } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
