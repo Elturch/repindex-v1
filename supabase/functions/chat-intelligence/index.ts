@@ -5793,50 +5793,36 @@ Compara la mediana RIX de la empresa analizada con cada competidor que tenga dat
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
 
-MÍNIMO 3 recomendaciones, sin límite superior. Incluye todas las que los datos justifiquen.
-Incluye tanto recomendaciones DEFENSIVAS (mitigar riesgos, proteger métricas débiles) como OFENSIVAS (amplificar fortalezas, ganar posicionamiento algorítmico).
-Si una métrica es fuerte, recomienda cómo MANTENERLA o AMPLIFICARLA, no solo corregir debilidades.
+MÁXIMO 3 recomendaciones por bloque (no 5). Calidad sobre cantidad.
+Incluye tanto DEFENSIVAS (mitigar riesgos) como OFENSIVAS (amplificar fortalezas).
 
-Cada recomendación DEBE seguir esta estructura completa:
+REGLA CLAVE: Cada recomendación EMPIEZA POR LA ACCIÓN, no por la métrica.
+El directivo quiere saber QUÉ HACER primero, luego POR QUÉ.
 
-• **Qué se detecta**: Qué métrica o hallazgo del DATAPACK motiva esta recomendación. Incluye el score actual y el gap vs sector/competidores si existe. Ejemplo: "SIM de 37 — baja autoridad en fuentes algorítmicas, 18 puntos por debajo del sector."
+Estructura obligatoria de cada recomendación:
 
-• **Qué hacer**: Acción estratégica concreta y específica para el caso. NO genérica.
+• **Acción concreta**: Qué hacer exactamente (verbo de acción primero). Específica para el caso, NO genérica.
+
+• **Qué implica**: Por qué esta acción importa para la empresa en este momento.
+
+• **Evidencia (métrica)**: Qué métrica o hallazgo del DATAPACK motiva esta recomendación. Score actual y gap.
 
 • **Cómo hacerlo** (3-5 pasos tácticos ejecutables):
-  Aquí es donde debes aportar MÁXIMO VALOR. Cada paso debe ser concreto y accionable. Incluye:
-  - **Tipo de contenido** a crear o modificar (notas de prensa con datos propios, informes sectoriales, FAQ corporativas, comunicados regulatorios, artículos de opinión del CEO, etc.)
-  - **Canales recomendados** (web corporativa, medios tier 1 del sector, LinkedIn corporativo, relaciones con inversores, etc.)
-  - **Formato IA-friendly**: cómo estructurar el contenido para que los modelos de IA lo procesen bien:
-    · Datos verificables con cifras concretas y fechas
-    · Fuentes citadas explícitamente
-    · Schema markup (Article, FAQ, Organization)
-    · Respuestas directas a preguntas frecuentes sobre la empresa
-  - **Tácticas GEO/AISO específicas** (Generative Engine Optimization / AI Search Optimization):
-    · Publicar en fuentes que los LLMs priorizan (medios de referencia, documentos regulatorios, bases de datos sectoriales)
-    · Crear claims verificables con evidencia adjunta para que los LLMs los prioricen frente a opiniones
-    · Estructurar FAQ corporativas que respondan directamente a las preguntas que los usuarios hacen a los LLMs sobre la empresa
-    · Generar contenido que los crawlers de IA puedan extraer fácilmente (párrafos autocontenidos, datos estructurados)
+  - **Tipo de contenido** a crear o modificar
+  - **Canales recomendados**
+  - **Formato IA-friendly**: datos verificables, fuentes citadas, Schema markup, FAQ corporativas
+  - **Tácticas GEO/AISO específicas**: publicar en fuentes que los LLMs priorizan, crear claims verificables, estructurar FAQ, generar contenido extraíble por crawlers de IA
 
-• **Métrica RIX impactada**: Qué métrica mejorará si se ejecuta (usa el nombre ejecutivo y el acrónimo).
+• **KPI Objetivo y Plazo**: Formato obligatorio: "**Métrica: valor actual → objetivo → plazo**"
+  Los objetivos son ORIENTATIVOS. NUNCA prometer resultados.
 
-• **KPI Objetivo y Plazo**: Para cada recomendación, incluir la MÉTRICA ACTUAL → OBJETIVO → PLAZO ESTIMADO.
-  Formato obligatorio: "**Métrica: valor actual → objetivo → plazo**"
-  Ejemplos:
-  - **SIM: 37 → 55 en 30 días**
-  - **DCM: 61 → 70 en 45 días**
-  - **NVM: 48 → 60 en 60 días**
-  Los objetivos son ORIENTATIVOS, basados en: (1) la brecha detectada respecto al benchmark sectorial o competidores, (2) el potencial de mejora razonable según la métrica, (3) la velocidad típica de actualización de los modelos de IA. Si no hay benchmark sectorial, usar como referencia la zona verde (≥70). NUNCA prometer resultados, siempre presentar como estimación orientativa.
-
-• **Prioridad**: Alta / Media / Baja — según el impacto potencial en el RIX global y la urgencia del gap.
+• **Prioridad**: Alta / Media / Baja
 
 REGLAS DE RECOMENDACIONES:
 - Cada recomendación DEBE estar ANCLADA en datos reales del DATAPACK. PROHIBIDO inventar.
 - Las tácticas GEO/AISO deben ser ESPECÍFICAS para el caso de la empresa, NO genéricas.
 - El tono debe ser de consultor estratégico senior, no de checklist genérico.
 - PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
-- Los KPIs objetivo son ESTIMACIONES ORIENTATIVAS, no compromisos. Dejar claro que dependen de la ejecución.
-- Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
 - OBLIGATORIO: CADA recomendación DEBE terminar con una línea en formato exacto:
   **KPI objetivo**: [Sigla]: [valor actual] → [objetivo] en [plazo] días.
   Esta línea NO puede omitirse en NINGUNA recomendación. Si falta, la recomendación está INCOMPLETA.
