@@ -1093,10 +1093,15 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "escándalos","escandalos","demandas","litigios","multas","sanciones","denuncias",
     "conflictos","polémicas","polemicas","irregularidades","huelgas","protestas",
     "accidentes","negligencias","abusos","quejas","reclamaciones",
-    "crisis","crisis reputacional","crisis de imagen","escándalo","escandalo",
+    "crisis reputacional","crisis de imagen",
     "soborno","blanqueo","estafa","manipulación","manipulacion",
-    "sanción","sancion","expediente","cese","dimisión","dimision",
-    "destitución","destitucion","imputación","imputacion"
+    "expediente","cese","dimisión","dimision",
+    "destitución","destitucion","imputación","imputacion",
+    // P1/3 additions
+    "escándalo corporativo","escandalo corporativo","cancel culture","fake news",
+    "desinformación","desinformacion","difamación","difamacion","calumnia","injuria",
+    "difamación corporativa","difamacion corporativa","daño reputacional","dano reputacional",
+    "viral","trending topic negativo"
   ],
   "29_sim_score": [
     "fuentes","credibilidad","fiabilidad","referencias","documentos oficiales","regulador",
@@ -1109,7 +1114,10 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "fuentes oficiales","fuente primaria","fuentes primarias","tier 1","tier 2",
     "prensa financiera","bloomberg","reuters","financial times","sec","reguladores",
     "documentación","documentacion","trazabilidad","corroboración","corroboracion",
-    "autoridad de fuentes","calidad de fuentes","jerarquía de fuentes","jerarquia de fuentes"
+    "autoridad de fuentes","calidad de fuentes","jerarquía de fuentes","jerarquia de fuentes",
+    // P1/3 additions
+    "cuota de voz","share of voice","sov","cuota de voz algorítmica","cuota de voz algoritmica",
+    "fuente tier 1","reputación online","reputacion online"
   ],
   "23_nvm_score": [
     "relato","comunicación","comunicacion","mensaje","historia","storytelling","discurso",
@@ -1122,7 +1130,10 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "calidad de la narrativa","calidad narrativa","coherencia del discurso",
     "sentimiento","sentimiento positivo","sentimiento negativo","tono","percepción","percepcion",
     "imagen corporativa","imagen pública","imagen publica","opinión pública","opinion publica",
-    "comunicación corporativa","comunicacion corporativa","relato corporativo"
+    "comunicación corporativa","comunicacion corporativa","relato corporativo",
+    // P1/3 additions
+    "narrativa corporativa","messaging","spin","brecha narrativa","narrative gap",
+    "nota de prensa","press release","statement","comunicado","portavoz","spokesperson"
   ],
   "26_drm_score": [
     "evidencia","datos","pruebas","hechos","cifras","números","numeros",
@@ -1134,7 +1145,10 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "fortaleza de evidencia","calidad de evidencia","solidez","verificable",
     "datos duros","cifras concretas","hechos verificables","documentación financiera","documentacion financiera",
     "cuentas anuales","informe anual","resultados financieros","memoria anual",
-    "ratios","ratio","margen","rentabilidad","roi","roa","roe"
+    "ratios","ratio","margen","rentabilidad","roi","roa","roe",
+    // P1/3 additions — coherence/factual terms map here
+    "error factual","error factual algorítmico","error factual algoritmico",
+    "fact-checking","fact checking","transparencia corporativa","accountability"
   ],
   "32_rmm_score": [
     "actualidad","reciente","últimas noticias","ultimas noticias","trending","momento",
@@ -1156,7 +1170,10 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "nepotismo","puertas giratorias","consejero","consejeros","consejo de administración","consejo de administracion",
     "buen gobierno","gobierno","autonomía","autonomia","independencia directiva",
     "transparencia","estructura directiva","equipo directivo","alta dirección","alta direccion",
-    "gobernanza corporativa","percepción de gobierno","percepcion de gobierno"
+    "gobernanza corporativa","percepción de gobierno","percepcion de gobierno",
+    // P1/3 additions — ESG terms map to governance perception
+    "greenwashing","net zero","neutralidad de carbono","huella de carbono",
+    "d&i","diversidad e inclusión","diversidad e inclusion"
   ],
   "41_dcm_score": [
     "coherencia","consistencia","contradicción","contradiccion","discrepancia informativa",
@@ -1179,6 +1196,14 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "resultados operativos","capacidad de ejecución","capacidad de ejecucion",
     "estrategia corporativa","plan de negocio","operativa","operativo",
     "capacidad operativa","excelencia operativa","resultados empresariales"
+  ],
+  // P1/3 — General RIX / algorithmic reputation concepts (map to 09_rix_score for overall)
+  "09_rix_score": [
+    "reputación algorítmica","reputacion algoritmica","arm","algorithmic reputation management",
+    "geo","generative engine optimization","prompt optimization",
+    "riesgo reputacional algorítmico","riesgo reputacional algoritmico",
+    "señal predictiva","senal predictiva","rix","índice rix","indice rix",
+    "reputación digital","reputacion digital","score general","puntuación general","puntuacion general"
   ],
 };
 
