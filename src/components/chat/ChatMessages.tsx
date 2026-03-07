@@ -2,7 +2,7 @@ import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
+
 import { MarkdownMessage, generateExportHtml } from "@/components/ui/markdown-message";
 
 import { ResponseFeedback } from "./ResponseFeedback";
@@ -10,7 +10,7 @@ import { ReportInfoBar } from "./ReportInfoBar";
 import { MethodologyFooter } from "./MethodologyFooter";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, Loader2, Theater, ArrowRight, Download } from "lucide-react";
+import { Sparkles, RefreshCw, Loader2, Theater, Download } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
@@ -306,38 +306,6 @@ export function ChatMessages({
               )}
 
 
-              {/* Drumroll Question - only show when NOT streaming */}
-              {message.role === 'assistant' && !message.isStreaming && message.drumrollQuestion && !compact && (
-                <div className="mt-4 pt-4 border-t border-primary/20">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold text-primary">
-                      {tr.drumrollTitle}
-                    </span>
-                  </div>
-                  
-                  <Card 
-                    className="bg-gradient-to-r from-primary/5 to-primary/10 
-                               border-primary/20 hover:border-primary/40 
-                               transition-colors cursor-pointer group"
-                    onClick={() => onSuggestedQuestion(message.drumrollQuestion!.fullQuestion)}
-                  >
-                    <CardContent className="p-4">
-                      <h4 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
-                        {message.drumrollQuestion.title}
-                      </h4>
-                      <p className="text-sm text-muted-foreground mb-3">
-                        {message.drumrollQuestion.teaser}
-                      </p>
-                      <div className="flex items-center gap-2 text-primary text-sm font-medium">
-                        <Sparkles className="h-4 w-4" />
-                        <span>{tr.drumrollAction}</span>
-                        <ArrowRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </CardContent>
-                </Card>
-                </div>
-              )}
 
               {/* Download button — bottom-right of assistant bubbles */}
               {message.role === 'assistant' && !message.isStreaming && (
