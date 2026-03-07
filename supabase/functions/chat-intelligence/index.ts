@@ -5691,11 +5691,12 @@ SECCIÓN 4: ${H("depth_model_divergence")} — OBLIGATORIA (cuando snapshot tien
 ───────────────────────────────────────────────────────────────────────────────
 
 ANÁLISIS DE DIVERGENCIAS (SECCIÓN CRÍTICA).
+Usar bullets simples (•) para cada divergencia. NO usar listas numeradas (1., 2., 3.).
 
-Para CADA métrica con rango >10 entre modelos:
-1. Identificar modelo más optimista y más pesimista con sus puntuaciones exactas
-2. Explicar POR QUÉ divergen usando los resúmenes y puntos_clave de cada modelo
-3. Valorar qué interpretación es más fiable y por qué (arquitectura, fuentes, ventana temporal)
+Para CADA métrica con rango >10 entre modelos, presentar con bullets:
+• Identificar modelo más optimista y más pesimista con sus puntuaciones exactas
+• Explicar POR QUÉ divergen usando los resúmenes y puntos_clave de cada modelo
+• Valorar qué interpretación es más fiable y por qué (arquitectura, fuentes, ventana temporal)
 
 Si rango <=10 en todas las métricas: indicar CONSENSO ROBUSTO y qué significa para la empresa (es una señal positiva de estabilidad perceptual).
 
