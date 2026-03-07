@@ -1777,6 +1777,7 @@ async function buildDataPackFromSkills(
       competidores_verificados: [], competidores_metricas_avg: null,
       explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
       competidores_directos: competidoresDirectos,
+      competidores_sin_datos: competidoresSinDatos,
       competidores_nota: competidoresNota,
       competidores_fuente: competitorSource,
     };
