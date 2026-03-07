@@ -36,7 +36,8 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
 
   const hasDateRange = context.date_from || context.date_to;
   const label = context.company || context.sector || null;
-  if (!label && !hasDateRange) return null;
+  const hasQuestion = !!context.user_question;
+  if (!label && !hasDateRange && !hasQuestion) return null;
 
   const modelNames = (context.models || []).map(m =>
     m.replace("Google Gemini", "Gemini")
