@@ -5776,6 +5776,9 @@ REGLAS DE RECOMENDACIONES:
 - PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
 - Los KPIs objetivo son ESTIMACIONES ORIENTATIVAS, no compromisos. Dejar claro que dependen de la ejecución.
 - Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
+- OBLIGATORIO: CADA recomendación DEBE terminar con una línea en formato exacto:
+  **KPI objetivo**: [Sigla]: [valor actual] → [objetivo] en [plazo] días.
+  Esta línea NO puede omitirse en NINGUNA recomendación. Si falta, la recomendación está INCOMPLETA.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 8: ${H("depth_closing")} — OBLIGATORIA
