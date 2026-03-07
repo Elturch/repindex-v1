@@ -225,8 +225,8 @@ async function executeSkillGetCompanyEvolution(supabase: any, params: { ticker: 
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
-// ── Helper: Resolve competitor tickers (verified-first, sector fallback) ─────
-async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: string): Promise<{ tickers: string[]; source: "verified" | "sector_fallback" | "none"; sector_category: string | null }> {
+// ── Helper: Resolve competitor tickers (verified-first, sector fallback, hybrid) ─────
+async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: string): Promise<{ tickers: string[]; source: "verified" | "sector_fallback" | "verified_plus_sector" | "none"; sector_category: string | null }> {
   try {
     const { data, error } = await supabase.from("repindex_root_issuers")
       .select("verified_competitors,sector_category")
@@ -238,12 +238,31 @@ async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: st
     const vc = data.verified_competitors;
     const vcArray: string[] = Array.isArray(vc) ? vc.filter((t: any) => typeof t === "string" && t.length > 0) : [];
 
-    if (vcArray.length > 0) {
+    // If verified competitors are sufficient (>=3), use them directly
+    if (vcArray.length >= 3) {
       console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified competitors: ${vcArray.join(",")}`);
       return { tickers: vcArray, source: "verified", sector_category: data.sector_category };
     }
 
-    // Fallback: same sector_category (excluding self), limited to 10
+    // If verified competitors exist but are sparse (<3), supplement with sector peers
+    if (vcArray.length > 0 && data.sector_category) {
+      const { data: peers, error: pe } = await supabase.from("repindex_root_issuers")
+        .select("ticker")
+        .eq("sector_category", data.sector_category)
+        .neq("ticker", ticker)
+        .limit(10);
+      if (!pe && peers && peers.length > 0) {
+        const peerTickers = peers.map((p: any) => p.ticker).filter((t: string) => !vcArray.includes(t));
+        const combined = [...vcArray, ...peerTickers.slice(0, Math.max(5 - vcArray.length, 3))];
+        console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified + ${combined.length - vcArray.length} sector peers (${data.sector_category})`);
+        return { tickers: combined, source: "verified_plus_sector", sector_category: data.sector_category };
+      }
+      // No sector peers found, use what we have
+      console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified competitors (no sector peers available): ${vcArray.join(",")}`);
+      return { tickers: vcArray, source: "verified", sector_category: data.sector_category };
+    }
+
+    // No verified competitors: fallback to sector
     if (data.sector_category) {
       const { data: peers, error: pe } = await supabase.from("repindex_root_issuers")
         .select("ticker")
