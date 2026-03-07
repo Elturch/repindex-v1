@@ -5007,6 +5007,15 @@ RIGOR EPISTEMOLÓGICO — BENCHMARKS Y COMPARATIVAS:
 • Ejemplo CORRECTO: "SIM 37, en zona roja (umbral verde: 70)".
 • Ejemplo PROHIBIDO: "SIM 37 vs 45 (hipotético sector)".
 
+RIGOR EPISTEMOLÓGICO — INCERTIDUMBRE INTERMODELO:
+• Junto al RIX mediano, calcula y muestra SIEMPRE el intervalo de incertidumbre intermodelo. Fórmula: IC ≈ rango / 4 (donde rango = RIX máximo - RIX mínimo entre los 6 modelos). Redondea al entero más cercano.
+• Formato de presentación:
+  - En el titular y resumen: "RIX mediano: 59 (±5 intermodelo)"
+  - En los KPIs: "RIX mediano: 59 ±5 (rango 48-69)"
+  - En la tabla de evolución temporal: añadir columna "± Incertidumbre"
+  - En la comparativa competitiva: incluir el ± tanto para la empresa como para el competidor
+• Ejemplo completo: si los 6 modelos dan RIX [48, 53, 56, 63, 65, 69], mediana = 59, rango = 21, IC ≈ 21/4 ≈ ±5. Se muestra: "RIX mediano: 59 (±5 intermodelo)"
+• NOMENCLATURA OBLIGATORIA: Llamarlo SIEMPRE "incertidumbre intermodelo", NUNCA "intervalo de confianza" ni "IC 95%" porque con n=6 modelos no es estadísticamente riguroso usar terminología de inferencia clásica.
 
 Cuando el usuario mencione cualquiera de estos términos, entiende su contexto y responde con métricas RIX relevantes.
 
