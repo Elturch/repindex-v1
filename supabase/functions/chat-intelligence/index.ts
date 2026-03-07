@@ -4621,7 +4621,7 @@ interface ComparatorResult {
   fortalezas: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
   debilidades: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
   posicion_competitiva: { ranking: number; de: number; lider: string; distancia: number } | null;
-  recomendaciones: { accion: string; metrica_objetivo: string; basado_en: string; razonamiento?: string; prioridad?: string; gap_numerico?: string }[];
+  recomendaciones: { que_se_detecta: string; que_hacer: string; como_hacerlo: string[]; metrica_impactada: string; prioridad: string }[];
   gaps_percepcion: { tema: string; dato_real: string; narrativa_ia: string; riesgo: string }[];
 }
 
