@@ -723,6 +723,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
             structuredDataFound: data.metadata?.structuredDataFound,
             depthLevel: options?.depthLevel || sessionDepthLevel,
             questionCategory: data.metadata?.questionCategory,
+            verifiedSources: data.metadata?.verifiedSources,
+            reportContext: data.metadata?.reportContext || undefined,
+            methodology: data.metadata?.methodology || {
+              hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
+              modelsUsed: data.metadata?.modelsUsed || [],
+              periodFrom: data.metadata?.periodFrom,
+              periodTo: data.metadata?.periodTo,
+              observationsCount: data.metadata?.structuredDataFound || 0,
+              divergenceLevel: data.metadata?.divergenceLevel || 'unknown',
+              divergencePoints: data.metadata?.divergencePoints || 0,
+              uniqueCompanies: data.metadata?.uniqueCompanies,
+              uniqueWeeks: data.metadata?.uniqueWeeks,
+            },
           },
         };
 

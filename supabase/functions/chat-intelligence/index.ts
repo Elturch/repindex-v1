@@ -2049,6 +2049,7 @@ async function buildDataPackFromSkills(
     const reportContext: Record<string, unknown> = {
       company: resolvedTicker ? (cp?.empresa || resolvedName || resolvedTicker) : null,
       sector: interpret.filters.sector_category || (cp ? resultMap.detail?.sector_category : ss?.sector) || null,
+      user_question: originalQuestion || null,
       date_from: null,
       date_to: null,
       timezone: "Europe/Madrid (CET/CEST)",

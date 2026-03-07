@@ -5,6 +5,7 @@ import { es, enUS } from "date-fns/locale";
 export interface ReportContext {
   company?: string | null;
   sector?: string | null;
+  user_question?: string | null;
   date_from?: string | null;
   date_to?: string | null;
   timezone?: string;
