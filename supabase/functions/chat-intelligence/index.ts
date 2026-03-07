@@ -5719,13 +5719,19 @@ Si evolucion tiene ≤ 1 semana: OMITIR esta sección completamente.
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 6: ${H("depth_competitive")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
-INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío).
+INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío) O DATAPACK.competidores_sin_datos tiene tickers.
 
 REGLA FUNDAMENTAL DE COMPETIDORES:
 - Si DATAPACK.competidores_fuente === "verified": estos son competidores directos VERIFICADOS. Preséntalo como "Competidores Directos Verificados".
+- Si DATAPACK.competidores_fuente === "verified_plus_sector": hay competidores verificados COMPLEMENTADOS con empresas del sector. Presenta PRIMERO los verificados claramente identificados, y DESPUÉS los sectoriales como referencia. Incluye DATAPACK.competidores_nota.
 - Si DATAPACK.competidores_fuente === "sector_fallback": son empresas del mismo sector (NO competidores directos). Preséntalo como "Empresas del Mismo Sector (referencia)" e incluye DATAPACK.competidores_nota como disclaimer.
-- Si DATAPACK.competidores_directos está vacío: OMITIR esta sección completamente.
-- NUNCA inventes competidores ni mezcles fuentes verificadas con sectoriales.
+- Si DATAPACK.competidores_directos está vacío Y competidores_sin_datos también: OMITIR esta sección completamente.
+- NUNCA inventes competidores ni mezcles fuentes verificadas con sectoriales sin explicar.
+
+COMPETIDORES SIN DATOS RIX:
+Si DATAPACK.competidores_sin_datos contiene tickers, DOCUMENTAR EXPLÍCITAMENTE cada uno:
+"No se dispone de datos RIX para [TICKER] en este periodo" — NO omitirlos silenciosamente.
+Esto es información valiosa: indica que el competidor NO está siendo monitorizado por RepIndex.
 
 | Competidor | Ticker | RIX Mediano | Δ vs empresa |
 |------------|--------|-------------|--------------|
