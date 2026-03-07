@@ -51,6 +51,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
 
   return (
     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/40 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-muted-foreground mb-3`}>
+      {/* User question */}
+      {hasQuestion && (
+        <span className="flex items-center gap-1 font-medium text-foreground/80 w-full mb-1">
+          <MessageCircle className="h-3 w-3 shrink-0" />
+          {questionLabel}: <span className="italic font-normal">{context.user_question}</span>
+        </span>
+      )}
+
       {/* Company / Sector */}
       {label && (
         <span className="flex items-center gap-1 font-medium text-foreground/80">
