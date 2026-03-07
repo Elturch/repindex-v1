@@ -369,6 +369,15 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
         proveedores que coinciden generan señal robusta.
       </p>
 
+      <h4>Incertidumbre Intermodelo (±X)</h4>
+      <p>
+        El valor ±X que acompaña al RIX mediano representa la dispersión aproximada entre los 6 modelos 
+        de IA consultados, calculada como <span class="formula">rango / 4</span> (donde rango = RIX máximo − RIX mínimo). 
+        No es un intervalo de confianza estadístico clásico (que requeriría una muestra mayor), sino una medida 
+        práctica de la concordancia entre modelos. Un valor bajo (<strong>±3 o menos</strong>) indica alto consenso; 
+        un valor alto (<strong>±8 o más</strong>) indica fuerte desacuerdo entre IAs y mayor incertidumbre en la estimación.
+      </p>
+
       <h4>Variables de Contraste (Validación Empírica)</h4>
       <p>
         El sistema recoge variables empíricas para calibración: 
