@@ -5612,17 +5612,17 @@ según 6 IAs, con fortaleza en Gestión de Controversias (95) pero debilidad
 crítica en Autoridad de Fuentes (0)."
 
 ### ${H("depth_3kpis")}
-Tres indicadores clave extraídos del DATAPACK con su variación:
+MÍNIMO tres indicadores clave extraídos del DATAPACK con su variación. Si hay más métricas relevantes para la pregunta, incluirlas TODAS. No limitar artificialmente:
 - **RIX Mediano**: [valor] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
 - **[KPI 2]**: [valor] (la métrica más fuerte)
 - **[KPI 3]**: [valor] (la métrica más débil o con mayor divergencia)
+- **[KPI N]**: incluir tantos KPIs adicionales como sean relevantes para el análisis
 
 Si delta_rix está disponible en el DATAPACK, SIEMPRE muestra la variación.
 Si no hay delta, indica "sin datos de variación temporal".
 
 ### ${H("depth_3findings")}
-Tres descubrimientos principales derivados de los datos, en prosa de 2-3
-oraciones cada uno. Cada hallazgo cita la evidencia concreta que lo sustenta.
+MÍNIMO tres descubrimientos principales derivados de los datos, sin límite superior. Incluir todos los hallazgos relevantes que el análisis revele. Cada hallazgo en prosa de 2-3 oraciones, citando la evidencia concreta. IMPORTANTE: usar bullets simples (•), NO enumerar con "1.", "2.", "3.".
 
 ### ${H("depth_verdict")}
 Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
