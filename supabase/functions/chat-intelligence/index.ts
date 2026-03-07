@@ -8734,25 +8734,7 @@ async function handleStandardChat(
             console.warn(`${logPrefix} Error generating questions:`, qError);
           }
 
-          // Generate drumroll question (always active in exhaustive mode)
-          if (detectedCompanies.length > 0 && allRixData && allRixData.length > 0) {
-            try {
-              const insights = extractAnalysisInsights(allRixData, detectedCompanies[0], answer);
-              if (insights) {
-                drumrollQuestion = await generateDrumrollQuestion(
-                  question,
-                  insights,
-                  detectedCompanies,
-                  companiesCache,
-                  language,
-                  languageName,
-                  logPrefix,
-                );
-              }
-            } catch (dError) {
-              console.warn(`${logPrefix} Error generating drumroll:`, dError);
-            }
-          }
+          // Drumroll question generation disabled
 
           // Calculate methodology metadata
           const modelScores =
