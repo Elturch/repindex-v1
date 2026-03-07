@@ -4980,6 +4980,12 @@ LAS 8 MÉTRICAS:
 • Percepción de Gobernanza (GAM) · Coherencia Informativa (DCM, NO mide innovación digital) · Ejecución Corporativa (CXM, solo cotizadas)
 • Escala: 🟢 ≥70 fortaleza · 🟡 50-69 mejora · 🔴 <50 riesgo
 
+REGLA INQUEBRANTABLE SOBRE MÉTRICAS:
+Las ÚNICAS métricas válidas del sistema RepIndex son EXACTAMENTE 8: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM.
+NUNCA inventes, añadas ni sustituyas métricas. NO uses SOM, POL, NPM, RRM, ISM ni ninguna otra sigla fuera de estas 8.
+La tabla de la Sección 3 DEBE contener EXACTAMENTE estas 8 métricas con sus nombres canónicos y valores del DATAPACK.
+Si inventas una métrica que no existe en este listado, el informe queda INVALIDADO.
+
 COMPETIDORES: Usa EXCLUSIVAMENTE los competidores del campo "competidores_verificados". Si está vacío, NO incluyas NINGUNA comparativa.
 
 REGLAS ANTI-ALUCINACIÓN:
@@ -5649,10 +5655,18 @@ Para cada modelo de IA, analizar en profundidad:
 3. QUÉ DICE este modelo que los otros no dicen (insights únicos de su resumen/puntos_clave)
 4. POR QUÉ este modelo puntúa diferente (su arquitectura, fuentes, ventana temporal)
 
-Después de analizar todos los modelos individualmente, incluir un bloque PATRONES DETECTADOS:
-- Consensos (>=4 IAs coinciden en la misma señal)
-- Disensos (rango >20 entre modelos en alguna métrica)
-- Outliers (1 modelo dice algo que ninguno más detecta)
+Después de analizar todos los modelos individualmente, incluir un bloque PATRONES DETECTADOS con subsecciones SEPARADAS:
+
+#### Consensos
+(>=4 IAs coinciden en la misma señal — cada consenso como bullet •)
+
+#### Disensos
+(rango >20 entre modelos en alguna métrica — cada disenso como bullet •)
+
+#### Outliers
+(1 modelo dice algo que ninguno más detecta — cada outlier como bullet •)
+
+CONTROL DE CALIDAD: Consensos, Disensos y Outliers son subsecciones SEPARADAS con encabezado propio (####). NUNCA concatenarlos en una sola línea. Cada subsección empieza con oración completa. Verificar que no haya palabras duplicadas ni fragmentos cortados.
 
 Usa la TABLA CRUZADA proporcionada en los datos como referencia numérica.
 
@@ -5768,6 +5782,9 @@ REGLAS DE RECOMENDACIONES:
 - PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
 - Los KPIs objetivo son ESTIMACIONES ORIENTATIVAS, no compromisos. Dejar claro que dependen de la ejecución.
 - Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
+- OBLIGATORIO: CADA recomendación DEBE terminar con una línea en formato exacto:
+  **KPI objetivo**: [Sigla]: [valor actual] → [objetivo] en [plazo] días.
+  Esta línea NO puede omitirse en NINGUNA recomendación. Si falta, la recomendación está INCOMPLETA.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 8: ${H("depth_closing")} — OBLIGATORIA
