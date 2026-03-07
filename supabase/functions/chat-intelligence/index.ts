@@ -5705,12 +5705,41 @@ Compara la mediana RIX de la empresa analizada con cada competidor.
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
 
-Máximo 4 recomendaciones, cada una con:
-1. **Gap identificado**: qué métrica está por debajo y cuánto
-2. **Evidencia**: datos concretos del DATAPACK que sustentan el gap
-3. **Acción sugerida**: qué puede hacer la empresa para mejorar
+MÍNIMO 3 recomendaciones, sin límite superior. Incluye todas las que los datos justifiquen.
+Incluye tanto recomendaciones DEFENSIVAS (mitigar riesgos, proteger métricas débiles) como OFENSIVAS (amplificar fortalezas, ganar posicionamiento algorítmico).
+Si una métrica es fuerte, recomienda cómo MANTENERLA o AMPLIFICARLA, no solo corregir debilidades.
 
-PROHIBIDO inventar acciones, roadmaps, plazos o certificaciones.
+Cada recomendación DEBE seguir esta estructura completa:
+
+• **Qué se detecta**: Qué métrica o hallazgo del DATAPACK motiva esta recomendación. Incluye el score actual y el gap vs sector/competidores si existe. Ejemplo: "SIM de 37 — baja autoridad en fuentes algorítmicas, 18 puntos por debajo del sector."
+
+• **Qué hacer**: Acción estratégica concreta y específica para el caso. NO genérica.
+
+• **Cómo hacerlo** (3-5 pasos tácticos ejecutables):
+  Aquí es donde debes aportar MÁXIMO VALOR. Cada paso debe ser concreto y accionable. Incluye:
+  - **Tipo de contenido** a crear o modificar (notas de prensa con datos propios, informes sectoriales, FAQ corporativas, comunicados regulatorios, artículos de opinión del CEO, etc.)
+  - **Canales recomendados** (web corporativa, medios tier 1 del sector, LinkedIn corporativo, relaciones con inversores, etc.)
+  - **Formato IA-friendly**: cómo estructurar el contenido para que los modelos de IA lo procesen bien:
+    · Datos verificables con cifras concretas y fechas
+    · Fuentes citadas explícitamente
+    · Schema markup (Article, FAQ, Organization)
+    · Respuestas directas a preguntas frecuentes sobre la empresa
+  - **Tácticas GEO/AISO específicas** (Generative Engine Optimization / AI Search Optimization):
+    · Publicar en fuentes que los LLMs priorizan (medios de referencia, documentos regulatorios, bases de datos sectoriales)
+    · Crear claims verificables con evidencia adjunta para que los LLMs los prioricen frente a opiniones
+    · Estructurar FAQ corporativas que respondan directamente a las preguntas que los usuarios hacen a los LLMs sobre la empresa
+    · Generar contenido que los crawlers de IA puedan extraer fácilmente (párrafos autocontenidos, datos estructurados)
+
+• **Métrica RIX impactada**: Qué métrica mejorará si se ejecuta (usa el nombre ejecutivo y el acrónimo).
+
+• **Prioridad**: Alta / Media / Baja — según el impacto potencial en el RIX global y la urgencia del gap.
+
+REGLAS DE RECOMENDACIONES:
+- Cada recomendación DEBE estar ANCLADA en datos reales del DATAPACK. PROHIBIDO inventar.
+- Las tácticas GEO/AISO deben ser ESPECÍFICAS para el caso de la empresa, NO genéricas.
+- El tono debe ser de consultor estratégico senior, no de checklist genérico.
+- PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
+- Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 8: ${H("depth_closing")} — OBLIGATORIA
