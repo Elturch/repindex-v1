@@ -5751,6 +5751,14 @@ Cada recomendación DEBE seguir esta estructura completa:
 
 • **Métrica RIX impactada**: Qué métrica mejorará si se ejecuta (usa el nombre ejecutivo y el acrónimo).
 
+• **KPI Objetivo y Plazo**: Para cada recomendación, incluir la MÉTRICA ACTUAL → OBJETIVO → PLAZO ESTIMADO.
+  Formato obligatorio: "**Métrica: valor actual → objetivo → plazo**"
+  Ejemplos:
+  - **SIM: 37 → 55 en 30 días**
+  - **DCM: 61 → 70 en 45 días**
+  - **NVM: 48 → 60 en 60 días**
+  Los objetivos son ORIENTATIVOS, basados en: (1) la brecha detectada respecto al benchmark sectorial o competidores, (2) el potencial de mejora razonable según la métrica, (3) la velocidad típica de actualización de los modelos de IA. Si no hay benchmark sectorial, usar como referencia la zona verde (≥70). NUNCA prometer resultados, siempre presentar como estimación orientativa.
+
 • **Prioridad**: Alta / Media / Baja — según el impacto potencial en el RIX global y la urgencia del gap.
 
 REGLAS DE RECOMENDACIONES:
@@ -5758,6 +5766,7 @@ REGLAS DE RECOMENDACIONES:
 - Las tácticas GEO/AISO deben ser ESPECÍFICAS para el caso de la empresa, NO genéricas.
 - El tono debe ser de consultor estratégico senior, no de checklist genérico.
 - PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
+- Los KPIs objetivo son ESTIMACIONES ORIENTATIVAS, no compromisos. Dejar claro que dependen de la ejecución.
 - Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
 
 ───────────────────────────────────────────────────────────────────────────────
