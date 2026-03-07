@@ -2174,9 +2174,9 @@ El boletín estará listo para **descargar o imprimir** en formato profesional.`
     depth_section_analysis: "EL ANÁLISIS",
     depth_section_actions: "ACCIONES BASADAS EN DATOS",
     depth_closing: "CIERRE — FUENTES Y METODOLOGÍA",
-    depth_headline_diagnosis: "Titular-Diagnóstico",
-    depth_3kpis: "3 KPIs con Delta",
-    depth_3findings: "3 Hallazgos",
+    depth_headline_diagnosis: "Diagnóstico",
+    depth_3kpis: "KPIs Principales con Delta",
+    depth_3findings: "Hallazgos",
     depth_verdict: "Veredicto",
     depth_6ai_vision: "Visión de las 6 IAs",
     depth_8metrics: "Las 8 Métricas",
@@ -2271,9 +2271,9 @@ The bulletin will be ready to **download or print** in professional format.`,
     depth_section_analysis: "THE ANALYSIS",
     depth_section_actions: "DATA-DRIVEN ACTIONS",
     depth_closing: "CLOSING — SOURCES AND METHODOLOGY",
-    depth_headline_diagnosis: "Headline Diagnosis",
-    depth_3kpis: "3 KPIs with Delta",
-    depth_3findings: "3 Findings",
+    depth_headline_diagnosis: "Diagnosis",
+    depth_3kpis: "Key KPIs with Delta",
+    depth_3findings: "Findings",
     depth_verdict: "Verdict",
     depth_6ai_vision: "Vision of the 6 AIs",
     depth_8metrics: "The 8 Metrics",
@@ -2366,9 +2366,9 @@ Sur quelle entreprise ou quel secteur souhaitez-vous vous concentrer ?`,
     depth_section_analysis: "L'ANALYSE",
     depth_section_actions: "ACTIONS BASÉES SUR LES DONNÉES",
     depth_closing: "CLÔTURE — SOURCES ET MÉTHODOLOGIE",
-    depth_headline_diagnosis: "Diagnostic-titre",
-    depth_3kpis: "3 KPI avec Delta",
-    depth_3findings: "3 Constats",
+    depth_headline_diagnosis: "Diagnostic",
+    depth_3kpis: "KPI Principaux avec Delta",
+    depth_3findings: "Constats",
     depth_verdict: "Verdict",
     depth_6ai_vision: "Vision des 6 IA",
     depth_8metrics: "Les 8 Métriques",
@@ -2461,9 +2461,9 @@ Escreva o nome da empresa e gerarei uma análise detalhada incluindo:
     depth_section_analysis: "A ANÁLISE",
     depth_section_actions: "AÇÕES BASEADAS EM DADOS",
     depth_closing: "ENCERRAMENTO — FONTES E METODOLOGIA",
-    depth_headline_diagnosis: "Diagnóstico-Título",
-    depth_3kpis: "3 KPIs com Delta",
-    depth_3findings: "3 Descobertas",
+    depth_headline_diagnosis: "Diagnóstico",
+    depth_3kpis: "KPIs Principais com Delta",
+    depth_3findings: "Descobertas",
     depth_verdict: "Veredito",
     depth_6ai_vision: "Visão das 6 IAs",
     depth_8metrics: "As 8 Métricas",
@@ -5612,17 +5612,17 @@ según 6 IAs, con fortaleza en Gestión de Controversias (95) pero debilidad
 crítica en Autoridad de Fuentes (0)."
 
 ### ${H("depth_3kpis")}
-Tres indicadores clave extraídos del DATAPACK con su variación:
+MÍNIMO tres indicadores clave extraídos del DATAPACK con su variación. Si hay más métricas relevantes para la pregunta, incluirlas TODAS. No limitar artificialmente:
 - **RIX Mediano**: [valor] ([+/- delta] vs semana anterior — usa DATAPACK.delta_rix si disponible)
 - **[KPI 2]**: [valor] (la métrica más fuerte)
 - **[KPI 3]**: [valor] (la métrica más débil o con mayor divergencia)
+- **[KPI N]**: incluir tantos KPIs adicionales como sean relevantes para el análisis
 
 Si delta_rix está disponible en el DATAPACK, SIEMPRE muestra la variación.
 Si no hay delta, indica "sin datos de variación temporal".
 
 ### ${H("depth_3findings")}
-Tres descubrimientos principales derivados de los datos, en prosa de 2-3
-oraciones cada uno. Cada hallazgo cita la evidencia concreta que lo sustenta.
+MÍNIMO tres descubrimientos principales derivados de los datos, sin límite superior. Incluir todos los hallazgos relevantes que el análisis revele. Cada hallazgo en prosa de 2-3 oraciones, citando la evidencia concreta. IMPORTANTE: usar bullets simples (•), NO enumerar con "1.", "2.", "3.".
 
 ### ${H("depth_verdict")}
 Párrafo de 3-4 oraciones con la valoración del analista basada en los datos.
