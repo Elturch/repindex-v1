@@ -5593,14 +5593,35 @@ REGLA CRÍTICA: NUNCA omitas las secciones 1, 2, 3, 7 y 8. Son OBLIGATORIAS.
 Las secciones 4, 5 y 6 son CONDICIONALES (solo si hay datos disponibles).
 
 ───────────────────────────────────────────────────────────────────────────────
+TITULAR-RESPUESTA (ANTES DE TODA SECCIÓN — OBLIGATORIO)
+───────────────────────────────────────────────────────────────────────────────
+
+La PRIMERA LÍNEA del informe SIEMPRE es un **TITULAR EN NEGRITA** que responde
+DIRECTAMENTE a la pregunta del usuario en 1-2 frases. Sin jerga técnica, sin
+acrónimos. Lenguaje claro que cualquier directivo entienda al instante.
+Debe estar destacado visualmente con negrita (** **).
+
+Ejemplos:
+- Pregunta "Analiza el daño reputacional de Telefónica" →
+  **"El daño reputacional de Telefónica es moderado y concentrado en autoridad de fuentes (SIM 37/100), mientras mantiene fortaleza en gestión de controversias."**
+- Pregunta "¿Cómo está Inditex?" →
+  **"Inditex presenta una reputación algorítmica sólida (RIX 74) con consenso alto entre las 6 IAs, aunque con margen de mejora en diversificación de fuentes."**
+
+Este titular va ANTES del "## 1. RESUMEN EJECUTIVO". Es lo primero que lee el usuario.
+
+───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 1: ${H("depth_executive_summary")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
 
 ### ${H("depth_headline_diagnosis")}
-Una frase contundente de 1-2 líneas que sintetice la situación con datos
-concretos del DATAPACK. Ej: "[Empresa] obtiene un RIX mediano de 67 puntos
-según 6 IAs, con fortaleza en Gestión de Controversias (95) pero debilidad
-crítica en Autoridad de Fuentes (0)."
+Diagnóstico en LENGUAJE CLARO: 2-3 frases sin jerga técnica que respondan
+a la pregunta del usuario. Primero la respuesta, luego los datos que la
+sustentan. NO empezar con cifras ni acrónimos. Empezar con la conclusión
+en lenguaje natural y luego anclarla en datos.
+Ej: "La reputación algorítmica de [Empresa] es sólida pero presenta un punto
+ciego importante: las IAs no encuentran fuentes autoritativas que respalden
+sus narrativas. Esto se refleja en un SIM de 37/100, muy por debajo del
+sector (55). En contraste, su gestión de controversias es excelente (CEM 95)."
 
 ### ${H("depth_3kpis")}
 MÍNIMO tres indicadores clave extraídos del DATAPACK con su variación. Si hay más métricas relevantes para la pregunta, incluirlas TODAS. No limitar artificialmente:
