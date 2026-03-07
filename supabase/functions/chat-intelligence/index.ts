@@ -1707,12 +1707,12 @@ async function buildDataPackFromSkills(
     let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number | null}> = [];
     let competidoresSinDatos: string[] = [];
     let competidoresNota: string | undefined;
-    let competitorSource: "verified" | "sector_fallback" | "verified_plus_sector" | "none" = "none";
+    let competitorSource: "verified" | "none" = "none";
     if (resolvedTicker) {
       const compInfo = await getCompetitorTickers(supabaseClient, resolvedTicker, logPrefix);
       competitorSource = compInfo.source;
       if (compInfo.tickers.length > 0) {
-        console.log(`${logPrefix} [SKILLS-v2] Fetching competitor profiles (source: ${compInfo.source}): ${compInfo.tickers.join(",")}`);
+        console.log(`${logPrefix} [SKILLS-v2] Fetching competitor profiles (source: verified): ${compInfo.tickers.join(",")}`);
         const compPromises = compInfo.tickers.map((t: string) => skillCompanyProfile(supabaseClient, t));
         const compResults = await Promise.allSettled(compPromises);
         for (let ci = 0; ci < compInfo.tickers.length; ci++) {
@@ -1726,20 +1726,13 @@ async function buildDataPackFromSkills(
           }
         }
         console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}, without data: ${competidoresSinDatos.length}`);
-        if (compInfo.source === "sector_fallback") {
-          competidoresNota = `Sin competidores directos verificados. Se muestran ${competidoresDirectos.length} empresas del mismo sector (${compInfo.sector_category}) como referencia`;
-        } else if (compInfo.source === "verified_plus_sector") {
-          const vc = (await supabaseClient.from("repindex_root_issuers").select("verified_competitors").eq("ticker", resolvedTicker).maybeSingle())?.data?.verified_competitors;
-          const vcArray: string[] = Array.isArray(vc) ? vc : [];
-          competidoresNota = `${vcArray.length} competidor(es) directo(s) verificado(s) (${vcArray.join(", ")}), complementados con empresas del mismo sector (${compInfo.sector_category}) como referencia adicional`;
-        }
       } else {
-        competidoresNota = "No se han verificado competidores directos para esta empresa";
+        competidoresNota = "No se han definido competidores directos para esta empresa";
       }
     }
 
     // ── Build DataPack from consolidated results ─────────────────
-    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: any[]; competidores_nota?: string; competidores_fuente?: string } = {
+    const pack: DataPack & { divergencias_detalle?: any[]; competidores_directos?: any[]; competidores_sin_datos?: string[]; competidores_nota?: string; competidores_fuente?: string } = {
       snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
       memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
       competidores_verificados: [], competidores_metricas_avg: null,
