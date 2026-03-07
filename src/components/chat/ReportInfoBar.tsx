@@ -110,17 +110,22 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   if (!context) return "";
   const label = context.company || context.sector || null;
   const hasDateRange = context.date_from || context.date_to;
-  if (!label && !hasDateRange) return "";
+  const hasQuestion = !!context.user_question;
+  if (!label && !hasDateRange && !hasQuestion) return "";
 
   const periodLabel = languageCode === "en" ? "Period" : "Período";
   const weeksLabel = languageCode === "en" ? "weeks" : "semanas";
   const modelsLabel = languageCode === "en" ? "models" : "modelos";
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
+  const questionLabel = languageCode === "en" ? "Query" : "Consulta";
 
   const modelNames = (context.models || []).map(m => m.replace("Google Gemini", "Gemini"));
 
   const items: string[] = [];
 
+  if (hasQuestion) {
+    items.push(`<span style="display:flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;width:100%;margin-bottom:4px;">💬 ${questionLabel}: <span style="font-weight:400;font-style:italic;">${context.user_question}</span></span>`);
+  }
   if (label) {
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${label}</span>`);
   }
