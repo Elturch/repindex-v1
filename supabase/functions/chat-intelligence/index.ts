@@ -2375,7 +2375,7 @@ Sur quelle entreprise ou quel secteur souhaitez-vous vous concentrer ?`,
     depth_model_divergence: "Divergence entre modèles",
     depth_evolution: "Évolution Temporelle",
     depth_competitive: "Contexte Concurrentiel",
-    depth_recommendations: "Recommandations Basées sur les Données",
+    depth_recommendations: "Recommandations Stratégiques et Tactiques",
     // Fallback questions
     fallback_ceo_q1: "Quels sont les 3 risques réputationnels les plus urgents ?",
     fallback_ceo_q2: "Comment nous situons-nous par rapport à la concurrence directe ?",
