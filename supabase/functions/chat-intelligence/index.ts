@@ -2183,7 +2183,7 @@ El boletín estará listo para **descargar o imprimir** en formato profesional.`
     depth_model_divergence: "Divergencia entre Modelos",
     depth_evolution: "Evolución Temporal",
     depth_competitive: "Contexto Competitivo",
-    depth_recommendations: "Recomendaciones Basadas en Datos",
+    depth_recommendations: "Recomendaciones Estratégicas y Tácticas",
     // Fallback questions
     fallback_ceo_q1: "¿Cuáles son los 3 riesgos reputacionales más urgentes?",
     fallback_ceo_q2: "¿Cómo estamos vs la competencia directa?",
@@ -2280,7 +2280,7 @@ The bulletin will be ready to **download or print** in professional format.`,
     depth_model_divergence: "Model Divergence",
     depth_evolution: "Temporal Evolution",
     depth_competitive: "Competitive Context",
-    depth_recommendations: "Data-Driven Recommendations",
+    depth_recommendations: "Strategic & Tactical Recommendations",
     // Fallback questions
     fallback_ceo_q1: "What are the 3 most urgent reputational risks?",
     fallback_ceo_q2: "How are we doing vs direct competition?",
@@ -2375,7 +2375,7 @@ Sur quelle entreprise ou quel secteur souhaitez-vous vous concentrer ?`,
     depth_model_divergence: "Divergence entre modèles",
     depth_evolution: "Évolution Temporelle",
     depth_competitive: "Contexte Concurrentiel",
-    depth_recommendations: "Recommandations Basées sur les Données",
+    depth_recommendations: "Recommandations Stratégiques et Tactiques",
     // Fallback questions
     fallback_ceo_q1: "Quels sont les 3 risques réputationnels les plus urgents ?",
     fallback_ceo_q2: "Comment nous situons-nous par rapport à la concurrence directe ?",
@@ -2470,7 +2470,7 @@ Escreva o nome da empresa e gerarei uma análise detalhada incluindo:
     depth_model_divergence: "Divergência entre Modelos",
     depth_evolution: "Evolução Temporal",
     depth_competitive: "Contexto Competitivo",
-    depth_recommendations: "Recomendações Baseadas em Dados",
+    depth_recommendations: "Recomendações Estratégicas e Táticas",
     // Fallback questions
     fallback_ceo_q1: "Quais são os 3 riscos reputacionais mais urgentes?",
     fallback_ceo_q2: "Como estamos em relação à concorrência direta?",
@@ -4621,7 +4621,7 @@ interface ComparatorResult {
   fortalezas: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
   debilidades: { metrica: string; score: number; vs_sector: string; evidencia_cualitativa: string }[];
   posicion_competitiva: { ranking: number; de: number; lider: string; distancia: number } | null;
-  recomendaciones: { accion: string; metrica_objetivo: string; basado_en: string; razonamiento?: string; prioridad?: string; gap_numerico?: string }[];
+  recomendaciones: { que_se_detecta: string; que_hacer: string; como_hacerlo: string[]; metrica_impactada: string; prioridad: string }[];
   gaps_percepcion: { tema: string; dato_real: string; narrativa_ia: string; riesgo: string }[];
 }
 
@@ -4759,7 +4759,7 @@ Responde SOLO en JSON válido (sin markdown):
   "fortalezas": [{"metrica":"NVM","score":75,"vs_sector":"+12","evidencia_cualitativa":"5/6 IAs califican como Bueno..."}],
   "debilidades": [{"metrica":"SIM","score":35,"vs_sector":"-18","evidencia_cualitativa":"Solo 2 IAs encuentran fuentes institucionales..."}],
   "posicion_competitiva": {"ranking":3,"de":8,"lider":"EmpresaY","distancia":-8},
-  "recomendaciones": [{"accion":"Mejorar X","metrica_objetivo":"DRM","basado_en":"gap de 18 pts","razonamiento":"Los competidores tienen DRM 72 porque...","prioridad":"alta","gap_numerico":"-18 pts"}],
+  "recomendaciones": [{"que_se_detecta":"SIM de 37, -18 pts vs sector","que_hacer":"Amplificar presencia en fuentes de alta autoridad algorítmica","como_hacerlo":["Publicar informe sectorial con datos propios en web corporativa con schema markup Article+FAQ","Distribuir nota clave en 3+ medios tier 1 del sector","Crear FAQ corporativa respondiendo preguntas frecuentes de LLMs","Asegurar claims con evidencia verificable (cifras, fechas, fuentes)"],"metrica_impactada":"SIM (Autoridad de Fuentes)","prioridad":"Alta"}],
   "gaps_percepcion": [{"tema":"ESG","dato_real":"CEM 42","narrativa_ia":"4 modelos positivos","riesgo":"desconexion"}],
   "contexto_mercado": "Precio X, PER Y, contraste con RIX..." | null,
   "consenso_categorias": [{"metrica":"CEM","calificacion_dominante":"Bueno","modelos_coincidentes":5}]
@@ -4767,11 +4767,13 @@ Responde SOLO en JSON válido (sin markdown):
 
 REGLAS:
 - Solo conclusiones trazables a los datos de arriba.
-- Cada recomendación DEBE citar la métrica, el gap numérico, un razonamiento de por qué esa acción mejoraría la métrica, y una prioridad (alta/media/baja) basada en el tamaño del gap.
+- MÍNIMO 3 recomendaciones, sin límite superior. Incluye todas las que los datos justifiquen.
+- Cada recomendación DEBE incluir: que_se_detecta (métrica+score+gap), que_hacer (acción estratégica), como_hacerlo (3-5 pasos tácticos con contenido, canales, formato IA-friendly y tácticas GEO/AISO), metrica_impactada y prioridad (Alta/Media/Baja).
+- Incluye recomendaciones tanto DEFENSIVAS (mitigar debilidades) como OFENSIVAS (amplificar fortalezas).
 - Usa el CONSENSO DE CATEGORÍAS para reforzar evidencia: "5/6 IAs califican CEM como Bueno" es más convincente que solo "CEM=78".
 - Si hay DATOS DE MERCADO, incluye contexto_mercado conectando reputación con cotización.
 - Solo compara con competidores verificados. Si no hay competidores verificados, omite completamente la comparativa competitiva.
-- Máximo 4 fortalezas, 4 debilidades, 6 recomendaciones.`;
+- Máximo 4 fortalezas, 4 debilidades.`;
 
   try {
     const result = await callAISimple(
@@ -5705,12 +5707,41 @@ Compara la mediana RIX de la empresa analizada con cada competidor.
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
 ───────────────────────────────────────────────────────────────────────────────
 
-Máximo 4 recomendaciones, cada una con:
-1. **Gap identificado**: qué métrica está por debajo y cuánto
-2. **Evidencia**: datos concretos del DATAPACK que sustentan el gap
-3. **Acción sugerida**: qué puede hacer la empresa para mejorar
+MÍNIMO 3 recomendaciones, sin límite superior. Incluye todas las que los datos justifiquen.
+Incluye tanto recomendaciones DEFENSIVAS (mitigar riesgos, proteger métricas débiles) como OFENSIVAS (amplificar fortalezas, ganar posicionamiento algorítmico).
+Si una métrica es fuerte, recomienda cómo MANTENERLA o AMPLIFICARLA, no solo corregir debilidades.
 
-PROHIBIDO inventar acciones, roadmaps, plazos o certificaciones.
+Cada recomendación DEBE seguir esta estructura completa:
+
+• **Qué se detecta**: Qué métrica o hallazgo del DATAPACK motiva esta recomendación. Incluye el score actual y el gap vs sector/competidores si existe. Ejemplo: "SIM de 37 — baja autoridad en fuentes algorítmicas, 18 puntos por debajo del sector."
+
+• **Qué hacer**: Acción estratégica concreta y específica para el caso. NO genérica.
+
+• **Cómo hacerlo** (3-5 pasos tácticos ejecutables):
+  Aquí es donde debes aportar MÁXIMO VALOR. Cada paso debe ser concreto y accionable. Incluye:
+  - **Tipo de contenido** a crear o modificar (notas de prensa con datos propios, informes sectoriales, FAQ corporativas, comunicados regulatorios, artículos de opinión del CEO, etc.)
+  - **Canales recomendados** (web corporativa, medios tier 1 del sector, LinkedIn corporativo, relaciones con inversores, etc.)
+  - **Formato IA-friendly**: cómo estructurar el contenido para que los modelos de IA lo procesen bien:
+    · Datos verificables con cifras concretas y fechas
+    · Fuentes citadas explícitamente
+    · Schema markup (Article, FAQ, Organization)
+    · Respuestas directas a preguntas frecuentes sobre la empresa
+  - **Tácticas GEO/AISO específicas** (Generative Engine Optimization / AI Search Optimization):
+    · Publicar en fuentes que los LLMs priorizan (medios de referencia, documentos regulatorios, bases de datos sectoriales)
+    · Crear claims verificables con evidencia adjunta para que los LLMs los prioricen frente a opiniones
+    · Estructurar FAQ corporativas que respondan directamente a las preguntas que los usuarios hacen a los LLMs sobre la empresa
+    · Generar contenido que los crawlers de IA puedan extraer fácilmente (párrafos autocontenidos, datos estructurados)
+
+• **Métrica RIX impactada**: Qué métrica mejorará si se ejecuta (usa el nombre ejecutivo y el acrónimo).
+
+• **Prioridad**: Alta / Media / Baja — según el impacto potencial en el RIX global y la urgencia del gap.
+
+REGLAS DE RECOMENDACIONES:
+- Cada recomendación DEBE estar ANCLADA en datos reales del DATAPACK. PROHIBIDO inventar.
+- Las tácticas GEO/AISO deben ser ESPECÍFICAS para el caso de la empresa, NO genéricas.
+- El tono debe ser de consultor estratégico senior, no de checklist genérico.
+- PROHIBIDO inventar plazos, certificaciones, presupuestos o roadmaps ficticios.
+- Si no hay datos suficientes para una recomendación concreta, NO la incluyas.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 8: ${H("depth_closing")} — OBLIGATORIA
