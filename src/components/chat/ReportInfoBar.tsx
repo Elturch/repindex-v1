@@ -1,10 +1,11 @@
-import { Building2, Calendar, Clock, Brain, Database } from "lucide-react";
+import { Building2, Calendar, Clock, Brain, Database, MessageCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es, enUS } from "date-fns/locale";
 
 export interface ReportContext {
   company?: string | null;
   sector?: string | null;
+  user_question?: string | null;
   date_from?: string | null;
   date_to?: string | null;
   timezone?: string;
@@ -35,7 +36,8 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
 
   const hasDateRange = context.date_from || context.date_to;
   const label = context.company || context.sector || null;
-  if (!label && !hasDateRange) return null;
+  const hasQuestion = !!context.user_question;
+  if (!label && !hasDateRange && !hasQuestion) return null;
 
   const modelNames = (context.models || []).map(m =>
     m.replace("Google Gemini", "Gemini")
@@ -45,9 +47,18 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   const weeksLabel = languageCode === "en" ? "weeks" : "semanas";
   const modelsLabel = languageCode === "en" ? "models" : "modelos";
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
+  const questionLabel = languageCode === "en" ? "Query" : "Consulta";
 
   return (
     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/40 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-muted-foreground mb-3`}>
+      {/* User question */}
+      {hasQuestion && (
+        <span className="flex items-center gap-1 font-medium text-foreground/80 w-full mb-1">
+          <MessageCircle className="h-3 w-3 shrink-0" />
+          {questionLabel}: <span className="italic font-normal">{context.user_question}</span>
+        </span>
+      )}
+
       {/* Company / Sector */}
       {label && (
         <span className="flex items-center gap-1 font-medium text-foreground/80">
@@ -99,17 +110,22 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   if (!context) return "";
   const label = context.company || context.sector || null;
   const hasDateRange = context.date_from || context.date_to;
-  if (!label && !hasDateRange) return "";
+  const hasQuestion = !!context.user_question;
+  if (!label && !hasDateRange && !hasQuestion) return "";
 
   const periodLabel = languageCode === "en" ? "Period" : "Período";
   const weeksLabel = languageCode === "en" ? "weeks" : "semanas";
   const modelsLabel = languageCode === "en" ? "models" : "modelos";
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
+  const questionLabel = languageCode === "en" ? "Query" : "Consulta";
 
   const modelNames = (context.models || []).map(m => m.replace("Google Gemini", "Gemini"));
 
   const items: string[] = [];
 
+  if (hasQuestion) {
+    items.push(`<span style="display:flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;width:100%;margin-bottom:4px;">💬 ${questionLabel}: <span style="font-weight:400;font-style:italic;">${context.user_question}</span></span>`);
+  }
   if (label) {
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${label}</span>`);
   }
