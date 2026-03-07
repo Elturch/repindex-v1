@@ -225,8 +225,8 @@ async function executeSkillGetCompanyEvolution(supabase: any, params: { ticker: 
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
 }
 
-// ── Helper: Resolve competitor tickers (verified-first, sector fallback) ─────
-async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: string): Promise<{ tickers: string[]; source: "verified" | "sector_fallback" | "none"; sector_category: string | null }> {
+// ── Helper: Resolve competitor tickers (verified-first, sector fallback, hybrid) ─────
+async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: string): Promise<{ tickers: string[]; source: "verified" | "sector_fallback" | "verified_plus_sector" | "none"; sector_category: string | null }> {
   try {
     const { data, error } = await supabase.from("repindex_root_issuers")
       .select("verified_competitors,sector_category")
@@ -238,12 +238,31 @@ async function getCompetitorTickers(supabase: any, ticker: string, logPrefix: st
     const vc = data.verified_competitors;
     const vcArray: string[] = Array.isArray(vc) ? vc.filter((t: any) => typeof t === "string" && t.length > 0) : [];
 
-    if (vcArray.length > 0) {
+    // If verified competitors are sufficient (>=3), use them directly
+    if (vcArray.length >= 3) {
       console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified competitors: ${vcArray.join(",")}`);
       return { tickers: vcArray, source: "verified", sector_category: data.sector_category };
     }
 
-    // Fallback: same sector_category (excluding self), limited to 10
+    // If verified competitors exist but are sparse (<3), supplement with sector peers
+    if (vcArray.length > 0 && data.sector_category) {
+      const { data: peers, error: pe } = await supabase.from("repindex_root_issuers")
+        .select("ticker")
+        .eq("sector_category", data.sector_category)
+        .neq("ticker", ticker)
+        .limit(10);
+      if (!pe && peers && peers.length > 0) {
+        const peerTickers = peers.map((p: any) => p.ticker).filter((t: string) => !vcArray.includes(t));
+        const combined = [...vcArray, ...peerTickers.slice(0, Math.max(5 - vcArray.length, 3))];
+        console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified + ${combined.length - vcArray.length} sector peers (${data.sector_category})`);
+        return { tickers: combined, source: "verified_plus_sector", sector_category: data.sector_category };
+      }
+      // No sector peers found, use what we have
+      console.log(`${logPrefix} [COMPETITORS] ${ticker}: ${vcArray.length} verified competitors (no sector peers available): ${vcArray.join(",")}`);
+      return { tickers: vcArray, source: "verified", sector_category: data.sector_category };
+    }
+
+    // No verified competitors: fallback to sector
     if (data.sector_category) {
       const { data: peers, error: pe } = await supabase.from("repindex_root_issuers")
         .select("ticker")
@@ -1717,9 +1736,10 @@ async function buildDataPackFromSkills(
     console.log(`${logPrefix} [SKILLS-v2] Completed: ${Object.keys(resultMap).join(",")} in ${Date.now() - totalStart}ms`);
 
     // ── Resolve verified competitors ─────────────────────────────
-    let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number}> = [];
+    let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number | null}> = [];
+    let competidoresSinDatos: string[] = [];
     let competidoresNota: string | undefined;
-    let competitorSource: "verified" | "sector_fallback" | "none" = "none";
+    let competitorSource: "verified" | "sector_fallback" | "verified_plus_sector" | "none" = "none";
     if (resolvedTicker) {
       const compInfo = await getCompetitorTickers(supabaseClient, resolvedTicker, logPrefix);
       competitorSource = compInfo.source;
@@ -1732,11 +1752,18 @@ async function buildDataPackFromSkills(
           if (cr.status === "fulfilled" && cr.value?.success && cr.value.data) {
             const cd = cr.value.data;
             competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.empresa, median_rix: cd.rix_mediano });
+          } else {
+            // Track competitors without RIX data — don't silently drop them
+            competidoresSinDatos.push(compInfo.tickers[ci]);
           }
         }
-        console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}`);
+        console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}, without data: ${competidoresSinDatos.length}`);
         if (compInfo.source === "sector_fallback") {
           competidoresNota = `Sin competidores directos verificados. Se muestran ${competidoresDirectos.length} empresas del mismo sector (${compInfo.sector_category}) como referencia`;
+        } else if (compInfo.source === "verified_plus_sector") {
+          const vc = (await supabaseClient.from("repindex_root_issuers").select("verified_competitors").eq("ticker", resolvedTicker).maybeSingle())?.data?.verified_competitors;
+          const vcArray: string[] = Array.isArray(vc) ? vc : [];
+          competidoresNota = `${vcArray.length} competidor(es) directo(s) verificado(s) (${vcArray.join(", ")}), complementados con empresas del mismo sector (${compInfo.sector_category}) como referencia adicional`;
         }
       } else {
         competidoresNota = "No se han verificado competidores directos para esta empresa";
@@ -1750,6 +1777,7 @@ async function buildDataPackFromSkills(
       competidores_verificados: [], competidores_metricas_avg: null,
       explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
       competidores_directos: competidoresDirectos,
+      competidores_sin_datos: competidoresSinDatos,
       competidores_nota: competidoresNota,
       competidores_fuente: competitorSource,
     };
@@ -5664,11 +5692,12 @@ SECCIÓN 4: ${H("depth_model_divergence")} — OBLIGATORIA (cuando snapshot tien
 ───────────────────────────────────────────────────────────────────────────────
 
 ANÁLISIS DE DIVERGENCIAS (SECCIÓN CRÍTICA).
+Usar bullets simples (•) para cada divergencia. NO usar listas numeradas (1., 2., 3.).
 
-Para CADA métrica con rango >10 entre modelos:
-1. Identificar modelo más optimista y más pesimista con sus puntuaciones exactas
-2. Explicar POR QUÉ divergen usando los resúmenes y puntos_clave de cada modelo
-3. Valorar qué interpretación es más fiable y por qué (arquitectura, fuentes, ventana temporal)
+Para CADA métrica con rango >10 entre modelos, presentar con bullets:
+• Identificar modelo más optimista y más pesimista con sus puntuaciones exactas
+• Explicar POR QUÉ divergen usando los resúmenes y puntos_clave de cada modelo
+• Valorar qué interpretación es más fiable y por qué (arquitectura, fuentes, ventana temporal)
 
 Si rango <=10 en todas las métricas: indicar CONSENSO ROBUSTO y qué significa para la empresa (es una señal positiva de estabilidad perceptual).
 
@@ -5690,13 +5719,19 @@ Si evolucion tiene ≤ 1 semana: OMITIR esta sección completamente.
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 6: ${H("depth_competitive")} — CONDICIONAL
 ───────────────────────────────────────────────────────────────────────────────
-INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío).
+INCLUIR SOLO SI: DATAPACK.competidores_directos tiene datos (array no vacío) O DATAPACK.competidores_sin_datos tiene tickers.
 
 REGLA FUNDAMENTAL DE COMPETIDORES:
 - Si DATAPACK.competidores_fuente === "verified": estos son competidores directos VERIFICADOS. Preséntalo como "Competidores Directos Verificados".
+- Si DATAPACK.competidores_fuente === "verified_plus_sector": hay competidores verificados COMPLEMENTADOS con empresas del sector. Presenta PRIMERO los verificados claramente identificados, y DESPUÉS los sectoriales como referencia. Incluye DATAPACK.competidores_nota.
 - Si DATAPACK.competidores_fuente === "sector_fallback": son empresas del mismo sector (NO competidores directos). Preséntalo como "Empresas del Mismo Sector (referencia)" e incluye DATAPACK.competidores_nota como disclaimer.
-- Si DATAPACK.competidores_directos está vacío: OMITIR esta sección completamente.
-- NUNCA inventes competidores ni mezcles fuentes verificadas con sectoriales.
+- Si DATAPACK.competidores_directos está vacío Y competidores_sin_datos también: OMITIR esta sección completamente.
+- NUNCA inventes competidores ni mezcles fuentes verificadas con sectoriales sin explicar.
+
+COMPETIDORES SIN DATOS RIX:
+Si DATAPACK.competidores_sin_datos contiene tickers, DOCUMENTAR EXPLÍCITAMENTE cada uno:
+"No se dispone de datos RIX para [TICKER] en este periodo" — NO omitirlos silenciosamente.
+Esto es información valiosa: indica que el competidor NO está siendo monitorizado por RepIndex.
 
 | Competidor | Ticker | RIX Mediano | Δ vs empresa |
 |------------|--------|-------------|--------------|
