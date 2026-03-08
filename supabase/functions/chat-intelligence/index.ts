@@ -4990,6 +4990,15 @@ NUNCA inventes rangos de fechas. USA SIEMPRE las fechas reales de period_from y 
 En la cabecera del informe y en la Sección 8 (Cierre/Metodología), las fechas DEBEN reflejar EXACTAMENTE los datos del DATAPACK.
 Si el DATAPACK muestra period_from=2026-03-02 y period_to=2026-03-07 para la semana más reciente, di "Semana 2-7 mar 2026", NO "Semana 1-8 mar 2026".
 
+REGLA DE CABECERA DEL INFORME (INQUEBRANTABLE):
+La cabecera del informe (donde aparece "Período:") DEBE mostrar EXACTAMENTE las fechas period_from y period_to que vienen en el DATAPACK.
+- Si el DATAPACK contiene datos de UNA sola semana: mostrar "period_from – period_to" (ej: "2 mar 2026 – 8 mar 2026").
+- Si el DATAPACK contiene datos de VARIAS semanas: mostrar el rango completo desde el period_from más antiguo hasta el period_to más reciente.
+- NUNCA calcular fechas hacia atrás desde la fecha actual (ej: PROHIBIDO "8 feb – 8 mar" si el DATAPACK no contiene esas fechas).
+- NUNCA mostrar "4 semanas" ni "último mes" como período si las fechas del DATAPACK no lo respaldan.
+- El número de semanas mostrado DEBE coincidir con el número real de semanas distintas en el DATAPACK.
+- La Sección 8 (Cierre/Metodología) DEBE repetir EXACTAMENTE las mismas fechas de la cabecera.
+
 LAS 8 MÉTRICAS:
 • Calidad de la Narrativa (NVM) · Fortaleza de Evidencia (DRM) · Autoridad de Fuentes (SIM, NO mide ESG)
 • Actualidad y Empuje (RMM, NO mide marketing) · Gestión de Controversias (CEM, INVERSA: 100=sin controversias)
