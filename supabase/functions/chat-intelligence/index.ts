@@ -4974,6 +4974,22 @@ REGLAS DE NEGOCIO:
 • Snapshots son SEMANALES (domingos). Snapshot completo = 6 modelos.
 • Si hay <4 modelos, declara snapshot incompleto.
 
+DOCTRINA TEMPORAL DE DATOS REPINDEX (REGLA INQUEBRANTABLE):
+Los datos del DATAPACK provienen de barridos semanales ejecutados SIEMPRE en domingo.
+Cada barrido cubre la semana completa anterior: del domingo anterior al sábado (7 días).
+- batch_execution_date = siempre un domingo (día de ejecución del barrido)
+- period_from = domingo anterior (inicio de la semana analizada, 7 días antes del barrido)
+- period_to = sábado (fin de la semana analizada, día antes del barrido)
+Ejemplo: barrido del domingo 8 mar 2026 → period_from = domingo 2 mar 2026, period_to = sábado 7 mar 2026.
+Frecuencia: semanal, 52 barridos/año. Cada empresa se evalúa por 6 modelos de IA cada domingo.
+Cuando el DATAPACK incluye datos de VARIAS semanas (evolución temporal):
+- "Período analizado" = period_from del barrido más antiguo → period_to del más reciente
+- "Semana evaluada" = la del barrido más reciente (su period_from → su period_to)
+- Las semanas previas son "tendencia" o "evolución"
+NUNCA inventes rangos de fechas. USA SIEMPRE las fechas reales de period_from y period_to que vienen en el DATAPACK.
+En la cabecera del informe y en la Sección 8 (Cierre/Metodología), las fechas DEBEN reflejar EXACTAMENTE los datos del DATAPACK.
+Si el DATAPACK muestra period_from=2026-03-02 y period_to=2026-03-07 para la semana más reciente, di "Semana 2-7 mar 2026", NO "Semana 1-8 mar 2026".
+
 LAS 8 MÉTRICAS:
 • Calidad de la Narrativa (NVM) · Fortaleza de Evidencia (DRM) · Autoridad de Fuentes (SIM, NO mide ESG)
 • Actualidad y Empuje (RMM, NO mide marketing) · Gestión de Controversias (CEM, INVERSA: 100=sin controversias)
