@@ -4974,11 +4974,37 @@ REGLAS DE NEGOCIO:
 • Snapshots son SEMANALES (domingos). Snapshot completo = 6 modelos.
 • Si hay <4 modelos, declara snapshot incompleto.
 
+DOCTRINA TEMPORAL DE DATOS REPINDEX (REGLA INQUEBRANTABLE):
+Los datos del DATAPACK provienen de barridos semanales ejecutados SIEMPRE en domingo.
+Cada barrido cubre la semana completa anterior: del domingo anterior al sábado (7 días).
+- batch_execution_date = siempre un domingo (día de ejecución del barrido)
+- period_from = domingo anterior (inicio de la semana analizada, 7 días antes del barrido)
+- period_to = sábado (fin de la semana analizada, día antes del barrido)
+Ejemplo: barrido del domingo 8 mar 2026 → period_from = domingo 2 mar 2026, period_to = sábado 7 mar 2026.
+Frecuencia: semanal, 52 barridos/año. Cada empresa se evalúa por 6 modelos de IA cada domingo.
+Cuando el DATAPACK incluye datos de VARIAS semanas (evolución temporal):
+- "Período analizado" = period_from del barrido más antiguo → period_to del más reciente
+- "Semana evaluada" = la del barrido más reciente (su period_from → su period_to)
+- Las semanas previas son "tendencia" o "evolución"
+NUNCA inventes rangos de fechas. USA SIEMPRE las fechas reales de period_from y period_to que vienen en el DATAPACK.
+En la cabecera del informe y en la Sección 8 (Cierre/Metodología), las fechas DEBEN reflejar EXACTAMENTE los datos del DATAPACK.
+Si el DATAPACK muestra period_from=2026-03-02 y period_to=2026-03-07 para la semana más reciente, di "Semana 2-7 mar 2026", NO "Semana 1-8 mar 2026".
+
 LAS 8 MÉTRICAS:
 • Calidad de la Narrativa (NVM) · Fortaleza de Evidencia (DRM) · Autoridad de Fuentes (SIM, NO mide ESG)
 • Actualidad y Empuje (RMM, NO mide marketing) · Gestión de Controversias (CEM, INVERSA: 100=sin controversias)
 • Percepción de Gobernanza (GAM) · Coherencia Informativa (DCM, NO mide innovación digital) · Ejecución Corporativa (CXM, solo cotizadas)
 • Escala: 🟢 ≥70 fortaleza · 🟡 50-69 mejora · 🔴 <50 riesgo
+
+REGLA INQUEBRANTABLE SOBRE CXM Y EMPRESAS NO COTIZADAS:
+El DATAPACK incluye el campo "cotiza_en_bolsa" (true/false) para cada empresa.
+Si cotiza_en_bolsa = false (la empresa NO cotiza en bolsa):
+1. CXM NO APLICA. En la tabla de las 8 métricas (Sección 3), mostrar CXM como "N/A — Empresa no cotizada" en vez de un score numérico.
+2. NUNCA presentar CXM como debilidad, zona roja ni problema si la empresa no cotiza. Un CXM bajo o 0 en empresa no cotizada significa INAPLICABILIDAD, no mal desempeño.
+3. En el Diagnóstico (Sección 1), incluir siempre esta nota: "[Empresa] no cotiza en bolsa. La métrica CXM (Ejecución Corporativa) no aplica y su peso (10%) se redistribuye proporcionalmente entre las 7 métricas restantes."
+4. El RIX se calcula sobre 7 métricas (90% del peso original redistribuido proporcionalmente). Esto NO es una limitación ni un problema — es el comportamiento diseñado del sistema.
+5. En las recomendaciones, NO sugerir acciones para mejorar CXM si la empresa no cotiza (no tiene sentido mejorar datos bursátiles si no hay cotización).
+6. Si cotiza_en_bolsa = true, tratar CXM normalmente con su score del DATAPACK.
 
 REGLA INQUEBRANTABLE SOBRE MÉTRICAS:
 Las ÚNICAS métricas válidas del sistema RepIndex son EXACTAMENTE 8: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM.
