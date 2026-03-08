@@ -13,56 +13,63 @@ interface Suggestion {
   source: string;
 }
 
-interface DimensionAnomaly {
-  company_name: string;
-  ticker: string;
-  ai_model: string;
-  high_dim: string;
-  high_score: number;
-  low_dim: string;
-  low_score: number;
-  delta: number;
-}
-
-interface Divergence {
-  company_name: string;
-  ticker: string;
-  max_model: string;
-  min_model: string;
-  max_score: number;
-  min_score: number;
-  delta: number;
-}
-
-interface WeeklyMove {
-  company_name: string;
-  ticker: string;
-  prev_avg: number;
-  curr_avg: number;
-  delta: number;
-}
-
+// ── Dimension labels (human-readable) ───────────────────────────────
 const DIM_LABELS_ES: Record<string, string> = {
-  nvm: "Calidad Narrativa",
-  drm: "Fortaleza de Evidencia",
-  sim: "Autoridad de Fuentes",
-  rmm: "Actualidad y Empuje",
-  cem: "Gestión de Controversias",
-  gam: "Percepción de Gobernanza",
-  dcm: "Coherencia Informativa",
-  cxm: "Ejecución Corporativa",
+  "23_nvm_score": "Calidad Narrativa",
+  "26_drm_score": "Fortaleza de Evidencia",
+  "29_sim_score": "Autoridad de Fuentes",
+  "32_rmm_score": "Actualidad y Empuje",
+  "35_cem_score": "Gestión de Controversias",
+  "38_gam_score": "Percepción de Gobernanza",
+  "41_dcm_score": "Coherencia Informativa",
+  "44_cxm_score": "Ejecución Corporativa",
 };
 
 const DIM_LABELS_EN: Record<string, string> = {
-  nvm: "Narrative Quality",
-  drm: "Evidence Strength",
-  sim: "Source Authority",
-  rmm: "Momentum",
-  cem: "Controversy Management",
-  gam: "Governance Perception",
-  dcm: "Information Coherence",
-  cxm: "Corporate Execution",
+  "23_nvm_score": "Narrative Quality",
+  "26_drm_score": "Evidence Strength",
+  "29_sim_score": "Source Authority",
+  "32_rmm_score": "Momentum",
+  "35_cem_score": "Controversy Management",
+  "38_gam_score": "Governance Perception",
+  "41_dcm_score": "Information Coherence",
+  "44_cxm_score": "Corporate Execution",
 };
+
+const DIM_COLS = [
+  "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
+  "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
+] as const;
+
+const SELECT_COLS = [
+  "02_model_name", "03_target_name", "05_ticker", "09_rix_score",
+  "07_period_to", ...DIM_COLS,
+].join(",");
+
+// ── Row type from rix_runs_v2 ───────────────────────────────────────
+interface RixRow {
+  "02_model_name": string | null;
+  "03_target_name": string | null;
+  "05_ticker": string | null;
+  "09_rix_score": number | null;
+  "07_period_to": string | null;
+  "23_nvm_score": number | null;
+  "26_drm_score": number | null;
+  "29_sim_score": number | null;
+  "32_rmm_score": number | null;
+  "35_cem_score": number | null;
+  "38_gam_score": number | null;
+  "41_dcm_score": number | null;
+  "44_cxm_score": number | null;
+}
+
+// ── Company grouped data ────────────────────────────────────────────
+interface CompanyData {
+  ticker: string;
+  name: string;
+  models: Map<string, { rix: number; dims: Record<string, number> }>;
+  weekScores: Map<string, number[]>; // week -> rix scores
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -76,350 +83,332 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
     const dimLabels = lang === "en" ? DIM_LABELS_EN : DIM_LABELS_ES;
 
-    // Run all queries in parallel - all use the documents table metadata
-    const [
-      anomaliesResult,
-      divergencesResult,
-      flagsResult,
-      weeklyMovesResult,
-      sectorResult,
-      crossIndexResult,
-    ] = await Promise.all([
-      // Q1: Dimensional anomalies - companies with huge spread between dimensions
-      supabase
-        .from("documents")
-        .select("metadata")
-        .not("metadata->scores", "is", null)
-        .not("metadata->ai_model", "is", null)
-        .not("metadata->company_name", "is", null)
-        .order("id", { ascending: false })
-        .limit(500),
+    // ── S1+S5: Get latest week from rix_runs_v2, then compute cutoff ──
+    const { data: latestRows, error: latestErr } = await supabase
+      .from("rix_runs_v2")
+      .select("07_period_to")
+      .not("07_period_to", "is", null)
+      .order("07_period_to", { ascending: false })
+      .limit(1);
 
-      // Q2: Same query pool used for divergences (different processing)
-      supabase
-        .from("documents")
-        .select("metadata")
-        .not("metadata->scores", "is", null)
-        .not("metadata->ai_model", "is", null)
-        .not("metadata->ticker", "is", null)
-        .order("id", { ascending: false })
-        .limit(500),
+    if (latestErr || !latestRows?.length) {
+      console.error("Could not determine latest week:", latestErr);
+      return new Response(
+        JSON.stringify({ suggestions: [], error: "No recent data found" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
-      // Q3: Flags - documents with interesting flags
-      supabase
-        .from("documents")
-        .select("metadata")
-        .not("metadata->flags", "is", null)
-        .not("metadata->company_name", "is", null)
-        .order("id", { ascending: false })
-        .limit(300),
+    const latestWeek = latestRows[0]["07_period_to"] as string;
+    const cutoffDate = new Date(latestWeek);
+    cutoffDate.setUTCDate(cutoffDate.getUTCDate() - 14);
+    const cutoffStr = cutoffDate.toISOString().split("T")[0];
 
-      // Q4: Weekly moves - need two different weeks
-      supabase
-        .from("documents")
-        .select("metadata")
-        .not("metadata->rix_score", "is", null)
-        .not("metadata->week_start", "is", null)
-        .not("metadata->ticker", "is", null)
-        .order("id", { ascending: false })
-        .limit(800),
+    // ── S1: Single bulk query to rix_runs_v2 with temporal filter ────
+    // Paginate to get all rows (default PostgREST limit is 1000)
+    const allRows: RixRow[] = [];
+    let from = 0;
+    const PAGE = 1500;
+    for (let page = 0; page < 5; page++) {
+      const { data, error } = await supabase
+        .from("rix_runs_v2")
+        .select(SELECT_COLS)
+        .gte("07_period_to", cutoffStr)
+        .not("09_rix_score", "is", null)
+        .not("05_ticker", "is", null)
+        .order("07_period_to", { ascending: false })
+        .range(from, from + PAGE - 1);
 
-      // Q5: Sector patterns
-      supabase
-        .from("documents")
-        .select("metadata")
-        .not("metadata->sector_category", "is", null)
-        .not("metadata->rix_score", "is", null)
-        .order("id", { ascending: false })
-        .limit(500),
+      if (error) { console.error("Query error:", error); break; }
+      if (!data || data.length === 0) break;
+      allRows.push(...(data as unknown as RixRow[]));
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
 
-      // Q6: Cross-index (IBEX vs non-IBEX)
-      supabase
-        .from("documents")
-        .select("metadata")
-        .not("metadata->rix_score", "is", null)
-        .not("metadata->ibex_family_code", "is", null)
-        .order("id", { ascending: false })
-        .limit(400),
-    ]);
+    if (allRows.length === 0) {
+      return new Response(
+        JSON.stringify({ suggestions: [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── Group rows by ticker ────────────────────────────────────────
+    const companies = new Map<string, CompanyData>();
+
+    for (const row of allRows) {
+      const ticker = row["05_ticker"];
+      const model = row["02_model_name"];
+      const rix = row["09_rix_score"];
+      const name = row["03_target_name"];
+      const week = row["07_period_to"];
+      if (!ticker || !model || rix == null || !name) continue;
+
+      if (!companies.has(ticker)) {
+        companies.set(ticker, {
+          ticker, name,
+          models: new Map(),
+          weekScores: new Map(),
+        });
+      }
+      const co = companies.get(ticker)!;
+
+      // Store latest model entry (dedup by model, keep most recent)
+      if (!co.models.has(model)) {
+        const dims: Record<string, number> = {};
+        for (const d of DIM_COLS) {
+          const v = row[d];
+          if (v != null && typeof v === "number") dims[d] = v;
+        }
+        co.models.set(model, { rix, dims });
+      }
+
+      // Weekly scores for move detection
+      if (week) {
+        const wk = String(week).split("T")[0];
+        if (!co.weekScores.has(wk)) co.weekScores.set(wk, []);
+        co.weekScores.get(wk)!.push(rix);
+      }
+    }
+
+    // ── S7: Filter to companies with >= 4 models ────────────────────
+    const validCompanies = [...companies.values()].filter(
+      (c) => c.models.size >= 4,
+    );
+
+    // ── Fetch sector/ibex metadata from repindex_root_issuers ───────
+    const tickerSet = new Set(validCompanies.map((c) => c.ticker));
+    const { data: issuerRows } = await supabase
+      .from("repindex_root_issuers")
+      .select("ticker, sector_category, ibex_family_code")
+      .in("ticker", [...tickerSet]);
+
+    const issuerMap = new Map<string, { sector: string | null; ibex: string | null }>();
+    for (const r of issuerRows || []) {
+      issuerMap.set(r.ticker, {
+        sector: r.sector_category,
+        ibex: r.ibex_family_code,
+      });
+    }
 
     const suggestions: Suggestion[] = [];
 
-    // --- Process Q1: Dimensional anomalies ---
-    if (anomaliesResult.data) {
-      const anomalies: DimensionAnomaly[] = [];
-      for (const doc of anomaliesResult.data) {
-        const m = doc.metadata as any;
-        if (!m?.scores || !m?.company_name) continue;
-        const dims = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm"];
-        const entries = dims
-          .filter((d) => m.scores[d] != null)
-          .map((d) => ({ dim: d, score: m.scores[d] as number }));
-        if (entries.length < 3) continue;
-        const sorted = [...entries].sort((a, b) => b.score - a.score);
-        const high = sorted[0];
-        const low = sorted[sorted.length - 1];
-        const delta = high.score - low.score;
-        if (delta >= 45) {
-          anomalies.push({
-            company_name: m.company_name,
-            ticker: m.ticker,
-            ai_model: m.ai_model,
-            high_dim: high.dim,
-            high_score: high.score,
-            low_dim: low.dim,
-            low_score: low.score,
-            delta,
-          });
+    // ── S2+S4: Dimensional anomalies ────────────────────────────────
+    const anomalies: { name: string; highDim: string; lowDim: string; highScore: number; lowScore: number; delta: number }[] = [];
+
+    for (const co of validCompanies) {
+      // Aggregate dimension scores across all models (median-like: average)
+      const dimAgg = new Map<string, number[]>();
+      for (const m of co.models.values()) {
+        for (const [d, v] of Object.entries(m.dims)) {
+          if (v > 0) {
+            if (!dimAgg.has(d)) dimAgg.set(d, []);
+            dimAgg.get(d)!.push(v);
+          }
         }
       }
-      // Deduplicate by company, keep highest delta
-      const byCompany = new Map<string, DimensionAnomaly>();
-      for (const a of anomalies) {
-        const existing = byCompany.get(a.company_name);
-        if (!existing || a.delta > existing.delta) byCompany.set(a.company_name, a);
-      }
-      const topAnomalies = [...byCompany.values()]
-        .sort((a, b) => b.delta - a.delta)
-        .slice(0, 3);
 
-      for (const a of topAnomalies) {
-        const highLabel = dimLabels[a.high_dim] || a.high_dim;
-        const lowLabel = dimLabels[a.low_dim] || a.low_dim;
-        suggestions.push({
-          text:
-            lang === "en"
-              ? `${a.company_name} scores ${a.high_score} in ${highLabel} but only ${a.low_score} in ${lowLabel} — why such a ${a.delta}-point gap?`
-              : `${a.company_name} tiene ${a.high_score} en ${highLabel} pero solo ${a.low_score} en ${lowLabel} — ¿por qué esa brecha de ${a.delta} puntos?`,
-          type: "vector_insight",
-          icon: "🔬",
-          source: "dimensional_anomaly",
+      const dimAvgs = [...dimAgg.entries()]
+        .filter(([_, vals]) => vals.length >= 2) // Need data from multiple models
+        .map(([d, vals]) => ({
+          dim: d,
+          avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+        }))
+        .filter((e) => e.avg > 0); // S2: exclude zeros
+
+      if (dimAvgs.length < 3) continue;
+
+      const sorted = [...dimAvgs].sort((a, b) => b.avg - a.avg);
+      const high = sorted[0];
+      const low = sorted[sorted.length - 1];
+      const delta = high.avg - low.avg;
+
+      if (delta >= 30 && high.avg > 0 && low.avg > 0) { // S2: both > 0
+        anomalies.push({
+          name: co.name,
+          highDim: high.dim,
+          lowDim: low.dim,
+          highScore: high.avg,
+          lowScore: low.avg,
+          delta,
         });
       }
     }
 
-    // --- Process Q2: Divergences between AI models ---
-    if (divergencesResult.data) {
-      const byTickerWeek = new Map<
-        string,
-        { company_name: string; ticker: string; models: { model: string; score: number }[] }
-      >();
-      for (const doc of divergencesResult.data) {
-        const m = doc.metadata as any;
-        if (!m?.rix_score || !m?.ticker || !m?.ai_model) continue;
-        const key = `${m.ticker}_${m.week_start || "latest"}`;
-        if (!byTickerWeek.has(key)) {
-          byTickerWeek.set(key, {
-            company_name: m.company_name || m.ticker,
-            ticker: m.ticker,
-            models: [],
-          });
-        }
-        byTickerWeek.get(key)!.models.push({ model: m.ai_model, score: m.rix_score });
-      }
+    anomalies.sort((a, b) => b.delta - a.delta);
+    for (const a of anomalies.slice(0, 3)) {
+      const highLabel = dimLabels[a.highDim] || a.highDim;
+      const lowLabel = dimLabels[a.lowDim] || a.lowDim;
+      suggestions.push({
+        text: lang === "en"
+          ? `Analyze the reputation of ${a.name} — stands out in ${highLabel} but has weakness in ${lowLabel}`
+          : `Analiza la reputación de ${a.name} — destaca en ${highLabel} pero tiene debilidad en ${lowLabel}`,
+        type: "vector_insight",
+        icon: "🔬",
+        source: "dimensional_anomaly",
+      });
+    }
 
-      const divergences: Divergence[] = [];
-      for (const entry of byTickerWeek.values()) {
-        if (entry.models.length < 2) continue;
-        const sorted = [...entry.models].sort((a, b) => b.score - a.score);
-        const delta = sorted[0].score - sorted[sorted.length - 1].score;
-        if (delta >= 15) {
-          divergences.push({
-            company_name: entry.company_name,
-            ticker: entry.ticker,
-            max_model: sorted[0].model,
-            min_model: sorted[sorted.length - 1].model,
-            max_score: sorted[0].score,
-            min_score: sorted[sorted.length - 1].score,
-            delta,
-          });
-        }
+    // ── S3: Model divergences ───────────────────────────────────────
+    const divergences: { name: string; ticker: string; range: number }[] = [];
+
+    for (const co of validCompanies) {
+      const rixScores = [...co.models.values()].map((m) => m.rix);
+      if (rixScores.length < 4) continue;
+      const range = Math.max(...rixScores) - Math.min(...rixScores);
+      if (range >= 15) {
+        divergences.push({ name: co.name, ticker: co.ticker, range });
       }
-      divergences.sort((a, b) => b.delta - a.delta);
-      for (const d of divergences.slice(0, 2)) {
+    }
+
+    divergences.sort((a, b) => b.range - a.range);
+    for (const d of divergences.slice(0, 2)) {
+      suggestions.push({
+        text: lang === "en"
+          ? `AIs diverge sharply on ${d.name} (${d.range}-point range) — why do they see such different realities?`
+          : `Las IAs divergen mucho sobre ${d.name} (rango de ${d.range} puntos) — ¿por qué las IAs ven realidades tan distintas?`,
+        type: "vector_insight",
+        icon: "🤖",
+        source: "model_divergence",
+      });
+    }
+
+    // ── Weekly moves (compare 2 most recent weeks) ──────────────────
+    const moves: { name: string; ticker: string; prevAvg: number; currAvg: number; delta: number }[] = [];
+
+    for (const co of validCompanies) {
+      const weekKeys = [...co.weekScores.keys()].sort().reverse();
+      if (weekKeys.length < 2) continue;
+
+      const currScores = co.weekScores.get(weekKeys[0])!;
+      const prevScores = co.weekScores.get(weekKeys[1])!;
+      if (currScores.length < 3 || prevScores.length < 3) continue;
+
+      const currAvg = Math.round(currScores.reduce((a, b) => a + b, 0) / currScores.length);
+      const prevAvg = Math.round(prevScores.reduce((a, b) => a + b, 0) / prevScores.length);
+      const delta = currAvg - prevAvg;
+
+      if (Math.abs(delta) >= 8) {
+        moves.push({ name: co.name, ticker: co.ticker, prevAvg, currAvg, delta });
+      }
+    }
+
+    moves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    for (const m of moves.slice(0, 2)) {
+      const up = m.delta > 0;
+      suggestions.push({
+        text: up
+          ? lang === "en"
+            ? `${m.name} jumped from ${m.prevAvg} to ${m.currAvg} (+${m.delta} pts) in one week — what happened?`
+            : `${m.name} ha subido de ${m.prevAvg} a ${m.currAvg} (+${m.delta} pts) en una semana — ¿qué ha pasado?`
+          : lang === "en"
+            ? `${m.name} dropped from ${m.prevAvg} to ${m.currAvg} (${m.delta} pts) in one week — real issue or noise?`
+            : `${m.name} ha caído de ${m.prevAvg} a ${m.currAvg} (${m.delta} pts) en una semana — ¿problema real o ruido?`,
+        type: "vector_insight",
+        icon: up ? "📈" : "📉",
+        source: "weekly_move",
+      });
+    }
+
+    // ── Sector patterns (using issuer metadata) ─────────────────────
+    const sectorGroups = new Map<string, { name: string; avgRix: number }[]>();
+    for (const co of validCompanies) {
+      const meta = issuerMap.get(co.ticker);
+      if (!meta?.sector) continue;
+      const rixScores = [...co.models.values()].map((m) => m.rix);
+      const avg = Math.round(rixScores.reduce((a, b) => a + b, 0) / rixScores.length);
+      if (!sectorGroups.has(meta.sector)) sectorGroups.set(meta.sector, []);
+      sectorGroups.get(meta.sector)!.push({ name: co.name, avgRix: avg });
+    }
+
+    for (const [sector, members] of sectorGroups) {
+      if (members.length < 3) continue;
+      members.sort((a, b) => b.avgRix - a.avgRix);
+      const top = members[0];
+      const bottom = members[members.length - 1];
+      if (top.avgRix - bottom.avgRix >= 20) {
         suggestions.push({
-          text:
-            lang === "en"
-              ? `${d.max_model} rates ${d.company_name} at ${d.max_score} but ${d.min_model} only ${d.min_score} — who's right and why?`
-              : `${d.max_model} da ${d.max_score} a ${d.company_name} pero ${d.min_model} solo ${d.min_score} — ¿quién tiene razón y por qué?`,
+          text: lang === "en"
+            ? `In ${sector}, ${top.name} leads with ${top.avgRix} pts while ${bottom.name} trails at ${bottom.avgRix} — what explains the gap?`
+            : `En ${sector}, ${top.name} lidera con ${top.avgRix} pts mientras ${bottom.name} queda en ${bottom.avgRix} — ¿qué explica la brecha?`,
           type: "vector_insight",
-          icon: "🤖",
-          source: "model_divergence",
+          icon: "📊",
+          source: "sector_pattern",
+        });
+        break;
+      }
+    }
+
+    // ── Cross-index (IBEX-35 vs others) ─────────────────────────────
+    const ibexScores: number[] = [];
+    const nonIbexBeaters: string[] = [];
+
+    for (const co of validCompanies) {
+      const meta = issuerMap.get(co.ticker);
+      if (!meta?.ibex) continue;
+      const rixScores = [...co.models.values()].map((m) => m.rix);
+      const avg = Math.round(rixScores.reduce((a, b) => a + b, 0) / rixScores.length);
+      if (meta.ibex === "IBEX-35") {
+        ibexScores.push(avg);
+      }
+    }
+
+    if (ibexScores.length > 5) {
+      const ibexAvg = Math.round(ibexScores.reduce((a, b) => a + b, 0) / ibexScores.length);
+      for (const co of validCompanies) {
+        const meta = issuerMap.get(co.ticker);
+        if (!meta?.ibex || meta.ibex === "IBEX-35") continue;
+        const rixScores = [...co.models.values()].map((m) => m.rix);
+        const avg = Math.round(rixScores.reduce((a, b) => a + b, 0) / rixScores.length);
+        if (avg > ibexAvg) nonIbexBeaters.push(co.name);
+      }
+      if (nonIbexBeaters.length >= 1 && nonIbexBeaters.length <= 8) {
+        suggestions.push({
+          text: lang === "en"
+            ? `${nonIbexBeaters.length} companies outside the IBEX-35 beat its average score (${ibexAvg}) — which ones and why?`
+            : `${nonIbexBeaters.length} empresas fuera del IBEX-35 superan su media (${ibexAvg} pts) — ¿cuáles son y por qué?`,
+          type: "vector_insight",
+          icon: "💎",
+          source: "cross_index",
         });
       }
     }
 
-    // --- Process Q3: Interesting flags ---
-    if (flagsResult.data) {
-      const flagCounts = new Map<string, Set<string>>();
-      for (const doc of flagsResult.data) {
-        const m = doc.metadata as any;
-        if (!m?.flags || !Array.isArray(m.flags)) continue;
-        for (const flag of m.flags) {
-          if (!flagCounts.has(flag)) flagCounts.set(flag, new Set());
-          flagCounts.get(flag)!.add(m.company_name || m.ticker || "unknown");
-        }
-      }
-      const interestingFlags = ["inconsistencias", "sim_bajo", "drm_bajo", "confusion_alias", "datos_antiguos"];
-      for (const flag of interestingFlags) {
-        const companies = flagCounts.get(flag);
-        if (companies && companies.size >= 2) {
-          const flagLabel =
-            lang === "en"
-              ? flag.replace(/_/g, " ")
-              : flag.replace(/_/g, " ");
-          suggestions.push({
-            text:
-              lang === "en"
-                ? `${companies.size} companies flagged with '${flagLabel}' this week — what's going on?`
-                : `${companies.size} empresas con alerta de '${flagLabel}' esta semana — ¿qué está pasando?`,
-            type: "vector_insight",
-            icon: "⚠️",
-            source: "flag_alert",
-          });
-          break; // Only one flag suggestion
-        }
-      }
+    // ── S6: "Full analysis" suggestions for interesting companies ───
+    const fullAnalysisCandidates = new Set<string>();
+
+    // Companies with high divergence or big weekly moves
+    for (const d of divergences.slice(0, 5)) fullAnalysisCandidates.add(d.name);
+    for (const m of moves.slice(0, 5)) fullAnalysisCandidates.add(m.name);
+
+    // Avoid duplicating companies already in other suggestions
+    const alreadySuggested = new Set(suggestions.map((s) => {
+      // Extract company name from text (rough heuristic)
+      const match = s.text.match(/(?:de |of |on |In .+?, )([A-ZÁ-Ú][\w\s.&-]+?)(?:\s(?:—|ha |jumped|dropped|leads|divergen|stands|beat))/);
+      return match?.[1]?.trim();
+    }).filter(Boolean));
+
+    const fullAnalysisNames = [...fullAnalysisCandidates]
+      .filter((n) => !alreadySuggested.has(n))
+      .slice(0, 3);
+
+    for (const name of fullAnalysisNames) {
+      suggestions.push({
+        text: lang === "en"
+          ? `Analyze the reputation of ${name}`
+          : `Analiza la reputación de ${name}`,
+        type: "vector_insight",
+        icon: "🔍",
+        source: "full_analysis",
+      });
     }
 
-    // --- Process Q4: Weekly moves ---
-    if (weeklyMovesResult.data) {
-      const weeksByTicker = new Map<
-        string,
-        { company_name: string; weeks: Map<string, number[]> }
-      >();
-      for (const doc of weeklyMovesResult.data) {
-        const m = doc.metadata as any;
-        if (!m?.rix_score || !m?.week_start || !m?.ticker) continue;
-        if (!weeksByTicker.has(m.ticker)) {
-          weeksByTicker.set(m.ticker, {
-            company_name: m.company_name || m.ticker,
-            weeks: new Map(),
-          });
-        }
-        const entry = weeksByTicker.get(m.ticker)!;
-        if (!entry.weeks.has(m.week_start)) entry.weeks.set(m.week_start, []);
-        entry.weeks.get(m.week_start)!.push(m.rix_score);
-      }
-
-      const moves: WeeklyMove[] = [];
-      for (const entry of weeksByTicker.values()) {
-        const weekKeys = [...entry.weeks.keys()].sort().reverse();
-        if (weekKeys.length < 2) continue;
-        const currScores = entry.weeks.get(weekKeys[0])!;
-        const prevScores = entry.weeks.get(weekKeys[1])!;
-        const currAvg = Math.round(currScores.reduce((a, b) => a + b, 0) / currScores.length);
-        const prevAvg = Math.round(prevScores.reduce((a, b) => a + b, 0) / prevScores.length);
-        const delta = currAvg - prevAvg;
-        if (Math.abs(delta) >= 8) {
-          moves.push({
-            company_name: entry.company_name,
-            ticker: weekKeys[0],
-            prev_avg: prevAvg,
-            curr_avg: currAvg,
-            delta,
-          });
-        }
-      }
-      moves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-      for (const m of moves.slice(0, 2)) {
-        const direction = m.delta > 0;
-        suggestions.push({
-          text: direction
-            ? lang === "en"
-              ? `${m.company_name} jumped from ${m.prev_avg} to ${m.curr_avg} (+${m.delta} pts) in one week — what happened?`
-              : `${m.company_name} ha subido de ${m.prev_avg} a ${m.curr_avg} (+${m.delta} pts) en una semana — ¿qué ha pasado?`
-            : lang === "en"
-              ? `${m.company_name} dropped from ${m.prev_avg} to ${m.curr_avg} (${m.delta} pts) in one week — real problem or data glitch?`
-              : `${m.company_name} ha caído de ${m.prev_avg} a ${m.curr_avg} (${m.delta} pts) en una semana — ¿problema real o fallo de datos?`,
-          type: "vector_insight",
-          icon: direction ? "📈" : "📉",
-          source: "weekly_move",
-        });
-      }
-    }
-
-    // --- Process Q5: Sector patterns ---
-    if (sectorResult.data) {
-      const sectorScores = new Map<
-        string,
-        { companies: Map<string, number[]> }
-      >();
-      for (const doc of sectorResult.data) {
-        const m = doc.metadata as any;
-        if (!m?.sector_category || !m?.rix_score || !m?.company_name) continue;
-        if (!sectorScores.has(m.sector_category)) {
-          sectorScores.set(m.sector_category, { companies: new Map() });
-        }
-        const sector = sectorScores.get(m.sector_category)!;
-        if (!sector.companies.has(m.company_name)) sector.companies.set(m.company_name, []);
-        sector.companies.get(m.company_name)!.push(m.rix_score);
-      }
-
-      for (const [sector, data] of sectorScores) {
-        if (data.companies.size < 3) continue;
-        const avgs = [...data.companies.entries()].map(([name, scores]) => ({
-          name,
-          avg: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
-        }));
-        avgs.sort((a, b) => b.avg - a.avg);
-        const top = avgs[0];
-        const bottom = avgs[avgs.length - 1];
-        if (top.avg - bottom.avg >= 20) {
-          suggestions.push({
-            text:
-              lang === "en"
-                ? `In ${sector}, ${top.name} leads with ${top.avg} pts while ${bottom.name} trails at ${bottom.avg} — what explains the gap?`
-                : `En ${sector}, ${top.name} lidera con ${top.avg} pts mientras ${bottom.name} queda en ${bottom.avg} — ¿qué explica la brecha?`,
-            type: "vector_insight",
-            icon: "📊",
-            source: "sector_pattern",
-          });
-          break; // One sector suggestion
-        }
-      }
-    }
-
-    // --- Process Q6: Cross-index discoveries ---
-    if (crossIndexResult.data) {
-      const ibexScores: { name: string; score: number }[] = [];
-      const nonIbexScores: { name: string; score: number; code: string }[] = [];
-      const seen = new Set<string>();
-
-      for (const doc of crossIndexResult.data) {
-        const m = doc.metadata as any;
-        if (!m?.rix_score || !m?.company_name || seen.has(m.company_name)) continue;
-        seen.add(m.company_name);
-        if (m.ibex_family_code === "IBEX-35") {
-          ibexScores.push({ name: m.company_name, score: m.rix_score });
-        } else {
-          nonIbexScores.push({ name: m.company_name, score: m.rix_score, code: m.ibex_family_code });
-        }
-      }
-
-      if (ibexScores.length > 0 && nonIbexScores.length > 0) {
-        const ibexAvg = Math.round(ibexScores.reduce((a, b) => a + b.score, 0) / ibexScores.length);
-        const beaters = nonIbexScores.filter((c) => c.score > ibexAvg);
-        if (beaters.length >= 1 && beaters.length <= 5) {
-          suggestions.push({
-            text:
-              lang === "en"
-                ? `${beaters.length} companies outside the IBEX-35 beat its average score (${ibexAvg}) — which ones and why?`
-                : `${beaters.length} empresas fuera del IBEX-35 superan su media (${ibexAvg} pts) — ¿cuáles son y por qué?`,
-            type: "vector_insight",
-            icon: "💎",
-            source: "cross_index",
-          });
-        }
-      }
-    }
-
-    // Shuffle and pick `count` suggestions
+    // ── Shuffle and pick `count` suggestions ────────────────────────
     const shuffled = suggestions.sort(() => Math.random() - 0.5).slice(0, count);
 
     return new Response(JSON.stringify({ suggestions: shuffled }), {
@@ -429,7 +418,7 @@ Deno.serve(async (req) => {
     console.error("Error in fetch-smart-suggestions:", error);
     return new Response(
       JSON.stringify({ suggestions: [], error: String(error) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
