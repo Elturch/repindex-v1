@@ -4999,6 +4999,13 @@ La cabecera del informe (donde aparece "Período:") DEBE mostrar EXACTAMENTE las
 - El número de semanas mostrado DEBE coincidir con el número real de semanas distintas en el DATAPACK.
 - La Sección 8 (Cierre/Metodología) DEBE repetir EXACTAMENTE las mismas fechas de la cabecera.
 
+REGLA DE FECHA DE ELABORACIÓN (INQUEBRANTABLE):
+La Sección 8 (Cierre/Metodología) incluye una frase "Análisis elaborado el [fecha]".
+- Esta fecha DEBE ser la fecha ACTUAL del momento en que se genera el informe.
+- NUNCA inventar una fecha futura ni pasada.
+- Si no conoces la fecha exacta, usa la fecha del period_to más reciente del DATAPACK como aproximación.
+- PROHIBIDO escribir una fecha que aún no ha ocurrido (ej: si hoy es 8 mar, NO escribir 10 mar).
+
 LAS 8 MÉTRICAS:
 • Calidad de la Narrativa (NVM) · Fortaleza de Evidencia (DRM) · Autoridad de Fuentes (SIM, NO mide ESG)
 • Actualidad y Empuje (RMM, NO mide marketing) · Gestión de Controversias (CEM, INVERSA: 100=sin controversias)
