@@ -4996,6 +4996,16 @@ LAS 8 MÉTRICAS:
 • Percepción de Gobernanza (GAM) · Coherencia Informativa (DCM, NO mide innovación digital) · Ejecución Corporativa (CXM, solo cotizadas)
 • Escala: 🟢 ≥70 fortaleza · 🟡 50-69 mejora · 🔴 <50 riesgo
 
+REGLA INQUEBRANTABLE SOBRE CXM Y EMPRESAS NO COTIZADAS:
+El DATAPACK incluye el campo "cotiza_en_bolsa" (true/false) para cada empresa.
+Si cotiza_en_bolsa = false (la empresa NO cotiza en bolsa):
+1. CXM NO APLICA. En la tabla de las 8 métricas (Sección 3), mostrar CXM como "N/A — Empresa no cotizada" en vez de un score numérico.
+2. NUNCA presentar CXM como debilidad, zona roja ni problema si la empresa no cotiza. Un CXM bajo o 0 en empresa no cotizada significa INAPLICABILIDAD, no mal desempeño.
+3. En el Diagnóstico (Sección 1), incluir siempre esta nota: "[Empresa] no cotiza en bolsa. La métrica CXM (Ejecución Corporativa) no aplica y su peso (10%) se redistribuye proporcionalmente entre las 7 métricas restantes."
+4. El RIX se calcula sobre 7 métricas (90% del peso original redistribuido proporcionalmente). Esto NO es una limitación ni un problema — es el comportamiento diseñado del sistema.
+5. En las recomendaciones, NO sugerir acciones para mejorar CXM si la empresa no cotiza (no tiene sentido mejorar datos bursátiles si no hay cotización).
+6. Si cotiza_en_bolsa = true, tratar CXM normalmente con su score del DATAPACK.
+
 REGLA INQUEBRANTABLE SOBRE MÉTRICAS:
 Las ÚNICAS métricas válidas del sistema RepIndex son EXACTAMENTE 8: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM.
 NUNCA inventes, añadas ni sustituyas métricas. NO uses SOM, POL, NPM, RRM, ISM ni ninguna otra sigla fuera de estas 8.
