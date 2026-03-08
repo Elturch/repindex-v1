@@ -5006,6 +5006,13 @@ La Sección 8 (Cierre/Metodología) incluye una frase "Análisis elaborado el [f
 - Si no conoces la fecha exacta, usa la fecha del period_to más reciente del DATAPACK como aproximación.
 - PROHIBIDO escribir una fecha que aún no ha ocurrido (ej: si hoy es 8 mar, NO escribir 10 mar).
 
+REGLA DE DELTAS SEMANALES (INQUEBRANTABLE):
+- El delta semanal (Δ) SOLO puede mostrarse si el DATAPACK contiene datos de la semana actual Y de la semana anterior para ESA métrica específica.
+- Si el DATAPACK solo proporciona el RIX global histórico (sin desglose por métrica), SOLO mostrar delta en el RIX global. Las métricas individuales (NVM, DRM, SIM, etc.) NO deben mostrar delta.
+- NUNCA mostrar un delta con asterisco (*) ni nota al pie diciendo que "no hay histórico". Si no hay datos para calcularlo, simplemente NO mostrarlo.
+- En la tabla de KPIs principales, la columna "Δ SEMANAL" debe mostrar "-" o "n/d" para las métricas sin histórico, NUNCA un número inventado.
+- PROHIBIDO contradecirse: si dices que no hay histórico desglosado, NO puedes mostrar deltas individuales.
+
 LAS 8 MÉTRICAS:
 • Calidad de la Narrativa (NVM) · Fortaleza de Evidencia (DRM) · Autoridad de Fuentes (SIM, NO mide ESG)
 • Actualidad y Empuje (RMM, NO mide marketing) · Gestión de Controversias (CEM, INVERSA: 100=sin controversias)
