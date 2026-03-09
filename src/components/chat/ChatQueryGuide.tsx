@@ -1,5 +1,10 @@
-import { Lightbulb } from "lucide-react";
 import { ChatLanguage } from "@/lib/chatLanguages";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ChatQueryGuideProps {
   language: ChatLanguage;
@@ -8,25 +13,14 @@ interface ChatQueryGuideProps {
 
 type LangCode = 'es' | 'en' | 'fr' | 'de' | 'pt' | 'it' | 'ar' | 'zh' | 'ja' | 'ko';
 
-const GUIDE_TRANSLATIONS: Record<string, Record<string, string>> = {
-  title: {
-    es: "¿Qué quieres saber?",
-    en: "What do you want to know?",
-    pt: "O que queres saber?",
-    ca: "Què vols saber?",
-    fr: "Que voulez-vous savoir ?",
-    de: "Was möchten Sie wissen?",
-    it: "Cosa vuoi sapere?",
-  },
-  subtitle: {
-    es: "Escribe tu pregunta como quieras — el Agente Rix la interpretará automáticamente",
-    en: "Write your question however you like — Agent Rix will interpret it automatically",
-    pt: "Escreve a tua pergunta como quiseres — o Agente Rix interpretará automaticamente",
-    ca: "Escriu la teva pregunta com vulguis — l'Agent Rix la interpretarà automàticament",
-    fr: "Écrivez votre question comme vous voulez — l'Agent Rix l'interprétera automatiquement",
-    de: "Schreiben Sie Ihre Frage wie Sie möchten — Agent Rix wird sie automatisch interpretieren",
-    it: "Scrivi la tua domanda come vuoi — l'Agente Rix la interpreterà automaticamente",
-  },
+const LABEL: Record<string, string> = {
+  es: "💡 Prueba:",
+  en: "💡 Try:",
+  pt: "💡 Tenta:",
+  ca: "💡 Prova:",
+  fr: "💡 Essayez :",
+  de: "💡 Probiere:",
+  it: "💡 Prova:",
 };
 
 interface GuideCategory {
@@ -34,14 +28,6 @@ interface GuideCategory {
   labels: Record<string, string>;
   examples: Record<string, string>;
 }
-
-const CATEGORY_COLORS = [
-  "bg-blue-100 dark:bg-blue-900/40",
-  "bg-violet-100 dark:bg-violet-900/40",
-  "bg-amber-100 dark:bg-amber-900/40",
-  "bg-emerald-100 dark:bg-emerald-900/40",
-  "bg-rose-100 dark:bg-rose-900/40",
-];
 
 const CATEGORIES: GuideCategory[] = [
   {
@@ -110,53 +96,37 @@ const CATEGORIES: GuideCategory[] = [
     },
   },
 ];
-function t(key: string, lang: string): string {
-  const map = GUIDE_TRANSLATIONS[key];
-  if (!map) return "";
-  return map[lang] || map["en"] || map["es"] || "";
-}
 
 export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProps) {
   const lang = language.code as LangCode;
+  const label = LABEL[lang] || LABEL["en"] || LABEL["es"];
 
   return (
-    <div className="rounded-2xl border border-border/30 bg-gradient-to-b from-secondary/60 to-background p-6 space-y-5">
-      {/* Title */}
-      <div className="flex items-center gap-2.5 justify-center">
-        <Lightbulb className="h-6 w-6 text-primary" />
-        <h3 className="text-xl font-bold text-foreground">
-          {t("title", lang)}
-        </h3>
-      </div>
-
-      {/* Category cards */}
-      <div className="flex gap-3 overflow-x-auto pb-2 snap-x sm:flex-wrap sm:justify-center sm:overflow-visible scrollbar-hide">
+    <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1">
+      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{label}</span>
+      <TooltipProvider delayDuration={200}>
         {CATEGORIES.map((cat, i) => {
-          const label = cat.labels[lang] || cat.labels["en"] || cat.labels["es"];
+          const catLabel = cat.labels[lang] || cat.labels["en"] || cat.labels["es"];
           const example = cat.examples[lang] || cat.examples["en"] || cat.examples["es"];
 
           return (
-            <button
-              key={i}
-              onClick={() => onSelectExample(example)}
-              className="flex-shrink-0 snap-start cursor-pointer flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-card p-4 min-w-[150px] sm:min-w-[160px] shadow-soft hover:shadow-medium hover:-translate-y-1 transition-all duration-200"
-            >
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full ${CATEGORY_COLORS[i]}`}>
-                <span className="text-3xl leading-none">{cat.icon}</span>
-              </div>
-              <span className="text-sm font-semibold text-foreground">{label}</span>
-              <span className="text-xs text-muted-foreground text-center leading-tight line-clamp-2">
-                {example}
-              </span>
-            </button>
+            <Tooltip key={i}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onSelectExample(example)}
+                  className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-colors"
+                >
+                  <span className="text-sm leading-none">{cat.icon}</span>
+                  <span>{catLabel}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[220px] text-center">
+                <p className="text-xs">{example}</p>
+              </TooltipContent>
+            </Tooltip>
           );
         })}
-      </div>
-
-      {/* Subtitle */}
-      <p className="text-center text-[11px] italic text-muted-foreground/60">
-        {t("subtitle", lang)}
-      </p>
+      </TooltipProvider>
     </div>
   );
 }
