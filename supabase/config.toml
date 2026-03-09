@@ -110,3 +110,6 @@ verify_jwt = false
 
 [functions.cleanup-duplicate-documents]
 verify_jwt = false
+
+[functions.normalize-query]
+verify_jwt = false
