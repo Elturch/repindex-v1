@@ -1549,6 +1549,7 @@ const EVOLUTION_PATTERNS_EDGE = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|t
 const RANKING_PATTERNS_EDGE = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)/i;
 const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
+const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
 
 function interpretQueryEdge(question: string): { intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number } {
   const lower = question.toLowerCase();
