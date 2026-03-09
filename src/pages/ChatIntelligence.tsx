@@ -68,13 +68,6 @@ export default function ChatIntelligence() {
           </p>
         </div>
 
-        {/* Query Guide — only before first message */}
-        {showGuide && (
-          <ChatQueryGuide
-            language={language}
-            onSelectExample={handleSelectExample}
-          />
-        )}
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-2">
