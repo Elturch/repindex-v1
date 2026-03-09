@@ -35,6 +35,14 @@ interface GuideCategory {
   examples: Record<string, string>;
 }
 
+const CATEGORY_COLORS = [
+  "bg-blue-100 dark:bg-blue-900/40",
+  "bg-violet-100 dark:bg-violet-900/40",
+  "bg-amber-100 dark:bg-amber-900/40",
+  "bg-emerald-100 dark:bg-emerald-900/40",
+  "bg-rose-100 dark:bg-rose-900/40",
+];
+
 const CATEGORIES: GuideCategory[] = [
   {
     icon: "📊",
@@ -102,7 +110,6 @@ const CATEGORIES: GuideCategory[] = [
     },
   },
 ];
-
 function t(key: string, lang: string): string {
   const map = GUIDE_TRANSLATIONS[key];
   if (!map) return "";
@@ -113,17 +120,17 @@ export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProp
   const lang = language.code as LangCode;
 
   return (
-    <div className="rounded-xl border border-border/40 bg-gradient-to-b from-muted/40 to-background p-5 space-y-4">
+    <div className="rounded-2xl border border-border/30 bg-gradient-to-b from-secondary/60 to-background p-6 space-y-5">
       {/* Title */}
-      <div className="flex items-center gap-2 justify-center">
-        <Lightbulb className="h-5 w-5 text-primary" />
-        <h3 className="text-base font-semibold text-foreground">
+      <div className="flex items-center gap-2.5 justify-center">
+        <Lightbulb className="h-6 w-6 text-primary" />
+        <h3 className="text-xl font-bold text-foreground">
           {t("title", lang)}
         </h3>
       </div>
 
-      {/* Category pills — horizontal scroll on mobile, flex wrap on desktop */}
-      <div className="flex gap-3 overflow-x-auto pb-2 sm:flex-wrap sm:justify-center sm:overflow-visible scrollbar-hide">
+      {/* Category cards */}
+      <div className="flex gap-3 overflow-x-auto pb-2 snap-x sm:flex-wrap sm:justify-center sm:overflow-visible scrollbar-hide">
         {CATEGORIES.map((cat, i) => {
           const label = cat.labels[lang] || cat.labels["en"] || cat.labels["es"];
           const example = cat.examples[lang] || cat.examples["en"] || cat.examples["es"];
@@ -132,11 +139,13 @@ export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProp
             <button
               key={i}
               onClick={() => onSelectExample(example)}
-              className="flex-shrink-0 group flex flex-col items-center gap-1.5 rounded-lg border border-border/50 bg-card px-4 py-3 min-w-[140px] sm:min-w-[150px] hover:border-primary/50 hover:shadow-soft transition-all duration-200 cursor-pointer"
+              className="flex-shrink-0 snap-start cursor-pointer flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-card p-4 min-w-[150px] sm:min-w-[160px] shadow-soft hover:shadow-medium hover:-translate-y-1 transition-all duration-200"
             >
-              <span className="text-2xl">{cat.icon}</span>
-              <span className="text-xs font-semibold text-foreground">{label}</span>
-              <span className="text-[11px] text-muted-foreground text-center leading-tight group-hover:text-primary transition-colors line-clamp-2">
+              <div className={`flex items-center justify-center w-12 h-12 rounded-full ${CATEGORY_COLORS[i]}`}>
+                <span className="text-3xl leading-none">{cat.icon}</span>
+              </div>
+              <span className="text-sm font-semibold text-foreground">{label}</span>
+              <span className="text-xs text-muted-foreground text-center leading-tight line-clamp-2">
                 {example}
               </span>
             </button>
@@ -144,8 +153,8 @@ export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProp
         })}
       </div>
 
-      {/* Subtle subtitle */}
-      <p className="text-center text-xs text-muted-foreground/70">
+      {/* Subtitle */}
+      <p className="text-center text-[11px] italic text-muted-foreground/60">
         {t("subtitle", lang)}
       </p>
     </div>
