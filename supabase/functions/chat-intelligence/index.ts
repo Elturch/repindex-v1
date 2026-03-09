@@ -8706,6 +8706,63 @@ async function handleStandardChat(
     }
   }
 
+  // --- DIRECT CRISIS RESPONSE (bypass E3/E4/E5 orchestrator) ---
+  // If this is a crisis_scan query with data, generate markdown directly — no LLM needed
+  const isCrisisQueryWithData = !dpHasSnapshot && dpHasRanking && dataPack.ranking.length > 0 && dataPack.ranking[0] && "cem" in dataPack.ranking[0];
+  if (isCrisisQueryWithData) {
+    console.log(`${logPrefix} [CRISIS-DIRECT] Generating direct markdown response for crisis_scan (${dataPack.ranking.length} companies)`);
+
+    const batchDate = (dataPack as any).crisis_batch_date || "último barrido";
+    const langKey = language === "en" ? "en" : "es";
+
+    // Sort by rix_avg ascending (worst first)
+    const sorted = [...dataPack.ranking].sort((a, b) => (a.rix_avg ?? 100) - (b.rix_avg ?? 100));
+
+    let crisisMarkdown: string;
+    if (langKey === "en") {
+      crisisMarkdown = `## ⚠️ Companies in the Reputational Risk Zone\n\nAccording to the latest sweep (${batchDate}), **${sorted.length} companies** show RIX or CEM scores below 40, indicating potential reputational risk.\n\n`;
+      crisisMarkdown += `| # | Company | Ticker | RIX | CEM | NVM | Sector |\n|---|---------|--------|-----|-----|-----|--------|\n`;
+      sorted.forEach((r: any, i: number) => {
+        crisisMarkdown += `| ${i + 1} | ${r.nombre || "—"} | ${r.ticker || "—"} | ${r.rix_avg ?? "—"} | ${r.cem ?? "—"} | ${r.nvm ?? "—"} | ${r.sector || "—"} |\n`;
+      });
+      crisisMarkdown += `\n**Methodology:** Companies with RIX < 40 or CEM (Crisis Management) < 40 in the latest weekly sweep. RIX is the median of 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Data from sweep of ${batchDate}*`;
+    } else {
+      crisisMarkdown = `## ⚠️ Empresas en Zona de Riesgo Reputacional\n\nSegún el último barrido (${batchDate}), **${sorted.length} empresas** presentan puntuaciones RIX o CEM por debajo de 40, lo que indica riesgo reputacional potencial.\n\n`;
+      crisisMarkdown += `| # | Empresa | Ticker | RIX | CEM | NVM | Sector |\n|---|---------|--------|-----|-----|-----|--------|\n`;
+      sorted.forEach((r: any, i: number) => {
+        crisisMarkdown += `| ${i + 1} | ${r.nombre || "—"} | ${r.ticker || "—"} | ${r.rix_avg ?? "—"} | ${r.cem ?? "—"} | ${r.nvm ?? "—"} | ${r.sector || "—"} |\n`;
+      });
+      crisisMarkdown += `\n**Metodología:** Empresas con RIX < 40 o CEM (Gestión de Controversias) < 40 en el último barrido semanal. El RIX es la mediana de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Datos del barrido del ${batchDate}*`;
+    }
+
+    const crisisSuggestions = langKey === "en"
+      ? [`Analyze ${sorted[0]?.nombre || "the worst company"}`, "Show me the IBEX 35 ranking", "Which sector has the most risk?"]
+      : [`Analiza ${sorted[0]?.nombre || "la peor empresa"}`, "Muéstrame el ranking del IBEX 35", "¿Qué sector tiene más riesgo?"];
+
+    // Save to session
+    try {
+      await supabaseClient.from("chat_intelligence_sessions").insert([
+        { session_id: sessionId, role: "user", content: question, user_id: userId },
+        { session_id: sessionId, role: "assistant", content: crisisMarkdown, user_id: userId, question_category: "alert" },
+      ]);
+    } catch (_e) { /* ignore */ }
+
+    if (streamMode) {
+      const sseEncoderCrisis = createSSEEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(sseEncoderCrisis({ type: "start", metadata: { language, depthLevel, detectedCompanies: [] } }));
+          controller.enqueue(sseEncoderCrisis({ type: "chunk", text: crisisMarkdown }));
+          controller.enqueue(sseEncoderCrisis({ type: "done", suggestedQuestions: crisisSuggestions, metadata: { type: "crisis_scan", documentsFound: 0, structuredDataFound: sorted.length, questionCategory: "alert" } }));
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+    } else {
+      return new Response(JSON.stringify({ answer: crisisMarkdown, suggestedQuestions: crisisSuggestions, metadata: { type: "crisis_scan", structuredDataFound: sorted.length, questionCategory: "alert" } }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+  }
+
   // --- E3: LECTOR CUALITATIVO ---
   const facts = await extractQualitativeFacts(dataPack.raw_texts, dataPack, logPrefix);
 
