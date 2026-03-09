@@ -478,6 +478,70 @@ export function ChatProvider({ children }: ChatProviderProps) {
       
       console.log('[ChatContext] Sending message with language:', language.code, 'depth:', options?.depthLevel, 'streaming:', useStreaming);
 
+      // =========================================================================
+      // NORMALIZE QUERY: Call normalize-query edge function first (3s timeout)
+      // =========================================================================
+      let normalizedQuestion = question;
+      let normalizationMeta: Record<string, unknown> | null = null;
+      
+      try {
+        const normController = new AbortController();
+        const normTimeout = setTimeout(() => normController.abort(), 3500);
+        
+        const normResp = await fetch(
+          `${SUPABASE_URL}/functions/v1/normalize-query`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+              'apikey': SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ query: question, language: language.code }),
+            signal: normController.signal,
+          }
+        );
+        clearTimeout(normTimeout);
+
+        if (normResp.ok) {
+          const normData = await normResp.json();
+          normalizationMeta = normData;
+          
+          // If needs clarification, show it as assistant message and stop
+          if (normData.needs_clarification && normData.clarification_message) {
+            const clarificationMsg: Message = {
+              role: 'assistant',
+              content: normData.clarification_message,
+            };
+            setMessages(prev => [...prev, clarificationMsg]);
+            
+            // Save to DB
+            await supabase.from('chat_intelligence_sessions').insert({
+              session_id: sessionId,
+              role: 'assistant',
+              content: normData.clarification_message,
+              user_id: currentUserId,
+              conversation_id: convId,
+            });
+            
+            // Clean up loading state
+            if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+            setIsLoading(false);
+            setIsStreaming(false);
+            return;
+          }
+          
+          // Use normalized query if available
+          if (normData.normalized_query && normData.confidence > 0.3) {
+            normalizedQuestion = normData.normalized_query;
+            console.log('[ChatContext] Query normalized:', question, '->', normalizedQuestion);
+          }
+        }
+      } catch (normErr) {
+        // Graceful degradation: just use original query
+        console.warn('[ChatContext] normalize-query failed, using original:', normErr);
+      }
+
       if (useStreaming) {
         // =========================================================================
         // STREAMING MODE: Use fetch with ReadableStream for SSE
@@ -501,7 +565,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
               'apikey': SUPABASE_ANON_KEY,
             },
             body: JSON.stringify({
-              question,
+              question: normalizedQuestion,
+              originalQuestion: question !== normalizedQuestion ? question : undefined,
               conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
               sessionId,
               conversationId: convId,
