@@ -130,7 +130,6 @@ export function ChatMessages({
             <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
           </div>
           
-          {/* Smart suggestions temporarily hidden
           <div className="w-full space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
@@ -199,7 +198,6 @@ export function ChatMessages({
               )}
             </div>
           </div>
-          */}
         </div>
       </ScrollArea>
     );

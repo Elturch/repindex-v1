@@ -144,12 +144,14 @@ export default function ChatIntelligence() {
 
             {/* Input Area */}
             <div className="mt-4 space-y-2">
+              {/* ChatQueryGuide temporarily hidden
               {showGuide && (
                 <ChatQueryGuide
                   language={language}
                   onSelectExample={handleSelectExample}
                 />
               )}
+              */}
               <ChatInput
                 onSend={sendMessage as any}
                 isLoading={isLoading}
