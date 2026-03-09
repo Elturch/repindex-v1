@@ -35,6 +35,14 @@ interface GuideCategory {
   examples: Record<string, string>;
 }
 
+const CATEGORY_COLORS = [
+  "bg-blue-100 dark:bg-blue-900/40",
+  "bg-violet-100 dark:bg-violet-900/40",
+  "bg-amber-100 dark:bg-amber-900/40",
+  "bg-emerald-100 dark:bg-emerald-900/40",
+  "bg-rose-100 dark:bg-rose-900/40",
+];
+
 const CATEGORIES: GuideCategory[] = [
   {
     icon: "📊",
@@ -102,7 +110,6 @@ const CATEGORIES: GuideCategory[] = [
     },
   },
 ];
-
 function t(key: string, lang: string): string {
   const map = GUIDE_TRANSLATIONS[key];
   if (!map) return "";
