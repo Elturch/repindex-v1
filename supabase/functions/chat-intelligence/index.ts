@@ -8624,6 +8624,55 @@ async function handleStandardChat(
     console.warn(`${logPrefix} [REGRESSION] Failed:`, regError);
   }
 
+  // --- GRACEFUL EMPTY DATAPACK CHECK ---
+  const dpHasSnapshot = dataPack.snapshot && dataPack.snapshot.length > 0;
+  const dpHasRanking = dataPack.ranking && dataPack.ranking.length > 0;
+  const dpHasF2 = (dataPack as any).f2_dynamic && Object.keys((dataPack as any).f2_dynamic).length > 0;
+  const dpCrisisEmpty = (dataPack as any).crisis_scan_empty === true;
+
+  if (!dpHasSnapshot && !dpHasRanking && !dpHasF2) {
+    let earlyResponse: string | null = null;
+
+    if (dpCrisisEmpty) {
+      const batchDate = (dataPack as any).crisis_batch_date || "reciente";
+      const langKey = language === "en" ? "en" : "es";
+      earlyResponse = langKey === "en"
+        ? `Good news: in the latest sweep (${batchDate}), no company has been detected in a crisis situation. All monitored companies maintain a CEM > 40 and a RIX > 40.`
+        : `Buenas noticias: en el último barrido (${batchDate}) no se ha detectado ninguna empresa en situación de crisis. Todas las empresas monitorizadas mantienen un CEM > 40 y un RIX > 40.`;
+    } else {
+      const langKey = language === "en" ? "en" : "es";
+      earlyResponse = langKey === "en"
+        ? "I couldn't find enough data to answer this query. Please make sure the company is in our monitoring universe or rephrase your question."
+        : "No he encontrado datos suficientes para responder a esta consulta. Asegúrate de que la empresa está en nuestro universo de monitorización o reformula la pregunta.";
+    }
+
+    if (earlyResponse) {
+      console.log(`${logPrefix} [GRACEFUL] Empty dataPack detected (crisis_empty=${dpCrisisEmpty}), returning early response`);
+
+      // Save to session
+      try {
+        await supabaseClient.from("chat_intelligence_sessions").insert([
+          { session_id: sessionId, role: "user", content: question, user_id: userId, conversation_id: conversationId },
+          { session_id: sessionId, role: "assistant", content: earlyResponse, user_id: userId, conversation_id: conversationId, question_category: dpCrisisEmpty ? "alert" : "general" },
+        ]);
+      } catch (_e) { /* ignore session save error */ }
+
+      if (streamMode) {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: earlyResponse })}\n\n`));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+      } else {
+        return new Response(JSON.stringify({ answer: earlyResponse }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+  }
+
   // --- E3: LECTOR CUALITATIVO ---
   const facts = await extractQualitativeFacts(dataPack.raw_texts, dataPack, logPrefix);
 
