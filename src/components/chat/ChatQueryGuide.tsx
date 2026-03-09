@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ChatLanguage } from "@/lib/chatLanguages";
 import {
   Tooltip,
@@ -11,8 +12,6 @@ interface ChatQueryGuideProps {
   onSelectExample: (text: string) => void;
 }
 
-type LangCode = 'es' | 'en' | 'fr' | 'de' | 'pt' | 'it' | 'ar' | 'zh' | 'ja' | 'ko';
-
 const LABEL: Record<string, string> = {
   es: "💡 Prueba:",
   en: "💡 Try:",
@@ -25,103 +24,127 @@ const LABEL: Record<string, string> = {
 
 interface GuideCategory {
   icon: string;
-  labels: Record<string, string>;
-  examples: Record<string, string>;
+  label: Record<string, string>;
+  examples: string[];
 }
 
 const CATEGORIES: GuideCategory[] = [
   {
     icon: "📊",
-    labels: { es: "Análisis", en: "Analysis", pt: "Análise", ca: "Anàlisi", fr: "Analyse", de: "Analyse", it: "Analisi" },
-    examples: {
-      es: "Analiza la reputación de Telefónica",
-      en: "Analyze Telefónica's reputation",
-      pt: "Analisa a reputação da Telefónica",
-      ca: "Analitza la reputació de Telefónica",
-      fr: "Analyse la réputation de Telefónica",
-      de: "Analysiere den Ruf von Telefónica",
-      it: "Analizza la reputazione di Telefónica",
-    },
+    label: { es: "Análisis", en: "Analysis", pt: "Análise", ca: "Anàlisi", fr: "Analyse", de: "Analyse", it: "Analisi" },
+    examples: [
+      "Analiza la reputación de Telefónica",
+      "Analiza la reputación de Inditex",
+      "Analiza la reputación de Repsol",
+      "Analiza la reputación de BBVA",
+      "Analiza la reputación de Iberdrola",
+      "Analiza la reputación de Santander",
+      "Analiza la reputación de CaixaBank",
+      "Analiza la reputación de Puig",
+    ],
   },
   {
     icon: "⚔️",
-    labels: { es: "Comparar", en: "Compare", pt: "Comparar", ca: "Compara", fr: "Comparer", de: "Vergleichen", it: "Confronta" },
-    examples: {
-      es: "Compara Inditex con Mango",
-      en: "Compare Inditex with Mango",
-      pt: "Compara Inditex com Mango",
-      ca: "Compara Inditex amb Mango",
-      fr: "Compare Inditex avec Mango",
-      de: "Vergleiche Inditex mit Mango",
-      it: "Confronta Inditex con Mango",
-    },
+    label: { es: "Comparar", en: "Compare", pt: "Comparar", ca: "Compara", fr: "Comparer", de: "Vergleichen", it: "Confronta" },
+    examples: [
+      "Compara Inditex con Mango",
+      "Compara Telefónica con Vodafone",
+      "Compara BBVA con Santander",
+      "Compara Repsol con Cepsa",
+      "Compara Iberdrola con Endesa",
+      "Compara CaixaBank con Sabadell",
+    ],
   },
   {
     icon: "🏆",
-    labels: { es: "Rankings", en: "Rankings", pt: "Rankings", ca: "Rankings", fr: "Classements", de: "Rankings", it: "Classifiche" },
-    examples: {
-      es: "Top 5 del IBEX por reputación",
-      en: "Top 5 IBEX by reputation",
-      pt: "Top 5 do IBEX por reputação",
-      ca: "Top 5 de l'IBEX per reputació",
-      fr: "Top 5 de l'IBEX par réputation",
-      de: "Top 5 IBEX nach Reputation",
-      it: "Top 5 IBEX per reputazione",
-    },
+    label: { es: "Rankings", en: "Rankings", pt: "Rankings", ca: "Rankings", fr: "Classements", de: "Rankings", it: "Classifiche" },
+    examples: [
+      "Top 5 del IBEX por reputación",
+      "Top 10 empresas mejor valoradas",
+      "Ranking del sector Banca",
+      "Peores empresas del IBEX esta semana",
+      "Ranking del sector Energía",
+      "Top empresas del BME Growth",
+    ],
   },
   {
     icon: "📈",
-    labels: { es: "Evolución", en: "Trends", pt: "Evolução", ca: "Evolució", fr: "Évolution", de: "Entwicklung", it: "Evoluzione" },
-    examples: {
-      es: "Evolución de Repsol",
-      en: "Repsol's evolution",
-      pt: "Evolução da Repsol",
-      ca: "Evolució de Repsol",
-      fr: "Évolution de Repsol",
-      de: "Entwicklung von Repsol",
-      it: "Evoluzione di Repsol",
-    },
+    label: { es: "Evolución", en: "Trends", pt: "Evolução", ca: "Evolució", fr: "Évolution", de: "Entwicklung", it: "Evoluzione" },
+    examples: [
+      "Evolución de Repsol",
+      "Evolución de Telefónica",
+      "¿Cómo ha cambiado la reputación de Inditex?",
+      "Tendencia de Santander en las últimas semanas",
+      "Evolución del sector Construcción",
+    ],
   },
   {
     icon: "🔍",
-    labels: { es: "Divergencia", en: "Divergence", pt: "Divergência", ca: "Divergència", fr: "Divergence", de: "Divergenz", it: "Divergenza" },
-    examples: {
-      es: "¿Por qué las IAs divergen sobre Santander?",
-      en: "Why do AIs diverge on Santander?",
-      pt: "Por que as IAs divergem sobre Santander?",
-      ca: "Per què les IAs divergeixen sobre Santander?",
-      fr: "Pourquoi les IAs divergent-elles sur Santander ?",
-      de: "Warum weichen die KIs bei Santander ab?",
-      it: "Perché le IA divergono su Santander?",
-    },
+    label: { es: "Divergencia", en: "Divergence", pt: "Divergência", ca: "Divergència", fr: "Divergence", de: "Divergenz", it: "Divergenza" },
+    examples: [
+      "¿Por qué las IAs divergen sobre Santander?",
+      "¿Por qué las IAs divergen sobre Telefónica?",
+      "¿Qué empresa tiene más divergencia entre IAs?",
+      "Divergencias en el sector Telecomunicaciones",
+      "Analiza la divergencia de BBVA",
+    ],
+  },
+  {
+    icon: "🎯",
+    label: { es: "Métricas", en: "Metrics", pt: "Métricas", ca: "Mètriques", fr: "Métriques", de: "Metriken", it: "Metriche" },
+    examples: [
+      "Analiza el CEM de Repsol",
+      "¿Por qué el SIM de Telefónica es bajo?",
+      "Analiza el NVM de Inditex",
+      "¿Qué empresas tienen mejor CEM?",
+      "Analiza el DCM de Santander",
+    ],
+  },
+  {
+    icon: "📄",
+    label: { es: "Sector", en: "Sector", pt: "Setor", ca: "Sector", fr: "Secteur", de: "Sektor", it: "Settore" },
+    examples: [
+      "Análisis del sector Banca",
+      "Análisis del sector Energía",
+      "¿Cómo va el sector Telecomunicaciones?",
+      "Resumen del sector Construcción",
+    ],
   },
 ];
 
 export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProps) {
-  const lang = language.code as LangCode;
-  const label = LABEL[lang] || LABEL["en"] || LABEL["es"];
+  const lang = language.code;
+  const prompt = LABEL[lang] || LABEL["en"] || LABEL["es"];
+  const [indices, setIndices] = useState<Record<number, number>>({});
+
+  const handleClick = (catIndex: number) => {
+    const current = indices[catIndex] ?? 0;
+    const pool = CATEGORIES[catIndex].examples;
+    onSelectExample(pool[current]);
+    setIndices((prev) => ({ ...prev, [catIndex]: (current + 1) % pool.length }));
+  };
 
   return (
     <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1">
-      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{label}</span>
+      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
       <TooltipProvider delayDuration={200}>
         {CATEGORIES.map((cat, i) => {
-          const catLabel = cat.labels[lang] || cat.labels["en"] || cat.labels["es"];
-          const example = cat.examples[lang] || cat.examples["en"] || cat.examples["es"];
+          const catLabel = cat.label[lang] || cat.label["en"] || cat.label["es"];
+          const currentExample = cat.examples[indices[i] ?? 0];
 
           return (
             <Tooltip key={i}>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => onSelectExample(example)}
-                  className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-colors"
+                  onClick={() => handleClick(i)}
+                  className="shrink-0 cursor-pointer inline-flex items-center gap-1 rounded-full border border-border/50 bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-colors"
                 >
                   <span className="text-sm leading-none">{cat.icon}</span>
                   <span>{catLabel}</span>
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[220px] text-center">
-                <p className="text-xs">{example}</p>
+              <TooltipContent side="top" className="max-w-[240px] text-center">
+                <p className="text-xs">{currentExample}</p>
               </TooltipContent>
             </Tooltip>
           );
