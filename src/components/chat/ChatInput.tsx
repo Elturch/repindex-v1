@@ -8,12 +8,10 @@ import { LanguageSelector } from "./LanguageSelector";
 import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ChatLanguage } from "@/lib/chatLanguages";
 import { getChatTranslations } from "@/lib/chatTranslations";
-import { useChatContext } from "@/contexts/ChatContext";
+import { useChatContext, DepthLevel } from "@/contexts/ChatContext";
 
-export type DepthLevel = 'quick' | 'complete' | 'exhaustive';
-
-interface ChatInputProps {
-  onSend: (message: string, options?: { depthLevel?: DepthLevel; roleId?: string }) => void;
+export interface ChatInputProps {
+  onSend: (message: string, options?: { depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => void | Promise<void>;
   isLoading: boolean;
   placeholder?: string;
   compact?: boolean;
@@ -89,7 +87,6 @@ export function ChatInput({
     if (prefillText && prefillText.trim()) {
       setValue(prefillText);
       onPrefillConsumed?.();
-      // Focus the textarea
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [prefillText, onPrefillConsumed]);
@@ -221,7 +218,7 @@ export function ChatInput({
                   disabled={isLoading}
                   className={cn(
                     "shrink-0 transition-all",
-                    isListening && "bg-red-500 hover:bg-red-600 animate-pulse"
+                    isListening && "bg-destructive hover:bg-destructive/90 animate-pulse"
                   )}
                 >
                   {isListening ? (
@@ -249,7 +246,7 @@ export function ChatInput({
           className={cn(
             "flex-1 min-w-0 resize-none overflow-hidden !min-h-[44px] max-h-[220px]",
             compact && "text-sm !min-h-[36px] max-h-[120px]",
-            isListening && "border-red-500 ring-1 ring-red-500"
+            isListening && "border-destructive ring-1 ring-destructive"
           )}
         />
         <TooltipProvider>
