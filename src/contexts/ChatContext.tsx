@@ -762,7 +762,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // NON-STREAMING MODE: Use invokeWithTimeout (original behavior)
         // =========================================================================
         const { data, error } = await invokeWithTimeout('chat-intelligence', {
-          question,
+          question: normalizedQuestion,
+          originalQuestion: question !== normalizedQuestion ? question : undefined,
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
           sessionId,
           conversationId: convId,
