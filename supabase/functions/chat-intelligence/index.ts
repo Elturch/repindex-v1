@@ -4574,7 +4574,34 @@ async function buildDataPack(
     });
   } catch (_) {}
 
-  console.log(`${logPrefix} [E2] DataPack built: ${pack.snapshot.length} models, ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.raw_texts.length} texts`);
+  // Build report_context for InfoBar (same structure as Skills pipeline)
+  const companyModels = [...new Set(latestWeek.map((r: any) => r["02_model_name"]).filter(Boolean))];
+  const companyDateFrom = latestWeek.reduce((min: string | null, r: any) => {
+    const d = r["06_period_from"];
+    return d && (!min || d < min) ? d : min;
+  }, null as string | null);
+  const companyDateTo = latestWeek.reduce((max: string | null, r: any) => {
+    const d = r["07_period_to"];
+    return d && (!max || d > max) ? d : max;
+  }, null as string | null);
+  (pack as any).report_context = {
+    company: primaryCompany?.issuer_name || primaryTicker,
+    sector: primaryCompany?.sector_category || null,
+    user_question: classifier.pregunta_original || null,
+    date_from: companyDateFrom,
+    date_to: companyDateTo,
+    models: companyModels,
+    models_count: companyModels.length,
+    sample_size: latestWeek.length,
+    weeks_analyzed: uniqueDates.length,
+  };
+
+  // Preserve raw runs for source extraction
+  (pack as any)._rawRunsForSources = companyFullData
+    .filter((r: any) => r["20_res_gpt_bruto"] || r["21_res_perplex_bruto"])
+    .slice(0, 30);
+
+  console.log(`${logPrefix} [E2] DataPack built: ${pack.snapshot.length} models, ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.raw_texts.length} texts, rawRunsForSources: ${(pack as any)._rawRunsForSources.length}`);
   return pack;
 }
 
