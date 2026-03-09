@@ -482,7 +482,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // NORMALIZE QUERY: Call normalize-query edge function first (3s timeout)
       // =========================================================================
       let normalizedQuestion = question;
-      let normalizationMeta: Record<string, unknown> | null = null;
+      let _normalizationMeta: Record<string, unknown> | null = null;
       
       try {
         const normController = new AbortController();
