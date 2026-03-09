@@ -3737,10 +3737,18 @@ Genera las queries SQL óptimas para responder esta pregunta con la mayor riquez
       return [];
     }
 
-    // Validate: only SELECT queries, max 5
+    // Validate: only SELECT queries, max 5, reject malformed patterns
+    const MALFORMED_PATTERNS = /WHERE\s+ORDER|WHERE\s+GROUP|SELECT\s+,|FROM\s+ORDER|FROM\s+GROUP|WHERE\s+LIMIT|,,/i;
     queries = queries.filter(q => {
       const trimmed = q.query?.trim().toUpperCase() || "";
-      return trimmed.startsWith("SELECT") && !trimmed.includes("INSERT") && !trimmed.includes("UPDATE") && !trimmed.includes("DELETE") && !trimmed.includes("DROP") && !trimmed.includes("ALTER");
+      if (!trimmed.startsWith("SELECT") || trimmed.includes("INSERT") || trimmed.includes("UPDATE") || trimmed.includes("DELETE") || trimmed.includes("DROP") || trimmed.includes("ALTER")) {
+        return false;
+      }
+      if (MALFORMED_PATTERNS.test(q.query || "")) {
+        console.warn(`${logPrefix} [F2] Query rejected (malformed pattern): ${(q.query || "").substring(0, 100)}`);
+        return false;
+      }
+      return true;
     }).slice(0, 5);
 
     console.log(`${logPrefix} [F2] Generated ${queries.length} valid queries: ${queries.map(q => q.label).join(", ")}`);
