@@ -5,11 +5,16 @@
 
 export interface TechnicalSheetOptions {
   companyName?: string;
+  ticker?: string;
   periodFrom?: string;
   periodTo?: string;
   rixScore?: number;
   flags?: string[];
   modelsUsed?: string[];
+  userQuestion?: string;
+  perspective?: string;
+  observationsCount?: number;
+  elaborationDate?: string;
 }
 
 /**
@@ -162,6 +167,34 @@ export const technicalSheetStyles = `
     margin-top: 0;
   }
 
+  /* ===========================================
+     REPORT HEADER CARD STYLES
+     =========================================== */
+  .report-header-card {
+    background: #f5f5f5;
+    border-left: 3px solid #1a73e8;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .report-header-card .header-row {
+    margin: 2px 0;
+  }
+
+  .report-header-card .header-label {
+    font-weight: 700;
+    color: #0f1419;
+  }
+
+  .report-header-card .header-separator {
+    color: #9ca3af;
+    margin: 0 6px;
+  }
+
   @media print {
     .technical-sheet {
       page-break-before: always;
@@ -174,6 +207,10 @@ export const technicalSheetStyles = `
     
     .technical-sheet h4 {
       font-size: 7.5pt;
+    }
+
+    .report-header-card {
+      font-size: 10pt;
     }
   }
 `;
@@ -449,4 +486,52 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
       </p>
     </div>
   `;
+}
+
+/**
+ * Generates the HTML for the Report Header Card (Ficha de Cabecera)
+ * to be placed at the top of PDF/HTML exports, before the report content.
+ */
+export function generateReportHeaderCardHtml(options?: TechnicalSheetOptions): string {
+  if (!options?.companyName && !options?.userQuestion) return '';
+
+  const rows: string[] = [];
+
+  if (options.userQuestion) {
+    rows.push(`<div class="header-row"><span class="header-label">Consulta:</span> ${options.userQuestion}</div>`);
+  }
+
+  if (options.companyName) {
+    let line = `<span class="header-label">Empresa:</span> ${options.companyName}`;
+    if (options.ticker) {
+      line += `<span class="header-separator">|</span><span class="header-label">Ticker:</span> ${options.ticker}`;
+    }
+    rows.push(`<div class="header-row">${line}</div>`);
+  }
+
+  if (options.periodFrom || options.periodTo) {
+    const from = options.periodFrom || '–';
+    const to = options.periodTo || '–';
+    rows.push(`<div class="header-row"><span class="header-label">Período analizado:</span> ${from} – ${to}</div>`);
+  }
+
+  if (options.modelsUsed?.length) {
+    rows.push(`<div class="header-row"><span class="header-label">Modelos consultados:</span> ${options.modelsUsed.join(', ')} (${options.modelsUsed.length} modelos)</div>`);
+  }
+
+  if (options.observationsCount) {
+    rows.push(`<div class="header-row"><span class="header-label">Observaciones:</span> ${options.observationsCount} registros</div>`);
+  }
+
+  if (options.perspective) {
+    rows.push(`<div class="header-row"><span class="header-label">Perspectiva:</span> ${options.perspective}</div>`);
+  }
+
+  if (options.elaborationDate) {
+    rows.push(`<div class="header-row"><span class="header-label">Fecha de elaboración:</span> ${options.elaborationDate}</div>`);
+  }
+
+  if (rows.length === 0) return '';
+
+  return `<div class="report-header-card">${rows.join('\n')}</div>`;
 }

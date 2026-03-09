@@ -5678,10 +5678,31 @@ REGLA CRÍTICA: NUNCA omitas las secciones 1, 2, 3, 7 y 8. Son OBLIGATORIAS.
 Las secciones 4, 5 y 6 son CONDICIONALES (solo si hay datos disponibles).
 
 ───────────────────────────────────────────────────────────────────────────────
-TITULAR-RESPUESTA (ANTES DE TODA SECCIÓN — OBLIGATORIO)
+FICHA DE CABECERA (OBLIGATORIA — SIEMPRE LO PRIMERO DEL INFORME)
 ───────────────────────────────────────────────────────────────────────────────
 
-La PRIMERA LÍNEA del informe SIEMPRE es un **TITULAR EN NEGRITA** que responde
+Antes de CUALQUIER contenido del informe (antes del titular, antes del resumen,
+antes de todo), incluir una FICHA DE CABECERA con este formato exacto:
+
+> **Consulta**: [reproducir la pregunta exacta del usuario]
+> **Empresa**: [nombre completo] | **Ticker**: [ticker]
+> **Período analizado**: [period_from] – [period_to] (tomado del DATAPACK, NUNCA inventado)
+> **Modelos consultados**: [lista de modelos] ([número] modelos)
+> **Observaciones**: [número] registros
+> **Perspectiva**: [General/Pericial/Boletín según el rol activo]
+> **Fecha de elaboración**: [fecha actual, NUNCA futura]
+
+Esta ficha es lo PRIMERO que ve el usuario. Va en un bloque quote (>) con
+formato compacto. DESPUÉS de esta ficha viene el titular en negrita y luego
+el resto del informe. NO duplicar estos datos en ningún otro bloque quote
+posterior. Si antes existía un bloque "> 📊 Consulta: ..." después del
+titular, ELIMINARLO porque queda redundante con esta ficha.
+
+───────────────────────────────────────────────────────────────────────────────
+TITULAR-RESPUESTA (DESPUÉS DE LA FICHA DE CABECERA — OBLIGATORIO)
+───────────────────────────────────────────────────────────────────────────────
+
+La PRIMERA LÍNEA después de la ficha SIEMPRE es un **TITULAR EN NEGRITA** que responde
 DIRECTAMENTE a la pregunta del usuario en LENGUAJE NATURAL, SIN MÉTRICAS.
 La primera frase SOLO contiene la respuesta directa. Las métricas aparecen
 en la SEGUNDA frase como evidencia. Estructura obligatoria:
@@ -5695,11 +5716,7 @@ Ejemplos:
 - Pregunta "¿Cómo está Inditex?" →
   **"Inditex goza de una reputación algorítmica sólida con alto consenso entre las 6 IAs. Su RIX mediano de 74 (±3) la sitúa en zona verde, aunque con margen de mejora en diversificación de fuentes."**
 
-Este titular va ANTES del "## 1. RESUMEN EJECUTIVO". Es lo primero que lee el usuario.
-
-METADATOS DE CABECERA (inmediatamente después del titular):
-Incluir una línea con los metadatos del informe:
-> 📊 **Consulta**: [pregunta del usuario] | **Perspectiva**: [rol seleccionado, ej: "Director de Comunicación" o "General"] | **Periodo**: [fecha] | **Modelos**: [lista de IAs]
+Este titular va ANTES del "## 1. RESUMEN EJECUTIVO".
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 1: ${H("depth_executive_summary")} — OBLIGATORIA
