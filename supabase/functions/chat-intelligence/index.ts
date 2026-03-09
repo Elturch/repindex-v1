@@ -1549,6 +1549,7 @@ const EVOLUTION_PATTERNS_EDGE = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|t
 const RANKING_PATTERNS_EDGE = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)/i;
 const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
+const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
 
 function interpretQueryEdge(question: string): { intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number } {
   const lower = question.toLowerCase();
@@ -1577,8 +1578,11 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   const hasRanking = RANKING_PATTERNS_EDGE.test(lower) || lexicon.intent_hints.includes("ranking");
   const hasSector = filters.sector_category != null || lexicon.intent_hints.includes("sector");
   const hasIbex = IBEX_PATTERNS_EDGE.test(lower);
+  const hasAlert = ALERT_PATTERNS_EDGE.test(lower);
 
-  if (hasEvolution) {
+  if (hasAlert && !hasEvolution && !hasDivergence) {
+    intent = "alert"; recommended_skills.push("skillCrisisScan"); confidence = 0.85;
+  } else if (hasEvolution) {
     intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
   } else if (hasDivergence) {
     intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
@@ -1661,6 +1665,29 @@ async function buildDataPackFromSkills(
       }
     }
 
+    // ── Crisis scan: cross-company alert query (hardcoded, no GPT) ──
+    let crisisScanEmpty = false;
+    let crisisScanData: any[] | null = null;
+    if (interpret.intent === "alert" && !resolvedTicker) {
+      console.log(`${logPrefix} [SKILLS-v2] Running crisis_scan (hardcoded query)...`);
+      try {
+        const { data: crisisRows, error: crisisErr } = await supabaseClient.rpc("execute_sql", {
+          sql_query: `SELECT r."05_ticker", r."03_target_name", r."09_rix_score", r."35_cem_score", r."23_nvm_score", r.batch_execution_date, i.sector_category, i.ibex_family_code FROM rix_runs_v2 r JOIN repindex_root_issuers i ON r."05_ticker" = i.ticker WHERE r.batch_execution_date = (SELECT MAX(batch_execution_date) FROM rix_runs_v2) AND (r."35_cem_score" < 40 OR r."09_rix_score" < 40) ORDER BY r."09_rix_score" ASC LIMIT 30`,
+        });
+        if (crisisErr) {
+          console.warn(`${logPrefix} [SKILLS-v2] crisis_scan query error: ${crisisErr.message}`);
+        } else if (crisisRows && crisisRows.length > 0) {
+          crisisScanData = crisisRows;
+          console.log(`${logPrefix} [SKILLS-v2] crisis_scan found ${crisisRows.length} rows`);
+        } else {
+          crisisScanEmpty = true;
+          console.log(`${logPrefix} [SKILLS-v2] crisis_scan: no companies in crisis`);
+        }
+      } catch (csErr: any) {
+        console.warn(`${logPrefix} [SKILLS-v2] crisis_scan exception: ${csErr.message}`);
+      }
+    }
+
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
@@ -1681,6 +1708,50 @@ async function buildDataPackFromSkills(
       skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
         ibex_family_code: interpret.filters.ibex_family_code,
       });
+    }
+
+    // For alert intent with crisis data, we don't need other skills
+    if (interpret.intent === "alert" && !resolvedTicker && (crisisScanData || crisisScanEmpty)) {
+      // Build a minimal pack directly
+      const alertPack: DataPack & { crisis_scan_empty?: boolean; crisis_batch_date?: string } = {
+        snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
+        memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
+        competidores_verificados: [], competidores_metricas_avg: null,
+        explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
+      };
+      if (crisisScanData && crisisScanData.length > 0) {
+        // Deduplicate by ticker using worst RIX per company
+        const byTicker = new Map<string, any>();
+        for (const row of crisisScanData) {
+          const t = row["05_ticker"];
+          if (!byTicker.has(t) || (row["09_rix_score"] ?? 100) < (byTicker.get(t)["09_rix_score"] ?? 100)) {
+            byTicker.set(t, row);
+          }
+        }
+        alertPack.ranking = Array.from(byTicker.values()).map((r: any, i: number) => ({
+          pos: i + 1,
+          ticker: r["05_ticker"],
+          nombre: r["03_target_name"],
+          rix_avg: r["09_rix_score"],
+          cem: r["35_cem_score"],
+          nvm: r["23_nvm_score"],
+          sector: r.sector_category,
+        }));
+        alertPack.crisis_batch_date = crisisScanData[0]?.batch_execution_date
+          ? String(crisisScanData[0].batch_execution_date).slice(0, 10)
+          : null;
+      } else {
+        alertPack.crisis_scan_empty = true;
+        // Fetch batch date for the positive message
+        try {
+          const { data: maxDateRows } = await supabaseClient.rpc("execute_sql", {
+            sql_query: `SELECT MAX(batch_execution_date)::text as max_date FROM rix_runs_v2`,
+          });
+          alertPack.crisis_batch_date = maxDateRows?.[0]?.max_date?.slice(0, 10) || null;
+        } catch (_e) { /* ignore */ }
+      }
+      console.log(`${logPrefix} [SKILLS-v2] crisis_scan pack built: ranking=${alertPack.ranking.length}, empty=${alertPack.crisis_scan_empty}`);
+      return alertPack as any;
     }
 
     if (Object.keys(skillCalls).length === 0) {
@@ -3666,10 +3737,18 @@ Genera las queries SQL óptimas para responder esta pregunta con la mayor riquez
       return [];
     }
 
-    // Validate: only SELECT queries, max 5
+    // Validate: only SELECT queries, max 5, reject malformed patterns
+    const MALFORMED_PATTERNS = /WHERE\s+ORDER|WHERE\s+GROUP|SELECT\s+,|FROM\s+ORDER|FROM\s+GROUP|WHERE\s+LIMIT|,,/i;
     queries = queries.filter(q => {
       const trimmed = q.query?.trim().toUpperCase() || "";
-      return trimmed.startsWith("SELECT") && !trimmed.includes("INSERT") && !trimmed.includes("UPDATE") && !trimmed.includes("DELETE") && !trimmed.includes("DROP") && !trimmed.includes("ALTER");
+      if (!trimmed.startsWith("SELECT") || trimmed.includes("INSERT") || trimmed.includes("UPDATE") || trimmed.includes("DELETE") || trimmed.includes("DROP") || trimmed.includes("ALTER")) {
+        return false;
+      }
+      if (MALFORMED_PATTERNS.test(q.query || "")) {
+        console.warn(`${logPrefix} [F2] Query rejected (malformed pattern): ${(q.query || "").substring(0, 100)}`);
+        return false;
+      }
+      return true;
     }).slice(0, 5);
 
     console.log(`${logPrefix} [F2] Generated ${queries.length} valid queries: ${queries.map(q => q.label).join(", ")}`);
@@ -8368,7 +8447,7 @@ async function handleStandardChat(
     console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
     const skillsStart = Date.now();
     const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix);
-    if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0)) {
+    if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0 || (skillsPack as any).crisis_scan_empty === true)) {
       usedSkillsPipeline = true;
       dataPack = skillsPack;
       console.log(`${logPrefix} [SKILLS] Success in ${Date.now() - skillsStart}ms — snapshot:${skillsPack.snapshot.length}, ranking:${skillsPack.ranking.length}`);
@@ -8543,6 +8622,55 @@ async function handleStandardChat(
     }
   } catch (regError) {
     console.warn(`${logPrefix} [REGRESSION] Failed:`, regError);
+  }
+
+  // --- GRACEFUL EMPTY DATAPACK CHECK ---
+  const dpHasSnapshot = dataPack.snapshot && dataPack.snapshot.length > 0;
+  const dpHasRanking = dataPack.ranking && dataPack.ranking.length > 0;
+  const dpHasF2 = (dataPack as any).f2_dynamic && Object.keys((dataPack as any).f2_dynamic).length > 0;
+  const dpCrisisEmpty = (dataPack as any).crisis_scan_empty === true;
+
+  if (!dpHasSnapshot && !dpHasRanking && !dpHasF2) {
+    let earlyResponse: string | null = null;
+
+    if (dpCrisisEmpty) {
+      const batchDate = (dataPack as any).crisis_batch_date || "reciente";
+      const langKey = language === "en" ? "en" : "es";
+      earlyResponse = langKey === "en"
+        ? `Good news: in the latest sweep (${batchDate}), no company has been detected in a crisis situation. All monitored companies maintain a CEM > 40 and a RIX > 40.`
+        : `Buenas noticias: en el último barrido (${batchDate}) no se ha detectado ninguna empresa en situación de crisis. Todas las empresas monitorizadas mantienen un CEM > 40 y un RIX > 40.`;
+    } else {
+      const langKey = language === "en" ? "en" : "es";
+      earlyResponse = langKey === "en"
+        ? "I couldn't find enough data to answer this query. Please make sure the company is in our monitoring universe or rephrase your question."
+        : "No he encontrado datos suficientes para responder a esta consulta. Asegúrate de que la empresa está en nuestro universo de monitorización o reformula la pregunta.";
+    }
+
+    if (earlyResponse) {
+      console.log(`${logPrefix} [GRACEFUL] Empty dataPack detected (crisis_empty=${dpCrisisEmpty}), returning early response`);
+
+      // Save to session
+      try {
+        await supabaseClient.from("chat_intelligence_sessions").insert([
+          { session_id: sessionId, role: "user", content: question, user_id: userId },
+          { session_id: sessionId, role: "assistant", content: earlyResponse, user_id: userId, question_category: dpCrisisEmpty ? "alert" : "general" },
+        ]);
+      } catch (_e) { /* ignore session save error */ }
+
+      if (streamMode) {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: earlyResponse })}\n\n`));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+        return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+      } else {
+        return new Response(JSON.stringify({ answer: earlyResponse }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
   }
 
   // --- E3: LECTOR CUALITATIVO ---
