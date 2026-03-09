@@ -1626,7 +1626,15 @@ async function buildDataPackFromSkills(
     const interpret = interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
-    if (interpret.intent === "general_question" && interpret.confidence < 0.4) {
+    // Direct crisis detection (independent from interpretQueryEdge)
+    const questionLower = question
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const crisisKeywords = ["crisis", "alerta", "alertas", "riesgo", "peligro", "caida", "hundimiento", "peor", "peores", "problemas", "en peligro", "desplome", "colapso", "en crisis"];
+    const hasDirectCrisisKeywords = crisisKeywords.some((kw) => questionLower.includes(kw));
+
+    if (interpret.intent === "general_question" && interpret.confidence < 0.4 && !hasDirectCrisisKeywords) {
       console.log(`${logPrefix} [SKILLS-v2] Low confidence (${interpret.confidence}), skipping`);
       return null;
     }
@@ -1634,14 +1642,14 @@ async function buildDataPackFromSkills(
     // Resolve ticker: prefer semanticBridge detected companies, then legacy detection
     let resolvedTicker: string | null = null;
     let resolvedName: string | null = null;
-    
+
     // Priority 1: semanticBridge dynamic detection (handles DIA, ACS, etc. with disambiguation)
     if (bridge.detected_companies.length > 0) {
       resolvedTicker = bridge.detected_companies[0].ticker;
       resolvedName = bridge.detected_companies[0].issuer_name;
       console.log(`${logPrefix} [SKILLS-v2] Resolved via semanticBridge: ${resolvedName} (${resolvedTicker})`);
     }
-    
+
     // Priority 2: legacy detectCompaniesInQuestion
     if (!resolvedTicker && companiesCacheLocal && companiesCacheLocal.length > 0) {
       const detected = detectCompaniesInQuestion(question, companiesCacheLocal);
@@ -1665,10 +1673,13 @@ async function buildDataPackFromSkills(
       }
     }
 
+    const shouldRunCrisisScan = !resolvedTicker && (hasDirectCrisisKeywords || interpret.intent === "alert");
+    console.log(`${logPrefix} [SKILLS-v2] crisis detection: direct=${hasDirectCrisisKeywords}, interpretAlert=${interpret.intent === "alert"}, resolvedTicker=${resolvedTicker || "none"}, shouldRun=${shouldRunCrisisScan}`);
+
     // ── Crisis scan: cross-company alert query (hardcoded, no GPT) ──
     let crisisScanEmpty = false;
     let crisisScanData: any[] | null = null;
-    if (interpret.intent === "alert" && !resolvedTicker) {
+    if (shouldRunCrisisScan) {
       console.log(`${logPrefix} [SKILLS-v2] Running crisis_scan (hardcoded query)...`);
       try {
         const { data: crisisRows, error: crisisErr } = await supabaseClient.rpc("execute_sql", {
@@ -1710,8 +1721,8 @@ async function buildDataPackFromSkills(
       });
     }
 
-    // For alert intent with crisis data, we don't need other skills
-    if (interpret.intent === "alert" && !resolvedTicker && (crisisScanData || crisisScanEmpty)) {
+    // For alert/crisis cross-company queries with crisis data, we don't need other skills
+    if (shouldRunCrisisScan && (crisisScanData || crisisScanEmpty)) {
       // Build a minimal pack directly
       const alertPack: DataPack & { crisis_scan_empty?: boolean; crisis_batch_date?: string } = {
         snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
@@ -6868,27 +6879,32 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+  const logCategory = (category: QuestionCategory, reason: string): QuestionCategory => {
+    console.log(`[GUARDRAIL] categorizeQuestion => ${category} (reason=${reason}) question="${question.substring(0, 120)}"`);
+    return category;
+  };
+
   // Agent identity patterns
   if (
     /qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|que modelo|qué modelo|who are you|what are you/i.test(q)
   ) {
-    return "agent_identity";
+    return logCategory("agent_identity", "agent_identity_pattern");
   }
 
   // Crisis/alert queries are ALWAYS corporate analysis (cross-company scan)
-  const CRISIS_KEYWORDS = ["crisis", "alerta", "alertas", "riesgo", "peligro", "caida", "hundimiento", "peor", "peores", "problemas", "en peligro", "desplome", "colapso", "riesgo reputacional"];
-  if (CRISIS_KEYWORDS.some(kw => q.includes(kw))) {
-    return "corporate_analysis";
+  const CRISIS_KEYWORDS = ["crisis", "alerta", "alertas", "riesgo", "peligro", "caida", "hundimiento", "peor", "peores", "problemas", "en peligro", "desplome", "colapso", "riesgo reputacional", "en crisis"];
+  if (CRISIS_KEYWORDS.some((kw) => q.includes(kw))) {
+    return logCategory("corporate_analysis", "crisis_keywords");
   }
 
   // If mentions known companies, it's corporate analysis — check BEFORE personal_query
   if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
-    return "corporate_analysis";
+    return logCategory("corporate_analysis", "company_detected");
   }
 
   // Personal query patterns (asking about themselves or specific people without company context)
   if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analizame|analiza\s+me\b|sobre m[ií]|analyze me|about me/i.test(q)) {
-    return "personal_query";
+    return logCategory("personal_query", "personal_query_pattern");
   }
 
   // Off-topic patterns
@@ -6897,31 +6913,31 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
       q,
     )
   ) {
-    return "off_topic";
+    return logCategory("off_topic", "off_topic_pattern");
   }
 
   // Test limits patterns — expanded to catch injection attempts
   if (/ignore.*instructions|ignora.*instrucciones|jailbreak|bypass|prompt injection|actua como|act as if/i.test(q)) {
-    return "test_limits";
+    return logCategory("test_limits", "prompt_injection_pattern");
   }
 
   // Detect "responde literalmente" / "repeat exactly" injection attempts
   if (/responde\s+(?:literalmente|exactamente|solo\s+con)|repite?\s+(?:exactamente|literalmente|solo)|repeat\s+(?:exactly|only)|respond\s+only\s+with/i.test(q)) {
-    return "test_limits";
+    return logCategory("test_limits", "repeat_exact_pattern");
   }
 
   // Sector/methodology/ranking queries WITHOUT a specific company
   if (/\b(?:sector|ranking|top\s+\d+|ibex|mercado|metodolog[ií]a|c[oó]mo\s+funciona|qu[eé]\s+es\s+(?:el\s+)?r[ií]x)\b/i.test(q)) {
-    return "corporate_analysis"; // legitimate, will be handled with proper depth
+    return logCategory("corporate_analysis", "sector_or_ranking_pattern");
   }
 
   // Default: only fall to corporate_analysis if the question has substance
   // Short prompts (<20 chars) or pure instructions without company context → test_limits
   if (q.length < 20 && !/\b(?:analiza|compara|ranking|top|sector)\b/i.test(q)) {
-    return "test_limits";
+    return logCategory("test_limits", "too_short_no_substance");
   }
 
-  return "corporate_analysis";
+  return logCategory("corporate_analysis", "default");
 }
 
 function getRedirectResponse(
