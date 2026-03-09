@@ -3926,6 +3926,7 @@ async function buildDataPack(
       "23_nvm_score", "26_drm_score", "29_sim_score", "32_rmm_score",
       "35_cem_score", "38_gam_score", "41_dcm_score", "44_cxm_score",
       "10_resumen", "11_puntos_clave", "22_explicacion", "25_explicaciones_detalladas",
+      "20_res_gpt_bruto", "21_res_perplex_bruto",
       batch_execution_date
     `;
 
