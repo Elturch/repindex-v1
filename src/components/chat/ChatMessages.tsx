@@ -75,10 +75,10 @@ export function ChatMessages({
   
   // Smart suggestions with live data and personalization
   const { 
-    suggestions: smartSuggestions, 
-    isLoading: suggestionsLoading, 
-    refresh: refreshSuggestions,
-    hasPersonalized 
+    suggestions: _smartSuggestions, 
+    isLoading: _suggestionsLoading, 
+    refresh: _refreshSuggestions,
+    hasPersonalized: _hasPersonalized 
   } = useSmartSuggestions(user?.id || null, languageCode, compact ? 3 : 4);
 
   // Auto-scroll to bottom when messages change
