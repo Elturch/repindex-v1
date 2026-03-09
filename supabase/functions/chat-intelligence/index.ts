@@ -4203,7 +4203,43 @@ async function buildDataPack(
       });
     } catch (_) {}
 
-    console.log(`${logPrefix} [E2] INDEX DataPack built: ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.competidores_verificados.length} sectors, ${pack.snapshot.length} snapshot entries`);
+    // Build report_context for InfoBar (same structure as Skills pipeline)
+    const indexModels = [...new Set(latestWeek.map((r: any) => r["02_model_name"]).filter(Boolean))];
+    const indexDateFrom = latestWeek.reduce((min: string | null, r: any) => {
+      const d = r["06_period_from"];
+      return d && (!min || d < min) ? d : min;
+    }, null as string | null);
+    const indexDateTo = latestWeek.reduce((max: string | null, r: any) => {
+      const d = r["07_period_to"];
+      return d && (!max || d > max) ? d : max;
+    }, null as string | null);
+    (pack as any).report_context = {
+      sector: universeLabel === IBEX35_CODE ? "IBEX-35" : universeLabel,
+      user_question: classifier.pregunta_original || null,
+      date_from: indexDateFrom,
+      date_to: indexDateTo,
+      models: indexModels,
+      models_count: indexModels.length,
+      sample_size: latestWeek.length,
+      weeks_analyzed: uniqueDates.length,
+    };
+
+    // Preserve raw runs with bruto fields for source extraction (top 10 companies)
+    const top10Tickers = rankingEntries.slice(0, 10).map(r => r.ticker);
+    (pack as any)._rawRunsForSources = latestWeek
+      .filter((r: any) => top10Tickers.includes(r["05_ticker"]) && (r["20_res_gpt_bruto"] || r["21_res_perplex_bruto"]))
+      .map((r: any) => ({
+        "02_model_name": r["02_model_name"],
+        "03_target_name": r["03_target_name"],
+        "05_ticker": r["05_ticker"],
+        "06_period_from": r["06_period_from"],
+        "07_period_to": r["07_period_to"],
+        "09_rix_score": r["09_rix_score"],
+        "20_res_gpt_bruto": r["20_res_gpt_bruto"],
+        "21_res_perplex_bruto": r["21_res_perplex_bruto"],
+      }));
+
+    console.log(`${logPrefix} [E2] INDEX DataPack built: ${pack.ranking.length} ranked, ${pack.evolucion.length} weeks, ${pack.competidores_verificados.length} sectors, ${pack.snapshot.length} snapshot entries, rawRunsForSources: ${(pack as any)._rawRunsForSources.length}`);
     return pack;
   }
 
