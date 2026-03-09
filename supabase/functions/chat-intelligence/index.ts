@@ -1626,7 +1626,15 @@ async function buildDataPackFromSkills(
     const interpret = interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
-    if (interpret.intent === "general_question" && interpret.confidence < 0.4) {
+    // Direct crisis detection (independent from interpretQueryEdge)
+    const questionLower = question
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const crisisKeywords = ["crisis", "alerta", "alertas", "riesgo", "peligro", "caida", "hundimiento", "peor", "peores", "problemas", "en peligro", "desplome", "colapso", "en crisis"];
+    const hasDirectCrisisKeywords = crisisKeywords.some((kw) => questionLower.includes(kw));
+
+    if (interpret.intent === "general_question" && interpret.confidence < 0.4 && !hasDirectCrisisKeywords) {
       console.log(`${logPrefix} [SKILLS-v2] Low confidence (${interpret.confidence}), skipping`);
       return null;
     }
@@ -1634,14 +1642,14 @@ async function buildDataPackFromSkills(
     // Resolve ticker: prefer semanticBridge detected companies, then legacy detection
     let resolvedTicker: string | null = null;
     let resolvedName: string | null = null;
-    
+
     // Priority 1: semanticBridge dynamic detection (handles DIA, ACS, etc. with disambiguation)
     if (bridge.detected_companies.length > 0) {
       resolvedTicker = bridge.detected_companies[0].ticker;
       resolvedName = bridge.detected_companies[0].issuer_name;
       console.log(`${logPrefix} [SKILLS-v2] Resolved via semanticBridge: ${resolvedName} (${resolvedTicker})`);
     }
-    
+
     // Priority 2: legacy detectCompaniesInQuestion
     if (!resolvedTicker && companiesCacheLocal && companiesCacheLocal.length > 0) {
       const detected = detectCompaniesInQuestion(question, companiesCacheLocal);
@@ -1665,10 +1673,13 @@ async function buildDataPackFromSkills(
       }
     }
 
+    const shouldRunCrisisScan = !resolvedTicker && (hasDirectCrisisKeywords || interpret.intent === "alert");
+    console.log(`${logPrefix} [SKILLS-v2] crisis detection: direct=${hasDirectCrisisKeywords}, interpretAlert=${interpret.intent === "alert"}, resolvedTicker=${resolvedTicker || "none"}, shouldRun=${shouldRunCrisisScan}`);
+
     // ── Crisis scan: cross-company alert query (hardcoded, no GPT) ──
     let crisisScanEmpty = false;
     let crisisScanData: any[] | null = null;
-    if (interpret.intent === "alert" && !resolvedTicker) {
+    if (shouldRunCrisisScan) {
       console.log(`${logPrefix} [SKILLS-v2] Running crisis_scan (hardcoded query)...`);
       try {
         const { data: crisisRows, error: crisisErr } = await supabaseClient.rpc("execute_sql", {
@@ -1710,8 +1721,8 @@ async function buildDataPackFromSkills(
       });
     }
 
-    // For alert intent with crisis data, we don't need other skills
-    if (interpret.intent === "alert" && !resolvedTicker && (crisisScanData || crisisScanEmpty)) {
+    // For alert/crisis cross-company queries with crisis data, we don't need other skills
+    if (shouldRunCrisisScan && (crisisScanData || crisisScanEmpty)) {
       // Build a minimal pack directly
       const alertPack: DataPack & { crisis_scan_empty?: boolean; crisis_batch_date?: string } = {
         snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
