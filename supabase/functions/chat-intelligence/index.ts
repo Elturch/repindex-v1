@@ -8652,8 +8652,8 @@ async function handleStandardChat(
       // Save to session
       try {
         await supabaseClient.from("chat_intelligence_sessions").insert([
-          { session_id: sessionId, role: "user", content: question, user_id: userId, conversation_id: conversationId },
-          { session_id: sessionId, role: "assistant", content: earlyResponse, user_id: userId, conversation_id: conversationId, question_category: dpCrisisEmpty ? "alert" : "general" },
+          { session_id: sessionId, role: "user", content: question, user_id: userId },
+          { session_id: sessionId, role: "assistant", content: earlyResponse, user_id: userId, question_category: dpCrisisEmpty ? "alert" : "general" },
         ]);
       } catch (_e) { /* ignore session save error */ }
 
