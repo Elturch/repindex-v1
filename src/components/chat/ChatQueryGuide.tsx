@@ -1,11 +1,5 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ChatLanguage } from "@/lib/chatLanguages";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface ChatQueryGuideProps {
   language: ChatLanguage;
@@ -110,46 +104,97 @@ const CATEGORIES: GuideCategory[] = [
       "Resumen del sector Construcción",
     ],
   },
+  {
+    icon: "⚠️",
+    label: { es: "Alertas", en: "Alerts", pt: "Alertas", ca: "Alertes", fr: "Alertes", de: "Warnungen", it: "Avvisi" },
+    examples: [
+      "¿Qué empresa tiene más riesgo reputacional esta semana?",
+      "¿Hay alguna empresa en crisis?",
+      "Empresas con mayor caída de RIX",
+      "¿Qué empresa tiene el CEM más bajo?",
+      "Alertas del IBEX esta semana",
+    ],
+  },
+  {
+    icon: "🧩",
+    label: { es: "Contexto", en: "Context", pt: "Contexto", ca: "Context", fr: "Contexte", de: "Kontext", it: "Contesto" },
+    examples: [
+      "¿Cómo afecta la regulación al sector Energía?",
+      "Resume las noticias clave de Telefónica",
+      "¿Qué empresa del IBEX tiene mejor gobernanza?",
+      "¿Cuál es la empresa más estable del sistema?",
+      "¿Qué sectores están mejorando su reputación?",
+    ],
+  },
 ];
 
 export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProps) {
   const lang = language.code;
   const prompt = LABEL[lang] || LABEL["en"] || LABEL["es"];
-  const [indices, setIndices] = useState<Record<number, number>>({});
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleClick = (catIndex: number) => {
-    const current = indices[catIndex] ?? 0;
-    const pool = CATEGORIES[catIndex].examples;
-    onSelectExample(pool[current]);
-    setIndices((prev) => ({ ...prev, [catIndex]: (current + 1) % pool.length }));
+  // Close on outside click
+  useEffect(() => {
+    if (openIndex === null) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpenIndex(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [openIndex]);
+
+  const handlePillClick = (i: number) => {
+    setOpenIndex(openIndex === i ? null : i);
+  };
+
+  const handleSelect = (example: string) => {
+    onSelectExample(example);
+    setOpenIndex(null);
   };
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide py-1">
-      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
-      <TooltipProvider delayDuration={200}>
+    <div ref={containerRef} className="relative space-y-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
         {CATEGORIES.map((cat, i) => {
           const catLabel = cat.label[lang] || cat.label["en"] || cat.label["es"];
-          const currentExample = cat.examples[indices[i] ?? 0];
+          const isOpen = openIndex === i;
 
           return (
-            <Tooltip key={i}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => handleClick(i)}
-                  className="shrink-0 cursor-pointer inline-flex items-center gap-1 rounded-full border border-border/50 bg-secondary/60 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-colors"
-                >
-                  <span className="text-sm leading-none">{cat.icon}</span>
-                  <span>{catLabel}</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-[240px] text-center">
-                <p className="text-xs">{currentExample}</p>
-              </TooltipContent>
-            </Tooltip>
+            <button
+              key={i}
+              onClick={() => handlePillClick(i)}
+              className={`shrink-0 cursor-pointer inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                isOpen
+                  ? "bg-primary/15 border-primary/50 text-foreground"
+                  : "bg-secondary/60 border-border/50 text-foreground hover:bg-primary/10 hover:border-primary/40"
+              }`}
+            >
+              <span className="text-sm leading-none">{cat.icon}</span>
+              <span>{catLabel}</span>
+            </button>
           );
         })}
-      </TooltipProvider>
+      </div>
+
+      {/* Dropdown */}
+      {openIndex !== null && (
+        <div className="absolute bottom-full mb-1 left-0 right-0 z-50 rounded-lg border border-border bg-popover shadow-medium max-h-[200px] overflow-y-auto scrollbar-thin animate-in fade-in-0 slide-in-from-bottom-2 duration-150">
+          {CATEGORIES[openIndex].examples.map((ex, j) => (
+            <button
+              key={j}
+              onClick={() => handleSelect(ex)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-left text-popover-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              <span className="line-clamp-1">{ex}</span>
+              <span className="text-muted-foreground shrink-0">➤</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
