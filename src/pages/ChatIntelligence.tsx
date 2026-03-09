@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { useChatContext } from "@/contexts/ChatContext";
 import { usePageContext } from "@/hooks/usePageContext";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatQueryGuide } from "@/components/chat/ChatQueryGuide";
 import { getChatTranslations } from "@/lib/chatTranslations";
 
 export default function ChatIntelligence() {
@@ -36,6 +37,13 @@ export default function ChatIntelligence() {
   const pageContext = usePageContext(undefined, language);
   const tr = getChatTranslations(language.code);
 
+  // Track prefilled text from guide clicks
+  const [prefillText, setPrefillText] = useState("");
+
+  const handleSelectExample = useCallback((text: string) => {
+    setPrefillText(text);
+  }, []);
+
   // Update page context and close floating chat when on full page
   useEffect(() => {
     setPageContext({
@@ -44,6 +52,8 @@ export default function ChatIntelligence() {
     });
     setIsFloatingOpen(false);
   }, [pageContext.name, pageContext.path, setPageContext, setIsFloatingOpen]);
+
+  const showGuide = messages.length === 0 && !isLoading && !isLoadingHistory;
 
   return (
     <Layout title="RepIndex.ai">
@@ -57,6 +67,14 @@ export default function ChatIntelligence() {
             {tr.pageSubtitle}
           </p>
         </div>
+
+        {/* Query Guide — only before first message */}
+        {showGuide && (
+          <ChatQueryGuide
+            language={language}
+            onSelectExample={handleSelectExample}
+          />
+        )}
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-2">
@@ -138,6 +156,8 @@ export default function ChatIntelligence() {
                 isLoading={isLoading}
                 language={language}
                 onLanguageChange={setLanguage}
+                prefillText={prefillText}
+                onPrefillConsumed={() => setPrefillText("")}
               />
             </div>
           </CardContent>
