@@ -73,7 +73,9 @@ export function ChatInput({
   placeholder,
   compact = false,
   language,
-  onLanguageChange 
+  onLanguageChange,
+  prefillText,
+  onPrefillConsumed,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -81,6 +83,16 @@ export function ChatInput({
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const tr = getChatTranslations(language.code);
+
+  // Handle prefill from external sources (e.g., ChatQueryGuide)
+  useEffect(() => {
+    if (prefillText && prefillText.trim()) {
+      setValue(prefillText);
+      onPrefillConsumed?.();
+      // Focus the textarea
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    }
+  }, [prefillText, onPrefillConsumed]);
 
   // Get session configuration from context
   const { sessionDepthLevel, sessionRoleId, isSessionConfigured } = useChatContext();
