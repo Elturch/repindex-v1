@@ -8708,7 +8708,9 @@ async function handleStandardChat(
 
   // --- DIRECT CRISIS RESPONSE (bypass E3/E4/E5 orchestrator) ---
   // If this is a crisis_scan query with data, generate markdown directly — no LLM needed
-  const isCrisisQueryWithData = !dpHasSnapshot && dpHasRanking && dataPack.ranking.length > 0 && dataPack.ranking[0] && "cem" in dataPack.ranking[0];
+  const firstRank = dataPack.ranking?.[0];
+  const isCrisisQueryWithData = !dpHasSnapshot && dpHasRanking && dataPack.ranking.length > 0 && firstRank && ("cem" in firstRank || "35_cem_score" in firstRank);
+  console.log(`${logPrefix} [CRISIS-DETECT] isCrisisQueryWithData=${isCrisisQueryWithData}, rankingLen=${dataPack.ranking.length}, firstRankKeys=${firstRank ? Object.keys(firstRank).join(",") : "null"}`);
   if (isCrisisQueryWithData) {
     console.log(`${logPrefix} [CRISIS-DIRECT] Generating direct markdown response for crisis_scan (${dataPack.ranking.length} companies)`);
 
