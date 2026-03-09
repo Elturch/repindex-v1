@@ -6875,6 +6875,12 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return "agent_identity";
   }
 
+  // Crisis/alert queries are ALWAYS corporate analysis (cross-company scan)
+  const CRISIS_KEYWORDS = ["crisis", "alerta", "alertas", "riesgo", "peligro", "caida", "hundimiento", "peor", "peores", "problemas", "en peligro", "desplome", "colapso", "riesgo reputacional"];
+  if (CRISIS_KEYWORDS.some(kw => q.includes(kw))) {
+    return "corporate_analysis";
+  }
+
   // If mentions known companies, it's corporate analysis — check BEFORE personal_query
   if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
     return "corporate_analysis";
