@@ -505,7 +505,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         if (normResp.ok) {
           const normData = await normResp.json();
-          normalizationMeta = normData;
+          _normalizationMeta = normData;
           
           // If needs clarification, show it as assistant message and stop
           if (normData.needs_clarification && normData.clarification_message) {
