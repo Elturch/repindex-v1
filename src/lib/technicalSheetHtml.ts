@@ -167,6 +167,34 @@ export const technicalSheetStyles = `
     margin-top: 0;
   }
 
+  /* ===========================================
+     REPORT HEADER CARD STYLES
+     =========================================== */
+  .report-header-card {
+    background: #f5f5f5;
+    border-left: 3px solid #1a73e8;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+    border-radius: 0 6px 6px 0;
+  }
+
+  .report-header-card .header-row {
+    margin: 2px 0;
+  }
+
+  .report-header-card .header-label {
+    font-weight: 700;
+    color: #0f1419;
+  }
+
+  .report-header-card .header-separator {
+    color: #9ca3af;
+    margin: 0 6px;
+  }
+
   @media print {
     .technical-sheet {
       page-break-before: always;
@@ -179,6 +207,10 @@ export const technicalSheetStyles = `
     
     .technical-sheet h4 {
       font-size: 7.5pt;
+    }
+
+    .report-header-card {
+      font-size: 10pt;
     }
   }
 `;
