@@ -1578,8 +1578,11 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   const hasRanking = RANKING_PATTERNS_EDGE.test(lower) || lexicon.intent_hints.includes("ranking");
   const hasSector = filters.sector_category != null || lexicon.intent_hints.includes("sector");
   const hasIbex = IBEX_PATTERNS_EDGE.test(lower);
+  const hasAlert = ALERT_PATTERNS_EDGE.test(lower);
 
-  if (hasEvolution) {
+  if (hasAlert && !hasEvolution && !hasDivergence) {
+    intent = "alert"; recommended_skills.push("skillCrisisScan"); confidence = 0.85;
+  } else if (hasEvolution) {
     intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
   } else if (hasDivergence) {
     intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
