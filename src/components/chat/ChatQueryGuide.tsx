@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { ChatLanguage } from "@/lib/chatLanguages";
 
 interface ChatQueryGuideProps {
@@ -131,71 +131,43 @@ const CATEGORIES: GuideCategory[] = [
     ],
   },
 ];
+// Flatten all examples with their category icon
+const ALL_EXAMPLES = CATEGORIES.flatMap((cat) =>
+  cat.examples.map((text) => ({ icon: cat.icon, text }))
+);
+
 export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProps) {
   const lang = language.code;
   const prompt = LABEL[lang] || LABEL["en"] || LABEL["es"];
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * ALL_EXAMPLES.length));
+  const [fade, setFade] = useState(true);
 
   useEffect(() => {
-    if (openIndex === null) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpenIndex(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [openIndex]);
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setIndex((prev) => (prev + 1) % ALL_EXAMPLES.length);
+        setFade(true);
+      }, 200);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const handlePillClick = (i: number) => {
-    setOpenIndex(openIndex === i ? null : i);
-  };
-
-  const handleSelect = (example: string) => {
-    onSelectExample(example);
-    setOpenIndex(null);
-  };
+  const current = ALL_EXAMPLES[index];
 
   return (
-    <div ref={containerRef} className="relative space-y-1">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
-        {CATEGORIES.map((cat, i) => {
-          const catLabel = cat.label[lang] || cat.label["en"] || cat.label["es"];
-          const isOpen = openIndex === i;
-
-          return (
-            <button
-              key={i}
-              onClick={() => handlePillClick(i)}
-              className={`shrink-0 cursor-pointer inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                isOpen
-                  ? "bg-primary/15 border-primary/50 text-foreground"
-                  : "bg-secondary/60 border-border/50 text-foreground hover:bg-primary/10 hover:border-primary/40"
-              }`}
-            >
-              <span className="text-sm leading-none">{cat.icon}</span>
-              <span>{catLabel}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {openIndex !== null && (
-        <div className="absolute bottom-full mb-1 left-0 right-0 z-50 rounded-lg border border-border bg-popover shadow-medium max-h-[200px] overflow-y-auto scrollbar-thin animate-in fade-in-0 slide-in-from-bottom-2 duration-150">
-          {CATEGORIES[openIndex].examples.map((ex, j) => (
-            <button
-              key={j}
-              onClick={() => handleSelect(ex)}
-              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs text-left text-popover-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              <span className="line-clamp-1">{ex}</span>
-              <span className="text-muted-foreground shrink-0">➤</span>
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
+      <button
+        onClick={() => onSelectExample(current.text)}
+        className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-all duration-200 ${
+          fade ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+        }`}
+      >
+        <span className="text-sm leading-none">{current.icon}</span>
+        <span className="line-clamp-1">{current.text}</span>
+        <span className="text-muted-foreground shrink-0 ml-1">➤</span>
+      </button>
     </div>
   );
 }
