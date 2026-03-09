@@ -8708,36 +8708,46 @@ async function handleStandardChat(
 
   // --- DIRECT CRISIS RESPONSE (bypass E3/E4/E5 orchestrator) ---
   // If this is a crisis_scan query with data, generate markdown directly — no LLM needed
-  const isCrisisQueryWithData = !dpHasSnapshot && dpHasRanking && dataPack.ranking.length > 0 && dataPack.ranking[0] && "cem" in dataPack.ranking[0];
+  const firstRank = dataPack.ranking?.[0];
+  const isCrisisQueryWithData = !dpHasSnapshot && dpHasRanking && dataPack.ranking.length > 0 && firstRank && ("cem" in firstRank || "35_cem_score" in firstRank);
+  console.log(`${logPrefix} [CRISIS-DETECT] isCrisisQueryWithData=${isCrisisQueryWithData}, rankingLen=${dataPack.ranking.length}, firstRankKeys=${firstRank ? Object.keys(firstRank).join(",") : "null"}`);
   if (isCrisisQueryWithData) {
     console.log(`${logPrefix} [CRISIS-DIRECT] Generating direct markdown response for crisis_scan (${dataPack.ranking.length} companies)`);
 
     const batchDate = (dataPack as any).crisis_batch_date || "último barrido";
     const langKey = language === "en" ? "en" : "es";
 
-    // Sort by rix_avg ascending (worst first)
-    const sorted = [...dataPack.ranking].sort((a, b) => (a.rix_avg ?? 100) - (b.rix_avg ?? 100));
+    // Sort by rix_avg ascending (worst first) — handle both field name variants
+    const sorted = [...dataPack.ranking].sort((a: any, b: any) => {
+      const aRix = a.rix_avg ?? a["09_rix_score"] ?? 100;
+      const bRix = b.rix_avg ?? b["09_rix_score"] ?? 100;
+      return aRix - bRix;
+    });
+
+    // Helper to read fields regardless of naming convention (mapped vs raw)
+    const f = (r: any, mapped: string, raw: string) => r[mapped] ?? r[raw] ?? "—";
 
     let crisisMarkdown: string;
     if (langKey === "en") {
       crisisMarkdown = `## ⚠️ Companies in the Reputational Risk Zone\n\nAccording to the latest sweep (${batchDate}), **${sorted.length} companies** show RIX or CEM scores below 40, indicating potential reputational risk.\n\n`;
       crisisMarkdown += `| # | Company | Ticker | RIX | CEM | NVM | Sector |\n|---|---------|--------|-----|-----|-----|--------|\n`;
       sorted.forEach((r: any, i: number) => {
-        crisisMarkdown += `| ${i + 1} | ${r.nombre || "—"} | ${r.ticker || "—"} | ${r.rix_avg ?? "—"} | ${r.cem ?? "—"} | ${r.nvm ?? "—"} | ${r.sector || "—"} |\n`;
+        crisisMarkdown += `| ${i + 1} | ${f(r, "nombre", "03_target_name")} | ${f(r, "ticker", "05_ticker")} | ${f(r, "rix_avg", "09_rix_score")} | ${f(r, "cem", "35_cem_score")} | ${f(r, "nvm", "23_nvm_score")} | ${f(r, "sector", "sector_category")} |\n`;
       });
       crisisMarkdown += `\n**Methodology:** Companies with RIX < 40 or CEM (Crisis Management) < 40 in the latest weekly sweep. RIX is the median of 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Data from sweep of ${batchDate}*`;
     } else {
       crisisMarkdown = `## ⚠️ Empresas en Zona de Riesgo Reputacional\n\nSegún el último barrido (${batchDate}), **${sorted.length} empresas** presentan puntuaciones RIX o CEM por debajo de 40, lo que indica riesgo reputacional potencial.\n\n`;
       crisisMarkdown += `| # | Empresa | Ticker | RIX | CEM | NVM | Sector |\n|---|---------|--------|-----|-----|-----|--------|\n`;
       sorted.forEach((r: any, i: number) => {
-        crisisMarkdown += `| ${i + 1} | ${r.nombre || "—"} | ${r.ticker || "—"} | ${r.rix_avg ?? "—"} | ${r.cem ?? "—"} | ${r.nvm ?? "—"} | ${r.sector || "—"} |\n`;
+        crisisMarkdown += `| ${i + 1} | ${f(r, "nombre", "03_target_name")} | ${f(r, "ticker", "05_ticker")} | ${f(r, "rix_avg", "09_rix_score")} | ${f(r, "cem", "35_cem_score")} | ${f(r, "nvm", "23_nvm_score")} | ${f(r, "sector", "sector_category")} |\n`;
       });
       crisisMarkdown += `\n**Metodología:** Empresas con RIX < 40 o CEM (Gestión de Controversias) < 40 en el último barrido semanal. El RIX es la mediana de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Datos del barrido del ${batchDate}*`;
     }
 
+    const firstName = f(sorted[0], "nombre", "03_target_name");
     const crisisSuggestions = langKey === "en"
-      ? [`Analyze ${sorted[0]?.nombre || "the worst company"}`, "Show me the IBEX 35 ranking", "Which sector has the most risk?"]
-      : [`Analiza ${sorted[0]?.nombre || "la peor empresa"}`, "Muéstrame el ranking del IBEX 35", "¿Qué sector tiene más riesgo?"];
+      ? [`Analyze ${firstName !== "—" ? firstName : "the worst company"}`, "Show me the IBEX 35 ranking", "Which sector has the most risk?"]
+      : [`Analiza ${firstName !== "—" ? firstName : "la peor empresa"}`, "Muéstrame el ranking del IBEX 35", "¿Qué sector tiene más riesgo?"];
 
     // Save to session
     try {
