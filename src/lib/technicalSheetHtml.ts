@@ -5,11 +5,16 @@
 
 export interface TechnicalSheetOptions {
   companyName?: string;
+  ticker?: string;
   periodFrom?: string;
   periodTo?: string;
   rixScore?: number;
   flags?: string[];
   modelsUsed?: string[];
+  userQuestion?: string;
+  perspective?: string;
+  observationsCount?: number;
+  elaborationDate?: string;
 }
 
 /**
