@@ -8447,7 +8447,7 @@ async function handleStandardChat(
     console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
     const skillsStart = Date.now();
     const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix);
-    if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0)) {
+    if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0 || (skillsPack as any).crisis_scan_empty === true)) {
       usedSkillsPipeline = true;
       dataPack = skillsPack;
       console.log(`${logPrefix} [SKILLS] Success in ${Date.now() - skillsStart}ms — snapshot:${skillsPack.snapshot.length}, ranking:${skillsPack.ranking.length}`);
