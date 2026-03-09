@@ -19,6 +19,8 @@ interface ChatInputProps {
   compact?: boolean;
   language: ChatLanguage;
   onLanguageChange: (language: ChatLanguage) => void;
+  prefillText?: string;
+  onPrefillConsumed?: () => void;
 }
 
 // Extend Window interface for SpeechRecognition
