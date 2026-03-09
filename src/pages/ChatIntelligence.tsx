@@ -152,12 +152,11 @@ export default function ChatIntelligence() {
             {/* Input Area */}
             <div className="mt-4">
               <ChatInput
-                onSend={sendMessage}
+                onSend={sendMessage as any}
                 isLoading={isLoading}
                 language={language}
                 onLanguageChange={setLanguage}
-                prefillText={prefillText}
-                onPrefillConsumed={() => setPrefillText("")}
+                {...{ prefillText, onPrefillConsumed: () => setPrefillText("") }}
               />
             </div>
           </CardContent>
