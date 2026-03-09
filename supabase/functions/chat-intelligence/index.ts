@@ -8652,20 +8652,29 @@ async function handleStandardChat(
   const dpHasF2 = (dataPack as any).f2_dynamic && Object.keys((dataPack as any).f2_dynamic).length > 0;
   const dpCrisisEmpty = (dataPack as any).crisis_scan_empty === true;
 
+  console.log(`${logPrefix} [GRACEFUL-CHECK] snapshot=${dpHasSnapshot}, ranking=${dpHasRanking}, f2=${dpHasF2}, crisisEmpty=${dpCrisisEmpty}`);
+
   if (!dpHasSnapshot && !dpHasRanking && !dpHasF2) {
     let earlyResponse: string | null = null;
+    let earlySuggestions: string[] = [];
 
     if (dpCrisisEmpty) {
       const batchDate = (dataPack as any).crisis_batch_date || "reciente";
       const langKey = language === "en" ? "en" : "es";
       earlyResponse = langKey === "en"
-        ? `Good news: in the latest sweep (${batchDate}), no company has been detected in a crisis situation. All monitored companies maintain a CEM > 40 and a RIX > 40.`
-        : `Buenas noticias: en el último barrido (${batchDate}) no se ha detectado ninguna empresa en situación de crisis. Todas las empresas monitorizadas mantienen un CEM > 40 y un RIX > 40.`;
+        ? `✅ **Good news!** In the latest sweep (${batchDate}), no company has been detected in a crisis situation. All monitored companies maintain a CEM > 40 and a RIX > 40.\n\nThis means the reputational ecosystem is stable across all analyzed companies.`
+        : `✅ **¡Buenas noticias!** En el último barrido (${batchDate}) no se ha detectado ninguna empresa en situación de crisis. Todas las empresas monitorizadas mantienen un CEM > 40 y un RIX > 40.\n\nEsto significa que el ecosistema reputacional se mantiene estable en todas las empresas analizadas.`;
+      earlySuggestions = langKey === "en"
+        ? ["Which companies have the lowest reputation this week?", "Show me the top 5 IBEX 35 by reputation", "Which sector has the most reputational risk?"]
+        : ["¿Qué empresas tienen peor reputación esta semana?", "Muéstrame el top 5 del IBEX 35 por reputación", "¿Qué sector tiene más riesgo reputacional?"];
     } else {
       const langKey = language === "en" ? "en" : "es";
       earlyResponse = langKey === "en"
         ? "I couldn't find enough data to answer this query. Please make sure the company is in our monitoring universe or rephrase your question."
         : "No he encontrado datos suficientes para responder a esta consulta. Asegúrate de que la empresa está en nuestro universo de monitorización o reformula la pregunta.";
+      earlySuggestions = langKey === "en"
+        ? ["Show me the IBEX 35 ranking", "Analyze Telefónica", "Which companies are in crisis?"]
+        : ["Muéstrame el ranking del IBEX 35", "Analiza Telefónica", "¿Hay alguna empresa en crisis?"];
     }
 
     if (earlyResponse) {
@@ -8680,17 +8689,19 @@ async function handleStandardChat(
       } catch (_e) { /* ignore session save error */ }
 
       if (streamMode) {
-        const encoder = new TextEncoder();
+        // Use proper SSE format matching createSSEEncoder output
+        const sseEncoderEarly = createSSEEncoder();
         const stream = new ReadableStream({
           start(controller) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: earlyResponse })}\n\n`));
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.enqueue(sseEncoderEarly({ type: "start", metadata: { language, depthLevel, detectedCompanies: [] } }));
+            controller.enqueue(sseEncoderEarly({ type: "chunk", text: earlyResponse }));
+            controller.enqueue(sseEncoderEarly({ type: "done", suggestedQuestions: earlySuggestions, metadata: { type: "standard", documentsFound: 0, structuredDataFound: 0, questionCategory: dpCrisisEmpty ? "alert" : "general" } }));
             controller.close();
           },
         });
         return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
       } else {
-        return new Response(JSON.stringify({ answer: earlyResponse }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ answer: earlyResponse, suggestedQuestions: earlySuggestions, metadata: { type: "standard", questionCategory: dpCrisisEmpty ? "alert" : "general" } }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     }
   }
