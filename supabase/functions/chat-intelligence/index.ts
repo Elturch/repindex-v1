@@ -1665,6 +1665,29 @@ async function buildDataPackFromSkills(
       }
     }
 
+    // ── Crisis scan: cross-company alert query (hardcoded, no GPT) ──
+    let crisisScanEmpty = false;
+    let crisisScanData: any[] | null = null;
+    if (interpret.intent === "alert" && !resolvedTicker) {
+      console.log(`${logPrefix} [SKILLS-v2] Running crisis_scan (hardcoded query)...`);
+      try {
+        const { data: crisisRows, error: crisisErr } = await supabaseClient.rpc("execute_sql", {
+          sql_query: `SELECT r."05_ticker", r."03_target_name", r."09_rix_score", r."35_cem_score", r."23_nvm_score", r.batch_execution_date, i.sector_category, i.ibex_family_code FROM rix_runs_v2 r JOIN repindex_root_issuers i ON r."05_ticker" = i.ticker WHERE r.batch_execution_date = (SELECT MAX(batch_execution_date) FROM rix_runs_v2) AND (r."35_cem_score" < 40 OR r."09_rix_score" < 40) ORDER BY r."09_rix_score" ASC LIMIT 30`,
+        });
+        if (crisisErr) {
+          console.warn(`${logPrefix} [SKILLS-v2] crisis_scan query error: ${crisisErr.message}`);
+        } else if (crisisRows && crisisRows.length > 0) {
+          crisisScanData = crisisRows;
+          console.log(`${logPrefix} [SKILLS-v2] crisis_scan found ${crisisRows.length} rows`);
+        } else {
+          crisisScanEmpty = true;
+          console.log(`${logPrefix} [SKILLS-v2] crisis_scan: no companies in crisis`);
+        }
+      } catch (csErr: any) {
+        console.warn(`${logPrefix} [SKILLS-v2] crisis_scan exception: ${csErr.message}`);
+      }
+    }
+
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
@@ -1685,6 +1708,50 @@ async function buildDataPackFromSkills(
       skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
         ibex_family_code: interpret.filters.ibex_family_code,
       });
+    }
+
+    // For alert intent with crisis data, we don't need other skills
+    if (interpret.intent === "alert" && !resolvedTicker && (crisisScanData || crisisScanEmpty)) {
+      // Build a minimal pack directly
+      const alertPack: DataPack & { crisis_scan_empty?: boolean; crisis_batch_date?: string } = {
+        snapshot: [], sector_avg: null, ranking: [], evolucion: [], divergencia: null,
+        memento: null, noticias: [], raw_texts: [], empresa_primaria: null,
+        competidores_verificados: [], competidores_metricas_avg: null,
+        explicaciones_metricas: [], puntos_clave: [], categorias_metricas: [], mercado: null,
+      };
+      if (crisisScanData && crisisScanData.length > 0) {
+        // Deduplicate by ticker using worst RIX per company
+        const byTicker = new Map<string, any>();
+        for (const row of crisisScanData) {
+          const t = row["05_ticker"];
+          if (!byTicker.has(t) || (row["09_rix_score"] ?? 100) < (byTicker.get(t)["09_rix_score"] ?? 100)) {
+            byTicker.set(t, row);
+          }
+        }
+        alertPack.ranking = Array.from(byTicker.values()).map((r: any, i: number) => ({
+          pos: i + 1,
+          ticker: r["05_ticker"],
+          nombre: r["03_target_name"],
+          rix_avg: r["09_rix_score"],
+          cem: r["35_cem_score"],
+          nvm: r["23_nvm_score"],
+          sector: r.sector_category,
+        }));
+        alertPack.crisis_batch_date = crisisScanData[0]?.batch_execution_date
+          ? String(crisisScanData[0].batch_execution_date).slice(0, 10)
+          : null;
+      } else {
+        alertPack.crisis_scan_empty = true;
+        // Fetch batch date for the positive message
+        try {
+          const { data: maxDateRows } = await supabaseClient.rpc("execute_sql", {
+            sql_query: `SELECT MAX(batch_execution_date)::text as max_date FROM rix_runs_v2`,
+          });
+          alertPack.crisis_batch_date = maxDateRows?.[0]?.max_date?.slice(0, 10) || null;
+        } catch (_e) { /* ignore */ }
+      }
+      console.log(`${logPrefix} [SKILLS-v2] crisis_scan pack built: ranking=${alertPack.ranking.length}, empty=${alertPack.crisis_scan_empty}`);
+      return alertPack as any;
     }
 
     if (Object.keys(skillCalls).length === 0) {
