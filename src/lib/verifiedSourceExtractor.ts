@@ -646,7 +646,7 @@ export function generateBibliographyHtml(
         ">
           Fuentes históricas o contextuales usadas por las IAs
         </p>
-        <ol style="
+        <ol class="sources-list" style="
           font-size: 11px;
            list-style: none;
           padding-left: 20px;
