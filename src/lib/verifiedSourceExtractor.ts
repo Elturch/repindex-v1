@@ -709,7 +709,7 @@ export function generateBibliographyHtml(
           </h3>
           <ol style="
             font-size: 11px;
-            list-style: decimal;
+             list-style: none;
             padding-left: 24px;
             margin: 0 0 16px 0;
             color: #475569;
