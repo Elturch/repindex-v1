@@ -1930,7 +1930,7 @@ const Admin: React.FC = () => {
               </Card>
             ) : (
               <div className="space-y-3">
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <Card key={user.id}>
                     <CardContent className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-4">
