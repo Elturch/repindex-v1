@@ -572,7 +572,7 @@ export function generateBibliographyHtml(
         ">
           Fuentes contemporáneas al período de análisis
         </p>
-        <ol style="
+        <ol class="sources-list" style="
           font-size: 11px;
            list-style: none;
           padding-left: 20px;
