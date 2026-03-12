@@ -1,24 +1,20 @@
 
 
-## Plan: Fix duplicate numbering in PDF sources list
+## Remove RoleEnrichmentBar from assistant messages
 
-### Problem
-The sources bibliography in exported PDFs shows each link number **twice**: once from the browser's native `list-style: decimal` (inline with the `<ol>`) and once from a CSS `counter` pseudo-element (`ol li::before`) defined in `markdownToHtml.ts`. Both fire on the same `<li>` elements, producing two visible numbers per entry.
+The `RoleEnrichmentBar` component appears after every assistant response, offering to "replantear desde otro perfil" (generate executive report from a different role). Since roles are now configured via the `SessionConfigPanel` above the input area before asking, this post-response bar is redundant and no longer functional as intended.
 
-### Root Cause
-- `markdownToHtml.ts` line 400-403: sets `list-style: none` globally on `ol` — but the sources HTML uses **inline** `list-style: decimal` which overrides the global rule (inline styles win).
-- Lines 426-447: adds `counter-reset` / `counter-increment` / `ol li::before { content: counter(list-counter) }` — this fires on ALL `ol li` including the sources.
+### Changes
 
-Result: sources get both native decimal numbering AND CSS counter numbering.
+**1. Remove RoleEnrichmentBar usage from ChatMessages.tsx**
+- Delete the import of `RoleEnrichmentBar` (line 10)
+- Delete lines 303-310 where it renders after each assistant message
 
-### Fix
+**2. Delete the component file**
+- Remove `src/components/chat/RoleEnrichmentBar.tsx` entirely
 
-**File: `src/lib/verifiedSourceExtractor.ts`**
+**3. Clean up unused translation keys in chatTranslations.ts**
+- Remove these keys from the `ChatTranslations` interface and all language objects (~6 languages): `adaptResponseFor`, `enrichedResponse`, `viewOriginal`, `hideOriginal`, `originalResponse`, `generateExecutiveReport`, `selectRoleForReport`, `adaptResponse`, `adaptToYourRole`, `moreRoles`, `reportsByProfessionalRole`, `eachRoleGenerates`
 
-Remove `list-style: decimal` from all `<ol>` inline styles in the sources HTML (5 occurrences, lines ~577, ~651, ~712, ~754, ~819). Replace with `list-style: none` so only the global CSS counter provides the number — no duplication.
-
-This is the simplest fix because:
-- The CSS counter in `markdownToHtml.ts` already produces well-styled numbers (bold, colored, positioned)
-- The sources `<ol>` elements already have `padding-left: 20-24px` which accommodates the counter
-- No changes needed to the global CSS
+**No backend changes needed.** The `SessionConfigPanel` (role selector above chat input) remains as the sole way to choose a professional perspective.
 
