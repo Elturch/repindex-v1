@@ -182,6 +182,8 @@ const Admin: React.FC = () => {
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [savingUser, setSavingUser] = useState(false);
+  const [userFilterCompany, setUserFilterCompany] = useState<string>('_all');
+  const [userSearchText, setUserSearchText] = useState('');
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
@@ -190,6 +192,37 @@ const Admin: React.FC = () => {
     is_active: true,
     send_magic_link: true,
   });
+
+  // Filtered users
+  const filteredUsers = useMemo(() => {
+    let result = users;
+    if (userFilterCompany !== '_all') {
+      if (userFilterCompany === '_none') {
+        result = result.filter(u => !u.company_id || u.is_individual);
+      } else {
+        result = result.filter(u => u.company_id === userFilterCompany);
+      }
+    }
+    if (userSearchText.trim()) {
+      const q = userSearchText.toLowerCase();
+      result = result.filter(u =>
+        (u.full_name && u.full_name.toLowerCase().includes(q)) ||
+        u.email.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [users, userFilterCompany, userSearchText]);
+
+  // Unique companies from users for the filter dropdown
+  const userCompanyOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach(u => {
+      if (u.company_id && u.client_companies) {
+        map.set(u.company_id, u.client_companies.company_name);
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [users]);
 
   // Role Analytics state
   const [roleAnalytics, setRoleAnalytics] = useState<RoleEnrichmentAnalytic[]>([]);
@@ -1727,6 +1760,31 @@ const Admin: React.FC = () => {
               </div>
             </div>
 
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <Select value={userFilterCompany} onValueChange={setUserFilterCompany}>
+                <SelectTrigger className="w-full sm:w-[240px]">
+                  <SelectValue placeholder="Filtrar por empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">Todas las empresas</SelectItem>
+                  <SelectItem value="_none">Sin empresa (particulares)</SelectItem>
+                  {userCompanyOptions.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Buscar por nombre o email..."
+                value={userSearchText}
+                onChange={(e) => setUserSearchText(e.target.value)}
+                className="w-full sm:w-[280px]"
+              />
+              <p className="text-sm text-muted-foreground self-center whitespace-nowrap">
+                Mostrando {filteredUsers.length} de {users.length} usuarios
+              </p>
+            </div>
+
             {showUserForm && (
               <Card className="mb-6 border-primary/50">
                 <CardHeader>
@@ -1872,7 +1930,7 @@ const Admin: React.FC = () => {
               </Card>
             ) : (
               <div className="space-y-3">
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <Card key={user.id}>
                     <CardContent className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-4">
