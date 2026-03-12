@@ -707,7 +707,7 @@ export function generateBibliographyHtml(
             <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #10a37f; color: white; border-radius: 4px; font-size: 10px;">G</span>
             Fuentes verificadas por ChatGPT (${chatGptSources.length})
           </h3>
-          <ol style="
+          <ol class="sources-list" style="
             font-size: 11px;
              list-style: none;
             padding-left: 24px;
