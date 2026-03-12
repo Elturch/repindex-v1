@@ -182,6 +182,8 @@ const Admin: React.FC = () => {
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [savingUser, setSavingUser] = useState(false);
+  const [userFilterCompany, setUserFilterCompany] = useState<string>('_all');
+  const [userSearchText, setUserSearchText] = useState('');
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
@@ -190,6 +192,37 @@ const Admin: React.FC = () => {
     is_active: true,
     send_magic_link: true,
   });
+
+  // Filtered users
+  const filteredUsers = useMemo(() => {
+    let result = users;
+    if (userFilterCompany !== '_all') {
+      if (userFilterCompany === '_none') {
+        result = result.filter(u => !u.company_id || u.is_individual);
+      } else {
+        result = result.filter(u => u.company_id === userFilterCompany);
+      }
+    }
+    if (userSearchText.trim()) {
+      const q = userSearchText.toLowerCase();
+      result = result.filter(u =>
+        (u.full_name && u.full_name.toLowerCase().includes(q)) ||
+        u.email.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [users, userFilterCompany, userSearchText]);
+
+  // Unique companies from users for the filter dropdown
+  const userCompanyOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach(u => {
+      if (u.company_id && u.client_companies) {
+        map.set(u.company_id, u.client_companies.company_name);
+      }
+    });
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [users]);
 
   // Role Analytics state
   const [roleAnalytics, setRoleAnalytics] = useState<RoleEnrichmentAnalytic[]>([]);
