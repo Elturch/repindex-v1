@@ -572,7 +572,7 @@ export function generateBibliographyHtml(
         ">
           Fuentes contemporáneas al período de análisis
         </p>
-        <ol style="
+        <ol class="sources-list" style="
           font-size: 11px;
            list-style: none;
           padding-left: 20px;
@@ -646,7 +646,7 @@ export function generateBibliographyHtml(
         ">
           Fuentes históricas o contextuales usadas por las IAs
         </p>
-        <ol style="
+        <ol class="sources-list" style="
           font-size: 11px;
            list-style: none;
           padding-left: 20px;
@@ -707,7 +707,7 @@ export function generateBibliographyHtml(
             <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #10a37f; color: white; border-radius: 4px; font-size: 10px;">G</span>
             Fuentes verificadas por ChatGPT (${chatGptSources.length})
           </h3>
-          <ol style="
+          <ol class="sources-list" style="
             font-size: 11px;
              list-style: none;
             padding-left: 24px;
@@ -749,7 +749,7 @@ export function generateBibliographyHtml(
             <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #20808d; color: white; border-radius: 4px; font-size: 10px;">P</span>
             Fuentes verificadas por Perplexity (${perplexitySources.length})
           </h3>
-          <ol style="
+          <ol class="sources-list" style="
             font-size: 11px;
              list-style: none;
             padding-left: 24px;
@@ -814,7 +814,7 @@ export function generateBibliographyHtml(
           ">
             Fuentes sin clasificación temporal determinada
           </p>
-          <ol style="
+          <ol class="sources-list" style="
             font-size: 11px;
             list-style: none;
             padding-left: 20px;

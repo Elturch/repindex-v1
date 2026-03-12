@@ -446,6 +446,11 @@ export const baseExportStyles = `
     justify-content: center;
   }
   
+  /* Neutralize counter for sources bibliography lists */
+  ol.sources-list { counter-reset: none; }
+  ol.sources-list li { counter-increment: none; }
+  ol.sources-list li::before { content: none; display: none; }
+  
   /* Blockquotes */
   blockquote {
     border-left: 3px solid var(--primary);
