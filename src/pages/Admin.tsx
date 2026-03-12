@@ -1760,6 +1760,31 @@ const Admin: React.FC = () => {
               </div>
             </div>
 
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <Select value={userFilterCompany} onValueChange={setUserFilterCompany}>
+                <SelectTrigger className="w-full sm:w-[240px]">
+                  <SelectValue placeholder="Filtrar por empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_all">Todas las empresas</SelectItem>
+                  <SelectItem value="_none">Sin empresa (particulares)</SelectItem>
+                  {userCompanyOptions.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Buscar por nombre o email..."
+                value={userSearchText}
+                onChange={(e) => setUserSearchText(e.target.value)}
+                className="w-full sm:w-[280px]"
+              />
+              <p className="text-sm text-muted-foreground self-center whitespace-nowrap">
+                Mostrando {filteredUsers.length} de {users.length} usuarios
+              </p>
+            </div>
+
             {showUserForm && (
               <Card className="mb-6 border-primary/50">
                 <CardHeader>
