@@ -574,7 +574,7 @@ export function generateBibliographyHtml(
         </p>
         <ol style="
           font-size: 11px;
-          list-style: decimal;
+           list-style: none;
           padding-left: 20px;
           margin: 0;
           color: #0f1419;
