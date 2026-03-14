@@ -1265,15 +1265,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "versiones distintas","cada modelo dice algo diferente","no coinciden",
     "información fragmentada","informacion fragmentada","datos dispersos",
     "misma información","misma informacion","datos alineados","consenso de datos",
+    // IR Coherence terms
+    "perception study","shareholder engagement","targeting de inversores",
+    "one-on-one meetings","q&a con analistas","fact book","presentación institucional","presentacion institucional",
+    "activism defense",
     // EN
     "coherence","consistency","contradiction","alignment","congruence","uniformity",
     "fragmentation","noise","incoherence","inconsistency","contradictory data",
+    "perception study","shareholder engagement","investor targeting","fact book",
     // PT
     "coerência","coerencia","consistência","consistencia","contradição","contradicao",
     "alinhamento","fragmentação","fragmentacao","incoerência","incoerencia",
+    "estudo de perceção","engajamento de acionistas",
     // CA
     "coherència","coherencia","consistència","consistencia","contradicció","contraccio",
-    "alineació","fragmentació","incoherència","incoherencia"
+    "alineació","fragmentació","incoherència","incoherencia",
+    "estudi de percepció","engagement d'accionistes"
   ],
   "44_cxm_score": [
     "ejecución","ejecucion","resultados","operaciones","rendimiento","performance",
