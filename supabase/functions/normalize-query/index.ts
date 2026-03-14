@@ -20,6 +20,60 @@ SKILLS DISPONIBLES:
 
 MÉTRICAS VÁLIDAS: NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM
 
+DICCIONARIO DE SINÓNIMOS MULTILINGÜE:
+
+Antes de clasificar la consulta, normaliza estos conceptos:
+
+1) Si el usuario menciona CUALQUIERA de estos términos, interpreta que pregunta sobre VALORACIÓN BURSÁTIL / CXM (stock price):
+
+   ES: cotización, precio de mercado, capitalización bursátil, valor en bolsa, precio de la acción, valoración de mercado, valor bursátil, precio bursátil, tasación de mercado, valor de cotización, precio de negociación, valoración bursátil
+
+   EN: stock price, market valuation, market capitalization, market cap, share price, equity valuation, stock valuation, market price, trading price, market worth, stock market value, equity price
+
+   PT: cotação, preço de mercado, capitalização bolsista, valor em bolsa, preço da ação, avaliação de mercado, valor bolsista, preço bolsista, valor de cotação, preço de negociação
+
+   CA: cotització, preu de mercat, capitalització borsària, valor en borsa, preu de l'acció, valoració de mercat
+
+   -> Reescribe la consulta usando 'valoración bursátil' o 'CXM' en el trigger. Usa skill_hint: 'metricDeepDive' con métrica CXM.
+
+2) Si el usuario menciona CUALQUIERA de estos términos, interpreta que pregunta sobre DESACOPLAMIENTO entre reputación y mercado:
+
+   ES: desacoplamiento, divergencia, desconexión, desfase, disociación, brecha, descorrelación, desalineación, desvinculación, separación, distanciamiento, asimetría, discrepancia, desajuste, desequilibrio, falta de correspondencia
+
+   EN: decoupling, divergence, disconnect, misalignment, gap, decorrelation, dislocation, detachment, discrepancy, mismatch, asymmetry, deviation, disparity, spread, imbalance, delinking
+
+   PT: desacoplamento, divergência, desconexão, descorrelação, desalinhamento, desequilíbrio, discrepância, diferença, assimetria
+
+   CA: desacoblament, divergència, desconnexió, desfasament, bretxa, desalineació
+
+   -> Reescribe la consulta usando 'desacoplamiento' en el trigger. Usa skill_hint: 'divergence'.
+
+3) Si el usuario menciona CUALQUIERA de estos términos, interpreta que pregunta sobre RESULTADOS FINANCIEROS:
+
+   ES: cuentas anuales, presentación de resultados financieros, resultados trimestrales, resultados anuales, informe financiero, memoria anual, presentación a inversores, presentación de analistas, earnings, beneficio neto, ingresos, EBITDA, guidance, previsión de resultados, rendición de cuentas
+
+   EN: financial results, annual accounts, earnings release, earnings call, quarterly results, annual report, investor presentation, results presentation, financial statements, accountability
+
+   PT: contas anuais, resultados financeiros, demonstrações financeiras, relatório anual, apresentação de resultados, resultados trimestrais, prestação de contas
+
+   CA: comptes anuals, resultats financers, presentació de resultats, rendició de comptes
+
+   -> Reescribe la consulta mencionando 'resultados financieros' y la empresa. Usa skill_hint: 'companyProfile'.
+
+4) Si el usuario menciona CUALQUIERA de estos términos, interpreta que pregunta sobre EQUITY STORY:
+
+   ES: equity story, relato de equity, historia de inversión, tesis de inversión, narrativa de la compañía para el mercado, relato estratégico para inversores
+
+   EN: equity story, investment thesis, equity narrative, company story for investors, strategic narrative
+
+   PT: equity story, tese de investimento, narrativa para investidores, história de investimento
+
+   CA: equity story, tesi d'inversió, narrativa per a inversors
+
+   -> Reescribe la consulta mencionando 'equity story' y la empresa. Usa skill_hint: 'companyProfile'.
+
+REGLA CLAVE: Si la consulta combina varios conceptos (ej: 'stock price vs reputación de Telefónica'), detecta AMBOS y usa el skill más apropiado (metricDeepDive para CXM, divergence para desacoplamiento).
+
 REGLAS:
 1. Si detectas una empresa, reescribe usando el nombre EXACTO (no abreviaturas)
 2. Si la consulta es en inglés/portugués/catalán, reescríbela en ESE idioma pero con el formato de trigger correspondiente
