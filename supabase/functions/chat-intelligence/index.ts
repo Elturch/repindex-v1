@@ -1161,7 +1161,13 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "empuje","frescura","temporalidad","ventana temporal","recencia",
     "últimas semanas","ultimas semanas","recientemente","nuevo","novedades",
     "de actualidad","al día","al dia","última hora","ultima hora",
-    "noticias recientes","información reciente","informacion reciente"
+    "noticias recientes","información reciente","informacion reciente",
+    // EN
+    "latest news","recent","trending","momentum","breaking news","current","up to date","freshness",
+    // PT
+    "atualidade","recente","últimas notícias","ultimas noticias","momento","tendência","tendencia",
+    // CA
+    "actualitat","recent","últimes notícies","ultimes noticies","tendència","tendencia"
   ],
   "38_gam_score": [
     "gobernanza","gobierno corporativo","consejo","directivos","ceo","presidente",
