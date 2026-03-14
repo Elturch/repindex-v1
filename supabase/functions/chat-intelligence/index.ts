@@ -1189,7 +1189,26 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "ejecución corporativa","ejecucion corporativa","desempeño","desempeno",
     "resultados operativos","capacidad de ejecución","capacidad de ejecucion",
     "estrategia corporativa","plan de negocio","operativa","operativo",
-    "capacidad operativa","excelencia operativa","resultados empresariales"
+    "capacidad operativa","excelencia operativa","resultados empresariales",
+    // Stock price / valuation synonyms — ES
+    "cotización","cotizacion","bursátil","bursatil","bolsa","acción","accion",
+    "capitalización","capitalizacion","valor","precio de mercado","capitalización bursátil","capitalizacion bursatil",
+    "valor en bolsa","precio de la acción","precio de la accion","valoración bursátil","valoracion bursatil",
+    "precio bursátil","precio bursatil","valor bursátil","valor bursatil",
+    "valoración de mercado","valoracion de mercado","valor de cotización","valor de cotizacion",
+    "precio de negociación","precio de negociacion","tasación de mercado","tasacion de mercado",
+    // Stock price / valuation — EN
+    "stock price","market valuation","market capitalization","market cap","share price",
+    "equity valuation","stock valuation","market price","trading price","market worth",
+    "stock market value","equity price",
+    // Stock price / valuation — PT
+    "cotação","cotacao","preço de mercado","preco de mercado","capitalização bolsista","capitalizacao bolsista",
+    "valor em bolsa","preço da ação","preco da acao","avaliação de mercado","avaliacao de mercado",
+    "valor bolsista","preço bolsista","preco bolsista","valor de cotação","valor de cotacao",
+    "preço de negociação","preco de negociacao",
+    // Stock price / valuation — CA
+    "cotització","cotitzacio","preu de mercat","capitalització borsària","capitalitzacio borsaria",
+    "valor en borsa","preu de l'acció","preu de l accio","valoració de mercat","valoracio de mercat"
   ],
   // P1/3 — General RIX / algorithmic reputation concepts (map to 09_rix_score for overall)
   "09_rix_score": [
