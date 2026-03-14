@@ -1144,14 +1144,21 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     // P1/3 additions — coherence/factual terms map here
     "error factual","error factual algorítmico","error factual algoritmico",
     "fact-checking","fact checking","transparencia corporativa","accountability",
+    // IR Evidence terms
+    "folleto informativo","prospectus","due diligence","nota de análisis","nota de analisis",
+    "research note","cobertura de analistas","analyst coverage","initiation of coverage",
+    "upgrade","downgrade","buy","hold","sell","overweight","underweight",
     // EN
     "evidence","data","proof","facts","figures","financial reports","annual accounts","financial statements",
     "hard metrics","fundamentals","data quality","verifiable","factual error",
+    "prospectus","due diligence","research note","analyst coverage","initiation of coverage",
     // PT
     "evidência","evidencia","dados","provas","fatos","cifras","relatórios financeiros","relatorios financeiros",
     "contas anuais","demonstrações financeiras","demonstracoes financeiras",
+    "prospeto","nota de análise","nota de analise","cobertura de analistas",
     // CA
-    "evidència","dades","proves","fets","xifres","informes financers","comptes anuals"
+    "evidència","dades","proves","fets","xifres","informes financers","comptes anuals",
+    "prospecte","nota d'anàlisi","nota d analisi","cobertura d'analistes"
   ],
   "32_rmm_score": [
     "actualidad","reciente","últimas noticias","ultimas noticias","trending","momento",
