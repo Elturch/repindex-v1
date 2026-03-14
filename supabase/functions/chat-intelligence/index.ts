@@ -512,7 +512,8 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
         const prevM = previousStats?.metricas?.[m.key];
         metricasConDelta[m.key] = {
           ...curr,
-          delta: prevM ? curr.mediano - prevM.mediano : 0,
+          delta: prevM ? Math.round((curr.mediano - prevM.mediano) * 10) / 10 : null,
+          has_delta: !!prevM,
         };
       }
     }
@@ -583,7 +584,7 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
       raw_runs,
       // Medians as reference aggregates (NOT the central data)
       rix_mediano: currentStats?.rix_mediano || 0,
-      delta_rix: previousStats ? (currentStats?.rix_mediano || 0) - previousStats.rix_mediano : 0,
+      delta_rix: previousStats ? Math.round(((currentStats?.rix_mediano || 0) - previousStats.rix_mediano) * 10) / 10 : null,
       medianas_por_metrica: metricasConDelta,
       // Latest week models (convenience shortcut into raw_runs)
       modelos,
@@ -5264,6 +5265,10 @@ function buildOrchestratorPrompt(
     noticias: dataPack.noticias.slice(0, 5),
     mercado: dataPack.mercado,
     evolucion_sector: (dataPack as any).evolucion_sector || null,
+    // ── Metric deltas: expose consolidated medians with per-metric deltas ──
+    rix_mediano: (dataPack as any).rix_mediano || null,
+    delta_rix: (dataPack as any).delta_rix_value || null,
+    metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
     ...((dataPack as any).f2_dynamic ? { datos_dinamicos: (dataPack as any).f2_dynamic } : {}),
   }, null, 0);
 
@@ -5413,11 +5418,12 @@ La Sección 8 (Cierre/Metodología) incluye una frase "Análisis elaborado el [f
 - PROHIBIDO escribir una fecha que aún no ha ocurrido (ej: si hoy es 8 mar, NO escribir 10 mar).
 
 REGLA DE DELTAS SEMANALES (INQUEBRANTABLE):
-- El delta semanal (Δ) SOLO puede mostrarse si el DATAPACK contiene datos de la semana actual Y de la semana anterior para ESA métrica específica.
-- Si el DATAPACK solo proporciona el RIX global histórico (sin desglose por métrica), SOLO mostrar delta en el RIX global. Las métricas individuales (NVM, DRM, SIM, etc.) NO deben mostrar delta.
+- El DATAPACK incluye "metricas_consolidadas" con un campo "delta" y "has_delta" para CADA métrica (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM).
+- Si "has_delta" es true para una métrica, MUESTRA su delta numérico en la tabla de KPIs (ej: "+3", "-5").
+- Si "has_delta" es false o "delta" es null, muestra "-" o "n/d" en esa métrica. NUNCA inventes un número.
+- También hay "delta_rix" (delta del RIX global mediano). Muéstralo siempre que exista.
 - NUNCA mostrar un delta con asterisco (*) ni nota al pie diciendo que "no hay histórico". Si no hay datos para calcularlo, simplemente NO mostrarlo.
-- En la tabla de KPIs principales, la columna "Δ SEMANAL" debe mostrar "-" o "n/d" para las métricas sin histórico, NUNCA un número inventado.
-- PROHIBIDO contradecirse: si dices que no hay histórico desglosado, NO puedes mostrar deltas individuales.
+- PROHIBIDO contradecirse: si los datos tienen deltas individuales, NO digas "Delta semanal disponible solo para RIX global".
 
 LAS 8 MÉTRICAS:
 • Calidad de la Narrativa (NVM) · Fortaleza de Evidencia (DRM) · Autoridad de Fuentes (SIM, NO mide ESG)
