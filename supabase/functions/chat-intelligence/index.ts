@@ -1183,16 +1183,31 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     // P1/3 additions — ESG terms map to governance perception
     "greenwashing","net zero","neutralidad de carbono","huella de carbono",
     "d&i","diversidad e inclusión","diversidad e inclusion",
+    // IR Governance terms — ES
+    "consejero independiente","comité de auditoría","comite de auditoria",
+    "comité de nombramientos y retribuciones","comite de nombramientos y retribuciones",
+    "junta general de accionistas","say on pay","proxy advisor","iss","glass lewis",
+    "informe de gobierno corporativo","iagc","participaciones significativas",
+    "accionistas de referencia","inversores institucionales","accionista activista",
+    "derechos de voto","diluciones","ampliación de capital","ampliacion de capital",
+    "autocartera","treasury shares","rating esg","djsi","ftse4good","msci esg",
+    "taxonomía europea","taxonomia europea","doble materialidad","csrd","esrs",
     // EN
     "governance","corporate governance","board","directors","management","ethics",
     "sustainability","social responsibility","shareholder","shareholders","transparency",
-    "executive team","board of directors",
+    "executive team","board of directors","independent director","audit committee",
+    "nomination committee","remuneration committee","annual general meeting","agm",
+    "proxy advisor","institutional investors","activist shareholder","voting rights",
+    "capital increase","share dilution","esg rating",
     // PT
     "governança","governanca","governo corporativo","conselho","diretores","gestão","gestao",
     "ética","etica","sustentabilidade","responsabilidade social","acionistas",
+    "conselheiro independente","comitê de auditoria","comite de auditoria",
+    "assembleia geral","investidores institucionais","acionista ativista",
     // CA
     "governança","governanca","govern corporatiu","consell","directius","gestió","ètica","etica",
-    "sostenibilitat","responsabilitat social","accionistes"
+    "sostenibilitat","responsabilitat social","accionistes","conseller independent",
+    "comitè d'auditoria","comite d auditoria","junta general d'accionistes"
   ],
   "41_dcm_score": [
     "coherencia","consistencia","contradicción","contradiccion","discrepancia informativa",
