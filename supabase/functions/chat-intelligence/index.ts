@@ -1127,15 +1127,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "resultados","métricas duras","metricas duras","kpis","indicadores",
     "estadísticas","estadisticas","informes financieros","cuentas","balance",
     "ebitda","beneficio","facturación","facturacion","ingresos","deuda",
-    "dividendo","cotización","cotizacion","bursátil","bursatil","bolsa",
-    "acción","accion","valor","capitalización","capitalizacion","fundamentales",
+    "dividendo","fundamentales",
     "fortaleza de evidencia","calidad de evidencia","solidez","verificable",
     "datos duros","cifras concretas","hechos verificables","documentación financiera","documentacion financiera",
     "cuentas anuales","informe anual","resultados financieros","memoria anual",
     "ratios","ratio","margen","rentabilidad","roi","roa","roe",
     // P1/3 additions — coherence/factual terms map here
     "error factual","error factual algorítmico","error factual algoritmico",
-    "fact-checking","fact checking","transparencia corporativa","accountability"
+    "fact-checking","fact checking","transparencia corporativa","accountability",
+    // EN
+    "evidence","data","proof","facts","figures","financial reports","annual accounts","financial statements",
+    "hard metrics","fundamentals","data quality","verifiable","factual error",
+    // PT
+    "evidência","evidencia","dados","provas","fatos","cifras","relatórios financeiros","relatorios financeiros",
+    "contas anuais","demonstrações financeiras","demonstracoes financeiras",
+    // CA
+    "evidència","dades","proves","fets","xifres","informes financers","comptes anuals"
   ],
   "32_rmm_score": [
     "actualidad","reciente","últimas noticias","ultimas noticias","trending","momento",
