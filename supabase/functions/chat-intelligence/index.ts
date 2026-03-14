@@ -1179,12 +1179,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "últimas semanas","ultimas semanas","recientemente","nuevo","novedades",
     "de actualidad","al día","al dia","última hora","ultima hora",
     "noticias recientes","información reciente","informacion reciente",
+    // IR Momentum terms
+    "rally","bull market","bear market","movers","breakout","golden cross","death cross",
+    "tendencia alcista","tendencia bajista","rebalanceo de índice","rebalanceo de indice",
+    "inclusión en índice","inclusion en indice","exclusión de índice","exclusion de indice",
     // EN
     "latest news","recent","trending","momentum","breaking news","current","up to date","freshness",
+    "rally","bull market","bear market","breakout","golden cross","death cross",
+    "index rebalancing","index inclusion","index exclusion",
     // PT
     "atualidade","recente","últimas notícias","ultimas noticias","momento","tendência","tendencia",
+    "rally","tendência altista","tendencia altista","tendência baixista","tendencia baixista",
+    "rebalanceamento de índice","rebalanceamento de indice",
     // CA
-    "actualitat","recent","últimes notícies","ultimes noticies","tendència","tendencia"
+    "actualitat","recent","últimes notícies","ultimes noticies","tendència","tendencia",
+    "rally","tendència alcista","tendencia alcista","tendència baixista","tendencia baixista",
+    "rebalanceig d'índex","rebalanceig d index"
   ],
   "38_gam_score": [
     "gobernanza","gobierno corporativo","consejo","directivos","ceo","presidente",
