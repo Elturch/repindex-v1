@@ -512,7 +512,8 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
         const prevM = previousStats?.metricas?.[m.key];
         metricasConDelta[m.key] = {
           ...curr,
-          delta: prevM ? curr.mediano - prevM.mediano : 0,
+          delta: prevM ? Math.round((curr.mediano - prevM.mediano) * 10) / 10 : null,
+          has_delta: !!prevM,
         };
       }
     }
