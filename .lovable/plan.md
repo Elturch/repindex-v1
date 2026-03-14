@@ -1,20 +1,35 @@
 
+Diagnóstico confirmado (revisando tu exportado):
+- En el informe aparece exactamente “n/d” en deltas de RMM/CEM/SIM y la nota “Delta semanal disponible solo para RIX global”.
+- En base de datos sí hay histórico para calcular deltas por métrica (ejemplo TEF semana 2026-03-08 vs 2026-03-01: NVM -1.00, DRM +7.50, SIM -5.00, CEM +9.00, etc.).
+- Causa raíz en código: el pipeline calcula esos deltas (`metricasConDelta`) pero luego no los inyecta en el bloque JSON que ve el LLM (`dataPackBlock`). Además, el prompt fuerza “n/d” cuando no hay histórico por métrica; como ese histórico no se expone, el modelo actúa “correctamente” pero con salida incompleta.
 
-## Remove RoleEnrichmentBar from assistant messages
+Plan de corrección (sin tocar otras funcionalidades/roles):
+1) Exponer deltas de métricas al orquestador
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+- En `buildOrchestratorPrompt` añadir al `dataPackBlock`:
+  - `delta_rix`
+  - `metricas_consolidadas` (con `mediano/min/max/categoria_dominante/delta`)
+  - opcional: bloque explícito de “última semana vs anterior” para las 8 métricas.
 
-The `RoleEnrichmentBar` component appears after every assistant response, offering to "replantear desde otro perfil" (generate executive report from a different role). Since roles are now configured via the `SessionConfigPanel` above the input area before asking, this post-response bar is redundant and no longer functional as intended.
+2) Corregir semántica de delta “sin histórico”
+- En `skillCompanyProfile`, cambiar `delta` de `0` a `null` cuando no exista semana previa.
+- Añadir bandera de disponibilidad (`has_delta`) para evitar ambigüedad entre “0 real” y “no disponible”.
 
-### Changes
+3) Paridad con fallback legacy
+- En `buildDataPack` (ruta legacy), calcular y poblar la misma estructura de deltas por métrica para que no vuelva el problema si hay fallback.
 
-**1. Remove RoleEnrichmentBar usage from ChatMessages.tsx**
-- Delete the import of `RoleEnrichmentBar` (line 10)
-- Delete lines 303-310 where it renders after each assistant message
+4) Ajustar prompt para usar el nuevo bloque
+- Mantener la regla de honestidad, pero indicar:
+  - “si `metricas_consolidadas.*.delta` existe, mostrar delta numérico”
+  - “usar n/d solo cuando `delta=null`”.
+- Eliminar contradicciones que induzcan “solo RIX” cuando sí hay desglose.
 
-**2. Delete the component file**
-- Remove `src/components/chat/RoleEnrichmentBar.tsx` entirely
+5) Verificación de salida
+- Ejecutar consulta “Evolución de Telefónica”.
+- Validar que en “KPIs Principales con Delta” aparezcan deltas numéricos en métricas con histórico (no solo RIX).
+- Exportar HTML/PDF y comprobar que desaparece la nota de “solo RIX” cuando sí hay datos.
 
-**3. Clean up unused translation keys in chatTranslations.ts**
-- Remove these keys from the `ChatTranslations` interface and all language objects (~6 languages): `adaptResponseFor`, `enrichedResponse`, `viewOriginal`, `hideOriginal`, `originalResponse`, `generateExecutiveReport`, `selectRoleForReport`, `adaptResponse`, `adaptToYourRole`, `moreRoles`, `reportsByProfessionalRole`, `eachRoleGenerates`
-
-**No backend changes needed.** The `SessionConfigPanel` (role selector above chat input) remains as the sole way to choose a professional perspective.
-
+Resultado esperado
+- Deltas coherentes y no vacíos en métricas individuales cuando existe histórico semanal.
+- “n/d” únicamente en casos realmente sin datos.
