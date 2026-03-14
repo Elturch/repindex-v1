@@ -6,7 +6,7 @@ export interface ChatRole {
   emoji: string;
   name: string;
   shortDescription: string;
-  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos";
+  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos" | "investor_relations";
   prompt: string;
   /** Feature flag: role is only shown when true. Defaults to true if omitted. */
   enabled?: boolean;
