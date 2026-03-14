@@ -1120,22 +1120,38 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "comunicación corporativa","comunicacion corporativa","relato corporativo",
     // P1/3 additions
     "narrativa corporativa","messaging","spin","brecha narrativa","narrative gap",
-    "nota de prensa","press release","statement","comunicado","portavoz","spokesperson"
+    "nota de prensa","press release","statement","comunicado","portavoz","spokesperson",
+    // EN
+    "narrative","story","communication","message","public perception","public opinion",
+    "corporate image","media coverage","brand perception","sentiment","tone","visibility",
+    "corporate communications","public relations","media presence",
+    // PT
+    "narrativa","comunicação","comunicacao","mensagem","percepção pública","percepcao publica",
+    "opinião pública","opiniao publica","imagem corporativa","cobertura mediática","cobertura mediatica",
+    // CA
+    "narrativa","comunicació","missatge","percepció pública","percepcio publica","imatge corporativa"
   ],
   "26_drm_score": [
     "evidencia","datos","pruebas","hechos","cifras","números","numeros",
     "resultados","métricas duras","metricas duras","kpis","indicadores",
     "estadísticas","estadisticas","informes financieros","cuentas","balance",
     "ebitda","beneficio","facturación","facturacion","ingresos","deuda",
-    "dividendo","cotización","cotizacion","bursátil","bursatil","bolsa",
-    "acción","accion","valor","capitalización","capitalizacion","fundamentales",
+    "dividendo","fundamentales",
     "fortaleza de evidencia","calidad de evidencia","solidez","verificable",
     "datos duros","cifras concretas","hechos verificables","documentación financiera","documentacion financiera",
     "cuentas anuales","informe anual","resultados financieros","memoria anual",
     "ratios","ratio","margen","rentabilidad","roi","roa","roe",
     // P1/3 additions — coherence/factual terms map here
     "error factual","error factual algorítmico","error factual algoritmico",
-    "fact-checking","fact checking","transparencia corporativa","accountability"
+    "fact-checking","fact checking","transparencia corporativa","accountability",
+    // EN
+    "evidence","data","proof","facts","figures","financial reports","annual accounts","financial statements",
+    "hard metrics","fundamentals","data quality","verifiable","factual error",
+    // PT
+    "evidência","evidencia","dados","provas","fatos","cifras","relatórios financeiros","relatorios financeiros",
+    "contas anuais","demonstrações financeiras","demonstracoes financeiras",
+    // CA
+    "evidència","dades","proves","fets","xifres","informes financers","comptes anuals"
   ],
   "32_rmm_score": [
     "actualidad","reciente","últimas noticias","ultimas noticias","trending","momento",
@@ -1145,7 +1161,13 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "empuje","frescura","temporalidad","ventana temporal","recencia",
     "últimas semanas","ultimas semanas","recientemente","nuevo","novedades",
     "de actualidad","al día","al dia","última hora","ultima hora",
-    "noticias recientes","información reciente","informacion reciente"
+    "noticias recientes","información reciente","informacion reciente",
+    // EN
+    "latest news","recent","trending","momentum","breaking news","current","up to date","freshness",
+    // PT
+    "atualidade","recente","últimas notícias","ultimas noticias","momento","tendência","tendencia",
+    // CA
+    "actualitat","recent","últimes notícies","ultimes noticies","tendència","tendencia"
   ],
   "38_gam_score": [
     "gobernanza","gobierno corporativo","consejo","directivos","ceo","presidente",
@@ -1160,7 +1182,17 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "gobernanza corporativa","percepción de gobierno","percepcion de gobierno",
     // P1/3 additions — ESG terms map to governance perception
     "greenwashing","net zero","neutralidad de carbono","huella de carbono",
-    "d&i","diversidad e inclusión","diversidad e inclusion"
+    "d&i","diversidad e inclusión","diversidad e inclusion",
+    // EN
+    "governance","corporate governance","board","directors","management","ethics",
+    "sustainability","social responsibility","shareholder","shareholders","transparency",
+    "executive team","board of directors",
+    // PT
+    "governança","governanca","governo corporativo","conselho","diretores","gestão","gestao",
+    "ética","etica","sustentabilidade","responsabilidade social","acionistas",
+    // CA
+    "governança","governanca","govern corporatiu","consell","directius","gestió","ètica","etica",
+    "sostenibilitat","responsabilitat social","accionistes"
   ],
   "41_dcm_score": [
     "coherencia","consistencia","contradicción","contradiccion","discrepancia informativa",
@@ -1171,7 +1203,16 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "coherencia informativa","datos contradictorios","información contradictoria","informacion contradictoria",
     "versiones distintas","cada modelo dice algo diferente","no coinciden",
     "información fragmentada","informacion fragmentada","datos dispersos",
-    "misma información","misma informacion","datos alineados","consenso de datos"
+    "misma información","misma informacion","datos alineados","consenso de datos",
+    // EN
+    "coherence","consistency","contradiction","alignment","congruence","uniformity",
+    "fragmentation","noise","incoherence","inconsistency","contradictory data",
+    // PT
+    "coerência","coerencia","consistência","consistencia","contradição","contradicao",
+    "alinhamento","fragmentação","fragmentacao","incoerência","incoerencia",
+    // CA
+    "coherència","coherencia","consistència","consistencia","contradicció","contraccio",
+    "alineació","fragmentació","incoherència","incoherencia"
   ],
   "44_cxm_score": [
     "ejecución","ejecucion","resultados","operaciones","rendimiento","performance",
@@ -1182,7 +1223,26 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "ejecución corporativa","ejecucion corporativa","desempeño","desempeno",
     "resultados operativos","capacidad de ejecución","capacidad de ejecucion",
     "estrategia corporativa","plan de negocio","operativa","operativo",
-    "capacidad operativa","excelencia operativa","resultados empresariales"
+    "capacidad operativa","excelencia operativa","resultados empresariales",
+    // Stock price / valuation synonyms — ES
+    "cotización","cotizacion","bursátil","bursatil","bolsa","acción","accion",
+    "capitalización","capitalizacion","valor","precio de mercado","capitalización bursátil","capitalizacion bursatil",
+    "valor en bolsa","precio de la acción","precio de la accion","valoración bursátil","valoracion bursatil",
+    "precio bursátil","precio bursatil","valor bursátil","valor bursatil",
+    "valoración de mercado","valoracion de mercado","valor de cotización","valor de cotizacion",
+    "precio de negociación","precio de negociacion","tasación de mercado","tasacion de mercado",
+    // Stock price / valuation — EN
+    "stock price","market valuation","market capitalization","market cap","share price",
+    "equity valuation","stock valuation","market price","trading price","market worth",
+    "stock market value","equity price",
+    // Stock price / valuation — PT
+    "cotação","cotacao","preço de mercado","preco de mercado","capitalização bolsista","capitalizacao bolsista",
+    "valor em bolsa","preço da ação","preco da acao","avaliação de mercado","avaliacao de mercado",
+    "valor bolsista","preço bolsista","preco bolsista","valor de cotação","valor de cotacao",
+    "preço de negociação","preco de negociacao",
+    // Stock price / valuation — CA
+    "cotització","cotitzacio","preu de mercat","capitalització borsària","capitalitzacio borsaria",
+    "valor en borsa","preu de l'acció","preu de l accio","valoració de mercat","valoracio de mercat"
   ],
   // P1/3 — General RIX / algorithmic reputation concepts (map to 09_rix_score for overall)
   "09_rix_score": [
@@ -1202,7 +1262,15 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     "ficha de","perfil de","resúmeme","resumeme","análisis de","analisis de",
     "cómo le va","como le va","cómo va","como va","qué pasa con","que pasa con",
     "háblame de","hablame de","explícame","explicame","detállame","detallame",
-    "radiografía","radiografia","diagnóstico","diagnostico","auditoría reputacional","auditoria reputacional"
+    "radiografía","radiografia","diagnóstico","diagnostico","auditoría reputacional","auditoria reputacional",
+    // EN
+    "analyze","analyse","diagnose","evaluate","how is","tell me about","report on","profile of",
+    "what about","status of","assessment of","overview of",
+    // PT
+    "analisa","diagnostica","avalia","como está","como esta","situação de","situacao de",
+    "estado de","relatório de","relatorio de","perfil de",
+    // CA
+    "analitza","diagnostica","avalua","com està","com esta","situació de","situacio de","informe de"
   ],
   ranking: [
     "ranking","clasificación","clasificacion","top","mejores","peores",
@@ -1210,7 +1278,13 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     "quién pierde","quien pierde","primero","último","ultimo","posición","posicion",
     "puesto","orden","lista","tabla","escalafón","escalafon",
     "quién lidera","quien lidera","quién está primero","quien esta primero",
-    "las mejores","las peores","cuáles destacan","cuales destacan"
+    "las mejores","las peores","cuáles destacan","cuales destacan",
+    // EN
+    "best","worst","leaders","laggards","who leads","who wins","who loses","leaderboard",
+    // PT
+    "melhores","piores","líderes","lideres","classificação","classificacao","quem lidera",
+    // CA
+    "millors","pitjors","líders","liders","classificació","classificacio","qui lidera"
   ],
   evolution: [
     "evolución","evolucion","histórico","historico","tendencia","trayectoria",
@@ -1223,26 +1297,104 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     // P1/3 additions
     "delta reputacional","variación del índice","variacion del indice",
     "línea base","linea base","baseline","recuperación reputacional","recuperacion reputacional",
-    "periodo de afectación","periodo de afectacion","hecho desencadenante","trigger event"
+    "periodo de afectación","periodo de afectacion","hecho desencadenante","trigger event",
+    // EN
+    "evolution","history","trend","trajectory","progress","change","improved","worsened",
+    "went up","went down","over time","time series","how has it evolved",
+    // PT
+    "evolução","evolucao","histórico","historico","tendência","tendencia","progresso",
+    "melhorou","piorou","subiu","desceu","como evoluiu",
+    // CA
+    "evolució","evolucio","històric","historic","tendència","tendencia","progrés","progres",
+    "ha millorat","ha empitjorat","com ha evolucionat"
   ],
   sector_comparison: [
     "sector","sectorial","industria","todas las de","empresas de","compañías de","companias de",
     "comparar sectores","comparación sectorial","comparacion sectorial",
-    "todo el sector","panorama del sector","cómo va el sector","como va el sector"
+    "todo el sector","panorama del sector","cómo va el sector","como va el sector",
+    // EN
+    "sector","industry","all companies in","sector comparison","sector overview","how is the sector",
+    // PT
+    "setor","setorial","indústria","industria","comparação setorial","comparacao setorial",
+    // CA
+    "sector","sectorial","indústria","industria","comparació sectorial","comparacio sectorial"
   ],
   divergence: [
     "divergencia","desacuerdo","consenso","disenso","discrepancia entre ias",
     "diferencia entre modelos","quién tiene razón","quien tiene razon",
     "por qué difieren","por que difieren","opinión dividida","opinion dividida",
     "no se ponen de acuerdo","modelos discrepan","las ias no coinciden",
-    "cada ia dice algo diferente","spread entre modelos","dispersión","dispersion"
+    "cada ia dice algo diferente","spread entre modelos","dispersión","dispersion",
+    // Decoupling / mismatch synonyms — ES
+    "desacoplamiento","brecha","desfase","desconexión","desconexion",
+    "descorrelación","descorrelacion","desalineación","desalineacion",
+    "asimetría","asimetria","desajuste","desequilibrio","disociación","disociacion",
+    "desvinculación","desvinculacion","separación","separacion","distanciamiento",
+    "discrepancia","falta de correspondencia",
+    // EN
+    "divergence","disagreement","consensus","dissent","discrepancy between ais",
+    "difference between models","models disagree","ais don't agree",
+    "decoupling","disconnect","misalignment","gap","mismatch","asymmetry",
+    "deviation","disparity","imbalance","delinking","dislocation","detachment","spread",
+    // PT
+    "divergência","divergencia","desacordo","consenso","discrepância","discrepancia",
+    "desacoplamento","desconexão","desconexao","descorrelação","descorrelacao",
+    "desalinhamento","desequilíbrio","desequilibrio",
+    // CA
+    "divergència","divergencia","desacord","consens","discrepància","discrepancia",
+    "desacoblament","desconnexió","desconnexio","desfasament","bretxa","desalineació","desalineacio"
   ],
   metric_deep_dive: [
     "métrica","metrica","score","puntuación","puntuacion","nota","calificación","calificacion",
     "valoración","valoracion","indicador","índice","indice","kpi",
     "desglose","detalle","profundizar","zoom","por qué tiene","por que tiene",
     "explícame la métrica","explicame la metrica","qué mide","que mide",
-    "cómo se calcula","como se calcula","significado de","qué significa","que significa"
+    "cómo se calcula","como se calcula","significado de","qué significa","que significa",
+    // EN
+    "metric","score","rating","grade","indicator","index","breakdown","detail","deep dive",
+    "explain the metric","what does it measure","how is it calculated",
+    // PT
+    "métrica","metrica","pontuação","pontuacao","nota","indicador","índice","indice",
+    "detalhe","o que mede","como se calcula",
+    // CA
+    "mètrica","metrica","puntuació","puntuacio","nota","indicador","índex","index",
+    "detall","què mesura","que mesura","com es calcula"
+  ],
+  // Financial results intent
+  financial_results: [
+    // ES
+    "cuentas anuales","presentación de resultados","presentacion de resultados",
+    "resultados trimestrales","resultados anuales","informe financiero","memoria anual",
+    "presentación a inversores","presentacion a inversores","earnings","beneficio neto",
+    "ingresos","ebitda","guidance","previsión de resultados","prevision de resultados",
+    "rendición de cuentas","rendicion de cuentas",
+    // EN
+    "financial results","annual accounts","earnings release","earnings call",
+    "quarterly results","annual report","investor presentation","results presentation",
+    "financial statements","accountability",
+    // PT
+    "contas anuais","resultados financeiros","demonstrações financeiras","demonstracoes financeiras",
+    "relatório anual","relatorio anual","apresentação de resultados","apresentacao de resultados",
+    "resultados trimestrais","prestação de contas","prestacao de contas",
+    // CA
+    "comptes anuals","resultats financers","presentació de resultats","presentacio de resultats",
+    "rendició de comptes","rendicio de comptes"
+  ],
+  // Equity story intent
+  equity_story: [
+    // ES
+    "equity story","relato de equity","historia de inversión","historia de inversion",
+    "tesis de inversión","tesis de inversion","narrativa de la compañía para el mercado",
+    "narrativa de la compania para el mercado","relato estratégico para inversores",
+    "relato estrategico para inversores",
+    // EN
+    "equity story","investment thesis","equity narrative","company story for investors",
+    "strategic narrative",
+    // PT
+    "equity story","tese de investimento","narrativa para investidores","história de investimento",
+    "historia de investimento",
+    // CA
+    "equity story","tesi d'inversió","tesi d inversio","narrativa per a inversors"
   ],
   // P2/3 — New intents
   due_diligence: [
