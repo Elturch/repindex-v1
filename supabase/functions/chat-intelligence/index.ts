@@ -5265,6 +5265,10 @@ function buildOrchestratorPrompt(
     noticias: dataPack.noticias.slice(0, 5),
     mercado: dataPack.mercado,
     evolucion_sector: (dataPack as any).evolucion_sector || null,
+    // ── Metric deltas: expose consolidated medians with per-metric deltas ──
+    rix_mediano: (dataPack as any).rix_mediano || null,
+    delta_rix: (dataPack as any).delta_rix_value || null,
+    metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
     ...((dataPack as any).f2_dynamic ? { datos_dinamicos: (dataPack as any).f2_dynamic } : {}),
   }, null, 0);
 
