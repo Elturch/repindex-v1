@@ -1262,7 +1262,15 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     "ficha de","perfil de","resúmeme","resumeme","análisis de","analisis de",
     "cómo le va","como le va","cómo va","como va","qué pasa con","que pasa con",
     "háblame de","hablame de","explícame","explicame","detállame","detallame",
-    "radiografía","radiografia","diagnóstico","diagnostico","auditoría reputacional","auditoria reputacional"
+    "radiografía","radiografia","diagnóstico","diagnostico","auditoría reputacional","auditoria reputacional",
+    // EN
+    "analyze","analyse","diagnose","evaluate","how is","tell me about","report on","profile of",
+    "what about","status of","assessment of","overview of",
+    // PT
+    "analisa","diagnostica","avalia","como está","como esta","situação de","situacao de",
+    "estado de","relatório de","relatorio de","perfil de",
+    // CA
+    "analitza","diagnostica","avalua","com està","com esta","situació de","situacio de","informe de"
   ],
   ranking: [
     "ranking","clasificación","clasificacion","top","mejores","peores",
@@ -1270,7 +1278,13 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     "quién pierde","quien pierde","primero","último","ultimo","posición","posicion",
     "puesto","orden","lista","tabla","escalafón","escalafon",
     "quién lidera","quien lidera","quién está primero","quien esta primero",
-    "las mejores","las peores","cuáles destacan","cuales destacan"
+    "las mejores","las peores","cuáles destacan","cuales destacan",
+    // EN
+    "best","worst","leaders","laggards","who leads","who wins","who loses","leaderboard",
+    // PT
+    "melhores","piores","líderes","lideres","classificação","classificacao","quem lidera",
+    // CA
+    "millors","pitjors","líders","liders","classificació","classificacio","qui lidera"
   ],
   evolution: [
     "evolución","evolucion","histórico","historico","tendencia","trayectoria",
@@ -1283,26 +1297,104 @@ const INTENT_THESAURUS: Record<string, string[]> = {
     // P1/3 additions
     "delta reputacional","variación del índice","variacion del indice",
     "línea base","linea base","baseline","recuperación reputacional","recuperacion reputacional",
-    "periodo de afectación","periodo de afectacion","hecho desencadenante","trigger event"
+    "periodo de afectación","periodo de afectacion","hecho desencadenante","trigger event",
+    // EN
+    "evolution","history","trend","trajectory","progress","change","improved","worsened",
+    "went up","went down","over time","time series","how has it evolved",
+    // PT
+    "evolução","evolucao","histórico","historico","tendência","tendencia","progresso",
+    "melhorou","piorou","subiu","desceu","como evoluiu",
+    // CA
+    "evolució","evolucio","històric","historic","tendència","tendencia","progrés","progres",
+    "ha millorat","ha empitjorat","com ha evolucionat"
   ],
   sector_comparison: [
     "sector","sectorial","industria","todas las de","empresas de","compañías de","companias de",
     "comparar sectores","comparación sectorial","comparacion sectorial",
-    "todo el sector","panorama del sector","cómo va el sector","como va el sector"
+    "todo el sector","panorama del sector","cómo va el sector","como va el sector",
+    // EN
+    "sector","industry","all companies in","sector comparison","sector overview","how is the sector",
+    // PT
+    "setor","setorial","indústria","industria","comparação setorial","comparacao setorial",
+    // CA
+    "sector","sectorial","indústria","industria","comparació sectorial","comparacio sectorial"
   ],
   divergence: [
     "divergencia","desacuerdo","consenso","disenso","discrepancia entre ias",
     "diferencia entre modelos","quién tiene razón","quien tiene razon",
     "por qué difieren","por que difieren","opinión dividida","opinion dividida",
     "no se ponen de acuerdo","modelos discrepan","las ias no coinciden",
-    "cada ia dice algo diferente","spread entre modelos","dispersión","dispersion"
+    "cada ia dice algo diferente","spread entre modelos","dispersión","dispersion",
+    // Decoupling / mismatch synonyms — ES
+    "desacoplamiento","brecha","desfase","desconexión","desconexion",
+    "descorrelación","descorrelacion","desalineación","desalineacion",
+    "asimetría","asimetria","desajuste","desequilibrio","disociación","disociacion",
+    "desvinculación","desvinculacion","separación","separacion","distanciamiento",
+    "discrepancia","falta de correspondencia",
+    // EN
+    "divergence","disagreement","consensus","dissent","discrepancy between ais",
+    "difference between models","models disagree","ais don't agree",
+    "decoupling","disconnect","misalignment","gap","mismatch","asymmetry",
+    "deviation","disparity","imbalance","delinking","dislocation","detachment","spread",
+    // PT
+    "divergência","divergencia","desacordo","consenso","discrepância","discrepancia",
+    "desacoplamento","desconexão","desconexao","descorrelação","descorrelacao",
+    "desalinhamento","desequilíbrio","desequilibrio",
+    // CA
+    "divergència","divergencia","desacord","consens","discrepància","discrepancia",
+    "desacoblament","desconnexió","desconnexio","desfasament","bretxa","desalineació","desalineacio"
   ],
   metric_deep_dive: [
     "métrica","metrica","score","puntuación","puntuacion","nota","calificación","calificacion",
     "valoración","valoracion","indicador","índice","indice","kpi",
     "desglose","detalle","profundizar","zoom","por qué tiene","por que tiene",
     "explícame la métrica","explicame la metrica","qué mide","que mide",
-    "cómo se calcula","como se calcula","significado de","qué significa","que significa"
+    "cómo se calcula","como se calcula","significado de","qué significa","que significa",
+    // EN
+    "metric","score","rating","grade","indicator","index","breakdown","detail","deep dive",
+    "explain the metric","what does it measure","how is it calculated",
+    // PT
+    "métrica","metrica","pontuação","pontuacao","nota","indicador","índice","indice",
+    "detalhe","o que mede","como se calcula",
+    // CA
+    "mètrica","metrica","puntuació","puntuacio","nota","indicador","índex","index",
+    "detall","què mesura","que mesura","com es calcula"
+  ],
+  // Financial results intent
+  financial_results: [
+    // ES
+    "cuentas anuales","presentación de resultados","presentacion de resultados",
+    "resultados trimestrales","resultados anuales","informe financiero","memoria anual",
+    "presentación a inversores","presentacion a inversores","earnings","beneficio neto",
+    "ingresos","ebitda","guidance","previsión de resultados","prevision de resultados",
+    "rendición de cuentas","rendicion de cuentas",
+    // EN
+    "financial results","annual accounts","earnings release","earnings call",
+    "quarterly results","annual report","investor presentation","results presentation",
+    "financial statements","accountability",
+    // PT
+    "contas anuais","resultados financeiros","demonstrações financeiras","demonstracoes financeiras",
+    "relatório anual","relatorio anual","apresentação de resultados","apresentacao de resultados",
+    "resultados trimestrais","prestação de contas","prestacao de contas",
+    // CA
+    "comptes anuals","resultats financers","presentació de resultats","presentacio de resultats",
+    "rendició de comptes","rendicio de comptes"
+  ],
+  // Equity story intent
+  equity_story: [
+    // ES
+    "equity story","relato de equity","historia de inversión","historia de inversion",
+    "tesis de inversión","tesis de inversion","narrativa de la compañía para el mercado",
+    "narrativa de la compania para el mercado","relato estratégico para inversores",
+    "relato estrategico para inversores",
+    // EN
+    "equity story","investment thesis","equity narrative","company story for investors",
+    "strategic narrative",
+    // PT
+    "equity story","tese de investimento","narrativa para investidores","história de investimento",
+    "historia de investimento",
+    // CA
+    "equity story","tesi d'inversió","tesi d inversio","narrativa per a inversors"
   ],
   // P2/3 — New intents
   due_diligence: [

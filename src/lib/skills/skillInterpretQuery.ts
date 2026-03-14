@@ -29,11 +29,12 @@ export interface InterpretQueryInput {
 
 // ── Known patterns ──────────────────────────────────────────────────
 const IBEX_PATTERNS = /\b(ibex[- ]?35|ibex|índice|indice)\b/i;
-const EVOLUTION_PATTERNS = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)/i;
-const RANKING_PATTERNS = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)/i;
-const SECTOR_PATTERNS = /\b(sector|sectorial|comparar sectores?|banc[a-z]*|energ[ií\u00e9][a-z]*|tecnol[oó\u00f3]g[a-z]*|telecomunicaci[a-z]*|utilities|construcci[oó]n|constructora[s]?|inmobiliaria[s]?|alimentaci[oó]n|alimentaria[s]?|seguros?|aseguradora[s]?|turismo|tur[ií]stic[a-z]*|textil|pharma|salud|farmac[eé]utic[a-z]*)/i;
-const DIVERGENCE_PATTERNS = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
-const COMPANY_QUESTION_PATTERNS = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
+const EVOLUTION_PATTERNS = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres|evolution|history|trajectory|evolução|evolucao|evolució|evolucio)\b/i;
+const RANKING_PATTERNS = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto|best|worst|leaders?|laggards?|leaderboard|classificação|classificacao|classificació|classificacio)\b/i;
+const SECTOR_PATTERNS = /\b(sector|sectorial|comparar sectores?|banc[a-z]*|energ[ií\u00e9][a-z]*|tecnol[oó\u00f3]g[a-z]*|telecomunicaci[a-z]*|utilities|construcci[oó]n|constructora[s]?|inmobiliaria[s]?|alimentaci[oó]n|alimentaria[s]?|seguros?|aseguradora[s]?|turismo|tur[ií]stic[a-z]*|textil|pharma|salud|farmac[eé]utic[a-z]*|industry|indústria|industria)\b/i;
+const DIVERGENCE_PATTERNS = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n|desacoplamiento|brecha|desfase|desconexi[oó]n|descorrelaci[oó]n|desalineaci[oó]n|asimetr[ií]a|desajuste|desequilibrio|disociaci[oó]n|desvinculaci[oó]n|decoupling|disconnect|misalignment|gap|mismatch|asymmetry|deviation|disparity|imbalance|delinking|divergence|divergência|desacoplamento|desconexão|desconexao|desalinhamento|desacoblament|desconnexió|desconnexio|bretxa)\b/i;
+const COMPANY_QUESTION_PATTERNS = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota|analyze|analyse|evaluate|how is|status of|assessment|analisa|avalia|analitza)\b/i;
+const CXM_PATTERNS = /\b(cotizaci[oó]n|precio de mercado|capitalizaci[oó]n burs[aá]til|valor en bolsa|precio de la acci[oó]n|valoraci[oó]n burs[aá]til|precio burs[aá]til|valor burs[aá]til|stock price|market valuation|market cap|share price|equity valuation|market price|trading price|cotação|cotacao|preço de mercado|preco de mercado|capitalização bolsista|capitalizacao bolsista|valor em bolsa|cotització|cotitzacio|preu de mercat|capitalitzaci[oó] bors[aà]ria)\b/i;
 
 // Common sector names → sector_category values
 const SECTOR_MAP: Record<string, string> = {
