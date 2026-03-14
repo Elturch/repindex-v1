@@ -6,7 +6,7 @@ export interface ChatRole {
   emoji: string;
   name: string;
   shortDescription: string;
-  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos";
+  category: "general" | "direccion" | "comunicacion" | "pericial" | "esg" | "talento" | "asuntos_publicos" | "investor_relations";
   prompt: string;
   /** Feature flag: role is only shown when true. Defaults to true if omitted. */
   enabled?: boolean;
@@ -18,6 +18,7 @@ export const ROLE_CATEGORIES = {
   comunicacion: "Comunicacion",
   pericial: "Peritaje y Legal",
   esg: "ESG y Sostenibilidad",
+  investor_relations: "Relación con Inversores",
   talento: "Talento",
   asuntos_publicos: "Asuntos Publicos",
 } as const;
@@ -154,6 +155,29 @@ Presenta el análisis desde la perspectiva de un Director de ESG/Sostenibilidad 
 
 Tono: Técnico-normativo pero accesible, orientado a la lectura de materialidad reputacional.`,
   },
+  // INVESTOR RELATIONS
+  {
+    id: "investor_relations",
+    emoji: "📈",
+    name: "Relación con Inversores",
+    shortDescription: "Percepción algorítmica para equipos IR de cotizadas",
+    category: "investor_relations",
+    enabled: true,
+    prompt: `${METRIC_LANGUAGE_RULES}
+
+${ANTI_FABRICATION_RULES}
+
+Como responsable de Relación con Inversores en una empresa cotizada, tu objetivo es entender cómo los principales modelos de IA perciben y transmiten la narrativa de inversión de tu empresa, y detectar desconexiones entre esa percepción algorítmica y la realidad corporativa (resultados, guidance, tesis de inversión).
+
+ÁNGULO DE LECTURA:
+1. **EQUITY STORY EN EL CANAL ALGORÍTMICO**: ¿Llega la tesis de inversión con claridad y evidencia? Cruza Calidad de la Narrativa (NVM) y Fortaleza de Evidencia (DRM) para medir si el equity story se traduce correctamente. Compara con el consensus de analistas y el guidance oficial.
+2. **PERCEPCIÓN DE GOBERNANZA E IR**: Percepción de Gobernanza (GAM) como proxy de cómo las IAs evalúan la calidad del gobierno corporativo, transparencia con inversores, calidad del consejo, retribución y cumplimiento. Relaciona con ratings ESG, proxy advisors (ISS, Glass Lewis) y códigos de buen gobierno.
+3. **RIESGOS Y CONTROVERSIAS PRE-MERCADO**: Gestión de Controversias (CEM) y Actualidad y Empuje (RMM) como sistema de alerta temprana. Detecta si las IAs están amplificando controversias, profit warnings, litigios o riesgos regulatorios antes de que el mercado los descuente. Señala gaps entre percepción algorítmica y cotización.
+4. **CREDIBILIDAD ANTE ANALISTAS E INVERSORES**: Autoridad de Fuentes (SIM) y Coherencia Informativa (DCM) miden si la empresa tiene presencia en fuentes Tier-1 (Reuters, Bloomberg, reguladores como CNMV/SEC) y si la información es consistente entre canales (CNMV, presentaciones de resultados, web corporativa, consensus). Detecta gaps informativos que erosionen credibilidad.
+5. **EJECUCIÓN CORPORATIVA Y VALORACIÓN**: Ejecución Corporativa (CXM) cruza datos de cotización, capitalización, ratios de valoración (PER, EV/EBITDA, P/B), TSR, dividend yield y consensus de precio objetivo para contextualizar la reputación algorítmica con la valoración fundamental.
+
+Tono: Analítico-financiero, como un equity analyst senior o un Head de IR que habla con el CFO. Datos, cifras, métricas y lenguaje de mercados de capitales. Evita lenguaje de comunicación corporativa genérico; usa terminología de valoración, consensus, y regulación bursátil.`,
+  },
   // TALENTO (disabled: no specific metrics yet)
   {
     id: "talento",
@@ -209,7 +233,7 @@ export function getEnabledRoles(): ChatRole[] {
 
 // Featured roles shown prominently in the UI (only enabled ones)
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ["direccion_general", "dircom", "esg", "perito_reputacional"];
+  const featuredIds = ["direccion_general", "dircom", "esg", "perito_reputacional", "investor_relations"];
   return CHAT_ROLES.filter((role) => featuredIds.includes(role.id) && role.enabled !== false);
 }
 

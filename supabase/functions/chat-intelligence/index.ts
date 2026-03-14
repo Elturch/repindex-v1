@@ -1088,7 +1088,26 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "escándalo corporativo","escandalo corporativo","cancel culture","fake news",
     "desinformación","desinformacion","difamación","difamacion","calumnia","injuria",
     "difamación corporativa","difamacion corporativa","daño reputacional","dano reputacional",
-    "viral","trending topic negativo"
+    "viral","trending topic negativo",
+    // IR controversy terms
+    "hecho relevante","material event","información privilegiada","informacion privilegiada",
+    "insider information","blackout period","abuso de mercado","market abuse","mar",
+    "mifid ii","mifid","cnmv","sec","insider trading","pdmr transactions",
+    "short selling","posición corta","posicion corta","halt de cotización","halt de cotizacion",
+    "circuit breaker","sell-off","corrección","correccion","sanción regulatoria","sancion regulatoria",
+    // EN
+    "controversy","scandal","crisis","lawsuit","litigation","regulation","fine","sanction",
+    "investigation","fraud","corruption","risk","threat","boycott","complaint",
+    "material event","insider information","market abuse","insider trading","short selling",
+    "trading halt","regulatory sanction",
+    // PT
+    "controvérsia","controversia","escândalo","escandalo","crise","litígio","litigio",
+    "multa","sanção","sancao","investigação","investigacao","fraude","corrupção","corrupcao",
+    "fato relevante","informação privilegiada","informacao privilegiada","abuso de mercado",
+    // CA
+    "controvèrsia","controversia","escàndol","escandol","crisi","litigi",
+    "multa","sanció","sancio","investigació","investigacio","frau","corrupció","corrupcio",
+    "fet rellevant","informació privilegiada","informacio privilegiada","abús de mercat","abus de mercat"
   ],
   "29_sim_score": [
     "fuentes","credibilidad","fiabilidad","referencias","documentos oficiales","regulador",
@@ -1104,7 +1123,17 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "autoridad de fuentes","calidad de fuentes","jerarquía de fuentes","jerarquia de fuentes",
     // P1/3 additions
     "cuota de voz","share of voice","sov","cuota de voz algorítmica","cuota de voz algoritmica",
-    "fuente tier 1","reputación online","reputacion online"
+    "fuente tier 1","reputación online","reputacion online",
+    // IR Source authority terms
+    "cnmv filings","sec filings","registro oficial","regulador bursátil","regulador bursatil",
+    "fuentes tier-1","factiva","dow jones",
+    // EN
+    "reuters","bloomberg","cnmv filings","sec filings","official registry","stock regulator",
+    "tier-1 sources","factiva","dow jones","regulatory filings",
+    // PT
+    "fontes tier-1","registro oficial","regulador bolsista","fontes oficiais",
+    // CA
+    "fonts tier-1","registre oficial","regulador borsari","fonts oficials"
   ],
   "23_nvm_score": [
     "relato","comunicación","comunicacion","mensaje","historia","storytelling","discurso",
@@ -1121,15 +1150,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     // P1/3 additions
     "narrativa corporativa","messaging","spin","brecha narrativa","narrative gap",
     "nota de prensa","press release","statement","comunicado","portavoz","spokesperson",
+    // IR Narrative terms
+    "equity story","narrativa corporativa","narrativa de inversión","narrativa de inversion",
+    "investment case","tesis de inversión","tesis de inversion","guidance narrativo",
+    "strategy update","capital allocation",
     // EN
     "narrative","story","communication","message","public perception","public opinion",
     "corporate image","media coverage","brand perception","sentiment","tone","visibility",
     "corporate communications","public relations","media presence",
+    "equity story","investment case","investment thesis","narrative strategy","capital allocation",
     // PT
     "narrativa","comunicação","comunicacao","mensagem","percepção pública","percepcao publica",
     "opinião pública","opiniao publica","imagem corporativa","cobertura mediática","cobertura mediatica",
+    "equity story","caso de investimento","tese de investimento",
     // CA
-    "narrativa","comunicació","missatge","percepció pública","percepcio publica","imatge corporativa"
+    "narrativa","comunicació","missatge","percepció pública","percepcio publica","imatge corporativa",
+    "equity story","cas d'inversió","tesi d'inversió"
   ],
   "26_drm_score": [
     "evidencia","datos","pruebas","hechos","cifras","números","numeros",
@@ -1144,14 +1180,21 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     // P1/3 additions — coherence/factual terms map here
     "error factual","error factual algorítmico","error factual algoritmico",
     "fact-checking","fact checking","transparencia corporativa","accountability",
+    // IR Evidence terms
+    "folleto informativo","prospectus","due diligence","nota de análisis","nota de analisis",
+    "research note","cobertura de analistas","analyst coverage","initiation of coverage",
+    "upgrade","downgrade","buy","hold","sell","overweight","underweight",
     // EN
     "evidence","data","proof","facts","figures","financial reports","annual accounts","financial statements",
     "hard metrics","fundamentals","data quality","verifiable","factual error",
+    "prospectus","due diligence","research note","analyst coverage","initiation of coverage",
     // PT
     "evidência","evidencia","dados","provas","fatos","cifras","relatórios financeiros","relatorios financeiros",
     "contas anuais","demonstrações financeiras","demonstracoes financeiras",
+    "prospeto","nota de análise","nota de analise","cobertura de analistas",
     // CA
-    "evidència","dades","proves","fets","xifres","informes financers","comptes anuals"
+    "evidència","dades","proves","fets","xifres","informes financers","comptes anuals",
+    "prospecte","nota d'anàlisi","nota d analisi","cobertura d'analistes"
   ],
   "32_rmm_score": [
     "actualidad","reciente","últimas noticias","ultimas noticias","trending","momento",
@@ -1162,12 +1205,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "últimas semanas","ultimas semanas","recientemente","nuevo","novedades",
     "de actualidad","al día","al dia","última hora","ultima hora",
     "noticias recientes","información reciente","informacion reciente",
+    // IR Momentum terms
+    "rally","bull market","bear market","movers","breakout","golden cross","death cross",
+    "tendencia alcista","tendencia bajista","rebalanceo de índice","rebalanceo de indice",
+    "inclusión en índice","inclusion en indice","exclusión de índice","exclusion de indice",
     // EN
     "latest news","recent","trending","momentum","breaking news","current","up to date","freshness",
+    "rally","bull market","bear market","breakout","golden cross","death cross",
+    "index rebalancing","index inclusion","index exclusion",
     // PT
     "atualidade","recente","últimas notícias","ultimas noticias","momento","tendência","tendencia",
+    "rally","tendência altista","tendencia altista","tendência baixista","tendencia baixista",
+    "rebalanceamento de índice","rebalanceamento de indice",
     // CA
-    "actualitat","recent","últimes notícies","ultimes noticies","tendència","tendencia"
+    "actualitat","recent","últimes notícies","ultimes noticies","tendència","tendencia",
+    "rally","tendència alcista","tendencia alcista","tendència baixista","tendencia baixista",
+    "rebalanceig d'índex","rebalanceig d index"
   ],
   "38_gam_score": [
     "gobernanza","gobierno corporativo","consejo","directivos","ceo","presidente",
@@ -1183,16 +1236,31 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     // P1/3 additions — ESG terms map to governance perception
     "greenwashing","net zero","neutralidad de carbono","huella de carbono",
     "d&i","diversidad e inclusión","diversidad e inclusion",
+    // IR Governance terms — ES
+    "consejero independiente","comité de auditoría","comite de auditoria",
+    "comité de nombramientos y retribuciones","comite de nombramientos y retribuciones",
+    "junta general de accionistas","say on pay","proxy advisor","iss","glass lewis",
+    "informe de gobierno corporativo","iagc","participaciones significativas",
+    "accionistas de referencia","inversores institucionales","accionista activista",
+    "derechos de voto","diluciones","ampliación de capital","ampliacion de capital",
+    "autocartera","treasury shares","rating esg","djsi","ftse4good","msci esg",
+    "taxonomía europea","taxonomia europea","doble materialidad","csrd","esrs",
     // EN
     "governance","corporate governance","board","directors","management","ethics",
     "sustainability","social responsibility","shareholder","shareholders","transparency",
-    "executive team","board of directors",
+    "executive team","board of directors","independent director","audit committee",
+    "nomination committee","remuneration committee","annual general meeting","agm",
+    "proxy advisor","institutional investors","activist shareholder","voting rights",
+    "capital increase","share dilution","esg rating",
     // PT
     "governança","governanca","governo corporativo","conselho","diretores","gestão","gestao",
     "ética","etica","sustentabilidade","responsabilidade social","acionistas",
+    "conselheiro independente","comitê de auditoria","comite de auditoria",
+    "assembleia geral","investidores institucionais","acionista ativista",
     // CA
     "governança","governanca","govern corporatiu","consell","directius","gestió","ètica","etica",
-    "sostenibilitat","responsabilitat social","accionistes"
+    "sostenibilitat","responsabilitat social","accionistes","conseller independent",
+    "comitè d'auditoria","comite d auditoria","junta general d'accionistes"
   ],
   "41_dcm_score": [
     "coherencia","consistencia","contradicción","contradiccion","discrepancia informativa",
@@ -1204,15 +1272,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "versiones distintas","cada modelo dice algo diferente","no coinciden",
     "información fragmentada","informacion fragmentada","datos dispersos",
     "misma información","misma informacion","datos alineados","consenso de datos",
+    // IR Coherence terms
+    "perception study","shareholder engagement","targeting de inversores",
+    "one-on-one meetings","q&a con analistas","fact book","presentación institucional","presentacion institucional",
+    "activism defense",
     // EN
     "coherence","consistency","contradiction","alignment","congruence","uniformity",
     "fragmentation","noise","incoherence","inconsistency","contradictory data",
+    "perception study","shareholder engagement","investor targeting","fact book",
     // PT
     "coerência","coerencia","consistência","consistencia","contradição","contradicao",
     "alinhamento","fragmentação","fragmentacao","incoerência","incoerencia",
+    "estudo de perceção","engajamento de acionistas",
     // CA
     "coherència","coherencia","consistència","consistencia","contradicció","contraccio",
-    "alineació","fragmentació","incoherència","incoherencia"
+    "alineació","fragmentació","incoherència","incoherencia",
+    "estudi de percepció","engagement d'accionistes"
   ],
   "44_cxm_score": [
     "ejecución","ejecucion","resultados","operaciones","rendimiento","performance",
@@ -1242,7 +1317,32 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "preço de negociação","preco de negociacao",
     // Stock price / valuation — CA
     "cotització","cotitzacio","preu de mercat","capitalització borsària","capitalitzacio borsaria",
-    "valor en borsa","preu de l'acció","preu de l accio","valoració de mercat","valoracio de mercat"
+    "valor en borsa","preu de l'acció","preu de l accio","valoració de mercat","valoracio de mercat",
+    // IR Financial terms — ES
+    "precio de cierre","precio objetivo","target price","enterprise value","valor empresa",
+    "book value","valor contable","fair value","nav","free float","volumen de negociación","volumen de negociacion",
+    "liquidez","per","price-to-earnings","peg","price-to-book","p/b","ev/ebitda","ev/ebit",
+    "dividend yield","rentabilidad por dividendo","earnings yield","tsr","total shareholder return",
+    "alpha","beta","sharpe ratio","bpa","eps","beneficio por acción","beneficio por accion",
+    "ebit","margen operativo","margen neto","profit warning","earnings surprise","beat","miss",
+    "consensus estimate","dividendo por acción","dividendo por accion","payout ratio",
+    "share buyback","recompra de acciones","deuda neta","apalancamiento","leverage",
+    "rating crediticio","investment grade","cobertura de intereses","volatilidad","drawdown","var",
+    "ibex 35","euro stoxx 50","benchmark","precio objetivo medio",
+    "dcf","descuento de flujos","sum-of-the-parts","sotp","múltiplos","multiplos","comparables",
+    "presentación de resultados","presentacion de resultados","earnings release","conference call",
+    "capital markets day","roadshow","ipo","opa","opv","fusión","fusion","adquisición","adquisicion",
+    "spin-off","equity story","tesis de inversión","tesis de inversion","investment thesis",
+    "forward-looking statements","fact sheet",
+    // IR Additional financial terms
+    "wacc","coste de capital","cost of equity","cost of debt","spread de crédito","spread de credito",
+    "cds","credit default swap","covenant financiero","ratio de cobertura del dividendo",
+    "scrip dividend","retribución flexible","retribucion flexible","ex-date","record date",
+    "free cash flow","fcf yield","capex","opex","working capital","nof","cash conversion",
+    "roe","roa","roic","roce","margen bruto","ingresos recurrentes",
+    "arr","mrr","churn","ltv","cac","nrr","arpu",
+    "same-store sales","like-for-like","organic growth","backlog","book-to-bill",
+    "order intake","pipeline comercial","market share","tam","sam","som"
   ],
   // P1/3 — General RIX / algorithmic reputation concepts (map to 09_rix_score for overall)
   "09_rix_score": [
