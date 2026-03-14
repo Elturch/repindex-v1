@@ -1120,7 +1120,16 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "comunicación corporativa","comunicacion corporativa","relato corporativo",
     // P1/3 additions
     "narrativa corporativa","messaging","spin","brecha narrativa","narrative gap",
-    "nota de prensa","press release","statement","comunicado","portavoz","spokesperson"
+    "nota de prensa","press release","statement","comunicado","portavoz","spokesperson",
+    // EN
+    "narrative","story","communication","message","public perception","public opinion",
+    "corporate image","media coverage","brand perception","sentiment","tone","visibility",
+    "corporate communications","public relations","media presence",
+    // PT
+    "narrativa","comunicação","comunicacao","mensagem","percepção pública","percepcao publica",
+    "opinião pública","opiniao publica","imagem corporativa","cobertura mediática","cobertura mediatica",
+    // CA
+    "narrativa","comunicació","missatge","percepció pública","percepcio publica","imatge corporativa"
   ],
   "26_drm_score": [
     "evidencia","datos","pruebas","hechos","cifras","números","numeros",
