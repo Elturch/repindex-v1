@@ -1104,7 +1104,17 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "autoridad de fuentes","calidad de fuentes","jerarquía de fuentes","jerarquia de fuentes",
     // P1/3 additions
     "cuota de voz","share of voice","sov","cuota de voz algorítmica","cuota de voz algoritmica",
-    "fuente tier 1","reputación online","reputacion online"
+    "fuente tier 1","reputación online","reputacion online",
+    // IR Source authority terms
+    "cnmv filings","sec filings","registro oficial","regulador bursátil","regulador bursatil",
+    "fuentes tier-1","factiva","dow jones",
+    // EN
+    "reuters","bloomberg","cnmv filings","sec filings","official registry","stock regulator",
+    "tier-1 sources","factiva","dow jones","regulatory filings",
+    // PT
+    "fontes tier-1","registro oficial","regulador bolsista","fontes oficiais",
+    // CA
+    "fonts tier-1","registre oficial","regulador borsari","fonts oficials"
   ],
   "23_nvm_score": [
     "relato","comunicación","comunicacion","mensaje","historia","storytelling","discurso",
