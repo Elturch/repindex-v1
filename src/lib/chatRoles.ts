@@ -18,6 +18,7 @@ export const ROLE_CATEGORIES = {
   comunicacion: "Comunicacion",
   pericial: "Peritaje y Legal",
   esg: "ESG y Sostenibilidad",
+  investor_relations: "Relación con Inversores",
   talento: "Talento",
   asuntos_publicos: "Asuntos Publicos",
 } as const;
