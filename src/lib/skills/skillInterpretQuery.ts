@@ -86,8 +86,15 @@ export function skillInterpretQuery(
       }
     }
 
+    // ── Detect CXM / stock price queries first (high priority) ─────
+    if (CXM_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis");
+      filters.metric_focus = "CXM";
+      confidence = 0.9;
+    }
     // ── Detect intent by pattern priority ────────────────────────
-    if (EVOLUTION_PATTERNS.test(lower)) {
+    else if (EVOLUTION_PATTERNS.test(lower)) {
       intent = "evolution";
       recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores");
       confidence = 0.85;
