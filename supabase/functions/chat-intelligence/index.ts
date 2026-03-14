@@ -1150,15 +1150,22 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     // P1/3 additions
     "narrativa corporativa","messaging","spin","brecha narrativa","narrative gap",
     "nota de prensa","press release","statement","comunicado","portavoz","spokesperson",
+    // IR Narrative terms
+    "equity story","narrativa corporativa","narrativa de inversión","narrativa de inversion",
+    "investment case","tesis de inversión","tesis de inversion","guidance narrativo",
+    "strategy update","capital allocation",
     // EN
     "narrative","story","communication","message","public perception","public opinion",
     "corporate image","media coverage","brand perception","sentiment","tone","visibility",
     "corporate communications","public relations","media presence",
+    "equity story","investment case","investment thesis","narrative strategy","capital allocation",
     // PT
     "narrativa","comunicação","comunicacao","mensagem","percepção pública","percepcao publica",
     "opinião pública","opiniao publica","imagem corporativa","cobertura mediática","cobertura mediatica",
+    "equity story","caso de investimento","tese de investimento",
     // CA
-    "narrativa","comunicació","missatge","percepció pública","percepcio publica","imatge corporativa"
+    "narrativa","comunicació","missatge","percepció pública","percepcio publica","imatge corporativa",
+    "equity story","cas d'inversió","tesi d'inversió"
   ],
   "26_drm_score": [
     "evidencia","datos","pruebas","hechos","cifras","números","numeros",
