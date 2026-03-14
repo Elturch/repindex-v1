@@ -1203,7 +1203,16 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "coherencia informativa","datos contradictorios","información contradictoria","informacion contradictoria",
     "versiones distintas","cada modelo dice algo diferente","no coinciden",
     "información fragmentada","informacion fragmentada","datos dispersos",
-    "misma información","misma informacion","datos alineados","consenso de datos"
+    "misma información","misma informacion","datos alineados","consenso de datos",
+    // EN
+    "coherence","consistency","contradiction","alignment","congruence","uniformity",
+    "fragmentation","noise","incoherence","inconsistency","contradictory data",
+    // PT
+    "coerência","coerencia","consistência","consistencia","contradição","contradicao",
+    "alinhamento","fragmentação","fragmentacao","incoerência","incoerencia",
+    // CA
+    "coherència","coherencia","consistència","consistencia","contradicció","contraccio",
+    "alineació","fragmentació","incoherència","incoherencia"
   ],
   "44_cxm_score": [
     "ejecución","ejecucion","resultados","operaciones","rendimiento","performance",
