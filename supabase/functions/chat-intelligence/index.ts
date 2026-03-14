@@ -1088,7 +1088,26 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "escándalo corporativo","escandalo corporativo","cancel culture","fake news",
     "desinformación","desinformacion","difamación","difamacion","calumnia","injuria",
     "difamación corporativa","difamacion corporativa","daño reputacional","dano reputacional",
-    "viral","trending topic negativo"
+    "viral","trending topic negativo",
+    // IR controversy terms
+    "hecho relevante","material event","información privilegiada","informacion privilegiada",
+    "insider information","blackout period","abuso de mercado","market abuse","mar",
+    "mifid ii","mifid","cnmv","sec","insider trading","pdmr transactions",
+    "short selling","posición corta","posicion corta","halt de cotización","halt de cotizacion",
+    "circuit breaker","sell-off","corrección","correccion","sanción regulatoria","sancion regulatoria",
+    // EN
+    "controversy","scandal","crisis","lawsuit","litigation","regulation","fine","sanction",
+    "investigation","fraud","corruption","risk","threat","boycott","complaint",
+    "material event","insider information","market abuse","insider trading","short selling",
+    "trading halt","regulatory sanction",
+    // PT
+    "controvérsia","controversia","escândalo","escandalo","crise","litígio","litigio",
+    "multa","sanção","sancao","investigação","investigacao","fraude","corrupção","corrupcao",
+    "fato relevante","informação privilegiada","informacao privilegiada","abuso de mercado",
+    // CA
+    "controvèrsia","controversia","escàndol","escandol","crisi","litigi",
+    "multa","sanció","sancio","investigació","investigacio","frau","corrupció","corrupcio",
+    "fet rellevant","informació privilegiada","informacio privilegiada","abús de mercat","abus de mercat"
   ],
   "29_sim_score": [
     "fuentes","credibilidad","fiabilidad","referencias","documentos oficiales","regulador",
