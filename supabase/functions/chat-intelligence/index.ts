@@ -1182,7 +1182,17 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "gobernanza corporativa","percepción de gobierno","percepcion de gobierno",
     // P1/3 additions — ESG terms map to governance perception
     "greenwashing","net zero","neutralidad de carbono","huella de carbono",
-    "d&i","diversidad e inclusión","diversidad e inclusion"
+    "d&i","diversidad e inclusión","diversidad e inclusion",
+    // EN
+    "governance","corporate governance","board","directors","management","ethics",
+    "sustainability","social responsibility","shareholder","shareholders","transparency",
+    "executive team","board of directors",
+    // PT
+    "governança","governanca","governo corporativo","conselho","diretores","gestão","gestao",
+    "ética","etica","sustentabilidade","responsabilidade social","acionistas",
+    // CA
+    "governança","governanca","govern corporatiu","consell","directius","gestió","ètica","etica",
+    "sostenibilitat","responsabilitat social","accionistes"
   ],
   "41_dcm_score": [
     "coherencia","consistencia","contradicción","contradiccion","discrepancia informativa",
