@@ -584,7 +584,7 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
       raw_runs,
       // Medians as reference aggregates (NOT the central data)
       rix_mediano: currentStats?.rix_mediano || 0,
-      delta_rix: previousStats ? (currentStats?.rix_mediano || 0) - previousStats.rix_mediano : 0,
+      delta_rix: previousStats ? Math.round(((currentStats?.rix_mediano || 0) - previousStats.rix_mediano) * 10) / 10 : null,
       medianas_por_metrica: metricasConDelta,
       // Latest week models (convenience shortcut into raw_runs)
       modelos,
