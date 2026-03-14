@@ -1242,7 +1242,32 @@ const METRIC_THESAURUS: Record<string, string[]> = {
     "preço de negociação","preco de negociacao",
     // Stock price / valuation — CA
     "cotització","cotitzacio","preu de mercat","capitalització borsària","capitalitzacio borsaria",
-    "valor en borsa","preu de l'acció","preu de l accio","valoració de mercat","valoracio de mercat"
+    "valor en borsa","preu de l'acció","preu de l accio","valoració de mercat","valoracio de mercat",
+    // IR Financial terms — ES
+    "precio de cierre","precio objetivo","target price","enterprise value","valor empresa",
+    "book value","valor contable","fair value","nav","free float","volumen de negociación","volumen de negociacion",
+    "liquidez","per","price-to-earnings","peg","price-to-book","p/b","ev/ebitda","ev/ebit",
+    "dividend yield","rentabilidad por dividendo","earnings yield","tsr","total shareholder return",
+    "alpha","beta","sharpe ratio","bpa","eps","beneficio por acción","beneficio por accion",
+    "ebit","margen operativo","margen neto","profit warning","earnings surprise","beat","miss",
+    "consensus estimate","dividendo por acción","dividendo por accion","payout ratio",
+    "share buyback","recompra de acciones","deuda neta","apalancamiento","leverage",
+    "rating crediticio","investment grade","cobertura de intereses","volatilidad","drawdown","var",
+    "ibex 35","euro stoxx 50","benchmark","precio objetivo medio",
+    "dcf","descuento de flujos","sum-of-the-parts","sotp","múltiplos","multiplos","comparables",
+    "presentación de resultados","presentacion de resultados","earnings release","conference call",
+    "capital markets day","roadshow","ipo","opa","opv","fusión","fusion","adquisición","adquisicion",
+    "spin-off","equity story","tesis de inversión","tesis de inversion","investment thesis",
+    "forward-looking statements","fact sheet",
+    // IR Additional financial terms
+    "wacc","coste de capital","cost of equity","cost of debt","spread de crédito","spread de credito",
+    "cds","credit default swap","covenant financiero","ratio de cobertura del dividendo",
+    "scrip dividend","retribución flexible","retribucion flexible","ex-date","record date",
+    "free cash flow","fcf yield","capex","opex","working capital","nof","cash conversion",
+    "roe","roa","roic","roce","margen bruto","ingresos recurrentes",
+    "arr","mrr","churn","ltv","cac","nrr","arpu",
+    "same-store sales","like-for-like","organic growth","backlog","book-to-bill",
+    "order intake","pipeline comercial","market share","tam","sam","som"
   ],
   // P1/3 — General RIX / algorithmic reputation concepts (map to 09_rix_score for overall)
   "09_rix_score": [
