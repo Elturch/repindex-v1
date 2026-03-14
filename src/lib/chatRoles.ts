@@ -233,7 +233,7 @@ export function getEnabledRoles(): ChatRole[] {
 
 // Featured roles shown prominently in the UI (only enabled ones)
 export function getFeaturedRoles(): ChatRole[] {
-  const featuredIds = ["direccion_general", "dircom", "esg", "perito_reputacional"];
+  const featuredIds = ["direccion_general", "dircom", "esg", "perito_reputacional", "investor_relations"];
   return CHAT_ROLES.filter((role) => featuredIds.includes(role.id) && role.enabled !== false);
 }
 
