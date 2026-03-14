@@ -1,13 +1,20 @@
 
 
-## Plan: Remove 100-conversation limit in admin API
+## Remove RoleEnrichmentBar from assistant messages
 
-### Problem
-The `list_conversations` action in `supabase/functions/admin-api/index.ts` (line 316) has `.limit(100)`, which caps the conversations returned to the admin panel at 100. This distorts the chat activity summary and prevents seeing the full picture.
+The `RoleEnrichmentBar` component appears after every assistant response, offering to "replantear desde otro perfil" (generate executive report from a different role). Since roles are now configured via the `SessionConfigPanel` above the input area before asking, this post-response bar is redundant and no longer functional as intended.
 
-### Fix
+### Changes
 
-**File: `supabase/functions/admin-api/index.ts`** — Remove `.limit(100)` from the `list_conversations` query (line 316). The query will then return all conversations ordered by `last_message_at`.
+**1. Remove RoleEnrichmentBar usage from ChatMessages.tsx**
+- Delete the import of `RoleEnrichmentBar` (line 10)
+- Delete lines 303-310 where it renders after each assistant message
 
-After editing, the edge function will need to be redeployed.
+**2. Delete the component file**
+- Remove `src/components/chat/RoleEnrichmentBar.tsx` entirely
+
+**3. Clean up unused translation keys in chatTranslations.ts**
+- Remove these keys from the `ChatTranslations` interface and all language objects (~6 languages): `adaptResponseFor`, `enrichedResponse`, `viewOriginal`, `hideOriginal`, `originalResponse`, `generateExecutiveReport`, `selectRoleForReport`, `adaptResponse`, `adaptToYourRole`, `moreRoles`, `reportsByProfessionalRole`, `eachRoleGenerates`
+
+**No backend changes needed.** The `SessionConfigPanel` (role selector above chat input) remains as the sole way to choose a professional perspective.
 

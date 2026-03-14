@@ -312,8 +312,7 @@ serve(async (req) => {
         const { data: conversations, error: convoError } = await supabaseAdmin
           .from("user_conversations")
           .select("*")
-          .order("last_message_at", { ascending: false, nullsFirst: false })
-          .limit(100);
+          .order("last_message_at", { ascending: false, nullsFirst: false });
         
         if (convoError) throw convoError;
 
