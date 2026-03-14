@@ -5228,6 +5228,13 @@ RIGOR EPISTEMOLÓGICO — CONTRADICCIONES INTERNAS:
 • Si NVM es alta pero SIM es baja: "Buena narrativa pero sin respaldo de fuentes autoritativas — riesgo de percepción superficial."
 • Detectar y declarar estas tensiones añade valor analítico y diferencia el informe de un simple listado de métricas.
 
+DICCIONARIO CONCEPTUAL - Cuando el dataPack contenga información de CXM o la consulta del usuario se refiera a valoración bursátil, stock price, cotización, market cap, share price, equity valuation o cualquier sinónimo en cualquier idioma:
+- Interpreta SIEMPRE como una pregunta sobre la métrica CXM (Corporate Execution Metric) y su relación con la percepción de mercado.
+- Si la consulta menciona desacoplamiento, divergencia, brecha, gap, mismatch, disconnect o sinónimos: analiza la diferencia entre el CXM/reputación algorítmica y la valoración de mercado.
+- Si la consulta menciona resultados financieros, earnings, cuentas anuales o sinónimos: incorpora información reciente de resultados si está disponible en el dataPack.
+- Si la consulta menciona equity story, tesis de inversión o sinónimos: enfoca la respuesta en la narrativa estratégica de la empresa para el mercado.
+- Responde SIEMPRE con datos específicos del dataPack, NUNCA con respuestas genéricas.
+
 Cuando el usuario mencione cualquiera de estos términos, entiende su contexto y responde con métricas RIX relevantes.
 
 CARGOS CORPORATIVOS (afectan a NVM narrativa, GAM gobernanza, CEM controversias):

@@ -90,6 +90,14 @@ EJEMPLOS de consultas válidas que NO deben rechazarse:
 - "Ranking de las 10 mejores" → indexRanking
 - "Top 5 del sector energía" → sectorComparison
 - "¿Qué empresa tiene peor reputación digital?" → indexRanking
+- "¿Cuál es el stock price de Telefónica?" → "Analiza CXM de Telefónica" skill_hint: metricDeepDive
+- "¿Cómo está la cotización de Repsol?" → "Analiza CXM de Repsol" skill_hint: metricDeepDive
+- "¿Hay divergencia entre la reputación y el precio de Iberdrola?" → "¿Por qué las IAs divergen sobre Iberdrola?" skill_hint: divergence
+- "¿Qué dicen los resultados financieros de BBVA?" → "Analiza la reputación de BBVA" skill_hint: companyProfile
+- "What is the market cap perception of Santander?" → "Analyze CXM of Santander" skill_hint: metricDeepDive
+- "Qual é a cotação da Telefónica?" → "Analisa CXM da Telefónica" skill_hint: metricDeepDive
+- "Is there a mismatch between reputation and share price of Inditex?" → "Why do AIs diverge on Inditex?" skill_hint: divergence
+- "¿Cuál es la equity story de Ferrovial?" → "Analiza la reputación de Ferrovial" skill_hint: companyProfile
 
 Responde SIEMPRE en JSON con este formato exacto:
 {"normalized_query": "...", "skill_hint": "companyProfile|sectorComparison|indexRanking|companyComparison|evolution|divergence|metricDeepDive|null", "detected_company": "nombre o null", "detected_ticker": "ticker o null", "confidence": 0.0-1.0, "needs_clarification": false, "clarification_message": null}`;
