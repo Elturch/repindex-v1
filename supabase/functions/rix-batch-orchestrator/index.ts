@@ -922,7 +922,7 @@ async function processCronTriggers(
           }),
           // Evita dejar el trigger en "processing" por timeout de la plataforma
           // (si el análisis GPT-5 se alarga demasiado).
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(300_000),
         });
 
         const responseText = await response.text();
