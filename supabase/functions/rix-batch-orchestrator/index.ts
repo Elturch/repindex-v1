@@ -918,7 +918,7 @@ async function processCronTriggers(
           },
           body: JSON.stringify({ 
             action: 'reprocess_pending', 
-            batch_size: (trigger.params as any)?.batch_size || 5 
+            batch_size: (trigger.params as any)?.batch_size || 2 
           }),
           // Evita dejar el trigger en "processing" por timeout de la plataforma
           // (si el análisis GPT-5 se alarga demasiado).
