@@ -750,7 +750,7 @@ async function performHealthChecks(
           console.log(`[health_check] Auto-triggering analysis repair for ${pendingAnalysis} pending records (model-aware count)`);
           await supabase.from('cron_triggers').insert({
             action: 'repair_analysis',
-            params: { batch_size: 5, auto_triggered: true }
+            params: { batch_size: 2, auto_triggered: true }
           });
         }
       }
