@@ -750,7 +750,7 @@ async function performHealthChecks(
           console.log(`[health_check] Auto-triggering analysis repair for ${pendingAnalysis} pending records (model-aware count)`);
           await supabase.from('cron_triggers').insert({
             action: 'repair_analysis',
-            params: { batch_size: 5, auto_triggered: true }
+            params: { batch_size: 2, auto_triggered: true }
           });
         }
       }
@@ -918,11 +918,11 @@ async function processCronTriggers(
           },
           body: JSON.stringify({ 
             action: 'reprocess_pending', 
-            batch_size: (trigger.params as any)?.batch_size || 5 
+            batch_size: (trigger.params as any)?.batch_size || 2 
           }),
           // Evita dejar el trigger en "processing" por timeout de la plataforma
           // (si el análisis GPT-5 se alarga demasiado).
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(300_000),
         });
 
         const responseText = await response.text();
@@ -2490,7 +2490,7 @@ const {
           if (!existingTrigger) {
             const { error: insertError } = await supabase.from('cron_triggers').insert({
               action: 'repair_analysis',
-              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 5 },
+              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2 },
               status: 'pending',
             });
             if (insertError) {
