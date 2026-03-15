@@ -2490,7 +2490,7 @@ const {
           if (!existingTrigger) {
             const { error: insertError } = await supabase.from('cron_triggers').insert({
               action: 'repair_analysis',
-              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 5 },
+              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2 },
               status: 'pending',
             });
             if (insertError) {
