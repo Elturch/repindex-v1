@@ -49,6 +49,7 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   const modelsLabel = languageCode === "en" ? "models" : "modelos";
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
   const questionLabel = languageCode === "en" ? "Query" : "Consulta";
+  const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
 
   return (
     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/40 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-muted-foreground mb-3`}>
