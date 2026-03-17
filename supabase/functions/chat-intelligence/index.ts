@@ -7159,6 +7159,7 @@ serve(async (req) => {
       roleName,
       rolePrompt,
       streamMode, // Pass streaming mode to standard chat handler
+      originalQuestion, // Pass original user question for report_context
     );
   } catch (error) {
     console.error(`${logPrefix} Error in chat-intelligence function:`, error);
