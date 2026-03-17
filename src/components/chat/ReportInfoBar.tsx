@@ -69,6 +69,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
         </span>
       )}
 
+      {/* Perspective / Role */}
+      {context.perspective && (
+        <span className="flex items-center gap-1 font-medium text-foreground/80">
+          <Theater className="h-3 w-3 shrink-0" />
+          {perspectiveLabel}: {context.perspective}
+        </span>
+      )}
+
       {/* Period */}
       {hasDateRange && (
         <span className="flex items-center gap-1">
