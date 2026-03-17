@@ -2374,6 +2374,7 @@ async function buildDataPackFromSkills(
       company: resolvedTicker ? (cp?.empresa || resolvedName || resolvedTicker) : null,
       sector: interpret.filters.sector_category || (cp ? resultMap.detail?.sector_category : ss?.sector) || null,
       user_question: question || null,
+      perspective: null, // Will be set downstream by handleStandardChat
       date_from: null,
       date_to: null,
       timezone: "Europe/Madrid (CET/CEST)",
