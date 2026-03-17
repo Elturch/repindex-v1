@@ -8765,6 +8765,7 @@ async function handleStandardChat(
   roleName?: string,
   rolePrompt?: string,
   streamMode: boolean = false,
+  originalUserQuestion?: string,
 ) {
   console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || "General"}`);
 
