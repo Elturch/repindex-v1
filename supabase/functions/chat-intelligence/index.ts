@@ -2374,6 +2374,7 @@ async function buildDataPackFromSkills(
       company: resolvedTicker ? (cp?.empresa || resolvedName || resolvedTicker) : null,
       sector: interpret.filters.sector_category || (cp ? resultMap.detail?.sector_category : ss?.sector) || null,
       user_question: question || null,
+      perspective: null, // Will be set downstream by handleStandardChat
       date_from: null,
       date_to: null,
       timezone: "Europe/Madrid (CET/CEST)",
@@ -4469,6 +4470,7 @@ async function buildDataPack(
     (pack as any).report_context = {
       sector: universeLabel === IBEX35_CODE ? "IBEX-35" : universeLabel,
       user_question: classifier.pregunta_original || null,
+      perspective: null, // Will be set downstream by handleStandardChat
       date_from: indexDateFrom,
       date_to: indexDateTo,
       models: indexModels,
@@ -4841,6 +4843,7 @@ async function buildDataPack(
     company: primaryCompany?.issuer_name || primaryTicker,
     sector: primaryCompany?.sector_category || null,
     user_question: classifier.pregunta_original || null,
+    perspective: null, // Will be set downstream by handleStandardChat
     date_from: companyDateFrom,
     date_to: companyDateTo,
     models: companyModels,
@@ -7159,6 +7162,7 @@ serve(async (req) => {
       roleName,
       rolePrompt,
       streamMode, // Pass streaming mode to standard chat handler
+      originalQuestion, // Pass original user question for report_context
     );
   } catch (error) {
     console.error(`${logPrefix} Error in chat-intelligence function:`, error);
@@ -8764,6 +8768,7 @@ async function handleStandardChat(
   roleName?: string,
   rolePrompt?: string,
   streamMode: boolean = false,
+  originalUserQuestion?: string,
 ) {
   console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || "General"}`);
 
@@ -8839,6 +8844,16 @@ async function handleStandardChat(
         }));
         console.log(`${logPrefix} [F2→E2] Merged ${f2SuccessfulData.length} dynamic datasets into DataPack`);
       }
+    }
+  }
+
+  // --- Inject originalUserQuestion and perspective into report_context ---
+  if ((dataPack as any).report_context) {
+    if (originalUserQuestion) {
+      (dataPack as any).report_context.user_question = originalUserQuestion;
+    }
+    if (roleName) {
+      (dataPack as any).report_context.perspective = roleName;
     }
   }
 

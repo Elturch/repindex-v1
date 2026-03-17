@@ -1,4 +1,4 @@
-import { Building2, Calendar, Clock, Brain, Database, MessageCircle } from "lucide-react";
+import { Building2, Calendar, Clock, Brain, Database, MessageCircle, Theater } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es, enUS } from "date-fns/locale";
 
@@ -6,6 +6,7 @@ export interface ReportContext {
   company?: string | null;
   sector?: string | null;
   user_question?: string | null;
+  perspective?: string | null;
   date_from?: string | null;
   date_to?: string | null;
   timezone?: string;
@@ -48,6 +49,7 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   const modelsLabel = languageCode === "en" ? "models" : "modelos";
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
   const questionLabel = languageCode === "en" ? "Query" : "Consulta";
+  const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
 
   return (
     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/40 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-muted-foreground mb-3`}>
@@ -64,6 +66,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
         <span className="flex items-center gap-1 font-medium text-foreground/80">
           <Building2 className="h-3 w-3 shrink-0" />
           {label}
+        </span>
+      )}
+
+      {/* Perspective / Role */}
+      {context.perspective && (
+        <span className="flex items-center gap-1 font-medium text-foreground/80">
+          <Theater className="h-3 w-3 shrink-0" />
+          {perspectiveLabel}: {context.perspective}
         </span>
       )}
 
@@ -128,6 +138,10 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   }
   if (label) {
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${label}</span>`);
+  }
+  if (context.perspective) {
+    const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
+    items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🎭 ${perspectiveLabel}: ${context.perspective}</span>`);
   }
   if (hasDateRange) {
     const from = context.date_from ? context.date_from.slice(0, 10) : "–";

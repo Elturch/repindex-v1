@@ -169,6 +169,7 @@ export interface ReportContext {
   company?: string | null;
   sector?: string | null;
   user_question?: string | null;
+  perspective?: string | null;
   date_from?: string | null;
   date_to?: string | null;
   timezone?: string;
@@ -473,7 +474,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
 
     try {
-      const role = options?.roleId ? getRoleById(options.roleId) : undefined;
+      const role = options?.roleId 
+        ? getRoleById(options.roleId) 
+        : sessionRoleId && sessionRoleId !== 'general' 
+          ? getRoleById(sessionRoleId) 
+          : undefined;
       const timeoutMs = getTimeoutForRequest(options?.depthLevel || sessionDepthLevel);
       
       console.log('[ChatContext] Sending message with language:', language.code, 'depth:', options?.depthLevel, 'streaming:', useStreaming);
