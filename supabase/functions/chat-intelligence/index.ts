@@ -4470,6 +4470,7 @@ async function buildDataPack(
     (pack as any).report_context = {
       sector: universeLabel === IBEX35_CODE ? "IBEX-35" : universeLabel,
       user_question: classifier.pregunta_original || null,
+      perspective: null, // Will be set downstream by handleStandardChat
       date_from: indexDateFrom,
       date_to: indexDateTo,
       models: indexModels,
