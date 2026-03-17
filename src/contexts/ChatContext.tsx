@@ -169,6 +169,7 @@ export interface ReportContext {
   company?: string | null;
   sector?: string | null;
   user_question?: string | null;
+  perspective?: string | null;
   date_from?: string | null;
   date_to?: string | null;
   timezone?: string;
