@@ -4843,6 +4843,7 @@ async function buildDataPack(
     company: primaryCompany?.issuer_name || primaryTicker,
     sector: primaryCompany?.sector_category || null,
     user_question: classifier.pregunta_original || null,
+    perspective: null, // Will be set downstream by handleStandardChat
     date_from: companyDateFrom,
     date_to: companyDateTo,
     models: companyModels,

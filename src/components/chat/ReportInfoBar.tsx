@@ -139,6 +139,10 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   if (label) {
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${label}</span>`);
   }
+  if (context.perspective) {
+    const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
+    items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🎭 ${perspectiveLabel}: ${context.perspective}</span>`);
+  }
   if (hasDateRange) {
     const from = context.date_from ? context.date_from.slice(0, 10) : "–";
     const to = context.date_to ? context.date_to.slice(0, 10) : "–";
