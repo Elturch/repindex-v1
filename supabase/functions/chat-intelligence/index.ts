@@ -8847,6 +8847,16 @@ async function handleStandardChat(
     }
   }
 
+  // --- Inject originalUserQuestion and perspective into report_context ---
+  if ((dataPack as any).report_context) {
+    if (originalUserQuestion) {
+      (dataPack as any).report_context.user_question = originalUserQuestion;
+    }
+    if (roleName) {
+      (dataPack as any).report_context.perspective = roleName;
+    }
+  }
+
   // --- CONTEXTO COMPLEMENTARIO: Graph Expansion ---
   let graphContextString = "";
   if (detectedCompanies.length > 0) {
