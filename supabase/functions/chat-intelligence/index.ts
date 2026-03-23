@@ -1987,10 +1987,12 @@ async function buildDataPackFromSkills(
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory);
     }
 
-    // IBEX ranking fallback
-    if (interpret.filters.ibex_family_code && !sectorCategory) {
+    // Ranking: IBEX filter, sector filter, or general ranking intent
+    if (interpret.intent === "ranking" || interpret.filters.ibex_family_code) {
       skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
         ibex_family_code: interpret.filters.ibex_family_code,
+        sector_category: sectorCategory,
+        model_name: interpret.filters.model_name,
       });
     }
 
