@@ -5453,12 +5453,19 @@ function buildOrchestratorPrompt(
   roleName?: string,
   rolePrompt?: string,
 ): { systemPrompt: string; userPrompt: string } {
-  // Serialize artifacts as compact JSON blocks
+  const rankingTop = (dataPack as any).ranking_top || null;
+  const rankingBottom = (dataPack as any).ranking_bottom || null;
+  const rankingEnriched = (dataPack as any).ranking_enriched || false;
+
   const dataPackBlock = JSON.stringify({
     empresa: dataPack.empresa_primaria,
     snapshot: dataPack.snapshot,
     sector_avg: dataPack.sector_avg,
-    ranking: dataPack.ranking.slice(0, 15),
+    // Send full ranking context: top, bottom, and full (limited to 35 for IBEX)
+    ranking: rankingTop || rankingBottom ? undefined : dataPack.ranking.slice(0, 35),
+    ranking_top: rankingTop || null,
+    ranking_bottom: rankingBottom || null,
+    ranking_enriched: rankingEnriched,
     competidores_verificados: dataPack.competidores_verificados,
     competidores_metricas_avg: dataPack.competidores_metricas_avg,
     competidores_por_empresa: (dataPack as any).competidores_por_empresa || null,
@@ -5469,10 +5476,10 @@ function buildOrchestratorPrompt(
     noticias: dataPack.noticias.slice(0, 5),
     mercado: dataPack.mercado,
     evolucion_sector: (dataPack as any).evolucion_sector || null,
+    metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
     // ── Metric deltas: expose consolidated medians with per-metric deltas ──
     rix_mediano: (dataPack as any).rix_mediano || null,
     delta_rix: (dataPack as any).delta_rix_value || null,
-    metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
     ...((dataPack as any).f2_dynamic ? { datos_dinamicos: (dataPack as any).f2_dynamic } : {}),
   }, null, 0);
 
