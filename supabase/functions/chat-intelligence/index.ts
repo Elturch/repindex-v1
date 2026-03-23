@@ -1852,6 +1852,16 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   const hasIbex = IBEX_PATTERNS_EDGE.test(lower);
   const hasAlert = ALERT_PATTERNS_EDGE.test(lower);
 
+  // Detect AI model mentioned in query
+  const MODEL_NAME_PATTERNS = /\b(chatgpt|chat\s*gpt|perplexity|gemini|deepseek|deep\s*seek|grok|qwen)\b/i;
+  const modelMatch = lower.match(MODEL_NAME_PATTERNS);
+  if (modelMatch) {
+    const MODEL_MAP: Record<string, string> = { chatgpt: "ChatGPT", "chat gpt": "ChatGPT", perplexity: "Perplexity", gemini: "Google Gemini", deepseek: "DeepSeek", "deep seek": "DeepSeek", grok: "Grok", qwen: "Qwen" };
+    const key = modelMatch[1].toLowerCase().replace(/\s+/g, " ");
+    filters.model_name = MODEL_MAP[key] || MODEL_MAP[key.replace(/\s/g, "")] || modelMatch[1];
+    console.log(`[INTERPRET] Detected model filter: ${filters.model_name}`);
+  }
+
   if (hasAlert && !hasEvolution && !hasDivergence) {
     intent = "alert"; recommended_skills.push("skillCrisisScan"); confidence = 0.85;
   } else if (hasEvolution) {
