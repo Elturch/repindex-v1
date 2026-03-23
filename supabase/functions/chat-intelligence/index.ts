@@ -1898,6 +1898,89 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
   // Attach lexicon for downstream
   (filters as any)._lexicon = lexicon;
 
+  // ── LLM Fallback: when regex confidence is low, use gpt-4o-mini to classify ──
+  if (confidence < 0.7 && intent === "general_question") {
+    try {
+      const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+      if (openAIApiKey) {
+        console.log(`[INTERPRET_LLM_FALLBACK] Confidence ${confidence} < 0.7, calling gpt-4o-mini for classification`);
+        const llmClassifyStart = Date.now();
+        const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openAIApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            temperature: 0,
+            max_tokens: 300,
+            messages: [
+              { role: "system", content: `Eres un clasificador de intención para consultas sobre reputación corporativa del IBEX 35 y empresas españolas.
+Devuelve JSON con esta estructura exacta:
+{
+  "intent": "ranking" | "evolution" | "company_analysis" | "sector_comparison" | "divergence" | "alert" | "general_question",
+  "filters": {
+    "ibex_family_code": "IBEX-35" (solo si menciona IBEX),
+    "sector_category": "nombre del sector" (solo si menciona sector),
+    "model_name": "ChatGPT" | "Perplexity" | "Google Gemini" | "DeepSeek" | "Grok" | "Qwen" (solo si menciona modelo de IA),
+    "top_n": "5" (si pide top N),
+    "bottom_n": "5" (si pide bottom/peores N)
+  },
+  "skills": ["skillGetCompanyRanking", "skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution", "skillGetSectorComparison", "skillGetDivergenceAnalysis"]
+}
+Skills disponibles:
+- skillGetCompanyRanking: para rankings, top, bottom, mejores, peores
+- skillGetCompanyScores: para puntuaciones, métricas de una empresa
+- skillGetCompanyDetail: para perfil/detalle de empresa
+- skillGetCompanyEvolution: para evolución temporal, tendencias
+- skillGetSectorComparison: para comparar sectores
+- skillGetDivergenceAnalysis: para divergencias entre modelos de IA
+Solo devuelve el JSON, sin texto adicional.` },
+              { role: "user", content: question }
+            ],
+            response_format: { type: "json_object" },
+          }),
+        });
+        if (llmResponse.ok) {
+          const llmData = await llmResponse.json();
+          const parsed = JSON.parse(llmData.choices?.[0]?.message?.content || "{}");
+          const llmMs = Date.now() - llmClassifyStart;
+          console.log(`[INTERPRET_LLM_FALLBACK] Result in ${llmMs}ms: intent=${parsed.intent}, filters=${JSON.stringify(parsed.filters)}`);
+          
+          if (parsed.intent && parsed.intent !== "general_question") {
+            intent = parsed.intent;
+            confidence = 0.8; // LLM classification is reliable
+            
+            // Merge LLM-detected filters (don't overwrite existing ones)
+            if (parsed.filters) {
+              for (const [k, v] of Object.entries(parsed.filters)) {
+                if (v && !filters[k] && k !== "_lexicon") {
+                  filters[k] = v as string;
+                }
+              }
+            }
+            
+            // Use LLM-recommended skills
+            if (parsed.skills && Array.isArray(parsed.skills) && parsed.skills.length > 0) {
+              recommended_skills.length = 0;
+              for (const s of parsed.skills) recommended_skills.push(s);
+            } else {
+              // Default skills based on LLM intent
+              recommended_skills.length = 0;
+              if (intent === "ranking") recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
+              else if (intent === "evolution") recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores");
+              else if (intent === "divergence") recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores");
+              else if (intent === "sector_comparison") recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking");
+              else if (intent === "company_analysis") recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution");
+              else if (intent === "alert") recommended_skills.push("skillGetCompanyRanking");
+            }
+          }
+        }
+      }
+    } catch (llmErr) {
+      console.warn(`[INTERPRET_LLM_FALLBACK] Error:`, llmErr);
+      // Continue with regex result — this is just a fallback
+    }
+  }
+
   return { intent, entities, filters, recommended_skills, confidence };
 }
 
