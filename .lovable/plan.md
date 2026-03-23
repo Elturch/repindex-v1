@@ -1,68 +1,70 @@
 
-Objetivo: corregir de forma definitiva que en consultas tipo “Top/Bottom IBEX según [modelo]” salgan tablas vacías y métricas a 0/N/A, manteniendo el ranking correcto.
 
-Diagnóstico auditado (causa real)
-1) El problema principal NO es el barrido ni falta de datos en BD:
-- En `rix_runs_v2` sí existen métricas completas por empresa/modelo (NVM…CXM) para IBEX.
-2) El fallo está en el armado del DataPack del pipeline de skills:
-- Logs reales de `chat-intelligence`: `snapshot:0, ranking:35`.
-- Con `snapshot` vacío, E3/E4 se saltan y el LLM redacta informe con “sin desglose métrico”.
-3) Además hay dos incoherencias funcionales:
-- El bloque enviado al LLM corta `ranking` a 15 (`slice(0,15)`), dificultando Bottom real.
-- `report_context` en skills fija siempre 6 modelos aunque el filtro sea “solo Gemini”.
+## Auditoría completa: Vector Store, Embeddings y fragilidad del sistema de Skills
 
-Conclusión: ampliar diccionario ayuda, pero por sí sola NO arregla métricas vacías. Hay que corregir la ruta de datos del ranking.
+### Estado actual del Vector Store
 
-Plan de implementación
-Fase 1 — Estabilizar interpretación (diccionario + patrones)
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-1. Ampliar detección semántica para ranking Top/Bottom:
-   - Añadir variantes: `bottom`, `botom`, `cola`, `últimos`, `colistas`, `peores`, `los más bajos`, etc.
-   - Extraer cantidades (`top 5`, `bottom 5`) con regex robusta multilenguaje.
-2. Guardar en filtros estructurados:
-   - `filters.top_n`, `filters.bottom_n` (defaults seguros: 5/5 cuando se pidan ambos).
+| Fuente | Registros en BD | Documentos vectorizados | Cobertura |
+|--------|----------------|------------------------|-----------|
+| rix_runs_v2 | 10,423 | 13,277 | 127% (incluye semanas anteriores) |
+| rix_runs (V1) | 9,548 | 1,327 | 13.9% |
+| corporate_news | 462 | 457 | 98.9% |
+| **Total** | | **23,831** | |
 
-Fase 2 — Corregir DataPack de ranking para que nunca quede “ciego”
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-3. En `buildDataPackFromSkills`, cuando haya `ranking` y no haya `companyProfile/sectorSnapshot`:
-   - Hacer un “ranking-enrichment” con `rix_runs_v2` (métricas + resúmenes + flags) para empresas Top/Bottom solicitadas.
-   - Construir `pack.snapshot` con detalle por modelo (aunque sea 1 modelo filtrado).
-   - Poblar `pack.metricas_consolidadas`, `pack.raw_texts`, `pack.explicaciones_metricas` y `pack.puntos_clave`.
-4. Ajustar `report_context` dinámico en skills:
-   - `models` y `models_count` reales según datos (si filtro Gemini => 1 modelo).
-   - `sample_size` y `weeks_analyzed` reales del subconjunto usado.
+**Sí se está vectorizando**, y el embedding usado es `text-embedding-3-small` de OpenAI (1536 dimensiones). Todos los 23,831 documentos tienen embedding (0 sin embedding).
 
-Fase 3 — Evitar pérdida de Bottom y vacíos en generación del informe
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-5. En `buildOrchestratorPrompt`:
-   - Dejar de enviar solo `ranking.slice(0,15)` para consultas Top/Bottom.
-   - Enviar explícitamente `ranking_top` y `ranking_bottom` (o ranking completo limitado por query).
-6. Añadir regla de redacción:
-   - Si consulta pide Top+Bottom, es obligatorio incluir ambas tablas.
-   - Si hay `snapshot`, es obligatorio completar sección de 8 métricas con datos reales (no “n/d”).
+### Problema 1: El embedding `text-embedding-3-small` es correcto pero el uso del Vector Store es marginal
 
-Fase 4 — Hardening opcional del fallback LLM
-- Archivo: `supabase/functions/chat-intelligence/index.ts`
-7. Mantener diccionario como primera capa determinística.
-8. Solo si la interpretación queda en baja confianza, usar fallback LLM más robusto (sin sustituir capa determinística), para no romper latencia/coste.
+El vector store se usa en 2 sitios del pipeline:
+1. **Legacy E1-E6** (línea 8178): busca 30 docs por nombre de empresa para contexto cualitativo
+2. **Skills pipeline** (línea 9146): busca 50 docs por la pregunta del usuario
 
-Validación (criterios de aceptación)
-A) Query: “Dame el ranking IBEX 35 top 5 y bottom 5 de Gemini”
-- Debe devolver Top 5 y Bottom 5.
-- Debe mostrar métricas no vacías (NVM..CXM) en informe.
-- `report_context.models_count` = 1 y modelo = Gemini.
-B) Query: “Top 5 y bottom 5 del IBEX 35” (sin modelo)
-- Debe devolver Top/Bottom con consolidado 6 modelos.
-- Métricas no vacías (consolidado).
-C) Log técnico esperado en `chat-intelligence`:
-- Pasar de `snapshot:0` a `snapshot>0` en estas consultas.
-- Sin mensajes de “No snapshot data, skipping comparator” para estos casos.
+Pero en ambos casos el vector store solo aporta **contexto narrativo complementario**. Los datos numéricos (scores, métricas, rankings) vienen de **consultas SQL directas** a `rix_runs_v2`. Si la consulta SQL falla o no se construye correctamente, el vector store no puede compensar porque no contiene datos estructurados.
 
-Archivos a tocar
-- `supabase/functions/chat-intelligence/index.ts` (principal: parser, enrichment, prompt, report_context).
-- (Opcional de consistencia) `src/lib/skills/skillInterpretQuery.ts` para alinear semántica frontend/backend de top/bottom y aliases.
+### Problema 2: La fragilidad real - El sistema depende de un clasificador regex frágil
 
-Resultado esperado
-- Se elimina la incoherencia actual (ranking correcto pero métricas vacías).
-- El sistema queda más estable para phrasing real de usuarios (incluyendo typos como “botom”).
-- No depende únicamente de “modelo más potente”; prioriza datos estructurados correctos.
+La causa raíz de que consultas "inusuales" fallen es que el pipeline de skills usa una cadena de `if/else if` con patrones regex estáticos (`RANKING_PATTERNS_EDGE`, `EVOLUTION_PATTERNS_EDGE`, etc.) para decidir qué skill ejecutar. Si una consulta no coincide exactamente con los patrones, el sistema:
+- Cae al intent `general_question` con confianza 0.3
+- No ejecuta `skillGetCompanyRanking` ni `skillGetCompanyScores`
+- El DataPack queda vacío (`snapshot:0`)
+- El LLM genera un informe "inventado" sin datos
+
+El Semantic Bridge (thesaurus de ~500 palabras) ayuda pero es **determinístico**: solo funciona si el usuario usa exactamente una de las palabras del diccionario. Cualquier paráfrasis, sinónimo nuevo o combinación inusual lo rompe.
+
+### Problema 3: La función `match_documents` no filtra por metadata
+
+En la línea 9149, el `filter: {}` significa que la búsqueda vectorial devuelve documentos de **cualquier empresa, modelo o semana**. Cuando se pregunta por "ranking IBEX de Gemini", el vector store devuelve los 50 docs más similares semánticamente, que pueden ser de cualquier empresa y modelo. No hay filtrado por `model_name`, `ibex_family_code` ni `ticker`.
+
+### Propuesta de solución: 3 niveles
+
+**Nivel 1 — Fallback LLM para clasificación (impacto inmediato)**
+Cuando el clasificador regex tiene confianza < 0.7, enviar la pregunta a `gpt-4o-mini` con un prompt estructurado que devuelva `{intent, filters, entities}` en JSON. Esto cubre todas las consultas "inusuales" sin necesidad de ampliar el diccionario infinitamente.
+
+Coste: ~$0.001 por consulta adicional. Latencia: ~500ms.
+
+Cambio en: `supabase/functions/chat-intelligence/index.ts` — función `interpretQueryEdge` — añadir bloque de fallback LLM tras la clasificación regex.
+
+**Nivel 2 — Filtrado inteligente del Vector Store**
+Pasar filtros de metadata a `match_documents` según el contexto de la consulta:
+- Si hay ticker detectado: `filter: { ticker: "BBVA" }`
+- Si hay modelo: filtrar post-query por `metadata.ai_model`
+- Si hay sector: `filter: { sector_category: "Banca y Servicios Financieros" }`
+
+Cambio en: `supabase/functions/chat-intelligence/index.ts` — las 2 llamadas a `match_documents` (líneas 8178 y 9146).
+
+**Nivel 3 — Migrar a `text-embedding-3-large` (opcional, a futuro)**
+El modelo actual (`text-embedding-3-small`, 1536 dims) tiene buena relación calidad/precio. `text-embedding-3-large` (3072 dims) mejoraría la relevancia semántica pero requiere re-indexar los 23,831 documentos ($4-5 de coste) y duplicar el almacenamiento vectorial. No es prioritario ahora.
+
+### Recomendación inmediata
+
+Implementar **Nivel 1** (fallback LLM) y **Nivel 2** (filtrado de metadata) en `chat-intelligence/index.ts`. El fallback LLM resuelve de raíz el problema de fragilidad: cualquier consulta en lenguaje natural se clasifica correctamente por un LLM cuando el regex falla, eliminando la necesidad de mantener un diccionario infinito.
+
+### Archivos a modificar
+- `supabase/functions/chat-intelligence/index.ts`:
+  - `interpretQueryEdge`: añadir fallback a `gpt-4o-mini` cuando confianza < 0.7
+  - Llamadas a `match_documents`: pasar filtros de metadata contextuales
+- Redesplegar `chat-intelligence`
+
+### Sobre MCP y Vector Store
+El MCP (Model Context Protocol) no es necesario para mejorar el vector store. El vector store ya está correctamente poblado. Lo que falla es la **capa de interpretación** (regex) que decide qué datos buscar, no la capa de almacenamiento vectorial.
+
