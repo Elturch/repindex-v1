@@ -9230,10 +9230,16 @@ async function handleStandardChat(
     if (embeddingResponse.ok) {
       const embeddingData = await embeddingResponse.json();
       const embedding = embeddingData.data[0].embedding;
+      // Build contextual metadata filter for vector search
+      const vectorFilter: Record<string, string> = {};
+      if (resolvedTicker) vectorFilter.ticker = resolvedTicker;
+      else if (interpret?.filters?.ibex_family_code) vectorFilter.ibex_family_code = interpret.filters.ibex_family_code;
+      else if (interpret?.filters?.sector_category) vectorFilter.sector_category = interpret.filters.sector_category;
+      
       const { data: docs } = await supabaseClient.rpc("match_documents", {
         query_embedding: embedding,
         match_count: 50,
-        filter: {},
+        filter: Object.keys(vectorFilter).length > 0 ? vectorFilter : {},
       });
       vectorDocs = docs || [];
       if (vectorDocs.length > 0) {
