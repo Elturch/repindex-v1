@@ -9092,7 +9092,7 @@ async function handleStandardChat(
       console.log(`${logPrefix} [SKILLS] Success in ${Date.now() - skillsStart}ms — snapshot:${skillsPack.snapshot.length}, ranking:${skillsPack.ranking.length}`);
 
       // Create a minimal classifier for downstream compatibility (suggestions, drumroll, session save)
-      const interpretResult = interpretQueryEdge(question);
+      const interpretResult = await interpretQueryEdge(question);
       const detectedFromCache = detectCompaniesInQuestion(question, companiesCache || []);
       classifier = {
         tipo: interpretResult.intent === "ranking" || interpretResult.intent === "sector_comparison" ? "sector" : "empresa",
