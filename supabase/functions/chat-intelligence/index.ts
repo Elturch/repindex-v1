@@ -2412,11 +2412,149 @@ async function buildDataPackFromSkills(
       }
     }
 
-    // ── Map IBEX ranking fallback ────────────────────────────────
+    // ── Map IBEX ranking fallback + ENRICHMENT ────────────────────
     if (resultMap.ranking && !ss) {
-      pack.ranking = resultMap.ranking.ranking.map((r: any, i: number) => ({
+      const rankingData = resultMap.ranking.ranking || [];
+      pack.ranking = rankingData.map((r: any, i: number) => ({
         pos: i + 1, ticker: r.ticker, nombre: r.company, rix_avg: r.median_rix,
+        min_rix: r.min_rix, max_rix: r.max_rix, range: r.range,
+        consensus_level: r.consensus_level,
+        scores_by_model: r.scores_by_model,
       }));
+
+      // ── Ranking Enrichment: fetch full metrics for top/bottom companies ──
+      // When there's no companyProfile, snapshot is empty → metrics show as N/A
+      // Fix: fetch 8 metrics + resumen + puntos_clave for the requested companies
+      if (!cp && pack.snapshot.length === 0 && rankingData.length > 0) {
+        const topN = parseInt(interpret.filters.top_n || "5", 10);
+        const bottomN = parseInt(interpret.filters.bottom_n || "0", 10);
+        const topTickers = rankingData.slice(0, topN).map((r: any) => r.ticker);
+        const bottomTickers = bottomN > 0 ? rankingData.slice(-bottomN).map((r: any) => r.ticker) : [];
+        const enrichTickers = [...new Set([...topTickers, ...bottomTickers])];
+
+        console.log(`${logPrefix} [SKILLS-v2] Ranking enrichment: fetching metrics for ${enrichTickers.length} companies (top=${topN}, bottom=${bottomN})`);
+
+        try {
+          const batchDate = resultMap.ranking.batch_date;
+          const { gte: eGte, lt: eLt } = buildDateFilterEdge(batchDate);
+          const modelFilter = interpret.filters.model_name || null;
+
+          let enrichData: any[] = [];
+          for (let page = 0; page < 4; page++) {
+            let eq = supabaseClient.from("rix_runs_v2")
+              .select("02_model_name,03_target_name,05_ticker,09_rix_score,23_nvm_score,26_drm_score,29_sim_score,32_rmm_score,35_cem_score,38_gam_score,41_dcm_score,44_cxm_score,10_resumen,11_puntos_clave,17_flags,06_period_from,07_period_to,batch_execution_date,25_nvm_categoria,28_drm_categoria,31_sim_categoria,34_rmm_categoria,37_cem_categoria,40_gam_categoria,43_dcm_categoria,46_cxm_categoria")
+              .gte("batch_execution_date", eGte).lt("batch_execution_date", eLt)
+              .in("05_ticker", enrichTickers)
+              .range(page * 1000, (page + 1) * 1000 - 1);
+            if (modelFilter) eq = eq.eq("02_model_name", modelFilter);
+            const { data: eRows, error: eErr } = await eq;
+            if (eErr) { console.warn(`${logPrefix} [SKILLS-v2] Enrichment query error: ${eErr.message}`); break; }
+            if (!eRows || eRows.length === 0) break;
+            enrichData = enrichData.concat(eRows);
+            if (eRows.length < 1000) break;
+          }
+
+          console.log(`${logPrefix} [SKILLS-v2] Enrichment fetched ${enrichData.length} rows for ${enrichTickers.length} companies`);
+
+          if (enrichData.length > 0) {
+            // Build snapshot from enrichment data (per-model detail for top companies)
+            // Group by ticker for structured output
+            const byTicker = new Map<string, any[]>();
+            for (const row of enrichData) {
+              const t = row["05_ticker"] || "";
+              if (!byTicker.has(t)) byTicker.set(t, []);
+              byTicker.get(t)!.push(row);
+            }
+
+            // Build snapshot array from ALL enriched companies' models
+            const allModels: any[] = [];
+            for (const [ticker, rows] of byTicker.entries()) {
+              for (const m of rows) {
+                allModels.push({
+                  ticker,
+                  empresa: m["03_target_name"] || ticker,
+                  modelo: m["02_model_name"] || "",
+                  rix: m["09_rix_score"],
+                  nvm: m["23_nvm_score"], drm: m["26_drm_score"], sim: m["29_sim_score"],
+                  rmm: m["32_rmm_score"], cem: m["35_cem_score"], gam: m["38_gam_score"],
+                  dcm: m["41_dcm_score"], cxm: m["44_cxm_score"],
+                  resumen: m["10_resumen"], puntos_clave: m["11_puntos_clave"],
+                  flags: m["17_flags"],
+                  period_from: m["06_period_from"], period_to: m["07_period_to"],
+                  nvm_cat: m["25_nvm_categoria"], drm_cat: m["28_drm_categoria"],
+                  sim_cat: m["31_sim_categoria"], rmm_cat: m["34_rmm_categoria"],
+                  cem_cat: m["37_cem_categoria"], gam_cat: m["40_gam_categoria"],
+                  dcm_cat: m["43_dcm_categoria"], cxm_cat: m["46_cxm_categoria"],
+                });
+              }
+            }
+            pack.snapshot = allModels;
+
+            // Build raw_texts
+            pack.raw_texts = allModels.filter((m: any) => m.resumen).map((m: any) => ({
+              modelo: m.modelo, texto: m.resumen || "", ticker: m.ticker,
+            }));
+
+            // Build puntos_clave
+            pack.puntos_clave = allModels.filter((m: any) => m.puntos_clave).map((m: any) => ({
+              modelo: m.modelo, puntos: Array.isArray(m.puntos_clave) ? m.puntos_clave : [m.puntos_clave],
+              ticker: m.ticker,
+            }));
+
+            // Build metricas_consolidadas per ticker
+            const metricasConsolidadas: Record<string, any> = {};
+            for (const [ticker, rows] of byTicker.entries()) {
+              const metrics = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"];
+              const consolidated: Record<string, any> = {};
+              for (const mk of metrics) {
+                const colMap: Record<string, string> = { nvm: "23_nvm_score", drm: "26_drm_score", sim: "29_sim_score", rmm: "32_rmm_score", cem: "35_cem_score", gam: "38_gam_score", dcm: "41_dcm_score", cxm: "44_cxm_score" };
+                const vals = rows.map((r: any) => r[colMap[mk]]).filter((v: any) => v != null) as number[];
+                if (vals.length > 0) {
+                  vals.sort((a, b) => a - b);
+                  const mid = Math.floor(vals.length / 2);
+                  const median = vals.length % 2 ? vals[mid] : Math.round((vals[mid - 1] + vals[mid]) / 2);
+                  consolidated[mk] = { mediana: median, min: Math.min(...vals), max: Math.max(...vals), has_delta: false, delta: null };
+                }
+              }
+              metricasConsolidadas[ticker] = consolidated;
+            }
+            (pack as any).metricas_consolidadas = metricasConsolidadas;
+            (pack as any).ranking_enriched = true;
+
+            // Set empresa_primaria from first top company for context
+            if (topTickers.length > 0 && byTicker.has(topTickers[0])) {
+              const firstRows = byTicker.get(topTickers[0])!;
+              pack.empresa_primaria = {
+                ticker: topTickers[0],
+                nombre: firstRows[0]["03_target_name"] || topTickers[0],
+                sector: null, subsector: null,
+              };
+            }
+
+            // Store enrichment data as raw_runs for source extraction
+            (pack as any)._rawRunsForSources = enrichData;
+
+            // Populate date range from enrichment
+            const periodsFrom = enrichData.map((r: any) => r["06_period_from"]).filter(Boolean).sort();
+            const periodsTo = enrichData.map((r: any) => r["07_period_to"]).filter(Boolean).sort();
+            (pack as any)._enrichment_date_from = periodsFrom.length > 0 ? periodsFrom[0] : null;
+            (pack as any)._enrichment_date_to = periodsTo.length > 0 ? periodsTo[periodsTo.length - 1] : null;
+            (pack as any)._enrichment_sample_size = enrichData.length;
+          }
+        } catch (enrichErr: any) {
+          console.warn(`${logPrefix} [SKILLS-v2] Ranking enrichment failed: ${enrichErr.message}`);
+        }
+      }
+
+      // ── Separate ranking_top and ranking_bottom for prompt ──
+      if (interpret.filters.bottom_n) {
+        const bottomN = parseInt(interpret.filters.bottom_n, 10);
+        (pack as any).ranking_bottom = pack.ranking.slice(-bottomN).reverse().map((r: any, i: number) => ({ ...r, pos_bottom: i + 1 }));
+      }
+      if (interpret.filters.top_n) {
+        const topN = parseInt(interpret.filters.top_n, 10);
+        (pack as any).ranking_top = pack.ranking.slice(0, topN);
+      }
     }
 
     // Attach semantic bridge results for downstream prompt emphasis
