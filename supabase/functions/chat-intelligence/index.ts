@@ -107,10 +107,11 @@ async function executeSkillGetCompanyScores(supabase: any, params: { ticker?: st
 }
 
 // ── Inlined skill: Company Ranking ──────────────────────────────────
-async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string }) {
+async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string }) {
   const start = Date.now();
   try {
     const topN = params.top_n ?? 50;
+    const filterByModel = params.model_name || null;
     let batchDate = params.batch_date;
     if (!batchDate) {
       const sr = await getLatestValidSundayEdge(supabase);
@@ -133,13 +134,31 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       let q = supabase.from("rix_runs_v2").select("02_model_name,03_target_name,05_ticker,09_rix_score")
         .gte("batch_execution_date", gte).lt("batch_execution_date", lt).range(page * 1000, (page + 1) * 1000 - 1);
       if (tickerFilter) q = q.in("05_ticker", tickerFilter);
+      if (filterByModel) q = q.eq("02_model_name", filterByModel);
       const { data, error } = await q;
       if (error) return { success: false, error: error.message };
       if (!data || data.length === 0) break;
       allData = allData.concat(data);
       if (data.length < 1000) break;
     }
-    if (allData.length === 0) return { success: false, error: `No ranking data for ${batchDate}` };
+    if (allData.length === 0) return { success: false, error: `No ranking data for ${batchDate}${filterByModel ? ` (model: ${filterByModel})` : ""}` };
+    
+    // When filtering by a single model, use direct scores instead of median
+    if (filterByModel) {
+      const ranking = allData.map((row: any) => ({
+        company: row["03_target_name"] || "",
+        ticker: row["05_ticker"] || "",
+        median_rix: row["09_rix_score"] ?? 0,
+        min_rix: row["09_rix_score"] ?? 0,
+        max_rix: row["09_rix_score"] ?? 0,
+        range: 0,
+        consensus_level: "n/a (single model)",
+        scores_by_model: [{ model: filterByModel, rix_score: row["09_rix_score"] }],
+      })).sort((a: any, b: any) => b.median_rix - a.median_rix).slice(0, topN);
+      console.log(`[SKILL] CompanyRanking (model=${filterByModel}): ${ranking.length} companies in ${Date.now() - start}ms`);
+      return { success: true, data: { batch_date: batchDate, filter: params.sector_category || params.ibex_family_code || "all", model_filter: filterByModel, ranking } };
+    }
+    
     const grouped = new Map<string, { company: string; ticker: string; scores: { model: string; rix_score: number | null }[] }>();
     for (const row of allData) {
       const t = row["05_ticker"] || "";
