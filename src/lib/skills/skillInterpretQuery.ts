@@ -105,6 +105,7 @@ export function skillInterpretQuery(
     } else if (RANKING_PATTERNS.test(lower)) {
       intent = "ranking";
       recommended_skills.push("skillGetCompanyRanking");
+      if (IBEX_PATTERNS.test(lower)) filters.ibex_family_code = "IBEX-35";
       if (filters.sector_category) {
         recommended_skills.push("skillGetSectorComparison");
       }
@@ -115,7 +116,7 @@ export function skillInterpretQuery(
       confidence = 0.8;
     } else if (IBEX_PATTERNS.test(lower)) {
       intent = "ranking";
-      filters.ibex_family_code = "IBEX35";
+      filters.ibex_family_code = "IBEX-35";
       recommended_skills.push("skillGetCompanyRanking");
       confidence = 0.9;
     } else if (COMPANY_QUESTION_PATTERNS.test(lower)) {
