@@ -8258,10 +8258,14 @@ async function handleBulletinRequest(
 
       if (queryEmbedding) {
         // Search Vector Store for relevant documents
+        // Build metadata filter for more relevant vector results
+        const vectorFilter: Record<string, string> = {};
+        if (matchedCompany?.ticker) vectorFilter.ticker = matchedCompany.ticker;
+        
         const { data: vectorDocs, error: vectorError } = await supabaseClient.rpc("match_documents", {
           query_embedding: queryEmbedding,
           match_count: vectorMatchCount,
-          filter: {}, // Could filter by metadata->ticker if indexed
+          filter: vectorFilter,
         });
 
         if (!vectorError && vectorDocs?.length > 0) {
