@@ -1873,6 +1873,15 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
     if (hasIbex) filters.ibex_family_code = "IBEX-35";
     if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
     confidence = 0.85;
+    // Extract top_n / bottom_n quantities
+    const topMatch = lower.match(/\btop\s*(\d+)\b/i);
+    const bottomMatch = lower.match(/\b(?:bottom|botom|últimos|peores|colistas?|cola|worst)\s*(\d+)?\b/i);
+    if (topMatch) filters.top_n = topMatch[1] || "5";
+    if (bottomMatch) filters.bottom_n = bottomMatch[1] || "5";
+    // If user asks for "top 5 y bottom 5" or similar, mark both
+    if (!topMatch && !bottomMatch && /\b(top|mejor|l[ií]der)/i.test(lower)) filters.top_n = "5";
+    const hasBottomIntent = /\b(bottom|botom|peor|peores|últimos|colistas?|cola|worst|los\s+m[aá]s\s+bajos)\b/i.test(lower);
+    if (hasBottomIntent && !filters.bottom_n) filters.bottom_n = "5";
   } else if (hasSector && filters.sector_category) {
     intent = "sector_comparison"; recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"); confidence = 0.8;
   } else if (hasIbex) {
