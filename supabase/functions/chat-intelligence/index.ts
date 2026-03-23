@@ -5753,6 +5753,15 @@ REGLAS PARA RANKINGS SECTORIALES:
 • Cubre TOP 5-10 empresas de forma EQUILIBRADA, no solo el líder.
 • Compara métricas ENTRE las top 5. Analiza divergencias y evolución por empresa.
 ` : ""}
+${rankingTop || rankingBottom ? `
+REGLAS PARA CONSULTAS TOP/BOTTOM (OBLIGATORIO):
+• Si ranking_top está presente en el DATAPACK, presenta una tabla completa del Top con: Posición, Empresa, Ticker, RIX Score, y las 8 métricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM) si están disponibles en el snapshot.
+• Si ranking_bottom está presente, presenta una tabla equivalente del Bottom.
+• NUNCA omitas la tabla Bottom si ranking_bottom tiene datos.
+• Las 8 métricas de cada empresa deben extraerse del campo "snapshot" del DATAPACK (filtrando por ticker).
+• Si el snapshot contiene datos de un solo modelo (filtro de modelo activo), indica claramente que los datos son de ese modelo específico, no consolidados.
+• Si metricas_consolidadas tiene datos por ticker, úsalos para las columnas de métricas.
+` : ""}
 
 ═══ EJEMPLO DE ANÁLISIS CORRECTO (sección 2 — Visión de las 6 IAs) ═══
 
