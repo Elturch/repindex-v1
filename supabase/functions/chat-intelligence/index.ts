@@ -1823,7 +1823,7 @@ const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|d
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
 
-function interpretQueryEdge(question: string): { intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number } {
+async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
   const lower = question.toLowerCase();
   const entities: string[] = [];
   const filters: Record<string, string> = {};
@@ -1898,6 +1898,89 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
   // Attach lexicon for downstream
   (filters as any)._lexicon = lexicon;
 
+  // ── LLM Fallback: when regex confidence is low, use gpt-4o-mini to classify ──
+  if (confidence < 0.7 && intent === "general_question") {
+    try {
+      const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
+      if (openAIApiKey) {
+        console.log(`[INTERPRET_LLM_FALLBACK] Confidence ${confidence} < 0.7, calling gpt-4o-mini for classification`);
+        const llmClassifyStart = Date.now();
+        const llmResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openAIApiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            temperature: 0,
+            max_tokens: 300,
+            messages: [
+              { role: "system", content: `Eres un clasificador de intención para consultas sobre reputación corporativa del IBEX 35 y empresas españolas.
+Devuelve JSON con esta estructura exacta:
+{
+  "intent": "ranking" | "evolution" | "company_analysis" | "sector_comparison" | "divergence" | "alert" | "general_question",
+  "filters": {
+    "ibex_family_code": "IBEX-35" (solo si menciona IBEX),
+    "sector_category": "nombre del sector" (solo si menciona sector),
+    "model_name": "ChatGPT" | "Perplexity" | "Google Gemini" | "DeepSeek" | "Grok" | "Qwen" (solo si menciona modelo de IA),
+    "top_n": "5" (si pide top N),
+    "bottom_n": "5" (si pide bottom/peores N)
+  },
+  "skills": ["skillGetCompanyRanking", "skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution", "skillGetSectorComparison", "skillGetDivergenceAnalysis"]
+}
+Skills disponibles:
+- skillGetCompanyRanking: para rankings, top, bottom, mejores, peores
+- skillGetCompanyScores: para puntuaciones, métricas de una empresa
+- skillGetCompanyDetail: para perfil/detalle de empresa
+- skillGetCompanyEvolution: para evolución temporal, tendencias
+- skillGetSectorComparison: para comparar sectores
+- skillGetDivergenceAnalysis: para divergencias entre modelos de IA
+Solo devuelve el JSON, sin texto adicional.` },
+              { role: "user", content: question }
+            ],
+            response_format: { type: "json_object" },
+          }),
+        });
+        if (llmResponse.ok) {
+          const llmData = await llmResponse.json();
+          const parsed = JSON.parse(llmData.choices?.[0]?.message?.content || "{}");
+          const llmMs = Date.now() - llmClassifyStart;
+          console.log(`[INTERPRET_LLM_FALLBACK] Result in ${llmMs}ms: intent=${parsed.intent}, filters=${JSON.stringify(parsed.filters)}`);
+          
+          if (parsed.intent && parsed.intent !== "general_question") {
+            intent = parsed.intent;
+            confidence = 0.8; // LLM classification is reliable
+            
+            // Merge LLM-detected filters (don't overwrite existing ones)
+            if (parsed.filters) {
+              for (const [k, v] of Object.entries(parsed.filters)) {
+                if (v && !filters[k] && k !== "_lexicon") {
+                  filters[k] = v as string;
+                }
+              }
+            }
+            
+            // Use LLM-recommended skills
+            if (parsed.skills && Array.isArray(parsed.skills) && parsed.skills.length > 0) {
+              recommended_skills.length = 0;
+              for (const s of parsed.skills) recommended_skills.push(s);
+            } else {
+              // Default skills based on LLM intent
+              recommended_skills.length = 0;
+              if (intent === "ranking") recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
+              else if (intent === "evolution") recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores");
+              else if (intent === "divergence") recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores");
+              else if (intent === "sector_comparison") recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking");
+              else if (intent === "company_analysis") recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution");
+              else if (intent === "alert") recommended_skills.push("skillGetCompanyRanking");
+            }
+          }
+        }
+      }
+    } catch (llmErr) {
+      console.warn(`[INTERPRET_LLM_FALLBACK] Error:`, llmErr);
+      // Continue with regex result — this is just a fallback
+    }
+  }
+
   return { intent, entities, filters, recommended_skills, confidence };
 }
 
@@ -1916,7 +1999,7 @@ async function buildDataPackFromSkills(
     const enrichedQuestion = bridge.enriched_question;
     console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, companies=${bridge.detected_companies.map(c=>c.issuer_name).join(",")}, llm=${bridge.used_llm_fallback}`);
     
-    const interpret = interpretQueryEdge(enrichedQuestion);
+    const interpret = await interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
     // Fallback: if model not detected in normalized question, try original question
@@ -8175,10 +8258,14 @@ async function handleBulletinRequest(
 
       if (queryEmbedding) {
         // Search Vector Store for relevant documents
+        // Build metadata filter for more relevant vector results
+        const vectorFilter: Record<string, string> = {};
+        if (matchedCompany?.ticker) vectorFilter.ticker = matchedCompany.ticker;
+        
         const { data: vectorDocs, error: vectorError } = await supabaseClient.rpc("match_documents", {
           query_embedding: queryEmbedding,
           match_count: vectorMatchCount,
-          filter: {}, // Could filter by metadata->ticker if indexed
+          filter: vectorFilter,
         });
 
         if (!vectorError && vectorDocs?.length > 0) {
@@ -9009,7 +9096,7 @@ async function handleStandardChat(
       console.log(`${logPrefix} [SKILLS] Success in ${Date.now() - skillsStart}ms — snapshot:${skillsPack.snapshot.length}, ranking:${skillsPack.ranking.length}`);
 
       // Create a minimal classifier for downstream compatibility (suggestions, drumroll, session save)
-      const interpretResult = interpretQueryEdge(question);
+      const interpretResult = await interpretQueryEdge(question);
       const detectedFromCache = detectCompaniesInQuestion(question, companiesCache || []);
       classifier = {
         tipo: interpretResult.intent === "ranking" || interpretResult.intent === "sector_comparison" ? "sector" : "empresa",
@@ -9143,10 +9230,18 @@ async function handleStandardChat(
     if (embeddingResponse.ok) {
       const embeddingData = await embeddingResponse.json();
       const embedding = embeddingData.data[0].embedding;
+      // Build contextual metadata filter for vector search
+      const vectorFilter: Record<string, string> = {};
+      if (detectedCompanies?.length > 0 && detectedCompanies[0]?.ticker) {
+        vectorFilter.ticker = detectedCompanies[0].ticker;
+      } else if (classifier?.empresas_detectadas?.length > 0) {
+        vectorFilter.ticker = classifier.empresas_detectadas[0].ticker;
+      }
+      
       const { data: docs } = await supabaseClient.rpc("match_documents", {
         query_embedding: embedding,
         match_count: 50,
-        filter: {},
+        filter: Object.keys(vectorFilter).length > 0 ? vectorFilter : {},
       });
       vectorDocs = docs || [];
       if (vectorDocs.length > 0) {
