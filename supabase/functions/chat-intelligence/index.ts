@@ -1818,7 +1818,7 @@ async function semanticBridge(
 // ── Interpret Query (lexicon + regex, no LLM) ───────────────────────
 const IBEX_PATTERNS_EDGE = /\b(ibex[- ]?35|ibex|índice|indice|panorama general|ranking general)\b/i;
 const EVOLUTION_PATTERNS_EDGE = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)/i;
-const RANKING_PATTERNS_EDGE = /\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)/i;
+const RANKING_PATTERNS_EDGE = /\b(ranking|clasificaci[oó]n|top|bottom|botom|mejor|peor|peores|l[ií]der|rezagad|posici[oó]n|puesto|colistas?|cola|últimos|los\s+m[aá]s\s+bajos|worst|best|leaders?|laggards?|leaderboard)\b/i;
 const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n)/i;
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
