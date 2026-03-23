@@ -1,84 +1,68 @@
 
+Objetivo: corregir de forma definitiva que en consultas tipo “Top/Bottom IBEX según [modelo]” salgan tablas vacías y métricas a 0/N/A, manteniendo el ranking correcto.
 
-## Diagnóstico definitivo: por qué "de Gemini" no se aplica
+Diagnóstico auditado (causa real)
+1) El problema principal NO es el barrido ni falta de datos en BD:
+- En `rix_runs_v2` sí existen métricas completas por empresa/modelo (NVM…CXM) para IBEX.
+2) El fallo está en el armado del DataPack del pipeline de skills:
+- Logs reales de `chat-intelligence`: `snapshot:0, ranking:35`.
+- Con `snapshot` vacío, E3/E4 se saltan y el LLM redacta informe con “sin desglose métrico”.
+3) Además hay dos incoherencias funcionales:
+- El bloque enviado al LLM corta `ranking` a 15 (`slice(0,15)`), dificultando Bottom real.
+- `report_context` en skills fija siempre 6 modelos aunque el filtro sea “solo Gemini”.
 
-### Lo que ocurrió la semana pasada
+Conclusión: ampliar diccionario ayuda, pero por sí sola NO arregla métricas vacías. Hay que corregir la ruta de datos del ranking.
 
-Cuando hiciste "dame el top 5 y el bottom del ibex 35 según chatgpt", el sistema probablemente funcionó por una de estas dos razones:
-1. El `normalize-query` falló o hizo timeout (3 segundos de límite) → graceful degradation → la consulta original (con "chatgpt") pasó intacta al backend → la función F2 (SQL Expert con GPT) generó un SQL con `WHERE "02_model_name" = 'ChatGPT'`.
-2. O bien la landing page (selector de modelo) fue la fuente del dato para la noticia, no el chat.
+Plan de implementación
+Fase 1 — Estabilizar interpretación (diccionario + patrones)
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+1. Ampliar detección semántica para ranking Top/Bottom:
+   - Añadir variantes: `bottom`, `botom`, `cola`, `últimos`, `colistas`, `peores`, `los más bajos`, etc.
+   - Extraer cantidades (`top 5`, `bottom 5`) con regex robusta multilenguaje.
+2. Guardar en filtros estructurados:
+   - `filters.top_n`, `filters.bottom_n` (defaults seguros: 5/5 cuando se pidan ambos).
 
-### Lo que pasa ahora
+Fase 2 — Corregir DataPack de ranking para que nunca quede “ciego”
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+3. En `buildDataPackFromSkills`, cuando haya `ranking` y no haya `companyProfile/sectorSnapshot`:
+   - Hacer un “ranking-enrichment” con `rix_runs_v2` (métricas + resúmenes + flags) para empresas Top/Bottom solicitadas.
+   - Construir `pack.snapshot` con detalle por modelo (aunque sea 1 modelo filtrado).
+   - Poblar `pack.metricas_consolidadas`, `pack.raw_texts`, `pack.explicaciones_metricas` y `pack.puntos_clave`.
+4. Ajustar `report_context` dinámico en skills:
+   - `models` y `models_count` reales según datos (si filtro Gemini => 1 modelo).
+   - `sample_size` y `weeks_analyzed` reales del subconjunto usado.
 
-```text
-"Dame el ranking IBEX 35 top 5 de Gemini"
-         ↓
-  normalize-query (GPT-4o-mini)   ← FUNCIONA esta vez (no timeout)
-         ↓
-  "Top 5 del IBEX 35"            ← "de Gemini" ELIMINADO
-         ↓
-  body.question = "Top 5 del IBEX 35"
-  body.originalQuestion = "Dame el ranking IBEX 35 top 5 de Gemini"
-         ↓
-  handleStandardChat(question="Top 5 del IBEX 35", ..., originalUserQuestion="...de Gemini")
-         ↓
-  buildDataPackFromSkills(question)  ← recibe la normalizada SIN "Gemini"
-         ↓
-  interpretQueryEdge → detecta ranking + IBEX ✓, modelo → NO MATCH ✗
-         ↓
-  executeSkillGetCompanyRanking({ibex: "IBEX-35", model_name: undefined})
-         ↓
-  Ranking con mediana de 6 modelos (NO Gemini)
-```
+Fase 3 — Evitar pérdida de Bottom y vacíos en generación del informe
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+5. En `buildOrchestratorPrompt`:
+   - Dejar de enviar solo `ranking.slice(0,15)` para consultas Top/Bottom.
+   - Enviar explícitamente `ranking_top` y `ranking_bottom` (o ranking completo limitado por query).
+6. Añadir regla de redacción:
+   - Si consulta pide Top+Bottom, es obligatorio incluir ambas tablas.
+   - Si hay `snapshot`, es obligatorio completar sección de 8 métricas con datos reales (no “n/d”).
 
-El `originalUserQuestion` existe en `handleStandardChat` (línea 8803) pero **nunca se pasa** a `buildDataPackFromSkills` (línea 8820).
+Fase 4 — Hardening opcional del fallback LLM
+- Archivo: `supabase/functions/chat-intelligence/index.ts`
+7. Mantener diccionario como primera capa determinística.
+8. Solo si la interpretación queda en baja confianza, usar fallback LLM más robusto (sin sustituir capa determinística), para no romper latencia/coste.
 
-### Evidencia del informe
+Validación (criterios de aceptación)
+A) Query: “Dame el ranking IBEX 35 top 5 y bottom 5 de Gemini”
+- Debe devolver Top 5 y Bottom 5.
+- Debe mostrar métricas no vacías (NVM..CXM) en informe.
+- `report_context.models_count` = 1 y modelo = Gemini.
+B) Query: “Top 5 y bottom 5 del IBEX 35” (sin modelo)
+- Debe devolver Top/Bottom con consolidado 6 modelos.
+- Métricas no vacías (consolidado).
+C) Log técnico esperado en `chat-intelligence`:
+- Pasar de `snapshot:0` a `snapshot>0` en estas consultas.
+- Sin mensajes de “No snapshot data, skipping comparator” para estos casos.
 
-El informe exportado confirma el bug:
-- Consulta: "Dame el ranking IBEX 35 top 5 de Gemini"
-- Pero dice: "6 modelos: ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen"
-- Y: "mediana consolidada de los seis modelos"
-- Los scores (72, 67, 67, 67, 67) son medianas, no scores de Gemini
+Archivos a tocar
+- `supabase/functions/chat-intelligence/index.ts` (principal: parser, enrichment, prompt, report_context).
+- (Opcional de consistencia) `src/lib/skills/skillInterpretQuery.ts` para alinear semántica frontend/backend de top/bottom y aliases.
 
-### Corrección (2 cambios mínimos)
-
-**1. Pasar `originalUserQuestion` a `buildDataPackFromSkills`**
-
-Archivo: `supabase/functions/chat-intelligence/index.ts`
-
-- Línea 1896: añadir parámetro `originalQuestion?: string` a la firma
-- Línea 1909: después de `interpretQueryEdge(enrichedQuestion)`, re-ejecutar detección de modelo contra `originalQuestion` si existe:
-```ts
-if (originalQuestion && !interpret.filters.model_name) {
-  const origLower = originalQuestion.toLowerCase();
-  const origModelMatch = origLower.match(MODEL_NAME_PATTERNS);
-  if (origModelMatch) {
-    const key = origModelMatch[1].toLowerCase().replace(/\s+/g, " ");
-    interpret.filters.model_name = MODEL_MAP[key] || MODEL_MAP[key.replace(/\s/g, "")] || origModelMatch[1];
-  }
-}
-```
-- Línea 8820: pasar `originalUserQuestion` como 5o argumento
-
-**2. Preservar modelos de IA en `normalize-query`**
-
-Archivo: `supabase/functions/normalize-query/index.ts`
-
-Añadir regla al `SYSTEM_PROMPT` (después de la regla 8):
-```
-9. Si el usuario menciona un modelo de IA (ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen),
-   PRESERVA esa mención en la consulta normalizada añadiendo "según [modelo]".
-   Ejemplo: "ranking IBEX 35 de Gemini" → "Top 5 del IBEX 35 según Gemini"
-```
-
-Esto es redundante con el fix 1 (belt & suspenders), pero evita depender solo del fallback al `originalQuestion`.
-
-**3. Redesplegar ambas edge functions**
-
-### Por qué esto NO rompe nada
-
-- Solo añade un parámetro opcional a una función interna
-- El `normalize-query` sigue siendo best-effort; el fix principal es el passthrough
-- El ranking sin modelo sigue funcionando igual (mediana de 6 modelos)
-
+Resultado esperado
+- Se elimina la incoherencia actual (ranking correcto pero métricas vacías).
+- El sistema queda más estable para phrasing real de usuarios (incluyendo typos como “botom”).
+- No depende únicamente de “modelo más potente”; prioriza datos estructurados correctos.
