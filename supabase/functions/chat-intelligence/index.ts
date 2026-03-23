@@ -2563,6 +2563,7 @@ async function buildDataPackFromSkills(
     }
 
     // ── Build report_context for InfoBar ─────────────────────────
+    const filterByModel = interpret.filters.model_name || null;
     const reportContext: Record<string, unknown> = {
       company: resolvedTicker ? (cp?.empresa || resolvedName || resolvedTicker) : null,
       sector: interpret.filters.sector_category || (cp ? resultMap.detail?.sector_category : ss?.sector) || null,
@@ -2571,9 +2572,9 @@ async function buildDataPackFromSkills(
       date_from: null,
       date_to: null,
       timezone: "Europe/Madrid (CET/CEST)",
-      models: ["ChatGPT", "Perplexity", "Google Gemini", "DeepSeek", "Grok", "Qwen"],
+      models: filterByModel ? [filterByModel] : ["ChatGPT", "Perplexity", "Google Gemini", "DeepSeek", "Grok", "Qwen"],
       sample_size: 0,
-      models_count: 6,
+      models_count: filterByModel ? 1 : 6,
       weeks_analyzed: 0,
     };
 
@@ -2600,6 +2601,13 @@ async function buildDataPackFromSkills(
       reportContext.sample_size = ss.per_model_detail.length;
       const uniqueWeeks = new Set(batchDates.map((d: string) => String(d).slice(0, 10)));
       reportContext.weeks_analyzed = uniqueWeeks.size;
+    }
+    // Fallback: enrichment data from ranking
+    else if ((pack as any)._enrichment_date_from) {
+      reportContext.date_from = (pack as any)._enrichment_date_from;
+      reportContext.date_to = (pack as any)._enrichment_date_to;
+      reportContext.sample_size = (pack as any)._enrichment_sample_size || 0;
+      reportContext.weeks_analyzed = 1;
     }
 
     (pack as any).report_context = reportContext;
