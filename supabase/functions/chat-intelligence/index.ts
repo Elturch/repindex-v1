@@ -9232,9 +9232,11 @@ async function handleStandardChat(
       const embedding = embeddingData.data[0].embedding;
       // Build contextual metadata filter for vector search
       const vectorFilter: Record<string, string> = {};
-      if (resolvedTicker) vectorFilter.ticker = resolvedTicker;
-      else if (interpret?.filters?.ibex_family_code) vectorFilter.ibex_family_code = interpret.filters.ibex_family_code;
-      else if (interpret?.filters?.sector_category) vectorFilter.sector_category = interpret.filters.sector_category;
+      if (detectedCompanies?.length > 0 && detectedCompanies[0]?.ticker) {
+        vectorFilter.ticker = detectedCompanies[0].ticker;
+      } else if (classifier?.empresas_detectadas?.length > 0) {
+        vectorFilter.ticker = classifier.empresas_detectadas[0].ticker;
+      }
       
       const { data: docs } = await supabaseClient.rpc("match_documents", {
         query_embedding: embedding,
