@@ -1898,6 +1898,7 @@ async function buildDataPackFromSkills(
   supabaseClient: any,
   companiesCacheLocal: any[] | null,
   logPrefix: string,
+  originalQuestion?: string,
 ): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
   const totalStart = Date.now();
   try {
@@ -1908,6 +1909,19 @@ async function buildDataPackFromSkills(
     
     const interpret = interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
+
+    // Fallback: if model not detected in normalized question, try original question
+    if (originalQuestion && !interpret.filters.model_name) {
+      const origLower = originalQuestion.toLowerCase();
+      const MODEL_NAME_PATTERNS_FALLBACK = /\b(chatgpt|chat\s*gpt|perplexity|gemini|deepseek|deep\s*seek|grok|qwen)\b/i;
+      const origModelMatch = origLower.match(MODEL_NAME_PATTERNS_FALLBACK);
+      if (origModelMatch) {
+        const MODEL_MAP_FALLBACK: Record<string, string> = { chatgpt: "ChatGPT", "chat gpt": "ChatGPT", perplexity: "Perplexity", gemini: "Google Gemini", deepseek: "DeepSeek", "deep seek": "DeepSeek", grok: "Grok", qwen: "Qwen" };
+        const key = origModelMatch[1].toLowerCase().replace(/\s+/g, " ");
+        interpret.filters.model_name = MODEL_MAP_FALLBACK[key] || MODEL_MAP_FALLBACK[key.replace(/\s/g, "")] || origModelMatch[1];
+        console.log(`${logPrefix} [SKILLS-v2] Model detected from originalQuestion fallback: ${interpret.filters.model_name}`);
+      }
+    }
 
     // Direct crisis detection (independent from interpretQueryEdge)
     const questionLower = question
