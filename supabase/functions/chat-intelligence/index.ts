@@ -1999,7 +1999,7 @@ async function buildDataPackFromSkills(
     const enrichedQuestion = bridge.enriched_question;
     console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, companies=${bridge.detected_companies.map(c=>c.issuer_name).join(",")}, llm=${bridge.used_llm_fallback}`);
     
-    const interpret = interpretQueryEdge(enrichedQuestion);
+    const interpret = await interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
     // Fallback: if model not detected in normalized question, try original question
