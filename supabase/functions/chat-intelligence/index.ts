@@ -1841,12 +1841,13 @@ function interpretQueryEdge(question: string): { intent: string; entities: strin
     intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
   } else if (hasRanking) {
     intent = "ranking"; recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
+    if (hasIbex) filters.ibex_family_code = "IBEX-35";
     if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
     confidence = 0.85;
   } else if (hasSector && filters.sector_category) {
     intent = "sector_comparison"; recommended_skills.push("skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"); confidence = 0.8;
   } else if (hasIbex) {
-    intent = "ranking"; filters.ibex_family_code = "IBEX35"; recommended_skills.push("skillGetCompanyRanking"); confidence = 0.9;
+    intent = "ranking"; filters.ibex_family_code = "IBEX-35"; recommended_skills.push("skillGetCompanyRanking"); confidence = 0.9;
   } else if (COMPANY_QUESTION_PATTERNS_EDGE.test(lower)) {
     intent = "company_analysis"; recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution", "skillGetDivergenceAnalysis"); confidence = 0.75;
   }
