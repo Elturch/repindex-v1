@@ -1823,7 +1823,7 @@ const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|d
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
 
-function interpretQueryEdge(question: string): { intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number } {
+async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
   const lower = question.toLowerCase();
   const entities: string[] = [];
   const filters: Record<string, string> = {};
