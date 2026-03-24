@@ -967,14 +967,40 @@ const COMPANY_TICKER_MAP: Record<string, string> = {
 const COMPANY_KEYS_SORTED = Object.keys(COMPANY_TICKER_MAP).sort((a, b) => b.length - a.length);
 
 const INTENT_HINT_PATTERNS: Array<[RegExp, string]> = [
-  [/\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)\b/i, "ranking"],
+  // Ranking
+  [/\b(ranking|clasificaci[oó]n|top|bottom|botom|mejor|peor|peores|l[ií]der|rezagad|posici[oó]n|puesto|colistas?|cola|últimos|worst|best|leaders?|laggards?|leaderboard)\b/i, "ranking"],
+  // Comparison
   [/\b(compar|versus|vs|frente a|contra)\b/i, "comparación"],
-  [/\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)\b/i, "evolución"],
-  [/\b(m[eé]trica|subscore|nvm|drm|sim|rmm|cem|gam|dcm|cxm|rix)\b/i, "métrica"],
-  [/\b(sector|sectorial|sectores)\b/i, "sector"],
-  [/\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|dispersi[oó]n)\b/i, "divergencia"],
+  // Evolution
+  [/\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres|trayectoria|trajectory)\b/i, "evolución"],
+  // Metrics
+  [/\b(m[eé]trica|subscore|nvm|drm|sim|rmm|cem|gam|dcm|cxm|rix|score|puntuaci[oó]n|nota|calificaci[oó]n)\b/i, "métrica"],
+  // Sector
+  [/\b(sector|sectorial|sectores|industry|indústria|industria)\b/i, "sector"],
+  // Divergence
+  [/\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|dispersi[oó]n|desacoplamiento|brecha|desfase|desconexi[oó]n|mismatch|gap)\b/i, "divergencia"],
+  // Financial / Earnings
+  [/\b(beneficio|ingresos|facturaci[oó]n|ebitda|margen|rentabilidad|resultados\s+(?:trimestral|anual)|earnings|revenue|profit)\b/i, "financiero"],
+  [/\b(dividendo|payout|recompra|buyback|retribuci[oó]n\s+al\s+accionista)\b/i, "financiero"],
+  [/\b(deuda|apalancamiento|leverage|rating\s+crediticio|endeudamiento)\b/i, "financiero"],
+  // Corporate events
+  [/\b(opa|fusi[oó]n|adquisici[oó]n|m&a|spin[\s-]?off|ipo|opv|takeover|merger|acquisition|ampliaci[oó]n\s+de\s+capital)\b/i, "corporativo"],
+  // Market / Stock
+  [/\b(cotizaci[oó]n|bolsa|acci[oó]n|burs[aá]til|precio\s+(?:de\s+la\s+)?acci[oó]n|stock\s+price|market\s+cap|capitalizaci[oó]n)\b/i, "bursátil"],
+  // Governance / ESG
+  [/\b(esg|sostenibilidad|gobernanza|gobierno\s+corporativo|sustainability|governance|responsabilidad\s+social)\b/i, "gobernanza"],
+  // Crisis / Alert
+  [/\b(crisis|esc[aá]ndalo|controversia|riesgo\s+reputacional|alerta|problem[aá]tic|scandal|controversy)\b/i, "alerta"],
+  // Due diligence / Forensic
+  [/\b(due\s+diligence|diligencia\s+debida|peritaje|informe\s+pericial|an[aá]lisis\s+forense)\b/i, "due_diligence"],
+  // Talent / Employer
+  [/\b(employer\s+branding|marca\s+empleadora|glassdoor|clima\s+laboral|talento|talent)\b/i, "talento"],
+  // Temporal
   [/\b4\s*semanas?\b/i, "4 semanas"],
   [/\b[uú]ltima\s+semana\b/i, "última semana"],
+  // English general
+  [/\b(how\s+is|what\s+about|analyze|analyse|evaluate|assessment|status\s+of)\b/i, "análisis"],
+  [/\b(best\s+performing|top\s+rated|highest\s+score|lowest\s+score)\b/i, "ranking"],
 ];
 
 function removeAccentsEdge(s: string): string {
