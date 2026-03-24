@@ -2028,6 +2028,58 @@ async function buildDataPackFromSkills(
     const interpret = await interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
 
+    // ── Bridge→Interpret propagation: if interpret fell to general_question but bridge detected an advanced intent, use it ──
+    if (interpret.intent === "general_question" && bridge.detected_intent) {
+      const BRIDGE_TO_INTERPRET_MAP: Record<string, { intent: string; skills: string[] }> = {
+        financial_results: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+        equity_story: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        due_diligence: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+        corporate_event: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        forensic_analysis: { intent: "evolution", skills: ["skillGetCompanyEvolution", "skillGetCompanyScores"] },
+        risk_signal: { intent: "alert", skills: ["skillGetCompanyRanking", "skillGetCompanyScores"] },
+        talent_reputation: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        metric_deep_dive: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        company_analysis: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+        ranking: { intent: "ranking", skills: ["skillGetCompanyRanking", "skillGetCompanyEvolution"] },
+        evolution: { intent: "evolution", skills: ["skillGetCompanyEvolution", "skillGetCompanyScores"] },
+        sector_comparison: { intent: "sector_comparison", skills: ["skillGetSectorComparison", "skillGetCompanyRanking"] },
+        divergence: { intent: "divergence", skills: ["skillGetDivergenceAnalysis", "skillGetCompanyScores"] },
+      };
+      const mapped = BRIDGE_TO_INTERPRET_MAP[bridge.detected_intent];
+      if (mapped) {
+        interpret.intent = mapped.intent;
+        interpret.confidence = 0.75;
+        interpret.recommended_skills.length = 0;
+        for (const s of mapped.skills) interpret.recommended_skills.push(s);
+        console.log(`${logPrefix} [BRIDGE→INTERPRET] Propagated bridge intent '${bridge.detected_intent}' → '${mapped.intent}' with skills [${mapped.skills.join(",")}]`);
+      }
+    }
+    // ── Also check lexicon intent_hints for advanced intents not caught by regex ──
+    const lexiconHints = (interpret.filters as any)?._lexicon?.intent_hints || [];
+    if (interpret.intent === "general_question" && lexiconHints.length > 0) {
+      const HINT_TO_INTENT: Record<string, { intent: string; skills: string[] }> = {
+        "financiero": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "corporativo": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "bursátil": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+        "gobernanza": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "alerta": { intent: "alert", skills: ["skillGetCompanyRanking", "skillGetCompanyScores"] },
+        "due_diligence": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+        "talento": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "análisis": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+      };
+      for (const hint of lexiconHints) {
+        const hintMap = HINT_TO_INTENT[hint];
+        if (hintMap) {
+          interpret.intent = hintMap.intent;
+          interpret.confidence = 0.7;
+          interpret.recommended_skills.length = 0;
+          for (const s of hintMap.skills) interpret.recommended_skills.push(s);
+          console.log(`${logPrefix} [LEXICON→INTERPRET] Hint '${hint}' → '${hintMap.intent}'`);
+          break;
+        }
+      }
+    }
+
     // Fallback: if model not detected in normalized question, try original question
     if (originalQuestion && !interpret.filters.model_name) {
       const origLower = originalQuestion.toLowerCase();
