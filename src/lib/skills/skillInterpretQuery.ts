@@ -125,6 +125,18 @@ export function skillInterpretQuery(
       filters.ibex_family_code = "IBEX-35";
       recommended_skills.push("skillGetCompanyRanking");
       confidence = 0.9;
+    } else if (CORPORATE_EVENT_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail");
+      confidence = 0.8;
+    } else if (FINANCIAL_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail");
+      confidence = 0.8;
+    } else if (ESG_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail");
+      confidence = 0.8;
     } else if (COMPANY_QUESTION_PATTERNS.test(lower)) {
       intent = "company_analysis";
       recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis");
