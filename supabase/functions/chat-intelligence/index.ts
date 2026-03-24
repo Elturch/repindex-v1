@@ -967,14 +967,40 @@ const COMPANY_TICKER_MAP: Record<string, string> = {
 const COMPANY_KEYS_SORTED = Object.keys(COMPANY_TICKER_MAP).sort((a, b) => b.length - a.length);
 
 const INTENT_HINT_PATTERNS: Array<[RegExp, string]> = [
-  [/\b(ranking|clasificaci[oó]n|top|mejor|peor|l[ií]der|rezagad|posici[oó]n|puesto)\b/i, "ranking"],
+  // Ranking
+  [/\b(ranking|clasificaci[oó]n|top|bottom|botom|mejor|peor|peores|l[ií]der|rezagad|posici[oó]n|puesto|colistas?|cola|últimos|worst|best|leaders?|laggards?|leaderboard)\b/i, "ranking"],
+  // Comparison
   [/\b(compar|versus|vs|frente a|contra)\b/i, "comparación"],
-  [/\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres)\b/i, "evolución"],
-  [/\b(m[eé]trica|subscore|nvm|drm|sim|rmm|cem|gam|dcm|cxm|rix)\b/i, "métrica"],
-  [/\b(sector|sectorial|sectores)\b/i, "sector"],
-  [/\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|dispersi[oó]n)\b/i, "divergencia"],
+  // Evolution
+  [/\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres|trayectoria|trajectory)\b/i, "evolución"],
+  // Metrics
+  [/\b(m[eé]trica|subscore|nvm|drm|sim|rmm|cem|gam|dcm|cxm|rix|score|puntuaci[oó]n|nota|calificaci[oó]n)\b/i, "métrica"],
+  // Sector
+  [/\b(sector|sectorial|sectores|industry|indústria|industria)\b/i, "sector"],
+  // Divergence
+  [/\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|dispersi[oó]n|desacoplamiento|brecha|desfase|desconexi[oó]n|mismatch|gap)\b/i, "divergencia"],
+  // Financial / Earnings
+  [/\b(beneficio|ingresos|facturaci[oó]n|ebitda|margen|rentabilidad|resultados\s+(?:trimestral|anual)|earnings|revenue|profit)\b/i, "financiero"],
+  [/\b(dividendo|payout|recompra|buyback|retribuci[oó]n\s+al\s+accionista)\b/i, "financiero"],
+  [/\b(deuda|apalancamiento|leverage|rating\s+crediticio|endeudamiento)\b/i, "financiero"],
+  // Corporate events
+  [/\b(opa|fusi[oó]n|adquisici[oó]n|m&a|spin[\s-]?off|ipo|opv|takeover|merger|acquisition|ampliaci[oó]n\s+de\s+capital)\b/i, "corporativo"],
+  // Market / Stock
+  [/\b(cotizaci[oó]n|bolsa|acci[oó]n|burs[aá]til|precio\s+(?:de\s+la\s+)?acci[oó]n|stock\s+price|market\s+cap|capitalizaci[oó]n)\b/i, "bursátil"],
+  // Governance / ESG
+  [/\b(esg|sostenibilidad|gobernanza|gobierno\s+corporativo|sustainability|governance|responsabilidad\s+social)\b/i, "gobernanza"],
+  // Crisis / Alert
+  [/\b(crisis|esc[aá]ndalo|controversia|riesgo\s+reputacional|alerta|problem[aá]tic|scandal|controversy)\b/i, "alerta"],
+  // Due diligence / Forensic
+  [/\b(due\s+diligence|diligencia\s+debida|peritaje|informe\s+pericial|an[aá]lisis\s+forense)\b/i, "due_diligence"],
+  // Talent / Employer
+  [/\b(employer\s+branding|marca\s+empleadora|glassdoor|clima\s+laboral|talento|talent)\b/i, "talento"],
+  // Temporal
   [/\b4\s*semanas?\b/i, "4 semanas"],
   [/\b[uú]ltima\s+semana\b/i, "última semana"],
+  // English general
+  [/\b(how\s+is|what\s+about|analyze|analyse|evaluate|assessment|status\s+of)\b/i, "análisis"],
+  [/\b(best\s+performing|top\s+rated|highest\s+score|lowest\s+score)\b/i, "ranking"],
 ];
 
 function removeAccentsEdge(s: string): string {
@@ -1926,13 +1952,22 @@ Devuelve JSON con esta estructura exacta:
   },
   "skills": ["skillGetCompanyRanking", "skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution", "skillGetSectorComparison", "skillGetDivergenceAnalysis"]
 }
+Intents y cuándo usarlos:
+- ranking: rankings, top, bottom, mejores, peores, líderes, colistas
+- evolution: evolución temporal, tendencia, trayectoria, progreso, histórico
+- company_analysis: análisis de empresa, resultados financieros (beneficios, EBITDA, dividendos, deuda), equity story, due diligence, eventos corporativos (OPA, fusión, M&A, IPO), ESG/sostenibilidad, gobernanza, employer branding, talento, cotización/bolsa
+- sector_comparison: comparar sectores, panorama sectorial
+- divergence: divergencia entre modelos de IA, consenso, discrepancia, desacoplamiento
+- alert: crisis, escándalo, controversia, riesgo reputacional, señales de riesgo, alerta temprana
+- general_question: solo si ningún otro intent aplica
+
 Skills disponibles:
-- skillGetCompanyRanking: para rankings, top, bottom, mejores, peores
-- skillGetCompanyScores: para puntuaciones, métricas de una empresa
-- skillGetCompanyDetail: para perfil/detalle de empresa
-- skillGetCompanyEvolution: para evolución temporal, tendencias
-- skillGetSectorComparison: para comparar sectores
-- skillGetDivergenceAnalysis: para divergencias entre modelos de IA
+- skillGetCompanyRanking: rankings, top, bottom, mejores, peores
+- skillGetCompanyScores: puntuaciones, métricas RIX de una empresa
+- skillGetCompanyDetail: perfil/detalle de empresa, resúmenes cualitativos
+- skillGetCompanyEvolution: evolución temporal, tendencias, serie histórica
+- skillGetSectorComparison: comparar empresas dentro de un sector
+- skillGetDivergenceAnalysis: divergencias entre modelos de IA, consenso
 Solo devuelve el JSON, sin texto adicional.` },
               { role: "user", content: question }
             ],
@@ -2001,6 +2036,58 @@ async function buildDataPackFromSkills(
     
     const interpret = await interpretQueryEdge(enrichedQuestion);
     console.log(`${logPrefix} [SKILLS-v2] interpretQuery: intent=${interpret.intent}, confidence=${interpret.confidence}`);
+
+    // ── Bridge→Interpret propagation: if interpret fell to general_question but bridge detected an advanced intent, use it ──
+    if (interpret.intent === "general_question" && bridge.detected_intent) {
+      const BRIDGE_TO_INTERPRET_MAP: Record<string, { intent: string; skills: string[] }> = {
+        financial_results: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+        equity_story: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        due_diligence: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+        corporate_event: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        forensic_analysis: { intent: "evolution", skills: ["skillGetCompanyEvolution", "skillGetCompanyScores"] },
+        risk_signal: { intent: "alert", skills: ["skillGetCompanyRanking", "skillGetCompanyScores"] },
+        talent_reputation: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        metric_deep_dive: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        company_analysis: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+        ranking: { intent: "ranking", skills: ["skillGetCompanyRanking", "skillGetCompanyEvolution"] },
+        evolution: { intent: "evolution", skills: ["skillGetCompanyEvolution", "skillGetCompanyScores"] },
+        sector_comparison: { intent: "sector_comparison", skills: ["skillGetSectorComparison", "skillGetCompanyRanking"] },
+        divergence: { intent: "divergence", skills: ["skillGetDivergenceAnalysis", "skillGetCompanyScores"] },
+      };
+      const mapped = BRIDGE_TO_INTERPRET_MAP[bridge.detected_intent];
+      if (mapped) {
+        interpret.intent = mapped.intent;
+        interpret.confidence = 0.75;
+        interpret.recommended_skills.length = 0;
+        for (const s of mapped.skills) interpret.recommended_skills.push(s);
+        console.log(`${logPrefix} [BRIDGE→INTERPRET] Propagated bridge intent '${bridge.detected_intent}' → '${mapped.intent}' with skills [${mapped.skills.join(",")}]`);
+      }
+    }
+    // ── Also check lexicon intent_hints for advanced intents not caught by regex ──
+    const lexiconHints = (interpret.filters as any)?._lexicon?.intent_hints || [];
+    if (interpret.intent === "general_question" && lexiconHints.length > 0) {
+      const HINT_TO_INTENT: Record<string, { intent: string; skills: string[] }> = {
+        "financiero": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "corporativo": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "bursátil": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+        "gobernanza": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "alerta": { intent: "alert", skills: ["skillGetCompanyRanking", "skillGetCompanyScores"] },
+        "due_diligence": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+        "talento": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+        "análisis": { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+      };
+      for (const hint of lexiconHints) {
+        const hintMap = HINT_TO_INTENT[hint];
+        if (hintMap) {
+          interpret.intent = hintMap.intent;
+          interpret.confidence = 0.7;
+          interpret.recommended_skills.length = 0;
+          for (const s of hintMap.skills) interpret.recommended_skills.push(s);
+          console.log(`${logPrefix} [LEXICON→INTERPRET] Hint '${hint}' → '${hintMap.intent}'`);
+          break;
+        }
+      }
+    }
 
     // Fallback: if model not detected in normalized question, try original question
     if (originalQuestion && !interpret.filters.model_name) {

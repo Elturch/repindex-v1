@@ -29,12 +29,18 @@ export interface InterpretQueryInput {
 
 // ── Known patterns ──────────────────────────────────────────────────
 const IBEX_PATTERNS = /\b(ibex[- ]?35|ibex|índice|indice)\b/i;
-const EVOLUTION_PATTERNS = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres|evolution|history|trajectory|evolução|evolucao|evolució|evolucio)\b/i;
-const RANKING_PATTERNS = /\b(ranking|clasificaci[oó]n|top|bottom|botom|mejor|peor|peores|l[ií]der|rezagad|posici[oó]n|puesto|colistas?|cola|últimos|los\s+m[aá]s\s+bajos|worst|best|leaders?|laggards?|leaderboard|classificação|classificacao|classificació|classificacio)\b/i;
+const EVOLUTION_PATTERNS = /\b(evoluci[oó]n|tendencia|trend|hist[oó]ric|temporal|semanas?|weeks?|últim[oa]s?|progres|evolution|history|trajectory|evolução|evolucao|evolució|evolucio|trayectoria|serie\s+temporal|time\s+series)\b/i;
+const RANKING_PATTERNS = /\b(ranking|clasificaci[oó]n|top|bottom|botom|mejor|peor|peores|l[ií]der|rezagad|posici[oó]n|puesto|colistas?|cola|últimos|los\s+m[aá]s\s+bajos|worst|best|leaders?|laggards?|leaderboard|classificação|classificacao|classificació|classificacio|best\s+performing|top\s+rated|highest|lowest)\b/i;
 const SECTOR_PATTERNS = /\b(sector|sectorial|comparar sectores?|banc[a-z]*|energ[ií\u00e9][a-z]*|tecnol[oó\u00f3]g[a-z]*|telecomunicaci[a-z]*|utilities|construcci[oó]n|constructora[s]?|inmobiliaria[s]?|alimentaci[oó]n|alimentaria[s]?|seguros?|aseguradora[s]?|turismo|tur[ií]stic[a-z]*|textil|pharma|salud|farmac[eé]utic[a-z]*|industry|indústria|industria)\b/i;
 const DIVERGENCE_PATTERNS = /\b(divergencia|consenso|discrepancia|acuerdo|desacuerdo|modelos? difieren|spread|dispersi[oó]n|desacoplamiento|brecha|desfase|desconexi[oó]n|descorrelaci[oó]n|desalineaci[oó]n|asimetr[ií]a|desajuste|desequilibrio|disociaci[oó]n|desvinculaci[oó]n|decoupling|disconnect|misalignment|gap|mismatch|asymmetry|deviation|disparity|imbalance|delinking|divergence|divergência|desacoplamento|desconexão|desconexao|desalinhamento|desacoblament|desconnexió|desconnexio|bretxa)\b/i;
 const COMPANY_QUESTION_PATTERNS = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota|analyze|analyse|evaluate|how is|status of|assessment|analisa|avalia|analitza)\b/i;
-const CXM_PATTERNS = /\b(cotizaci[oó]n|precio de mercado|capitalizaci[oó]n burs[aá]til|valor en bolsa|precio de la acci[oó]n|valoraci[oó]n burs[aá]til|precio burs[aá]til|valor burs[aá]til|stock price|market valuation|market cap|share price|equity valuation|market price|trading price|cotação|cotacao|preço de mercado|preco de mercado|capitalização bolsista|capitalizacao bolsista|valor em bolsa|cotització|cotitzacio|preu de mercat|capitalitzaci[oó] bors[aà]ria)\b/i;
+const CXM_PATTERNS = /\b(cotizaci[oó]n|precio de mercado|capitalizaci[oó]n burs[aá]til|valor en bolsa|precio de la acci[oó]n|valoraci[oó]n burs[aá]til|precio burs[aá]til|valor burs[aá]til|stock price|market valuation|market cap|share price|equity valuation|market price|trading price|cotação|cotacao|preço de mercado|preco de mercado|capitalização bolsista|capitalizacao bolsista|valor em bolsa|cotització|cotitzacio|preu de mercat|capitalitzaci[oó] bors[aà]ria|per|múltiplo|multiplo|precio objetivo|target price)\b/i;
+// Financial terms that should trigger company_analysis
+const FINANCIAL_PATTERNS = /\b(beneficio|ingresos|facturaci[oó]n|ebitda|margen|rentabilidad|resultados\s+(?:trimestral|anual)|earnings|revenue|profit|dividendo|payout|deuda|apalancamiento|leverage|endeudamiento)\b/i;
+// Corporate events
+const CORPORATE_EVENT_PATTERNS = /\b(opa|fusi[oó]n|adquisici[oó]n|m&a|spin[\s-]?off|ipo|opv|takeover|merger|acquisition|ampliaci[oó]n\s+de\s+capital)\b/i;
+// ESG / Governance
+const ESG_PATTERNS = /\b(esg|sostenibilidad|gobernanza|gobierno\s+corporativo|sustainability|governance|responsabilidad\s+social)\b/i;
 
 // Common sector names → sector_category values
 const SECTOR_MAP: Record<string, string> = {
@@ -119,6 +125,18 @@ export function skillInterpretQuery(
       filters.ibex_family_code = "IBEX-35";
       recommended_skills.push("skillGetCompanyRanking");
       confidence = 0.9;
+    } else if (CORPORATE_EVENT_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail");
+      confidence = 0.8;
+    } else if (FINANCIAL_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail");
+      confidence = 0.8;
+    } else if (ESG_PATTERNS.test(lower)) {
+      intent = "company_analysis";
+      recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail");
+      confidence = 0.8;
     } else if (COMPANY_QUESTION_PATTERNS.test(lower)) {
       intent = "company_analysis";
       recommended_skills.push("skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis");
