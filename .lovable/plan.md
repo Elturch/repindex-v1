@@ -1,70 +1,141 @@
 
 
-## Auditoría completa: Vector Store, Embeddings y fragilidad del sistema de Skills
+## Auditoría completa del diccionario de términos económicos
 
-### Estado actual del Vector Store
+### Arquitectura actual: 3 capas de detección
 
-| Fuente | Registros en BD | Documentos vectorizados | Cobertura |
-|--------|----------------|------------------------|-----------|
-| rix_runs_v2 | 10,423 | 13,277 | 127% (incluye semanas anteriores) |
-| rix_runs (V1) | 9,548 | 1,327 | 13.9% |
-| corporate_news | 462 | 457 | 98.9% |
-| **Total** | | **23,831** | |
+El sistema tiene **3 diccionarios** que operan en cascada, cada uno con sus propias lagunas:
 
-**Sí se está vectorizando**, y el embedding usado es `text-embedding-3-small` de OpenAI (1536 dimensiones). Todos los 23,831 documentos tienen embedding (0 sin embedding).
+```text
+Capa 1: normalizeQuery()        → SECTOR_LEXICON + COMPANY_TICKER_MAP + INTENT_HINT_PATTERNS
+Capa 2: semanticBridge()        → METRIC_THESAURUS + INTENT_THESAURUS + TEMPORAL_THESAURUS
+Capa 3: interpretQueryEdge()    → Regex patterns (RANKING_PATTERNS_EDGE, etc.) + LLM fallback
+```
 
-### Problema 1: El embedding `text-embedding-3-small` es correcto pero el uso del Vector Store es marginal
+### Problemas encontrados
 
-El vector store se usa en 2 sitios del pipeline:
-1. **Legacy E1-E6** (línea 8178): busca 30 docs por nombre de empresa para contexto cualitativo
-2. **Skills pipeline** (línea 9146): busca 50 docs por la pregunta del usuario
+**1. INTENT_HINT_PATTERNS (Capa 1) es demasiado pobre**
 
-Pero en ambos casos el vector store solo aporta **contexto narrativo complementario**. Los datos numéricos (scores, métricas, rankings) vienen de **consultas SQL directas** a `rix_runs_v2`. Si la consulta SQL falla o no se construye correctamente, el vector store no puede compensar porque no contiene datos estructurados.
+Solo tiene 8 patrones. Faltan muchos términos económicos que los usuarios usan naturalmente:
 
-### Problema 2: La fragilidad real - El sistema depende de un clasificador regex frágil
+| Concepto ausente | Ejemplo de consulta que falla |
+|---|---|
+| "beneficio", "ingresos", "facturación" | "¿Cómo afecta la facturación a la reputación de Repsol?" |
+| "dividendo", "rentabilidad" | "¿Qué empresa del IBEX tiene mejor dividendo?" |
+| "deuda", "apalancamiento" | "¿Qué dicen las IAs de la deuda de Telefónica?" |
+| "opa", "fusión", "adquisición" | "¿Cómo afecta la OPA a la reputación?" |
+| "resultados", "earnings" | "Resultados trimestrales de BBVA" |
+| "sostenibilidad", "ESG" | "¿Qué empresa lidera en ESG?" |
+| "cotización", "bolsa", "acción" | "¿Cómo cotiza Iberdrola en reputación?" |
+| "crisis", "escándalo" | Ya está en ALERT_PATTERNS pero no en INTENT_HINT |
 
-La causa raíz de que consultas "inusuales" fallen es que el pipeline de skills usa una cadena de `if/else if` con patrones regex estáticos (`RANKING_PATTERNS_EDGE`, `EVOLUTION_PATTERNS_EDGE`, etc.) para decidir qué skill ejecutar. Si una consulta no coincide exactamente con los patrones, el sistema:
-- Cae al intent `general_question` con confianza 0.3
-- No ejecuta `skillGetCompanyRanking` ni `skillGetCompanyScores`
-- El DataPack queda vacío (`snapshot:0`)
-- El LLM genera un informe "inventado" sin datos
+**2. METRIC_THESAURUS (Capa 2) tiene términos correctos pero hay colisiones y ausencias**
 
-El Semantic Bridge (thesaurus de ~500 palabras) ayuda pero es **determinístico**: solo funciona si el usuario usa exactamente una de las palabras del diccionario. Cualquier paráfrasis, sinónimo nuevo o combinación inusual lo rompe.
+- **Colisión "bolsa"/"ibex 35"**: El término "ibex 35" está en CXM (línea 1351), pero también se detecta como patrón IBEX en interpretQueryEdge. Si el usuario dice "ibex 35 y bolsa", el sistema puede rutear a ranking en vez de CXM.
+- **Ausencias en CXM**: Faltan "PER", "múltiplo", "valoración", "precio objetivo" como términos sueltos (están como frases largas pero no como palabras individuales).
+- **Ausencias en GAM**: Falta "compliance" como término individual, "CNMV" está duplicado entre SIM y CEM.
+- **Ausencias en NVM**: Faltan "reputación" (como concepto genérico), "marca personal", "employer branding" (está en talent_reputation intent pero no en NVM metric).
 
-### Problema 3: La función `match_documents` no filtra por metadata
+**3. INTENT_THESAURUS (Capa 2) tiene intents que no se propagan correctamente**
 
-En la línea 9149, el `filter: {}` significa que la búsqueda vectorial devuelve documentos de **cualquier empresa, modelo o semana**. Cuando se pregunta por "ranking IBEX de Gemini", el vector store devuelve los 50 docs más similares semánticamente, que pueden ser de cualquier empresa y modelo. No hay filtrado por `model_name`, `ibex_family_code` ni `ticker`.
+Los intents `financial_results`, `equity_story`, `due_diligence`, `corporate_event`, `forensic_analysis`, `risk_signal`, `talent_reputation` (líneas 1484-1557) **se detectan en el thesaurus** pero:
+- `interpretQueryEdge` (Capa 3) **no los reconoce** — solo conoce: ranking, evolution, divergence, alert, company_analysis, sector_comparison, general_question
+- Resultado: el intent detectado en semanticBridge se inyecta en la `enriched_question` como tag `[financial_results]`, pero interpretQueryEdge lo ignora y cae a `general_question` con confianza 0.3
+- El LLM fallback (gpt-4o-mini) tampoco los conoce — su prompt solo lista los intents básicos
 
-### Propuesta de solución: 3 niveles
+**4. COMPANY_TICKER_MAP (Capa 1) tiene empresas importantes ausentes**
 
-**Nivel 1 — Fallback LLM para clasificación (impacto inmediato)**
-Cuando el clasificador regex tiene confianza < 0.7, enviar la pregunta a `gpt-4o-mini` con un prompt estructurado que devuelva `{intent, filters, entities}` en JSON. Esto cubre todas las consultas "inusuales" sin necesidad de ampliar el diccionario infinitamente.
+Faltan empresas relevantes del censo de 175:
+- No está Técnicas Reunidas (TRE), Naturhouse (NTH), Applus+ se mapea a "AS" (debería ser "APPS.MC" o similar según BD), Prosegur Cash (no solo Prosegur), Grupo Ezentis ya en liquidación
+- Empresas privadas como Pascual, Mahou, El Pozo, Mercadona ya está pero sin variantes como "Hacendado"
 
-Coste: ~$0.001 por consulta adicional. Latencia: ~500ms.
+**5. SECTOR_LEXICON vs SECTOR_MAP del frontend están desalineados**
 
-Cambio en: `supabase/functions/chat-intelligence/index.ts` — función `interpretQueryEdge` — añadir bloque de fallback LLM tras la clasificación regex.
+- Backend: tiene "Construcción" Y "Construcción e Infraestructuras" como sectores separados
+- Frontend `skillInterpretQuery.ts`: mapea "construcción" → "Construcción e Infraestructuras"
+- Backend: mapea "construcción" → "Construcción" (sin infraestructuras)
+- Esto puede causar que el frontend detecte un sector que el backend no encuentra en BD
 
-**Nivel 2 — Filtrado inteligente del Vector Store**
-Pasar filtros de metadata a `match_documents` según el contexto de la consulta:
-- Si hay ticker detectado: `filter: { ticker: "BBVA" }`
-- Si hay modelo: filtrar post-query por `metadata.ai_model`
-- Si hay sector: `filter: { sector_category: "Banca y Servicios Financieros" }`
+**6. Términos económicos en inglés que no se propagan**
 
-Cambio en: `supabase/functions/chat-intelligence/index.ts` — las 2 llamadas a `match_documents` (líneas 8178 y 9146).
+El thesaurus tiene muchos términos EN/PT/CA pero los regex de interpretQueryEdge son casi exclusivamente en español. Si el LLM de `normalize-query` traduce la consulta o el usuario pregunta en inglés, los regex no capturan "how is", "what about", "best performing" etc.
 
-**Nivel 3 — Migrar a `text-embedding-3-large` (opcional, a futuro)**
-El modelo actual (`text-embedding-3-small`, 1536 dims) tiene buena relación calidad/precio. `text-embedding-3-large` (3072 dims) mejoraría la relevancia semántica pero requiere re-indexar los 23,831 documentos ($4-5 de coste) y duplicar el almacenamiento vectorial. No es prioritario ahora.
+### Plan de corrección
 
-### Recomendación inmediata
+**Archivo principal**: `supabase/functions/chat-intelligence/index.ts`
 
-Implementar **Nivel 1** (fallback LLM) y **Nivel 2** (filtrado de metadata) en `chat-intelligence/index.ts`. El fallback LLM resuelve de raíz el problema de fragilidad: cualquier consulta en lenguaje natural se clasifica correctamente por un LLM cuando el regex falla, eliminando la necesidad de mantener un diccionario infinito.
+**Fase 1 — Alinear intents no reconocidos**
 
-### Archivos a modificar
-- `supabase/functions/chat-intelligence/index.ts`:
-  - `interpretQueryEdge`: añadir fallback a `gpt-4o-mini` cuando confianza < 0.7
-  - Llamadas a `match_documents`: pasar filtros de metadata contextuales
-- Redesplegar `chat-intelligence`
+En `interpretQueryEdge`, añadir mapeo de los intents avanzados del thesaurus a intents base:
+- `financial_results` → `company_analysis` (+ añadir skill `skillGetCompanyScores`)
+- `equity_story` → `company_analysis`
+- `due_diligence` → `company_analysis`
+- `corporate_event` → `company_analysis` (+ enfatizar CEM)
+- `forensic_analysis` → `evolution`
+- `risk_signal` → `alert`
+- `talent_reputation` → `company_analysis` (+ enfatizar GAM)
 
-### Sobre MCP y Vector Store
-El MCP (Model Context Protocol) no es necesario para mejorar el vector store. El vector store ya está correctamente poblado. Lo que falla es la **capa de interpretación** (regex) que decide qué datos buscar, no la capa de almacenamiento vectorial.
+Implementación: después de que `semanticBridge` detecte el intent, si `interpretQueryEdge` queda en `general_question` pero bridge tiene intent != null, usar el intent del bridge mapeado.
+
+**Fase 2 — Ampliar INTENT_HINT_PATTERNS**
+
+Añadir patrones para términos económicos frecuentes:
+```ts
+[/\b(beneficio|ingresos|facturaci[oó]n|ebitda|margen|rentabilidad|resultados)\b/i, "financiero"],
+[/\b(dividendo|payout|recompra|buyback|retribuci[oó]n)\b/i, "financiero"],
+[/\b(deuda|apalancamiento|leverage|rating|crediticio)\b/i, "financiero"],
+[/\b(opa|fusi[oó]n|adquisici[oó]n|m&a|spin-?off|ipo|opv)\b/i, "corporativo"],
+[/\b(cotizaci[oó]n|bolsa|acci[oó]n|burs[aá]til|precio)\b/i, "bursátil"],
+[/\b(esg|sostenibilidad|gobernanza|gobierno corporativo)\b/i, "gobernanza"],
+[/\b(crisis|esc[aá]ndalo|controversia|riesgo|problem)\b/i, "alerta"],
+```
+
+**Fase 3 — Propagar intent del Semantic Bridge cuando interpretQueryEdge falla**
+
+En `buildDataPackFromSkills` (línea ~2002), después de `interpretQueryEdge`:
+```ts
+// Si interpretQueryEdge queda en general_question pero bridge detectó intent, usar bridge
+if (interpret.intent === "general_question" && bridge.detected_intent) {
+  const BRIDGE_TO_INTERPRET_MAP = {
+    financial_results: "company_analysis",
+    equity_story: "company_analysis",
+    due_diligence: "company_analysis",
+    corporate_event: "company_analysis",
+    forensic_analysis: "evolution",
+    risk_signal: "alert",
+    talent_reputation: "company_analysis",
+    // Los intents básicos ya matchean directamente
+    company_analysis: "company_analysis",
+    ranking: "ranking",
+    evolution: "evolution",
+    sector_comparison: "sector_comparison",
+    divergence: "divergence",
+    metric_deep_dive: "company_analysis",
+  };
+  const mapped = BRIDGE_TO_INTERPRET_MAP[bridge.detected_intent];
+  if (mapped) {
+    interpret.intent = mapped;
+    interpret.confidence = 0.75;
+    // Asignar skills apropiados
+  }
+}
+```
+
+**Fase 4 — Ampliar LLM fallback con intents avanzados**
+
+Actualizar el system prompt del LLM fallback (línea 1916) para incluir `financial_results`, `corporate_event`, `due_diligence` como intents válidos, con instrucción de mapearlos a los skills correctos.
+
+**Fase 5 — Alinear SECTOR_LEXICON con la BD real**
+
+Verificar qué valores de `sector_category` existen realmente en `repindex_root_issuers` y alinear el lexicon. Eliminar la duplicación "Construcción" vs "Construcción e Infraestructuras".
+
+### Archivo secundario (consistencia frontend)
+
+`src/lib/skills/skillInterpretQuery.ts` — Añadir los mismos términos económicos a `RANKING_PATTERNS` y `CXM_PATTERNS` para que las sugerencias del frontend sean coherentes.
+
+### Resultado esperado
+
+- Consultas con terminología financiera ("beneficio", "deuda", "OPA", "dividendo", "cotización") se clasifican correctamente en vez de caer a `general_question`
+- Los 7 intents avanzados del thesaurus se propagan al pipeline de skills en vez de perderse
+- El LLM fallback cubre el gap restante para cualquier paráfrasis no cubierta
 
