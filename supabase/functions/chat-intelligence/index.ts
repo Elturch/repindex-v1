@@ -1952,13 +1952,22 @@ Devuelve JSON con esta estructura exacta:
   },
   "skills": ["skillGetCompanyRanking", "skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution", "skillGetSectorComparison", "skillGetDivergenceAnalysis"]
 }
+Intents y cuándo usarlos:
+- ranking: rankings, top, bottom, mejores, peores, líderes, colistas
+- evolution: evolución temporal, tendencia, trayectoria, progreso, histórico
+- company_analysis: análisis de empresa, resultados financieros (beneficios, EBITDA, dividendos, deuda), equity story, due diligence, eventos corporativos (OPA, fusión, M&A, IPO), ESG/sostenibilidad, gobernanza, employer branding, talento, cotización/bolsa
+- sector_comparison: comparar sectores, panorama sectorial
+- divergence: divergencia entre modelos de IA, consenso, discrepancia, desacoplamiento
+- alert: crisis, escándalo, controversia, riesgo reputacional, señales de riesgo, alerta temprana
+- general_question: solo si ningún otro intent aplica
+
 Skills disponibles:
-- skillGetCompanyRanking: para rankings, top, bottom, mejores, peores
-- skillGetCompanyScores: para puntuaciones, métricas de una empresa
-- skillGetCompanyDetail: para perfil/detalle de empresa
-- skillGetCompanyEvolution: para evolución temporal, tendencias
-- skillGetSectorComparison: para comparar sectores
-- skillGetDivergenceAnalysis: para divergencias entre modelos de IA
+- skillGetCompanyRanking: rankings, top, bottom, mejores, peores
+- skillGetCompanyScores: puntuaciones, métricas RIX de una empresa
+- skillGetCompanyDetail: perfil/detalle de empresa, resúmenes cualitativos
+- skillGetCompanyEvolution: evolución temporal, tendencias, serie histórica
+- skillGetSectorComparison: comparar empresas dentro de un sector
+- skillGetDivergenceAnalysis: divergencias entre modelos de IA, consenso
 Solo devuelve el JSON, sin texto adicional.` },
               { role: "user", content: question }
             ],
