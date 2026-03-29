@@ -1960,6 +1960,7 @@ Intents y cuándo usarlos:
 - divergence: divergencia entre modelos de IA, consenso, discrepancia, desacoplamiento
 - alert: crisis, escándalo, controversia, riesgo reputacional, señales de riesgo, alerta temprana
 - general_question: solo si ningún otro intent aplica
+Si el usuario usa términos especializados (reputación algorítmica, OPA, compliance, delta reputacional, cuota de voz, etc.), clasifica según el contexto reputacional más cercano.
 
 Skills disponibles:
 - skillGetCompanyRanking: rankings, top, bottom, mejores, peores
