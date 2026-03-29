@@ -2166,15 +2166,80 @@ async function buildDataPackFromSkills(
             esg: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
             pericial: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
             roles: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            // New categories from semantic dictionary
+            agrupacion: { intent: "ranking", skills: ["skillGetCompanyRanking", "skillGetCompanyScores"] },
+            marca_matriz: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            nombre_historico: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            persona_empresa: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            sector_coloquial: { intent: "sector_comparison", skills: ["skillGetSectorComparison", "skillGetCompanyRanking"] },
+            filtro: { intent: "ranking", skills: ["skillGetCompanyRanking"] },
+            propiedad: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            acronimo: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            no_disponible: { intent: "general_question", skills: [] },
           };
           const primaryCategory = glossaryTerms[0].category;
           const catMap = CATEGORY_TO_INTENT[primaryCategory];
           if (catMap) {
             interpret.intent = catMap.intent;
-            interpret.confidence = 0.65;
+            interpret.confidence = primaryCategory === "no_disponible" ? 0.9 : 0.70;
             interpret.recommended_skills.length = 0;
             for (const s of catMap.skills) interpret.recommended_skills.push(s);
             console.log(`${logPrefix} [GLOSSARY→INTERPRET] Category '${primaryCategory}' → '${catMap.intent}'`);
+
+            // Extract tickers from repindex_relevance for entity-bearing categories
+            const ENTITY_CATEGORIES = new Set(["agrupacion", "marca_matriz", "nombre_historico", "persona_empresa", "sector_coloquial", "filtro", "acronimo", "propiedad"]);
+            if (ENTITY_CATEGORIES.has(primaryCategory)) {
+              for (const gt of glossaryTerms) {
+                const rel = gt.repindex_relevance || "";
+                // Handle no_disponible in persona_empresa (e.g., Tim Cook → Apple not in BBDD)
+                if (rel.startsWith("no_disponible:")) {
+                  interpret.intent = "general_question";
+                  interpret.confidence = 0.9;
+                  interpret.recommended_skills.length = 0;
+                  enrichedQuestion = `${enrichedQuestion} [NO_DISPONIBLE: ${rel.replace("no_disponible:", "")}]`;
+                  console.log(`${logPrefix} [GLOSSARY→NO_DISPONIBLE] ${gt.term}: ${rel}`);
+                  break;
+                }
+                // Extract tickers
+                const tickerMatch = rel.match(/tickers?:([^|]+)/);
+                if (tickerMatch) {
+                  const tickers = tickerMatch[1].split(",").map((t: string) => t.trim()).filter(Boolean);
+                  for (const tk of tickers) {
+                    if (!interpret.entities.includes(tk)) interpret.entities.push(tk);
+                  }
+                  if (tickers.length === 1 && !interpret.filters.ticker) {
+                    interpret.filters.ticker = tickers[0];
+                  }
+                }
+                // Extract filters (e.g., filter:cotiza_en_bolsa=true)
+                const filterMatch = rel.match(/filter:([^|]+)/);
+                if (filterMatch) {
+                  const parts = filterMatch[1].split("=");
+                  if (parts.length === 2) {
+                    interpret.filters[parts[0]] = parts[1];
+                  }
+                }
+                // Extract sector hints
+                const sectorMatch = rel.match(/sector:([^|]+)/);
+                if (sectorMatch) {
+                  const sectors = sectorMatch[1].split(",").map((s: string) => s.trim());
+                  if (!interpret.filters.sector_category) {
+                    interpret.filters.sector_category = sectors[0];
+                  }
+                }
+                // Extract extra_tickers
+                const extraMatch = rel.match(/extra_tickers:([^|]+)/);
+                if (extraMatch) {
+                  const extras = extraMatch[1].split(",").map((t: string) => t.trim());
+                  for (const tk of extras) {
+                    if (!interpret.entities.includes(tk)) interpret.entities.push(tk);
+                  }
+                }
+              }
+              if (interpret.entities.length > 0) {
+                console.log(`${logPrefix} [GLOSSARY→ENTITIES] Extracted ${interpret.entities.length} entities: ${interpret.entities.slice(0, 5).join(", ")}${interpret.entities.length > 5 ? "..." : ""}`);
+              }
+            }
           }
         }
       } catch (glossaryErr) {
