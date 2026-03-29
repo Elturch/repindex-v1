@@ -1849,6 +1849,59 @@ const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|d
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
 
+// ── Semantic Glossary Lookup (fallback for specialized terms) ──
+interface GlossaryTerm {
+  term: string;
+  definition: string;
+  category: string;
+  related_metrics: string[] | null;
+  repindex_relevance: string | null;
+}
+
+let glossaryCache: { terms: GlossaryTerm[]; fetched_at: number } | null = null;
+const GLOSSARY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function lookupGlossaryTerms(supabase: any, query: string, maxResults = 3): Promise<GlossaryTerm[]> {
+  // Fetch and cache glossary
+  if (!glossaryCache || Date.now() - glossaryCache.fetched_at > GLOSSARY_CACHE_TTL) {
+    const { data, error } = await supabase
+      .from("rix_semantic_glossary")
+      .select("term, aliases, definition, category, related_metrics, repindex_relevance");
+    if (error || !data) {
+      console.warn("[GLOSSARY] Failed to fetch glossary:", error?.message);
+      return [];
+    }
+    glossaryCache = { terms: data, fetched_at: Date.now() };
+  }
+
+  const lower = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const matches: { term: GlossaryTerm; score: number }[] = [];
+
+  for (const entry of glossaryCache.terms) {
+    const termLower = (entry as any).term?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
+    const aliases: string[] = (entry as any).aliases || [];
+    
+    // Check term match
+    if (lower.includes(termLower) && termLower.length >= 3) {
+      matches.push({ term: entry, score: termLower.length }); // longer terms = more specific = higher score
+      continue;
+    }
+    
+    // Check aliases
+    for (const alias of aliases) {
+      const aliasLower = alias.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes(aliasLower) && aliasLower.length >= 3) {
+        matches.push({ term: entry, score: aliasLower.length });
+        break;
+      }
+    }
+  }
+
+  // Sort by specificity (longest match first) and limit
+  matches.sort((a, b) => b.score - a.score);
+  return matches.slice(0, maxResults).map(m => m.term);
+}
+
 async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
   const lower = question.toLowerCase();
   const entities: string[] = [];
@@ -1960,6 +2013,7 @@ Intents y cuándo usarlos:
 - divergence: divergencia entre modelos de IA, consenso, discrepancia, desacoplamiento
 - alert: crisis, escándalo, controversia, riesgo reputacional, señales de riesgo, alerta temprana
 - general_question: solo si ningún otro intent aplica
+Si el usuario usa términos especializados (reputación algorítmica, OPA, compliance, delta reputacional, cuota de voz, etc.), clasifica según el contexto reputacional más cercano.
 
 Skills disponibles:
 - skillGetCompanyRanking: rankings, top, bottom, mejores, peores
@@ -2086,6 +2140,45 @@ async function buildDataPackFromSkills(
           console.log(`${logPrefix} [LEXICON→INTERPRET] Hint '${hint}' → '${hintMap.intent}'`);
           break;
         }
+      }
+    }
+
+    // ── Glossary fallback: when still general_question with low confidence, look up specialized terms ──
+    if (interpret.intent === "general_question" && interpret.confidence < 0.5) {
+      try {
+        const glossaryTerms = await lookupGlossaryTerms(supabase, question);
+        if (glossaryTerms.length > 0) {
+          // Inject glossary context into the enriched question for the LLM
+          const glossaryContext = glossaryTerms.map(t => `[GLOSARIO: "${t.term}" = ${t.definition}${t.related_metrics?.length ? ` (métricas: ${t.related_metrics.join(", ")})` : ""}]`).join(" ");
+          enrichedQuestion = `${enrichedQuestion} ${glossaryContext}`;
+          console.log(`${logPrefix} [GLOSSARY_FALLBACK] Found ${glossaryTerms.length} terms: ${glossaryTerms.map(t=>t.term).join(", ")}`);
+          
+          // Determine intent from glossary category
+          const CATEGORY_TO_INTENT: Record<string, { intent: string; skills: string[] }> = {
+            reputacion_algoritmica: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            optimizacion: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+            comunicacion: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            corporativo: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            financiero: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyEvolution"] },
+            legal: { intent: "alert", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetCompanyRanking"] },
+            institucional: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            digital: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            esg: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+            pericial: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail", "skillGetDivergenceAnalysis"] },
+            roles: { intent: "company_analysis", skills: ["skillGetCompanyScores", "skillGetCompanyDetail"] },
+          };
+          const primaryCategory = glossaryTerms[0].category;
+          const catMap = CATEGORY_TO_INTENT[primaryCategory];
+          if (catMap) {
+            interpret.intent = catMap.intent;
+            interpret.confidence = 0.65;
+            interpret.recommended_skills.length = 0;
+            for (const s of catMap.skills) interpret.recommended_skills.push(s);
+            console.log(`${logPrefix} [GLOSSARY→INTERPRET] Category '${primaryCategory}' → '${catMap.intent}'`);
+          }
+        }
+      } catch (glossaryErr) {
+        console.warn(`${logPrefix} [GLOSSARY_FALLBACK] Error:`, glossaryErr);
       }
     }
 

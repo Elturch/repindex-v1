@@ -2293,6 +2293,42 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_semantic_glossary: {
+        Row: {
+          aliases: string[]
+          category: string
+          created_at: string
+          definition: string
+          id: string
+          related_metrics: string[] | null
+          repindex_relevance: string | null
+          term: string
+          term_en: string | null
+        }
+        Insert: {
+          aliases?: string[]
+          category: string
+          created_at?: string
+          definition: string
+          id?: string
+          related_metrics?: string[] | null
+          repindex_relevance?: string | null
+          term: string
+          term_en?: string | null
+        }
+        Update: {
+          aliases?: string[]
+          category?: string
+          created_at?: string
+          definition?: string
+          id?: string
+          related_metrics?: string[] | null
+          repindex_relevance?: string | null
+          term?: string
+          term_en?: string | null
+        }
+        Relationships: []
+      }
       rix_trends: {
         Row: {
           batch_week: string
