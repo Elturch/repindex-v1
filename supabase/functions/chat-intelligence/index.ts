@@ -1849,7 +1849,60 @@ const DIVERGENCE_PATTERNS_EDGE = /\b(divergencia|consenso|discrepancia|acuerdo|d
 const COMPANY_QUESTION_PATTERNS_EDGE = /\b(c[oó]mo est[aá]|qu[eé] tal|an[aá]lisis|diagn[oó]stico|situaci[oó]n|reputaci[oó]n|score|puntuaci[oó]n|nota)\b/i;
 const ALERT_PATTERNS_EDGE = /\b(crisis|alerta|alertas|riesgo|peligro|problemas?|hundimiento|ca[ií]da|peor(?:es)?|en\s+crisis|riesgo\s+reputacional)\b/i;
 
-async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
+// ── Semantic Glossary Lookup (fallback for specialized terms) ──
+interface GlossaryTerm {
+  term: string;
+  definition: string;
+  category: string;
+  related_metrics: string[] | null;
+  repindex_relevance: string | null;
+}
+
+let glossaryCache: { terms: GlossaryTerm[]; fetched_at: number } | null = null;
+const GLOSSARY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function lookupGlossaryTerms(supabase: any, query: string, maxResults = 3): Promise<GlossaryTerm[]> {
+  // Fetch and cache glossary
+  if (!glossaryCache || Date.now() - glossaryCache.fetched_at > GLOSSARY_CACHE_TTL) {
+    const { data, error } = await supabase
+      .from("rix_semantic_glossary")
+      .select("term, aliases, definition, category, related_metrics, repindex_relevance");
+    if (error || !data) {
+      console.warn("[GLOSSARY] Failed to fetch glossary:", error?.message);
+      return [];
+    }
+    glossaryCache = { terms: data, fetched_at: Date.now() };
+  }
+
+  const lower = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const matches: { term: GlossaryTerm; score: number }[] = [];
+
+  for (const entry of glossaryCache.terms) {
+    const termLower = (entry as any).term?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") || "";
+    const aliases: string[] = (entry as any).aliases || [];
+    
+    // Check term match
+    if (lower.includes(termLower) && termLower.length >= 3) {
+      matches.push({ term: entry, score: termLower.length }); // longer terms = more specific = higher score
+      continue;
+    }
+    
+    // Check aliases
+    for (const alias of aliases) {
+      const aliasLower = alias.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (lower.includes(aliasLower) && aliasLower.length >= 3) {
+        matches.push({ term: entry, score: aliasLower.length });
+        break;
+      }
+    }
+  }
+
+  // Sort by specificity (longest match first) and limit
+  matches.sort((a, b) => b.score - a.score);
+  return matches.slice(0, maxResults).map(m => m.term);
+}
+
+
   const lower = question.toLowerCase();
   const entities: string[] = [];
   const filters: Record<string, string> = {};
