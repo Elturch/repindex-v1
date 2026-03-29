@@ -1902,7 +1902,7 @@ async function lookupGlossaryTerms(supabase: any, query: string, maxResults = 3)
   return matches.slice(0, maxResults).map(m => m.term);
 }
 
-
+async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
   const lower = question.toLowerCase();
   const entities: string[] = [];
   const filters: Record<string, string> = {};
