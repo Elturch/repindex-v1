@@ -2420,7 +2420,12 @@ async function buildDataPackFromSkills(
     // ── Semantic Groups: deterministic canonical group resolution ──
     // This MUST run before sector_category-based skill calls.
     // If a canonical group is resolved, it overrides sector_category with a closed ticker list.
-    const semanticGroup = await resolveSemanticGroup(question, supabaseClient);
+    // PROBLEM 1 FIX: Try BOTH the normalized question AND the original user question
+    let semanticGroup = await resolveSemanticGroup(question, supabaseClient);
+    if (!semanticGroup.canonical_key && originalQuestion && originalQuestion !== question) {
+      console.log(`${logPrefix} [SEMANTIC_GROUPS] No match on normalized question, retrying with originalQuestion: "${originalQuestion}"`);
+      semanticGroup = await resolveSemanticGroup(originalQuestion, supabaseClient);
+    }
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
       resolvedGroupTickerFilter = semanticGroup.issuer_ids;
