@@ -3050,6 +3050,19 @@ async function buildDataPackFromSkills(
       reportContext.weeks_analyzed = 1;
     }
 
+    // PROBLEM 2: Data availability floor — RepIndex data starts 2026-01-01
+    const DATA_AVAILABLE_FROM = "2026-01-01";
+    let dateRangeAdjusted = false;
+    if (reportContext.date_from && String(reportContext.date_from).slice(0, 10) < DATA_AVAILABLE_FROM) {
+      console.log(`${logPrefix} [DATE_FLOOR] date_from ${reportContext.date_from} is before ${DATA_AVAILABLE_FROM}, adjusting`);
+      reportContext.date_from = DATA_AVAILABLE_FROM;
+      dateRangeAdjusted = true;
+    }
+    if (dateRangeAdjusted) {
+      (pack as any).date_range_adjusted = true;
+      (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
+    }
+
     (pack as any).report_context = reportContext;
 
     return pack;
