@@ -1061,7 +1061,75 @@ function normalizeQuery(question: string): { sector_categories: string[]; compan
 }
 
 // =============================================================================
-// SEMANTIC BRIDGE — Hybrid 2-layer synonym resolution
+// SEMANTIC GROUPS — Deterministic canonical group resolution
+// =============================================================================
+
+let cachedSemanticGroups: { data: any[]; fetched_at: number } | null = null;
+const SEMANTIC_GROUPS_TTL = 10 * 60 * 1000; // 10 min cache
+
+async function resolveSemanticGroup(
+  question: string,
+  supabaseClient: any
+): Promise<{ canonical_key: string | null; display_name: string | null; issuer_ids: string[]; exclusions: string[] }> {
+  try {
+    // Fetch and cache groups
+    if (!cachedSemanticGroups || Date.now() - cachedSemanticGroups.fetched_at > SEMANTIC_GROUPS_TTL) {
+      const { data, error } = await supabaseClient
+        .from("rix_semantic_groups")
+        .select("canonical_key, display_name, aliases, issuer_ids, exclusions")
+        .limit(100);
+      if (error || !data) {
+        console.warn(`[SEMANTIC_GROUPS] Failed to fetch: ${error?.message}`);
+        return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
+      }
+      cachedSemanticGroups = { data, fetched_at: Date.now() };
+    }
+
+    const lower = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const matches: { canonical_key: string; display_name: string; issuer_ids: string[]; exclusions: string[]; alias_len: number }[] = [];
+
+    for (const group of cachedSemanticGroups.data) {
+      const aliases: string[] = group.aliases || [];
+      for (const alias of aliases) {
+        const aliasNorm = alias.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        // Word-boundary match (not substring inside another word)
+        const idx = lower.indexOf(aliasNorm);
+        if (idx === -1) continue;
+        const end = idx + aliasNorm.length;
+        const before = idx === 0 || /[\s,;:.!?¿¡()\-\/]/.test(lower[idx - 1]);
+        const after = end >= lower.length || /[\s,;:.!?¿¡()\-\/]/.test(lower[end]);
+        if (before && after) {
+          matches.push({
+            canonical_key: group.canonical_key,
+            display_name: group.display_name,
+            issuer_ids: group.issuer_ids || [],
+            exclusions: group.exclusions || [],
+            alias_len: aliasNorm.length,
+          });
+          break; // One match per group is enough
+        }
+      }
+    }
+
+    if (matches.length === 0) {
+      return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
+    }
+
+    if (matches.length === 1) {
+      console.log(`[SEMANTIC_GROUPS] Resolved: "${matches[0].canonical_key}" (${matches[0].issuer_ids.length} issuers)`);
+      return matches[0];
+    }
+
+    // Multiple matches: pick the longest alias match (most specific)
+    matches.sort((a, b) => b.alias_len - a.alias_len);
+    console.log(`[SEMANTIC_GROUPS] Multiple matches: ${matches.map(m => m.canonical_key).join(", ")} — picking most specific: "${matches[0].canonical_key}"`);
+    return matches[0];
+  } catch (e: any) {
+    console.warn(`[SEMANTIC_GROUPS] Error: ${e.message}`);
+    return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
+  }
+}
+
 // =============================================================================
 
 interface SemanticBridgeResult {
