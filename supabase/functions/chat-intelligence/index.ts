@@ -1086,6 +1086,7 @@ async function resolveSemanticGroup(
     }
 
     const lower = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    console.log(`[SEMANTIC_GROUPS] Matching question: "${lower}"`);
     const matches: { canonical_key: string; display_name: string; issuer_ids: string[]; exclusions: string[]; alias_len: number }[] = [];
 
     for (const group of cachedSemanticGroups.data) {
@@ -1099,6 +1100,7 @@ async function resolveSemanticGroup(
         const before = idx === 0 || /[\s,;:.!?¿¡()\-\/]/.test(lower[idx - 1]);
         const after = end >= lower.length || /[\s,;:.!?¿¡()\-\/]/.test(lower[end]);
         if (before && after) {
+          console.log(`[SEMANTIC_GROUPS] Match found: alias="${alias}" -> group="${group.canonical_key}" (${group.issuer_ids?.length || 0} tickers)`);
           matches.push({
             canonical_key: group.canonical_key,
             display_name: group.display_name,
@@ -1112,6 +1114,7 @@ async function resolveSemanticGroup(
     }
 
     if (matches.length === 0) {
+      console.log(`[SEMANTIC_GROUPS] No match found for question. ${cachedSemanticGroups?.data?.length || 0} groups checked.`);
       return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
     }
 
