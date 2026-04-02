@@ -1065,7 +1065,7 @@ function normalizeQuery(question: string): { sector_categories: string[]; compan
 // =============================================================================
 
 let cachedSemanticGroups: { data: any[]; fetched_at: number } | null = null;
-const SEMANTIC_GROUPS_TTL = 10 * 60 * 1000; // 10 min cache
+const SEMANTIC_GROUPS_TTL = 5 * 60 * 1000; // 5 min cache
 
 async function resolveSemanticGroup(
   question: string,
