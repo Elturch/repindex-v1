@@ -2414,6 +2414,27 @@ async function buildDataPackFromSkills(
       }
     }
 
+    // ── Semantic Groups: deterministic canonical group resolution ──
+    // This MUST run before sector_category-based skill calls.
+    // If a canonical group is resolved, it overrides sector_category with a closed ticker list.
+    const semanticGroup = await resolveSemanticGroup(question, supabaseClient);
+    let resolvedGroupTickerFilter: string[] | null = null;
+    if (semanticGroup.canonical_key) {
+      resolvedGroupTickerFilter = semanticGroup.issuer_ids;
+      // Override intent if it was general_question
+      if (interpret.intent === "general_question" || interpret.intent === "sector_comparison") {
+        interpret.intent = "sector_comparison";
+        interpret.confidence = Math.max(interpret.confidence, 0.85);
+        interpret.recommended_skills = ["skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"];
+      }
+      // Clear sector_category so downstream skills don't also do ILIKE matching
+      delete interpret.filters.sector_category;
+      console.log(`${logPrefix} [SEMANTIC_GROUPS] Resolved group "${semanticGroup.canonical_key}" (${semanticGroup.display_name}) → ${resolvedGroupTickerFilter.length} tickers: ${resolvedGroupTickerFilter.join(",")}`);
+      // Store in pack metadata for downstream
+      (interpret.filters as any)._resolved_group = semanticGroup.canonical_key;
+      (interpret.filters as any)._resolved_group_name = semanticGroup.display_name;
+    }
+
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
@@ -2423,17 +2444,21 @@ async function buildDataPackFromSkills(
       skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
-    // Sector snapshot: when sector detected or ranking intent
+    // Sector snapshot: when sector detected, ranking intent, or canonical group resolved
     const sectorCategory = interpret.filters.sector_category;
-    if (sectorCategory) {
+    if (resolvedGroupTickerFilter) {
+      // Use canonical group tickers — bypass sector_category entirely
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter);
+    } else if (sectorCategory) {
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory);
     }
 
-    // Ranking: IBEX filter, sector filter, or general ranking intent
-    if (interpret.intent === "ranking" || interpret.filters.ibex_family_code) {
+    // Ranking: IBEX filter, sector filter, canonical group, or general ranking intent
+    if (interpret.intent === "ranking" || interpret.filters.ibex_family_code || resolvedGroupTickerFilter) {
       skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
         ibex_family_code: interpret.filters.ibex_family_code,
-        sector_category: sectorCategory,
+        sector_category: resolvedGroupTickerFilter ? undefined : sectorCategory,
+        ticker_filter: resolvedGroupTickerFilter || undefined,
         model_name: interpret.filters.model_name,
       });
     }
