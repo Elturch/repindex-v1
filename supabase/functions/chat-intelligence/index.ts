@@ -107,7 +107,7 @@ async function executeSkillGetCompanyScores(supabase: any, params: { ticker?: st
 }
 
 // ── Inlined skill: Company Ranking ──────────────────────────────────
-async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string }) {
+async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string; ticker_filter?: string[] }) {
   const start = Date.now();
   try {
     const topN = params.top_n ?? 50;
@@ -119,8 +119,8 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       batchDate = sr.data;
     }
     const { gte, lt } = buildDateFilterEdge(batchDate!);
-    let tickerFilter: string[] | null = null;
-    if (params.sector_category || params.ibex_family_code) {
+    let tickerFilter: string[] | null = params.ticker_filter || null;
+    if (!tickerFilter && (params.sector_category || params.ibex_family_code)) {
       let iq = supabase.from("repindex_root_issuers").select("ticker");
       if (params.sector_category) iq = iq.ilike("sector_category", `%${params.sector_category}%`);
       if (params.ibex_family_code) iq = iq.eq("ibex_family_code", params.ibex_family_code);
