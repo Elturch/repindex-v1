@@ -2424,15 +2424,13 @@ async function buildDataPackFromSkills(
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
       resolvedGroupTickerFilter = semanticGroup.issuer_ids;
-      // Override intent if it was general_question
-      if (interpret.intent === "general_question" || interpret.intent === "sector_comparison") {
-        interpret.intent = "sector_comparison";
-        interpret.confidence = Math.max(interpret.confidence, 0.85);
-        interpret.recommended_skills = ["skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"];
-      }
+      // ALWAYS override intent when canonical group is resolved, regardless of LLM classification
+      interpret.intent = "sector_comparison";
+      interpret.confidence = Math.max(interpret.confidence, 0.85);
+      interpret.recommended_skills = ["skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"];
       // Clear sector_category so downstream skills don't also do ILIKE matching
       delete interpret.filters.sector_category;
-      console.log(`${logPrefix} [SEMANTIC_GROUPS] Resolved group "${semanticGroup.canonical_key}" (${semanticGroup.display_name}) → ${resolvedGroupTickerFilter.length} tickers: ${resolvedGroupTickerFilter.join(",")}`);
+      console.log(`${logPrefix} [SEMANTIC_GROUPS] Resolved group "${semanticGroup.canonical_key}" (${semanticGroup.display_name}) -> ${resolvedGroupTickerFilter!.length} tickers: [${resolvedGroupTickerFilter!.join(", ")}]`);
       // Store in pack metadata for downstream
       (interpret.filters as any)._resolved_group = semanticGroup.canonical_key;
       (interpret.filters as any)._resolved_group_name = semanticGroup.display_name;
