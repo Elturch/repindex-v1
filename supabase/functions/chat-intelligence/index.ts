@@ -2652,7 +2652,37 @@ async function buildDataPackFromSkills(
     }
     console.log(`${logPrefix} [SKILLS-v2] Completed: ${Object.keys(resultMap).join(",")} in ${Date.now() - totalStart}ms`);
 
-    // ── Resolve verified competitors ─────────────────────────────
+    // ── Temporal filtering: if user requested a specific date range, filter raw data ──
+    if (temporalRange) {
+      const tFrom = temporalRange.from;
+      const tTo = temporalRange.to;
+      const isInRange = (row: any) => {
+        const periodFrom = String(row["06_period_from"] || row.period_from || row.batch_execution_date || "").slice(0, 10);
+        const periodTo = String(row["07_period_to"] || row.period_to || periodFrom).slice(0, 10);
+        if (!periodFrom) return true; // keep rows without dates
+        return periodTo >= tFrom && periodFrom <= tTo;
+      };
+
+      // Filter companyProfile raw_runs
+      if (resultMap.companyProfile?.raw_runs) {
+        const before = resultMap.companyProfile.raw_runs.length;
+        resultMap.companyProfile.raw_runs = resultMap.companyProfile.raw_runs.filter(isInRange);
+        console.log(`${logPrefix} [TEMPORAL] Filtered companyProfile raw_runs: ${before} -> ${resultMap.companyProfile.raw_runs.length}`);
+      }
+
+      // Filter sectorSnapshot per_model_detail and ranking scores
+      if (resultMap.sectorSnapshot?.per_model_detail) {
+        const before = resultMap.sectorSnapshot.per_model_detail.length;
+        resultMap.sectorSnapshot.per_model_detail = resultMap.sectorSnapshot.per_model_detail.filter(isInRange);
+        console.log(`${logPrefix} [TEMPORAL] Filtered sectorSnapshot per_model_detail: ${before} -> ${resultMap.sectorSnapshot.per_model_detail.length}`);
+      }
+
+      // Filter ranking enrichment data if present
+      if (resultMap.ranking && Array.isArray(resultMap.ranking)) {
+        // ranking rows themselves don't have dates, but enrichment data does
+      }
+    }
+
     let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number | null}> = [];
     let competidoresSinDatos: string[] = [];
     let competidoresNota: string | undefined;
