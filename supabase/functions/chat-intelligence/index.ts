@@ -2281,6 +2281,11 @@ async function buildDataPackFromSkills(
 ): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
   const totalStart = Date.now();
   try {
+    // ── Temporal expression parsing: MUST run on original question BEFORE normalize-query ──
+    const temporalRange = parseTemporalExpression(originalQuestion || question);
+    if (temporalRange) {
+      console.log(`${logPrefix} [TEMPORAL] Using temporal range: ${temporalRange.from} to ${temporalRange.to} (${temporalRange.label})${temporalRange.adjusted ? " [floor adjusted]" : ""}`);
+    }
     // ── Semantic Bridge: enrich question with canonical terms ──────
     const bridge = await semanticBridge(question, companiesCacheLocal);
     const enrichedQuestion = bridge.enriched_question;
