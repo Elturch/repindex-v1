@@ -620,19 +620,32 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
 }
 
 // ── NEW SKILL 2: skillSectorSnapshot — Sector-level consolidated view ─
-async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promise<{ success: boolean; data?: any; error?: string }> {
+async function skillSectorSnapshot(supabase: any, sectorCategory: string, tickerFilterOverride?: string[]): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
-    if (!sectorCategory) return { success: false, error: "sector_category required" };
+    if (!sectorCategory && !tickerFilterOverride) return { success: false, error: "sector_category or ticker_filter required" };
 
-    // 1. Get tickers in sector (including verified_competitors)
-    const { data: issuers, error: ie } = await supabase
-      .from("repindex_root_issuers")
-      .select("ticker, issuer_name, verified_competitors")
-      .ilike("sector_category", `%${sectorCategory}%`)
-      .limit(100);
-    if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
-    if (!issuers || issuers.length === 0) return { success: false, error: `No companies in sector ${sectorCategory}` };
+    let issuers: any[];
+    if (tickerFilterOverride && tickerFilterOverride.length > 0) {
+      // Use canonical group issuer_ids directly — no sector_category lookup
+      const { data: issuerData, error: ie } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker, issuer_name, verified_competitors")
+        .in("ticker", tickerFilterOverride)
+        .limit(100);
+      if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
+      issuers = issuerData || [];
+    } else {
+      // 1. Get tickers in sector (including verified_competitors)
+      const { data: issuerData, error: ie } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker, issuer_name, verified_competitors")
+        .ilike("sector_category", `%${sectorCategory}%`)
+        .limit(100);
+      if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
+      issuers = issuerData || [];
+    }
+    if (issuers.length === 0) return { success: false, error: `No companies for ${tickerFilterOverride ? 'group' : 'sector'} ${sectorCategory || 'override'}` };
 
     const tickers = issuers.map((r: any) => String(r.ticker));
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
