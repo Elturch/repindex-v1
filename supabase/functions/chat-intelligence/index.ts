@@ -2420,7 +2420,12 @@ async function buildDataPackFromSkills(
     // ── Semantic Groups: deterministic canonical group resolution ──
     // This MUST run before sector_category-based skill calls.
     // If a canonical group is resolved, it overrides sector_category with a closed ticker list.
-    const semanticGroup = await resolveSemanticGroup(question, supabaseClient);
+    // PROBLEM 1 FIX: Try BOTH the normalized question AND the original user question
+    let semanticGroup = await resolveSemanticGroup(question, supabaseClient);
+    if (!semanticGroup.canonical_key && originalQuestion && originalQuestion !== question) {
+      console.log(`${logPrefix} [SEMANTIC_GROUPS] No match on normalized question, retrying with originalQuestion: "${originalQuestion}"`);
+      semanticGroup = await resolveSemanticGroup(originalQuestion, supabaseClient);
+    }
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
       resolvedGroupTickerFilter = semanticGroup.issuer_ids;
@@ -3043,6 +3048,19 @@ async function buildDataPackFromSkills(
       reportContext.date_to = (pack as any)._enrichment_date_to;
       reportContext.sample_size = (pack as any)._enrichment_sample_size || 0;
       reportContext.weeks_analyzed = 1;
+    }
+
+    // PROBLEM 2: Data availability floor — RepIndex data starts 2026-01-01
+    const DATA_AVAILABLE_FROM = "2026-01-01";
+    let dateRangeAdjusted = false;
+    if (reportContext.date_from && String(reportContext.date_from).slice(0, 10) < DATA_AVAILABLE_FROM) {
+      console.log(`${logPrefix} [DATE_FLOOR] date_from ${reportContext.date_from} is before ${DATA_AVAILABLE_FROM}, adjusting`);
+      reportContext.date_from = DATA_AVAILABLE_FROM;
+      dateRangeAdjusted = true;
+    }
+    if (dateRangeAdjusted) {
+      (pack as any).date_range_adjusted = true;
+      (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
     }
 
     (pack as any).report_context = reportContext;
