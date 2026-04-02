@@ -2329,6 +2329,39 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_semantic_groups: {
+        Row: {
+          aliases: string[]
+          canonical_key: string
+          created_at: string
+          display_name: string
+          exclusions: string[]
+          id: string
+          issuer_ids: string[]
+          notes: string | null
+        }
+        Insert: {
+          aliases?: string[]
+          canonical_key: string
+          created_at?: string
+          display_name: string
+          exclusions?: string[]
+          id?: string
+          issuer_ids?: string[]
+          notes?: string | null
+        }
+        Update: {
+          aliases?: string[]
+          canonical_key?: string
+          created_at?: string
+          display_name?: string
+          exclusions?: string[]
+          id?: string
+          issuer_ids?: string[]
+          notes?: string | null
+        }
+        Relationships: []
+      }
       rix_trends: {
         Row: {
           batch_week: string
