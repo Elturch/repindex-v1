@@ -3199,17 +3199,31 @@ async function buildDataPackFromSkills(
       reportContext.weeks_analyzed = 1;
     }
 
-    // PROBLEM 2: Data availability floor — RepIndex data starts 2026-01-01
-    const DATA_AVAILABLE_FROM = "2026-01-01";
-    let dateRangeAdjusted = false;
-    if (reportContext.date_from && String(reportContext.date_from).slice(0, 10) < DATA_AVAILABLE_FROM) {
-      console.log(`${logPrefix} [DATE_FLOOR] date_from ${reportContext.date_from} is before ${DATA_AVAILABLE_FROM}, adjusting`);
-      reportContext.date_from = DATA_AVAILABLE_FROM;
-      dateRangeAdjusted = true;
-    }
-    if (dateRangeAdjusted) {
-      (pack as any).date_range_adjusted = true;
-      (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
+    // ── Temporal range override: if user requested a specific period, use it ──
+    if (temporalRange) {
+      reportContext.date_from = temporalRange.from;
+      reportContext.date_to = temporalRange.to;
+      reportContext.temporal_label = temporalRange.label;
+      (pack as any).temporal_range = temporalRange;
+      if (temporalRange.adjusted) {
+        (pack as any).date_range_adjusted = true;
+        (pack as any).date_range_note = `El usuario solicitó datos del "${temporalRange.label}", pero los datos completos de RepIndex están disponibles desde el 1 de enero de 2026. Se muestran los datos disponibles desde esa fecha.`;
+      } else {
+        (pack as any).date_range_note = `Datos filtrados para el período solicitado: ${temporalRange.label} (${temporalRange.from} a ${temporalRange.to}).`;
+      }
+      console.log(`${logPrefix} [TEMPORAL] report_context dates set to ${temporalRange.from} - ${temporalRange.to}`);
+    } else {
+      // Data availability floor (only when no explicit temporal range)
+      let dateRangeAdjusted = false;
+      if (reportContext.date_from && String(reportContext.date_from).slice(0, 10) < DATA_AVAILABLE_FROM) {
+        console.log(`${logPrefix} [DATE_FLOOR] date_from ${reportContext.date_from} is before ${DATA_AVAILABLE_FROM}, adjusting`);
+        reportContext.date_from = DATA_AVAILABLE_FROM;
+        dateRangeAdjusted = true;
+      }
+      if (dateRangeAdjusted) {
+        (pack as any).date_range_adjusted = true;
+        (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
+      }
     }
 
     (pack as any).report_context = reportContext;
