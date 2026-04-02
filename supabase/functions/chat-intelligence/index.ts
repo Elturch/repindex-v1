@@ -56,6 +56,120 @@ async function getLatestValidSundayEdge(supabase: any): Promise<{ success: boole
   }
 }
 
+// ── Temporal expression parser ──────────────────────────────────────
+const DATA_AVAILABLE_FROM = "2026-01-01";
+
+interface TemporalRange {
+  from: string; // YYYY-MM-DD
+  to: string;   // YYYY-MM-DD
+  label: string; // human-readable description
+  adjusted: boolean; // true if floor was applied
+}
+
+function parseTemporalExpression(question: string): TemporalRange | null {
+  if (!question) return null;
+  const q = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+
+  const MONTH_MAP: Record<string, number> = {
+    enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+    julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12,
+  };
+
+  let from: string | null = null;
+  let to: string | null = null;
+  let label = "";
+
+  // ── Trimestres ──
+  const trimestreMatch = q.match(/\b(primer|segundo|tercer|cuarto|1er|2do|3er|4to|q1|q2|q3|q4)\s*trimestre(?:\s+(?:de\s+)?(\d{4}))?/);
+  if (trimestreMatch) {
+    const ordMap: Record<string, number> = { primer: 1, "1er": 1, q1: 1, segundo: 2, "2do": 2, q2: 2, tercer: 3, "3er": 3, q3: 3, cuarto: 4, "4to": 4, q4: 4 };
+    const trimNum = ordMap[trimestreMatch[1]] || 1;
+    const year = trimestreMatch[2] ? parseInt(trimestreMatch[2]) : currentYear;
+    const startMonth = (trimNum - 1) * 3 + 1;
+    const endMonth = startMonth + 2;
+    const lastDay = new Date(year, endMonth, 0).getDate();
+    from = `${year}-${String(startMonth).padStart(2, "0")}-01`;
+    to = `${year}-${String(endMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    label = `${trimestreMatch[1]} trimestre de ${year}`;
+  }
+
+  // ── Semestres ──
+  if (!from) {
+    const semestreMatch = q.match(/\b(primer|segundo|1er|2do)\s*semestre(?:\s+(?:de\s+)?(\d{4}))?/);
+    if (semestreMatch) {
+      const year = semestreMatch[2] ? parseInt(semestreMatch[2]) : currentYear;
+      if (semestreMatch[1] === "primer" || semestreMatch[1] === "1er") {
+        from = `${year}-01-01`; to = `${year}-06-30`;
+        label = `primer semestre de ${year}`;
+      } else {
+        from = `${year}-07-01`; to = `${year}-12-31`;
+        label = `segundo semestre de ${year}`;
+      }
+    }
+  }
+
+  // ── Months: "enero 2026", "en enero", "mes de marzo" ──
+  if (!from) {
+    const monthMatch = q.match(/\b(?:en\s+|mes\s+de\s+)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)(?:\s+(?:de\s+)?(\d{4}))?/);
+    if (monthMatch) {
+      const monthNum = MONTH_MAP[monthMatch[1]];
+      const year = monthMatch[2] ? parseInt(monthMatch[2]) : currentYear;
+      const lastDay = new Date(year, monthNum, 0).getDate();
+      from = `${year}-${String(monthNum).padStart(2, "0")}-01`;
+      to = `${year}-${String(monthNum).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      label = `${monthMatch[1]} de ${year}`;
+    }
+  }
+
+  // ── Relative: "últimos N meses" / "últimas N semanas" ──
+  if (!from) {
+    const relMatch = q.match(/ultim[oa]s?\s+(\d+)\s+(meses?|semanas?)/);
+    if (relMatch) {
+      const n = parseInt(relMatch[1]);
+      const unit = relMatch[2];
+      const end = new Date(now);
+      const start = new Date(now);
+      if (unit.startsWith("mes")) {
+        start.setUTCMonth(start.getUTCMonth() - n);
+      } else {
+        start.setUTCDate(start.getUTCDate() - n * 7);
+      }
+      from = start.toISOString().split("T")[0];
+      to = end.toISOString().split("T")[0];
+      label = `últimos ${n} ${unit}`;
+    }
+  }
+
+  // ── Full year: "2025", "en 2025", "año 2025" ──
+  if (!from) {
+    const yearMatch = q.match(/\b(?:en\s+|ano\s+)?(\d{4})\b/);
+    if (yearMatch) {
+      const year = parseInt(yearMatch[1]);
+      if (year >= 2024 && year <= 2030) {
+        from = `${year}-01-01`; to = `${year}-12-31`;
+        label = `año ${year}`;
+      }
+    }
+  }
+
+  if (!from || !to) return null;
+
+  // Apply data availability floor
+  let adjusted = false;
+  if (from < DATA_AVAILABLE_FROM) {
+    from = DATA_AVAILABLE_FROM;
+    adjusted = true;
+  }
+
+  // If from > to after adjustment, no valid range
+  if (from > to) return null;
+
+  console.log(`[TEMPORAL] Parsed temporal expression: ${JSON.stringify({ from, to, label, adjusted })} from question: "${question}"`);
+  return { from, to, label, adjusted };
+}
+
 function buildDateFilterEdge(dateStr: string) {
   const d = new Date(dateStr + "T00:00:00Z");
   const next = new Date(d);
@@ -2167,6 +2281,11 @@ async function buildDataPackFromSkills(
 ): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
   const totalStart = Date.now();
   try {
+    // ── Temporal expression parsing: MUST run on original question BEFORE normalize-query ──
+    const temporalRange = parseTemporalExpression(originalQuestion || question);
+    if (temporalRange) {
+      console.log(`${logPrefix} [TEMPORAL] Using temporal range: ${temporalRange.from} to ${temporalRange.to} (${temporalRange.label})${temporalRange.adjusted ? " [floor adjusted]" : ""}`);
+    }
     // ── Semantic Bridge: enrich question with canonical terms ──────
     const bridge = await semanticBridge(question, companiesCacheLocal);
     const enrichedQuestion = bridge.enriched_question;
@@ -2533,7 +2652,37 @@ async function buildDataPackFromSkills(
     }
     console.log(`${logPrefix} [SKILLS-v2] Completed: ${Object.keys(resultMap).join(",")} in ${Date.now() - totalStart}ms`);
 
-    // ── Resolve verified competitors ─────────────────────────────
+    // ── Temporal filtering: if user requested a specific date range, filter raw data ──
+    if (temporalRange) {
+      const tFrom = temporalRange.from;
+      const tTo = temporalRange.to;
+      const isInRange = (row: any) => {
+        const periodFrom = String(row["06_period_from"] || row.period_from || row.batch_execution_date || "").slice(0, 10);
+        const periodTo = String(row["07_period_to"] || row.period_to || periodFrom).slice(0, 10);
+        if (!periodFrom) return true; // keep rows without dates
+        return periodTo >= tFrom && periodFrom <= tTo;
+      };
+
+      // Filter companyProfile raw_runs
+      if (resultMap.companyProfile?.raw_runs) {
+        const before = resultMap.companyProfile.raw_runs.length;
+        resultMap.companyProfile.raw_runs = resultMap.companyProfile.raw_runs.filter(isInRange);
+        console.log(`${logPrefix} [TEMPORAL] Filtered companyProfile raw_runs: ${before} -> ${resultMap.companyProfile.raw_runs.length}`);
+      }
+
+      // Filter sectorSnapshot per_model_detail and ranking scores
+      if (resultMap.sectorSnapshot?.per_model_detail) {
+        const before = resultMap.sectorSnapshot.per_model_detail.length;
+        resultMap.sectorSnapshot.per_model_detail = resultMap.sectorSnapshot.per_model_detail.filter(isInRange);
+        console.log(`${logPrefix} [TEMPORAL] Filtered sectorSnapshot per_model_detail: ${before} -> ${resultMap.sectorSnapshot.per_model_detail.length}`);
+      }
+
+      // Filter ranking enrichment data if present
+      if (resultMap.ranking && Array.isArray(resultMap.ranking)) {
+        // ranking rows themselves don't have dates, but enrichment data does
+      }
+    }
+
     let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number | null}> = [];
     let competidoresSinDatos: string[] = [];
     let competidoresNota: string | undefined;
@@ -3050,17 +3199,31 @@ async function buildDataPackFromSkills(
       reportContext.weeks_analyzed = 1;
     }
 
-    // PROBLEM 2: Data availability floor — RepIndex data starts 2026-01-01
-    const DATA_AVAILABLE_FROM = "2026-01-01";
-    let dateRangeAdjusted = false;
-    if (reportContext.date_from && String(reportContext.date_from).slice(0, 10) < DATA_AVAILABLE_FROM) {
-      console.log(`${logPrefix} [DATE_FLOOR] date_from ${reportContext.date_from} is before ${DATA_AVAILABLE_FROM}, adjusting`);
-      reportContext.date_from = DATA_AVAILABLE_FROM;
-      dateRangeAdjusted = true;
-    }
-    if (dateRangeAdjusted) {
-      (pack as any).date_range_adjusted = true;
-      (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
+    // ── Temporal range override: if user requested a specific period, use it ──
+    if (temporalRange) {
+      reportContext.date_from = temporalRange.from;
+      reportContext.date_to = temporalRange.to;
+      reportContext.temporal_label = temporalRange.label;
+      (pack as any).temporal_range = temporalRange;
+      if (temporalRange.adjusted) {
+        (pack as any).date_range_adjusted = true;
+        (pack as any).date_range_note = `El usuario solicitó datos del "${temporalRange.label}", pero los datos completos de RepIndex están disponibles desde el 1 de enero de 2026. Se muestran los datos disponibles desde esa fecha.`;
+      } else {
+        (pack as any).date_range_note = `Datos filtrados para el período solicitado: ${temporalRange.label} (${temporalRange.from} a ${temporalRange.to}).`;
+      }
+      console.log(`${logPrefix} [TEMPORAL] report_context dates set to ${temporalRange.from} - ${temporalRange.to}`);
+    } else {
+      // Data availability floor (only when no explicit temporal range)
+      let dateRangeAdjusted = false;
+      if (reportContext.date_from && String(reportContext.date_from).slice(0, 10) < DATA_AVAILABLE_FROM) {
+        console.log(`${logPrefix} [DATE_FLOOR] date_from ${reportContext.date_from} is before ${DATA_AVAILABLE_FROM}, adjusting`);
+        reportContext.date_from = DATA_AVAILABLE_FROM;
+        dateRangeAdjusted = true;
+      }
+      if (dateRangeAdjusted) {
+        (pack as any).date_range_adjusted = true;
+        (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
+      }
     }
 
     (pack as any).report_context = reportContext;
