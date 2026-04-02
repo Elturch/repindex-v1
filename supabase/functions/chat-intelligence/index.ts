@@ -107,7 +107,7 @@ async function executeSkillGetCompanyScores(supabase: any, params: { ticker?: st
 }
 
 // ── Inlined skill: Company Ranking ──────────────────────────────────
-async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string }) {
+async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string; ticker_filter?: string[] }) {
   const start = Date.now();
   try {
     const topN = params.top_n ?? 50;
@@ -119,8 +119,8 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       batchDate = sr.data;
     }
     const { gte, lt } = buildDateFilterEdge(batchDate!);
-    let tickerFilter: string[] | null = null;
-    if (params.sector_category || params.ibex_family_code) {
+    let tickerFilter: string[] | null = params.ticker_filter || null;
+    if (!tickerFilter && (params.sector_category || params.ibex_family_code)) {
       let iq = supabase.from("repindex_root_issuers").select("ticker");
       if (params.sector_category) iq = iq.ilike("sector_category", `%${params.sector_category}%`);
       if (params.ibex_family_code) iq = iq.eq("ibex_family_code", params.ibex_family_code);
@@ -620,19 +620,32 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
 }
 
 // ── NEW SKILL 2: skillSectorSnapshot — Sector-level consolidated view ─
-async function skillSectorSnapshot(supabase: any, sectorCategory: string): Promise<{ success: boolean; data?: any; error?: string }> {
+async function skillSectorSnapshot(supabase: any, sectorCategory: string, tickerFilterOverride?: string[]): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
-    if (!sectorCategory) return { success: false, error: "sector_category required" };
+    if (!sectorCategory && !tickerFilterOverride) return { success: false, error: "sector_category or ticker_filter required" };
 
-    // 1. Get tickers in sector (including verified_competitors)
-    const { data: issuers, error: ie } = await supabase
-      .from("repindex_root_issuers")
-      .select("ticker, issuer_name, verified_competitors")
-      .ilike("sector_category", `%${sectorCategory}%`)
-      .limit(100);
-    if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
-    if (!issuers || issuers.length === 0) return { success: false, error: `No companies in sector ${sectorCategory}` };
+    let issuers: any[];
+    if (tickerFilterOverride && tickerFilterOverride.length > 0) {
+      // Use canonical group issuer_ids directly — no sector_category lookup
+      const { data: issuerData, error: ie } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker, issuer_name, verified_competitors")
+        .in("ticker", tickerFilterOverride)
+        .limit(100);
+      if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
+      issuers = issuerData || [];
+    } else {
+      // 1. Get tickers in sector (including verified_competitors)
+      const { data: issuerData, error: ie } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker, issuer_name, verified_competitors")
+        .ilike("sector_category", `%${sectorCategory}%`)
+        .limit(100);
+      if (ie) return { success: false, error: `Issuer query failed: ${ie.message}` };
+      issuers = issuerData || [];
+    }
+    if (issuers.length === 0) return { success: false, error: `No companies for ${tickerFilterOverride ? 'group' : 'sector'} ${sectorCategory || 'override'}` };
 
     const tickers = issuers.map((r: any) => String(r.ticker));
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
@@ -1048,7 +1061,75 @@ function normalizeQuery(question: string): { sector_categories: string[]; compan
 }
 
 // =============================================================================
-// SEMANTIC BRIDGE — Hybrid 2-layer synonym resolution
+// SEMANTIC GROUPS — Deterministic canonical group resolution
+// =============================================================================
+
+let cachedSemanticGroups: { data: any[]; fetched_at: number } | null = null;
+const SEMANTIC_GROUPS_TTL = 10 * 60 * 1000; // 10 min cache
+
+async function resolveSemanticGroup(
+  question: string,
+  supabaseClient: any
+): Promise<{ canonical_key: string | null; display_name: string | null; issuer_ids: string[]; exclusions: string[] }> {
+  try {
+    // Fetch and cache groups
+    if (!cachedSemanticGroups || Date.now() - cachedSemanticGroups.fetched_at > SEMANTIC_GROUPS_TTL) {
+      const { data, error } = await supabaseClient
+        .from("rix_semantic_groups")
+        .select("canonical_key, display_name, aliases, issuer_ids, exclusions")
+        .limit(100);
+      if (error || !data) {
+        console.warn(`[SEMANTIC_GROUPS] Failed to fetch: ${error?.message}`);
+        return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
+      }
+      cachedSemanticGroups = { data, fetched_at: Date.now() };
+    }
+
+    const lower = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const matches: { canonical_key: string; display_name: string; issuer_ids: string[]; exclusions: string[]; alias_len: number }[] = [];
+
+    for (const group of cachedSemanticGroups.data) {
+      const aliases: string[] = group.aliases || [];
+      for (const alias of aliases) {
+        const aliasNorm = alias.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        // Word-boundary match (not substring inside another word)
+        const idx = lower.indexOf(aliasNorm);
+        if (idx === -1) continue;
+        const end = idx + aliasNorm.length;
+        const before = idx === 0 || /[\s,;:.!?¿¡()\-\/]/.test(lower[idx - 1]);
+        const after = end >= lower.length || /[\s,;:.!?¿¡()\-\/]/.test(lower[end]);
+        if (before && after) {
+          matches.push({
+            canonical_key: group.canonical_key,
+            display_name: group.display_name,
+            issuer_ids: group.issuer_ids || [],
+            exclusions: group.exclusions || [],
+            alias_len: aliasNorm.length,
+          });
+          break; // One match per group is enough
+        }
+      }
+    }
+
+    if (matches.length === 0) {
+      return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
+    }
+
+    if (matches.length === 1) {
+      console.log(`[SEMANTIC_GROUPS] Resolved: "${matches[0].canonical_key}" (${matches[0].issuer_ids.length} issuers)`);
+      return matches[0];
+    }
+
+    // Multiple matches: pick the longest alias match (most specific)
+    matches.sort((a, b) => b.alias_len - a.alias_len);
+    console.log(`[SEMANTIC_GROUPS] Multiple matches: ${matches.map(m => m.canonical_key).join(", ")} — picking most specific: "${matches[0].canonical_key}"`);
+    return matches[0];
+  } catch (e: any) {
+    console.warn(`[SEMANTIC_GROUPS] Error: ${e.message}`);
+    return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
+  }
+}
+
 // =============================================================================
 
 interface SemanticBridgeResult {
@@ -2333,6 +2414,27 @@ async function buildDataPackFromSkills(
       }
     }
 
+    // ── Semantic Groups: deterministic canonical group resolution ──
+    // This MUST run before sector_category-based skill calls.
+    // If a canonical group is resolved, it overrides sector_category with a closed ticker list.
+    const semanticGroup = await resolveSemanticGroup(question, supabaseClient);
+    let resolvedGroupTickerFilter: string[] | null = null;
+    if (semanticGroup.canonical_key) {
+      resolvedGroupTickerFilter = semanticGroup.issuer_ids;
+      // Override intent if it was general_question
+      if (interpret.intent === "general_question" || interpret.intent === "sector_comparison") {
+        interpret.intent = "sector_comparison";
+        interpret.confidence = Math.max(interpret.confidence, 0.85);
+        interpret.recommended_skills = ["skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"];
+      }
+      // Clear sector_category so downstream skills don't also do ILIKE matching
+      delete interpret.filters.sector_category;
+      console.log(`${logPrefix} [SEMANTIC_GROUPS] Resolved group "${semanticGroup.canonical_key}" (${semanticGroup.display_name}) → ${resolvedGroupTickerFilter.length} tickers: ${resolvedGroupTickerFilter.join(",")}`);
+      // Store in pack metadata for downstream
+      (interpret.filters as any)._resolved_group = semanticGroup.canonical_key;
+      (interpret.filters as any)._resolved_group_name = semanticGroup.display_name;
+    }
+
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
@@ -2342,17 +2444,21 @@ async function buildDataPackFromSkills(
       skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
-    // Sector snapshot: when sector detected or ranking intent
+    // Sector snapshot: when sector detected, ranking intent, or canonical group resolved
     const sectorCategory = interpret.filters.sector_category;
-    if (sectorCategory) {
+    if (resolvedGroupTickerFilter) {
+      // Use canonical group tickers — bypass sector_category entirely
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter);
+    } else if (sectorCategory) {
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory);
     }
 
-    // Ranking: IBEX filter, sector filter, or general ranking intent
-    if (interpret.intent === "ranking" || interpret.filters.ibex_family_code) {
+    // Ranking: IBEX filter, sector filter, canonical group, or general ranking intent
+    if (interpret.intent === "ranking" || interpret.filters.ibex_family_code || resolvedGroupTickerFilter) {
       skillCalls.ranking = executeSkillGetCompanyRanking(supabaseClient, {
         ibex_family_code: interpret.filters.ibex_family_code,
-        sector_category: sectorCategory,
+        sector_category: resolvedGroupTickerFilter ? undefined : sectorCategory,
+        ticker_filter: resolvedGroupTickerFilter || undefined,
         model_name: interpret.filters.model_name,
       });
     }
