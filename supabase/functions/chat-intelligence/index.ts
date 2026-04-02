@@ -1065,7 +1065,7 @@ function normalizeQuery(question: string): { sector_categories: string[]; compan
 // =============================================================================
 
 let cachedSemanticGroups: { data: any[]; fetched_at: number } | null = null;
-const SEMANTIC_GROUPS_TTL = 10 * 60 * 1000; // 10 min cache
+const SEMANTIC_GROUPS_TTL = 5 * 60 * 1000; // 5 min cache
 
 async function resolveSemanticGroup(
   question: string,
@@ -1086,6 +1086,7 @@ async function resolveSemanticGroup(
     }
 
     const lower = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    console.log(`[SEMANTIC_GROUPS] Matching question: "${lower}"`);
     const matches: { canonical_key: string; display_name: string; issuer_ids: string[]; exclusions: string[]; alias_len: number }[] = [];
 
     for (const group of cachedSemanticGroups.data) {
@@ -1099,6 +1100,7 @@ async function resolveSemanticGroup(
         const before = idx === 0 || /[\s,;:.!?¿¡()\-\/]/.test(lower[idx - 1]);
         const after = end >= lower.length || /[\s,;:.!?¿¡()\-\/]/.test(lower[end]);
         if (before && after) {
+          console.log(`[SEMANTIC_GROUPS] Match found: alias="${alias}" -> group="${group.canonical_key}" (${group.issuer_ids?.length || 0} tickers)`);
           matches.push({
             canonical_key: group.canonical_key,
             display_name: group.display_name,
@@ -1112,6 +1114,7 @@ async function resolveSemanticGroup(
     }
 
     if (matches.length === 0) {
+      console.log(`[SEMANTIC_GROUPS] No match found for question. ${cachedSemanticGroups?.data?.length || 0} groups checked.`);
       return { canonical_key: null, display_name: null, issuer_ids: [], exclusions: [] };
     }
 
@@ -2421,15 +2424,13 @@ async function buildDataPackFromSkills(
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
       resolvedGroupTickerFilter = semanticGroup.issuer_ids;
-      // Override intent if it was general_question
-      if (interpret.intent === "general_question" || interpret.intent === "sector_comparison") {
-        interpret.intent = "sector_comparison";
-        interpret.confidence = Math.max(interpret.confidence, 0.85);
-        interpret.recommended_skills = ["skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"];
-      }
+      // ALWAYS override intent when canonical group is resolved, regardless of LLM classification
+      interpret.intent = "sector_comparison";
+      interpret.confidence = Math.max(interpret.confidence, 0.85);
+      interpret.recommended_skills = ["skillGetSectorComparison", "skillGetCompanyRanking", "skillGetCompanyEvolution"];
       // Clear sector_category so downstream skills don't also do ILIKE matching
       delete interpret.filters.sector_category;
-      console.log(`${logPrefix} [SEMANTIC_GROUPS] Resolved group "${semanticGroup.canonical_key}" (${semanticGroup.display_name}) → ${resolvedGroupTickerFilter.length} tickers: ${resolvedGroupTickerFilter.join(",")}`);
+      console.log(`${logPrefix} [SEMANTIC_GROUPS] Resolved group "${semanticGroup.canonical_key}" (${semanticGroup.display_name}) -> ${resolvedGroupTickerFilter!.length} tickers: [${resolvedGroupTickerFilter!.join(", ")}]`);
       // Store in pack metadata for downstream
       (interpret.filters as any)._resolved_group = semanticGroup.canonical_key;
       (interpret.filters as any)._resolved_group_name = semanticGroup.display_name;
