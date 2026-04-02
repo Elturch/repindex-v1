@@ -10272,15 +10272,19 @@ async function handleStandardChat(
           const divergenceLevelMethod =
             divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
           const modelsUsedMethod = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
-          const periodFromMethod = allRixData
+          const periodFromRaw = allRixData
             ?.map((r) => r["06_period_from"])
             .filter(Boolean)
             .sort()[0];
-          const periodToMethod = allRixData
+          const periodToRaw = allRixData
             ?.map((r) => r["07_period_to"])
             .filter(Boolean)
             .sort()
             .reverse()[0];
+          // If temporal range was requested, use it for methodology instead of raw data dates
+          const temporalOverride = (dataPack as any)?.temporal_range;
+          const periodFromMethod = temporalOverride?.from || (dataPack as any)?.report_context?.date_from || periodFromRaw;
+          const periodToMethod = temporalOverride?.to || (dataPack as any)?.report_context?.date_to || periodToRaw;
           const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
           const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
 
