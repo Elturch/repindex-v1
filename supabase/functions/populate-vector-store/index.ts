@@ -9,9 +9,9 @@ const corsHeaders = {
 
 // Configuration
 const MAX_RAW_RESPONSE_LENGTH = 8000;
-const BATCH_SIZE = 100; // Documents per execution
-const MAX_EXECUTION_TIME = 45000; // 45 seconds (safe margin before timeout)
-const NEWS_BATCH_SIZE = 50; // News articles per execution
+const BATCH_SIZE = 20; // Documents per execution (reduced to avoid WORKER_LIMIT)
+const MAX_EXECUTION_TIME = 30000; // 30 seconds (conservative margin)
+const NEWS_BATCH_SIZE = 15; // News articles per execution (reduced to avoid WORKER_LIMIT)
 
 // New models added in the 6 IA system (January 2026)
 const NEW_MODELS = ['Grok', 'Qwen'];
@@ -171,7 +171,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       }
 
       let v1Offset = 0;
-      const v1BatchSize = 500;
+      const v1BatchSize = 200;
       let v1Scanned = 0;
 
       while (v1PendingEstimate > 0 && rixBatchToProcess.length < BATCH_SIZE) {
@@ -236,7 +236,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       }
 
       let v2Offset = 0;
-      const v2BatchSize = 500;
+      const v2BatchSize = 200;
       let v2Scanned = 0;
 
       while (v2PendingEstimate > 0 && rixBatchToProcess.length < BATCH_SIZE) {
@@ -569,7 +569,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
           }
 
           // Small delay to avoid rate limits
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 200));
           
         } catch (docError) {
           console.error(`Error processing run ${run.id}:`, docError);
@@ -593,7 +593,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       const newsBatchToProcess: any[] = [];
       let pendingNewsFound = 0;
       let newsOffset = 0;
-      const newsScanBatchSize = 500;
+      const newsScanBatchSize = 200;
 
       while (newsBatchToProcess.length < NEWS_BATCH_SIZE) {
         const { data: newsData, error: newsError } = await supabaseClient
