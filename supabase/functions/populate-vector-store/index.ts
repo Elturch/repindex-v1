@@ -9,9 +9,9 @@ const corsHeaders = {
 
 // Configuration
 const MAX_RAW_RESPONSE_LENGTH = 8000;
-const BATCH_SIZE = 100; // Documents per execution
-const MAX_EXECUTION_TIME = 45000; // 45 seconds (safe margin before timeout)
-const NEWS_BATCH_SIZE = 50; // News articles per execution
+const BATCH_SIZE = 20; // Documents per execution (reduced to avoid WORKER_LIMIT)
+const MAX_EXECUTION_TIME = 30000; // 30 seconds (conservative margin)
+const NEWS_BATCH_SIZE = 15; // News articles per execution (reduced to avoid WORKER_LIMIT)
 
 // New models added in the 6 IA system (January 2026)
 const NEW_MODELS = ['Grok', 'Qwen'];
