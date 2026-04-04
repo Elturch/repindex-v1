@@ -569,7 +569,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
           }
 
           // Small delay to avoid rate limits
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 200));
           
         } catch (docError) {
           console.error(`Error processing run ${run.id}:`, docError);
