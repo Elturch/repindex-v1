@@ -593,7 +593,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       const newsBatchToProcess: any[] = [];
       let pendingNewsFound = 0;
       let newsOffset = 0;
-      const newsScanBatchSize = 500;
+      const newsScanBatchSize = 200;
 
       while (newsBatchToProcess.length < NEWS_BATCH_SIZE) {
         const { data: newsData, error: newsError } = await supabaseClient
