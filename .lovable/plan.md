@@ -1,79 +1,65 @@
 
 
-## Plan: Poblar rix_semantic_glossary con el Diccionario Semántico completo
+## Plan revisado: Arreglar WORKER_LIMIT sin acotar datos
 
-### Alcance
+### Por qué tu preocupación es correcta
 
-El documento contiene ~350+ entradas distribuidas en 9 secciones + 2 apéndices + diccionario corporativo (~108 términos). Todo debe insertarse en `rix_semantic_glossary` con categorías que permitan al `lookupGlossaryTerms` resolver cualquier consulta conversacional.
+El plan anterior proponía:
+- Reducir `MAX_RAW_RESPONSE_LENGTH` de 8000 a 4000 → **PELIGROSO**: las respuestas brutas de las 6 IAs se truncarían, perdiendo contexto semántico para los embeddings
+- Seleccionar solo columnas específicas en vez de `SELECT *` → **PELIGROSO**: si mañana se añade un campo nuevo que se use en el content builder, no se incluiría y habría datos fantasma
 
-### Estructura de categorías
+Eso ya os causó problemas antes. **No se toca el contenido**.
 
-| Categoría | Sección del doc | Ejemplo |
+### Causa raíz real
+
+El CPU se agota por dos motivos:
+1. **Escanear 500 filas por página** para buscar cuáles NO están indexadas (comparando IDs)
+2. **Procesar 100 documentos** por invocación (cada uno requiere llamada a OpenAI + insert)
+
+Pero las llamadas a OpenAI son I/O (no consumen CPU de Supabase). El CPU se gasta en:
+- Deserializar 500 filas con `SELECT *` (lectura)
+- Concatenar strings grandes para construir `content`
+- Serializar JSON para metadata
+
+### Solución conservadora (sin tocar contenido)
+
+**Archivo**: `supabase/functions/populate-vector-store/index.ts`
+
+**Cambio 1 — Reducir solo los tamaños de lote de procesamiento**
+
+| Constante | Antes | Después | Motivo |
+|---|---|---|---|
+| `BATCH_SIZE` | 100 | **20** | Procesar 20 docs por invocación en vez de 100 |
+| `NEWS_BATCH_SIZE` | 50 | **15** | Idem para noticias |
+| `MAX_EXECUTION_TIME` | 45000 | **30000** | Margen más conservador |
+
+**NO se toca**: `MAX_RAW_RESPONSE_LENGTH` (sigue en 8000), ni `SELECT *` (sigue trayendo todas las columnas).
+
+**Cambio 2 — Reducir las páginas de escaneo**
+
+| Línea | Antes | Después |
 |---|---|---|
-| `agrupacion` | §1 Agrupaciones conceptuales | "grupos hospitalarios" → lista de issuer_ids |
-| `marca_matriz` | §2 Marcas → empresa | "Zara" → Inditex (ITX) |
-| `nombre_historico` | §3 Nombres anteriores | "Cepsa" → Moeve |
-| `acronimo` | §4 Acrónimos | "SOCIMI" → inmobiliarias |
-| `sector_coloquial` | §5 Términos sectoriales | "farma" → issuers específicos |
-| `filtro` | §6 Filtros conceptuales | "cotizadas" → cotiza_en_bolsa=true |
-| `persona_empresa` | §7 Personas → empresa | "Amancio Ortega" → ITX |
-| `propiedad` | §8 Relaciones propiedad | "Quirónsalud" → Fresenius |
-| `no_disponible` | Apéndice B | "Abengoa" → en liquidación |
-| `reputacion_algoritmica` | Diccionario corp. | "Brecha narrativa" |
-| `optimizacion` | Diccionario corp. | "GEO" |
-| `comunicacion` | Diccionario corp. | "Portavoz" |
-| `corporativo` | Diccionario corp. | "OPA", "M&A" |
-| `financiero` | Diccionario corp. | "Profit warning" |
-| `legal` | Diccionario corp. | "Litigio" |
-| `institucional` | Diccionario corp. | "Lobby" |
-| `digital` | Diccionario corp. | "Fake news" |
-| `esg` | Diccionario corp. | "Huella de carbono" |
-| `pericial` | Diccionario corp. | "Informe pericial" |
-| `roles` | Diccionario corp. | "CEO", "CFO" |
+| 174 (`v1BatchSize`) | 500 | **200** |
+| 239 (`v2BatchSize`) | 500 | **200** |
+| 596 (`newsScanBatchSize`) | 500 | **200** |
 
-### Implementación
+Esto reduce la carga de deserialización en cada página sin perder datos — simplemente escanea en páginas más pequeñas.
 
-**Paso 1 — Script de inserción masiva** (usando `psql` vía `code--exec`)
+**Cambio 3 — Delay entre documentos**
 
-Generar un script SQL con ~350 INSERT statements. Cada entrada tendrá:
-- `term`: término principal (ej. "grupos hospitalarios")
-- `term_en`: equivalente en inglés si aplica
-- `aliases`: array de sinónimos (ej. `{"hospitales privados","sanidad privada","cadenas hospitalarias"}`)
-- `definition`: definición + issuer_ids/tickers relevantes para que el LLM los use
-- `category`: una de las categorías de arriba
-- `repindex_relevance`: cómo conecta con RepIndex (para agrupaciones: los issuer_ids; para personas: la empresa)
-- `related_metrics`: métricas RIX relacionadas si aplica
+Línea 572: cambiar el delay de `100ms` a `200ms` para dar más margen al runtime de Deno y evitar picos de CPU.
 
-**Paso 2 — Ampliar categorías en CATEGORY_TO_INTENT**
+### Qué NO se cambia (garantía de integridad)
 
-En `chat-intelligence/index.ts` (línea 2157), añadir las nuevas categorías al mapeo:
-```
-agrupacion → ranking (para buscar varias empresas)
-marca_matriz → company_analysis
-nombre_historico → company_analysis
-persona_empresa → company_analysis
-sector_coloquial → sector_comparison
-filtro → ranking
-propiedad → company_analysis
-no_disponible → general_question (respuesta explicativa)
-```
+- `MAX_RAW_RESPONSE_LENGTH` → sigue en 8000 (respuestas completas de las 6 IAs)
+- `SELECT *` → sigue trayendo TODAS las columnas (sin riesgo de campos faltantes)
+- La lógica de construcción de `content` → idéntica, sin truncamientos
+- La lógica de `metadata` → idéntica, todos los scores y categorías
 
-**Paso 3 — Mejorar lookupGlossaryTerms para nuevos tipos**
+### Resultado esperado
 
-Cuando se detecta una categoría `agrupacion`, `marca_matriz`, `nombre_historico` o `persona_empresa`, el sistema debe:
-- Extraer los tickers/issuer_ids del campo `repindex_relevance`
-- Inyectarlos como entidades en `interpret.entities` y `interpret.filters`
-- Para `no_disponible`: generar una respuesta directa sin intentar buscar datos
-
-### Volumen estimado
-
-~350 registros. Coste: 0 (INSERT directo en BD). Sin impacto en rendimiento porque el glossary se cachea 10 min.
-
-### Archivos a modificar
-
-1. Script de inserción SQL ejecutado con `psql` (datos)
-2. `supabase/functions/chat-intelligence/index.ts`:
-   - `CATEGORY_TO_INTENT` → añadir 8 categorías nuevas
-   - `lookupGlossaryTerms` → extraer tickers de `repindex_relevance` para inyectar en filters
-   - Bloque glossary fallback → manejar `no_disponible` con respuesta directa
+- Cada invocación procesa **20 docs** en vez de 100, escaneando páginas de **200** en vez de 500
+- El mecanismo `vector_store_continue` ya existente re-lanza automáticamente hasta completar todo
+- Tras un barrido semanal (1.050 registros): ~53 lotes de 20 en vez de ~11 de 100
+- **Cero pérdida de datos, cero truncamiento, cero campos omitidos**
 
