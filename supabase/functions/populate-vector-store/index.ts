@@ -236,7 +236,7 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
       }
 
       let v2Offset = 0;
-      const v2BatchSize = 500;
+      const v2BatchSize = 200;
       let v2Scanned = 0;
 
       while (v2PendingEstimate > 0 && rixBatchToProcess.length < BATCH_SIZE) {
