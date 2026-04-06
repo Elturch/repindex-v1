@@ -3235,11 +3235,13 @@ async function buildDataPackFromSkills(
       reportContext.weeks_analyzed = 1;
     }
 
-    // ── Temporal range override: if user requested a specific period, use it ──
+    // ── Temporal range: DO NOT override report_context dates with user-requested dates.
+    // Since skills now query the actual date range, report_context.date_from/to already 
+    // reflect the real data. We only add the temporal label as metadata. ──
     if (temporalRange) {
-      reportContext.date_from = temporalRange.from;
-      reportContext.date_to = temporalRange.to;
       reportContext.temporal_label = temporalRange.label;
+      reportContext.temporal_requested_from = temporalRange.from;
+      reportContext.temporal_requested_to = temporalRange.to;
       (pack as any).temporal_range = temporalRange;
       if (temporalRange.adjusted) {
         (pack as any).date_range_adjusted = true;
@@ -3247,7 +3249,7 @@ async function buildDataPackFromSkills(
       } else {
         (pack as any).date_range_note = `Datos filtrados para el período solicitado: ${temporalRange.label} (${temporalRange.from} a ${temporalRange.to}).`;
       }
-      console.log(`${logPrefix} [TEMPORAL] report_context dates set to ${temporalRange.from} - ${temporalRange.to}`);
+      console.log(`${logPrefix} [TEMPORAL] Temporal range applied at skill level: ${temporalRange.from} - ${temporalRange.to}. report_context dates reflect actual data: ${reportContext.date_from} - ${reportContext.date_to}`);
     } else {
       // Data availability floor (only when no explicit temporal range)
       let dateRangeAdjusted = false;
