@@ -2289,7 +2289,7 @@ async function buildDataPackFromSkills(
     }
     // ── Semantic Bridge: enrich question with canonical terms ──────
     const bridge = await semanticBridge(question, companiesCacheLocal);
-    const enrichedQuestion = bridge.enriched_question;
+    let enrichedQuestion = bridge.enriched_question;
     console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, companies=${bridge.detected_companies.map(c=>c.issuer_name).join(",")}, llm=${bridge.used_llm_fallback}`);
     
     const interpret = await interpretQueryEdge(enrichedQuestion);
