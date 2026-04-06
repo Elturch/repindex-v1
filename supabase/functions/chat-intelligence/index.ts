@@ -747,7 +747,7 @@ async function skillCompanyProfile(supabase: any, ticker: string, options?: { da
 }
 
 // ── NEW SKILL 2: skillSectorSnapshot — Sector-level consolidated view ─
-async function skillSectorSnapshot(supabase: any, sectorCategory: string, tickerFilterOverride?: string[]): Promise<{ success: boolean; data?: any; error?: string }> {
+async function skillSectorSnapshot(supabase: any, sectorCategory: string, tickerFilterOverride?: string[], options?: { modelFilter?: string; dateRange?: { from: string; to: string } }): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
     if (!sectorCategory && !tickerFilterOverride) return { success: false, error: "sector_category or ticker_filter required" };
