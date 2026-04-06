@@ -2350,7 +2350,7 @@ async function buildDataPackFromSkills(
     // ── Glossary fallback: when still general_question with low confidence, look up specialized terms ──
     if (interpret.intent === "general_question" && interpret.confidence < 0.5) {
       try {
-        const glossaryTerms = await lookupGlossaryTerms(supabase, question);
+        const glossaryTerms = await lookupGlossaryTerms(supabaseClient, question);
         if (glossaryTerms.length > 0) {
           // Inject glossary context into the enriched question for the LLM
           const glossaryContext = glossaryTerms.map(t => `[GLOSARIO: "${t.term}" = ${t.definition}${t.related_metrics?.length ? ` (métricas: ${t.related_metrics.join(", ")})` : ""}]`).join(" ");
@@ -2548,7 +2548,9 @@ async function buildDataPackFromSkills(
     }
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
-      resolvedGroupTickerFilter = semanticGroup.issuer_ids;
+      // Apply exclusions: remove excluded tickers from group
+      const exclusionSet = new Set(semanticGroup.exclusions || []);
+      resolvedGroupTickerFilter = semanticGroup.issuer_ids.filter((t: string) => !exclusionSet.has(t));
       // ALWAYS override intent when canonical group is resolved, regardless of LLM classification
       interpret.intent = "sector_comparison";
       interpret.confidence = Math.max(interpret.confidence, 0.85);
