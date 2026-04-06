@@ -2728,7 +2728,7 @@ async function buildDataPackFromSkills(
       competitorSource = compInfo.source;
       if (compInfo.tickers.length > 0) {
         console.log(`${logPrefix} [SKILLS-v2] Fetching competitor profiles (source: verified): ${compInfo.tickers.join(",")}`);
-        const compPromises = compInfo.tickers.map((t: string) => skillCompanyProfile(supabaseClient, t));
+        const compPromises = compInfo.tickers.map((t: string) => skillCompanyProfile(supabaseClient, t, { dateRange: skillDateRange }));
         const compResults = await Promise.allSettled(compPromises);
         for (let ci = 0; ci < compInfo.tickers.length; ci++) {
           const cr = compResults[ci];
