@@ -778,24 +778,40 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
     const competitorsMap = new Map<string, string[]>(issuers.map((r: any) => [r.ticker, Array.isArray(r.verified_competitors) ? r.verified_competitors : []]));
 
-    // 2. Fetch LAST 4 WEEKS of data (not just latest) — paginated
+    const modelFilter = options?.modelFilter || null;
+    const dateRange = options?.dateRange || null;
+
+    // 2. Fetch data — paginated. If dateRange provided, filter by it; otherwise last 4 weeks.
     const FULL_SELECT = "05_ticker, 02_model_name, 03_target_name, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 06_period_from, 07_period_to, batch_execution_date, 20_res_gpt_bruto, 21_res_perplex_bruto";
 
     let allRuns: any[] = [];
     for (let page = 0; page < 8; page++) {
-      const { data: pageData, error: pageErr } = await supabase
+      let q = supabase
         .from("rix_runs_v2")
         .select(FULL_SELECT)
         .in("05_ticker", tickers)
         .order("batch_execution_date", { ascending: false })
         .range(page * 1000, (page + 1) * 1000 - 1);
+
+      // Apply date range filter at query level
+      if (dateRange) {
+        q = q.gte("batch_execution_date", dateRange.from + "T00:00:00Z")
+             .lte("batch_execution_date", dateRange.to + "T23:59:59Z");
+      }
+      // Apply model filter at query level
+      if (modelFilter) {
+        q = q.eq("02_model_name", modelFilter);
+      }
+
+      const { data: pageData, error: pageErr } = await q;
       if (pageErr) return { success: false, error: `Runs query failed: ${pageErr.message}` };
       if (!pageData || pageData.length === 0) break;
       allRuns = allRuns.concat(pageData);
-      // Check if we have 4 distinct weeks
+      // Check if we have enough data (4 distinct weeks or dateRange satisfied)
       const weeks = new Set(allRuns.map((r: any) => String(r["07_period_to"] || "").split("T")[0]).filter(Boolean));
-      if (weeks.size >= 4 && pageData.length < 1000) break;
-      if (weeks.size >= 4) break;
+      if (!dateRange && weeks.size >= 4 && pageData.length < 1000) break;
+      if (!dateRange && weeks.size >= 4) break;
+      if (dateRange && pageData.length < 1000) break;
     }
 
     if (allRuns.length === 0) return { success: false, error: `No runs for sector ${sectorCategory}` };
