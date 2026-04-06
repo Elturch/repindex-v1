@@ -1229,6 +1229,66 @@ export type Database = {
           },
         ]
       }
+      monitor_reputacional_events: {
+        Row: {
+          categoria_tema: string
+          contexto: string
+          created_at: string
+          cuenta: string | null
+          empresa_persona: string
+          es_warning: boolean
+          fecha: string
+          fuentes_clave: Json | null
+          id: number
+          id_interno: string
+          medio_plataforma: string
+          nuevo_vs_recurrente: string
+          resumen: string
+          riesgo_reputacional: string
+          tipo_fuente: string
+          titular_o_texto: string
+          url: string
+        }
+        Insert: {
+          categoria_tema: string
+          contexto: string
+          created_at?: string
+          cuenta?: string | null
+          empresa_persona: string
+          es_warning?: boolean
+          fecha: string
+          fuentes_clave?: Json | null
+          id?: number
+          id_interno: string
+          medio_plataforma: string
+          nuevo_vs_recurrente: string
+          resumen: string
+          riesgo_reputacional: string
+          tipo_fuente: string
+          titular_o_texto: string
+          url: string
+        }
+        Update: {
+          categoria_tema?: string
+          contexto?: string
+          created_at?: string
+          cuenta?: string | null
+          empresa_persona?: string
+          es_warning?: boolean
+          fecha?: string
+          fuentes_clave?: Json | null
+          id?: number
+          id_interno?: string
+          medio_plataforma?: string
+          nuevo_vs_recurrente?: string
+          resumen?: string
+          riesgo_reputacional?: string
+          tipo_fuente?: string
+          titular_o_texto?: string
+          url?: string
+        }
+        Relationships: []
+      }
       news_articles: {
         Row: {
           body: string
