@@ -2591,22 +2591,27 @@ async function buildDataPackFromSkills(
       (interpret.filters as any)._resolved_group_name = semanticGroup.display_name;
     }
 
+    // ── Build skill options from temporal range and model filter ──
+    const skillDateRange = temporalRange ? { from: temporalRange.from, to: temporalRange.to } : undefined;
+    const skillModelFilter = interpret.filters.model_name || undefined;
+
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
     // Company profile: always when we have a ticker
     if (resolvedTicker) {
-      skillCalls.companyProfile = skillCompanyProfile(supabaseClient, resolvedTicker);
+      skillCalls.companyProfile = skillCompanyProfile(supabaseClient, resolvedTicker, { dateRange: skillDateRange });
       skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
     // Sector snapshot: when sector detected, ranking intent, or canonical group resolved
     const sectorCategory = interpret.filters.sector_category;
+    const sectorOptions = { modelFilter: skillModelFilter, dateRange: skillDateRange };
     if (resolvedGroupTickerFilter) {
       // Use canonical group tickers — bypass sector_category entirely
-      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter);
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter, sectorOptions);
     } else if (sectorCategory) {
-      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory);
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory, undefined, sectorOptions);
     }
 
     // Ranking: IBEX filter, sector filter, canonical group, or general ranking intent
