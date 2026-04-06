@@ -551,17 +551,28 @@ async function executeSkillGetDivergenceAnalysis(supabase: any, params: { ticker
 }
 
 // ── NEW SKILL 1: skillCompanyProfile — Consolidated company profile ─
-async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ success: boolean; data?: any; error?: string }> {
+async function skillCompanyProfile(supabase: any, ticker: string, options?: { dateRange?: { from: string; to: string } }): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
     if (!ticker) return { success: false, error: "ticker required" };
 
-    const { data, error } = await supabase
+    const dateRange = options?.dateRange;
+    let query = supabase
       .from("rix_runs_v2")
-      .select("02_model_name, 03_target_name, 07_period_to, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen, 06_period_from")
+      .select("02_model_name, 03_target_name, 07_period_to, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen, 06_period_from, batch_execution_date")
       .eq("05_ticker", ticker)
-      .order("07_period_to", { ascending: false })
-      .limit(24);
+      .order("batch_execution_date", { ascending: false });
+
+    if (dateRange) {
+      // Query all data within the requested date range
+      query = query.gte("batch_execution_date", dateRange.from + "T00:00:00Z")
+                   .lte("batch_execution_date", dateRange.to + "T23:59:59Z");
+      // Fetch more rows for multi-week ranges (up to ~20 weeks × 6 models = 120)
+      query = query.limit(200);
+      console.log(`[SKILL] CompanyProfile for ${ticker}: querying date range ${dateRange.from} to ${dateRange.to}`);
+    } else {
+      query = query.limit(24);
+    }
 
     if (error) return { success: false, error: `Query failed: ${error.message}` };
     if (!data || data.length === 0) return { success: false, error: `No data for ${ticker}` };
