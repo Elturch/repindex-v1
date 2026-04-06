@@ -574,6 +574,7 @@ async function skillCompanyProfile(supabase: any, ticker: string, options?: { da
       query = query.limit(24);
     }
 
+    const { data, error } = await query;
     if (error) return { success: false, error: `Query failed: ${error.message}` };
     if (!data || data.length === 0) return { success: false, error: `No data for ${ticker}` };
 
