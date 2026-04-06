@@ -551,18 +551,30 @@ async function executeSkillGetDivergenceAnalysis(supabase: any, params: { ticker
 }
 
 // ── NEW SKILL 1: skillCompanyProfile — Consolidated company profile ─
-async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ success: boolean; data?: any; error?: string }> {
+async function skillCompanyProfile(supabase: any, ticker: string, options?: { dateRange?: { from: string; to: string } }): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
     if (!ticker) return { success: false, error: "ticker required" };
 
-    const { data, error } = await supabase
+    const dateRange = options?.dateRange;
+    let query = supabase
       .from("rix_runs_v2")
-      .select("02_model_name, 03_target_name, 07_period_to, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen, 06_period_from")
+      .select("02_model_name, 03_target_name, 07_period_to, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, respuesta_bruto_grok, respuesta_bruto_qwen, 06_period_from, batch_execution_date")
       .eq("05_ticker", ticker)
-      .order("07_period_to", { ascending: false })
-      .limit(24);
+      .order("batch_execution_date", { ascending: false });
 
+    if (dateRange) {
+      // Query all data within the requested date range
+      query = query.gte("batch_execution_date", dateRange.from + "T00:00:00Z")
+                   .lte("batch_execution_date", dateRange.to + "T23:59:59Z");
+      // Fetch more rows for multi-week ranges (up to ~20 weeks × 6 models = 120)
+      query = query.limit(200);
+      console.log(`[SKILL] CompanyProfile for ${ticker}: querying date range ${dateRange.from} to ${dateRange.to}`);
+    } else {
+      query = query.limit(24);
+    }
+
+    const { data, error } = await query;
     if (error) return { success: false, error: `Query failed: ${error.message}` };
     if (!data || data.length === 0) return { success: false, error: `No data for ${ticker}` };
 
@@ -735,7 +747,7 @@ async function skillCompanyProfile(supabase: any, ticker: string): Promise<{ suc
 }
 
 // ── NEW SKILL 2: skillSectorSnapshot — Sector-level consolidated view ─
-async function skillSectorSnapshot(supabase: any, sectorCategory: string, tickerFilterOverride?: string[]): Promise<{ success: boolean; data?: any; error?: string }> {
+async function skillSectorSnapshot(supabase: any, sectorCategory: string, tickerFilterOverride?: string[], options?: { modelFilter?: string; dateRange?: { from: string; to: string } }): Promise<{ success: boolean; data?: any; error?: string }> {
   const start = Date.now();
   try {
     if (!sectorCategory && !tickerFilterOverride) return { success: false, error: "sector_category or ticker_filter required" };
@@ -766,24 +778,40 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
     const nameMap = new Map(issuers.map((r: any) => [r.ticker, r.issuer_name]));
     const competitorsMap = new Map<string, string[]>(issuers.map((r: any) => [r.ticker, Array.isArray(r.verified_competitors) ? r.verified_competitors : []]));
 
-    // 2. Fetch LAST 4 WEEKS of data (not just latest) — paginated
+    const modelFilter = options?.modelFilter || null;
+    const dateRange = options?.dateRange || null;
+
+    // 2. Fetch data — paginated. If dateRange provided, filter by it; otherwise last 4 weeks.
     const FULL_SELECT = "05_ticker, 02_model_name, 03_target_name, 09_rix_score, 10_resumen, 11_puntos_clave, 17_flags, 23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, 25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, 37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, 48_precio_accion, 06_period_from, 07_period_to, batch_execution_date, 20_res_gpt_bruto, 21_res_perplex_bruto";
 
     let allRuns: any[] = [];
     for (let page = 0; page < 8; page++) {
-      const { data: pageData, error: pageErr } = await supabase
+      let q = supabase
         .from("rix_runs_v2")
         .select(FULL_SELECT)
         .in("05_ticker", tickers)
         .order("batch_execution_date", { ascending: false })
         .range(page * 1000, (page + 1) * 1000 - 1);
+
+      // Apply date range filter at query level
+      if (dateRange) {
+        q = q.gte("batch_execution_date", dateRange.from + "T00:00:00Z")
+             .lte("batch_execution_date", dateRange.to + "T23:59:59Z");
+      }
+      // Apply model filter at query level
+      if (modelFilter) {
+        q = q.eq("02_model_name", modelFilter);
+      }
+
+      const { data: pageData, error: pageErr } = await q;
       if (pageErr) return { success: false, error: `Runs query failed: ${pageErr.message}` };
       if (!pageData || pageData.length === 0) break;
       allRuns = allRuns.concat(pageData);
-      // Check if we have 4 distinct weeks
+      // Check if we have enough data (4 distinct weeks or dateRange satisfied)
       const weeks = new Set(allRuns.map((r: any) => String(r["07_period_to"] || "").split("T")[0]).filter(Boolean));
-      if (weeks.size >= 4 && pageData.length < 1000) break;
-      if (weeks.size >= 4) break;
+      if (!dateRange && weeks.size >= 4 && pageData.length < 1000) break;
+      if (!dateRange && weeks.size >= 4) break;
+      if (dateRange && pageData.length < 1000) break;
     }
 
     if (allRuns.length === 0) return { success: false, error: `No runs for sector ${sectorCategory}` };
@@ -2289,7 +2317,7 @@ async function buildDataPackFromSkills(
     }
     // ── Semantic Bridge: enrich question with canonical terms ──────
     const bridge = await semanticBridge(question, companiesCacheLocal);
-    const enrichedQuestion = bridge.enriched_question;
+    let enrichedQuestion = bridge.enriched_question;
     console.log(`${logPrefix} [SEMANTIC_BRIDGE] metrics=[${bridge.detected_metrics.join(",")}], intent=${bridge.detected_intent}, companies=${bridge.detected_companies.map(c=>c.issuer_name).join(",")}, llm=${bridge.used_llm_fallback}`);
     
     const interpret = await interpretQueryEdge(enrichedQuestion);
@@ -2350,7 +2378,7 @@ async function buildDataPackFromSkills(
     // ── Glossary fallback: when still general_question with low confidence, look up specialized terms ──
     if (interpret.intent === "general_question" && interpret.confidence < 0.5) {
       try {
-        const glossaryTerms = await lookupGlossaryTerms(supabase, question);
+        const glossaryTerms = await lookupGlossaryTerms(supabaseClient, question);
         if (glossaryTerms.length > 0) {
           // Inject glossary context into the enriched question for the LLM
           const glossaryContext = glossaryTerms.map(t => `[GLOSARIO: "${t.term}" = ${t.definition}${t.related_metrics?.length ? ` (métricas: ${t.related_metrics.join(", ")})` : ""}]`).join(" ");
@@ -2548,7 +2576,9 @@ async function buildDataPackFromSkills(
     }
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
-      resolvedGroupTickerFilter = semanticGroup.issuer_ids;
+      // Apply exclusions: remove excluded tickers from group
+      const exclusionSet = new Set(semanticGroup.exclusions || []);
+      resolvedGroupTickerFilter = semanticGroup.issuer_ids.filter((t: string) => !exclusionSet.has(t));
       // ALWAYS override intent when canonical group is resolved, regardless of LLM classification
       interpret.intent = "sector_comparison";
       interpret.confidence = Math.max(interpret.confidence, 0.85);
@@ -2561,22 +2591,27 @@ async function buildDataPackFromSkills(
       (interpret.filters as any)._resolved_group_name = semanticGroup.display_name;
     }
 
+    // ── Build skill options from temporal range and model filter ──
+    const skillDateRange = temporalRange ? { from: temporalRange.from, to: temporalRange.to } : undefined;
+    const skillModelFilter = interpret.filters.model_name || undefined;
+
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
 
     // Company profile: always when we have a ticker
     if (resolvedTicker) {
-      skillCalls.companyProfile = skillCompanyProfile(supabaseClient, resolvedTicker);
+      skillCalls.companyProfile = skillCompanyProfile(supabaseClient, resolvedTicker, { dateRange: skillDateRange });
       skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
     // Sector snapshot: when sector detected, ranking intent, or canonical group resolved
     const sectorCategory = interpret.filters.sector_category;
+    const sectorOptions = { modelFilter: skillModelFilter, dateRange: skillDateRange };
     if (resolvedGroupTickerFilter) {
       // Use canonical group tickers — bypass sector_category entirely
-      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter);
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter, sectorOptions);
     } else if (sectorCategory) {
-      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory);
+      skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory, undefined, sectorOptions);
     }
 
     // Ranking: IBEX filter, sector filter, canonical group, or general ranking intent
@@ -2693,7 +2728,7 @@ async function buildDataPackFromSkills(
       competitorSource = compInfo.source;
       if (compInfo.tickers.length > 0) {
         console.log(`${logPrefix} [SKILLS-v2] Fetching competitor profiles (source: verified): ${compInfo.tickers.join(",")}`);
-        const compPromises = compInfo.tickers.map((t: string) => skillCompanyProfile(supabaseClient, t));
+        const compPromises = compInfo.tickers.map((t: string) => skillCompanyProfile(supabaseClient, t, { dateRange: skillDateRange }));
         const compResults = await Promise.allSettled(compPromises);
         for (let ci = 0; ci < compInfo.tickers.length; ci++) {
           const cr = compResults[ci];
@@ -3200,11 +3235,13 @@ async function buildDataPackFromSkills(
       reportContext.weeks_analyzed = 1;
     }
 
-    // ── Temporal range override: if user requested a specific period, use it ──
+    // ── Temporal range: DO NOT override report_context dates with user-requested dates.
+    // Since skills now query the actual date range, report_context.date_from/to already 
+    // reflect the real data. We only add the temporal label as metadata. ──
     if (temporalRange) {
-      reportContext.date_from = temporalRange.from;
-      reportContext.date_to = temporalRange.to;
       reportContext.temporal_label = temporalRange.label;
+      reportContext.temporal_requested_from = temporalRange.from;
+      reportContext.temporal_requested_to = temporalRange.to;
       (pack as any).temporal_range = temporalRange;
       if (temporalRange.adjusted) {
         (pack as any).date_range_adjusted = true;
@@ -3212,7 +3249,7 @@ async function buildDataPackFromSkills(
       } else {
         (pack as any).date_range_note = `Datos filtrados para el período solicitado: ${temporalRange.label} (${temporalRange.from} a ${temporalRange.to}).`;
       }
-      console.log(`${logPrefix} [TEMPORAL] report_context dates set to ${temporalRange.from} - ${temporalRange.to}`);
+      console.log(`${logPrefix} [TEMPORAL] Temporal range applied at skill level: ${temporalRange.from} - ${temporalRange.to}. report_context dates reflect actual data: ${reportContext.date_from} - ${reportContext.date_to}`);
     } else {
       // Data availability floor (only when no explicit temporal range)
       let dateRangeAdjusted = false;
