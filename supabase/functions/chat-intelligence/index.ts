@@ -3351,7 +3351,11 @@ async function buildDataPackFromSkills(
       reportContext.date_from = (pack as any)._enrichment_date_from;
       reportContext.date_to = (pack as any)._enrichment_date_to;
       reportContext.sample_size = (pack as any)._enrichment_sample_size || 0;
-      reportContext.weeks_analyzed = 1;
+      // Compute real weeks from enrichment data batch dates
+      const enrichBatchDates = (pack as any)._rawRunsForSources 
+        ? new Set(((pack as any)._rawRunsForSources as any[]).map((r: any) => String(r.batch_execution_date || "").slice(0, 10)).filter(Boolean))
+        : new Set<string>();
+      reportContext.weeks_analyzed = enrichBatchDates.size || 1;
     }
 
     // ── Temporal range: DO NOT override report_context dates with user-requested dates.
