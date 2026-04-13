@@ -2495,8 +2495,16 @@ async function buildDataPackFromSkills(
             for (const s of catMap.skills) interpret.recommended_skills.push(s);
             console.log(`${logPrefix} [GLOSSARY→INTERPRET] Category '${primaryCategory}' → '${catMap.intent}'`);
 
-            // Extract tickers from repindex_relevance for entity-bearing categories
-            const ENTITY_CATEGORIES = new Set(["agrupacion", "marca_matriz", "nombre_historico", "persona_empresa", "sector_coloquial", "filtro", "acronimo", "propiedad"]);
+            // Handle no_disponible category directly — inject tag from definition + repindex_relevance
+            if (primaryCategory === "no_disponible") {
+              const ndTerm = glossaryTerms[0];
+              const motivo = ndTerm.repindex_relevance || ndTerm.definition || "entidad no monitorizada";
+              enrichedQuestion = `${enrichedQuestion} [NO_DISPONIBLE: ${ndTerm.term} — ${motivo}]`;
+              console.log(`${logPrefix} [GLOSSARY→NO_DISPONIBLE] ${ndTerm.term}: ${motivo}`);
+            }
+
+             // Extract tickers from repindex_relevance for entity-bearing categories
+             const ENTITY_CATEGORIES = new Set(["agrupacion", "marca_matriz", "nombre_historico", "persona_empresa", "sector_coloquial", "filtro", "acronimo", "propiedad"]);
             if (ENTITY_CATEGORIES.has(primaryCategory)) {
               for (const gt of glossaryTerms) {
                 const rel = gt.repindex_relevance || "";
