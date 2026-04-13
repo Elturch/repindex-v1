@@ -3017,6 +3017,14 @@ async function buildDataPackFromSkills(
 
       pack.sector_avg = ss.mediana_sectorial || null;
 
+      // PHASE 4: Inject canonical KPIs as explicit sector medians
+      if (ss.metricas_sector) {
+        (pack as any).kpis_sector_canonicos = {
+          nota: "Medianas sectoriales calculadas sobre todos los modelos y empresas del grupo/sector en la última semana",
+          ...ss.metricas_sector,
+        };
+      }
+
       // ── Build competidores_por_empresa from ranking verified_competitors ──
       const competidoresPorEmpresa: Record<string, string[]> = {};
       for (const r of (ss.ranking || [])) {
