@@ -6115,6 +6115,50 @@ REGLAS:
 
 // --- CROSS-MODEL TABLE BUILDER (pre-calculated for LLM) ---
 function buildCrossModelTable(dataPack: DataPack): string {
+  // ── SECTOR/RANKING queries: build a per-company × per-model cross-table ──
+  const sectorSnapshot = (dataPack as any).sector_snapshot;
+  if (sectorSnapshot?.ranking && sectorSnapshot.ranking.length > 0) {
+    const MODEL_ORDER = ["ChatGPT", "Perplexity", "Google Gemini", "DeepSeek", "Grok", "Qwen"];
+    let table = "## TABLA CRUZADA POR EMPRESA Y MODELO (DATO CENTRAL)\n\n";
+    table += "| Empresa | " + MODEL_ORDER.map(m => m.replace("Google ", "")).join(" | ") + " | Rango | Consenso |\n";
+    table += "|---------|" + MODEL_ORDER.map(() => "------|").join("") + "------|----------|\n";
+
+    for (const r of sectorSnapshot.ranking) {
+      const scores = r.scores_individuales || {};
+      // Fallback: build from scores_por_modelo if scores_individuales not present
+      const scoreMap: Record<string, number | null> = { ...scores };
+      if (Object.keys(scoreMap).length === 0 && r.scores_por_modelo) {
+        for (const s of r.scores_por_modelo) {
+          scoreMap[s.model_name] = s.rix;
+        }
+      }
+      const vals = MODEL_ORDER.map(m => {
+        const v = scoreMap[m];
+        return v != null ? String(v) : "—";
+      });
+      const rango = r.rango ?? "—";
+      const consenso = r.consenso || "—";
+      const emoji = consenso === "alto" ? "🟢" : consenso === "medio" ? "🟡" : consenso === "bajo" ? "🔴" : "";
+      table += `| ${(r.empresa || r.ticker || "?").substring(0, 20)} | ${vals.join(" | ")} | ${rango} | ${emoji} ${consenso} |\n`;
+    }
+
+    // Divergence summary for sector
+    table += "\n## DIVERGENCIAS POR EMPRESA\n\n";
+    for (const r of sectorSnapshot.ranking.slice(0, 10)) {
+      const consensoLabel = r.consenso === "alto" ? "CONSENSO_ALTO" : r.consenso === "bajo" ? "DIVERGENCIA_ALTA" : "CONSENSO_MEDIO";
+      const outlierStr = (r.outliers && r.outliers.length > 0) 
+        ? ` | Outliers: ${r.outliers.map((o: any) => `${o.model}(${o.rix})`).join(", ")}`
+        : "";
+      const bloqueStr = r.bloque_mayoritario 
+        ? ` | Bloque mayoritario: ${r.bloque_mayoritario.modelos?.join(", ") || "—"}(${r.bloque_mayoritario.score})`
+        : "";
+      table += `[${r.empresa}]: rango=${r.rango ?? "?"} -> ${consensoLabel}${bloqueStr}${outlierStr}\n`;
+    }
+
+    return table;
+  }
+
+  // ── Single-company queries: original per-model table ──
   if (!dataPack.snapshot || dataPack.snapshot.length === 0) return "";
 
   const METRIC_KEYS = ["rix", "nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
