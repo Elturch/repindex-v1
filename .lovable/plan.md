@@ -1,150 +1,93 @@
 
-Objetivo: hacer una auditoría de recuperación del Agente Rix centrada en el punto real de rotura y aplicar una reparación segura, paso a paso, sin “parches” que vuelvan a degradar resultados.
 
-Diagnóstico confirmado tras revisar el código activo y la base:
-1. El problema principal está en `supabase/functions/chat-intelligence/index.ts`, no en `src/lib/skills/skillInterpretQuery.ts`.
-   - La ruta de producción del agente usa `interpretQueryEdge` y `buildDataPackFromSkills` dentro de la edge function.
-   - Arreglar solo `src/lib/...` no restauraría el comportamiento real.
+## Auditoría completa: Estado actual del Agente Rix (13 abril 2026)
 
-2. La caída encaja con la capa temporal nueva (`// v2.1-temporal`), no con `populate-vector-store`.
-   - El parser trimestral/mensual se añadió arriba del pipeline.
-   - Pero los skills siguen consultando solo:
-     - empresa: últimas 24 filas (`~4 semanas`)
-     - sector: últimas 4 semanas
-     - ranking: solo último batch
-   - Después se aplica un filtro temporal “a posteriori”, cuando ya se han traído datos insuficientes o del periodo equivocado.
+### Hallazgos tras verificación con datos reales
 
-3. Ahora mismo el agente puede “decir” un periodo que no corresponde a los datos reales.
-   - `temporalRange` reescribe `report_context.date_from/date_to`
-   - pero no rehace las queries fuente para ese rango.
-   - Resultado: cabecera y narrativa pueden hablar de “enero” o “Q1” usando en realidad abril o solo las últimas 4 semanas.
+---
 
-4. Hay un fallo estructural claro en hospitalarios/seguros.
-   - En `public.rix_semantic_groups`, el grupo `grupos_hospitalarios` incluye `SANITAS` dentro de `issuer_ids`.
-   - Además, `Sanitas S.A. de Seguros` está en `repindex_root_issuers` con `sector_category = 'Salud y Farmacéutico'`.
-   - Y el código no aplica el campo `exclusions` de `rix_semantic_groups`.
-   - Conclusión: no es una sensación; hay mezcla real de grupo y sector.
+### PROBLEMA 1: Dashboard vs Agente muestran rankings distintos (CONFIRMADO)
 
-5. Hay inconsistencia entre skills con filtro de modelo.
-   - `executeSkillGetCompanyRanking` sí respeta `model_name`.
-   - `skillSectorSnapshot` no lo respeta.
-   - Resultado: un ranking “según Gemini” puede convivir con medianas sectoriales calculadas sobre los 6 modelos.
+**Causa raíz**: El Dashboard muestra filas individuales (1 por modelo por empresa) y ordena por `displayRixScore` de cada fila individual. El Agente calcula la **mediana** de los 6 modelos por empresa y ordena por esa mediana.
 
-6. La forma del DataPack es inconsistente según la ruta.
-   - En sector: `metricas_consolidadas = ss.metricas_sector` (objeto plano sectorial)
-   - En ranking enriquecido: `metricas_consolidadas = { [ticker]: ... }`
-   - El prompt recibe estructuras distintas bajo la misma clave y eso favorece tablas KPI incorrectas o narrativas mezcladas.
+Son dos vistas fundamentalmente diferentes del mismo dato. Ejemplo real del 12 abril IBEX-35:
+- **Agente (mediana)**: CaixaBank=70, Enagás=69, BBVA=68, Cellnex=67.5, Ferrovial=66.5
+- **Dashboard (filas individuales)**: Inditex-Gemini=83, Acciona-Grok=79, CaixaBank-Qwen=79...
 
-7. Hay al menos dos bugs adicionales en la propia función que pueden romper consultas “difíciles”.
-   - En el fallback de glosario se reasigna `enrichedQuestion` aunque está declarado como `const`.
-   - En ese mismo bloque se llama a `lookupGlossaryTerms(supabase, ...)` cuando la variable activa es `supabaseClient`.
-   - Ese camino puede explotar precisamente en consultas ambiguas o complejas.
+El usuario ve en el Dashboard que Inditex tiene un 83 (Gemini) y el Agente le dice que CaixaBank lidera con 70. Ambos son "correctos" pero miden cosas distintas, lo que genera desconfianza total.
 
-8. La base sí tiene histórico suficiente para responder enero/trimestres.
-   - He comprobado semanas desde enero en `rix_runs_v2`.
-   - El problema no es falta de dato; es que el agente no lo está recuperando bien.
+**El plan aprobado de consenso/disenso resuelve esto**: el Agente debe mostrar las 6 puntuaciones individuales y ordenar por consenso, no por mediana ficticia.
 
-Plan de recuperación propuesto
+---
 
-Fase 0 — Contención inmediata para dejar de dar respuestas engañosas
-- Cortar el comportamiento más peligroso: no volver a “maquillar” el `report_context` con un rango solicitado si las queries no se han recalculado para ese rango.
-- Si una consulta pide mes/trimestre/semestre/año y aún no hay datos reconstruidos para ese intervalo, el agente debe:
-  - o responder con datos realmente filtrados por rango,
-  - o declarar que no puede construir ese corte todavía.
-- Prioridad aquí: dejar de mentir con fechas.
+### PROBLEMA 2: "1 semana / 30 observaciones" cuando se piden 4 semanas (PERSISTE)
 
-Fase 1 — Reparar la lógica temporal en origen, no al final
-Archivo principal:
-- `supabase/functions/chat-intelligence/index.ts`
+El informe del 13 abril dice literalmente "1 semanas, 30 observaciones" cuando el usuario pidió "evolución durante las últimas 4 semanas". La lógica temporal sigue sin propagarse a `skillSectorSnapshot`.
 
-Cambios de diseño:
-- Añadir `dateRange` a los skills que hoy trabajan “últimas 4 semanas / último batch”:
-  - `skillCompanyProfile`
-  - `skillSectorSnapshot`
-  - `executeSkillGetSectorComparison`
-  - ranking/enrichment cuando la consulta sea temporal
-- Para rangos explícitos (enero, Q1, semestre, año):
-  - consultar todas las semanas dominicales dentro del intervalo
-  - recalcular snapshot/evolución/ranking con esas semanas
-  - no filtrar después un conjunto ya recortado
-- Ampliar el parser trimestral para formatos reales de usuario:
-  - `Q1 2026`
-  - `T1 2026`
-  - `1T 2026`
-  - `primer trimestre de 2026`
-- Sustituir el “suelo sintético” de `2026-01-01` en cabeceras por disponibilidad real de datos devueltos, dejando la nota metodológica aparte.
+---
 
-Criterio funcional propuesto:
-- Si el usuario pide un periodo explícito, el ranking y las medianas deben calcularse sobre las semanas incluidas en ese periodo, no sobre la última semana disponible fuera de contexto.
+### PROBLEMA 3: "Grupos hospitalarios" — Estado actual: FUNCIONA
 
-Fase 2 — Arreglar grupos hospitalarios y el cruce con seguros
-Código + datos a revisar:
-- `supabase/functions/chat-intelligence/index.ts`
-- `public.rix_semantic_groups`
-- posiblemente `public.repindex_root_issuers` si hay clasificación editorial incorrecta
+He verificado con los logs y con una llamada directa:
+- `rix_semantic_groups` tiene la composición correcta: 7 tickers `[QS, HMH, HLA, HOS, VIT, VIA, RS]`
+- SANITAS está en `exclusions`
+- Los logs muestran resolución correcta: "7 companies, 42 model rows, 4 weeks"
+- El último informe generado de hospitalarios muestra datos correctos con las 8 métricas canónicas
 
-Acciones:
-- Corregir la composición de `grupos_hospitalarios` en `rix_semantic_groups`:
-  - revisar si `SANITAS` debe salir de `issuer_ids` del grupo hospitalario
-- Aplicar por fin `exclusions` en runtime
-- Ampliar aliases del grupo para capturar consultas naturales como “hospitales” cuando la intención sea grupo y no sector salud genérico
-- Mantener prioridad del grupo cerrado sobre el sector abierto
-- Evitar que una consulta de “hospitalarios” caiga por debajo a `Salud y Farmacéutico` salvo que el usuario realmente pida “sector salud”
+**Sin embargo**, hay un bug menor: la query "grupos hospitalarios" hace fuzzy match a "Grupo Azvi (AZVI)" como empresa principal, aunque el semantic group se resuelve correctamente en paralelo. Esto no rompe el resultado pero añade ruido innecesario.
 
-Fase 3 — Unificar filtros de modelo y datos sectoriales
-- Hacer que `skillSectorSnapshot` acepte `modelFilter`
-- Cuando haya filtro de modelo:
-  - ranking sectorial
-  - medianas sectoriales
-  - `per_model_detail`
-  - evolución
-  deben salir todos del mismo subconjunto
-- Así se elimina la mezcla actual de “ranking Gemini” + “sector 6 modelos”
+Si antes "no tenía datos", puede deberse a que la query se hizo antes del barrido del 12 abril con una formulación que no coincidía con los aliases, o a que el diccionario semántico no se había activado en una versión anterior del deploy.
 
-Fase 4 — Normalizar el DataPack para que el prompt no se contradiga
-- Dar una sola estructura a `metricas_consolidadas`
-- Separar explícitamente:
-  - `metricas_empresa`
-  - `metricas_sector`
-  - `metricas_ranking_por_ticker`
-  si hacen falta varias vistas
-- Añadir metadatos de alcance:
-  - `scope: company | sector | ranking`
-  - `time_scope: latest_week | selected_range`
-- El prompt debe consumir claves distintas según el tipo de consulta, no reinterpretar una misma clave con formas diferentes.
+---
 
-Fase 5 — Corregir bugs secundarios que hoy pueden estar disparando fallos globales
-- Arreglar el bloque de glossary fallback:
-  - `let enrichedQuestion`
-  - usar `supabaseClient`
-- Revisar cualquier otro camino de baja confianza que hoy pueda lanzar excepción silenciosa y devolver packs incompletos.
+### Plan de implementación (priorizado)
 
-Fase 6 — Añadir una batería de regresión antes de tocar más producción
-Ahora no hay tests para esta edge function. Añadiría tests de `chat-intelligence` para cubrir exactamente lo que se ha roto:
-- “grupos hospitalarios en enero”
-- “grupos hospitalarios según Gemini”
-- “Q1 2026 hospitales”
-- “sector salud” vs “grupos hospitalarios”
-- comprobación de que Sanitas no entra en hospitalarios si esa es la regla editorial final
-- validación de que cabecera/fechas salen de los datos reales, no del deseo del usuario
-- top/bottom con filtro temporal
-- consultas sin rango explícito para asegurar que no rompemos el comportamiento semanal actual
+#### Fase 1 — Pivotar ranking del Agente a consenso/disenso (el cambio más crítico)
 
-Orden recomendado de implementación
-1. Contención de fechas engañosas
-2. Reparación temporal en origen
-3. Fix de hospitalarios/seguros
-4. Filtro de modelo en sector snapshot
-5. Normalización del DataPack/prompt
-6. Tests de regresión
-7. Validación manual con casos reales de enero, Q1 y hospitalarios
+**Archivo**: `supabase/functions/chat-intelligence/index.ts`
 
-Resultado esperado
-- Las consultas por enero/trimestre dejarán de “alucinar” periodos
-- El agente usará el histórico real que ya existe en `rix_runs_v2`
-- “Grupos hospitalarios” dejará de arrastrar seguros por error de grupo/sector
-- “Según Gemini” dejará de mezclar datos de seis modelos
-- El informe volverá a estar alineado entre datos, fechas, ranking y narrativa
+En `skillSectorSnapshot` (~línea 860-895):
+- Cambiar el ranking de `sort by rix_mediano` a ranking por consenso dual:
+  - Calcular rango (max - min) por empresa
+  - Clasificar consenso: Alto (< 10), Medio (10-20), Bajo (> 20)  
+  - Calcular score del "bloque mayoritario" (modelos dentro de ±5 puntos entre sí)
+- Inyectar en el DataPack por cada empresa: `scores: {ChatGPT: X, Gemini: Y, ...}`, `consenso`, `rango`, `bloque_mayoritario`, `outliers`
+- Mantener `rix_mediano` solo como referencia secundaria
 
-Importante:
-No recomiendo revertir a ciegas “todo lo de trimestres”. El fallo no es solo el parser; es que se añadió una capa temporal por encima de skills que seguían diseñados para snapshots semanales. La reparación correcta es volverlos period-aware y cerrar los escapes de grupo/modelo/prompt al mismo tiempo.
+En la tabla cruzada pre-calculada del prompt:
+- Cambiar de una columna "Mediana" a 6 columnas (una por modelo) + Rango + Consenso
+- Así el LLM recibe exactamente los mismos datos que el Dashboard
+
+En el system prompt:
+- Prohibir presentar una puntuación única como "la nota"
+- Obligar a mostrar las 6 puntuaciones individuales
+- El análisis debe centrarse en dónde coinciden y dónde divergen las IAs
+
+#### Fase 2 — Corregir propagación temporal ("1 semana" → "4 semanas")
+
+En `skillSectorSnapshot`: cuando `dateRange` se proporciona, el `report_context` debe reflejar:
+- Número real de semanas con datos
+- Observaciones reales (empresas × modelos × semanas)
+- `date_from` y `date_to` reales del DataPack
+
+En la construcción del `pack` (~línea 2890-2960):
+- Contar semanas distintas en los datos devueltos
+- Inyectar `semanas_cubiertas` y `observaciones_totales` reales
+
+#### Fase 3 — Eliminar fuzzy match a "Grupo Azvi" cuando hay semantic group
+
+En el flujo de `resolveSemanticGroup` + `interpretQueryEdge`:
+- Cuando un semantic group se resuelve, suprimir el fuzzy match de empresa individual
+- Evitar que "grupos hospitalarios" resuelva "Grupo Azvi" como companyProfile
+
+#### Fase 4 — Reforzar el prompt sectorial con KPIs pre-calculados
+
+Calcular y añadir al DataPack un bloque `kpis_sector_canonicos` con las 8 métricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM) como medianas sectoriales. Esto ya se hace parcialmente pero no se inyecta de forma explícita en el prompt, lo que a veces causa que el LLM invente métricas.
+
+### Resultado esperado
+
+- Dashboard y Agente mostrarán los mismos datos base (6 puntuaciones individuales)
+- El Agente analizará consenso y disenso como valor diferencial
+- Los metadatos temporales del informe serán correctos
+- No habrá fuzzy match espúreo cuando un semantic group ya se ha resuelto
+
