@@ -930,7 +930,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
         return {
           ticker: t,
           empresa: nameMap.get(t) || t,
-          rix_mediano: rixMedian,
+          rix_mediano: rixMedian, rix_referencia: rixMedian,
           rix_min: rixMin,
           rix_max: rixMax,
           rango: rixRange,
@@ -1003,7 +1003,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
       weekMap.get(weekKey)!.push(score);
     }
 
-    const evolucion_sector: Array<{ fecha: string; ticker: string; empresa: string; rix_mediano: number }> = [];
+    const evolucion_sector: Array<{ fecha: string; ticker: string; empresa: string; rix_mediano: number; rix_referencia: number }> = [];
     for (const [ticker, weekMap] of evoMap.entries()) {
       const empresa = nameMap.get(ticker) || ticker;
       for (const [week, scores] of weekMap.entries()) {
@@ -1011,9 +1011,13 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
           fecha: week,
           ticker,
           empresa,
-          rix_mediano: medianEdge(scores),
+        const rixRef = medianEdge(scores);
+        evolucion_sector.push({
+          fecha: week,
+          ticker,
+          empresa,
+          rix_mediano: rixRef, rix_referencia: rixRef,
         });
-      }
     }
     evolucion_sector.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
