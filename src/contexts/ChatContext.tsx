@@ -941,8 +941,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(true);
-    // Reset session config - will be loaded from DB in loadHistory
-    setIsSessionConfigured(true);
   }, []);
 
   // Toggle star status for current conversation
