@@ -857,7 +857,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
       }
     }
 
-    // Build ranking with scores_por_modelo
+    // Build ranking with scores_por_modelo + consensus-based analysis
     const ranking = Array.from(grouped.entries())
       .map(([t, tickerRows]) => {
         const rixVals = tickerRows.map((r: any) => r["09_rix_score"]).filter((v: any) => v != null) as number[];
@@ -877,15 +877,56 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
             precio_accion: r["48_precio_accion"],
           };
         });
+
+        // ── Consensus-based analysis ──
+        const rixMedian = medianEdge(rixVals);
+        const rixMin = rixVals.length > 0 ? Math.min(...rixVals) : 0;
+        const rixMax = rixVals.length > 0 ? Math.max(...rixVals) : 0;
+        const rixRange = rixMax - rixMin;
+        const consenso = rixRange <= 10 ? "alto" : rixRange <= 20 ? "medio" : "bajo";
+
+        // Majority block: models within ±5 pts of each other (largest cluster)
+        let bestBlock: number[] = [];
+        for (const anchor of rixVals) {
+          const block = rixVals.filter(v => Math.abs(v - anchor) <= 5);
+          if (block.length > bestBlock.length) bestBlock = block;
+        }
+        const bloque_mayoritario_score = bestBlock.length > 0 ? Math.round(bestBlock.reduce((a, b) => a + b, 0) / bestBlock.length) : rixMedian;
+        const bloque_mayoritario_modelos = scores_por_modelo
+          .filter((s: any) => s.rix != null && bestBlock.includes(s.rix))
+          .map((s: any) => s.model_name);
+        const outlier_modelos = scores_por_modelo
+          .filter((s: any) => s.rix != null && !bestBlock.includes(s.rix))
+          .map((s: any) => ({ model: s.model_name, rix: s.rix }));
+
+        // Per-model scores map for cross-table
+        const scores_individuales: Record<string, number | null> = {};
+        for (const s of scores_por_modelo) {
+          scores_individuales[s.model_name] = s.rix;
+        }
+
         return {
           ticker: t,
           empresa: nameMap.get(t) || t,
-          rix_mediano: medianEdge(rixVals),
+          rix_mediano: rixMedian,
+          rix_min: rixMin,
+          rix_max: rixMax,
+          rango: rixRange,
+          consenso,
+          bloque_mayoritario: { score: bloque_mayoritario_score, modelos: bloque_mayoritario_modelos },
+          outliers: outlier_modelos,
+          scores_individuales,
           scores_por_modelo,
           verified_competitors: competitorsMap.get(t) || [],
         };
       })
-      .sort((a, b) => b.rix_mediano - a.rix_mediano)
+      // Primary sort: consensus alto first, then by majority block score
+      .sort((a, b) => {
+        const consensoOrder: Record<string, number> = { alto: 0, medio: 1, bajo: 2 };
+        const cDiff = (consensoOrder[a.consenso] ?? 1) - (consensoOrder[b.consenso] ?? 1);
+        if (cDiff !== 0) return cDiff;
+        return b.bloque_mayoritario.score - a.bloque_mayoritario.score;
+      })
       .map((r, i) => ({ pos: i + 1, ...r }));
 
     const allMedians = ranking.map(r => r.rix_mediano);
@@ -2517,7 +2558,12 @@ async function buildDataPackFromSkills(
     }
 
     // Priority 2: legacy detectCompaniesInQuestion
-    if (!resolvedTicker && companiesCacheLocal && companiesCacheLocal.length > 0) {
+    // PHASE 3 FIX: Skip fuzzy company matching when a semantic group has been resolved
+    // (prevents "grupos hospitalarios" from fuzzy-matching "Grupo Azvi")
+    const semanticGroupPending = await resolveSemanticGroup(originalQuestion || question, supabaseClient);
+    const hasSemanticGroupMatch = semanticGroupPending.canonical_key != null;
+    
+    if (!resolvedTicker && !hasSemanticGroupMatch && companiesCacheLocal && companiesCacheLocal.length > 0) {
       const detected = detectCompaniesInQuestion(question, companiesCacheLocal);
       if (detected.length > 0) {
         resolvedTicker = detected[0].ticker;
@@ -2537,6 +2583,8 @@ async function buildDataPackFromSkills(
           }
         }
       }
+    } else if (hasSemanticGroupMatch && !resolvedTicker) {
+      console.log(`${logPrefix} [SKILLS-v2] Skipping fuzzy company match — semantic group "${semanticGroupPending.canonical_key}" resolved`);
     }
 
     const shouldRunCrisisScan = !resolvedTicker && (hasDirectCrisisKeywords || interpret.intent === "alert");
@@ -3216,16 +3264,28 @@ async function buildDataPackFromSkills(
       }).filter(Boolean));
       reportContext.weeks_analyzed = uniqueWeeks.size;
     }
-    // Fallback: sectorSnapshot per_model_detail
-    else if (ss?.per_model_detail && Array.isArray(ss.per_model_detail) && ss.per_model_detail.length > 0) {
-      const batchDates = ss.per_model_detail.map((r: any) => r.batch_execution_date || r.period_from).filter(Boolean).sort();
-      if (batchDates.length > 0) {
-        reportContext.date_from = batchDates[0];
-        reportContext.date_to = batchDates[batchDates.length - 1];
+    // Fallback: sectorSnapshot — use semanas_disponibles for real week count
+    else if (ss) {
+      // PHASE 2 FIX: Use actual weeks from sectorSnapshot, not just per_model_detail dates
+      const weeksAvailable = ss.semanas_disponibles || [];
+      const realWeekCount = weeksAvailable.length;
+      const totalModelRows = ss.per_model_detail?.length || 0;
+      const numEmpresas = ss.num_empresas || ss.ranking?.length || 0;
+      
+      if (weeksAvailable.length > 0) {
+        reportContext.date_from = weeksAvailable[weeksAvailable.length - 1]; // oldest
+        reportContext.date_to = weeksAvailable[0]; // newest
+      } else if (ss.per_model_detail && Array.isArray(ss.per_model_detail) && ss.per_model_detail.length > 0) {
+        const batchDates = ss.per_model_detail.map((r: any) => r.batch_execution_date || r.period_from).filter(Boolean).sort();
+        if (batchDates.length > 0) {
+          reportContext.date_from = batchDates[0];
+          reportContext.date_to = batchDates[batchDates.length - 1];
+        }
       }
-      reportContext.sample_size = ss.per_model_detail.length;
-      const uniqueWeeks = new Set(batchDates.map((d: string) => String(d).slice(0, 10)));
-      reportContext.weeks_analyzed = uniqueWeeks.size;
+      reportContext.sample_size = totalModelRows > 0 ? totalModelRows : (numEmpresas * (filterByModel ? 1 : 6) * Math.max(realWeekCount, 1));
+      reportContext.weeks_analyzed = realWeekCount || 1;
+      reportContext.num_empresas = numEmpresas;
+      console.log(`${logPrefix} [REPORT_CTX] SectorSnapshot: ${realWeekCount} weeks, ${reportContext.sample_size} observations, ${numEmpresas} companies`);
     }
     // Fallback: enrichment data from ranking
     else if ((pack as any)._enrichment_date_from) {
