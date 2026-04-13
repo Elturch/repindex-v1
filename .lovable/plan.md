@@ -1,53 +1,49 @@
 
 
-## Plan de Stress Test del Agente Rix — Diccionario + Periodos Temporales
+## Plan: Corrección de 4 Bugs de Consistencia del Agente Rix
 
-### Batería de 16 consultas organizadas por vector de fallo
+### Bug #1 (P0 - Crítico): Prompt contradictorio sobre medianas
 
-**Grupo A — Grupos canónicos recientes (diccionario)**
-1. `"Ranking de grupos hospitalarios"` — Grupo con exclusiones (GRF, PHM, ROVI excluidos); verifica que no aparezcan farmacéuticas
-2. `"Compara las OTAs en el último trimestre"` — Grupo canónico + temporal trimestral
-3. `"¿Cómo están las cerveceras?"` — Grupo micro (2 empresas, ambas PRIV)
-4. `"Ranking de bodegas últimas 6 semanas"` — Grupo micro + temporal relativo
-5. `"Sector defensa: evolución último mes"` — Grupo reciente + temporal mensual
+**Problema**: Las líneas 6530-6537 del system prompt instruyen explícitamente al LLM a usar "RIX mediano: 59 (±5 intermodelo)" como formato de presentación. Esto contradice las reglas anti-mediana añadidas en 6592-6616. El LLM sigue las instrucciones más detalladas (las antiguas).
 
-**Grupo B — Marca matriz y propiedad (glossary)**
-6. `"Análisis de Zara en el primer trimestre 2026"` — Debe resolver a ITX, no fallar como empresa desconocida
-7. `"¿Qué dicen las IAs de Movistar?"` — Debe resolver a TEF
-8. `"¿De quién es HLA Hospitales?"` — Entrada tipo `propiedad` en glossary
+**Fix**: Reescribir el bloque "INCERTIDUMBRE INTERMODELO" (6530-6539) para eliminar toda referencia a "RIX mediano" y "mediana". Reemplazar con instrucciones que usen los 6 scores individuales + Consenso + Bloque Mayoritario como formato obligatorio. La incertidumbre se expresa mediante el Rango y el Nivel de Consenso, no mediante "±X intermodelo".
 
-**Grupo C — Temporales avanzados**
-9. `"Top 5 IBEX en el último trimestre"` — Ranking + trimestre relativo (Q1 2026 o Q2 según fecha)
-10. `"Evolución del sector banca en las últimas 6 semanas"` — Sector + temporal relativo 6 semanas
-11. `"Ranking de las eléctricas en febrero 2026"` — Grupo canónico + mes específico
-12. `"¿Cómo ha evolucionado BBVA en el primer semestre 2026?"` — Empresa + semestre
-13. `"Farmacéuticas en las últimas 8 semanas"` — Grupo canónico + temporal que puede exceder datos disponibles
+### Bug #2 (P0 - Crítico): Nombres de campos JSON con "mediana"
 
-**Grupo D — Edge cases y no_disponible**
-14. `"Análisis de Abengoa"` — Empresa liquidada (no_disponible); debe dar respuesta explicativa sin intentar buscar datos
-15. `"Compara Lidl con Mercadona"` — Una no_disponible + una que sí existe
-16. `"Ranking de supermercados último trimestre"` — Grupo canónico con mix de PRIV y públicas + temporal
+**Problema**: Los datos serializados en el DATAPACK contienen campos llamados `rix_mediano`, `mediana`, `mediana_sectorial`, `rix_mediana`. El LLM ve estos nombres y los reproduce textualmente en sus respuestas.
 
-### Verificaciones por consulta
+**Fix**: Renombrar los campos en las funciones de datos:
+- `rix_mediano` → `rix_referencia` (en ranking entries, sector snapshot, evolution)
+- `mediana` → `rix_referencia` (en ranking entries del buildRankingDataPack)
+- `mediana_sectorial` → `referencia_sectorial`
+- `rix_mediana` en sector_avg → `rix_referencia`
+- `rix_mediano` en DATAPACK serialization (línea 6319) → `rix_referencia`
 
-Para cada respuesta se comprobará:
-- **Scores**: 6 puntuaciones individuales visibles, sin mediana ni "RIX Score" único
-- **Scope**: que el DataPack y la narrativa cubran TODAS las empresas del grupo/ranking (no solo el líder)
-- **Exclusiones**: que los grupos con exclusions (hospitalarios) no incluyan las empresas excluidas
-- **Fechas**: que la metodología refleje las fechas REALES del dataset, no las solicitadas
-- **Temporal**: que `parseTemporalExpression` genere el rango correcto y que los datos se filtren por ese rango
-- **Glossary**: que marcas (Zara→ITX), no_disponible (Abengoa) y propiedad (HLA) se resuelvan correctamente
-- **Bibliografía**: URLs solo de empresas en scope
+Esto afecta ~15 puntos en el archivo. Los valores numéricos no cambian (sigue siendo la mediana matemática), solo el nombre del campo para que el LLM no diga "mediana".
 
-### Implementación técnica
+### Bug #3 (P1 - Alto): `no_disponible` sin instrucciones en el prompt
 
-Se ejecutarán las 16 consultas via `supabase--curl_edge_functions` contra `chat-intelligence` con un `conversation_id` único por test. Cada respuesta se parseará buscando:
-- Patrones prohibidos: `/mediana|RIX Score.*\d{2}/i`
-- Presencia obligatoria de tabla con 6 columnas de modelo
-- Fechas de metodología vs rango temporal solicitado
-- Empresas mencionadas vs empresas esperadas del grupo canónico
+**Problema**: Cuando el glossary detecta una entidad `no_disponible` (Abengoa, etc.), añade `[NO_DISPONIBLE: explicación]` a la pregunta pero el system prompt no contiene ninguna instrucción sobre cómo manejar este tag. El LLM ignora el tag o genera una respuesta genérica.
 
-### Entregable
+**Fix**: Añadir un bloque condicional en el system prompt (después de línea 6615) que detecte si la pregunta contiene `[NO_DISPONIBLE]` e instruya al LLM a:
+1. Explicar que la entidad no está monitorizada actualmente por RepIndex
+2. Dar el motivo específico del tag (liquidada, privada sin cobertura, etc.)
+3. NO intentar analizar datos inexistentes
+4. Sugerir alternativas si las hay
 
-Documento `/mnt/documents/stress_test_rix_agent.md` con resultado de cada test (PASS/FAIL), extracto de la respuesta problemática, y lista de bugs priorizados por severidad.
+### Bug #4 (P1 - Medio): F2 SQL Expert promueve medianas
+
+**Problema**: La línea 4952 del prompt de F2 dice "Usa medianas (PERCENTILE_CONT(0.5)) en vez de AVG cuando agregues scores entre modelos." Esto instruye al SQL expert a generar queries que calculan medianas, alimentando el problema.
+
+**Fix**: Reescribir la línea 4952 para que el SQL expert genere queries que devuelvan los 6 scores individuales por modelo, sin agregar. Si necesita ordenar, usar consenso (rango inter-modelo) en vez de mediana.
+
+### Orden de ejecución y pruebas
+
+1. **Fix Bug #2** (campos JSON) → Deploy → Test con "Ranking del sector banca" → Verificar que la respuesta NO contiene "mediana"
+2. **Fix Bug #1** (prompt contradictorio) → Deploy → Test con "Top 5 IBEX" → Verificar formato de 6 scores individuales
+3. **Fix Bug #3** (no_disponible) → Deploy → Test con "Análisis de Abengoa" → Verificar respuesta explicativa
+4. **Fix Bug #4** (F2 SQL) → Deploy → Test con "Evolución del sector banca últimas 6 semanas"
+
+### Archivos afectados
+- `supabase/functions/chat-intelligence/index.ts` (único archivo, ~20 cambios puntuales)
 
