@@ -241,11 +241,8 @@ interface ChatContextType {
   downloadAsHtml: () => void;
   // Streaming state
   isStreaming: boolean;
-  // Session configuration - persists for entire conversation
+  // Session configuration
   sessionDepthLevel: DepthLevel;
-  sessionRoleId: string;
-  isSessionConfigured: boolean;
-  configureSession: (roleId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -277,10 +274,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
   
-  // Session configuration state - persists for entire conversation
+  // Session configuration state
   const [sessionDepthLevel, setSessionDepthLevel] = useState<DepthLevel>('complete');
-  const [sessionRoleId, setSessionRoleId] = useState<string>('general');
-  const [isSessionConfigured, setIsSessionConfigured] = useState(true);
   
   // Use auth context for user ID - this syncs properly with AuthProvider
   const { user, isAuthenticated } = useAuth();
@@ -349,29 +344,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
   }, [currentUserId, sessionId, messages.length]);
 
-  // Configure session (role only) - depth defaults to 'complete' (not forced exhaustive)
-  const configureSession = useCallback(async (roleId: string) => {
-    setSessionDepthLevel('complete');
-    setSessionRoleId(roleId);
-    setIsSessionConfigured(true);
-    
-    // Persist to database if authenticated
-    if (currentUserId && conversationId) {
-      try {
-        await supabase
-          .from('user_conversations')
-          .update({ 
-            session_depth_level: 'complete',
-            session_role_id: roleId 
-          })
-          .eq('id', conversationId);
-      } catch (error) {
-        console.error('Error saving session config:', error);
-      }
-    }
-    
-    console.log('[ChatContext] Session configured:', { depthLevel: 'complete', roleId });
-  }, [currentUserId, conversationId]);
 
   // Load conversation history from DB on mount
   useEffect(() => {
@@ -406,15 +378,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
               .single();
             if (convData) {
               setIsStarred(convData.is_starred || false);
-              // Restore session configuration
               if (convData.session_depth_level) {
                 setSessionDepthLevel(convData.session_depth_level as DepthLevel);
               }
-              if (convData.session_role_id) {
-                setSessionRoleId(convData.session_role_id);
-              }
-              // Mark as configured if conversation has messages (already started)
-              setIsSessionConfigured(true);
             }
           }
         }
@@ -474,11 +440,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
 
     try {
-      const role = options?.roleId 
-        ? getRoleById(options.roleId) 
-        : sessionRoleId && sessionRoleId !== 'general' 
-          ? getRoleById(sessionRoleId) 
-          : undefined;
+      const role = options?.roleId ? getRoleById(options.roleId) : undefined;
       const timeoutMs = getTimeoutForRequest(options?.depthLevel || sessionDepthLevel);
       
       console.log('[ChatContext] Sending message with language:', language.code, 'depth:', options?.depthLevel, 'streaming:', useStreaming);
@@ -966,10 +928,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(false);
-    // Reset session configuration for new conversation
     setSessionDepthLevel('complete');
-    setSessionRoleId('general');
-    setIsSessionConfigured(true);
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
@@ -982,8 +941,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(true);
-    // Reset session config - will be loaded from DB in loadHistory
-    setIsSessionConfigured(true);
   }, []);
 
   // Toggle star status for current conversation
@@ -1502,11 +1459,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         downloadAsJson,
         downloadAsHtml,
         isStreaming,
-        // Session configuration
         sessionDepthLevel,
-        sessionRoleId,
-        isSessionConfigured,
-        configureSession,
       }}
     >
       {children}
