@@ -2232,11 +2232,8 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
 
   if (hasAlert && !hasEvolution && !hasDivergence) {
     intent = "alert"; recommended_skills.push("skillCrisisScan"); confidence = 0.85;
-  } else if (hasEvolution) {
-    intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
-  } else if (hasDivergence) {
-    intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
-  } else if (hasRanking) {
+  } else if (hasRanking && (hasIbex || filters.sector_category)) {
+    // Ranking + IBEX/sector takes priority over evolution — "top 5 IBEX últimas 4 semanas" is a ranking query with temporal filter
     intent = "ranking"; recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
     if (hasIbex) filters.ibex_family_code = "IBEX-35";
     if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
@@ -2246,7 +2243,22 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
     const bottomMatch = lower.match(/\b(?:bottom|botom|últimos|peores|colistas?|cola|worst)\s*(\d+)?\b/i);
     if (topMatch) filters.top_n = topMatch[1] || "5";
     if (bottomMatch) filters.bottom_n = bottomMatch[1] || "5";
-    // If user asks for "top 5 y bottom 5" or similar, mark both
+    if (!topMatch && !bottomMatch && /\b(top|mejor|l[ií]der)/i.test(lower)) filters.top_n = "5";
+    const hasBottomIntent = /\b(bottom|botom|peor|peores|últimos|colistas?|cola|worst|los\s+m[aá]s\s+bajos)\b/i.test(lower);
+    if (hasBottomIntent && !filters.bottom_n) filters.bottom_n = "5";
+  } else if (hasEvolution) {
+    intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
+  } else if (hasDivergence) {
+    intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
+  } else if (hasRanking) {
+    intent = "ranking"; recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
+    if (hasIbex) filters.ibex_family_code = "IBEX-35";
+    if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
+    confidence = 0.85;
+    const topMatch = lower.match(/\btop\s*(\d+)\b/i);
+    const bottomMatch = lower.match(/\b(?:bottom|botom|últimos|peores|colistas?|cola|worst)\s*(\d+)?\b/i);
+    if (topMatch) filters.top_n = topMatch[1] || "5";
+    if (bottomMatch) filters.bottom_n = bottomMatch[1] || "5";
     if (!topMatch && !bottomMatch && /\b(top|mejor|l[ií]der)/i.test(lower)) filters.top_n = "5";
     const hasBottomIntent = /\b(bottom|botom|peor|peores|últimos|colistas?|cola|worst|los\s+m[aá]s\s+bajos)\b/i.test(lower);
     if (hasBottomIntent && !filters.bottom_n) filters.bottom_n = "5";
