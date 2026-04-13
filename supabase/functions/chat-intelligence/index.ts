@@ -4182,8 +4182,8 @@ function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
 
   for (const run of rixData) {
     const sources = extractVerifiedSources(
-      run["20_res_gpt_bruto"] ?? null,
-      run["21_res_perplex_bruto"] ?? null,
+      run["20_res_gpt_bruto"] ?? run["_raw_gpt"] ?? null,
+      run["21_res_perplex_bruto"] ?? run["_raw_perplex"] ?? null,
       run["06_period_from"] ?? null,
       run["07_period_to"] ?? null,
     );
