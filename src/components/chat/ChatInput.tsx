@@ -5,7 +5,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Send, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageSelector } from "./LanguageSelector";
-import { SessionConfigPanel } from "./SessionConfigPanel";
 import { ChatLanguage } from "@/lib/chatLanguages";
 import { getChatTranslations } from "@/lib/chatTranslations";
 import { useChatContext, DepthLevel } from "@/contexts/ChatContext";
@@ -92,7 +91,7 @@ export function ChatInput({
   }, [prefillText, onPrefillConsumed]);
 
   // Get session configuration from context
-  const { sessionDepthLevel, sessionRoleId, isSessionConfigured } = useChatContext();
+  const { sessionDepthLevel } = useChatContext();
 
   // Auto-resize textarea as user types
   const adjustTextareaHeight = () => {
@@ -167,8 +166,7 @@ export function ChatInput({
     }
   };
 
-  // Can send only if text is present AND session is configured
-  const canSend = value.trim() && !isLoading && isSessionConfigured;
+  const canSend = value.trim() && !isLoading;
 
   const handleSend = () => {
     if (canSend) {
@@ -176,13 +174,8 @@ export function ChatInput({
         recognitionRef.current.stop();
         setIsListening(false);
       }
-      // Use session configuration from context (NOT local state)
-      onSend(value.trim(), { 
-        depthLevel: sessionDepthLevel,
-        roleId: sessionRoleId !== 'general' ? sessionRoleId : undefined
-      });
+      onSend(value.trim(), { depthLevel: sessionDepthLevel });
       setValue("");
-      // NOTE: We do NOT reset session configuration - it persists for entire conversation
     }
   };
 
@@ -195,8 +188,6 @@ export function ChatInput({
 
   return (
     <div className="space-y-3">
-      {/* Session Configuration Panel - uses context, shown only on non-compact mode */}
-      {!compact && <SessionConfigPanel />}
       
       <div className="flex gap-2">
         {/* Language Selector */}
@@ -260,10 +251,6 @@ export function ChatInput({
                 <Send className={compact ? "h-4 w-4" : "h-5 w-5"} />
               </Button>
             </TooltipTrigger>
-            {!isSessionConfigured && value.trim() && (
-              <TooltipContent side="top">
-                <p className="text-xs">Selecciona tu perspectiva profesional para enviar</p>
-              </TooltipContent>
             )}
           </Tooltip>
         </TooltipProvider>
