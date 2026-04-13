@@ -9902,6 +9902,27 @@ async function handleStandardChat(
     console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
     const skillsStart = Date.now();
     const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix, originalUserQuestion);
+    // ── NO_DISPONIBLE short-circuit: entity not in database, return explanatory answer directly ──
+    if (skillsPack && (skillsPack as any).no_disponible === true) {
+      const detail = (skillsPack as any).no_disponible_detail || "entidad no monitorizada";
+      console.log(`${logPrefix} [NO_DISPONIBLE] Returning explanatory response for: ${detail}`);
+      const noDispAnswer = language === "en"
+        ? `The entity you asked about is **not currently monitored** by RepIndex.\n\n**Reason:** ${detail}\n\nRepIndex monitors companies in the IBEX 35 and the broader IBEX family (~35 companies). If you'd like to analyze a company we do cover, try asking about any of them.\n\n💡 Try: *"Ranking del IBEX 35"* or *"Analiza Telefónica"*`
+        : `La entidad que consultas **no está monitorizada actualmente** por RepIndex.\n\n**Motivo:** ${detail}\n\nRepIndex monitoriza empresas del IBEX 35 y la familia IBEX ampliada (~35 empresas). Si deseas analizar una empresa que sí cubrimos, puedes preguntar por cualquiera de ellas.\n\n💡 Prueba: *"Ranking del IBEX 35"* o *"Analiza Telefónica"*`;
+      return new Response(
+        JSON.stringify({
+          answer: noDispAnswer,
+          metadata: { questionCategory: "corporate_analysis", type: "no_disponible" },
+          suggestedQuestions: [
+            language === "en" ? "Show me the IBEX 35 ranking" : "Muéstrame el ranking del IBEX 35",
+            language === "en" ? "Analyze Telefónica" : "Analiza Telefónica",
+            language === "en" ? "Which companies are in crisis?" : "¿Qué empresas están en crisis?",
+          ],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      );
+    }
+
     if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0 || (skillsPack as any).crisis_scan_empty === true)) {
       usedSkillsPipeline = true;
       dataPack = skillsPack;
