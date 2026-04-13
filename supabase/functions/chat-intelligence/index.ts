@@ -2452,8 +2452,11 @@ async function buildDataPackFromSkills(
       }
     }
 
-    // ── Glossary fallback: when still general_question with low confidence, look up specialized terms ──
-    if (interpret.intent === "general_question" && interpret.confidence < 0.5) {
+    // ── Glossary fallback: when general_question with low confidence OR company_analysis with no resolved entities ──
+    const noEntitiesResolved = interpret.entities.length === 0 && bridge.detected_companies.length === 0 && !interpret.filters.ticker;
+    const shouldTryGlossary = (interpret.intent === "general_question" && interpret.confidence < 0.5) || 
+                               (interpret.intent === "company_analysis" && noEntitiesResolved);
+    if (shouldTryGlossary) {
       try {
         const glossaryTerms = await lookupGlossaryTerms(supabaseClient, question);
         if (glossaryTerms.length > 0) {
