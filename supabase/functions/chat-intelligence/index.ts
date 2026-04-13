@@ -2940,6 +2940,9 @@ async function buildDataPackFromSkills(
     if (ss) {
       pack.ranking = (ss.ranking || []).map((r: any) => ({
         pos: r.pos, ticker: r.ticker, nombre: r.empresa, rix_avg: r.rix_mediano,
+        rix_min: r.rix_min, rix_max: r.rix_max, rango: r.rango,
+        consenso: r.consenso, bloque_mayoritario: r.bloque_mayoritario,
+        outliers: r.outliers, scores_individuales: r.scores_individuales,
       }));
       (pack as any).sector_snapshot = ss;
 
