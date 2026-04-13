@@ -1007,10 +1007,6 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
     for (const [ticker, weekMap] of evoMap.entries()) {
       const empresa = nameMap.get(ticker) || ticker;
       for (const [week, scores] of weekMap.entries()) {
-        evolucion_sector.push({
-          fecha: week,
-          ticker,
-          empresa,
         const rixRef = medianEdge(scores);
         evolucion_sector.push({
           fecha: week,
@@ -1018,6 +1014,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
           empresa,
           rix_mediano: rixRef, rix_referencia: rixRef,
         });
+      }
     }
     evolucion_sector.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
