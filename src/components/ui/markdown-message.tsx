@@ -759,7 +759,7 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
     ${bodyContent}
   </main>
   
-  ${generateBibliographyHtml(verifiedSources || [], periodFrom, periodTo)}
+  ${generateBibliographyHtml(verifiedSources || [], effectivePeriodFrom, effectivePeriodTo)}
   
   <footer class="report-footer">
     <div class="footer-logo">RepIndex</div>
