@@ -963,32 +963,40 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
     });
 
     // 4. per_model_detail: ALL raw rows from latest week, grouped by ticker
-    // This gives E3/E4 the full granularity they need
-    const per_model_detail = latestRows.map((row: any) => ({
-      ticker: String(row["05_ticker"] || ""),
-      empresa: nameMap.get(String(row["05_ticker"] || "")) || String(row["03_target_name"] || ""),
-      modelo: String(row["02_model_name"] || ""),
-      model_name: String(row["02_model_name"] || ""),
-      rix: row["09_rix_score"],
-      nvm: row["23_nvm_score"],
-      drm: row["26_drm_score"],
-      sim: row["29_sim_score"],
-      rmm: row["32_rmm_score"],
-      cem: row["35_cem_score"],
-      gam: row["38_gam_score"],
-      dcm: row["41_dcm_score"],
-      cxm: row["44_cxm_score"],
-      resumen: row["10_resumen"],
-      puntos_clave: row["11_puntos_clave"],
-      flags: row["12_flags"] ?? row["17_flags"],
-      period_from: row["06_period_from"] ?? row["07_period_to"],
-      period_to: row["07_period_to"],
-      // Preserve raw AI responses for bibliography/source extraction
-      "20_res_gpt_bruto": row["20_res_gpt_bruto"] ?? null,
-      "21_res_perplex_bruto": row["21_res_perplex_bruto"] ?? null,
-      "06_period_from": row["06_period_from"] ?? null,
-      "07_period_to": row["07_period_to"] ?? null,
-    }));
+    // For large groups (>4 issuers), truncate resumen and omit puntos_clave/flags
+    // for non-leader/non-tail companies to keep DataPack under token limits
+    const isLargeGroup = ranking.length > 4;
+    const liderTicker = lider?.ticker || "";
+    const colistaTicker = colista?.ticker || "";
+    const per_model_detail = latestRows.map((row: any) => {
+      const tk = String(row["05_ticker"] || "");
+      const isKeyCompany = !isLargeGroup || tk === liderTicker || tk === colistaTicker;
+      const resumenRaw = row["10_resumen"] || "";
+      return {
+        ticker: tk,
+        empresa: nameMap.get(tk) || String(row["03_target_name"] || ""),
+        modelo: String(row["02_model_name"] || ""),
+        model_name: String(row["02_model_name"] || ""),
+        rix: row["09_rix_score"],
+        nvm: row["23_nvm_score"],
+        drm: row["26_drm_score"],
+        sim: row["29_sim_score"],
+        rmm: row["32_rmm_score"],
+        cem: row["35_cem_score"],
+        gam: row["38_gam_score"],
+        dcm: row["41_dcm_score"],
+        cxm: row["44_cxm_score"],
+        resumen: isKeyCompany ? resumenRaw : (resumenRaw.length > 200 ? resumenRaw.substring(0, 200) + "…" : resumenRaw),
+        ...(isKeyCompany ? { puntos_clave: row["11_puntos_clave"], flags: row["12_flags"] ?? row["17_flags"] } : {}),
+        period_from: row["06_period_from"] ?? row["07_period_to"],
+        period_to: row["07_period_to"],
+        // Raw AI responses kept temporarily for source extraction, stripped before LLM serialization
+        _raw_gpt: row["20_res_gpt_bruto"] ?? null,
+        _raw_perplex: row["21_res_perplex_bruto"] ?? null,
+        "06_period_from": row["06_period_from"] ?? null,
+        "07_period_to": row["07_period_to"] ?? null,
+      };
+    });
 
     // 5. evolucion_sector: array semanal por ticker (últimas 4 semanas)
     const evoMap = new Map<string, Map<string, number[]>>();
@@ -4174,8 +4182,8 @@ function extractSourcesFromRixData(rixData: any[]): VerifiedSource[] {
 
   for (const run of rixData) {
     const sources = extractVerifiedSources(
-      run["20_res_gpt_bruto"] ?? null,
-      run["21_res_perplex_bruto"] ?? null,
+      run["20_res_gpt_bruto"] ?? run["_raw_gpt"] ?? null,
+      run["21_res_perplex_bruto"] ?? run["_raw_perplex"] ?? null,
       run["06_period_from"] ?? null,
       run["07_period_to"] ?? null,
     );
