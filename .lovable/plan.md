@@ -1,49 +1,43 @@
 
 
-## Plan: Corrección de 4 Bugs de Consistencia del Agente Rix
+## Diagnóstico Test 26: "Sector defensa: evolución último mes"
 
-### Bug #1 (P0 - Crítico): Prompt contradictorio sobre medianas
+### Causa raíz: Timeout del LLM, no del data fetch
 
-**Problema**: Las líneas 6530-6537 del system prompt instruyen explícitamente al LLM a usar "RIX mediano: 59 (±5 intermodelo)" como formato de presentación. Esto contradice las reglas anti-mediana añadidas en 6592-6616. El LLM sigue las instrucciones más detalladas (las antiguas).
+**Los datos existen y se recuperan rápido:**
+- 6 tickers: AIR, PSG, CASH, IDR, AMP, EME-PRIV
+- 30 rows por ticker en el último mes (180 rows total)
+- La query a `rix_runs_v2` completa sin problemas
 
-**Fix**: Reescribir el bloque "INCERTIDUMBRE INTERMODELO" (6530-6539) para eliminar toda referencia a "RIX mediano" y "mediana". Reemplazar con instrucciones que usen los 6 scores individuales + Consenso + Bloque Mayoritario como formato obligatorio. La incertidumbre se expresa mediante el Rango y el Nivel de Consenso, no mediante "±X intermodelo".
+**El cuello de botella está en la generación del LLM:**
+1. El `skillSectorSnapshot` genera un DATAPACK con ~180 rows de `per_model_detail` (6 empresas × 6 modelos × ~5 semanas)
+2. Cada row incluye `resumen` (500 chars), `puntos_clave`, `flags`, y los 8 sub-scores
+3. El DATAPACK serializado supera fácilmente los 50-80K tokens
+4. El LLM tiene un timeout de 120 segundos y `max_tokens: 40000`
+5. Con un DATAPACK tan grande, el LLM no alcanza a completar la respuesta antes del timeout
 
-### Bug #2 (P0 - Crítico): Nombres de campos JSON con "mediana"
+### Solución propuesta
 
-**Problema**: Los datos serializados en el DATAPACK contienen campos llamados `rix_mediano`, `mediana`, `mediana_sectorial`, `rix_mediana`. El LLM ve estos nombres y los reproduce textualmente en sus respuestas.
+**Optimizar el tamaño del DATAPACK para consultas de grupo canónico + evolución:**
 
-**Fix**: Renombrar los campos en las funciones de datos:
-- `rix_mediano` → `rix_referencia` (en ranking entries, sector snapshot, evolution)
-- `mediana` → `rix_referencia` (en ranking entries del buildRankingDataPack)
-- `mediana_sectorial` → `referencia_sectorial`
-- `rix_mediana` en sector_avg → `rix_referencia`
-- `rix_mediano` en DATAPACK serialization (línea 6319) → `rix_referencia`
+1. **Truncar `per_model_detail` en sector snapshots** (líneas 967-991): Cuando hay >4 empresas, limitar `resumen` a 200 chars y eliminar `puntos_clave` y `flags` de las rows que no son del líder/colista. Esto reduce el payload ~60%.
 
-Esto afecta ~15 puntos en el archivo. Los valores numéricos no cambian (sigue siendo la mediana matemática), solo el nombre del campo para que el LLM no diga "mediana".
+2. **Limitar `evolucion_sector` a las últimas 4 semanas reales** (ya se hace, pero verificar que no se envían semanas duplicadas por zona horaria).
 
-### Bug #3 (P1 - Alto): `no_disponible` sin instrucciones en el prompt
+3. **Reducir `20_res_gpt_bruto` y `21_res_perplex_bruto`** en `per_model_detail`: Estos campos de texto crudo se pasan al LLM pero son enormes. Eliminarlos del DATAPACK serializado y usarlos solo para extracción de fuentes.
 
-**Problema**: Cuando el glossary detecta una entidad `no_disponible` (Abengoa, etc.), añade `[NO_DISPONIBLE: explicación]` a la pregunta pero el system prompt no contiene ninguna instrucción sobre cómo manejar este tag. El LLM ignora el tag o genera una respuesta genérica.
+### Cambios en código
 
-**Fix**: Añadir un bloque condicional en el system prompt (después de línea 6615) que detecte si la pregunta contiene `[NO_DISPONIBLE]` e instruya al LLM a:
-1. Explicar que la entidad no está monitorizada actualmente por RepIndex
-2. Dar el motivo específico del tag (liquidada, privada sin cobertura, etc.)
-3. NO intentar analizar datos inexistentes
-4. Sugerir alternativas si las hay
+**Archivo: `supabase/functions/chat-intelligence/index.ts`**
 
-### Bug #4 (P1 - Medio): F2 SQL Expert promueve medianas
+- **Líneas 967-991** (`per_model_detail` construction): Añadir truncado condicional cuando `issuers.length > 4`:
+  - `resumen`: max 200 chars (vs 500)
+  - `puntos_clave`: omitir para empresas que no son líder/colista
+  - `20_res_gpt_bruto`, `21_res_perplex_bruto`: excluir del DATAPACK serializado
 
-**Problema**: La línea 4952 del prompt de F2 dice "Usa medianas (PERCENTILE_CONT(0.5)) en vez de AVG cuando agregues scores entre modelos." Esto instruye al SQL expert a generar queries que calculan medianas, alimentando el problema.
+- **Línea 6340-6350** (DATAPACK serialization): Asegurar que los campos brutos (`20_res_gpt_bruto`, `21_res_perplex_bruto`) se extraen para fuentes ANTES de serializar, y luego se eliminan del JSON enviado al LLM.
 
-**Fix**: Reescribir la línea 4952 para que el SQL expert genere queries que devuelvan los 6 scores individuales por modelo, sin agregar. Si necesita ordenar, usar consenso (rango inter-modelo) en vez de mediana.
+### Resultado esperado
 
-### Orden de ejecución y pruebas
-
-1. **Fix Bug #2** (campos JSON) → Deploy → Test con "Ranking del sector banca" → Verificar que la respuesta NO contiene "mediana"
-2. **Fix Bug #1** (prompt contradictorio) → Deploy → Test con "Top 5 IBEX" → Verificar formato de 6 scores individuales
-3. **Fix Bug #3** (no_disponible) → Deploy → Test con "Análisis de Abengoa" → Verificar respuesta explicativa
-4. **Fix Bug #4** (F2 SQL) → Deploy → Test con "Evolución del sector banca últimas 6 semanas"
-
-### Archivos afectados
-- `supabase/functions/chat-intelligence/index.ts` (único archivo, ~20 cambios puntuales)
+El DATAPACK para "Sector defensa: evolución último mes" pasará de ~70K tokens a ~25K tokens, permitiendo al LLM completar la respuesta dentro de los 120 segundos de timeout.
 
