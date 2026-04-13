@@ -286,8 +286,29 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       const min = valid.length > 0 ? Math.min(...valid) : 0;
       const max = valid.length > 0 ? Math.max(...valid) : 0;
       const range = max - min;
-      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo", scores_by_model: g.scores };
-    }).sort((a, b) => b.median_rix - a.median_rix).slice(0, topN);
+      const consensus_level = range <= 10 ? "alto" : range <= 20 ? "medio" : "bajo";
+      // Majority block: largest cluster of models within ±5 pts
+      let bestBlock: number[] = [];
+      for (const anchor of valid) {
+        const block = valid.filter(v => Math.abs(v - anchor) <= 5);
+        if (block.length > bestBlock.length) bestBlock = block;
+      }
+      const majority_block_score = bestBlock.length > 0 ? Math.round(bestBlock.reduce((a, b) => a + b, 0) / bestBlock.length) : med;
+      const majority_block_models = g.scores
+        .filter(s => s.rix_score != null && bestBlock.includes(s.rix_score))
+        .map(s => s.model);
+      // Per-model scores map
+      const scores_individuales: Record<string, number | null> = {};
+      for (const s of g.scores) scores_individuales[s.model] = s.rix_score;
+      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level, scores_by_model: g.scores, majority_block_score, majority_block_models, scores_individuales };
+    })
+    // Primary sort: consensus alto first, then by majority block score
+    .sort((a, b) => {
+      const order: Record<string, number> = { alto: 0, medio: 1, bajo: 2 };
+      const cDiff = (order[a.consensus_level] ?? 1) - (order[b.consensus_level] ?? 1);
+      if (cDiff !== 0) return cDiff;
+      return b.majority_block_score - a.majority_block_score;
+    }).slice(0, topN);
     console.log(`[SKILL] CompanyRanking: ${ranking.length} companies in ${Date.now() - start}ms`);
     return { success: true, data: { batch_date: batchDate, filter: params.sector_category || params.ibex_family_code || "all", ranking } };
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
