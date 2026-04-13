@@ -246,8 +246,8 @@ Deno.serve(async (req) => {
       const lowLabel = dimLabels[a.lowDim] || a.lowDim;
       suggestions.push({
         text: lang === "en"
-          ? `Analyze the reputation of ${a.name} — stands out in ${highLabel} but has weakness in ${lowLabel}`
-          : `Analiza la reputación de ${a.name} — destaca en ${highLabel} pero tiene debilidad en ${lowLabel}`,
+          ? `Analyze the reputation of ${a.name} — breakdown by dimensions`
+          : `Analiza la reputación de ${a.name} — desglose por dimensiones`,
         type: "vector_insight",
         icon: "🔬",
         source: "dimensional_anomaly",
@@ -270,8 +270,8 @@ Deno.serve(async (req) => {
     for (const d of divergences.slice(0, 2)) {
       suggestions.push({
         text: lang === "en"
-          ? `AIs diverge sharply on ${d.name} (${d.range}-point range) — why do they see such different realities?`
-          : `Las IAs divergen mucho sobre ${d.name} (rango de ${d.range} puntos) — ¿por qué las IAs ven realidades tan distintas?`,
+          ? `Analyze the AI divergence on ${d.name} (${d.range}-point range)`
+          : `Analiza la divergencia entre IAs sobre ${d.name} (rango de ${d.range} puntos)`,
         type: "vector_insight",
         icon: "🤖",
         source: "model_divergence",
@@ -302,13 +302,9 @@ Deno.serve(async (req) => {
     for (const m of moves.slice(0, 2)) {
       const up = m.delta > 0;
       suggestions.push({
-        text: up
-          ? lang === "en"
-            ? `${m.name} jumped from ${m.prevAvg} to ${m.currAvg} (+${m.delta} pts) in one week — what happened?`
-            : `${m.name} ha subido de ${m.prevAvg} a ${m.currAvg} (+${m.delta} pts) en una semana — ¿qué ha pasado?`
-          : lang === "en"
-            ? `${m.name} dropped from ${m.prevAvg} to ${m.currAvg} (${m.delta} pts) in one week — real issue or noise?`
-            : `${m.name} ha caído de ${m.prevAvg} a ${m.currAvg} (${m.delta} pts) en una semana — ¿problema real o ruido?`,
+        text: lang === "en"
+          ? `Evolution of ${m.name} over the last 2 weeks`
+          : `Evolución de ${m.name} en las últimas 2 semanas`,
         type: "vector_insight",
         icon: up ? "📈" : "📉",
         source: "weekly_move",
@@ -334,8 +330,8 @@ Deno.serve(async (req) => {
       if (top.avgRix - bottom.avgRix >= 20) {
         suggestions.push({
           text: lang === "en"
-            ? `In ${sector}, ${top.name} leads with ${top.avgRix} pts while ${bottom.name} trails at ${bottom.avgRix} — what explains the gap?`
-            : `En ${sector}, ${top.name} lidera con ${top.avgRix} pts mientras ${bottom.name} queda en ${bottom.avgRix} — ¿qué explica la brecha?`,
+            ? `Compare ${top.name} with ${bottom.name} in the ${sector} sector`
+            : `Compara ${top.name} con ${bottom.name} en el sector ${sector}`,
           type: "vector_insight",
           icon: "📊",
           source: "sector_pattern",
@@ -370,8 +366,8 @@ Deno.serve(async (req) => {
       if (nonIbexBeaters.length >= 1 && nonIbexBeaters.length <= 8) {
         suggestions.push({
           text: lang === "en"
-            ? `${nonIbexBeaters.length} companies outside the IBEX-35 beat its average score (${ibexAvg}) — which ones and why?`
-            : `${nonIbexBeaters.length} empresas fuera del IBEX-35 superan su media (${ibexAvg} pts) — ¿cuáles son y por qué?`,
+            ? `Ranking of companies outside the IBEX-35 by reputation`
+            : `Ranking de empresas fuera del IBEX-35 por reputación`,
           type: "vector_insight",
           icon: "💎",
           source: "cross_index",
