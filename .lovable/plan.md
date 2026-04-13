@@ -1,43 +1,63 @@
 
 
-## Diagnóstico Test 26: "Sector defensa: evolución último mes"
+## Plan: Alinear sugerencias con las capacidades reales del agente Rix
 
-### Causa raíz: Timeout del LLM, no del data fetch
+### Problema
 
-**Los datos existen y se recuperan rápido:**
-- 6 tickers: AIR, PSG, CASH, IDR, AMP, EME-PRIV
-- 30 rows por ticker en el último mes (180 rows total)
-- La query a `rix_runs_v2` completa sin problemas
+Tres fuentes de sugerencias generan preguntas que el agente no puede contestar bien:
+- Las **plantillas fallback** (`useSmartSuggestions.ts`) incluyen preguntas vagas como "¿Qué dimensiones reputacionales son más importantes?" o "¿Cuál es la metodología?" que no activan skills concretos.
+- Las **sugerencias live** (`fetch-smart-suggestions`) usan frases abiertas como "¿por qué las IAs ven realidades tan distintas?" que producen respuestas genéricas.
+- El **ChatQueryGuide** tiene ~70 ejemplos con muchos que no mapean a skills ("¿Hay alguna empresa en crisis?", "Novedades relevantes de la semana").
 
-**El cuello de botella está en la generación del LLM:**
-1. El `skillSectorSnapshot` genera un DATAPACK con ~180 rows de `per_model_detail` (6 empresas × 6 modelos × ~5 semanas)
-2. Cada row incluye `resumen` (500 chars), `puntos_clave`, `flags`, y los 8 sub-scores
-3. El DATAPACK serializado supera fácilmente los 50-80K tokens
-4. El LLM tiene un timeout de 120 segundos y `max_tokens: 40000`
-5. Con un DATAPACK tan grande, el LLM no alcanza a completar la respuesta antes del timeout
+### Solución
 
-### Solución propuesta
+#### 1. Reescribir las plantillas fallback (`useSmartSuggestions.ts`)
 
-**Optimizar el tamaño del DATAPACK para consultas de grupo canónico + evolución:**
+Reemplazar las 10 plantillas ES y EN por preguntas que activan directamente los 7 skills del agente:
 
-1. **Truncar `per_model_detail` en sector snapshots** (líneas 967-991): Cuando hay >4 empresas, limitar `resumen` a 200 chars y eliminar `puntos_clave` y `flags` de las rows que no son del líder/colista. Esto reduce el payload ~60%.
+```text
+ES:
+- "Top 5 del IBEX 35 por reputación esta semana"          → skillRanking
+- "Analiza la reputación de Telefónica"                     → skillCompanyProfile
+- "Compara BBVA con Banco Santander"                        → skillComparison
+- "Evolución de Repsol en las últimas 4 semanas"            → skillEvolution
+- "Ranking del sector Banca y Servicios Financieros"        → skillSectorSnapshot
+- "¿Por qué las IAs divergen sobre Iberdrola?"              → skillDivergence
+- "Desglose de métricas de Inditex"                         → skillCompanyScores
+- "Compara sector Energía vs Telecomunicaciones"            → skillSectorComparison
+- "Top empresas del BME Growth esta semana"                 → skillRanking
+- "Evolución del sector banca últimas 6 semanas"            → skillEvolution
+```
 
-2. **Limitar `evolucion_sector` a las últimas 4 semanas reales** (ya se hace, pero verificar que no se envían semanas duplicadas por zona horaria).
+#### 2. Reformular las sugerencias live (`fetch-smart-suggestions`)
 
-3. **Reducir `20_res_gpt_bruto` y `21_res_perplex_bruto`** en `per_model_detail`: Estos campos de texto crudo se pasan al LLM pero son enormes. Eliminarlos del DATAPACK serializado y usarlos solo para extracción de fuentes.
+Cambiar los templates de texto en la edge function para que usen verbos imperativos que mapean a skills:
 
-### Cambios en código
+| Tipo actual | Formato actual (vago) | Formato nuevo (skill-mapped) |
+|---|---|---|
+| `dimensional_anomaly` | "destaca en X pero tiene debilidad en Y" | "Analiza la reputación de {name} — desglose por dimensiones" |
+| `model_divergence` | "¿por qué ven realidades tan distintas?" | "Analiza la divergencia entre IAs sobre {name}" |
+| `weekly_move` | "¿qué ha pasado?" | "Evolución de {name} en las últimas 2 semanas" |
+| `sector_pattern` | "¿qué explica la brecha?" | "Compara {top} con {bottom} en el sector {sector}" |
+| `cross_index` | "¿cuáles son y por qué?" | "Ranking de empresas fuera del IBEX-35 por reputación" |
+| `full_analysis` | ya correcto | sin cambio |
 
-**Archivo: `supabase/functions/chat-intelligence/index.ts`**
+#### 3. Reducir y alinear el ChatQueryGuide (`ChatQueryGuide.tsx`)
 
-- **Líneas 967-991** (`per_model_detail` construction): Añadir truncado condicional cuando `issuers.length > 4`:
-  - `resumen`: max 200 chars (vs 500)
-  - `puntos_clave`: omitir para empresas que no son líder/colista
-  - `20_res_gpt_bruto`, `21_res_perplex_bruto`: excluir del DATAPACK serializado
+Reducir de 9 categorías con ~70 ejemplos a 6 categorías con ~30 ejemplos, todos usando verbos que activan skills directos. Eliminar categorías problemáticas:
+- Eliminar "Alertas" (no hay skill de alertas)
+- Eliminar "Contexto" (demasiado vago)
+- Eliminar "Métricas" como categoría separada (integrar en Análisis)
 
-- **Línea 6340-6350** (DATAPACK serialization): Asegurar que los campos brutos (`20_res_gpt_bruto`, `21_res_perplex_bruto`) se extraen para fuentes ANTES de serializar, y luego se eliminan del JSON enviado al LLM.
+Reformular ejemplos restantes con patrones que funcionan: "Analiza...", "Compara...", "Top/Ranking de...", "Evolución de...", "Divergencia entre IAs sobre...".
 
-### Resultado esperado
+### Archivos afectados
 
-El DATAPACK para "Sector defensa: evolución último mes" pasará de ~70K tokens a ~25K tokens, permitiendo al LLM completar la respuesta dentro de los 120 segundos de timeout.
+1. `src/hooks/useSmartSuggestions.ts` — reescribir `getFallbackTemplates`
+2. `supabase/functions/fetch-smart-suggestions/index.ts` — reformular los 6 bloques de generación de texto (líneas 247-408)
+3. `src/components/chat/ChatQueryGuide.tsx` — reducir CATEGORIES y reformular ejemplos
+
+### Verificación
+
+Desplegar la edge function y probar que las sugerencias generadas activan los skills correctos enviándolas como queries al agente.
 
