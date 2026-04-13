@@ -3159,15 +3159,23 @@ async function buildDataPackFromSkills(
         console.log(`${logPrefix} [SKILLS-v2] Ranking enrichment: fetching metrics for ${enrichTickers.length} companies (top=${topN}, bottom=${bottomN})`);
 
         try {
-          const batchDate = resultMap.ranking.batch_date;
-          const { gte: eGte, lt: eLt } = buildDateFilterEdge(batchDate);
+          // Use skillDateRange if available (multi-week queries), fallback to single batch date
+          let eGte: string, eLt: string;
+          if (skillDateRange) {
+            eGte = skillDateRange.from + "T00:00:00Z";
+            eLt = skillDateRange.to + "T23:59:59Z";
+          } else {
+            const batchDate = resultMap.ranking.batch_date;
+            const df = buildDateFilterEdge(batchDate);
+            eGte = df.gte; eLt = df.lt;
+          }
           const modelFilter = interpret.filters.model_name || null;
 
           let enrichData: any[] = [];
           for (let page = 0; page < 4; page++) {
             let eq = supabaseClient.from("rix_runs_v2")
               .select("02_model_name,03_target_name,05_ticker,09_rix_score,23_nvm_score,26_drm_score,29_sim_score,32_rmm_score,35_cem_score,38_gam_score,41_dcm_score,44_cxm_score,10_resumen,11_puntos_clave,17_flags,06_period_from,07_period_to,batch_execution_date,25_nvm_categoria,28_drm_categoria,31_sim_categoria,34_rmm_categoria,37_cem_categoria,40_gam_categoria,43_dcm_categoria,46_cxm_categoria")
-              .gte("batch_execution_date", eGte).lt("batch_execution_date", eLt)
+              .gte("batch_execution_date", eGte).lte("batch_execution_date", eLt)
               .in("05_ticker", enrichTickers)
               .range(page * 1000, (page + 1) * 1000 - 1);
             if (modelFilter) eq = eq.eq("02_model_name", modelFilter);
