@@ -4951,7 +4951,7 @@ REGLAS CRÍTICAS:
 2. Máximo 5 queries. Cada una con un "label" descriptivo.
 3. REGLA DEL SNAPSHOT DOMINICAL: Los barridos válidos son los de domingo (batch_execution_date). Para encontrar la semana más reciente, ordena por batch_execution_date DESC y filtra domingos con ≥180 registros (30 empresas × 6 modelos).
 4. Usa LIMIT razonables (nunca >500 por query). Para rankings, LIMIT 50 es suficiente.
-5. Usa medianas (PERCENTILE_CONT(0.5)) en vez de AVG cuando agregues scores entre modelos.
+5. NO agregues scores entre modelos con AVG ni PERCENTILE_CONT. Devuelve los 6 scores individuales por modelo (GROUP BY "02_model_name"). Si necesitas ordenar empresas, ordena por el rango inter-modelo (MAX("09_rix_score") - MIN("09_rix_score")) ascendente (menor rango = mayor consenso).
 6. Los nombres de columna con números llevan comillas dobles: "09_rix_score", "02_model_name", etc.
 7. Nunca uses subconsultas con más de 2 niveles de anidamiento.
 8. Para comparativas sectoriales, usa repindex_root_issuers.sector_category.
@@ -6529,16 +6529,19 @@ RIGOR EPISTEMOLÓGICO — BENCHMARKS Y COMPARATIVAS:
 • Ejemplo CORRECTO: "SIM 37, en zona roja (umbral verde: 70)".
 • Ejemplo PROHIBIDO: "SIM 37 vs 45 (hipotético sector)".
 
-RIGOR EPISTEMOLÓGICO — INCERTIDUMBRE INTERMODELO:
-• Junto al RIX mediano, calcula y muestra SIEMPRE el intervalo de incertidumbre intermodelo. Fórmula: IC ≈ rango / 4 (donde rango = RIX máximo - RIX mínimo entre los 6 modelos). Redondea al entero más cercano.
-• Formato de presentación:
-  - En el titular y resumen: "RIX mediano: 59 (±5 intermodelo)"
-  - En los KPIs: "RIX mediano: 59 ±5 (rango 48-69)"
-  - En la tabla de evolución temporal: añadir columna "± Incertidumbre"
-  - En la comparativa competitiva: incluir el ± tanto para la empresa como para el competidor
-• Ejemplo completo: si los 6 modelos dan RIX [48, 53, 56, 63, 65, 69], mediana = 59, rango = 21, IC ≈ 21/4 ≈ ±5. Se muestra: "RIX mediano: 59 (±5 intermodelo)"
-• NOMENCLATURA OBLIGATORIA: Llamarlo SIEMPRE "incertidumbre intermodelo", NUNCA "intervalo de confianza" ni "IC 95%" porque con n=6 modelos no es estadísticamente riguroso usar terminología de inferencia clásica.
-• INCERTIDUMBRE DE COMPETIDORES: Si hay datos de rango del competidor (RIX máximo - RIX mínimo de las 6 IAs), calcular su ±X con la misma fórmula (rango/4). Si no hay datos suficientes, declarar: "Sin datos suficientes para calcular dispersión inter-modelo del competidor."
+RIGOR EPISTEMOLÓGICO — CONSENSO INTERMODELO (formato obligatorio):
+• NUNCA uses "RIX mediano", "mediana" ni "±X intermodelo" como formato de presentación.
+• Para cada empresa, muestra SIEMPRE los 6 scores individuales: ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen.
+• La incertidumbre se expresa mediante el RANGO (max - min) y el NIVEL DE CONSENSO:
+  - Consenso Alto: rango < 10 → las 6 IAs coinciden → dato muy fiable
+  - Consenso Medio: rango 10-20 → divergencia moderada → requiere matices
+  - Consenso Bajo: rango > 20 → fuerte desacuerdo → analizar por qué divergen
+• Formato obligatorio en titulares: "RIX: 48-69 (Consenso Medio, Bloque Mayoritario 63)"
+• Formato en KPIs: tabla con las 6 columnas de modelo + columna Rango + columna Consenso
+• En evolución temporal: una fila por semana mostrando los 6 scores o, si no caben, el Rango y Consenso
+• En comparativa competitiva: incluir los 6 scores tanto para la empresa como para el competidor
+• NOMENCLATURA: Llamarlo SIEMPRE "consenso intermodelo" o "dispersión entre IAs", NUNCA "intervalo de confianza", "IC 95%" ni "mediana".
+• El BLOQUE MAYORITARIO es la media de los modelos que están dentro de ±5 puntos entre sí. Es la referencia de consenso, no la mediana.
 
 RIGOR EPISTEMOLÓGICO — CONTRADICCIONES INTERNAS:
 • El agente DEBE detectar y declarar tensiones internas entre métricas cuando las haya.
@@ -10144,7 +10147,7 @@ async function handleStandardChat(
       sorted.forEach((r: any, i: number) => {
         crisisMarkdown += `| ${i + 1} | ${f(r, "nombre", "03_target_name")} | ${f(r, "ticker", "05_ticker")} | ${f(r, "rix_avg", "09_rix_score")} | ${f(r, "cem", "35_cem_score")} | ${f(r, "nvm", "23_nvm_score")} | ${f(r, "sector", "sector_category")} |\n`;
       });
-      crisisMarkdown += `\n**Methodology:** Companies with RIX < 40 or CEM (Crisis Management) < 40 in the latest weekly sweep. RIX is the median of 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Data from sweep of ${batchDate}*`;
+      crisisMarkdown += `\n**Methodology:** Companies with RIX < 40 or CEM (Crisis Management) < 40 in the latest weekly sweep. RIX is calculated from 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Data from sweep of ${batchDate}*`;
     } else {
       crisisMarkdown = `## ⚠️ Empresas en Zona de Riesgo Reputacional\n\nSegún el último barrido (${batchDate}), **${sorted.length} empresas** presentan puntuaciones RIX o CEM por debajo de 40, lo que indica riesgo reputacional potencial.\n\n`;
       crisisMarkdown += `| # | Empresa | Ticker | RIX | CEM | NVM | Sector |\n|---|---------|--------|-----|-----|-----|--------|\n`;
