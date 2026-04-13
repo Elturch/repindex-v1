@@ -251,6 +251,9 @@ function stripLlmMetaCommentary(text: string): string {
 
 // Generate complete HTML document for export with premium RepIndex report styling
 export function generateExportHtml(markdown: string, tr: ChatUITranslations, languageCode: string, roleName?: string, verifiedSources?: VerifiedSource[], periodFrom?: string, periodTo?: string, reportContext?: Record<string, unknown> | null): string {
+  // Prioritize reportContext dates (real data dates) over periodFrom/periodTo (which may come from user request)
+  const effectivePeriodFrom = (reportContext?.date_from as string) || periodFrom;
+  const effectivePeriodTo = (reportContext?.date_to as string) || periodTo;
   const now = format(new Date(), 'dd/MM/yyyy HH:mm');
   const dateForFile = format(new Date(), 'yyyy-MM-dd');
   
@@ -756,7 +759,7 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
     ${bodyContent}
   </main>
   
-  ${generateBibliographyHtml(verifiedSources || [], periodFrom, periodTo)}
+  ${generateBibliographyHtml(verifiedSources || [], effectivePeriodFrom, effectivePeriodTo)}
   
   <footer class="report-footer">
     <div class="footer-logo">RepIndex</div>
