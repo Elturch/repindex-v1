@@ -6246,6 +6246,7 @@ function buildOrchestratorPrompt(
     mercado: dataPack.mercado,
     evolucion_sector: (dataPack as any).evolucion_sector || null,
     metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
+    kpis_sector_canonicos: (dataPack as any).kpis_sector_canonicos || null,
     // ── Metric deltas: expose consolidated medians with per-metric deltas ──
     rix_mediano: (dataPack as any).rix_mediano || null,
     delta_rix: (dataPack as any).delta_rix_value || null,
