@@ -857,7 +857,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
       }
     }
 
-    // Build ranking with scores_por_modelo
+    // Build ranking with scores_por_modelo + consensus-based analysis
     const ranking = Array.from(grouped.entries())
       .map(([t, tickerRows]) => {
         const rixVals = tickerRows.map((r: any) => r["09_rix_score"]).filter((v: any) => v != null) as number[];
@@ -877,15 +877,56 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
             precio_accion: r["48_precio_accion"],
           };
         });
+
+        // ── Consensus-based analysis ──
+        const rixMedian = medianEdge(rixVals);
+        const rixMin = rixVals.length > 0 ? Math.min(...rixVals) : 0;
+        const rixMax = rixVals.length > 0 ? Math.max(...rixVals) : 0;
+        const rixRange = rixMax - rixMin;
+        const consenso = rixRange <= 10 ? "alto" : rixRange <= 20 ? "medio" : "bajo";
+
+        // Majority block: models within ±5 pts of each other (largest cluster)
+        let bestBlock: number[] = [];
+        for (const anchor of rixVals) {
+          const block = rixVals.filter(v => Math.abs(v - anchor) <= 5);
+          if (block.length > bestBlock.length) bestBlock = block;
+        }
+        const bloque_mayoritario_score = bestBlock.length > 0 ? Math.round(bestBlock.reduce((a, b) => a + b, 0) / bestBlock.length) : rixMedian;
+        const bloque_mayoritario_modelos = scores_por_modelo
+          .filter((s: any) => s.rix != null && bestBlock.includes(s.rix))
+          .map((s: any) => s.model_name);
+        const outlier_modelos = scores_por_modelo
+          .filter((s: any) => s.rix != null && !bestBlock.includes(s.rix))
+          .map((s: any) => ({ model: s.model_name, rix: s.rix }));
+
+        // Per-model scores map for cross-table
+        const scores_individuales: Record<string, number | null> = {};
+        for (const s of scores_por_modelo) {
+          scores_individuales[s.model_name] = s.rix;
+        }
+
         return {
           ticker: t,
           empresa: nameMap.get(t) || t,
-          rix_mediano: medianEdge(rixVals),
+          rix_mediano: rixMedian,
+          rix_min: rixMin,
+          rix_max: rixMax,
+          rango: rixRange,
+          consenso,
+          bloque_mayoritario: { score: bloque_mayoritario_score, modelos: bloque_mayoritario_modelos },
+          outliers: outlier_modelos,
+          scores_individuales,
           scores_por_modelo,
           verified_competitors: competitorsMap.get(t) || [],
         };
       })
-      .sort((a, b) => b.rix_mediano - a.rix_mediano)
+      // Primary sort: consensus alto first, then by majority block score
+      .sort((a, b) => {
+        const consensoOrder: Record<string, number> = { alto: 0, medio: 1, bajo: 2 };
+        const cDiff = (consensoOrder[a.consenso] ?? 1) - (consensoOrder[b.consenso] ?? 1);
+        if (cDiff !== 0) return cDiff;
+        return b.bloque_mayoritario.score - a.bloque_mayoritario.score;
+      })
       .map((r, i) => ({ pos: i + 1, ...r }));
 
     const allMedians = ranking.map(r => r.rix_mediano);
@@ -2517,7 +2558,12 @@ async function buildDataPackFromSkills(
     }
 
     // Priority 2: legacy detectCompaniesInQuestion
-    if (!resolvedTicker && companiesCacheLocal && companiesCacheLocal.length > 0) {
+    // PHASE 3 FIX: Skip fuzzy company matching when a semantic group has been resolved
+    // (prevents "grupos hospitalarios" from fuzzy-matching "Grupo Azvi")
+    const semanticGroupPending = await resolveSemanticGroup(originalQuestion || question, supabaseClient);
+    const hasSemanticGroupMatch = semanticGroupPending.canonical_key != null;
+    
+    if (!resolvedTicker && !hasSemanticGroupMatch && companiesCacheLocal && companiesCacheLocal.length > 0) {
       const detected = detectCompaniesInQuestion(question, companiesCacheLocal);
       if (detected.length > 0) {
         resolvedTicker = detected[0].ticker;
@@ -2537,6 +2583,8 @@ async function buildDataPackFromSkills(
           }
         }
       }
+    } else if (hasSemanticGroupMatch && !resolvedTicker) {
+      console.log(`${logPrefix} [SKILLS-v2] Skipping fuzzy company match — semantic group "${semanticGroupPending.canonical_key}" resolved`);
     }
 
     const shouldRunCrisisScan = !resolvedTicker && (hasDirectCrisisKeywords || interpret.intent === "alert");
@@ -2892,6 +2940,9 @@ async function buildDataPackFromSkills(
     if (ss) {
       pack.ranking = (ss.ranking || []).map((r: any) => ({
         pos: r.pos, ticker: r.ticker, nombre: r.empresa, rix_avg: r.rix_mediano,
+        rix_min: r.rix_min, rix_max: r.rix_max, rango: r.rango,
+        consenso: r.consenso, bloque_mayoritario: r.bloque_mayoritario,
+        outliers: r.outliers, scores_individuales: r.scores_individuales,
       }));
       (pack as any).sector_snapshot = ss;
 
@@ -2965,6 +3016,14 @@ async function buildDataPackFromSkills(
       }
 
       pack.sector_avg = ss.mediana_sectorial || null;
+
+      // PHASE 4: Inject canonical KPIs as explicit sector medians
+      if (ss.metricas_sector) {
+        (pack as any).kpis_sector_canonicos = {
+          nota: "Medianas sectoriales calculadas sobre todos los modelos y empresas del grupo/sector en la última semana",
+          ...ss.metricas_sector,
+        };
+      }
 
       // ── Build competidores_por_empresa from ranking verified_competitors ──
       const competidoresPorEmpresa: Record<string, string[]> = {};
@@ -3216,16 +3275,28 @@ async function buildDataPackFromSkills(
       }).filter(Boolean));
       reportContext.weeks_analyzed = uniqueWeeks.size;
     }
-    // Fallback: sectorSnapshot per_model_detail
-    else if (ss?.per_model_detail && Array.isArray(ss.per_model_detail) && ss.per_model_detail.length > 0) {
-      const batchDates = ss.per_model_detail.map((r: any) => r.batch_execution_date || r.period_from).filter(Boolean).sort();
-      if (batchDates.length > 0) {
-        reportContext.date_from = batchDates[0];
-        reportContext.date_to = batchDates[batchDates.length - 1];
+    // Fallback: sectorSnapshot — use semanas_disponibles for real week count
+    else if (ss) {
+      // PHASE 2 FIX: Use actual weeks from sectorSnapshot, not just per_model_detail dates
+      const weeksAvailable = ss.semanas_disponibles || [];
+      const realWeekCount = weeksAvailable.length;
+      const totalModelRows = ss.per_model_detail?.length || 0;
+      const numEmpresas = ss.num_empresas || ss.ranking?.length || 0;
+      
+      if (weeksAvailable.length > 0) {
+        reportContext.date_from = weeksAvailable[weeksAvailable.length - 1]; // oldest
+        reportContext.date_to = weeksAvailable[0]; // newest
+      } else if (ss.per_model_detail && Array.isArray(ss.per_model_detail) && ss.per_model_detail.length > 0) {
+        const batchDates = ss.per_model_detail.map((r: any) => r.batch_execution_date || r.period_from).filter(Boolean).sort();
+        if (batchDates.length > 0) {
+          reportContext.date_from = batchDates[0];
+          reportContext.date_to = batchDates[batchDates.length - 1];
+        }
       }
-      reportContext.sample_size = ss.per_model_detail.length;
-      const uniqueWeeks = new Set(batchDates.map((d: string) => String(d).slice(0, 10)));
-      reportContext.weeks_analyzed = uniqueWeeks.size;
+      reportContext.sample_size = totalModelRows > 0 ? totalModelRows : (numEmpresas * (filterByModel ? 1 : 6) * Math.max(realWeekCount, 1));
+      reportContext.weeks_analyzed = realWeekCount || 1;
+      reportContext.num_empresas = numEmpresas;
+      console.log(`${logPrefix} [REPORT_CTX] SectorSnapshot: ${realWeekCount} weeks, ${reportContext.sample_size} observations, ${numEmpresas} companies`);
     }
     // Fallback: enrichment data from ranking
     else if ((pack as any)._enrichment_date_from) {
@@ -6055,6 +6126,50 @@ REGLAS:
 
 // --- CROSS-MODEL TABLE BUILDER (pre-calculated for LLM) ---
 function buildCrossModelTable(dataPack: DataPack): string {
+  // ── SECTOR/RANKING queries: build a per-company × per-model cross-table ──
+  const sectorSnapshot = (dataPack as any).sector_snapshot;
+  if (sectorSnapshot?.ranking && sectorSnapshot.ranking.length > 0) {
+    const MODEL_ORDER = ["ChatGPT", "Perplexity", "Google Gemini", "DeepSeek", "Grok", "Qwen"];
+    let table = "## TABLA CRUZADA POR EMPRESA Y MODELO (DATO CENTRAL)\n\n";
+    table += "| Empresa | " + MODEL_ORDER.map(m => m.replace("Google ", "")).join(" | ") + " | Rango | Consenso |\n";
+    table += "|---------|" + MODEL_ORDER.map(() => "------|").join("") + "------|----------|\n";
+
+    for (const r of sectorSnapshot.ranking) {
+      const scores = r.scores_individuales || {};
+      // Fallback: build from scores_por_modelo if scores_individuales not present
+      const scoreMap: Record<string, number | null> = { ...scores };
+      if (Object.keys(scoreMap).length === 0 && r.scores_por_modelo) {
+        for (const s of r.scores_por_modelo) {
+          scoreMap[s.model_name] = s.rix;
+        }
+      }
+      const vals = MODEL_ORDER.map(m => {
+        const v = scoreMap[m];
+        return v != null ? String(v) : "—";
+      });
+      const rango = r.rango ?? "—";
+      const consenso = r.consenso || "—";
+      const emoji = consenso === "alto" ? "🟢" : consenso === "medio" ? "🟡" : consenso === "bajo" ? "🔴" : "";
+      table += `| ${(r.empresa || r.ticker || "?").substring(0, 20)} | ${vals.join(" | ")} | ${rango} | ${emoji} ${consenso} |\n`;
+    }
+
+    // Divergence summary for sector
+    table += "\n## DIVERGENCIAS POR EMPRESA\n\n";
+    for (const r of sectorSnapshot.ranking.slice(0, 10)) {
+      const consensoLabel = r.consenso === "alto" ? "CONSENSO_ALTO" : r.consenso === "bajo" ? "DIVERGENCIA_ALTA" : "CONSENSO_MEDIO";
+      const outlierStr = (r.outliers && r.outliers.length > 0) 
+        ? ` | Outliers: ${r.outliers.map((o: any) => `${o.model}(${o.rix})`).join(", ")}`
+        : "";
+      const bloqueStr = r.bloque_mayoritario 
+        ? ` | Bloque mayoritario: ${r.bloque_mayoritario.modelos?.join(", ") || "—"}(${r.bloque_mayoritario.score})`
+        : "";
+      table += `[${r.empresa}]: rango=${r.rango ?? "?"} -> ${consensoLabel}${bloqueStr}${outlierStr}\n`;
+    }
+
+    return table;
+  }
+
+  // ── Single-company queries: original per-model table ──
   if (!dataPack.snapshot || dataPack.snapshot.length === 0) return "";
 
   const METRIC_KEYS = ["rix", "nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
@@ -6131,6 +6246,7 @@ function buildOrchestratorPrompt(
     mercado: dataPack.mercado,
     evolucion_sector: (dataPack as any).evolucion_sector || null,
     metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
+    kpis_sector_canonicos: (dataPack as any).kpis_sector_canonicos || null,
     // ── Metric deltas: expose consolidated medians with per-metric deltas ──
     rix_mediano: (dataPack as any).rix_mediano || null,
     delta_rix: (dataPack as any).delta_rix_value || null,
@@ -6194,6 +6310,15 @@ REGLA ANTI-PROMEDIO (PRIORIDAD MÁXIMA):
 • Cada IA tiene audiencia, arquitectura y sesgos distintos. Un promedio sin ponderación de audiencia es metodológicamente incorrecto.
 • Usa la MEDIANA como referencia de tendencia central (no la media). Muestra siempre: Mediana | Min | Max | Rango.
 • NUNCA digas "RIX promedio de 67.7" → Sí: "Mediana RIX: 67, rango: 57-84 (alta dispersión)"
+
+REGLA ANTI-PUNTUACIÓN-ÚNICA (CRÍTICA — RANKINGS Y SECTORES):
+• En rankings y comparativas sectoriales, NUNCA presentes una sola cifra como "la puntuación" de una empresa. SIEMPRE muestra las 6 puntuaciones individuales.
+• Si la TABLA CRUZADA tiene columnas por modelo (ChatGPT, Gemini, Grok, etc.), REPRODUCE esa tabla en tu respuesta. No la resumas en una mediana.
+• El ranking debe basarse en el CONSENSO entre las 6 IAs (rango bajo = más fiable), no en la mediana.
+• Clasifica cada empresa: Consenso Alto (rango ≤ 10, 🟢), Medio (10-20, 🟡), Bajo (> 20, 🔴).
+• Identifica el "bloque mayoritario" (modelos que coinciden ±5 pts) y señala outliers con nombre.
+• Ejemplo correcto: "CaixaBank: ChatGPT=64, Perplexity=68, Gemini=72, DeepSeek=56, Grok=73, Qwen=79 (rango 23, 🔴 consenso bajo). Bloque mayoritario: Gemini/Grok/Perplexity (~71). Outlier bajo: DeepSeek (56)."
+• Ejemplo INCORRECTO: "CaixaBank lidera con 70 puntos RIX" ← PROHIBIDO, nadie dijo 70.
 
 DIVERGENCIAS INTER-MODELO (OBLIGATORIO):
 • Si una métrica tiene consenso "alto" (rango < 10): "Las seis IAs coinciden en que [empresa] tiene un [métrica] sólido de [valor]"
