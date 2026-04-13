@@ -650,11 +650,11 @@ async function skillCompanyProfile(supabase: any, ticker: string, options?: { da
           categoria_dominante: dominantCat || null,
         };
       }
-      return { rix_mediano: rixMedian, metricas: result };
+      return { rix_mediano: rixMedian, rix_referencia: rixMedian, metricas: result };
     }
 
     // Build evolution (all weeks) with full metric medians
-    const evolucion: Array<{ semana: string; rix_mediano: number; metricas?: Record<string, number> }> = [];
+    const evolucion: Array<{ semana: string; rix_mediano: number; rix_referencia: number; metricas?: Record<string, number> }> = [];
     const weekStats: Array<{ semana: string; stats: ReturnType<typeof weekMetrics> }> = [];
     for (const week of sortedWeeks) {
       const wRows = weekMap.get(week)!;
@@ -663,7 +663,7 @@ async function skillCompanyProfile(supabase: any, ticker: string, options?: { da
       for (const m of METRIC_KEYS) {
         if (stats.metricas[m.key]?.mediano != null) metricMeds[m.key] = stats.metricas[m.key].mediano;
       }
-      evolucion.push({ semana: week, rix_mediano: stats.rix_mediano, metricas: metricMeds });
+      evolucion.push({ semana: week, rix_mediano: stats.rix_mediano, rix_referencia: stats.rix_mediano, metricas: metricMeds });
       weekStats.push({ semana: week, stats });
     }
 
@@ -749,8 +749,9 @@ async function skillCompanyProfile(supabase: any, ticker: string, options?: { da
       semana_actual: sortedWeeks[0] || "",
       // Raw runs: ALL 24 rows with full per-model granularity (6 models × 4 weeks)
       raw_runs,
-      // Medians as reference aggregates (NOT the central data)
+      // Reference aggregates (NOT the central data — individual scores are in raw_runs)
       rix_mediano: currentStats?.rix_mediano || 0,
+      rix_referencia: currentStats?.rix_mediano || 0,
       delta_rix: previousStats ? Math.round(((currentStats?.rix_mediano || 0) - previousStats.rix_mediano) * 10) / 10 : null,
       medianas_por_metrica: metricasConDelta,
       // Latest week models (convenience shortcut into raw_runs)
@@ -929,7 +930,7 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
         return {
           ticker: t,
           empresa: nameMap.get(t) || t,
-          rix_mediano: rixMedian,
+          rix_mediano: rixMedian, rix_referencia: rixMedian,
           rix_min: rixMin,
           rix_max: rixMax,
           rango: rixRange,
@@ -1002,15 +1003,16 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
       weekMap.get(weekKey)!.push(score);
     }
 
-    const evolucion_sector: Array<{ fecha: string; ticker: string; empresa: string; rix_mediano: number }> = [];
+    const evolucion_sector: Array<{ fecha: string; ticker: string; empresa: string; rix_mediano: number; rix_referencia: number }> = [];
     for (const [ticker, weekMap] of evoMap.entries()) {
       const empresa = nameMap.get(ticker) || ticker;
       for (const [week, scores] of weekMap.entries()) {
+        const rixRef = medianEdge(scores);
         evolucion_sector.push({
           fecha: week,
           ticker,
           empresa,
-          rix_mediano: medianEdge(scores),
+          rix_mediano: rixRef, rix_referencia: rixRef,
         });
       }
     }
@@ -1022,12 +1024,13 @@ async function skillSectorSnapshot(supabase: any, sectorCategory: string, ticker
       semana: latestWeek,
       semanas_disponibles: sortedWeeks,
       mediana_sectorial: medianaSectorial,
+      referencia_sectorial: medianaSectorial,
       num_empresas: ranking.length,
       ranking,
       metricas_sector: metricasSector,
       lider: lider ? { empresa: lider.empresa, ticker: lider.ticker, rix: lider.rix_mediano } : null,
       colista: colista ? { empresa: colista.empresa, ticker: colista.ticker, rix: colista.rix_mediano } : null,
-      brecha_lider_mediana: lider ? lider.rix_mediano - medianaSectorial : 0,
+      brecha_lider_referencia: lider ? lider.rix_mediano - medianaSectorial : 0,
       per_model_detail,
       evolucion_sector,
     };
@@ -2883,7 +2886,7 @@ async function buildDataPackFromSkills(
       // evolucion from consolidated weekly medians
       pack.evolucion = (cp.evolucion || []).map((e: any, i: number, arr: any[]) => ({
         fecha: e.semana,
-        rix_avg: e.rix_mediano,
+        rix_avg: e.rix_mediano || e.rix_referencia,
         modelos: 6,
         delta: i > 0 ? Math.round((e.rix_mediano - arr[i - 1].rix_mediano) * 10) / 10 : null,
       }));
@@ -2915,7 +2918,7 @@ async function buildDataPackFromSkills(
       // Pass consolidated metrics (medianas) and flags as extra fields
       (pack as any).metricas_consolidadas = cp.medianas_por_metrica;
       (pack as any).flags_dominantes = cp.flags_dominantes;
-      (pack as any).rix_mediano = cp.rix_mediano;
+      (pack as any).rix_referencia = cp.rix_mediano;
       (pack as any).delta_rix_value = cp.delta_rix;
       (pack as any).precio_accion = cp.modelos?.[0]?.precio_accion || null;
 
@@ -2982,7 +2985,7 @@ async function buildDataPackFromSkills(
     const ss = resultMap.sectorSnapshot;
     if (ss) {
       pack.ranking = (ss.ranking || []).map((r: any) => ({
-        pos: r.pos, ticker: r.ticker, nombre: r.empresa, rix_avg: r.rix_mediano,
+        pos: r.pos, ticker: r.ticker, nombre: r.empresa, rix_avg: r.rix_mediano || r.rix_referencia,
         rix_min: r.rix_min, rix_max: r.rix_max, rango: r.rango,
         consenso: r.consenso, bloque_mayoritario: r.bloque_mayoritario,
         outliers: r.outliers, scores_individuales: r.scores_individuales,
@@ -3037,7 +3040,7 @@ async function buildDataPackFromSkills(
             subsector: null,
           };
 
-          (pack as any).rix_mediano = leaderRanking?.rix_mediano ?? ss.lider?.rix ?? ss.mediana_sectorial;
+          (pack as any).rix_referencia = leaderRanking?.rix_mediano ?? ss.lider?.rix ?? ss.referencia_sectorial ?? ss.mediana_sectorial;
           (pack as any).metricas_consolidadas = ss.metricas_sector;
 
           // Populate _rawRunsForSources scoped to ranking companies only (not entire sector)
@@ -3053,16 +3056,16 @@ async function buildDataPackFromSkills(
           if (leaderEvo.length > 0) {
             pack.evolucion = leaderEvo.map((e: any, i: number, arr: any[]) => ({
               fecha: e.fecha,
-              rix_avg: e.rix_mediano,
+              rix_avg: e.rix_mediano || e.rix_referencia,
               modelos: 6,
-              delta: i > 0 ? Math.round((e.rix_mediano - arr[i - 1].rix_mediano) * 10) / 10 : null,
+              delta: i > 0 ? Math.round(((e.rix_mediano || e.rix_referencia) - (arr[i - 1].rix_mediano || arr[i - 1].rix_referencia)) * 10) / 10 : null,
             }));
           }
           (pack as any).evolucion_sector = ss.evolucion_sector;
         }
       }
 
-      pack.sector_avg = ss.mediana_sectorial || null;
+      pack.sector_avg = ss.referencia_sectorial || ss.mediana_sectorial || null;
 
       // PHASE 4: Inject canonical KPIs as explicit sector medians
       if (ss.metricas_sector) {
@@ -3261,7 +3264,7 @@ async function buildDataPackFromSkills(
                   vals.sort((a, b) => a - b);
                   const mid = Math.floor(vals.length / 2);
                   const median = vals.length % 2 ? vals[mid] : Math.round((vals[mid - 1] + vals[mid]) / 2);
-                  consolidated[mk] = { mediana: median, min: Math.min(...vals), max: Math.max(...vals), has_delta: false, delta: null };
+                  consolidated[mk] = { referencia: median, min: Math.min(...vals), max: Math.max(...vals), has_delta: false, delta: null };
                 }
               }
               metricasConsolidadas[ticker] = consolidated;
@@ -4949,7 +4952,7 @@ REGLAS CRÍTICAS:
 2. Máximo 5 queries. Cada una con un "label" descriptivo.
 3. REGLA DEL SNAPSHOT DOMINICAL: Los barridos válidos son los de domingo (batch_execution_date). Para encontrar la semana más reciente, ordena por batch_execution_date DESC y filtra domingos con ≥180 registros (30 empresas × 6 modelos).
 4. Usa LIMIT razonables (nunca >500 por query). Para rankings, LIMIT 50 es suficiente.
-5. Usa medianas (PERCENTILE_CONT(0.5)) en vez de AVG cuando agregues scores entre modelos.
+5. NO agregues scores entre modelos con AVG ni PERCENTILE_CONT. Devuelve los 6 scores individuales por modelo (GROUP BY "02_model_name"). Si necesitas ordenar empresas, ordena por el rango inter-modelo (MAX("09_rix_score") - MIN("09_rix_score")) ascendente (menor rango = mayor consenso).
 6. Los nombres de columna con números llevan comillas dobles: "09_rix_score", "02_model_name", etc.
 7. Nunca uses subconsultas con más de 2 niveles de anidamiento.
 8. Para comparativas sectoriales, usa repindex_root_issuers.sector_category.
@@ -5248,13 +5251,13 @@ async function buildDataPack(
 
     const rankingEntries = Array.from(byCompany.entries())
       .map(([ticker, d]) => {
-        const mediana = medianOf(d.scores);
+        const rix_referencia = medianOf(d.scores);
         const rango = d.scores.length > 0 ? Math.round((Math.max(...d.scores) - Math.min(...d.scores)) * 10) / 10 : 0;
         const consenso_nivel = rango < 10 ? "alto" : rango < 20 ? "medio" : "bajo";
         return {
           ticker,
           nombre: d.name,
-          mediana,
+          rix_referencia,
           rango,
           consenso_nivel,
           scores_por_modelo: d.scoresByModel,
@@ -5264,7 +5267,7 @@ async function buildDataPack(
           metricsByModel: d.metricsByModel,
         };
       })
-      .sort((a, b) => b.mediana - a.mediana);
+      .sort((a, b) => b.rix_referencia - a.rix_referencia);
 
     // --- Calcular deltas POR EMPRESA comparando última semana vs penúltima (usando mediana) ---
     const uniqueDatesForDelta = [...new Set(sortedByDate.map((r) => r.batch_execution_date))].sort().reverse();
@@ -5282,12 +5285,12 @@ async function buildDataPack(
     pack.ranking = rankingEntries.map((r, i) => {
       const prevScores = prevByCompany.get(r.ticker);
       const prevMedian = prevScores && prevScores.length > 0 ? medianOf(prevScores) : null;
-      const delta = prevMedian != null ? Math.round((r.mediana - prevMedian) * 10) / 10 : null;
+      const delta = prevMedian != null ? Math.round((r.rix_referencia - prevMedian) * 10) / 10 : null;
       return {
         pos: i + 1,
         ticker: r.ticker,
         nombre: r.nombre,
-        mediana: r.mediana,
+        rix_referencia: r.rix_referencia,
         rango: r.rango,
         consenso_nivel: r.consenso_nivel,
         scores_por_modelo: r.scores_por_modelo,
@@ -5296,7 +5299,7 @@ async function buildDataPack(
     });
 
     // Build snapshot: per-model-per-company rows for top-5 and bottom-5 (NO averages)
-    const allMedians = rankingEntries.map((r) => r.mediana);
+    const allMedians = rankingEntries.map((r) => r.rix_referencia);
     const globalMedian = medianOf(allMedians);
 
     // Compute global metric medians for sector_avg
@@ -5306,7 +5309,7 @@ async function buildDataPack(
       globalMetricMedians[k] = allVals.length > 0 ? medianOf(allVals) : null;
     }
     const allRanges = rankingEntries.map(r => r.rango);
-    pack.sector_avg = { rix_mediana: globalMedian, rango_medio: allRanges.length > 0 ? Math.round((allRanges.reduce((a, b) => a + b, 0) / allRanges.length) * 10) / 10 : 0, count: rankingEntries.length, ...globalMetricMedians };
+    pack.sector_avg = { rix_referencia: globalMedian, rango_medio: allRanges.length > 0 ? Math.round((allRanges.reduce((a, b) => a + b, 0) / allRanges.length) * 10) / 10 : 0, count: rankingEntries.length, ...globalMetricMedians };
 
     // Pack the top 5 and bottom 5 as granular per-model snapshot entries
     const top5 = rankingEntries.slice(0, 5);
@@ -5374,7 +5377,7 @@ async function buildDataPack(
     for (const entry of rankingEntries) {
       const sector = entry.sector || "Sin sector";
       if (!bySector.has(sector)) bySector.set(sector, { scores: [], companies: [] });
-      bySector.get(sector)!.scores.push(entry.mediana);
+      bySector.get(sector)!.scores.push(entry.rix_referencia);
       bySector.get(sector)!.companies.push(entry.nombre);
     }
 
@@ -5402,7 +5405,7 @@ async function buildDataPack(
       const uniqueCompanies = new Set(weekData.map((r) => r["05_ticker"])).size;
       pack.evolucion.push({
         fecha: date.toString().split("T")[0],
-        rix_mediana: weekMedian,
+        rix_referencia: weekMedian,
         rango: Math.round((weekMax - weekMin) * 10) / 10,
         modelos: uniqueCompanies,
         delta: prevMedianEvo != null ? Math.round((weekMedian - prevMedianEvo) * 10) / 10 : null,
@@ -6316,7 +6319,7 @@ function buildOrchestratorPrompt(
     metricas_consolidadas: (dataPack as any).metricas_consolidadas || null,
     kpis_sector_canonicos: (dataPack as any).kpis_sector_canonicos || null,
     // ── Metric deltas: expose consolidated medians with per-metric deltas ──
-    rix_mediano: (dataPack as any).rix_mediano || null,
+    rix_referencia: (dataPack as any).rix_referencia || null,
     delta_rix: (dataPack as any).delta_rix_value || null,
     ...((dataPack as any).f2_dynamic ? { datos_dinamicos: (dataPack as any).f2_dynamic } : {}),
   }, null, 0);
@@ -6369,20 +6372,21 @@ function buildOrchestratorPrompt(
   const systemPrompt = `[IDIOMA OBLIGATORIO: ${languageName}]
 Responde SIEMPRE en ${languageName}. Sin excepciones.
 
-REGLA #1 (PRIORIDAD MÁXIMA): Tu valor diferencial es el ANÁLISIS CRUZADO ENTRE MODELOS DE IA. La mediana es solo una referencia. El core de cada informe es: qué dice cada IA, dónde coinciden, dónde divergen, y POR QUÉ. Cada métrica debe analizarse modelo a modelo.
+REGLA #1 (PRIORIDAD MÁXIMA): Tu valor diferencial es el ANÁLISIS CRUZADO ENTRE MODELOS DE IA. El core de cada informe es: qué dice cada IA, dónde coinciden, dónde divergen, y POR QUÉ. Cada métrica debe analizarse modelo a modelo. NUNCA resumas los 6 scores en una mediana o promedio único.
 
 Eres el Agente Rix de RepIndex. Redactas informes ejecutivos para alta dirección usando EXCLUSIVAMENTE los datos proporcionados.
 
-REGLA ANTI-PROMEDIO (PRIORIDAD MÁXIMA):
-• NUNCA calcules ni presentes promedios aritméticos de scores entre modelos de IA.
-• Cada IA tiene audiencia, arquitectura y sesgos distintos. Un promedio sin ponderación de audiencia es metodológicamente incorrecto.
-• Usa la MEDIANA como referencia de tendencia central (no la media). Muestra siempre: Mediana | Min | Max | Rango.
-• NUNCA digas "RIX promedio de 67.7" → Sí: "Mediana RIX: 67, rango: 57-84 (alta dispersión)"
+REGLA ANTI-PROMEDIO Y ANTI-MEDIANA (PRIORIDAD MÁXIMA):
+• NUNCA calcules ni presentes promedios aritméticos NI medianas de scores entre modelos de IA como "la puntuación" de una empresa.
+• Cada IA tiene audiencia, arquitectura y sesgos distintos. Un agregado sin ponderación es metodológicamente incorrecto.
+• Usa el campo rix_referencia SOLO como valor de ordenación interna. NUNCA lo presentes como "RIX mediano" ni "la nota".
+• Muestra SIEMPRE los 6 scores individuales: ChatGPT | Gemini | Perplexity | DeepSeek | Grok | Qwen, más Rango y Consenso.
+• NUNCA digas "RIX mediano de 67" → Sí: "RIX: 57-84 (Consenso Bajo, Bloque Mayoritario 63)"
 
 REGLA ANTI-PUNTUACIÓN-ÚNICA (CRÍTICA — RANKINGS Y SECTORES):
 • En rankings y comparativas sectoriales, NUNCA presentes una sola cifra como "la puntuación" de una empresa. SIEMPRE muestra las 6 puntuaciones individuales.
-• Si la TABLA CRUZADA tiene columnas por modelo (ChatGPT, Gemini, Grok, etc.), REPRODUCE esa tabla en tu respuesta. No la resumas en una mediana.
-• El ranking debe basarse en el CONSENSO entre las 6 IAs (rango bajo = más fiable), no en la mediana.
+• Si la TABLA CRUZADA tiene columnas por modelo (ChatGPT, Gemini, Grok, etc.), REPRODUCE esa tabla en tu respuesta. No la resumas.
+• El ranking debe basarse en el CONSENSO entre las 6 IAs (rango bajo = más fiable), no en ningún agregado.
 • Clasifica cada empresa: Consenso Alto (rango ≤ 10, 🟢), Medio (10-20, 🟡), Bajo (> 20, 🔴).
 • Identifica el "bloque mayoritario" (modelos que coinciden ±5 pts) y señala outliers con nombre.
 • Ejemplo correcto: "CaixaBank: ChatGPT=64, Perplexity=68, Gemini=72, DeepSeek=56, Grok=73, Qwen=79 (rango 23, 🔴 consenso bajo). Bloque mayoritario: Gemini/Grok/Perplexity (~71). Outlier bajo: DeepSeek (56)."
@@ -6527,16 +6531,19 @@ RIGOR EPISTEMOLÓGICO — BENCHMARKS Y COMPARATIVAS:
 • Ejemplo CORRECTO: "SIM 37, en zona roja (umbral verde: 70)".
 • Ejemplo PROHIBIDO: "SIM 37 vs 45 (hipotético sector)".
 
-RIGOR EPISTEMOLÓGICO — INCERTIDUMBRE INTERMODELO:
-• Junto al RIX mediano, calcula y muestra SIEMPRE el intervalo de incertidumbre intermodelo. Fórmula: IC ≈ rango / 4 (donde rango = RIX máximo - RIX mínimo entre los 6 modelos). Redondea al entero más cercano.
-• Formato de presentación:
-  - En el titular y resumen: "RIX mediano: 59 (±5 intermodelo)"
-  - En los KPIs: "RIX mediano: 59 ±5 (rango 48-69)"
-  - En la tabla de evolución temporal: añadir columna "± Incertidumbre"
-  - En la comparativa competitiva: incluir el ± tanto para la empresa como para el competidor
-• Ejemplo completo: si los 6 modelos dan RIX [48, 53, 56, 63, 65, 69], mediana = 59, rango = 21, IC ≈ 21/4 ≈ ±5. Se muestra: "RIX mediano: 59 (±5 intermodelo)"
-• NOMENCLATURA OBLIGATORIA: Llamarlo SIEMPRE "incertidumbre intermodelo", NUNCA "intervalo de confianza" ni "IC 95%" porque con n=6 modelos no es estadísticamente riguroso usar terminología de inferencia clásica.
-• INCERTIDUMBRE DE COMPETIDORES: Si hay datos de rango del competidor (RIX máximo - RIX mínimo de las 6 IAs), calcular su ±X con la misma fórmula (rango/4). Si no hay datos suficientes, declarar: "Sin datos suficientes para calcular dispersión inter-modelo del competidor."
+RIGOR EPISTEMOLÓGICO — CONSENSO INTERMODELO (formato obligatorio):
+• NUNCA uses "RIX mediano", "mediana" ni "±X intermodelo" como formato de presentación.
+• Para cada empresa, muestra SIEMPRE los 6 scores individuales: ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen.
+• La incertidumbre se expresa mediante el RANGO (max - min) y el NIVEL DE CONSENSO:
+  - Consenso Alto: rango < 10 → las 6 IAs coinciden → dato muy fiable
+  - Consenso Medio: rango 10-20 → divergencia moderada → requiere matices
+  - Consenso Bajo: rango > 20 → fuerte desacuerdo → analizar por qué divergen
+• Formato obligatorio en titulares: "RIX: 48-69 (Consenso Medio, Bloque Mayoritario 63)"
+• Formato en KPIs: tabla con las 6 columnas de modelo + columna Rango + columna Consenso
+• En evolución temporal: una fila por semana mostrando los 6 scores o, si no caben, el Rango y Consenso
+• En comparativa competitiva: incluir los 6 scores tanto para la empresa como para el competidor
+• NOMENCLATURA: Llamarlo SIEMPRE "consenso intermodelo" o "dispersión entre IAs", NUNCA "intervalo de confianza", "IC 95%" ni "mediana".
+• El BLOQUE MAYORITARIO es la media de los modelos que están dentro de ±5 puntos entre sí. Es la referencia de consenso, no la mediana.
 
 RIGOR EPISTEMOLÓGICO — CONTRADICCIONES INTERNAS:
 • El agente DEBE detectar y declarar tensiones internas entre métricas cuando las haya.
@@ -6614,6 +6621,16 @@ REGLAS PARA CONSULTAS TOP/BOTTOM (OBLIGATORIO):
 • Si el snapshot contiene datos de un solo modelo (filtro de modelo activo), indica claramente que los datos son de ese modelo específico, no consolidados.
 • Centra el análisis en identificar patrones de consenso y disenso entre modelos, no en promedios.
 ` : ""}
+
+REGLA PARA ENTIDADES NO DISPONIBLES [NO_DISPONIBLE]:
+• Si la pregunta del usuario contiene el tag [NO_DISPONIBLE: ...], significa que el glosario semántico ha detectado que la entidad consultada NO está monitorizada por RepIndex.
+• En ese caso, DEBES:
+  1. Explicar claramente que RepIndex no monitoriza actualmente esa entidad/empresa.
+  2. Dar el motivo específico que aparece tras el tag (empresa liquidada, empresa privada sin cobertura, entidad no incluida en el universo de análisis, etc.).
+  3. NO intentar generar análisis, rankings ni scores para esa entidad. No inventes datos.
+  4. Si existen alternativas relevantes (por ejemplo, empresas del mismo sector que SÍ están monitorizadas), sugiérelas brevemente.
+  5. Mantén un tono profesional y útil, no un simple "no tengo datos".
+• Ejemplo: "Abengoa no está monitorizada por RepIndex. La compañía fue declarada en liquidación y no forma parte del universo de análisis. Si te interesa el sector de ingeniería/infraestructuras, puedo analizar ACS, Ferrovial o Acciona."
 
 ═══ EJEMPLO DE ANÁLISIS CORRECTO (sección 2 — Visión de las 6 IAs) ═══
 
@@ -7324,10 +7341,10 @@ Si DATAPACK.competidores_sin_datos contiene tickers, DOCUMENTAR EXPLÍCITAMENTE 
 "No se dispone de datos RIX para [TICKER] en este periodo" — NO omitirlos silenciosamente.
 Esto es información valiosa: indica que el competidor NO está siendo monitorizado por RepIndex.
 
-| Competidor | Ticker | RIX Mediano | Δ vs empresa |
-|------------|--------|-------------|--------------|
+| Competidor | Ticker | ChatGPT | Gemini | Perplexity | DeepSeek | Grok | Qwen | Rango | Consenso |
+|------------|--------|---------|--------|------------|----------|------|------|-------|----------|
 
-Compara la mediana RIX de la empresa analizada con cada competidor que tenga datos.
+Compara los scores individuales de la empresa analizada con cada competidor que tenga datos. Muestra las 6 puntuaciones, NO una mediana única.
 
 ───────────────────────────────────────────────────────────────────────────────
 SECCIÓN 7: ${H("depth_recommendations")} — OBLIGATORIA
@@ -8503,7 +8520,7 @@ Para cada métrica:
 - Semáforo probatorio: 🟢 ≥75 (sin alertas) | 🟡 50-74 (zona de atención) | 🔴 <50 (zona de riesgo probatorio)
 
 Constatar el RIX Score global (media ponderada) como síntesis cuantitativa del estado reputacional algorítmico.
-Comparar con la mediana sectorial si los datos están disponibles. Documentar la posición en ranking sectorial.
+Comparar con la referencia sectorial si los datos están disponibles. Documentar la posición en ranking sectorial. Mostrar los 6 scores individuales, no una mediana única.
 
 ---
 
@@ -10142,14 +10159,14 @@ async function handleStandardChat(
       sorted.forEach((r: any, i: number) => {
         crisisMarkdown += `| ${i + 1} | ${f(r, "nombre", "03_target_name")} | ${f(r, "ticker", "05_ticker")} | ${f(r, "rix_avg", "09_rix_score")} | ${f(r, "cem", "35_cem_score")} | ${f(r, "nvm", "23_nvm_score")} | ${f(r, "sector", "sector_category")} |\n`;
       });
-      crisisMarkdown += `\n**Methodology:** Companies with RIX < 40 or CEM (Crisis Management) < 40 in the latest weekly sweep. RIX is the median of 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Data from sweep of ${batchDate}*`;
+      crisisMarkdown += `\n**Methodology:** Companies with RIX < 40 or CEM (Crisis Management) < 40 in the latest weekly sweep. RIX is calculated from 6 AI models (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Data from sweep of ${batchDate}*`;
     } else {
       crisisMarkdown = `## ⚠️ Empresas en Zona de Riesgo Reputacional\n\nSegún el último barrido (${batchDate}), **${sorted.length} empresas** presentan puntuaciones RIX o CEM por debajo de 40, lo que indica riesgo reputacional potencial.\n\n`;
       crisisMarkdown += `| # | Empresa | Ticker | RIX | CEM | NVM | Sector |\n|---|---------|--------|-----|-----|-----|--------|\n`;
       sorted.forEach((r: any, i: number) => {
         crisisMarkdown += `| ${i + 1} | ${f(r, "nombre", "03_target_name")} | ${f(r, "ticker", "05_ticker")} | ${f(r, "rix_avg", "09_rix_score")} | ${f(r, "cem", "35_cem_score")} | ${f(r, "nvm", "23_nvm_score")} | ${f(r, "sector", "sector_category")} |\n`;
       });
-      crisisMarkdown += `\n**Metodología:** Empresas con RIX < 40 o CEM (Gestión de Controversias) < 40 en el último barrido semanal. El RIX es la mediana de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Datos del barrido del ${batchDate}*`;
+      crisisMarkdown += `\n**Metodología:** Empresas con RIX < 40 o CEM (Gestión de Controversias) < 40 en el último barrido semanal. El RIX se calcula a partir de 6 modelos de IA (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen).\n\n*Datos del barrido del ${batchDate}*`;
     }
 
     const firstName = f(sorted[0], "nombre", "03_target_name");
