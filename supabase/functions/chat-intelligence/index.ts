@@ -2673,7 +2673,7 @@ async function buildDataPackFromSkills(
       skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
-    // Sector snapshot: when sector detected, ranking intent, or canonical group resolved
+    // Sector snapshot: when sector detected, ranking intent, canonical group, or IBEX ranking
     const sectorCategory = interpret.filters.sector_category;
     const sectorOptions = { modelFilter: skillModelFilter, dateRange: skillDateRange };
     if (resolvedGroupTickerFilter) {
@@ -2681,6 +2681,16 @@ async function buildDataPackFromSkills(
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter, sectorOptions);
     } else if (sectorCategory) {
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory, undefined, sectorOptions);
+    } else if (interpret.filters.ibex_family_code && (interpret.intent === "ranking" || interpret.intent === "sector_comparison")) {
+      // IBEX ranking/comparison: resolve tickers from ibex_family_code and call sectorSnapshot
+      // This ensures per-model detail is available for cross-model tables
+      const ibexCode = interpret.filters.ibex_family_code;
+      const { data: ibexIssuers } = await supabaseClient.from("repindex_root_issuers").select("ticker").eq("ibex_family_code", ibexCode).limit(200);
+      if (ibexIssuers && ibexIssuers.length > 0) {
+        const ibexTickers = ibexIssuers.map((r: any) => r.ticker);
+        skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, `IBEX (${ibexCode})`, ibexTickers, sectorOptions);
+        console.log(`${logPrefix} [SKILLS-v2] IBEX sectorSnapshot triggered for ${ibexCode}: ${ibexTickers.length} tickers`);
+      }
     }
 
     // Ranking: IBEX filter, sector filter, canonical group, or general ranking intent
