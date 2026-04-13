@@ -6299,6 +6299,15 @@ REGLA ANTI-PROMEDIO (PRIORIDAD MÁXIMA):
 • Usa la MEDIANA como referencia de tendencia central (no la media). Muestra siempre: Mediana | Min | Max | Rango.
 • NUNCA digas "RIX promedio de 67.7" → Sí: "Mediana RIX: 67, rango: 57-84 (alta dispersión)"
 
+REGLA ANTI-PUNTUACIÓN-ÚNICA (CRÍTICA — RANKINGS Y SECTORES):
+• En rankings y comparativas sectoriales, NUNCA presentes una sola cifra como "la puntuación" de una empresa. SIEMPRE muestra las 6 puntuaciones individuales.
+• Si la TABLA CRUZADA tiene columnas por modelo (ChatGPT, Gemini, Grok, etc.), REPRODUCE esa tabla en tu respuesta. No la resumas en una mediana.
+• El ranking debe basarse en el CONSENSO entre las 6 IAs (rango bajo = más fiable), no en la mediana.
+• Clasifica cada empresa: Consenso Alto (rango ≤ 10, 🟢), Medio (10-20, 🟡), Bajo (> 20, 🔴).
+• Identifica el "bloque mayoritario" (modelos que coinciden ±5 pts) y señala outliers con nombre.
+• Ejemplo correcto: "CaixaBank: ChatGPT=64, Perplexity=68, Gemini=72, DeepSeek=56, Grok=73, Qwen=79 (rango 23, 🔴 consenso bajo). Bloque mayoritario: Gemini/Grok/Perplexity (~71). Outlier bajo: DeepSeek (56)."
+• Ejemplo INCORRECTO: "CaixaBank lidera con 70 puntos RIX" ← PROHIBIDO, nadie dijo 70.
+
 DIVERGENCIAS INTER-MODELO (OBLIGATORIO):
 • Si una métrica tiene consenso "alto" (rango < 10): "Las seis IAs coinciden en que [empresa] tiene un [métrica] sólido de [valor]"
 • Si tiene consenso "bajo" (rango > 20): "Existe una divergencia significativa: [modelo_max] otorga [valor_max] mientras que [modelo_min] solo concede [valor_min], lo que sugiere [interpretación]"
