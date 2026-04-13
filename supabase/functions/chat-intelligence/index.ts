@@ -2992,13 +2992,17 @@ async function buildDataPackFromSkills(
       // When there's NO companyProfile (sector-only query), fill snapshot + raw_texts
       // from the sector leader's per_model_detail so E3/E4 don't skip
       if (!cp && ss.per_model_detail && ss.per_model_detail.length > 0) {
+        // Collect tickers from the top N ranking to scope snapshot/raw_texts/sources
+        const topN = 5;
+        const scopeTickers: string[] = (ss.ranking || []).slice(0, topN).map((r: any) => r.ticker).filter(Boolean);
         const leaderTicker = ss.lider?.ticker || ss.ranking?.[0]?.ticker;
 
-        if (leaderTicker) {
-          const leaderModels = ss.per_model_detail.filter((r: any) => r.ticker === leaderTicker);
+        if (scopeTickers.length > 0) {
+          // Fill snapshot with ALL top-N companies' per-model detail (not just leader)
+          const scopeModels = ss.per_model_detail.filter((r: any) => scopeTickers.includes(r.ticker));
 
-          // Fill snapshot with leader's per-model detail
-          pack.snapshot = leaderModels.map((m: any) => ({
+          pack.snapshot = scopeModels.map((m: any) => ({
+            ticker: m.ticker,
             modelo: m.modelo || m.model_name,
             rix: m.rix,
             rix_adj: null,
@@ -3017,17 +3021,18 @@ async function buildDataPackFromSkills(
             period_to: m.period_to,
           }));
 
-          // Fill raw_texts from leader models
-          pack.raw_texts = leaderModels.map((m: any) => ({
+          // Fill raw_texts from all scope companies
+          pack.raw_texts = scopeModels.map((m: any) => ({
+            ticker: m.ticker,
             modelo: m.modelo || m.model_name,
             texto: m.resumen || "",
           }));
 
-          // Fill empresa_primaria from sector leader
+          // Fill empresa_primaria as a sector-level entity, not a single company
           const leaderRanking = (ss.ranking || []).find((r: any) => r.ticker === leaderTicker);
           pack.empresa_primaria = {
-            ticker: leaderTicker,
-            nombre: leaderRanking?.empresa || ss.lider?.empresa || leaderTicker,
+            ticker: leaderTicker || scopeTickers[0],
+            nombre: leaderRanking?.empresa || ss.lider?.empresa || leaderTicker || "Sector",
             sector: ss.sector,
             subsector: null,
           };
@@ -3035,9 +3040,8 @@ async function buildDataPackFromSkills(
           (pack as any).rix_mediano = leaderRanking?.rix_mediano ?? ss.lider?.rix ?? ss.mediana_sectorial;
           (pack as any).metricas_consolidadas = ss.metricas_sector;
 
-          // Populate _rawRunsForSources from per_model_detail (contains 20_res_gpt_bruto, 21_res_perplex_bruto)
-          // so extractSourcesFromRixData can find bibliography URLs for sector queries
-          (pack as any)._rawRunsForSources = ss.per_model_detail;
+          // Populate _rawRunsForSources scoped to ranking companies only (not entire sector)
+          (pack as any)._rawRunsForSources = scopeModels;
         }
 
         // Fill evolucion from evolucion_sector for leader
@@ -6587,23 +6591,28 @@ INSTRUCCIONES DEL ROL (el rol modifica CÓMO presentas, NUNCA autoriza fabricar 
 ${rolePrompt}` : ""}
 ${dataPack?.empresa_primaria?.ticker === "IBEX-35" ? `
 REGLAS PARA CONSULTAS DE ÍNDICE (IBEX-35):
-• Presenta scores de cada IA por separado para empresas destacadas.
-• Ordena por mediana pero muestra: Mediana | Min | Max | Consenso.
+• PROHIBIDO presentar una puntuación RIX única como "la nota" de una empresa. Muestra SIEMPRE las 6 puntuaciones individuales (ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen).
+• Ordena las empresas por Nivel de Consenso (Alto → Medio → Bajo) y secundariamente por Score del Bloque Mayoritario (media de los modelos dentro de ±5 puntos entre sí).
+• Tabla obligatoria: Empresa | ChatGPT | Gemini | Perplexity | DeepSeek | Grok | Qwen | Rango | Consenso
+• Centra la narrativa en dónde coinciden y dónde divergen las IAs, no en promedios.
 • Extensión máxima: 2.500 palabras.
 ` : ""}
 ${dataPack.ranking && dataPack.ranking.length > 3 && dataPack?.empresa_primaria?.ticker !== "IBEX-35" ? `
 REGLAS PARA RANKINGS SECTORIALES:
 • Cubre TOP 5-10 empresas de forma EQUILIBRADA, no solo el líder.
 • Compara métricas ENTRE las top 5. Analiza divergencias y evolución por empresa.
+• PROHIBIDO usar "mediana" o "RIX promedio" como score único. Muestra las 6 puntuaciones individuales por empresa.
+• Ordena por Consenso (Alto→Medio→Bajo), luego por Bloque Mayoritario.
 ` : ""}
 ${rankingTop || rankingBottom ? `
 REGLAS PARA CONSULTAS TOP/BOTTOM (OBLIGATORIO):
-• Si ranking_top está presente en el DATAPACK, presenta una tabla completa del Top con: Posición, Empresa, Ticker, RIX Score, y las 8 métricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM) si están disponibles en el snapshot.
+• Si ranking_top está presente en el DATAPACK, presenta una tabla con: Posición, Empresa, Ticker, y las 6 puntuaciones individuales (ChatGPT, Gemini, Perplexity, DeepSeek, Grok, Qwen), Rango, Consenso, Bloque Mayoritario.
+• PROHIBIDO mostrar "RIX Score" como columna única. Son 6 scores distintos, uno por modelo de IA.
 • Si ranking_bottom está presente, presenta una tabla equivalente del Bottom.
 • NUNCA omitas la tabla Bottom si ranking_bottom tiene datos.
-• Las 8 métricas de cada empresa deben extraerse del campo "snapshot" del DATAPACK (filtrando por ticker).
+• Usa scores_individuales del ranking del DATAPACK para las columnas de cada modelo.
 • Si el snapshot contiene datos de un solo modelo (filtro de modelo activo), indica claramente que los datos son de ese modelo específico, no consolidados.
-• Si metricas_consolidadas tiene datos por ticker, úsalos para las columnas de métricas.
+• Centra el análisis en identificar patrones de consenso y disenso entre modelos, no en promedios.
 ` : ""}
 
 ═══ EJEMPLO DE ANÁLISIS CORRECTO (sección 2 — Visión de las 6 IAs) ═══
@@ -10507,10 +10516,9 @@ async function handleStandardChat(
             .filter(Boolean)
             .sort()
             .reverse()[0];
-          // If temporal range was requested, use it for methodology instead of raw data dates
-          const temporalOverride = (dataPack as any)?.temporal_range;
-          const periodFromMethod = temporalOverride?.from || (dataPack as any)?.report_context?.date_from || periodFromRaw;
-          const periodToMethod = temporalOverride?.to || (dataPack as any)?.report_context?.date_to || periodToRaw;
+          // ALWAYS use real data dates for methodology — never override with user-requested range
+          const periodFromMethod = (dataPack as any)?.report_context?.date_from || periodFromRaw;
+          const periodToMethod = (dataPack as any)?.report_context?.date_to || periodToRaw;
           const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
           const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
 
@@ -11163,10 +11171,9 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       .filter(Boolean)
       .sort()
       .reverse()[0];
-    // If temporal range was requested, use it for methodology instead of raw data dates
-    const temporalOverrideNS = (dataPack as any)?.temporal_range;
-    const periodFromMethod = temporalOverrideNS?.from || (dataPack as any)?.report_context?.date_from || periodFromRaw;
-    const periodToMethod = temporalOverrideNS?.to || (dataPack as any)?.report_context?.date_to || periodToRaw;
+    // ALWAYS use real data dates for methodology — never override with user-requested range
+    const periodFromMethod = (dataPack as any)?.report_context?.date_from || periodFromRaw;
+    const periodToMethod = (dataPack as any)?.report_context?.date_to || periodToRaw;
 
     // Extract unique companies and weeks
     const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
