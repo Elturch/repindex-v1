@@ -2567,6 +2567,21 @@ async function buildDataPackFromSkills(
       }
     }
 
+    // ── NO_DISPONIBLE early return: if glossary flagged entity as unavailable, return special DataPack ──
+    const noDispMatch = enrichedQuestion.match(/\[NO_DISPONIBLE:\s*(.+?)\]/);
+    if (noDispMatch) {
+      console.log(`${logPrefix} [NO_DISPONIBLE] Detected — returning explanatory DataPack for: ${noDispMatch[1]}`);
+      return {
+        no_disponible: true,
+        no_disponible_detail: noDispMatch[1],
+        enrichedQuestion,
+        ranking: [],
+        snapshot: null,
+        evolution: [],
+        crisis_scan_empty: true,
+      } as any;
+    }
+
     // Fallback: if model not detected in normalized question, try original question
     if (originalQuestion && !interpret.filters.model_name) {
       const origLower = originalQuestion.toLowerCase();
