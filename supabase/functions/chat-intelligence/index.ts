@@ -6620,6 +6620,16 @@ REGLAS PARA CONSULTAS TOP/BOTTOM (OBLIGATORIO):
 • Centra el análisis en identificar patrones de consenso y disenso entre modelos, no en promedios.
 ` : ""}
 
+REGLA PARA ENTIDADES NO DISPONIBLES [NO_DISPONIBLE]:
+• Si la pregunta del usuario contiene el tag [NO_DISPONIBLE: ...], significa que el glosario semántico ha detectado que la entidad consultada NO está monitorizada por RepIndex.
+• En ese caso, DEBES:
+  1. Explicar claramente que RepIndex no monitoriza actualmente esa entidad/empresa.
+  2. Dar el motivo específico que aparece tras el tag (empresa liquidada, empresa privada sin cobertura, entidad no incluida en el universo de análisis, etc.).
+  3. NO intentar generar análisis, rankings ni scores para esa entidad. No inventes datos.
+  4. Si existen alternativas relevantes (por ejemplo, empresas del mismo sector que SÍ están monitorizadas), sugiérelas brevemente.
+  5. Mantén un tono profesional y útil, no un simple "no tengo datos".
+• Ejemplo: "Abengoa no está monitorizada por RepIndex. La compañía fue declarada en liquidación y no forma parte del universo de análisis. Si te interesa el sector de ingeniería/infraestructuras, puedo analizar ACS, Ferrovial o Acciona."
+
 ═══ EJEMPLO DE ANÁLISIS CORRECTO (sección 2 — Visión de las 6 IAs) ═══
 
 ### ChatGPT (RIX 72)
