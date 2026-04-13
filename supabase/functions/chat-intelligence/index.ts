@@ -2452,8 +2452,11 @@ async function buildDataPackFromSkills(
       }
     }
 
-    // ── Glossary fallback: when still general_question with low confidence, look up specialized terms ──
-    if (interpret.intent === "general_question" && interpret.confidence < 0.5) {
+    // ── Glossary fallback: when general_question with low confidence OR company_analysis with no resolved entities ──
+    const noEntitiesResolved = interpret.entities.length === 0 && bridge.detected_companies.length === 0 && !interpret.filters.ticker;
+    const shouldTryGlossary = (interpret.intent === "general_question" && interpret.confidence < 0.5) || 
+                               (interpret.intent === "company_analysis" && noEntitiesResolved);
+    if (shouldTryGlossary) {
       try {
         const glossaryTerms = await lookupGlossaryTerms(supabaseClient, question);
         if (glossaryTerms.length > 0) {
@@ -2495,8 +2498,16 @@ async function buildDataPackFromSkills(
             for (const s of catMap.skills) interpret.recommended_skills.push(s);
             console.log(`${logPrefix} [GLOSSARY→INTERPRET] Category '${primaryCategory}' → '${catMap.intent}'`);
 
-            // Extract tickers from repindex_relevance for entity-bearing categories
-            const ENTITY_CATEGORIES = new Set(["agrupacion", "marca_matriz", "nombre_historico", "persona_empresa", "sector_coloquial", "filtro", "acronimo", "propiedad"]);
+            // Handle no_disponible category directly — inject tag from definition + repindex_relevance
+            if (primaryCategory === "no_disponible") {
+              const ndTerm = glossaryTerms[0];
+              const motivo = ndTerm.repindex_relevance || ndTerm.definition || "entidad no monitorizada";
+              enrichedQuestion = `${enrichedQuestion} [NO_DISPONIBLE: ${ndTerm.term} — ${motivo}]`;
+              console.log(`${logPrefix} [GLOSSARY→NO_DISPONIBLE] ${ndTerm.term}: ${motivo}`);
+            }
+
+             // Extract tickers from repindex_relevance for entity-bearing categories
+             const ENTITY_CATEGORIES = new Set(["agrupacion", "marca_matriz", "nombre_historico", "persona_empresa", "sector_coloquial", "filtro", "acronimo", "propiedad"]);
             if (ENTITY_CATEGORIES.has(primaryCategory)) {
               for (const gt of glossaryTerms) {
                 const rel = gt.repindex_relevance || "";
@@ -2554,6 +2565,21 @@ async function buildDataPackFromSkills(
       } catch (glossaryErr) {
         console.warn(`${logPrefix} [GLOSSARY_FALLBACK] Error:`, glossaryErr);
       }
+    }
+
+    // ── NO_DISPONIBLE early return: if glossary flagged entity as unavailable, return special DataPack ──
+    const noDispMatch = enrichedQuestion.match(/\[NO_DISPONIBLE:\s*(.+?)\]/);
+    if (noDispMatch) {
+      console.log(`${logPrefix} [NO_DISPONIBLE] Detected — returning explanatory DataPack for: ${noDispMatch[1]}`);
+      return {
+        no_disponible: true,
+        no_disponible_detail: noDispMatch[1],
+        enrichedQuestion,
+        ranking: [],
+        snapshot: null,
+        evolution: [],
+        crisis_scan_empty: true,
+      } as any;
     }
 
     // Fallback: if model not detected in normalized question, try original question
@@ -8335,7 +8361,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
 
   // Default: only fall to corporate_analysis if the question has substance
   // Short prompts (<20 chars) or pure instructions without company context → test_limits
-  if (q.length < 20 && !/\b(?:analiza|compara|ranking|top|sector)\b/i.test(q)) {
+  if (q.length < 20 && !/\b(?:anali[sz][aei]s?|compara|ranking|top|sector|evoluci[oó]n)\b/i.test(q)) {
     return logCategory("test_limits", "too_short_no_substance");
   }
 
@@ -9876,6 +9902,27 @@ async function handleStandardChat(
     console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
     const skillsStart = Date.now();
     const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix, originalUserQuestion);
+    // ── NO_DISPONIBLE short-circuit: entity not in database, return explanatory answer directly ──
+    if (skillsPack && (skillsPack as any).no_disponible === true) {
+      const detail = (skillsPack as any).no_disponible_detail || "entidad no monitorizada";
+      console.log(`${logPrefix} [NO_DISPONIBLE] Returning explanatory response for: ${detail}`);
+      const noDispAnswer = language === "en"
+        ? `The entity you asked about is **not currently monitored** by RepIndex.\n\n**Reason:** ${detail}\n\nRepIndex monitors companies in the IBEX 35 and the broader IBEX family (~35 companies). If you'd like to analyze a company we do cover, try asking about any of them.\n\n💡 Try: *"Ranking del IBEX 35"* or *"Analiza Telefónica"*`
+        : `La entidad que consultas **no está monitorizada actualmente** por RepIndex.\n\n**Motivo:** ${detail}\n\nRepIndex monitoriza empresas del IBEX 35 y la familia IBEX ampliada (~35 empresas). Si deseas analizar una empresa que sí cubrimos, puedes preguntar por cualquiera de ellas.\n\n💡 Prueba: *"Ranking del IBEX 35"* o *"Analiza Telefónica"*`;
+      return new Response(
+        JSON.stringify({
+          answer: noDispAnswer,
+          metadata: { questionCategory: "corporate_analysis", type: "no_disponible" },
+          suggestedQuestions: [
+            language === "en" ? "Show me the IBEX 35 ranking" : "Muéstrame el ranking del IBEX 35",
+            language === "en" ? "Analyze Telefónica" : "Analiza Telefónica",
+            language === "en" ? "Which companies are in crisis?" : "¿Qué empresas están en crisis?",
+          ],
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      );
+    }
+
     if (skillsPack && (skillsPack.snapshot.length > 0 || skillsPack.ranking.length > 0 || (skillsPack as any).crisis_scan_empty === true)) {
       usedSkillsPipeline = true;
       dataPack = skillsPack;
