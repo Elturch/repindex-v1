@@ -286,8 +286,29 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       const min = valid.length > 0 ? Math.min(...valid) : 0;
       const max = valid.length > 0 ? Math.max(...valid) : 0;
       const range = max - min;
-      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level: range <= 5 ? "alto" : range <= 12 ? "medio" : "bajo", scores_by_model: g.scores };
-    }).sort((a, b) => b.median_rix - a.median_rix).slice(0, topN);
+      const consensus_level = range <= 10 ? "alto" : range <= 20 ? "medio" : "bajo";
+      // Majority block: largest cluster of models within ±5 pts
+      let bestBlock: number[] = [];
+      for (const anchor of valid) {
+        const block = valid.filter(v => Math.abs(v - anchor) <= 5);
+        if (block.length > bestBlock.length) bestBlock = block;
+      }
+      const majority_block_score = bestBlock.length > 0 ? Math.round(bestBlock.reduce((a, b) => a + b, 0) / bestBlock.length) : med;
+      const majority_block_models = g.scores
+        .filter(s => s.rix_score != null && bestBlock.includes(s.rix_score))
+        .map(s => s.model);
+      // Per-model scores map
+      const scores_individuales: Record<string, number | null> = {};
+      for (const s of g.scores) scores_individuales[s.model] = s.rix_score;
+      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level, scores_by_model: g.scores, majority_block_score, majority_block_models, scores_individuales };
+    })
+    // Primary sort: consensus alto first, then by majority block score
+    .sort((a, b) => {
+      const order: Record<string, number> = { alto: 0, medio: 1, bajo: 2 };
+      const cDiff = (order[a.consensus_level] ?? 1) - (order[b.consensus_level] ?? 1);
+      if (cDiff !== 0) return cDiff;
+      return b.majority_block_score - a.majority_block_score;
+    }).slice(0, topN);
     console.log(`[SKILL] CompanyRanking: ${ranking.length} companies in ${Date.now() - start}ms`);
     return { success: true, data: { batch_date: batchDate, filter: params.sector_category || params.ibex_family_code || "all", ranking } };
   } catch (e: any) { return { success: false, error: e.message || String(e) }; }
@@ -2211,11 +2232,8 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
 
   if (hasAlert && !hasEvolution && !hasDivergence) {
     intent = "alert"; recommended_skills.push("skillCrisisScan"); confidence = 0.85;
-  } else if (hasEvolution) {
-    intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
-  } else if (hasDivergence) {
-    intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
-  } else if (hasRanking) {
+  } else if (hasRanking && (hasIbex || filters.sector_category)) {
+    // Ranking + IBEX/sector takes priority over evolution — "top 5 IBEX últimas 4 semanas" is a ranking query with temporal filter
     intent = "ranking"; recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
     if (hasIbex) filters.ibex_family_code = "IBEX-35";
     if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
@@ -2225,7 +2243,22 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
     const bottomMatch = lower.match(/\b(?:bottom|botom|últimos|peores|colistas?|cola|worst)\s*(\d+)?\b/i);
     if (topMatch) filters.top_n = topMatch[1] || "5";
     if (bottomMatch) filters.bottom_n = bottomMatch[1] || "5";
-    // If user asks for "top 5 y bottom 5" or similar, mark both
+    if (!topMatch && !bottomMatch && /\b(top|mejor|l[ií]der)/i.test(lower)) filters.top_n = "5";
+    const hasBottomIntent = /\b(bottom|botom|peor|peores|últimos|colistas?|cola|worst|los\s+m[aá]s\s+bajos)\b/i.test(lower);
+    if (hasBottomIntent && !filters.bottom_n) filters.bottom_n = "5";
+  } else if (hasEvolution) {
+    intent = "evolution"; recommended_skills.push("skillGetCompanyEvolution", "skillGetCompanyScores"); confidence = 0.85;
+  } else if (hasDivergence) {
+    intent = "divergence"; recommended_skills.push("skillGetDivergenceAnalysis", "skillGetCompanyScores"); confidence = 0.85;
+  } else if (hasRanking) {
+    intent = "ranking"; recommended_skills.push("skillGetCompanyRanking", "skillGetCompanyEvolution");
+    if (hasIbex) filters.ibex_family_code = "IBEX-35";
+    if (filters.sector_category) recommended_skills.push("skillGetSectorComparison");
+    confidence = 0.85;
+    const topMatch = lower.match(/\btop\s*(\d+)\b/i);
+    const bottomMatch = lower.match(/\b(?:bottom|botom|últimos|peores|colistas?|cola|worst)\s*(\d+)?\b/i);
+    if (topMatch) filters.top_n = topMatch[1] || "5";
+    if (bottomMatch) filters.bottom_n = bottomMatch[1] || "5";
     if (!topMatch && !bottomMatch && /\b(top|mejor|l[ií]der)/i.test(lower)) filters.top_n = "5";
     const hasBottomIntent = /\b(bottom|botom|peor|peores|últimos|colistas?|cola|worst|los\s+m[aá]s\s+bajos)\b/i.test(lower);
     if (hasBottomIntent && !filters.bottom_n) filters.bottom_n = "5";
@@ -2652,7 +2685,7 @@ async function buildDataPackFromSkills(
       skillCalls.detail = executeSkillGetCompanyDetail(supabaseClient, { ticker: resolvedTicker });
     }
 
-    // Sector snapshot: when sector detected, ranking intent, or canonical group resolved
+    // Sector snapshot: when sector detected, ranking intent, canonical group, or IBEX ranking
     const sectorCategory = interpret.filters.sector_category;
     const sectorOptions = { modelFilter: skillModelFilter, dateRange: skillDateRange };
     if (resolvedGroupTickerFilter) {
@@ -2660,6 +2693,16 @@ async function buildDataPackFromSkills(
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, semanticGroup.display_name || semanticGroup.canonical_key!, resolvedGroupTickerFilter, sectorOptions);
     } else if (sectorCategory) {
       skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, sectorCategory, undefined, sectorOptions);
+    } else if (interpret.filters.ibex_family_code && (interpret.intent === "ranking" || interpret.intent === "sector_comparison")) {
+      // IBEX ranking/comparison: resolve tickers from ibex_family_code and call sectorSnapshot
+      // This ensures per-model detail is available for cross-model tables
+      const ibexCode = interpret.filters.ibex_family_code;
+      const { data: ibexIssuers } = await supabaseClient.from("repindex_root_issuers").select("ticker").eq("ibex_family_code", ibexCode).limit(200);
+      if (ibexIssuers && ibexIssuers.length > 0) {
+        const ibexTickers = ibexIssuers.map((r: any) => r.ticker);
+        skillCalls.sectorSnapshot = skillSectorSnapshot(supabaseClient, `IBEX (${ibexCode})`, ibexTickers, sectorOptions);
+        console.log(`${logPrefix} [SKILLS-v2] IBEX sectorSnapshot triggered for ${ibexCode}: ${ibexTickers.length} tickers`);
+      }
     }
 
     // Ranking: IBEX filter, sector filter, canonical group, or general ranking intent
@@ -3104,6 +3147,15 @@ async function buildDataPackFromSkills(
         min_rix: r.min_rix, max_rix: r.max_rix, range: r.range,
         consensus_level: r.consensus_level,
         scores_by_model: r.scores_by_model,
+        // Include consensus fields from ranking skill
+        majority_block_score: r.majority_block_score,
+        majority_block_models: r.majority_block_models,
+        scores_individuales: r.scores_individuales,
+        consenso: r.consensus_level === "alto" ? "alto" : r.consensus_level === "medio" ? "medio" : "bajo",
+        bloque_mayoritario: r.majority_block_score ? { score: r.majority_block_score, modelos: r.majority_block_models || [] } : undefined,
+        outliers: r.scores_by_model ? r.scores_by_model
+          .filter((s: any) => s.rix_score != null && r.majority_block_models && !r.majority_block_models.includes(s.model))
+          .map((s: any) => ({ model: s.model, rix: s.rix_score })) : [],
       }));
 
       // ── Ranking Enrichment: fetch full metrics for top/bottom companies ──
@@ -3119,15 +3171,23 @@ async function buildDataPackFromSkills(
         console.log(`${logPrefix} [SKILLS-v2] Ranking enrichment: fetching metrics for ${enrichTickers.length} companies (top=${topN}, bottom=${bottomN})`);
 
         try {
-          const batchDate = resultMap.ranking.batch_date;
-          const { gte: eGte, lt: eLt } = buildDateFilterEdge(batchDate);
+          // Use skillDateRange if available (multi-week queries), fallback to single batch date
+          let eGte: string, eLt: string;
+          if (skillDateRange) {
+            eGte = skillDateRange.from + "T00:00:00Z";
+            eLt = skillDateRange.to + "T23:59:59Z";
+          } else {
+            const batchDate = resultMap.ranking.batch_date;
+            const df = buildDateFilterEdge(batchDate);
+            eGte = df.gte; eLt = df.lt;
+          }
           const modelFilter = interpret.filters.model_name || null;
 
           let enrichData: any[] = [];
           for (let page = 0; page < 4; page++) {
             let eq = supabaseClient.from("rix_runs_v2")
               .select("02_model_name,03_target_name,05_ticker,09_rix_score,23_nvm_score,26_drm_score,29_sim_score,32_rmm_score,35_cem_score,38_gam_score,41_dcm_score,44_cxm_score,10_resumen,11_puntos_clave,17_flags,06_period_from,07_period_to,batch_execution_date,25_nvm_categoria,28_drm_categoria,31_sim_categoria,34_rmm_categoria,37_cem_categoria,40_gam_categoria,43_dcm_categoria,46_cxm_categoria")
-              .gte("batch_execution_date", eGte).lt("batch_execution_date", eLt)
+              .gte("batch_execution_date", eGte).lte("batch_execution_date", eLt)
               .in("05_ticker", enrichTickers)
               .range(page * 1000, (page + 1) * 1000 - 1);
             if (modelFilter) eq = eq.eq("02_model_name", modelFilter);
@@ -3303,7 +3363,11 @@ async function buildDataPackFromSkills(
       reportContext.date_from = (pack as any)._enrichment_date_from;
       reportContext.date_to = (pack as any)._enrichment_date_to;
       reportContext.sample_size = (pack as any)._enrichment_sample_size || 0;
-      reportContext.weeks_analyzed = 1;
+      // Compute real weeks from enrichment data batch dates
+      const enrichBatchDates = (pack as any)._rawRunsForSources 
+        ? new Set(((pack as any)._rawRunsForSources as any[]).map((r: any) => String(r.batch_execution_date || "").slice(0, 10)).filter(Boolean))
+        : new Set<string>();
+      reportContext.weeks_analyzed = enrichBatchDates.size || 1;
     }
 
     // ── Temporal range: DO NOT override report_context dates with user-requested dates.
