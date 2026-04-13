@@ -3135,6 +3135,15 @@ async function buildDataPackFromSkills(
         min_rix: r.min_rix, max_rix: r.max_rix, range: r.range,
         consensus_level: r.consensus_level,
         scores_by_model: r.scores_by_model,
+        // Include consensus fields from ranking skill
+        majority_block_score: r.majority_block_score,
+        majority_block_models: r.majority_block_models,
+        scores_individuales: r.scores_individuales,
+        consenso: r.consensus_level === "alto" ? "alto" : r.consensus_level === "medio" ? "medio" : "bajo",
+        bloque_mayoritario: r.majority_block_score ? { score: r.majority_block_score, modelos: r.majority_block_models || [] } : undefined,
+        outliers: r.scores_by_model ? r.scores_by_model
+          .filter((s: any) => s.rix_score != null && r.majority_block_models && !r.majority_block_models.includes(s.model))
+          .map((s: any) => ({ model: s.model, rix: s.rix_score })) : [],
       }));
 
       // ── Ranking Enrichment: fetch full metrics for top/bottom companies ──
