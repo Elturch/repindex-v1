@@ -8343,7 +8343,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
 
   // Default: only fall to corporate_analysis if the question has substance
   // Short prompts (<20 chars) or pure instructions without company context → test_limits
-  if (q.length < 20 && !/\b(?:analiza|compara|ranking|top|sector)\b/i.test(q)) {
+  if (q.length < 20 && !/\b(?:anali[sz][aei]s?|compara|ranking|top|sector|evoluci[oó]n)\b/i.test(q)) {
     return logCategory("test_limits", "too_short_no_substance");
   }
 
