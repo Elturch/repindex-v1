@@ -1,55 +1,53 @@
 
 
-## Diagnóstico real: Por qué se rompió con el barrido del 12 de abril
+## Plan de Stress Test del Agente Rix — Diccionario + Periodos Temporales
 
-### Los datos lo demuestran
+### Batería de 16 consultas organizadas por vector de fallo
 
-Comparación de scores para las mismas empresas entre las dos semanas:
+**Grupo A — Grupos canónicos recientes (diccionario)**
+1. `"Ranking de grupos hospitalarios"` — Grupo con exclusiones (GRF, PHM, ROVI excluidos); verifica que no aparezcan farmacéuticas
+2. `"Compara las OTAs en el último trimestre"` — Grupo canónico + temporal trimestral
+3. `"¿Cómo están las cerveceras?"` — Grupo micro (2 empresas, ambas PRIV)
+4. `"Ranking de bodegas últimas 6 semanas"` — Grupo micro + temporal relativo
+5. `"Sector defensa: evolución último mes"` — Grupo reciente + temporal mensual
 
-```text
-                    5 abril (funcionaba)              12 abril (roto)
-Empresa   ChatGPT Deep  Gemini Grok  Perp  Qwen    ChatGPT Deep  Gemini Grok  Perp  Qwen
-─────────────────────────────────────────────────────────────────────────────────────────
-BBVA        42     39    69     68    66    66        71     69    72     67    53    66
-ITX         47     63    59     67    49    63        53     66    83     62    57    74
-CABK        41     67    63     64    50    71        64     56    72     73    68    79
-TEF         55     36    62     63    47    67        70     51    53     75    43    76
-```
+**Grupo B — Marca matriz y propiedad (glossary)**
+6. `"Análisis de Zara en el primer trimestre 2026"` — Debe resolver a ITX, no fallar como empresa desconocida
+7. `"¿Qué dicen las IAs de Movistar?"` — Debe resolver a TEF
+8. `"¿De quién es HLA Hospitales?"` — Entrada tipo `propiedad` en glossary
 
-**El 5 de abril**: los scores estaban comprimidos (rangos de 20-30 puntos), las medianas eran estables y "parecidas" a lo que mostraba cualquier modelo individual. La instrucción "ordena por mediana" producía un ranking que no chocaba visualmente con el Dashboard.
+**Grupo C — Temporales avanzados**
+9. `"Top 5 IBEX en el último trimestre"` — Ranking + trimestre relativo (Q1 2026 o Q2 según fecha)
+10. `"Evolución del sector banca en las últimas 6 semanas"` — Sector + temporal relativo 6 semanas
+11. `"Ranking de las eléctricas en febrero 2026"` — Grupo canónico + mes específico
+12. `"¿Cómo ha evolucionado BBVA en el primer semestre 2026?"` — Empresa + semestre
+13. `"Farmacéuticas en las últimas 8 semanas"` — Grupo canónico + temporal que puede exceder datos disponibles
 
-**El 12 de abril**: los scores son más altos PERO mucho más dispersos. Ejemplos:
-- ITX: Gemini=83 vs ChatGPT=53 → rango de 30 puntos
-- TEF: Qwen=76 vs Perplexity=43 → rango de 33 puntos
-- CABK: Qwen=79 vs Deepseek=56 → rango de 23 puntos
+**Grupo D — Edge cases y no_disponible**
+14. `"Análisis de Abengoa"` — Empresa liquidada (no_disponible); debe dar respuesta explicativa sin intentar buscar datos
+15. `"Compara Lidl con Mercadona"` — Una no_disponible + una que sí existe
+16. `"Ranking de supermercados último trimestre"` — Grupo canónico con mix de PRIV y públicas + temporal
 
-### La causa raíz real
+### Verificaciones por consulta
 
-**Los bugs siempre estuvieron ahí. El barrido del 12 de abril los hizo visibles.**
+Para cada respuesta se comprobará:
+- **Scores**: 6 puntuaciones individuales visibles, sin mediana ni "RIX Score" único
+- **Scope**: que el DataPack y la narrativa cubran TODAS las empresas del grupo/ranking (no solo el líder)
+- **Exclusiones**: que los grupos con exclusions (hospitalarios) no incluyan las empresas excluidas
+- **Fechas**: que la metodología refleje las fechas REALES del dataset, no las solicitadas
+- **Temporal**: que `parseTemporalExpression` genere el rango correcto y que los datos se filtren por ese rango
+- **Glossary**: que marcas (Zara→ITX), no_disponible (Abengoa) y propiedad (HLA) se resuelvan correctamente
+- **Bibliografía**: URLs solo de empresas en scope
 
-La dispersión de scores del 12 de abril es significativamente mayor que la del 5 de abril. Cuando la dispersión es baja, la "mediana" se parece a cualquier score individual → Dashboard y Agente parecen coincidir. Cuando la dispersión es alta, la mediana diverge enormemente de los scores individuales → el usuario ve un 83 (Gemini-ITX) en el Dashboard pero el Agente le dice 64 (mediana).
+### Implementación técnica
 
-No fue un cambio de código. Fue un cambio en la distribución estadística de los datos que expuso la fragilidad del diseño original basado en medianas.
+Se ejecutarán las 16 consultas via `supabase--curl_edge_functions` contra `chat-intelligence` con un `conversation_id` único por test. Cada respuesta se parseará buscando:
+- Patrones prohibidos: `/mediana|RIX Score.*\d{2}/i`
+- Presencia obligatoria de tabla con 6 columnas de modelo
+- Fechas de metodología vs rango temporal solicitado
+- Empresas mencionadas vs empresas esperadas del grupo canónico
 
-### Por qué esto confirma que el plan de consenso/disenso es urgente
+### Entregable
 
-El sistema actual es inherentemente frágil: funciona cuando los modelos están de acuerdo y se rompe cuando divergen. Precisamente cuando la divergencia es mayor es cuando el análisis de consenso/disenso tiene más valor informativo.
-
-### Plan de implementación (sin cambios, los 5 bugs siguen siendo los correctos)
-
-**Archivo: `supabase/functions/chat-intelligence/index.ts`**
-
-1. **Línea 6591** — Eliminar "Ordena por mediana". Reemplazar con: ordenar por consenso (alto→bajo) y score del bloque mayoritario. Mostrar las 6 puntuaciones individuales.
-
-2. **Línea 6601** — Eliminar "RIX Score" singular. Reemplazar con tabla de 6 scores + Rango + Consenso + Bloque Mayoritario.
-
-3. **Líneas 2994-3041** — Expandir scope del DataPack: snapshot y raw_texts de TODAS las empresas del ranking (no solo el líder). Filtrar `_rawRunsForSources` al scope activo.
-
-4. **Líneas 10510-10513** — Corregir prioridad temporal: usar siempre `report_context.date_from/to` reales, no los solicitados por el usuario.
-
-5. **`src/components/ui/markdown-message.tsx`** — En el export HTML, priorizar `reportContext.date_from/date_to`.
-
-### Resultado esperado
-
-El agente será robusto ante cambios de distribución: cuando los modelos divergen mucho (como el 12 de abril), el informe lo mostrará como información valiosa (disenso), no como un error. Dashboard y Agente mostrarán los mismos 6 scores base.
+Documento `/mnt/documents/stress_test_rix_agent.md` con resultado de cada test (PASS/FAIL), extracto de la respuesta problemática, y lista de bugs priorizados por severidad.
 
