@@ -1,70 +1,56 @@
 
 
-## Plan: Garantizar que TODO usuario activo pueda entrar siempre
+## Plan: Eliminar emails enviados por Supabase/Lovable, todo vía Resend
 
-### Diagnóstico definitivo
+### Diagnóstico
 
-**Datos reales (consulta a `auth.users` + `user_profiles`):**
-- 38 usuarios activos
-- 30 lograron entrar alguna vez (79%)
-- **8 nunca pudieron entrar** (21%) — `last_sign_in_at IS NULL`
-- 8 con `email_confirmed_at IS NULL` (los mismos 8)
+**Buena noticia:** No hay dominio de Lovable Emails configurado, así que **Lovable NO está enviando emails**. Todas las funciones edge usan correctamente `Resend` con remitente `@repindex.ai`.
 
-**Error confirmado en logs (15:02 UTC, hoy):**
-```
-GET /verify  →  400: Verify requires a verification type
-```
+**Problema crítico encontrado:** Hay **2 puntos** donde Supabase envía emails automáticamente con su propia plantilla por defecto (no Resend, no branded):
 
-Esto significa que cuando un usuario pulsa el enlace que genera Supabase para usuarios sin `email_confirmed_at`, el link interno carece del parámetro `type=magiclink` y Supabase rechaza la verificación. Es un bug del comportamiento de `admin.generateLink({ type: "magiclink" })` cuando se usa con cuentas no confirmadas: en algunos casos genera links tipo "invite" o "recovery" que esperan otro `type`.
+1. **`supabase/functions/admin-api/index.ts` línea 181** — `case "create_user"` usa `supabaseAdmin.auth.admin.inviteUserByEmail()`. Este método de Supabase **dispara automáticamente un email de invitación con la plantilla por defecto de Supabase**, no con Resend.
+2. **`supabase/functions/admin-api/index.ts` línea 461** — `case "invite_user"` (conversión de lead) hace exactamente lo mismo.
 
-**Las tres causas raíz:**
-1. **Generación inestable del link**: `admin.generateLink({ type: "magiclink" })` no siempre devuelve un link válido para usuarios sin confirmar; mejor pedir `type: "recovery"` (más robusto, siempre incluye `type=recovery` y autoconfirma).
-2. **Sin auto-confirmación previa**: si el usuario nunca confirmó email, Supabase trata el link como "invite". Hay que marcarlos como confirmados antes de generar el link.
-3. **Sin self-healing**: cuando un link falla, el usuario queda atrapado sin diagnóstico.
+Esto explica por qué los usuarios de las primeras altas recibían emails poco branded que muchos confundían con spam: era el email automático de Supabase, no nuestro Resend.
 
----
+**Inventario completo de emails (todos correctos vía Resend):**
 
-### Solución en 4 capas
+| Función | Remitente | Estado |
+|---|---|---|
+| `send-user-magic-link` | `no-reply@repindex.ai` | ✅ Resend |
+| `admin-api` → send_magic_link | `no-reply@repindex.ai` | ✅ Resend |
+| `send-contact-form` | `no-reply@repindex.ai` | ✅ Resend |
+| `send-legal-form` | `no-reply@repindex.ai` | ✅ Resend |
+| `send-newsroom-email` | `no-reply@repindex.ai` | ✅ Resend |
+| `send-qualification-form` | `info@repindex.ai` | ✅ Resend |
+| `submit-qualification-form` | `info@repindex.ai` | ✅ Resend |
+| `admin-api` → create_user | (Supabase auto) | ❌ **Supabase default** |
+| `admin-api` → invite_user | (Supabase auto) | ❌ **Supabase default** |
 
-#### Capa 1: Endurecer `send-user-magic-link` (la edge function existente)
+### Cambios a aplicar
 
-Modificar `supabase/functions/send-user-magic-link/index.ts`:
+#### 1. Reemplazar `inviteUserByEmail` en `case "create_user"` (admin-api línea 179-225)
 
-1. **Auto-confirmar el email del usuario antes de generar el link** — si `email_confirmed_at` es `NULL`, llamar a `supabaseAdmin.auth.admin.updateUserById(userId, { email_confirm: true })` para que el link generado sea siempre tipo "magiclink" puro (no "invite").
-2. **Cambiar el tipo de link a `recovery`** — más fiable que `magiclink` porque siempre lleva `type=recovery` en la URL y autoconfirma al usuario al pulsar.
-3. **Logging detallado del action_link** — registrar el link generado en logs (sin token, solo dominio + path + query keys) para detectar reincidencias.
-4. **Validación del action_link** — comprobar que la URL contiene `type=` antes de enviar el email; si no, devolver error y avisar.
+Sustituir el flujo por:
+1. `supabaseAdmin.auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name } })` — crea el usuario sin enviar email automático.
+2. Actualizar el perfil con company_id, full_name, is_individual.
+3. Invocar internamente `send-user-magic-link` para enviar el email branded de bienvenida vía Resend.
 
-#### Capa 2: Migración SQL — confirmar a los 8 usuarios bloqueados
+#### 2. Reemplazar `inviteUserByEmail` en `case "invite_user"` (admin-api línea 459-490)
 
-Marcar `email_confirmed_at = now()` para todos los usuarios activos (`is_active=true` en `user_profiles`) que tengan `email_confirmed_at IS NULL` en `auth.users`. Esto se hace una sola vez vía migración con `UPDATE auth.users SET email_confirmed_at = now() WHERE id IN (...)`.
+Mismo patrón: `createUser` con `email_confirm: true` + actualizar perfil + invocar `send-user-magic-link`.
 
-> Esto es seguro: el usuario ya está autorizado en `user_profiles.is_active = true`. Confirmar el email solo desbloquea el flujo de magic link, no concede privilegios extra.
+#### 3. Verificación post-deploy
 
-#### Capa 3: Sincronizar `admin-api` con la misma lógica
-
-Replicar las mismas mejoras en `supabase/functions/admin-api/index.ts` (caso `send_magic_link`) para que los envíos manuales desde el panel de admin tampoco fallen.
-
-#### Capa 4: Reenvío automático de magic link a los 8 bloqueados
-
-Una vez confirmados en Capa 2, invocar `send-user-magic-link` para cada uno de los 8 usuarios pendientes (Pilar Serrano, Paulo Padrao, Ruben, Marisa Ribera, Eugenia, Salima, Rahma, Sstaccioli) para que reciban un link funcional inmediatamente.
-
----
-
-### Archivos afectados
-
-1. **`supabase/functions/send-user-magic-link/index.ts`** — auto-confirmar usuario + tipo `recovery` + validación + logging
-2. **`supabase/functions/admin-api/index.ts`** — misma lógica en caso `send_magic_link`
-3. **Migración SQL** — confirmar los 8 usuarios pendientes (`UPDATE auth.users`)
-4. **Acción puntual** — invocar la edge function para los 8 usuarios
-
-### Verificación
-
-- Tras desplegar, revisar logs de auth: el endpoint `/verify` debe responder 200 (no 400).
-- Pedir a un usuario bloqueado real (ej. Paulo Padrao) que solicite enlace → confirmar que `last_sign_in_at` se actualiza tras el clic.
-- Monitorizar `auth_logs` durante 24h: no debe aparecer ningún `validation_failed` en `/verify`.
+- Crear un usuario de prueba desde el panel admin.
+- Confirmar que llega **un solo email**, branded RepIndex, vía Resend (no el de Supabase).
+- Revisar logs de `admin-api` y `send-user-magic-link` para confirmar la cadena.
 
 ### Garantía a futuro
 
-Con estas 3 protecciones (auto-confirm + tipo recovery + validación del link generado) **cualquier usuario con `is_active=true` en `user_profiles` podrá entrar siempre**, sin importar si fue invitado mediante el flujo viejo, si confirmó el email original, o si el link inicial expiró.
+Tras estos cambios, **el 100% de los emails que reciben los usuarios saldrán de `@repindex.ai` vía Resend con plantilla branded**. Supabase ya no enviará nada en ningún flujo. No hace falta tocar plantillas de Supabase Auth porque dejaremos de invocar los métodos que las disparan.
+
+### Archivos afectados
+
+1. `supabase/functions/admin-api/index.ts` — reemplazar 2 invocaciones de `inviteUserByEmail` por `createUser` + invoke de `send-user-magic-link`.
 
