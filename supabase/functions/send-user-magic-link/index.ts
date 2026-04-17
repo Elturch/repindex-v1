@@ -147,10 +147,26 @@ serve(async (req) => {
 
     console.log(`[send-user-magic-link] User verified: ${profile.full_name || normalizedEmail}, is_active: ${profile.is_active}`);
 
-    // 2. Generate magic link using Admin API (ALWAYS works, regardless of email confirmation status)
+    // 2. AUTO-CONFIRM email if not confirmed yet (prevents "invite" link generation that fails /verify)
+    try {
+      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(profile.id);
+      if (authUserData?.user && !authUserData.user.email_confirmed_at) {
+        console.log(`[send-user-magic-link] Auto-confirming email for ${normalizedEmail} before link generation`);
+        const { error: confirmError } = await supabaseAdmin.auth.admin.updateUserById(profile.id, {
+          email_confirm: true,
+        });
+        if (confirmError) {
+          console.error("[send-user-magic-link] Auto-confirm error (non-fatal):", confirmError);
+        }
+      }
+    } catch (e) {
+      console.error("[send-user-magic-link] Auto-confirm exception (non-fatal):", e);
+    }
+
+    // 3. Generate RECOVERY link (more robust than magiclink: always carries type=recovery and auto-confirms on click)
     const redirectUrl = redirect_to || "https://repindex-v1.lovable.app/dashboard";
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: "magiclink",
+      type: "recovery",
       email: normalizedEmail,
       options: { redirectTo: redirectUrl }
     });
@@ -172,6 +188,24 @@ serve(async (req) => {
     }
 
     const magicLink = linkData.properties.action_link;
+
+    // 4. VALIDATE the generated link contains a `type=` parameter (defensive check)
+    try {
+      const linkUrl = new URL(magicLink);
+      const linkType = linkUrl.searchParams.get("type");
+      const queryKeys = Array.from(linkUrl.searchParams.keys());
+      console.log(`[send-user-magic-link] Link validation for ${normalizedEmail}: host=${linkUrl.host}, path=${linkUrl.pathname}, type=${linkType}, queryKeys=${queryKeys.join(",")}`);
+      if (!linkType) {
+        console.error(`[send-user-magic-link] ❌ Generated link missing 'type=' param. Refusing to send.`);
+        return new Response(
+          JSON.stringify({ success: false, error: "Enlace generado inválido. Avisa al administrador." }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } catch (e) {
+      console.error("[send-user-magic-link] Link URL parse error:", e);
+    }
+
     console.log(`[send-user-magic-link] Magic link generated successfully for ${normalizedEmail}`);
 
     // 3. Send email via Resend with branded template

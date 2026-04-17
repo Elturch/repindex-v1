@@ -252,17 +252,28 @@ serve(async (req) => {
         // Get user profile
         const { data: profile, error: profileError } = await supabaseAdmin
           .from("user_profiles")
-          .select("email, full_name")
+          .select("id, email, full_name")
           .eq("id", data.user_id)
           .single();
         
         if (profileError) throw profileError;
         if (!profile?.email) throw new Error("Usuario no encontrado o sin email");
 
-        // Generate magic link using Supabase Admin API (without sending email)
+        // Auto-confirm email if not confirmed yet (prevents 'invite' link generation that fails /verify)
+        try {
+          const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(profile.id);
+          if (authUserData?.user && !authUserData.user.email_confirmed_at) {
+            console.log(`[admin-api send_magic_link] Auto-confirming email for ${profile.email}`);
+            await supabaseAdmin.auth.admin.updateUserById(profile.id, { email_confirm: true });
+          }
+        } catch (e) {
+          console.error("[admin-api send_magic_link] Auto-confirm exception (non-fatal):", e);
+        }
+
+        // Generate RECOVERY link (more robust than magiclink)
         const redirectTo = data.redirect_to || "https://repindex-v1.lovable.app/dashboard";
         const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: "magiclink",
+          type: "recovery",
           email: profile.email,
           options: {
             redirectTo,
@@ -279,6 +290,19 @@ serve(async (req) => {
         }
 
         const magicLink = linkData.properties.action_link;
+
+        // Validate generated link contains a `type=` parameter
+        try {
+          const linkUrl = new URL(magicLink);
+          const linkType = linkUrl.searchParams.get("type");
+          console.log(`[admin-api send_magic_link] Link for ${profile.email}: host=${linkUrl.host}, path=${linkUrl.pathname}, type=${linkType}`);
+          if (!linkType) {
+            throw new Error("Enlace generado sin parámetro 'type'. Posible bug de Supabase.");
+          }
+        } catch (e) {
+          console.error("[admin-api send_magic_link] Link URL parse error:", e);
+        }
+
         const userName = profile.full_name || profile.email.split('@')[0];
 
         // Send email via Resend with custom template
