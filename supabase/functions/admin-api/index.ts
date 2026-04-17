@@ -177,20 +177,18 @@ serve(async (req) => {
       }
 
       case "create_user": {
-        // 1. Create user in auth.users using inviteUserByEmail which sends the email automatically
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-          data.email,
-          {
-            data: {
-              full_name: data.full_name,
-            },
-            redirectTo: data.redirect_to || undefined,
-          }
-        );
+        // 1. Create user WITHOUT sending Supabase's default email (email_confirm: true bypasses confirmation email)
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: data.email,
+          email_confirm: true,
+          user_metadata: {
+            full_name: data.full_name || "",
+          },
+        });
         
         if (authError) {
           // Check if user already exists
-          if (authError.code === "email_exists") {
+          if (authError.code === "email_exists" || (authError.message || "").toLowerCase().includes("already")) {
             return new Response(
               JSON.stringify({ 
                 error: "Este email ya está registrado. Usa 'Enviar Magic Link' para reenviar la invitación." 
@@ -216,9 +214,30 @@ serve(async (req) => {
         
         if (profileError) throw profileError;
         
+        // 3. Send branded magic link via Resend (NOT Supabase default email)
+        let emailSent = false;
+        try {
+          const { error: invokeError } = await supabaseAdmin.functions.invoke("send-user-magic-link", {
+            body: {
+              email: data.email,
+              redirect_to: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
+            },
+          });
+          if (invokeError) {
+            console.error("[admin-api/create_user] send-user-magic-link error:", invokeError);
+          } else {
+            emailSent = true;
+          }
+        } catch (e) {
+          console.error("[admin-api/create_user] send-user-magic-link exception:", e);
+        }
+        
         return new Response(JSON.stringify({ 
           user: authData.user,
-          message: "Usuario creado e invitación enviada por email" 
+          email_sent: emailSent,
+          message: emailSent 
+            ? "Usuario creado e invitación branded enviada por email"
+            : "Usuario creado, pero el email de invitación falló. Reenvía manualmente con 'Enviar Magic Link'."
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -457,19 +476,17 @@ serve(async (req) => {
 
       // ==================== LEAD CONVERSION ====================
       case "invite_user": {
-        // Create user from interested lead
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-          data.email,
-          {
-            data: {
-              full_name: data.full_name || "",
-            },
-            redirectTo: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
-          }
-        );
+        // Create user from interested lead WITHOUT sending Supabase's default email
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: data.email,
+          email_confirm: true,
+          user_metadata: {
+            full_name: data.full_name || "",
+          },
+        });
         
         if (authError) {
-          if (authError.code === "email_exists") {
+          if (authError.code === "email_exists" || (authError.message || "").toLowerCase().includes("already")) {
             return new Response(
               JSON.stringify({ error: "Este email ya está registrado como usuario." }),
               { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -501,10 +518,31 @@ serve(async (req) => {
             .eq("id", data.lead_id);
         }
         
+        // Send branded magic link via Resend (NOT Supabase default email)
+        let emailSent = false;
+        try {
+          const { error: invokeError } = await supabaseAdmin.functions.invoke("send-user-magic-link", {
+            body: {
+              email: data.email,
+              redirect_to: data.redirect_to || "https://repindex-v1.lovable.app/dashboard",
+            },
+          });
+          if (invokeError) {
+            console.error("[admin-api/invite_user] send-user-magic-link error:", invokeError);
+          } else {
+            emailSent = true;
+          }
+        } catch (e) {
+          console.error("[admin-api/invite_user] send-user-magic-link exception:", e);
+        }
+        
         return new Response(JSON.stringify({ 
           success: true,
           user: authData.user,
-          message: "Usuario creado e invitación enviada" 
+          email_sent: emailSent,
+          message: emailSent
+            ? "Usuario creado e invitación branded enviada"
+            : "Usuario creado, pero el email de invitación falló. Reenvía manualmente."
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
