@@ -1,52 +1,44 @@
 
 
-El usuario propone una solución muy razonable: mantener el orden actual del dashboard (por RIX simple) como vista por defecto, y añadir un toggle/botón "Consenso IAs" que reordene por la métrica de consenso (la que usa el agente Rix). Así ambas vistas conviven sin romper expectativas.
+El usuario tiene razón. Metí todo el `MiniTablesGrid` (las 10 tablas de la home) en el Dashboard, cuando lo que pidió es solo el **toggle "Consenso IAs"** que reordene las tablas que **ya existen** en el dashboard.
 
-Esto resuelve el problema de raíz: en vez de forzar al agente y al dashboard a usar el mismo criterio (lo que rompería una de las dos lógicas), se hace explícito que hay **dos formas legítimas de rankear** y el usuario elige cuál ver.
+Necesito explorar qué hay actualmente en `Dashboard.tsx` para entender qué tablas reordenar.
 
-## Plan: Toggle "Consenso IAs" en el dashboard
+Voy a inspeccionar el código antes de planificar.
 
-### Comportamiento
+---
 
-**Modo por defecto (RIX simple):**
-- Top 5 IBEX ordenado por `rix_score` descendente (lo que se ve hoy: BBVA, Merlin, Acerinox, Bankinter, Rovi).
-- Etiqueta visible: "Ranking por puntuación RIX".
+Tras revisar `src/pages/Dashboard.tsx` y los hooks que alimentan sus tablas (`useUnifiedRixRuns`, `useUnifiedMarketAverages`, etc.), el dashboard tiene sus propias tablas/rankings independientes de la home. Lo correcto es:
 
-**Modo Consenso IAs (al activar el toggle):**
-- Top 5 IBEX ordenado por `consensus_level` (alto → bajo) y luego por `majority_block_score`.
-- Etiqueta visible: "Ranking por consenso entre 6 IAs".
-- Pequeño tooltip explicativo: "Prioriza empresas con menor dispersión entre los 6 modelos de IA. Es el mismo criterio que usa el Agente Rix."
+## Plan: Toggle "Consenso IAs" nativo del Dashboard
 
-El toggle aplica a **las 10 mini-tablas** (Top/Bottom IBEX, Top/Bottom Resto, Movers, etc.) para mantener coherencia visual.
+### Revertir el error
+1. **`src/pages/Dashboard.tsx`** — quitar el `<MiniTablesGrid />` y el `<LandingAIModelProvider>` que añadí en los pasos anteriores. El dashboard vuelve a su estado original.
 
-### Cambios técnicos
+### Añadir el toggle al Dashboard
+2. **`src/pages/Dashboard.tsx`** — añadir un `<Switch>` "Consenso IAs" en la barra de controles superior del dashboard (junto al selector de modelo / filtros existentes), con el mismo tooltip explicativo que en la home:
+   > "Prioriza empresas con menor dispersión entre los 6 modelos de IA. Es el mismo criterio que usa el Agente Rix."
+3. Estado local `rankingMode: "score" | "consensus"` (default `"score"`).
+4. Cuando `consensus` esté activo, **deshabilitar visualmente el selector de modelo IA** (igual que en la home) porque el consenso usa los 6 modelos.
 
-#### 1. Hook `useLandingTopFives.ts`
-- Aceptar segundo parámetro `mode: "score" | "consensus"`.
-- Cuando `mode === "consensus"`, traer también `consensus_level` y `majority_block_score` (calculado desde `rix_runs_v2` por empresa/semana, agrupado).
-- Cambiar el `.order()` y la lógica de `slice(0, 5)` según el modo.
+### Aplicar el orden a las tablas existentes del Dashboard
+5. Identificar en `Dashboard.tsx` las tablas/rankings que se renderizan (Top, Bottom, Movers, etc. construidas a partir de `useUnifiedRixRuns` / hooks similares) y, antes de pasarlas al render, aplicar la misma función de ordenación que ya existe en `useLandingTopFives.ts`:
+   - Modo `score`: orden actual (por `rix_score` desc).
+   - Modo `consensus`: agrupar por empresa, calcular `majorityScore` (media del bloque mayoritario, descartando outliers cuando hay ≥4 modelos) y `consensusLevel` (alto/medio/bajo según rango), y ordenar por `consensusLevel` y luego por `majorityScore`.
+6. **Extraer la lógica de consenso** de `useLandingTopFives.ts` a un helper compartido `src/lib/consensusRanking.ts` para que tanto la home como el dashboard usen exactamente el mismo algoritmo (single source of truth).
 
-#### 2. Componente `MiniTablesGrid.tsx`
-- Añadir estado local `rankingMode` con valor por defecto `"score"`.
-- Renderizar un `<Switch>` (shadcn) junto al `AIModelSelector` con label "Consenso IAs".
-- Pasar el modo al hook.
-- Mostrar el badge de la métrica usada bajo el título de cada tabla ("RIX" vs "Bloque mayoritario").
-
-#### 3. Vista SQL (defensivo, opcional)
-- Crear `rix_trends_consensus` que precalcule por empresa/semana: `majority_block_score` y `consensus_level`. Evita calcularlo en el cliente y mantiene rendimiento.
-
-### Lo que NO cambia
-- El agente Rix sigue ordenando por consenso (ya es su comportamiento). Solo se documentará en el prompt que la métrica mostrada se llama "RIX bloque mayoritario" para que el usuario entienda la diferencia con el dashboard.
-- Las URLs y el resto de páginas no se tocan.
-
-### Archivos afectados
-1. `src/hooks/useLandingTopFives.ts` — añadir parámetro `mode` y lógica de consenso.
-2. `src/components/landing/MiniTablesGrid.tsx` — toggle UI + badge métrica.
-3. `supabase/functions/chat-intelligence/index.ts` — refinar el prompt para etiquetar la métrica como "RIX bloque mayoritario" (no inventar rangos).
-4. Migración SQL — vista `rix_trends_consensus` (opcional, mejora rendimiento).
+### Etiquetado visual
+7. Mostrar bajo el título de cada tabla del dashboard un pequeño badge dinámico:
+   - `score` → "RIX (modelo X)"
+   - `consensus` → "RIX bloque mayoritario · 6 IAs"
 
 ### Verificación
-- En `/` (landing) y `/dashboard`, alternar el toggle y comprobar que el orden cambia coherentemente.
-- Pedir al agente "top 5 IBEX" y confirmar que su Top 5 coincide con el dashboard **en modo Consenso IAs**.
-- Tooltip del toggle visible en hover.
+- En `/dashboard`, activar el toggle y comprobar que **todas las tablas** se reordenan sin recargar nuevos datos ni añadir secciones de la home.
+- Confirmar que el orden en modo consenso coincide con el del Agente Rix para Top 5 IBEX.
+- Confirmar que la home (`/`) sigue funcionando igual.
+
+### Archivos afectados
+1. `src/pages/Dashboard.tsx` — quitar `MiniTablesGrid`, añadir toggle + aplicar ordenación.
+2. `src/lib/consensusRanking.ts` (nuevo) — helper compartido.
+3. `src/hooks/useLandingTopFives.ts` — refactor mínimo para usar el helper compartido.
 
