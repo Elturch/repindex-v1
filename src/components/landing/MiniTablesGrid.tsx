@@ -95,7 +95,10 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info", metricLabel 
 
 export function MiniTablesGrid() {
   const { selectedModel } = useLandingAIModel();
-  const { data, isLoading } = useLandingTopFives(selectedModel);
+  const [rankingMode, setRankingMode] = useState<RankingMode>("score");
+  const { data, isLoading } = useLandingTopFives(selectedModel, rankingMode);
+
+  const metricLabel = rankingMode === "consensus" ? "RIX bloque mayoritario" : "RIX";
 
   if (isLoading) {
     return (
@@ -115,88 +118,25 @@ export function MiniTablesGrid() {
 
   if (!data) return null;
 
-  // IBEX 35 Rankings
   const ibexTables = [
-    {
-      title: "Top 5 IBEX 35",
-      subtitle: "Mejores índices del IBEX",
-      icon: <Trophy className="w-6 h-6" />,
-      data: data.topIbex || [],
-      variant: "success" as const
-    },
-    {
-      title: "Bottom 5 IBEX 35",
-      subtitle: "Índices más bajos del IBEX",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.bottomIbex || [],
-      variant: "danger" as const
-    },
-    {
-      title: "IBEX Movers UP",
-      subtitle: "Mayores subidas semanales",
-      icon: <TrendingUp className="w-6 h-6" />,
-      data: data.ibexMoversUp || [],
-      variant: "success" as const
-    },
-    {
-      title: "IBEX Movers DOWN",
-      subtitle: "Mayores bajadas semanales",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.ibexMoversDown || [],
-      variant: "danger" as const
-    }
+    { title: "Top 5 IBEX 35", subtitle: "Mejores índices del IBEX", icon: <Trophy className="w-6 h-6" />, data: data.topIbex || [], variant: "success" as const, metricLabel },
+    { title: "Bottom 5 IBEX 35", subtitle: "Índices más bajos del IBEX", icon: <TrendingDown className="w-6 h-6" />, data: data.bottomIbex || [], variant: "danger" as const, metricLabel },
+    { title: "IBEX Movers UP", subtitle: "Mayores subidas semanales", icon: <TrendingUp className="w-6 h-6" />, data: data.ibexMoversUp || [], variant: "success" as const, metricLabel },
+    { title: "IBEX Movers DOWN", subtitle: "Mayores bajadas semanales", icon: <TrendingDown className="w-6 h-6" />, data: data.ibexMoversDown || [], variant: "danger" as const, metricLabel },
   ];
 
-  // Non-IBEX Rankings
   const otherTables = [
-    {
-      title: "Top 5 Resto",
-      subtitle: "Mejores fuera del IBEX",
-      icon: <Trophy className="w-6 h-6" />,
-      data: data.topOverall || [],
-      variant: "success" as const
-    },
-    {
-      title: "Bottom 5 Resto",
-      subtitle: "Índices más bajos (sin IBEX)",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.bottomOverall || [],
-      variant: "danger" as const
-    },
-    {
-      title: "Top 5 Cotizadas",
-      subtitle: "Cotizadas fuera del IBEX",
-      icon: <Building2 className="w-6 h-6" />,
-      data: data.topTraded || [],
-      variant: "info" as const
-    },
-    {
-      title: "Top 5 No Cotizadas",
-      subtitle: "Empresas privadas",
-      icon: <Briefcase className="w-6 h-6" />,
-      data: data.topUntraded || [],
-      variant: "info" as const
-    },
-    {
-      title: "Top Movers UP",
-      subtitle: "Mayores subidas (sin IBEX)",
-      icon: <TrendingUp className="w-6 h-6" />,
-      data: data.topMoversUp || [],
-      variant: "success" as const
-    },
-    {
-      title: "Top Movers DOWN",
-      subtitle: "Mayores bajadas (sin IBEX)",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.topMoversDown || [],
-      variant: "danger" as const
-    }
+    { title: "Top 5 Resto", subtitle: "Mejores fuera del IBEX", icon: <Trophy className="w-6 h-6" />, data: data.topOverall || [], variant: "success" as const, metricLabel },
+    { title: "Bottom 5 Resto", subtitle: "Índices más bajos (sin IBEX)", icon: <TrendingDown className="w-6 h-6" />, data: data.bottomOverall || [], variant: "danger" as const, metricLabel },
+    { title: "Top 5 Cotizadas", subtitle: "Cotizadas fuera del IBEX", icon: <Building2 className="w-6 h-6" />, data: data.topTraded || [], variant: "info" as const, metricLabel },
+    { title: "Top 5 No Cotizadas", subtitle: "Empresas privadas", icon: <Briefcase className="w-6 h-6" />, data: data.topUntraded || [], variant: "info" as const, metricLabel },
+    { title: "Top Movers UP", subtitle: "Mayores subidas (sin IBEX)", icon: <TrendingUp className="w-6 h-6" />, data: data.topMoversUp || [], variant: "success" as const, metricLabel },
+    { title: "Top Movers DOWN", subtitle: "Mayores bajadas (sin IBEX)", icon: <TrendingDown className="w-6 h-6" />, data: data.topMoversDown || [], variant: "danger" as const, metricLabel },
   ];
 
   return (
     <section className="py-8 sm:py-12 px-2 sm:px-4 bg-muted/30">
       <div className="container mx-auto max-w-7xl">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -218,9 +158,41 @@ export function MiniTablesGrid() {
           <p className="text-muted-foreground text-xs sm:text-sm md:text-base lg:text-lg max-w-2xl mx-auto px-1 mb-4" style={{ fontSize: 'clamp(0.7rem, 2vw, 1.125rem)' }}>
             Explora las métricas de reputación corporativa analizadas por inteligencias artificiales
           </p>
-          
-          {/* AI Model Selector */}
-          <AIModelSelector />
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+            <div className={rankingMode === "consensus" ? "opacity-50 pointer-events-none" : ""}>
+              <AIModelSelector />
+            </div>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card">
+                    <Switch
+                      id="consensus-mode"
+                      checked={rankingMode === "consensus"}
+                      onCheckedChange={(checked) => setRankingMode(checked ? "consensus" : "score")}
+                    />
+                    <Label htmlFor="consensus-mode" className="text-xs sm:text-sm font-medium cursor-pointer flex items-center gap-1">
+                      Consenso IAs
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-xs">
+                    Prioriza empresas con menor dispersión entre los 6 modelos de IA. Es el mismo criterio que usa el Agente Rix.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-3">
+            {rankingMode === "consensus"
+              ? "Ranking por consenso entre 6 IAs"
+              : `Ranking por puntuación RIX (${selectedModel})`}
+          </p>
         </motion.div>
 
         {/* IBEX 35 Section */}
