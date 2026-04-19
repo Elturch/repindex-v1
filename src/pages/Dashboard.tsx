@@ -458,7 +458,13 @@ export function Dashboard() {
 
         {/* Controls - AI Selector with 6 models */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
+          <div
+            className={cn(
+              "w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0",
+              rankingMode === "consensus" && "opacity-50 pointer-events-none"
+            )}
+            aria-disabled={rankingMode === "consensus"}
+          >
             <div className="flex items-center bg-muted/50 p-1 rounded-lg min-w-max">
               <Button
                 variant={aiFilter === "all" ? "default" : "ghost"}
@@ -526,27 +532,65 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* View Mode Selector */}
-          <div className="flex items-center bg-muted/50 p-1 rounded-lg">
-            <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-              className="flex items-center gap-2"
-            >
-              <List className="h-4 w-4" />
-              Lista
-            </Button>
-            <Button
-              variant={viewMode === "cards" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("cards")}
-              className="flex items-center gap-2"
-            >
-              <Grid className="h-4 w-4" />
-              Cards
-            </Button>
+          <div className="flex items-center gap-3">
+            {/* Consensus IAs toggle */}
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card">
+                    <Switch
+                      id="dashboard-consensus-mode"
+                      checked={rankingMode === "consensus"}
+                      onCheckedChange={(checked) => setRankingMode(checked ? "consensus" : "score")}
+                    />
+                    <Label
+                      htmlFor="dashboard-consensus-mode"
+                      className="text-xs sm:text-sm font-medium cursor-pointer whitespace-nowrap"
+                    >
+                      Consenso IAs
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-xs">
+                    Prioriza empresas con menor dispersión entre los 6 modelos de IA.
+                    Es el mismo criterio que usa el Agente Rix.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {/* View Mode Selector */}
+            <div className="flex items-center bg-muted/50 p-1 rounded-lg">
+              <Button
+                variant={viewMode === "list" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("list")}
+                className="flex items-center gap-2"
+              >
+                <List className="h-4 w-4" />
+                Lista
+              </Button>
+              <Button
+                variant={viewMode === "cards" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("cards")}
+                className="flex items-center gap-2"
+              >
+                <Grid className="h-4 w-4" />
+                Cards
+              </Button>
+            </div>
           </div>
+        </div>
+
+        {/* Ranking mode badge */}
+        <div className="text-center -mt-2">
+          <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
+            {rankingMode === "consensus"
+              ? "Ranking por consenso entre 6 IAs · RIX bloque mayoritario"
+              : `Ranking por puntuación RIX${aiFilter !== "all" && aiFilter !== "comparison" ? ` (${aiFilter})` : ""}`}
+          </Badge>
         </div>
 
         {/* Filters */}
