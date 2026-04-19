@@ -1,56 +1,52 @@
 
 
-## Plan: Eliminar emails enviados por Supabase/Lovable, todo vía Resend
+El usuario propone una solución muy razonable: mantener el orden actual del dashboard (por RIX simple) como vista por defecto, y añadir un toggle/botón "Consenso IAs" que reordene por la métrica de consenso (la que usa el agente Rix). Así ambas vistas conviven sin romper expectativas.
 
-### Diagnóstico
+Esto resuelve el problema de raíz: en vez de forzar al agente y al dashboard a usar el mismo criterio (lo que rompería una de las dos lógicas), se hace explícito que hay **dos formas legítimas de rankear** y el usuario elige cuál ver.
 
-**Buena noticia:** No hay dominio de Lovable Emails configurado, así que **Lovable NO está enviando emails**. Todas las funciones edge usan correctamente `Resend` con remitente `@repindex.ai`.
+## Plan: Toggle "Consenso IAs" en el dashboard
 
-**Problema crítico encontrado:** Hay **2 puntos** donde Supabase envía emails automáticamente con su propia plantilla por defecto (no Resend, no branded):
+### Comportamiento
 
-1. **`supabase/functions/admin-api/index.ts` línea 181** — `case "create_user"` usa `supabaseAdmin.auth.admin.inviteUserByEmail()`. Este método de Supabase **dispara automáticamente un email de invitación con la plantilla por defecto de Supabase**, no con Resend.
-2. **`supabase/functions/admin-api/index.ts` línea 461** — `case "invite_user"` (conversión de lead) hace exactamente lo mismo.
+**Modo por defecto (RIX simple):**
+- Top 5 IBEX ordenado por `rix_score` descendente (lo que se ve hoy: BBVA, Merlin, Acerinox, Bankinter, Rovi).
+- Etiqueta visible: "Ranking por puntuación RIX".
 
-Esto explica por qué los usuarios de las primeras altas recibían emails poco branded que muchos confundían con spam: era el email automático de Supabase, no nuestro Resend.
+**Modo Consenso IAs (al activar el toggle):**
+- Top 5 IBEX ordenado por `consensus_level` (alto → bajo) y luego por `majority_block_score`.
+- Etiqueta visible: "Ranking por consenso entre 6 IAs".
+- Pequeño tooltip explicativo: "Prioriza empresas con menor dispersión entre los 6 modelos de IA. Es el mismo criterio que usa el Agente Rix."
 
-**Inventario completo de emails (todos correctos vía Resend):**
+El toggle aplica a **las 10 mini-tablas** (Top/Bottom IBEX, Top/Bottom Resto, Movers, etc.) para mantener coherencia visual.
 
-| Función | Remitente | Estado |
-|---|---|---|
-| `send-user-magic-link` | `no-reply@repindex.ai` | ✅ Resend |
-| `admin-api` → send_magic_link | `no-reply@repindex.ai` | ✅ Resend |
-| `send-contact-form` | `no-reply@repindex.ai` | ✅ Resend |
-| `send-legal-form` | `no-reply@repindex.ai` | ✅ Resend |
-| `send-newsroom-email` | `no-reply@repindex.ai` | ✅ Resend |
-| `send-qualification-form` | `info@repindex.ai` | ✅ Resend |
-| `submit-qualification-form` | `info@repindex.ai` | ✅ Resend |
-| `admin-api` → create_user | (Supabase auto) | ❌ **Supabase default** |
-| `admin-api` → invite_user | (Supabase auto) | ❌ **Supabase default** |
+### Cambios técnicos
 
-### Cambios a aplicar
+#### 1. Hook `useLandingTopFives.ts`
+- Aceptar segundo parámetro `mode: "score" | "consensus"`.
+- Cuando `mode === "consensus"`, traer también `consensus_level` y `majority_block_score` (calculado desde `rix_runs_v2` por empresa/semana, agrupado).
+- Cambiar el `.order()` y la lógica de `slice(0, 5)` según el modo.
 
-#### 1. Reemplazar `inviteUserByEmail` en `case "create_user"` (admin-api línea 179-225)
+#### 2. Componente `MiniTablesGrid.tsx`
+- Añadir estado local `rankingMode` con valor por defecto `"score"`.
+- Renderizar un `<Switch>` (shadcn) junto al `AIModelSelector` con label "Consenso IAs".
+- Pasar el modo al hook.
+- Mostrar el badge de la métrica usada bajo el título de cada tabla ("RIX" vs "Bloque mayoritario").
 
-Sustituir el flujo por:
-1. `supabaseAdmin.auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name } })` — crea el usuario sin enviar email automático.
-2. Actualizar el perfil con company_id, full_name, is_individual.
-3. Invocar internamente `send-user-magic-link` para enviar el email branded de bienvenida vía Resend.
+#### 3. Vista SQL (defensivo, opcional)
+- Crear `rix_trends_consensus` que precalcule por empresa/semana: `majority_block_score` y `consensus_level`. Evita calcularlo en el cliente y mantiene rendimiento.
 
-#### 2. Reemplazar `inviteUserByEmail` en `case "invite_user"` (admin-api línea 459-490)
-
-Mismo patrón: `createUser` con `email_confirm: true` + actualizar perfil + invocar `send-user-magic-link`.
-
-#### 3. Verificación post-deploy
-
-- Crear un usuario de prueba desde el panel admin.
-- Confirmar que llega **un solo email**, branded RepIndex, vía Resend (no el de Supabase).
-- Revisar logs de `admin-api` y `send-user-magic-link` para confirmar la cadena.
-
-### Garantía a futuro
-
-Tras estos cambios, **el 100% de los emails que reciben los usuarios saldrán de `@repindex.ai` vía Resend con plantilla branded**. Supabase ya no enviará nada en ningún flujo. No hace falta tocar plantillas de Supabase Auth porque dejaremos de invocar los métodos que las disparan.
+### Lo que NO cambia
+- El agente Rix sigue ordenando por consenso (ya es su comportamiento). Solo se documentará en el prompt que la métrica mostrada se llama "RIX bloque mayoritario" para que el usuario entienda la diferencia con el dashboard.
+- Las URLs y el resto de páginas no se tocan.
 
 ### Archivos afectados
+1. `src/hooks/useLandingTopFives.ts` — añadir parámetro `mode` y lógica de consenso.
+2. `src/components/landing/MiniTablesGrid.tsx` — toggle UI + badge métrica.
+3. `supabase/functions/chat-intelligence/index.ts` — refinar el prompt para etiquetar la métrica como "RIX bloque mayoritario" (no inventar rangos).
+4. Migración SQL — vista `rix_trends_consensus` (opcional, mejora rendimiento).
 
-1. `supabase/functions/admin-api/index.ts` — reemplazar 2 invocaciones de `inviteUserByEmail` por `createUser` + invoke de `send-user-magic-link`.
+### Verificación
+- En `/` (landing) y `/dashboard`, alternar el toggle y comprobar que el orden cambia coherentemente.
+- Pedir al agente "top 5 IBEX" y confirmar que su Top 5 coincide con el dashboard **en modo Consenso IAs**.
+- Tooltip del toggle visible en hover.
 
