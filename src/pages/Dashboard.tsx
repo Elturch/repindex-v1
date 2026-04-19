@@ -51,6 +51,7 @@ export function Dashboard() {
     key: 'rix' | 'nvm' | 'drm' | 'sim' | 'rmm' | 'cem' | 'gam' | 'dcm' | 'cxm';
     direction: 'asc' | 'desc';
   }>({ key: 'rix', direction: 'desc' });
+  const [rankingMode, setRankingMode] = useState<"score" | "consensus">("score");
   const navigate = useNavigate();
   
   const { data: rixRuns, isLoading, error } = useUnifiedRixRuns({
