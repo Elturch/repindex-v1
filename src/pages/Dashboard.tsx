@@ -410,6 +410,9 @@ export function Dashboard() {
   return (
     <Layout title="RepIndex.ai">
       <div className="space-y-6">
+        {/* Top 5 rankings with Consensus IAs toggle */}
+        <MiniTablesGrid />
+
         {/* Title */}
         <div className="text-center px-2">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
