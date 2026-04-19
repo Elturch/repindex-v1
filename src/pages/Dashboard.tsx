@@ -8,9 +8,10 @@ import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
 import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
-import { MiniTablesGrid } from "@/components/landing/MiniTablesGrid";
-import { LandingAIModelProvider } from "@/contexts/LandingAIModelContext";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { aggregateConsensus, compareConsensus, type ConsensusLevel } from "@/lib/consensusRanking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ export function Dashboard() {
     key: 'rix' | 'nvm' | 'drm' | 'sim' | 'rmm' | 'cem' | 'gam' | 'dcm' | 'cxm';
     direction: 'asc' | 'desc';
   }>({ key: 'rix', direction: 'desc' });
+  const [rankingMode, setRankingMode] = useState<"score" | "consensus">("score");
   const navigate = useNavigate();
   
   const { data: rixRuns, isLoading, error } = useUnifiedRixRuns({
@@ -216,30 +218,59 @@ export function Dashboard() {
   // Sort and filter RIX runs
   const sortedRixRuns = useMemo(() => {
     if (!rixRuns) return [];
-    
+
     let filteredByBatch = rixRuns;
     if (batchFilter && batchFilter !== "all") {
-      filteredByBatch = rixRuns.filter(run => 
+      filteredByBatch = rixRuns.filter(run =>
         run.batchNumber?.toString() === batchFilter
       );
     }
-    
+
     // Apply search filter
     if (searchQuery) {
       filteredByBatch = filteredByBatch.filter(run =>
         run.target_name?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-    
+
+    // CONSENSUS MODE — group by ticker across all 6 models in current batch,
+    // then sort each row by its ticker's consensus level + majority block score.
+    if (rankingMode === "consensus") {
+      const consensusMap = aggregateConsensus(
+        filteredByBatch.map(r => ({
+          ticker: (r.repindex_root_issuers?.ticker || r.ticker || "") as string,
+          rix_score: (r.displayRixScore ?? r.rix_score) as number | null,
+        }))
+      );
+
+      return [...filteredByBatch].sort((a, b) => {
+        if (a.isDataInvalid && !b.isDataInvalid) return 1;
+        if (!a.isDataInvalid && b.isDataInvalid) return -1;
+        const tA = (a.repindex_root_issuers?.ticker || a.ticker || "") as string;
+        const tB = (b.repindex_root_issuers?.ticker || b.ticker || "") as string;
+        const cA = consensusMap.get(tA);
+        const cB = consensusMap.get(tB);
+        if (cA && cB) {
+          const cmp = compareConsensus(cA, cB, sortConfig.direction === "asc");
+          if (cmp !== 0) return cmp;
+        } else if (cA && !cB) return -1;
+        else if (!cA && cB) return 1;
+        // Tie-breaker: own rix score
+        const sA = a.displayRixScore ?? a.rix_score ?? 0;
+        const sB = b.displayRixScore ?? b.rix_score ?? 0;
+        return sortConfig.direction === "asc" ? sA - sB : sB - sA;
+      });
+    }
+
     return [...filteredByBatch].sort((a, b) => {
       // Invalid data always at the bottom
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
-      
+
       // Get scores based on sort key
       let scoreA: number;
       let scoreB: number;
-      
+
       if (sortConfig.key === 'rix') {
         scoreA = a.displayRixScore ?? a.rix_score ?? 0;
         scoreB = b.displayRixScore ?? b.rix_score ?? 0;
@@ -248,22 +279,22 @@ export function Dashboard() {
         scoreA = (a as any)[scoreKey] ?? 0;
         scoreB = (b as any)[scoreKey] ?? 0;
       }
-      
+
       // Apply sort direction
       const multiplier = sortConfig.direction === 'desc' ? 1 : -1;
-      
+
       if (scoreB !== scoreA) {
         return (scoreB - scoreA) * multiplier;
       }
-      
+
       // Secondary sort by date
       if (a.batch_execution_date && b.batch_execution_date) {
         return new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime();
       }
-      
+
       return 0;
     });
-  }, [rixRuns, batchFilter, searchQuery, sortConfig]);
+  }, [rixRuns, batchFilter, searchQuery, sortConfig, rankingMode]);
 
   // Progressive loading
   const {
@@ -411,10 +442,6 @@ export function Dashboard() {
   return (
     <Layout title="RepIndex.ai">
       <div className="space-y-6">
-        {/* Top 5 rankings with Consensus IAs toggle */}
-        <LandingAIModelProvider>
-          <MiniTablesGrid />
-        </LandingAIModelProvider>
 
         {/* Title */}
         <div className="text-center px-2">
@@ -431,7 +458,13 @@ export function Dashboard() {
 
         {/* Controls - AI Selector with 6 models */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
+          <div
+            className={cn(
+              "w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0",
+              rankingMode === "consensus" && "opacity-50 pointer-events-none"
+            )}
+            aria-disabled={rankingMode === "consensus"}
+          >
             <div className="flex items-center bg-muted/50 p-1 rounded-lg min-w-max">
               <Button
                 variant={aiFilter === "all" ? "default" : "ghost"}
@@ -499,27 +532,65 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* View Mode Selector */}
-          <div className="flex items-center bg-muted/50 p-1 rounded-lg">
-            <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-              className="flex items-center gap-2"
-            >
-              <List className="h-4 w-4" />
-              Lista
-            </Button>
-            <Button
-              variant={viewMode === "cards" ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setViewMode("cards")}
-              className="flex items-center gap-2"
-            >
-              <Grid className="h-4 w-4" />
-              Cards
-            </Button>
+          <div className="flex items-center gap-3">
+            {/* Consensus IAs toggle */}
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card">
+                    <Switch
+                      id="dashboard-consensus-mode"
+                      checked={rankingMode === "consensus"}
+                      onCheckedChange={(checked) => setRankingMode(checked ? "consensus" : "score")}
+                    />
+                    <Label
+                      htmlFor="dashboard-consensus-mode"
+                      className="text-xs sm:text-sm font-medium cursor-pointer whitespace-nowrap"
+                    >
+                      Consenso IAs
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-xs">
+                    Prioriza empresas con menor dispersión entre los 6 modelos de IA.
+                    Es el mismo criterio que usa el Agente Rix.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {/* View Mode Selector */}
+            <div className="flex items-center bg-muted/50 p-1 rounded-lg">
+              <Button
+                variant={viewMode === "list" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("list")}
+                className="flex items-center gap-2"
+              >
+                <List className="h-4 w-4" />
+                Lista
+              </Button>
+              <Button
+                variant={viewMode === "cards" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("cards")}
+                className="flex items-center gap-2"
+              >
+                <Grid className="h-4 w-4" />
+                Cards
+              </Button>
+            </div>
           </div>
+        </div>
+
+        {/* Ranking mode badge */}
+        <div className="text-center -mt-2">
+          <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
+            {rankingMode === "consensus"
+              ? "Ranking por consenso entre 6 IAs · RIX bloque mayoritario"
+              : `Ranking por puntuación RIX${aiFilter !== "all" && aiFilter !== "comparison" ? ` (${aiFilter})` : ""}`}
+          </Badge>
         </div>
 
         {/* Filters */}
