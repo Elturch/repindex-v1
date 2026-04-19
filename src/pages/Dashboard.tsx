@@ -9,6 +9,7 @@ import { useChatContext } from "@/contexts/ChatContext";
 import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
 import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
 import { MiniTablesGrid } from "@/components/landing/MiniTablesGrid";
+import { LandingAIModelProvider } from "@/contexts/LandingAIModelContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
