@@ -218,30 +218,59 @@ export function Dashboard() {
   // Sort and filter RIX runs
   const sortedRixRuns = useMemo(() => {
     if (!rixRuns) return [];
-    
+
     let filteredByBatch = rixRuns;
     if (batchFilter && batchFilter !== "all") {
-      filteredByBatch = rixRuns.filter(run => 
+      filteredByBatch = rixRuns.filter(run =>
         run.batchNumber?.toString() === batchFilter
       );
     }
-    
+
     // Apply search filter
     if (searchQuery) {
       filteredByBatch = filteredByBatch.filter(run =>
         run.target_name?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-    
+
+    // CONSENSUS MODE — group by ticker across all 6 models in current batch,
+    // then sort each row by its ticker's consensus level + majority block score.
+    if (rankingMode === "consensus") {
+      const consensusMap = aggregateConsensus(
+        filteredByBatch.map(r => ({
+          ticker: (r.repindex_root_issuers?.ticker || r.ticker || "") as string,
+          rix_score: (r.displayRixScore ?? r.rix_score) as number | null,
+        }))
+      );
+
+      return [...filteredByBatch].sort((a, b) => {
+        if (a.isDataInvalid && !b.isDataInvalid) return 1;
+        if (!a.isDataInvalid && b.isDataInvalid) return -1;
+        const tA = (a.repindex_root_issuers?.ticker || a.ticker || "") as string;
+        const tB = (b.repindex_root_issuers?.ticker || b.ticker || "") as string;
+        const cA = consensusMap.get(tA);
+        const cB = consensusMap.get(tB);
+        if (cA && cB) {
+          const cmp = compareConsensus(cA, cB, sortConfig.direction === "asc");
+          if (cmp !== 0) return cmp;
+        } else if (cA && !cB) return -1;
+        else if (!cA && cB) return 1;
+        // Tie-breaker: own rix score
+        const sA = a.displayRixScore ?? a.rix_score ?? 0;
+        const sB = b.displayRixScore ?? b.rix_score ?? 0;
+        return sortConfig.direction === "asc" ? sA - sB : sB - sA;
+      });
+    }
+
     return [...filteredByBatch].sort((a, b) => {
       // Invalid data always at the bottom
       if (a.isDataInvalid && !b.isDataInvalid) return 1;
       if (!a.isDataInvalid && b.isDataInvalid) return -1;
-      
+
       // Get scores based on sort key
       let scoreA: number;
       let scoreB: number;
-      
+
       if (sortConfig.key === 'rix') {
         scoreA = a.displayRixScore ?? a.rix_score ?? 0;
         scoreB = b.displayRixScore ?? b.rix_score ?? 0;
@@ -250,22 +279,22 @@ export function Dashboard() {
         scoreA = (a as any)[scoreKey] ?? 0;
         scoreB = (b as any)[scoreKey] ?? 0;
       }
-      
+
       // Apply sort direction
       const multiplier = sortConfig.direction === 'desc' ? 1 : -1;
-      
+
       if (scoreB !== scoreA) {
         return (scoreB - scoreA) * multiplier;
       }
-      
+
       // Secondary sort by date
       if (a.batch_execution_date && b.batch_execution_date) {
         return new Date(b.batch_execution_date).getTime() - new Date(a.batch_execution_date).getTime();
       }
-      
+
       return 0;
     });
-  }, [rixRuns, batchFilter, searchQuery, sortConfig]);
+  }, [rixRuns, batchFilter, searchQuery, sortConfig, rankingMode]);
 
   // Progressive loading
   const {
