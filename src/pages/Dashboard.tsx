@@ -8,6 +8,7 @@ import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
 import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
+import { MiniTablesGrid } from "@/components/landing/MiniTablesGrid";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -409,6 +410,9 @@ export function Dashboard() {
   return (
     <Layout title="RepIndex.ai">
       <div className="space-y-6">
+        {/* Top 5 rankings with Consensus IAs toggle */}
+        <MiniTablesGrid />
+
         {/* Title */}
         <div className="text-center px-2">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
