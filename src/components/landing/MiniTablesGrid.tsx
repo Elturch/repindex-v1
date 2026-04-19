@@ -1,11 +1,15 @@
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Trophy, Building2, Briefcase, Calendar } from "lucide-react";
-import { useLandingTopFives } from "@/hooks/useLandingTopFives";
+import { useState } from "react";
+import { TrendingUp, TrendingDown, Trophy, Building2, Briefcase, Calendar, Info } from "lucide-react";
+import { useLandingTopFives, type RankingMode } from "@/hooks/useLandingTopFives";
 import { useLandingAIModel } from "@/contexts/LandingAIModelContext";
 import { AIModelSelector } from "./AIModelSelector";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
