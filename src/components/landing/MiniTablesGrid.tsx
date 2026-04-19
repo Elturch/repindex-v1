@@ -17,35 +17,31 @@ interface MiniTableProps {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
-  data: Array<{ empresa: string; ticker: string; rix: number; ai: string }>;
+  data: Array<{ empresa: string; ticker: string; rix: number; ai: string; consensusLevel?: "alto" | "medio" | "bajo" }>;
   variant?: "success" | "danger" | "info";
+  metricLabel: string;
 }
 
-const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableProps) => {
+const MiniTable = ({ title, subtitle, icon, data, variant = "info", metricLabel }: MiniTableProps) => {
   const variantColors = {
     success: "text-excellent",
     danger: "text-insufficient",
     info: "text-primary"
   };
 
-  // Ensure data is an array and has items
   const safeData = data && Array.isArray(data) ? data : [];
 
   if (safeData.length === 0) {
     return (
       <Card className="p-6 hover:shadow-card-hover transition-shadow">
         <div className="flex items-start gap-3 mb-4">
-          <div className={`${variantColors[variant]}`}>
-            {icon}
-          </div>
+          <div className={`${variantColors[variant]}`}>{icon}</div>
           <div className="flex-1">
             <h3 className="font-semibold text-lg">{title}</h3>
             <p className="text-sm text-muted-foreground">{subtitle}</p>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground text-center py-4">
-          No hay datos disponibles
-        </p>
+        <p className="text-sm text-muted-foreground text-center py-4">No hay datos disponibles</p>
       </Card>
     );
   }
@@ -59,6 +55,9 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-sm sm:text-base md:text-lg leading-tight">{title}</h3>
           <p className="text-[10px] sm:text-xs md:text-sm text-muted-foreground">{subtitle}</p>
+          <Badge variant="secondary" className="mt-1 text-[9px] sm:text-[10px] px-1.5 py-0 font-normal">
+            {metricLabel}
+          </Badge>
         </div>
       </div>
 
@@ -70,7 +69,12 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
           >
             <div className="flex-1 min-w-0">
               <p className="font-medium text-[11px] sm:text-sm truncate leading-tight">{item.empresa}</p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">{item.ticker}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">
+                {item.ticker}
+                {item.consensusLevel && (
+                  <span className="ml-1 opacity-70">· consenso {item.consensusLevel}</span>
+                )}
+              </p>
             </div>
             <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 flex-shrink-0">
               {item.rix.toFixed(1)}
