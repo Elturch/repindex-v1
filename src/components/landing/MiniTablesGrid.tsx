@@ -1,11 +1,15 @@
 import { motion } from "framer-motion";
-import { TrendingUp, TrendingDown, Trophy, Building2, Briefcase, Calendar } from "lucide-react";
-import { useLandingTopFives } from "@/hooks/useLandingTopFives";
+import { useState } from "react";
+import { TrendingUp, TrendingDown, Trophy, Building2, Briefcase, Calendar, Info } from "lucide-react";
+import { useLandingTopFives, type RankingMode } from "@/hooks/useLandingTopFives";
 import { useLandingAIModel } from "@/contexts/LandingAIModelContext";
 import { AIModelSelector } from "./AIModelSelector";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -13,35 +17,31 @@ interface MiniTableProps {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
-  data: Array<{ empresa: string; ticker: string; rix: number; ai: string }>;
+  data: Array<{ empresa: string; ticker: string; rix: number; ai: string; consensusLevel?: "alto" | "medio" | "bajo" }>;
   variant?: "success" | "danger" | "info";
+  metricLabel: string;
 }
 
-const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableProps) => {
+const MiniTable = ({ title, subtitle, icon, data, variant = "info", metricLabel }: MiniTableProps) => {
   const variantColors = {
     success: "text-excellent",
     danger: "text-insufficient",
     info: "text-primary"
   };
 
-  // Ensure data is an array and has items
   const safeData = data && Array.isArray(data) ? data : [];
 
   if (safeData.length === 0) {
     return (
       <Card className="p-6 hover:shadow-card-hover transition-shadow">
         <div className="flex items-start gap-3 mb-4">
-          <div className={`${variantColors[variant]}`}>
-            {icon}
-          </div>
+          <div className={`${variantColors[variant]}`}>{icon}</div>
           <div className="flex-1">
             <h3 className="font-semibold text-lg">{title}</h3>
             <p className="text-sm text-muted-foreground">{subtitle}</p>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground text-center py-4">
-          No hay datos disponibles
-        </p>
+        <p className="text-sm text-muted-foreground text-center py-4">No hay datos disponibles</p>
       </Card>
     );
   }
@@ -55,6 +55,9 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-sm sm:text-base md:text-lg leading-tight">{title}</h3>
           <p className="text-[10px] sm:text-xs md:text-sm text-muted-foreground">{subtitle}</p>
+          <Badge variant="secondary" className="mt-1 text-[9px] sm:text-[10px] px-1.5 py-0 font-normal">
+            {metricLabel}
+          </Badge>
         </div>
       </div>
 
@@ -66,7 +69,12 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
           >
             <div className="flex-1 min-w-0">
               <p className="font-medium text-[11px] sm:text-sm truncate leading-tight">{item.empresa}</p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">{item.ticker}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">
+                {item.ticker}
+                {item.consensusLevel && (
+                  <span className="ml-1 opacity-70">· consenso {item.consensusLevel}</span>
+                )}
+              </p>
             </div>
             <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 flex-shrink-0">
               {item.rix.toFixed(1)}
@@ -87,7 +95,10 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info" }: MiniTableP
 
 export function MiniTablesGrid() {
   const { selectedModel } = useLandingAIModel();
-  const { data, isLoading } = useLandingTopFives(selectedModel);
+  const [rankingMode, setRankingMode] = useState<RankingMode>("score");
+  const { data, isLoading } = useLandingTopFives(selectedModel, rankingMode);
+
+  const metricLabel = rankingMode === "consensus" ? "RIX bloque mayoritario" : "RIX";
 
   if (isLoading) {
     return (
@@ -107,88 +118,25 @@ export function MiniTablesGrid() {
 
   if (!data) return null;
 
-  // IBEX 35 Rankings
   const ibexTables = [
-    {
-      title: "Top 5 IBEX 35",
-      subtitle: "Mejores índices del IBEX",
-      icon: <Trophy className="w-6 h-6" />,
-      data: data.topIbex || [],
-      variant: "success" as const
-    },
-    {
-      title: "Bottom 5 IBEX 35",
-      subtitle: "Índices más bajos del IBEX",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.bottomIbex || [],
-      variant: "danger" as const
-    },
-    {
-      title: "IBEX Movers UP",
-      subtitle: "Mayores subidas semanales",
-      icon: <TrendingUp className="w-6 h-6" />,
-      data: data.ibexMoversUp || [],
-      variant: "success" as const
-    },
-    {
-      title: "IBEX Movers DOWN",
-      subtitle: "Mayores bajadas semanales",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.ibexMoversDown || [],
-      variant: "danger" as const
-    }
+    { title: "Top 5 IBEX 35", subtitle: "Mejores índices del IBEX", icon: <Trophy className="w-6 h-6" />, data: data.topIbex || [], variant: "success" as const, metricLabel },
+    { title: "Bottom 5 IBEX 35", subtitle: "Índices más bajos del IBEX", icon: <TrendingDown className="w-6 h-6" />, data: data.bottomIbex || [], variant: "danger" as const, metricLabel },
+    { title: "IBEX Movers UP", subtitle: "Mayores subidas semanales", icon: <TrendingUp className="w-6 h-6" />, data: data.ibexMoversUp || [], variant: "success" as const, metricLabel },
+    { title: "IBEX Movers DOWN", subtitle: "Mayores bajadas semanales", icon: <TrendingDown className="w-6 h-6" />, data: data.ibexMoversDown || [], variant: "danger" as const, metricLabel },
   ];
 
-  // Non-IBEX Rankings
   const otherTables = [
-    {
-      title: "Top 5 Resto",
-      subtitle: "Mejores fuera del IBEX",
-      icon: <Trophy className="w-6 h-6" />,
-      data: data.topOverall || [],
-      variant: "success" as const
-    },
-    {
-      title: "Bottom 5 Resto",
-      subtitle: "Índices más bajos (sin IBEX)",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.bottomOverall || [],
-      variant: "danger" as const
-    },
-    {
-      title: "Top 5 Cotizadas",
-      subtitle: "Cotizadas fuera del IBEX",
-      icon: <Building2 className="w-6 h-6" />,
-      data: data.topTraded || [],
-      variant: "info" as const
-    },
-    {
-      title: "Top 5 No Cotizadas",
-      subtitle: "Empresas privadas",
-      icon: <Briefcase className="w-6 h-6" />,
-      data: data.topUntraded || [],
-      variant: "info" as const
-    },
-    {
-      title: "Top Movers UP",
-      subtitle: "Mayores subidas (sin IBEX)",
-      icon: <TrendingUp className="w-6 h-6" />,
-      data: data.topMoversUp || [],
-      variant: "success" as const
-    },
-    {
-      title: "Top Movers DOWN",
-      subtitle: "Mayores bajadas (sin IBEX)",
-      icon: <TrendingDown className="w-6 h-6" />,
-      data: data.topMoversDown || [],
-      variant: "danger" as const
-    }
+    { title: "Top 5 Resto", subtitle: "Mejores fuera del IBEX", icon: <Trophy className="w-6 h-6" />, data: data.topOverall || [], variant: "success" as const, metricLabel },
+    { title: "Bottom 5 Resto", subtitle: "Índices más bajos (sin IBEX)", icon: <TrendingDown className="w-6 h-6" />, data: data.bottomOverall || [], variant: "danger" as const, metricLabel },
+    { title: "Top 5 Cotizadas", subtitle: "Cotizadas fuera del IBEX", icon: <Building2 className="w-6 h-6" />, data: data.topTraded || [], variant: "info" as const, metricLabel },
+    { title: "Top 5 No Cotizadas", subtitle: "Empresas privadas", icon: <Briefcase className="w-6 h-6" />, data: data.topUntraded || [], variant: "info" as const, metricLabel },
+    { title: "Top Movers UP", subtitle: "Mayores subidas (sin IBEX)", icon: <TrendingUp className="w-6 h-6" />, data: data.topMoversUp || [], variant: "success" as const, metricLabel },
+    { title: "Top Movers DOWN", subtitle: "Mayores bajadas (sin IBEX)", icon: <TrendingDown className="w-6 h-6" />, data: data.topMoversDown || [], variant: "danger" as const, metricLabel },
   ];
 
   return (
     <section className="py-8 sm:py-12 px-2 sm:px-4 bg-muted/30">
       <div className="container mx-auto max-w-7xl">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -210,9 +158,41 @@ export function MiniTablesGrid() {
           <p className="text-muted-foreground text-xs sm:text-sm md:text-base lg:text-lg max-w-2xl mx-auto px-1 mb-4" style={{ fontSize: 'clamp(0.7rem, 2vw, 1.125rem)' }}>
             Explora las métricas de reputación corporativa analizadas por inteligencias artificiales
           </p>
-          
-          {/* AI Model Selector */}
-          <AIModelSelector />
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+            <div className={rankingMode === "consensus" ? "opacity-50 pointer-events-none" : ""}>
+              <AIModelSelector />
+            </div>
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card">
+                    <Switch
+                      id="consensus-mode"
+                      checked={rankingMode === "consensus"}
+                      onCheckedChange={(checked) => setRankingMode(checked ? "consensus" : "score")}
+                    />
+                    <Label htmlFor="consensus-mode" className="text-xs sm:text-sm font-medium cursor-pointer flex items-center gap-1">
+                      Consenso IAs
+                      <Info className="w-3 h-3 text-muted-foreground" />
+                    </Label>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-xs">
+                    Prioriza empresas con menor dispersión entre los 6 modelos de IA. Es el mismo criterio que usa el Agente Rix.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          <p className="text-[10px] sm:text-xs text-muted-foreground mt-3">
+            {rankingMode === "consensus"
+              ? "Ranking por consenso entre 6 IAs"
+              : `Ranking por puntuación RIX (${selectedModel})`}
+          </p>
         </motion.div>
 
         {/* IBEX 35 Section */}
