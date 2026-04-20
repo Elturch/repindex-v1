@@ -16,6 +16,8 @@ import {
 import {
   MODEL_ENUM,
   extractModelNames,
+  parseModelsWithNegation,
+  detectUnsupportedModels,
 } from "../../_shared/modelsEnum.ts";
 
 // ── T1: real-world failure case (Grupos Hospitalarios) ──────────────
@@ -55,12 +57,12 @@ Deno.test("T5: 'compara GPT vs Claude' → 1 model (only ChatGPT, Claude not in 
 });
 
 // ── T6: literal "los 6 modelos" → 0 (no model names mentioned literally) ──
-// Design choice: "los 6 modelos" is a quantity, not a list of model names.
-// Empty array means "all 6 implicit" downstream. Either 0 or 6 is acceptable
-// per the spec — we choose 0 to keep the parser purely literal (no inference).
-Deno.test("T6: 'ranking de los 6 modelos' → 0 (no literal model names)", () => {
+// Phase 1.7 update: "los 6" / "todos los modelos" are now MODEL_GROUPS keys
+// that expand to the full enum. Spec accepted either 0 or 6 — we choose 6
+// for explicit user intent (the user did mention all of them).
+Deno.test("T6: 'ranking de los 6 modelos' → 6 (group expansion via MODEL_GROUPS)", () => {
   const result = extractModelNames("ranking de los 6 modelos");
-  assertEquals(result.length, 0);
+  assertEquals(result.length, 6);
 });
 
 // ── Bonus: dedup, order, and case variants ──────────────────────────
@@ -86,4 +88,90 @@ Deno.test("Bonus 4: all 6 listed explicitly", () => {
   const result = extractModelNames(q);
   assertEquals(result.length, 6);
   for (const m of MODEL_ENUM) assertArrayIncludes(result, [m]);
+});
+
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.7 — negation, groups, unsupported, expanded aliases
+// ──────────────────────────────────────────────────────────────────
+
+// N1: explicit exclusion of two models
+Deno.test("N1: 'sin contar Qwen ni Perplexity' → 4 models, mode=exclusive", () => {
+  const r = parseModelsWithNegation(
+    "ranking de banca el 19 de abril sin contar Qwen ni Perplexity",
+  );
+  assertEquals(r.mode, "exclusive");
+  assertEquals(r.model_names.length, 4);
+  assertArrayIncludes(r.model_names, ["ChatGPT", "Google Gemini", "DeepSeek", "Grok"]);
+});
+
+// N2: GPT4 alias + Claude unsupported + sector adjective handled upstream
+Deno.test("N2: 'compara GPT4 vs claude para tecnologicas' → ChatGPT only, Claude unsupported", () => {
+  const r = parseModelsWithNegation("compara GPT4 vs claude para tecnologicas");
+  assertEquals(r.mode, "inclusive");
+  assertEquals(r.model_names, ["ChatGPT"]);
+  assertEquals(r.unsupported_models, ["Claude"]);
+});
+
+// N3: semantic group "americanas"
+Deno.test("N3: 'con las IAs americanas' → 4 American models, mode=group", () => {
+  const r = parseModelsWithNegation("ranking de banca solo con las IAs americanas");
+  assertEquals(r.mode, "group");
+  assertEquals(r.model_names.length, 4);
+  assertArrayIncludes(r.model_names, ["ChatGPT", "Google Gemini", "Grok", "Perplexity"]);
+  assertEquals(r.matched_group, "ias americanas");
+});
+
+// N4: semantic group "modelos chinos"
+Deno.test("N4: 'con los modelos chinos' → DeepSeek + Qwen", () => {
+  const r = parseModelsWithNegation("ranking de tecnológicas con los modelos chinos");
+  assertEquals(r.mode, "group");
+  assertEquals(r.model_names.length, 2);
+  assertArrayIncludes(r.model_names, ["DeepSeek", "Qwen"]);
+});
+
+// N5: "excepto Gemini" → 5 models
+Deno.test("N5: 'excepto Gemini' → 5 models, mode=exclusive", () => {
+  const r = parseModelsWithNegation("ranking general excepto Gemini");
+  assertEquals(r.mode, "exclusive");
+  assertEquals(r.model_names.length, 5);
+  for (const m of MODEL_ENUM) {
+    if (m === "Google Gemini") continue;
+    assertArrayIncludes(r.model_names, [m]);
+  }
+});
+
+// N6: "solo OpenAI" → ChatGPT only via vendor group
+Deno.test("N6: 'solo OpenAI' → [ChatGPT]", () => {
+  // Note: "openai" is also an ALIAS_MAP entry, so it resolves via inclusive path.
+  const r = parseModelsWithNegation("ranking de banca solo OpenAI");
+  assertEquals(r.model_names, ["ChatGPT"]);
+});
+
+// N7: sector adjective routed at the chat-intelligence layer (parser stays clean)
+Deno.test("N7: 'para hospitalarios' → no models mentioned, parser returns empty", () => {
+  const r = parseModelsWithNegation("ranking para hospitalarios");
+  assertEquals(r.mode, "none");
+  assertEquals(r.model_names.length, 0);
+  assertEquals(r.unsupported_models.length, 0);
+});
+
+// N8: Anthropic group → 0 supported models, but Claude detected as unsupported elsewhere
+Deno.test("N8: 'según Anthropic' → empty supported list (group anthropic = [])", () => {
+  const r = parseModelsWithNegation("ranking según Anthropic");
+  assertEquals(r.model_names.length, 0);
+  assertEquals(r.matched_group, "anthropic");
+});
+
+// N9: model-version aliases (Grok 3, Gemini 2.5, DSK, PPX)
+Deno.test("N9: 'Grok 3, Gemini 2.5, DSK, PPX' → 4 canonical models", () => {
+  const r = parseModelsWithNegation("compara Grok 3, Gemini 2.5, DSK y PPX");
+  assertEquals(r.model_names.length, 4);
+  assertArrayIncludes(r.model_names, ["Grok", "Google Gemini", "DeepSeek", "Perplexity"]);
+});
+
+// N10: detectUnsupportedModels standalone helper
+Deno.test("N10: detectUnsupportedModels picks up Claude, Llama, Mistral", () => {
+  const u = detectUnsupportedModels("compara Claude, Llama y Mistral");
+  assertEquals(u.length, 3);
+  assertArrayIncludes(u, ["Claude", "Llama", "Mistral"]);
 });

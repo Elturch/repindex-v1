@@ -6,6 +6,7 @@ import {
   MODEL_ENUM,
   type ModelName,
   extractModelNames,
+  parseModelsWithNegation,
 } from "../_shared/modelsEnum.ts";
 import {
   aggregateConsensus,
@@ -2268,17 +2269,26 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
   const hasIbex = IBEX_PATTERNS_EDGE.test(lower);
   const hasAlert = ALERT_PATTERNS_EDGE.test(lower);
 
-  // Detect AI models mentioned in query (Phase 1: deterministic global regex, multi-model)
-  const detectedModels = extractModelNames(question);
-  if (detectedModels.length > 0) {
-    filters.model_names = detectedModels;
-    // Legacy single-value field kept for backwards compatibility with downstream code
-    // that hasn't been migrated yet. Equals detectedModels[0] when exactly one model.
-    filters.model_name = detectedModels.length === 1 ? detectedModels[0] : undefined;
-    console.log(`[INTERPRET] [models_names_detected] count=${detectedModels.length} models=[${detectedModels.join(", ")}]`);
-  } else {
-    console.log(`[INTERPRET] [models_names_detected] count=0 (no models mentioned → all 6 implicit)`);
+  // PHASE 1.7: deterministic multi-model parser with negation, semantic groups,
+  // and unsupported-model detection. Single source of truth for downstream.
+  const parsed = parseModelsWithNegation(question);
+  if (parsed.model_names.length > 0) {
+    filters.model_names = parsed.model_names;
+    filters.model_name = parsed.model_names.length === 1 ? parsed.model_names[0] : undefined;
   }
+  // Always propagate parser metadata (mode + unsupported list) so the report
+  // can render the "AVISO Claude no está monitorizado" line and explain
+  // exclusive/group selections.
+  (filters as any)._parsed_mode = parsed.mode;
+  if (parsed.unsupported_models.length > 0) {
+    (filters as any)._unsupported_models = parsed.unsupported_models;
+  }
+  if (parsed.matched_group) {
+    (filters as any)._matched_group = parsed.matched_group;
+  }
+  console.log(
+    `[INTERPRET] [models_names_detected] count=${parsed.model_names.length} mode=${parsed.mode} models=[${parsed.model_names.join(", ")}] unsupported=[${parsed.unsupported_models.join(", ")}] group=${parsed.matched_group ?? "—"}`,
+  );
 
   if (hasAlert && !hasEvolution && !hasDivergence) {
     intent = "alert"; recommended_skills.push("skillCrisisScan"); confidence = 0.85;
@@ -2631,11 +2641,21 @@ async function buildDataPackFromSkills(
 
     // Fallback: if no models detected in normalized question, try original question
     if (originalQuestion && (!interpret.filters.model_names || (interpret.filters.model_names as string[]).length === 0)) {
-      const fallbackModels = extractModelNames(originalQuestion);
-      if (fallbackModels.length > 0) {
-        interpret.filters.model_names = fallbackModels;
-        interpret.filters.model_name = fallbackModels.length === 1 ? fallbackModels[0] : undefined;
-        console.log(`${logPrefix} [SKILLS-v2] [models_names_detected] fallback=originalQuestion count=${fallbackModels.length} models=[${fallbackModels.join(", ")}]`);
+      const parsedFallback = parseModelsWithNegation(originalQuestion);
+      if (parsedFallback.model_names.length > 0) {
+        interpret.filters.model_names = parsedFallback.model_names;
+        interpret.filters.model_name = parsedFallback.model_names.length === 1 ? parsedFallback.model_names[0] : undefined;
+        (interpret.filters as any)._parsed_mode = parsedFallback.mode;
+        if (parsedFallback.unsupported_models.length > 0) {
+          (interpret.filters as any)._unsupported_models = parsedFallback.unsupported_models;
+        }
+        if (parsedFallback.matched_group) {
+          (interpret.filters as any)._matched_group = parsedFallback.matched_group;
+        }
+        console.log(`${logPrefix} [SKILLS-v2] [models_names_detected] fallback=originalQuestion count=${parsedFallback.model_names.length} mode=${parsedFallback.mode} models=[${parsedFallback.model_names.join(", ")}] unsupported=[${parsedFallback.unsupported_models.join(", ")}]`);
+      } else if (parsedFallback.unsupported_models.length > 0) {
+        // Even with no supported models, surface the unsupported warning
+        (interpret.filters as any)._unsupported_models = parsedFallback.unsupported_models;
       }
     }
 
@@ -3514,6 +3534,16 @@ async function buildDataPackFromSkills(
       missing,
     };
     (pack as any).models_coverage = reportContext.models_coverage;
+    // PHASE 1.7: propagate unsupported-models warning + parser mode into reportContext
+    const _unsupported = (interpret.filters as any)._unsupported_models as string[] | undefined;
+    const _parsedMode = (interpret.filters as any)._parsed_mode as string | undefined;
+    const _matchedGroup = (interpret.filters as any)._matched_group as string | undefined;
+    if (_unsupported && _unsupported.length > 0) {
+      reportContext.unsupported_models = _unsupported;
+      (pack as any).unsupported_models = _unsupported;
+    }
+    if (_parsedMode) reportContext.parsed_mode = _parsedMode;
+    if (_matchedGroup) reportContext.matched_group = _matchedGroup;
     console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
 
     (pack as any).report_context = reportContext;
