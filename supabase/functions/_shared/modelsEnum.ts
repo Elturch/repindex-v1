@@ -700,7 +700,7 @@ export function parseModelRankingForEntity(
  * Capped at 12 weeks (system limit). Returns null if no explicit N.
  */
 const PERIOD_WEEKS_REGEX =
-  /\b(?:[uú]ltim[oa]s?|past|previous|last|durante|during)\s+(\d{1,2})\s+(semanas?|weeks?|meses?|months?|d[ií]as?|days?)\b/i;
+  /(?:^|[^\p{L}])(?:[uú]ltim[oa]s?|past|previous|last|durante|during)\s+(\d{1,2})\s+(semanas?|weeks?|meses?|months?|d[ií]as?|days?)\b/iu;
 
 export interface PeriodWeeksResult {
   weeks: number;
