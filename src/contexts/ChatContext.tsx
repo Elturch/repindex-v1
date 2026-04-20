@@ -100,6 +100,35 @@ const CLIENT_MODEL_REGEX = /\b(chatgpt|chat\s*gpt|gpt[\s-]?[345](?:\.\d|o)?|gpt|
 const CLIENT_NEGATION_REGEX = /\b(sin(\s+contar|\s+incluir)?|excepto|salvo|menos|no\s+inclu(y|i)as?|fuera\s+de|exclu[yi]e?n?d?o?|quitando|except|excluding|without)\b/gi;
 const CLIENT_SECTOR_REGEX = /\b(banca|banc[ao]s?|tecnol[oó]gic[ao]s?|hospitalari[oa]s?|asegurador[ae]s?|farmac[eé]utic[ao]s?|inmobiliari[ao]s?|energ[eé]tic[ao]s?|teleco|telecos|retailers?|seguros|salud|farma|sector|ibex|ibex\s*35|ibex35)\b/i;
 
+// PHASE 1.8 — Conversational memory (Bug E).
+// We keep the last successful query context client-side so that short
+// follow-up questions ("y sin Grok?", "y ahora con Qwen?") can be merged
+// with the previous sector / company / model_names before being sent to
+// the backend. TTL = 5 minutes; reset on clearConversation().
+const FOLLOWUP_TTL_MS = 5 * 60 * 1000;
+const CLIENT_FOLLOWUP_PREFIX_REGEX =
+  /^[¿\s]*(y|ahora|sin|con|tambi[eé]n|pero|en\s+cambio|y\s+si|y\s+ahora|quita|quitando|excluye|excluyendo|a[ñn]ade|a[ñn]adiendo|incluye|incluyendo|adem[aá]s)\b/i;
+const CLIENT_FOLLOWUP_ANAPHOR_REGEX =
+  /\b(ese|esa|esos|esas|este|esta|estos|estas|aquel|aquella|el\s+anterior|el\s+ultimo|el\s+último|los\s+mismos|esa\s+misma)\b/i;
+
+function isFollowupClient(question: string): boolean {
+  if (!question) return false;
+  const t = question.trim();
+  const wc = t.split(/\s+/).filter(Boolean).length;
+  if (wc === 0 || wc > 10) return false;
+  return CLIENT_FOLLOWUP_ANAPHOR_REGEX.test(t) || CLIENT_FOLLOWUP_PREFIX_REGEX.test(t);
+}
+
+export interface LastQueryContext {
+  sector: string | null;
+  company: string | null;
+  model_names: string[];
+  mode: "inclusive" | "exclusive" | "group" | "none";
+  period_from: string | null;
+  period_to: string | null;
+  ts: number;
+}
+
 function aliasToCanonical(token: string): string | null {
   const t = token.toLowerCase().replace(/\s+/g, " ").trim();
   if (t === "chatgpt" || t === "openai" || t.startsWith("gpt")) return "ChatGPT";
@@ -373,6 +402,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isStarred, setIsStarred] = useState(false);
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // PHASE 1.8 — last successful query context for follow-up merging.
+  const lastQueryContextRef = useRef<LastQueryContext | null>(null);
+  // Capture the just-generated reportContext into the follow-up memory.
+  const captureLastQueryContext = useCallback((rc: any | null | undefined) => {
+    if (!rc) return;
+    lastQueryContextRef.current = {
+      sector: rc.sector ?? null,
+      company: rc.company ?? null,
+      model_names: Array.isArray(rc.models) ? rc.models : [],
+      mode: (rc._parsed_mode as any) || "none",
+      period_from: rc.date_from ?? null,
+      period_to: rc.date_to ?? null,
+      ts: Date.now(),
+    };
+    console.log('[ChatContext] PHASE 1.8 captured lastQueryContext:', lastQueryContextRef.current);
+  }, []);
   const { toast } = useToast();
   
   // Session configuration state
@@ -513,7 +558,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
     
     // Start rotating loading messages — first one reflects the actual model count detected in the query.
-    const detectedModelCount = detectModelCountFromQuery(question);
+    // PHASE 1.8 — Follow-up memory merge for the loader count.
+    const lastCtx = lastQueryContextRef.current;
+    const followupActive =
+      isFollowupClient(question) &&
+      lastCtx !== null &&
+      Date.now() - lastCtx.ts < FOLLOWUP_TTL_MS;
+    let detectedModelCount = detectModelCountFromQuery(question);
+    if (followupActive) {
+      const parsed = parseModelsClient(question);
+      if (parsed.mode === "exclusive" && parsed.modelNames.length > 0) {
+        // Subtract the excluded models from previous list
+        const stillIn = new Set(parsed.modelNames);
+        const excluded = ALL_MODELS_CLIENT.filter((m) => !stillIn.has(m));
+        const merged = (lastCtx?.model_names ?? [...ALL_MODELS_CLIENT]).filter(
+          (m) => !excluded.includes(m as any),
+        );
+        detectedModelCount = merged.length || (lastCtx?.model_names?.length ?? 6);
+      } else if ((parsed.mode === "inclusive" || parsed.mode === "group") && parsed.modelNames.length > 0) {
+        detectedModelCount = parsed.modelNames.length;
+      } else {
+        detectedModelCount = lastCtx?.model_names?.length ?? 6;
+      }
+      console.log(`[ChatContext] PHASE 1.8 follow-up active: loader count = ${detectedModelCount}`);
+    }
     const loadingMessages = buildLoadingMessages(detectedModelCount);
     let loadingIndex = 0;
     setLoadingMessage(loadingMessages[0]);
@@ -656,6 +724,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
               roleName: role ? `${role.emoji} ${role.name}` : undefined,
               rolePrompt: role?.prompt,
               streamMode: true, // Enable streaming in edge function
+              // PHASE 1.8 — Conversational memory for short follow-ups.
+              previousContext: followupActive ? lastCtx : null,
+              isFollowup: followupActive,
             }),
           }
         );
@@ -712,6 +783,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             title: "Respuesta recibida",
             description: `${data.metadata?.documentsFound || 0} documentos analizados`,
           });
+          // PHASE 1.8 — capture context for follow-up merging
+          captureLastQueryContext(data.metadata?.reportContext);
 
         } else {
           // =========================================================================
@@ -834,6 +907,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             title: "Respuesta recibida",
             description: `${finalMetadata?.documentsFound || 0} documentos analizados`,
           });
+          // PHASE 1.8 — capture context for follow-up merging (SSE)
+          captureLastQueryContext(finalMetadata?.reportContext);
         }
 
       } else {
@@ -853,6 +928,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           roleName: role ? `${role.emoji} ${role.name}` : undefined,
           rolePrompt: role?.prompt,
           streamMode: false,
+          // PHASE 1.8 — Conversational memory for short follow-ups.
+          previousContext: followupActive ? lastCtx : null,
+          isFollowup: followupActive,
         }, timeoutMs) as { data: any; error: Error | null };
 
         if (error) throw error;
@@ -902,6 +980,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           title: "Respuesta recibida",
           description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
         });
+        // PHASE 1.8 — capture context for follow-up merging (non-streaming)
+        captureLastQueryContext(data.metadata?.reportContext);
       }
     } catch (error) {
       console.error('Error in chat intelligence:', error);
@@ -930,7 +1010,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsLoading(false);
       setIsStreaming(false);
     }
-  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language]);
+  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language, captureLastQueryContext]);
 
   // Enrich a response with a specific professional role perspective
   const enrichResponse = useCallback(async (roleId: string, messageIndex: number) => {
@@ -1041,6 +1121,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setIsStarred(false);
     setIsLoadingHistory(false);
     setSessionDepthLevel('complete');
+    // PHASE 1.8 — reset conversational memory
+    lastQueryContextRef.current = null;
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
@@ -1053,6 +1135,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(true);
+    // PHASE 1.8 — reset conversational memory when switching conversation
+    lastQueryContextRef.current = null;
   }, []);
 
   // Toggle star status for current conversation

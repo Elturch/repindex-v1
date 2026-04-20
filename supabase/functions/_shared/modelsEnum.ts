@@ -407,3 +407,201 @@ export function extractModelNames(question: string | null | undefined): ModelNam
 export function isCanonicalModel(name: string): name is ModelName {
   return (MODEL_ENUM as readonly string[]).includes(name);
 }
+
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.8 — Conversational memory + quantifier parsing
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Detects anaphoric / follow-up queries that should inherit the previous
+ * query context (sector, models, period). Heuristic: short question (< 8
+ * words) starting with a follow-up connector OR containing demonstrative
+ * pronouns referring back to a previous answer.
+ *
+ * Examples that match:
+ *   "y ahora sin Grok?"
+ *   "¿y sin Qwen?"
+ *   "ahora con Gemini"
+ *   "pero excluye DeepSeek"
+ *   "y si quitamos PPX?"
+ *   "ese último modelo"
+ */
+const FOLLOWUP_PREFIX_REGEX =
+  /^[¿\s]*(y|ahora|sin|con|tambi[eé]n|pero|en\s+cambio|y\s+si|y\s+ahora|quita|quitando|excluye|excluyendo|a[ñn]ade|a[ñn]adiendo|incluye|incluyendo|adem[aá]s)\b/i;
+const FOLLOWUP_ANAPHOR_REGEX = /\b(ese|esa|esos|esas|este|esta|estos|estas|aquel|aquella|el\s+anterior|el\s+ultimo|el\s+último|los\s+mismos|esa\s+misma)\b/i;
+
+const COMPANY_HINT_REGEX = /\b(iberdrola|telefonica|telef[oó]nica|santander|bbva|inditex|repsol|caixabank|naturgy|endesa|acs|ferrovial|aena|grifols|cellnex|amadeus|mapfre|enagas|red\s+el[eé]ctrica|acciona|sabadell|bankinter|merlin|ibex|s&p|nasdaq|dow)\b/i;
+
+export function isFollowupQuery(question: string): boolean {
+  if (!question) return false;
+  const trimmed = question.trim();
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 10) return false;
+  // Don't treat a query that introduces a brand-new sector/company as follow-up
+  // (we still allow it if it's purely a model modifier — sector check handled in caller).
+  if (FOLLOWUP_ANAPHOR_REGEX.test(trimmed)) return true;
+  return FOLLOWUP_PREFIX_REGEX.test(trimmed);
+}
+
+/**
+ * Quantifier patterns: "los 3 mejores modelos", "los cuatro principales",
+ * "la mitad de las IAs", "la mayoría de los modelos", etc.
+ * Returns the requested count (clamped to 1..MODEL_ENUM.length) or null.
+ *
+ * Mode "top_coverage" tells the caller to pick the top-N models by
+ * recent observation coverage in the queried sector/company.
+ */
+export interface QuantifierResult {
+  count: number;
+  mode: "top_coverage";
+  raw_match: string;
+  label: string; // e.g., "Top 3 por cobertura"
+}
+
+const NUMBER_WORDS_ES: Record<string, number> = {
+  "uno": 1, "una": 1,
+  "dos": 2,
+  "tres": 3,
+  "cuatro": 4,
+  "cinco": 5,
+  "seis": 6,
+};
+
+const QUANT_TOPN_REGEX =
+  /\b(?:los?|las?)\s+(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:mejores?|principales|m[aá]s\s+(?:fiables|completos?|robustos?|relevantes?))\s+(?:modelos?|ias?|iaas?)\b/i;
+// Variant: "los 3 modelos más fiables" (modelos before the qualifier)
+const QUANT_TOPN_REGEX_INV =
+  /\b(?:los?|las?)\s+(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:modelos?|ias?)\s+(?:mejores?|principales|m[aá]s\s+(?:fiables|completos?|robustos?|relevantes?))\b/i;
+const QUANT_HALF_REGEX = /\b(?:la\s+mitad|las?\s+mitad)\s+de\s+(?:los?|las?)\s+(?:modelos?|ias?)\b/i;
+const QUANT_MAJORITY_REGEX = /\b(?:la\s+mayor[ií]a)\s+de\s+(?:los?|las?)\s+(?:modelos?|ias?)\b/i;
+
+export function parseQuantifier(question: string | null | undefined): QuantifierResult | null {
+  if (!question) return null;
+  const max = MODEL_ENUM.length;
+
+  const m = question.match(QUANT_TOPN_REGEX) || question.match(QUANT_TOPN_REGEX_INV);
+  if (m) {
+    const tok = m[1].toLowerCase();
+    const n = /^\d+$/.test(tok) ? parseInt(tok, 10) : (NUMBER_WORDS_ES[tok] ?? 0);
+    if (n >= 1 && n <= max) {
+      return {
+        count: n,
+        mode: "top_coverage",
+        raw_match: m[0],
+        label: `Top ${n} por cobertura`,
+      };
+    }
+  }
+
+  if (QUANT_HALF_REGEX.test(question)) {
+    const n = Math.ceil(max / 2); // 6 → 3
+    return {
+      count: n,
+      mode: "top_coverage",
+      raw_match: question.match(QUANT_HALF_REGEX)![0],
+      label: `Top ${n} por cobertura (mitad)`,
+    };
+  }
+  if (QUANT_MAJORITY_REGEX.test(question)) {
+    const n = Math.ceil(max / 2) + 1; // 4
+    return {
+      count: n,
+      mode: "top_coverage",
+      raw_match: question.match(QUANT_MAJORITY_REGEX)![0],
+      label: `Top ${n} por cobertura (mayoría)`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Sector hint detection — used by caller to decide whether a follow-up
+ * query introduces a NEW sector (in which case we must NOT inherit
+ * previous models). Mirrors the client-side CLIENT_SECTOR_REGEX.
+ */
+const SECTOR_HINT_REGEX =
+  /\b(banca|banc[ao]s?|tecnol[oó]gic[ao]s?|hospitalari[oa]s?|asegurador[ae]s?|farmac[eé]utic[ao]s?|inmobiliari[ao]s?|energ[eé]tic[ao]s?|teleco|telecos|retailers?|seguros|salud|farma|sector|ibex|ibex\s*35|ibex35|energ[ií]a|tecnolog[ií]a|real\s+estate|telecomunicaciones|retail)\b/i;
+
+export function hasSectorHint(question: string): boolean {
+  return !!question && SECTOR_HINT_REGEX.test(question);
+}
+
+export function hasCompanyHint(question: string): boolean {
+  return !!question && COMPANY_HINT_REGEX.test(question);
+}
+
+/**
+ * Conversational memory snapshot stored client-side and forwarded in the
+ * request body as `previousContext`.
+ */
+export interface PreviousQueryContext {
+  sector?: string | null;
+  company?: string | null;
+  model_names?: ModelName[];
+  mode?: "inclusive" | "exclusive" | "group" | "none";
+  period_from?: string | null;
+  period_to?: string | null;
+  /** Epoch ms when the context was captured; caller enforces TTL. */
+  ts?: number;
+}
+
+/**
+ * Merges a follow-up parse with the previous context. Logic:
+ *  - If the follow-up parsed in EXCLUSIVE mode (e.g. "y sin Grok"), apply
+ *    that exclusion to the previous model_names (NOT to MODEL_ENUM).
+ *  - If the follow-up parsed in INCLUSIVE / GROUP mode, the new model
+ *    list REPLACES the previous one entirely (user chose new models).
+ *  - If the follow-up parsed NONE → keep previous model_names.
+ *  - Sector/company are always inherited from previous when the new
+ *    question has no sector/company hint.
+ */
+export function mergeFollowupWithPrevious(
+  followupParsed: ParsedModelsResult,
+  previous: PreviousQueryContext | null | undefined,
+  followupQuestion: string,
+): { model_names: ModelName[]; mode: ParsedModelsResult["mode"]; sector: string | null; company: string | null; merged: boolean } {
+  const prev = previous || {};
+  const prevModels = (prev.model_names && prev.model_names.length > 0)
+    ? prev.model_names
+    : [...MODEL_ENUM];
+  const newSectorMentioned = hasSectorHint(followupQuestion);
+  const newCompanyMentioned = hasCompanyHint(followupQuestion);
+
+  // Exclusive follow-up: subtract from previous
+  if (followupParsed.mode === "exclusive" && followupParsed.model_names.length > 0) {
+    // followupParsed.model_names already = MODEL_ENUM minus mentioned in negation
+    // Re-derive "excluded set" by diffing against MODEL_ENUM:
+    const stillIncluded = new Set(followupParsed.model_names);
+    const excluded = (MODEL_ENUM as readonly ModelName[]).filter((m) => !stillIncluded.has(m));
+    const merged = prevModels.filter((m) => !excluded.includes(m));
+    return {
+      model_names: merged.length > 0 ? merged : prevModels,
+      mode: "exclusive",
+      sector: newSectorMentioned ? null : (prev.sector ?? null),
+      company: newCompanyMentioned ? null : (prev.company ?? null),
+      merged: true,
+    };
+  }
+
+  // Inclusive / group follow-up: new list replaces
+  if ((followupParsed.mode === "inclusive" || followupParsed.mode === "group")
+      && followupParsed.model_names.length > 0) {
+    return {
+      model_names: followupParsed.model_names,
+      mode: followupParsed.mode,
+      sector: newSectorMentioned ? null : (prev.sector ?? null),
+      company: newCompanyMentioned ? null : (prev.company ?? null),
+      merged: true,
+    };
+  }
+
+  // No model info in follow-up → inherit everything
+  return {
+    model_names: prevModels,
+    mode: prev.mode ?? "none",
+    sector: newSectorMentioned ? null : (prev.sector ?? null),
+    company: newCompanyMentioned ? null : (prev.company ?? null),
+    merged: true,
+  };
+}
