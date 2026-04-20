@@ -2820,6 +2820,31 @@ async function buildDataPackFromSkills(
       console.log(`${logPrefix} [SEMANTIC_GROUPS] No match on normalized question, retrying with originalQuestion: "${originalQuestion}"`);
       semanticGroup = await resolveSemanticGroup(originalQuestion, supabaseClient);
     }
+    // PHASE 1.8f — Follow-up rehydration: if no group resolved on the current
+    // (short) follow-up query but the previousContext carried a canonical_group,
+    // re-fetch the group's tickers by canonical_key. This prevents the cohort
+    // from defaulting to the full IBEX-35 universe in Q1→Q2 conversations.
+    if (!semanticGroup.canonical_key && followupActive && (previousContext as any)?.canonical_group) {
+      const ck = String((previousContext as any).canonical_group);
+      try {
+        const { data: rehyd } = await supabaseClient
+          .from("rix_semantic_groups")
+          .select("canonical_key, display_name, issuer_ids, exclusions")
+          .eq("canonical_key", ck)
+          .maybeSingle();
+        if (rehyd && Array.isArray(rehyd.issuer_ids) && rehyd.issuer_ids.length > 0) {
+          semanticGroup = {
+            canonical_key: rehyd.canonical_key,
+            display_name: rehyd.display_name,
+            issuer_ids: rehyd.issuer_ids,
+            exclusions: rehyd.exclusions || [],
+          };
+          console.log(`${logPrefix} [SEMANTIC_GROUPS] Rehydrated from previousContext.canonical_group="${ck}" → ${rehyd.issuer_ids.length} tickers`);
+        }
+      } catch (rgErr: any) {
+        console.warn(`${logPrefix} [SEMANTIC_GROUPS] Rehydration failed: ${rgErr?.message ?? rgErr}`);
+      }
+    }
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
       // Apply exclusions: remove excluded tickers from group
