@@ -2677,17 +2677,18 @@ async function buildDataPackFromSkills(
     // in the new short query. NEVER overwrite anything explicit in the
     // current parse.
     const FOLLOWUP_TTL_MS_BACKEND = 5 * 60 * 1000;
+    const followupQuestion = originalQuestion || question;
     const ctxFresh = !!(previousContext && previousContext.ts && (Date.now() - previousContext.ts) < FOLLOWUP_TTL_MS_BACKEND);
-    const followupActive = !!isFollowup && ctxFresh;
+    const parsedFollowup = isFollowupQuery(followupQuestion);
+    const followupActive = !!(isFollowup || parsedFollowup) && ctxFresh;
     if (isFollowup && !ctxFresh) {
       console.log(`${logPrefix} [ctx-merge] SKIPPED — previousContext stale or missing (ts=${previousContext?.ts ?? "null"})`);
     }
     if (followupActive) {
-      const followupQ = originalQuestion || question;
-      const newSectorMentioned = hasSectorHint(followupQ);
-      const newCompanyMentioned = hasCompanyHint(followupQ);
-      const followupParsed = parseModelsWithNegation(followupQ);
-      const merged = mergeFollowupWithPrevious(followupParsed, previousContext, followupQ);
+      const newSectorMentioned = hasSectorHint(followupQuestion);
+      const newCompanyMentioned = hasCompanyHint(followupQuestion);
+      const followupParsed = parseModelsWithNegation(followupQuestion);
+      const merged = mergeFollowupWithPrevious(followupParsed, previousContext, followupQuestion);
 
       // Inherit sector ONLY when the follow-up does not introduce one and we don't
       // already have one in the current interpret.
@@ -2718,6 +2719,16 @@ async function buildDataPackFromSkills(
         interpret.confidence = Math.max(interpret.confidence, 0.7);
         console.log(`${logPrefix} [ctx-merge] promoted intent=ranking from previousContext`);
       }
+      console.log(`${logPrefix} [BE-merged]`, {
+        entity: interpret.filters.ticker || previousContext?.company || null,
+        sector: interpret.filters.sector_category || merged.sector || null,
+        period: {
+          from: previousContext?.period_from ?? null,
+          to: previousContext?.period_to ?? null,
+        },
+        models: (interpret.filters.model_names as string[] | undefined) || merged.model_names || [],
+        source: (interpret.filters as any)._ctx_merged ? "previousContext+followup" : "explicit",
+      });
     }
 
     // Direct crisis detection (independent from interpretQueryEdge)
