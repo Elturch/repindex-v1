@@ -234,7 +234,8 @@ export function Dashboard() {
     }
 
     // CONSENSUS MODE — group by ticker across all 6 models in current batch,
-    // then sort each row by its ticker's consensus level + majority block score.
+    // collapse to ONE row per ticker (consensus single-row), then sort by
+    // consensus level + majority block score. Mirrors the agent Rix output.
     if (rankingMode === "consensus") {
       const consensusMap = aggregateConsensus(
         filteredByBatch.map(r => ({
@@ -243,7 +244,58 @@ export function Dashboard() {
         }))
       );
 
-      return [...filteredByBatch].sort((a, b) => {
+      // Group rows per ticker
+      const byTicker = new Map<string, typeof filteredByBatch>();
+      for (const r of filteredByBatch) {
+        const t = (r.repindex_root_issuers?.ticker || r.ticker || "") as string;
+        if (!t) continue;
+        if (!byTicker.has(t)) byTicker.set(t, [] as typeof filteredByBatch);
+        byTicker.get(t)!.push(r);
+      }
+
+      // Average a numeric metric across rows (ignoring null/0-as-missing).
+      const avg = (vals: Array<number | null | undefined>): number | null => {
+        const nums = vals.filter((v): v is number => typeof v === "number" && !isNaN(v));
+        if (nums.length === 0) return null;
+        return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
+      };
+
+      const METRIC_KEYS = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
+
+      // Collapse each ticker into a single representative row carrying the consensus values.
+      const collapsed = Array.from(byTicker.entries()).map(([ticker, rows]) => {
+        const agg = consensusMap.get(ticker);
+        // Pick the row whose own score is closest to the majority score as the "carrier".
+        const target = agg?.majorityScore ?? 0;
+        const carrier = [...rows].sort((a, b) => {
+          const sa = a.displayRixScore ?? a.rix_score ?? 0;
+          const sb = b.displayRixScore ?? b.rix_score ?? 0;
+          return Math.abs(sa - target) - Math.abs(sb - target);
+        })[0];
+
+        // Build a synthetic row: keep carrier metadata, override score + per-metric averages.
+        const synthetic: typeof carrier = { ...carrier };
+        synthetic.displayRixScore = agg ? Math.round(agg.majorityScore) : carrier.displayRixScore;
+        synthetic.rix_score = synthetic.displayRixScore;
+        synthetic.model_name = "Consenso IAs";
+        synthetic.metricTrends = {};
+        const syntheticBag = synthetic as unknown as Record<string, unknown>;
+        for (const key of METRIC_KEYS) {
+          const scoreField = `${key}_score`;
+          const catField = `${key}_categoria`;
+          const consensusScore = avg(
+            rows.map((r) => (r as unknown as Record<string, unknown>)[scoreField] as number | null),
+          );
+          syntheticBag[scoreField] = consensusScore;
+          // Reuse the carrier's category to keep color coding consistent
+          syntheticBag[catField] = (carrier as unknown as Record<string, unknown>)[catField];
+        }
+        // Stable id so React keys don't collide with original per-model rows
+        synthetic.id = `consensus-${ticker}`;
+        return synthetic;
+      });
+
+      return collapsed.sort((a, b) => {
         if (a.isDataInvalid && !b.isDataInvalid) return 1;
         if (!a.isDataInvalid && b.isDataInvalid) return -1;
         const tA = (a.repindex_root_issuers?.ticker || a.ticker || "") as string;
@@ -255,7 +307,6 @@ export function Dashboard() {
           if (cmp !== 0) return cmp;
         } else if (cA && !cB) return -1;
         else if (!cA && cB) return 1;
-        // Tie-breaker: own rix score
         const sA = a.displayRixScore ?? a.rix_score ?? 0;
         const sB = b.displayRixScore ?? b.rix_score ?? 0;
         return sortConfig.direction === "asc" ? sA - sB : sB - sA;
@@ -366,7 +417,14 @@ export function Dashboard() {
   const getModelInfo = (modelName: string) => {
     const normalizedModel = modelName?.toLowerCase() || '';
     
-    if (normalizedModel.includes('chatgpt') || normalizedModel.includes('gpt')) {
+    if (normalizedModel.includes('consenso')) {
+      return {
+        name: 'Consenso',
+        abbreviation: 'CNS',
+        icon: Brain,
+        colorClass: 'text-primary'
+      };
+    } else if (normalizedModel.includes('chatgpt') || normalizedModel.includes('gpt')) {
       return {
         name: 'ChatGPT',
         abbreviation: 'GPT',

@@ -71,16 +71,42 @@ async function invokeWithTimeout(
   }
 }
 
-// Loading messages for long operations (rotating every 15 seconds)
-const LOADING_MESSAGES = [
-  "Consultando 6 modelos de IA...",
-  "Analizando datos de mercado...",
-  "Recopilando información sectorial...",
-  "Procesando histórico de la empresa...",
-  "Generando informe ejecutivo...",
-  "Consolidando perspectivas de IA...",
-  "Finalizando análisis...",
-];
+// Loading messages for long operations (rotating every 15 seconds).
+// Built dynamically so the model count matches the user's query.
+const CLIENT_MODEL_REGEX = /\b(chatgpt|chat\s*gpt|gpt|perplexity|ppx|gemini|deepseek|deep\s*seek|dsk|grok|qwen)\b/gi;
+
+function detectModelCountFromQuery(question: string): number {
+  const matches = question.match(CLIENT_MODEL_REGEX) ?? [];
+  const normalized = new Set(
+    matches.map((m) => {
+      const t = m.toLowerCase().replace(/\s+/g, "");
+      if (t === "chatgpt" || t === "gpt") return "ChatGPT";
+      if (t === "perplexity" || t === "ppx") return "Perplexity";
+      if (t === "gemini") return "Gemini";
+      if (t === "deepseek" || t === "dsk") return "DeepSeek";
+      if (t === "grok") return "Grok";
+      if (t === "qwen") return "Qwen";
+      return t;
+    }),
+  );
+  return normalized.size;
+}
+
+function buildLoadingMessages(modelCount: number): string[] {
+  const n = modelCount > 0 ? modelCount : 6;
+  const noun = n === 1 ? "modelo" : "modelos";
+  return [
+    `Consultando ${n} ${noun} de IA...`,
+    "Analizando datos de mercado...",
+    "Recopilando información sectorial...",
+    "Procesando histórico de la empresa...",
+    "Generando informe ejecutivo...",
+    "Consolidando perspectivas de IA...",
+    "Finalizando análisis...",
+  ];
+}
+
+const DEFAULT_LOADING_MESSAGES = buildLoadingMessages(6);
 
 /**
  * Normalize text for compliance matching (mirrors backend logic):
@@ -265,7 +291,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
+  const [loadingMessage, setLoadingMessage] = useState(DEFAULT_LOADING_MESSAGES[0]);
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -411,12 +437,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsStreaming(true);
     }
     
-    // Start rotating loading messages
+    // Start rotating loading messages — first one reflects the actual model count detected in the query.
+    const detectedModelCount = detectModelCountFromQuery(question);
+    const loadingMessages = buildLoadingMessages(detectedModelCount);
     let loadingIndex = 0;
-    setLoadingMessage(LOADING_MESSAGES[0]);
+    setLoadingMessage(loadingMessages[0]);
     loadingIntervalRef.current = setInterval(() => {
-      loadingIndex = (loadingIndex + 1) % LOADING_MESSAGES.length;
-      setLoadingMessage(LOADING_MESSAGES[loadingIndex]);
+      loadingIndex = (loadingIndex + 1) % loadingMessages.length;
+      setLoadingMessage(loadingMessages[loadingIndex]);
     }, 15000); // Rotate every 15 seconds
 
     const userMessage: Message = {
