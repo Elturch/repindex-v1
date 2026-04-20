@@ -910,6 +910,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
           roleName: role ? `${role.emoji} ${role.name}` : undefined,
           rolePrompt: role?.prompt,
           streamMode: false,
+          // PHASE 1.8 — Conversational memory for short follow-ups.
+          previousContext: followupActive ? lastCtx : null,
+          isFollowup: followupActive,
         }, timeoutMs) as { data: any; error: Error | null };
 
         if (error) throw error;
