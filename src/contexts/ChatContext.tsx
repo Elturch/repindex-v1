@@ -783,6 +783,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             title: "Respuesta recibida",
             description: `${data.metadata?.documentsFound || 0} documentos analizados`,
           });
+          // PHASE 1.8 — capture context for follow-up merging
+          captureLastQueryContext(data.metadata?.reportContext);
 
         } else {
           // =========================================================================
