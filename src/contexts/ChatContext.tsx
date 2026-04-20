@@ -291,7 +291,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
+  const [loadingMessage, setLoadingMessage] = useState(DEFAULT_LOADING_MESSAGES[0]);
   const [pageContext, setPageContext] = useState<PageContext | null>(null);
   const [isFloatingOpen, setIsFloatingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -437,12 +437,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsStreaming(true);
     }
     
-    // Start rotating loading messages
+    // Start rotating loading messages — first one reflects the actual model count detected in the query.
+    const detectedModelCount = detectModelCountFromQuery(question);
+    const loadingMessages = buildLoadingMessages(detectedModelCount);
     let loadingIndex = 0;
-    setLoadingMessage(LOADING_MESSAGES[0]);
+    setLoadingMessage(loadingMessages[0]);
     loadingIntervalRef.current = setInterval(() => {
-      loadingIndex = (loadingIndex + 1) % LOADING_MESSAGES.length;
-      setLoadingMessage(LOADING_MESSAGES[loadingIndex]);
+      loadingIndex = (loadingIndex + 1) % loadingMessages.length;
+      setLoadingMessage(loadingMessages[loadingIndex]);
     }, 15000); // Rotate every 15 seconds
 
     const userMessage: Message = {
