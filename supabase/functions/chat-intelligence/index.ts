@@ -8652,9 +8652,26 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return category;
   };
 
-  // Agent identity patterns
+  // PHASE 1.9 (A2) — Company-aware short-circuit BEFORE agent_identity.
+  // Queries like "qué modelos miden mejor a CaixaBank" must NOT be misrouted
+  // to agent_identity just because they contain "qué modelo".
+  const earlyCompanyHit = detectCompaniesInQuestion(question, companiesCache);
+  if (earlyCompanyHit.length > 0) {
+    return logCategory("corporate_analysis", "company_detected_early");
+  }
+
+  // PHASE 1.9 (A2) — "qué modelos / ranking de modelos" without an entity is
+  // a methodological corporate question, NOT agent_identity. Only treat as
+  // identity when the user is clearly asking about the assistant ("qué modelo
+  // ERES tú", "what model are YOU").
+  const isModelRankingPattern = parseModelRankingForEntity(question).active;
+  if (isModelRankingPattern) {
+    return logCategory("corporate_analysis", "model_ranking_pattern");
+  }
+
+  // Agent identity patterns (only true self-identity questions)
   if (
-    /qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|que modelo|qué modelo|who are you|what are you/i.test(q)
+    /qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|qu[eé]\s+modelo\s+(?:eres|sos|usas|utilizas)|who are you|what are you|what model are you/i.test(q)
   ) {
     return logCategory("agent_identity", "agent_identity_pattern");
   }
@@ -8665,10 +8682,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return logCategory("corporate_analysis", "crisis_keywords");
   }
 
-  // If mentions known companies, it's corporate analysis — check BEFORE personal_query
-  if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
-    return logCategory("corporate_analysis", "company_detected");
-  }
+  // (Company detection already ran above — kept here as no-op for clarity.)
 
   // Personal query patterns (asking about themselves or specific people without company context)
   if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analizame|analiza\s+me\b|sobre m[ií]|analyze me|about me/i.test(q)) {
