@@ -693,11 +693,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // original short query so the backend ctx-merge can apply (otherwise
           // the LLM rewrite strips the conversational link, e.g. "y los 3
           // mejores" → "Top 3 del sector banca" loses the model intent).
-          if (normData.normalized_query && normData.confidence > 0.3 && !hasFollowupContext) {
+          const shouldPreserveOriginalForParser = hasModelQuantifierClient(question);
+          if (normData.normalized_query && normData.confidence > 0.3 && !hasFollowupContext && !shouldPreserveOriginalForParser) {
             normalizedQuestion = normData.normalized_query;
             console.log('[ChatContext] Query normalized:', question, '->', normalizedQuestion);
           } else if (hasFollowupContext) {
             console.log('[ChatContext] PHASE 1.8c: skipping normalize-query rewrite for follow-up — preserving original to enable ctx-merge.');
+          } else if (shouldPreserveOriginalForParser) {
+            console.log('[ChatContext] preserving original query — model quantifier must not drift into company top-N.');
           }
         }
       } catch (normErr) {
@@ -705,10 +708,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
         console.warn('[ChatContext] normalize-query failed, using original:', normErr);
       }
 
+      const previousContextPayload = followupActive && lastQueryContextRef.current
+        ? {
+            ...lastQueryContextRef.current,
+            entity: lastQueryContextRef.current.company,
+            models: lastQueryContextRef.current.model_names,
+            period: {
+              from: lastQueryContextRef.current.period_from,
+              to: lastQueryContextRef.current.period_to,
+            },
+            timestamp: lastQueryContextRef.current.ts,
+          }
+        : null;
+
       console.log('[FE-BE]', {
         query: normalizedQuestion,
         originalQuestion: question,
-        previousContext: lastQueryContextRef.current,
+        previousContext: previousContextPayload,
         isFollowupActive: followupActive,
       });
 
@@ -748,7 +764,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               rolePrompt: role?.prompt,
               streamMode: true, // Enable streaming in edge function
               // PHASE 1.8 — Conversational memory for short follow-ups.
-              previousContext: followupActive ? lastCtx : null,
+              previousContext: previousContextPayload,
               isFollowup: followupActive,
             }),
           }
@@ -952,7 +968,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           rolePrompt: role?.prompt,
           streamMode: false,
           // PHASE 1.8 — Conversational memory for short follow-ups.
-          previousContext: followupActive ? lastCtx : null,
+          previousContext: previousContextPayload,
           isFollowup: followupActive,
         }, timeoutMs) as { data: any; error: Error | null };
 
