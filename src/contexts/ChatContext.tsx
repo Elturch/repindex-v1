@@ -127,6 +127,7 @@ export interface LastQueryContext {
   period_from: string | null;
   period_to: string | null;
   ts: number;
+  intent?: string | null;
 }
 
 function aliasToCanonical(token: string): string | null {
