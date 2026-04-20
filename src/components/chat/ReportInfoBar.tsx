@@ -174,6 +174,9 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   if ((context.sample_size ?? 0) > 0) {
     items.push(`<span>🗄️ ${context.sample_size} ${obsLabel}</span>`);
   }
+  if (context.quantifier_label) {
+    items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${context.quantifier_label}</span>`);
+  }
 
   return `
     <div style="display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:10px 16px;margin-bottom:24px;border-radius:8px;border:1px solid #e5e7eb;background:#f7f9fa;font-size:12px;color:#536471;line-height:1.6;">
