@@ -279,13 +279,16 @@ export function Dashboard() {
         synthetic.rix_score = synthetic.displayRixScore;
         synthetic.model_name = "Consenso IAs";
         synthetic.metricTrends = {};
+        const syntheticBag = synthetic as unknown as Record<string, unknown>;
         for (const key of METRIC_KEYS) {
-          const scoreField = `${key}_score` as keyof typeof carrier;
-          const catField = `${key}_categoria` as keyof typeof carrier;
-          const consensusScore = avg(rows.map((r) => r[scoreField] as number | null));
-          (synthetic as Record<string, unknown>)[scoreField as string] = consensusScore;
+          const scoreField = `${key}_score`;
+          const catField = `${key}_categoria`;
+          const consensusScore = avg(
+            rows.map((r) => (r as unknown as Record<string, unknown>)[scoreField] as number | null),
+          );
+          syntheticBag[scoreField] = consensusScore;
           // Reuse the carrier's category to keep color coding consistent
-          (synthetic as Record<string, unknown>)[catField as string] = carrier[catField];
+          syntheticBag[catField] = (carrier as unknown as Record<string, unknown>)[catField];
         }
         // Stable id so React keys don't collide with original per-model rows
         synthetic.id = `consensus-${ticker}`;
