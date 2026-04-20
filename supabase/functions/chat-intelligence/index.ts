@@ -2601,16 +2601,13 @@ async function buildDataPackFromSkills(
       } as any;
     }
 
-    // Fallback: if model not detected in normalized question, try original question
-    if (originalQuestion && !interpret.filters.model_name) {
-      const origLower = originalQuestion.toLowerCase();
-      const MODEL_NAME_PATTERNS_FALLBACK = /\b(chatgpt|chat\s*gpt|perplexity|gemini|deepseek|deep\s*seek|grok|qwen)\b/i;
-      const origModelMatch = origLower.match(MODEL_NAME_PATTERNS_FALLBACK);
-      if (origModelMatch) {
-        const MODEL_MAP_FALLBACK: Record<string, string> = { chatgpt: "ChatGPT", "chat gpt": "ChatGPT", perplexity: "Perplexity", gemini: "Google Gemini", deepseek: "DeepSeek", "deep seek": "DeepSeek", grok: "Grok", qwen: "Qwen" };
-        const key = origModelMatch[1].toLowerCase().replace(/\s+/g, " ");
-        interpret.filters.model_name = MODEL_MAP_FALLBACK[key] || MODEL_MAP_FALLBACK[key.replace(/\s/g, "")] || origModelMatch[1];
-        console.log(`${logPrefix} [SKILLS-v2] Model detected from originalQuestion fallback: ${interpret.filters.model_name}`);
+    // Fallback: if no models detected in normalized question, try original question
+    if (originalQuestion && (!interpret.filters.model_names || (interpret.filters.model_names as string[]).length === 0)) {
+      const fallbackModels = extractModelNames(originalQuestion);
+      if (fallbackModels.length > 0) {
+        interpret.filters.model_names = fallbackModels;
+        interpret.filters.model_name = fallbackModels.length === 1 ? fallbackModels[0] : undefined;
+        console.log(`${logPrefix} [SKILLS-v2] [models_names_detected] fallback=originalQuestion count=${fallbackModels.length} models=[${fallbackModels.join(", ")}]`);
       }
     }
 
