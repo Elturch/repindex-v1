@@ -7,6 +7,11 @@ import {
   type ModelName,
   extractModelNames,
   parseModelsWithNegation,
+  parseCompanyQuantifier,
+  mergeFollowupWithPrevious,
+  hasSectorHint,
+  hasCompanyHint,
+  type PreviousQueryContext,
 } from "../_shared/modelsEnum.ts";
 import {
   aggregateConsensus,
@@ -2441,6 +2446,8 @@ async function buildDataPackFromSkills(
   companiesCacheLocal: any[] | null,
   logPrefix: string,
   originalQuestion?: string,
+  previousContext: PreviousQueryContext | null = null,
+  isFollowup: boolean = false,
 ): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
   const totalStart = Date.now();
   try {
@@ -2656,6 +2663,57 @@ async function buildDataPackFromSkills(
       } else if (parsedFallback.unsupported_models.length > 0) {
         // Even with no supported models, surface the unsupported warning
         (interpret.filters as any)._unsupported_models = parsedFallback.unsupported_models;
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // PHASE 1.8b — Conversational memory merge for follow-up queries
+    // ──────────────────────────────────────────────────────────────
+    // If the client flagged this as a follow-up AND the previousContext is
+    // fresh (< 5 min), we backfill sector/company/models that were omitted
+    // in the new short query. NEVER overwrite anything explicit in the
+    // current parse.
+    const FOLLOWUP_TTL_MS_BACKEND = 5 * 60 * 1000;
+    const ctxFresh = !!(previousContext && previousContext.ts && (Date.now() - previousContext.ts) < FOLLOWUP_TTL_MS_BACKEND);
+    const followupActive = !!isFollowup && ctxFresh;
+    if (isFollowup && !ctxFresh) {
+      console.log(`${logPrefix} [ctx-merge] SKIPPED — previousContext stale or missing (ts=${previousContext?.ts ?? "null"})`);
+    }
+    if (followupActive) {
+      const followupQ = originalQuestion || question;
+      const newSectorMentioned = hasSectorHint(followupQ);
+      const newCompanyMentioned = hasCompanyHint(followupQ);
+      const followupParsed = parseModelsWithNegation(followupQ);
+      const merged = mergeFollowupWithPrevious(followupParsed, previousContext, followupQ);
+
+      // Inherit sector ONLY when the follow-up does not introduce one and we don't
+      // already have one in the current interpret.
+      if (!interpret.filters.sector_category && !newSectorMentioned && merged.sector) {
+        interpret.filters.sector_category = merged.sector;
+        console.log(`${logPrefix} [ctx-merge] inherited sector="${merged.sector}" from previousContext`);
+      }
+      // Inherit models when none were detected in the follow-up.
+      const currentModels = (interpret.filters.model_names as string[] | undefined) || [];
+      if (currentModels.length === 0 && merged.model_names.length > 0 && !newSectorMentioned) {
+        // Don't inherit models if the user pivoted to a brand-new sector
+        interpret.filters.model_names = merged.model_names;
+        interpret.filters.model_name = merged.model_names.length === 1 ? merged.model_names[0] : undefined;
+        (interpret.filters as any)._parsed_mode = merged.mode;
+        (interpret.filters as any)._ctx_merged = true;
+        console.log(`${logPrefix} [ctx-merge] inherited model_names=[${merged.model_names.join(", ")}] mode=${merged.mode}`);
+      } else if (followupParsed.mode === "exclusive" && merged.model_names.length > 0) {
+        // Exclusive follow-up like "y sin Grok" — apply subtraction even if models were detected
+        interpret.filters.model_names = merged.model_names;
+        interpret.filters.model_name = merged.model_names.length === 1 ? merged.model_names[0] : undefined;
+        (interpret.filters as any)._parsed_mode = "exclusive";
+        (interpret.filters as any)._ctx_merged = true;
+        console.log(`${logPrefix} [ctx-merge] applied exclusive subtraction → model_names=[${merged.model_names.join(", ")}]`);
+      }
+      // Promote intent to ranking if previous was ranking and current is general
+      if (interpret.intent === "general_question" && (previousContext as any)?.intent === "ranking") {
+        interpret.intent = "ranking";
+        interpret.confidence = Math.max(interpret.confidence, 0.7);
+        console.log(`${logPrefix} [ctx-merge] promoted intent=ranking from previousContext`);
       }
     }
 
@@ -3547,6 +3605,38 @@ async function buildDataPackFromSkills(
     console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
 
     (pack as any).report_context = reportContext;
+
+    // ──────────────────────────────────────────────────────────────
+    // PHASE 1.8b — Company quantifier (top-N / bottom-N over ranking)
+    // ──────────────────────────────────────────────────────────────
+    // CRITICAL: parseCompanyQuantifier ignores patterns followed by
+    // "modelos|ias" (those are model selectors handled by parseQuantifier
+    // and live in the separate model-filter pipeline).
+    try {
+      const cQuant = parseCompanyQuantifier(originalQuestion || question);
+      if (cQuant && Array.isArray(pack.ranking) && pack.ranking.length > 0) {
+        const total = pack.ranking.length;
+        const sorted = [...pack.ranking].sort((a: any, b: any) => {
+          const sa = Number(a?.rix_avg ?? a?.rix_mediano ?? a?.median_rix ?? a?.["09_rix_score"] ?? 0);
+          const sb = Number(b?.rix_avg ?? b?.rix_mediano ?? b?.median_rix ?? b?.["09_rix_score"] ?? 0);
+          return cQuant.mode === "top" ? sb - sa : sa - sb;
+        });
+        const truncated = sorted.slice(0, cQuant.count).map((r: any, i: number) => ({ ...r, pos: i + 1 }));
+        // IMPORTANT: keep raw_texts / snapshot intact — only the visible ranking is truncated.
+        (pack as any)._ranking_full = pack.ranking;
+        pack.ranking = truncated;
+        // Surface to InfoBar / report_context
+        (reportContext as any).quantifier_label = `${cQuant.label} de ${total} empresas`;
+        (reportContext as any).quantifier_count = cQuant.count;
+        (reportContext as any).quantifier_mode = cQuant.mode;
+        (reportContext as any).quantifier_total = total;
+        console.log(`${logPrefix} [QUANTIFIER] company top-N applied: mode=${cQuant.mode} count=${cQuant.count} total=${total} match="${cQuant.raw_match}"`);
+      } else if (cQuant) {
+        console.log(`${logPrefix} [QUANTIFIER] detected but no ranking to slice (mode=${cQuant.mode} count=${cQuant.count})`);
+      }
+    } catch (qErr: any) {
+      console.warn(`${logPrefix} [QUANTIFIER] error: ${qErr?.message || qErr}`);
+    }
 
     return pack;
   } catch (e: any) {
@@ -8191,6 +8281,9 @@ serve(async (req) => {
       languageName = "Español",
       depthLevel = "complete",
       streamMode = false, // NEW: enable SSE streaming
+      // ── PHASE 1.8b — Conversational memory carried by the client ──
+      previousContext = null,
+      isFollowup = false,
     } = body;
 
     // =============================================================================
@@ -8396,6 +8489,8 @@ serve(async (req) => {
       rolePrompt,
       streamMode, // Pass streaming mode to standard chat handler
       originalQuestion, // Pass original user question for report_context
+      previousContext, // PHASE 1.8b — previous query context for follow-ups
+      isFollowup,      // PHASE 1.8b — flag to enable merge logic
     );
   } catch (error) {
     console.error(`${logPrefix} Error in chat-intelligence function:`, error);
@@ -10006,6 +10101,8 @@ async function handleStandardChat(
   rolePrompt?: string,
   streamMode: boolean = false,
   originalUserQuestion?: string,
+  previousContext: any = null,
+  isFollowup: boolean = false,
 ) {
   console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || "General"}`);
 
@@ -10022,7 +10119,7 @@ async function handleStandardChat(
   if (USE_SKILLS_PIPELINE) {
     console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
     const skillsStart = Date.now();
-    const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix, originalUserQuestion);
+    const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix, originalUserQuestion, previousContext, isFollowup);
     // ── NO_DISPONIBLE short-circuit: entity not in database, return explanatory answer directly ──
     if (skillsPack && (skillsPack as any).no_disponible === true) {
       const detail = (skillsPack as any).no_disponible_detail || "entidad no monitorizada";

@@ -14,6 +14,11 @@ export interface ReportContext {
   sample_size?: number;
   models_count?: number;
   weeks_analyzed?: number;
+  // PHASE 1.8b — top-N / bottom-N quantifier metadata
+  quantifier_label?: string;
+  quantifier_count?: number;
+  quantifier_mode?: "top" | "bottom";
+  quantifier_total?: number;
 }
 
 interface ReportInfoBarProps {
@@ -113,6 +118,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
           {context.sample_size} {obsLabel}
         </span>
       )}
+
+      {/* Top-N / Bottom-N quantifier (PHASE 1.8b) */}
+      {context.quantifier_label && (
+        <span className="flex items-center gap-1 font-medium text-foreground/80">
+          <Building2 className="h-3 w-3 shrink-0" />
+          {context.quantifier_label}
+        </span>
+      )}
     </div>
   );
 }
@@ -160,6 +173,9 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   }
   if ((context.sample_size ?? 0) > 0) {
     items.push(`<span>🗄️ ${context.sample_size} ${obsLabel}</span>`);
+  }
+  if (context.quantifier_label) {
+    items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${context.quantifier_label}</span>`);
   }
 
   return `
