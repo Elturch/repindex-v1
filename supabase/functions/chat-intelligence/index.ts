@@ -3491,6 +3491,31 @@ async function buildDataPackFromSkills(
       }
     }
 
+    // ── Compute models_coverage (anti-hallucination guardrail) ─────
+    // Inspect snapshot + per_model_detail to find which models actually have data.
+    const withDataSet = new Set<string>();
+    const collectModelsFromArr = (arr: any[] | undefined, key: string) => {
+      if (!arr) return;
+      for (const row of arr) {
+        const m = row?.[key];
+        if (typeof m === "string" && m.trim()) withDataSet.add(m.trim());
+      }
+    };
+    collectModelsFromArr(pack.snapshot, "modelo");
+    collectModelsFromArr(pack.snapshot, "model_name");
+    collectModelsFromArr(ss?.per_model_detail, "02_model_name");
+    collectModelsFromArr(pack.raw_texts, "modelo");
+    const requestedForCoverage = requestedModels.length > 0 ? requestedModels : ALL_MODELS_CANONICAL;
+    const withData = requestedForCoverage.filter((m) => withDataSet.has(m));
+    const missing = requestedForCoverage.filter((m) => !withDataSet.has(m));
+    reportContext.models_coverage = {
+      requested: requestedForCoverage,
+      with_data: withData,
+      missing,
+    };
+    (pack as any).models_coverage = reportContext.models_coverage;
+    console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
+
     (pack as any).report_context = reportContext;
 
     return pack;
