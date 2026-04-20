@@ -3751,13 +3751,22 @@ async function buildDataPackFromSkills(
           ? `Período: últimos ${Math.round(periodWeeks.weeks / 4)} mes${Math.round(periodWeeks.weeks / 4) > 1 ? "es" : ""} (${periodWeeks.weeks} semanas)`
           : `Período: últimas ${periodWeeks.weeks} semanas`;
         (reportContext as any).period_weeks_label = wksLabel;
-        // Only override weeks_analyzed when the snapshot came back narrower
-        // than what the user asked for (otherwise keep the actual count).
-        const currentWeeks = Number(reportContext.weeks_analyzed || 0);
-        if (currentWeeks < periodWeeks.weeks) {
-          reportContext.weeks_analyzed = periodWeeks.weeks;
-        }
-        console.log(`${logPrefix} [A3] period_weeks=${periodWeeks.weeks} (unit=${periodWeeks.unit}) injected into reportContext`);
+        // PHASE 1.10 — Single source of truth: when the user explicitly asks
+        // for a period (capped at 12), force weeks_analyzed = cap so the
+        // InfoBar and the downstream report (which already runs with the cap)
+        // never disagree. Also realign date_from to the cap window so the
+        // displayed range matches the data the skills actually used.
+        const previousWeeks = Number(reportContext.weeks_analyzed || 0);
+        reportContext.weeks_analyzed = periodWeeks.weeks;
+        try {
+          const baseTo = reportContext.date_to ? new Date(String(reportContext.date_to)) : new Date();
+          if (!isNaN(baseTo.getTime())) {
+            const realignedFrom = new Date(baseTo);
+            realignedFrom.setUTCDate(realignedFrom.getUTCDate() - (periodWeeks.weeks * 7));
+            reportContext.date_from = realignedFrom.toISOString().slice(0, 10);
+          }
+        } catch { /* keep existing date_from on parse failure */ }
+        console.log(`${logPrefix} [A3] period_weeks=${periodWeeks.weeks} (unit=${periodWeeks.unit}) override weeks_analyzed (was=${previousWeeks}, now=${periodWeeks.weeks}); date_from=${reportContext.date_from}`);
       }
     } catch (pwErr: any) {
       console.warn(`${logPrefix} [A3] parsePeriodWeeks error: ${pwErr?.message || pwErr}`);
