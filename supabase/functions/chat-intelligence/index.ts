@@ -2211,10 +2211,10 @@ async function lookupGlossaryTerms(supabase: any, query: string, maxResults = 3)
   return matches.slice(0, maxResults).map(m => m.term);
 }
 
-async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
+async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, any>; recommended_skills: string[]; confidence: number }> {
   const lower = question.toLowerCase();
   const entities: string[] = [];
-  const filters: Record<string, string> = {};
+  const filters: Record<string, any> = {};
   let intent = "general_question";
   const recommended_skills: string[] = [];
   let confidence = 0.6;
@@ -2240,14 +2240,16 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
   const hasIbex = IBEX_PATTERNS_EDGE.test(lower);
   const hasAlert = ALERT_PATTERNS_EDGE.test(lower);
 
-  // Detect AI model mentioned in query
-  const MODEL_NAME_PATTERNS = /\b(chatgpt|chat\s*gpt|perplexity|gemini|deepseek|deep\s*seek|grok|qwen)\b/i;
-  const modelMatch = lower.match(MODEL_NAME_PATTERNS);
-  if (modelMatch) {
-    const MODEL_MAP: Record<string, string> = { chatgpt: "ChatGPT", "chat gpt": "ChatGPT", perplexity: "Perplexity", gemini: "Google Gemini", deepseek: "DeepSeek", "deep seek": "DeepSeek", grok: "Grok", qwen: "Qwen" };
-    const key = modelMatch[1].toLowerCase().replace(/\s+/g, " ");
-    filters.model_name = MODEL_MAP[key] || MODEL_MAP[key.replace(/\s/g, "")] || modelMatch[1];
-    console.log(`[INTERPRET] Detected model filter: ${filters.model_name}`);
+  // Detect AI models mentioned in query (Phase 1: deterministic global regex, multi-model)
+  const detectedModels = extractModelNames(question);
+  if (detectedModels.length > 0) {
+    filters.model_names = detectedModels;
+    // Legacy single-value field kept for backwards compatibility with downstream code
+    // that hasn't been migrated yet. Equals detectedModels[0] when exactly one model.
+    filters.model_name = detectedModels.length === 1 ? detectedModels[0] : undefined;
+    console.log(`[INTERPRET] [models_names_detected] count=${detectedModels.length} models=[${detectedModels.join(", ")}]`);
+  } else {
+    console.log(`[INTERPRET] [models_names_detected] count=0 (no models mentioned → all 6 implicit)`);
   }
 
   if (hasAlert && !hasEvolution && !hasDivergence) {
