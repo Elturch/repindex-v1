@@ -110,6 +110,7 @@ const CLIENT_FOLLOWUP_PREFIX_REGEX =
   /^[¿\s]*(y|ahora|sin|con|tambi[eé]n|pero|en\s+cambio|y\s+si|y\s+ahora|quita|quitando|excluye|excluyendo|a[ñn]ade|a[ñn]adiendo|incluye|incluyendo|adem[aá]s)\b/i;
 const CLIENT_FOLLOWUP_ANAPHOR_REGEX =
   /\b(ese|esa|esos|esas|este|esta|estos|estas|aquel|aquella|el\s+anterior|el\s+ultimo|el\s+último|los\s+mismos|esa\s+misma)\b/i;
+const CLIENT_MODEL_QUANTIFIER_REGEX = /\b(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:mejores?|peores?|principales|primeros?|ultimos?|últimos?)\s+(?:modelos?|ias?|llms?)\b/i;
 
 function isFollowupClient(question: string): boolean {
   if (!question) return false;
@@ -117,6 +118,10 @@ function isFollowupClient(question: string): boolean {
   const wc = t.split(/\s+/).filter(Boolean).length;
   if (wc === 0 || wc > 10) return false;
   return CLIENT_FOLLOWUP_ANAPHOR_REGEX.test(t) || CLIENT_FOLLOWUP_PREFIX_REGEX.test(t);
+}
+
+function hasModelQuantifierClient(question: string): boolean {
+  return !!question && CLIENT_MODEL_QUANTIFIER_REGEX.test(question);
 }
 
 export interface LastQueryContext {
