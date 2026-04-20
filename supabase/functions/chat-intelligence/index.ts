@@ -3629,6 +3629,17 @@ async function buildDataPackFromSkills(
     try {
       const quantParse = parseQuantifiers(originalQuestion || question);
       const cQuant = quantParse.companyQuantifier;
+      const mFilter = quantParse.modelFilter;
+      // PHASE 1.8e — Model-only quantifier guard. When user says "los 3 mejores
+      // modelos" (no company quantifier), we must prevent the LLM from narrating
+      // a top-N podium of companies in the headline/lead.
+      if (mFilter && !cQuant) {
+        (pack as any)._model_only_quantifier = true;
+        (pack as any)._model_only_quantifier_label = mFilter.label || null;
+        (reportContext as any).model_only_quantifier_active = true;
+        (reportContext as any).model_only_quantifier_label = mFilter.label || null;
+        console.log(`${logPrefix} [QUANTIFIER] model-only quantifier detected (no podium): label="${mFilter.label}"`);
+      }
       if (cQuant && Array.isArray(pack.ranking) && pack.ranking.length > 0) {
         const total = pack.ranking.length;
         const sorted = [...pack.ranking].sort((a: any, b: any) => {
