@@ -8532,6 +8532,40 @@ serve(async (req) => {
       );
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // PHASE 1.9 (A1) — Multi-sector comparison clarification gate.
+    // Before launching the heavy data pipeline, detect "compara X y Y"
+    // queries that name two or more distinct sectors and ask the user
+    // to pick one. NEVER silently drop a sector.
+    // ─────────────────────────────────────────────────────────────────
+    const multiSector = parseMultiSectorComparison(runtimeQuery);
+    if (multiSector.active && multiSector.sectors.length >= 2 && !isFollowup) {
+      const sectorListEs = multiSector.sectors.join(" y ");
+      const sectorAlt = multiSector.sectors
+        .map((s, i) => (i === multiSector.sectors.length - 1 ? `o ${s}` : s))
+        .join(", ");
+      const clarification =
+        language === "en"
+          ? `I detected you want to compare ${multiSector.sectors.length} sectors (${sectorListEs}). Cross-sector comparison is not yet available. Would you like to analyze ${sectorAlt} individually first?`
+          : `Detecto que quieres comparar ${multiSector.sectors.length} sectores (${sectorListEs}). La comparativa cross-sector aún no está disponible. ¿Quieres que analice ${sectorAlt} por separado?`;
+      const suggested = multiSector.sectors.slice(0, 3).map((s) => `Ranking del sector ${s}`);
+      console.log(`${logPrefix} [A1] Multi-sector detected: [${multiSector.sectors.join(",")}] → asking user to pick one`);
+      if (sessionId) {
+        await supabaseClient.from("chat_intelligence_sessions").insert([
+          { session_id: sessionId, role: "user", content: question, user_id: userId, question_category: "corporate_analysis", depth_level: depthLevel },
+          { session_id: sessionId, role: "assistant", content: clarification, suggested_questions: suggested, user_id: userId, question_category: "corporate_analysis" },
+        ]);
+      }
+      return new Response(
+        JSON.stringify({
+          answer: clarification,
+          suggestedQuestions: suggested,
+          metadata: { type: "clarification", reason: "multi_sector_not_supported", sectors: multiSector.sectors },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // =============================================================================
     // CHECK FOR GENERIC BULLETIN REQUEST (without specific company)
     // =============================================================================
