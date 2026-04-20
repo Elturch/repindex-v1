@@ -907,6 +907,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
             title: "Respuesta recibida",
             description: `${finalMetadata?.documentsFound || 0} documentos analizados`,
           });
+          // PHASE 1.8 — capture context for follow-up merging (SSE)
+          captureLastQueryContext(finalMetadata?.reportContext);
         }
 
       } else {
