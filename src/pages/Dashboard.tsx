@@ -417,7 +417,14 @@ export function Dashboard() {
   const getModelInfo = (modelName: string) => {
     const normalizedModel = modelName?.toLowerCase() || '';
     
-    if (normalizedModel.includes('chatgpt') || normalizedModel.includes('gpt')) {
+    if (normalizedModel.includes('consenso')) {
+      return {
+        name: 'Consenso',
+        abbreviation: 'CNS',
+        icon: Brain,
+        colorClass: 'text-primary'
+      };
+    } else if (normalizedModel.includes('chatgpt') || normalizedModel.includes('gpt')) {
       return {
         name: 'ChatGPT',
         abbreviation: 'GPT',
