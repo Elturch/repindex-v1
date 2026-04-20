@@ -14,6 +14,11 @@ export interface ReportContext {
   sample_size?: number;
   models_count?: number;
   weeks_analyzed?: number;
+  // PHASE 1.8b — top-N / bottom-N quantifier metadata
+  quantifier_label?: string;
+  quantifier_count?: number;
+  quantifier_mode?: "top" | "bottom";
+  quantifier_total?: number;
 }
 
 interface ReportInfoBarProps {
