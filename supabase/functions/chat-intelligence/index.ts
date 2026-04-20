@@ -2748,6 +2748,9 @@ async function buildDataPackFromSkills(
     // ── Build skill options from temporal range and model filter ──
     const skillDateRange = temporalRange ? { from: temporalRange.from, to: temporalRange.to } : undefined;
     const skillModelFilter = interpret.filters.model_name || undefined;
+    const skillModelNamesFilter: string[] | undefined = (interpret.filters.model_names && (interpret.filters.model_names as string[]).length > 0)
+      ? (interpret.filters.model_names as string[])
+      : undefined;
 
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
@@ -2785,6 +2788,7 @@ async function buildDataPackFromSkills(
         sector_category: resolvedGroupTickerFilter ? undefined : sectorCategory,
         ticker_filter: resolvedGroupTickerFilter || undefined,
         model_name: interpret.filters.model_name,
+        model_names: skillModelNamesFilter,
       });
     }
 
