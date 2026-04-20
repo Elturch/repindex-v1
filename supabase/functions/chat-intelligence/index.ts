@@ -23,6 +23,14 @@ import {
   aggregateConsensus,
   compareConsensus,
 } from "../_shared/consensusRanking.ts";
+import {
+  detectInvalidPeriod,
+  isWelcomeQuery,
+  detectHomonymAmbiguity,
+  detectFuturePeriod,
+  fuzzyCompanyMatch,
+  detectPromptInjection,
+} from "../_shared/queryGuards.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8536,6 +8544,84 @@ serve(async (req) => {
 
     console.log(`${logPrefix} User question:`, question);
     console.log(`${logPrefix} Depth level:`, depthLevel);
+
+    // ─────────────────────────────────────────────────────────────────
+    // PHASE 1.11 — Edge-case query guards (T6→T2→T1→T4→T3→T5).
+    // Deterministic, no LLM. Short-circuit BEFORE the heavy pipeline.
+    // ─────────────────────────────────────────────────────────────────
+    const _gateRespond = async (answer: string, suggested: string[], reason: string) => {
+      if (sessionId) {
+        await supabaseClient.from("chat_intelligence_sessions").insert([
+          { session_id: sessionId, role: "user", content: question, user_id: userId, question_category: "corporate_analysis", depth_level: depthLevel },
+          { session_id: sessionId, role: "assistant", content: answer, suggested_questions: suggested, user_id: userId, question_category: "corporate_analysis" },
+        ]);
+      }
+      console.log(`${logPrefix} [PHASE-1.11] Gate triggered: ${reason}`);
+      return new Response(
+        JSON.stringify({ answer, suggestedQuestions: suggested, metadata: { type: "clarification", reason } }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    };
+    // T6: prompt-injection → fixed canned answer, never echoes system prompt.
+    const inj = detectPromptInjection(runtimeQuery);
+    if (inj.detected) {
+      const msg = language === "en"
+        ? "I can only help with corporate-reputation analysis on Spanish listed issuers. Try a real query, e.g. 'ranking IBEX-35 last 4 weeks'."
+        : "Solo puedo ayudarte con análisis reputacional de empresas españolas cotizadas. Prueba con una consulta real, p. ej. «ranking IBEX-35 últimas 4 semanas».";
+      return await _gateRespond(msg, ["Ranking IBEX-35 últimas 4 semanas", "Reputación de Iberdrola", "Top 5 banca"], `injection:${inj.kind}`);
+    }
+    // T2: empty / punctuation-only → welcome.
+    if (isWelcomeQuery(runtimeQuery)) {
+      const msg = language === "en"
+        ? "Hi 👋 I'm Agent Rix. Ask me about reputation, rankings, or trends of Spanish listed issuers."
+        : "Hola 👋 Soy el Agente Rix. Pregúntame por reputación, rankings o tendencias de empresas españolas cotizadas.";
+      return await _gateRespond(msg, ["Ranking IBEX-35 esta semana", "Reputación de Telefónica", "Top 5 banca últimas 4 semanas"], "welcome_empty");
+    }
+    // T1: negative / zero period.
+    const badPeriod = detectInvalidPeriod(runtimeQuery);
+    if (badPeriod.invalid) {
+      const msg = language === "en"
+        ? `The period "${badPeriod.raw_match}" is not valid (cannot go back ${badPeriod.reason} weeks). Try "last 4 weeks" or "last 3 months".`
+        : `El período «${badPeriod.raw_match}» no es válido (no puedo retroceder un número ${badPeriod.reason === "negative" ? "negativo" : "de cero"} de semanas). Prueba con «últimas 4 semanas» o «últimos 3 meses».`;
+      return await _gateRespond(msg, ["últimas 4 semanas", "últimas 8 semanas", "últimos 3 meses"], `invalid_period:${badPeriod.reason}`);
+    }
+    // T4: future period beyond data floor.
+    {
+      const sundayRes = await getLatestValidSundayEdge(supabaseClient);
+      const dataAvailableTo = sundayRes.success ? sundayRes.data! : new Date().toISOString().slice(0, 10);
+      const fut = detectFuturePeriod(runtimeQuery, new Date(), dataAvailableTo);
+      if (fut.future) {
+        const msg = language === "en"
+          ? `I don't have data later than ${dataAvailableTo}. The requested period (${fut.requested_period_label}) is in the future.`
+          : `No tengo datos posteriores al ${dataAvailableTo}. El período solicitado (${fut.requested_period_label}) es futuro.`;
+        return await _gateRespond(msg, ["últimas 4 semanas", "ranking esta semana", "evolución últimos 3 meses"], "future_period");
+      }
+    }
+    // T3: corporate homonyms.
+    const hom = detectHomonymAmbiguity(runtimeQuery);
+    if (hom.ambiguous) {
+      const msg = language === "en"
+        ? `I detected two possible entities sharing the "${hom.stem}" stem. Which one do you mean: ${hom.variants.join(" or ")}?`
+        : `Detecto dos posibles entidades con el mismo nombre raíz «${hom.stem}». ¿A cuál te refieres: ${hom.variants.join(" o ")}?`;
+      return await _gateRespond(msg, hom.variants, `homonym:${hom.stem}`);
+    }
+    // T5: fuzzy unknown company (lazy-load catalog).
+    if (!companiesCache || Date.now() - cacheTimestamp > CACHE_TTL) {
+      const { data: companies } = await supabaseClient
+        .from("repindex_root_issuers")
+        .select("issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms");
+      if (companies) { companiesCache = companies; cacheTimestamp = Date.now(); }
+    }
+    if (companiesCache && companiesCache.length > 0) {
+      const sugg = fuzzyCompanyMatch(runtimeQuery, companiesCache.map((c: any) => ({ issuer_name: c.issuer_name, ticker: c.ticker })), 3);
+      if (sugg.length > 0 && /\b(s\.?l\.?|s\.?a\.?|inc\.?|corp\.?|ltd\.?)\b/i.test(runtimeQuery)) {
+        const list = sugg.map((s) => s.issuer_name).join(", ");
+        const msg = language === "en"
+          ? `I couldn't find that exact issuer in my catalog. Did you mean: ${list}?`
+          : `No encuentro esa entidad en mi catálogo. ¿Quizás te refieres a: ${list}?`;
+        return await _gateRespond(msg, sugg.map((s) => `Reputación de ${s.issuer_name}`), "fuzzy_unknown_company");
+      }
+    }
 
     const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openAIApiKey) {
