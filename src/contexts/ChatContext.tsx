@@ -404,6 +404,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   // PHASE 1.8 — last successful query context for follow-up merging.
   const lastQueryContextRef = useRef<LastQueryContext | null>(null);
+  // Capture the just-generated reportContext into the follow-up memory.
+  const captureLastQueryContext = useCallback((rc: any | null | undefined) => {
+    if (!rc) return;
+    lastQueryContextRef.current = {
+      sector: rc.sector ?? null,
+      company: rc.company ?? null,
+      model_names: Array.isArray(rc.models) ? rc.models : [],
+      mode: (rc._parsed_mode as any) || "none",
+      period_from: rc.date_from ?? null,
+      period_to: rc.date_to ?? null,
+      ts: Date.now(),
+    };
+    console.log('[ChatContext] PHASE 1.8 captured lastQueryContext:', lastQueryContextRef.current);
+  }, []);
   const { toast } = useToast();
   
   // Session configuration state
