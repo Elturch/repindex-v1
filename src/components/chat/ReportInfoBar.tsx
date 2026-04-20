@@ -41,7 +41,15 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   if (!context) return null;
 
   const hasDateRange = context.date_from || context.date_to;
-  const label = context.company || context.sector || null;
+  // PHASE 1.8e — When a quantifier is active and we have a sector (no company),
+  // surface the chip as "Sector: {sector} · {quantifier_label}" to avoid
+  // showing the leader company as if it were the entity of analysis.
+  const sectorLabel = languageCode === "en" ? "Sector" : "Sector";
+  const baseLabel = context.company || context.sector || null;
+  const isAggregatedWithQuantifier = !context.company && !!context.sector && !!context.quantifier_label;
+  const label = isAggregatedWithQuantifier
+    ? `${sectorLabel}: ${context.sector} · ${context.quantifier_label}`
+    : baseLabel;
   const hasQuestion = !!context.user_question;
   if (!label && !hasDateRange && !hasQuestion) return null;
 
@@ -120,7 +128,7 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
       )}
 
       {/* Top-N / Bottom-N quantifier (PHASE 1.8b) */}
-      {context.quantifier_label && (
+      {context.quantifier_label && !isAggregatedWithQuantifier && (
         <span className="flex items-center gap-1 font-medium text-foreground/80">
           <Building2 className="h-3 w-3 shrink-0" />
           {context.quantifier_label}
@@ -133,7 +141,12 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
 /** Generate static HTML for the info bar (used in PDF/HTML export) */
 export function generateInfoBarHtml(context: ReportContext | null | undefined, languageCode: string = "es"): string {
   if (!context) return "";
-  const label = context.company || context.sector || null;
+  const sectorLabel = "Sector";
+  const baseLabel = context.company || context.sector || null;
+  const isAggregatedWithQuantifier = !context.company && !!context.sector && !!context.quantifier_label;
+  const label = isAggregatedWithQuantifier
+    ? `${sectorLabel}: ${context.sector} · ${context.quantifier_label}`
+    : baseLabel;
   const hasDateRange = context.date_from || context.date_to;
   const hasQuestion = !!context.user_question;
   if (!label && !hasDateRange && !hasQuestion) return "";
@@ -174,7 +187,7 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
   if ((context.sample_size ?? 0) > 0) {
     items.push(`<span>🗄️ ${context.sample_size} ${obsLabel}</span>`);
   }
-  if (context.quantifier_label) {
+  if (context.quantifier_label && !isAggregatedWithQuantifier) {
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${context.quantifier_label}</span>`);
   }
 
