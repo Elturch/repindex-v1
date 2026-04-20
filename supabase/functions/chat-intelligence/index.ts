@@ -14,6 +14,9 @@ import {
   mergeFollowupWithPrevious,
   hasSectorHint,
   hasCompanyHint,
+  parseModelRankingForEntity,
+  parsePeriodWeeks,
+  parseMultiSectorComparison,
   type PreviousQueryContext,
 } from "../_shared/modelsEnum.ts";
 import {
@@ -3711,6 +3714,55 @@ async function buildDataPackFromSkills(
       console.warn(`${logPrefix} [QUANTIFIER] error: ${qErr?.message || qErr}`);
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // PHASE 1.9 (A2) — Model-ranking-for-entity flag.
+    // When the user asks "qué modelos miden mejor a {entity}" we flag
+    // the pack so the orchestrator renders a "Modelo · RIX · Cobertura · Δ"
+    // table for that entity instead of a normal company analysis.
+    // ─────────────────────────────────────────────────────────────
+    try {
+      const modelRanking = parseModelRankingForEntity(originalQuestion || question);
+      const hasEntity = !!resolvedTicker || !!interpret.filters.sector_category || !!(interpret.filters as any)._resolved_group;
+      if (modelRanking.active && hasEntity) {
+        (pack as any)._model_ranking_for_entity = true;
+        (pack as any)._model_ranking_label = modelRanking.label;
+        (reportContext as any).model_ranking_for_entity = true;
+        (reportContext as any).quantifier_label = modelRanking.label;
+        console.log(`${logPrefix} [A2] model_ranking_for_entity ACTIVE — entity=${resolvedTicker || interpret.filters.sector_category || (interpret.filters as any)._resolved_group}`);
+      }
+    } catch (mrErr: any) {
+      console.warn(`${logPrefix} [A2] model_ranking detect error: ${mrErr?.message || mrErr}`);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // PHASE 1.9 (A3) — Period weeks parser ("últimas N semanas").
+    // Captures explicit N (cap 12) and surfaces it in InfoBar even when
+    // parseTemporalExpression already set date_from/to. Crucially we
+    // override report_context.weeks_analyzed so the InfoBar reflects the
+    // user's request, not just the snapshot data window.
+    // ─────────────────────────────────────────────────────────────
+    try {
+      const periodWeeks = parsePeriodWeeks(originalQuestion || question);
+      if (periodWeeks) {
+        (pack as any)._requested_weeks_back = periodWeeks.weeks;
+        (reportContext as any).requested_weeks_back = periodWeeks.weeks;
+        // Surface as the canonical period label in the InfoBar.
+        const wksLabel = periodWeeks.unit === "months"
+          ? `Período: últimos ${Math.round(periodWeeks.weeks / 4)} mes${Math.round(periodWeeks.weeks / 4) > 1 ? "es" : ""} (${periodWeeks.weeks} semanas)`
+          : `Período: últimas ${periodWeeks.weeks} semanas`;
+        (reportContext as any).period_weeks_label = wksLabel;
+        // Only override weeks_analyzed when the snapshot came back narrower
+        // than what the user asked for (otherwise keep the actual count).
+        const currentWeeks = Number(reportContext.weeks_analyzed || 0);
+        if (currentWeeks < periodWeeks.weeks) {
+          reportContext.weeks_analyzed = periodWeeks.weeks;
+        }
+        console.log(`${logPrefix} [A3] period_weeks=${periodWeeks.weeks} (unit=${periodWeeks.unit}) injected into reportContext`);
+      }
+    } catch (pwErr: any) {
+      console.warn(`${logPrefix} [A3] parsePeriodWeeks error: ${pwErr?.message || pwErr}`);
+    }
+
     return pack;
   } catch (e: any) {
     console.error(`${logPrefix} [SKILLS-v2] buildDataPackFromSkills failed: ${e.message || e}`);
@@ -7010,8 +7062,22 @@ cubrir las ${totalCompaniesInRanking} empresas del DATAPACK COMPLETAS.
 ═══════════════════════════════════════════════════════════════\n`
     : "";
 
+  // PHASE 1.9 (A2) — Per-model ranking guard.
+  const modelRankingForEntity = (dataPack as any)._model_ranking_for_entity === true;
+  const modelRankingGuard = modelRankingForEntity
+    ? "\n\n=== INSTRUCCION DE FORMATO (A2 - RANKING DE MODELOS) ===\n" +
+      "La pregunta del usuario es '¿que modelos miden mejor a esta entidad?'. El informe DEBE estructurarse como un ranking de los 6 modelos de IA, NO como un analisis tradicional de empresa.\n" +
+      "Estructura obligatoria:\n" +
+      "  1. Titular: 'Ranking de modelos para {entidad}'.\n" +
+      "  2. Tabla principal con columnas: Modelo | RIX medio | Cobertura (semanas) | Delta vs mediana. Calcula los valores a partir del DATAPACK; si faltan datos, escribe 'datos insuficientes' en la celda.\n" +
+      "  3. Parrafo de cierre: 2-3 frases interpretando que modelo destaca y por que.\n" +
+      "PROHIBIDO redactar un analisis ESG, financiero o corporativo de la entidad. PROHIBIDO incluir secciones de competidores, evolucion temporal o noticias.\n" +
+      "===============================================================\n"
+    : "";
+
   const userPrompt = `PREGUNTA: "${question}"
 ${antiPodiumGuard}
+${modelRankingGuard}
 
 CLASIFICACIÓN (E1): tipo=${classifier.tipo}, intención=${classifier.intencion}
 
@@ -8529,6 +8595,40 @@ serve(async (req) => {
       );
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // PHASE 1.9 (A1) — Multi-sector comparison clarification gate.
+    // Before launching the heavy data pipeline, detect "compara X y Y"
+    // queries that name two or more distinct sectors and ask the user
+    // to pick one. NEVER silently drop a sector.
+    // ─────────────────────────────────────────────────────────────────
+    const multiSector = parseMultiSectorComparison(runtimeQuery);
+    if (multiSector.active && multiSector.sectors.length >= 2 && !isFollowup) {
+      const sectorListEs = multiSector.sectors.join(" y ");
+      const sectorAlt = multiSector.sectors
+        .map((s, i) => (i === multiSector.sectors.length - 1 ? `o ${s}` : s))
+        .join(", ");
+      const clarification =
+        language === "en"
+          ? `I detected you want to compare ${multiSector.sectors.length} sectors (${sectorListEs}). Cross-sector comparison is not yet available. Would you like to analyze ${sectorAlt} individually first?`
+          : `Detecto que quieres comparar ${multiSector.sectors.length} sectores (${sectorListEs}). La comparativa cross-sector aún no está disponible. ¿Quieres que analice ${sectorAlt} por separado?`;
+      const suggested = multiSector.sectors.slice(0, 3).map((s) => `Ranking del sector ${s}`);
+      console.log(`${logPrefix} [A1] Multi-sector detected: [${multiSector.sectors.join(",")}] → asking user to pick one`);
+      if (sessionId) {
+        await supabaseClient.from("chat_intelligence_sessions").insert([
+          { session_id: sessionId, role: "user", content: question, user_id: userId, question_category: "corporate_analysis", depth_level: depthLevel },
+          { session_id: sessionId, role: "assistant", content: clarification, suggested_questions: suggested, user_id: userId, question_category: "corporate_analysis" },
+        ]);
+      }
+      return new Response(
+        JSON.stringify({
+          answer: clarification,
+          suggestedQuestions: suggested,
+          metadata: { type: "clarification", reason: "multi_sector_not_supported", sectors: multiSector.sectors },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // =============================================================================
     // CHECK FOR GENERIC BULLETIN REQUEST (without specific company)
     // =============================================================================
@@ -8649,9 +8749,26 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return category;
   };
 
-  // Agent identity patterns
+  // PHASE 1.9 (A2) — Company-aware short-circuit BEFORE agent_identity.
+  // Queries like "qué modelos miden mejor a CaixaBank" must NOT be misrouted
+  // to agent_identity just because they contain "qué modelo".
+  const earlyCompanyHit = detectCompaniesInQuestion(question, companiesCache);
+  if (earlyCompanyHit.length > 0) {
+    return logCategory("corporate_analysis", "company_detected_early");
+  }
+
+  // PHASE 1.9 (A2) — "qué modelos / ranking de modelos" without an entity is
+  // a methodological corporate question, NOT agent_identity. Only treat as
+  // identity when the user is clearly asking about the assistant ("qué modelo
+  // ERES tú", "what model are YOU").
+  const isModelRankingPattern = parseModelRankingForEntity(question).active;
+  if (isModelRankingPattern) {
+    return logCategory("corporate_analysis", "model_ranking_pattern");
+  }
+
+  // Agent identity patterns (only true self-identity questions)
   if (
-    /qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|que modelo|qué modelo|who are you|what are you/i.test(q)
+    /qui[ee]n eres|qu[ee] eres|c[oo]mo funcionas|eres una? ia|qu[eé]\s+modelo\s+(?:eres|sos|usas|utilizas)|who are you|what are you|what model are you/i.test(q)
   ) {
     return logCategory("agent_identity", "agent_identity_pattern");
   }
@@ -8662,10 +8779,7 @@ function categorizeQuestion(question: string, companiesCache: any[]): QuestionCa
     return logCategory("corporate_analysis", "crisis_keywords");
   }
 
-  // If mentions known companies, it's corporate analysis — check BEFORE personal_query
-  if (detectCompaniesInQuestion(question, companiesCache).length > 0) {
-    return logCategory("corporate_analysis", "company_detected");
-  }
+  // (Company detection already ran above — kept here as no-op for clarity.)
 
   // Personal query patterns (asking about themselves or specific people without company context)
   if (/c[oó]mo me ven|qu[eé] dicen de m[ií]|analizame|analiza\s+me\b|sobre m[ií]|analyze me|about me/i.test(q)) {
