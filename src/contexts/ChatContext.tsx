@@ -1010,7 +1010,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setIsLoading(false);
       setIsStreaming(false);
     }
-  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language]);
+  }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language, captureLastQueryContext]);
 
   // Enrich a response with a specific professional role perspective
   const enrichResponse = useCallback(async (roleId: string, messageIndex: number) => {
@@ -1121,6 +1121,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setIsStarred(false);
     setIsLoadingHistory(false);
     setSessionDepthLevel('complete');
+    // PHASE 1.8 — reset conversational memory
+    lastQueryContextRef.current = null;
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
@@ -1133,6 +1135,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(true);
+    // PHASE 1.8 — reset conversational memory when switching conversation
+    lastQueryContextRef.current = null;
   }, []);
 
   // Toggle star status for current conversation
