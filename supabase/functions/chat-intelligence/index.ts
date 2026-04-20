@@ -2729,6 +2729,14 @@ async function buildDataPackFromSkills(
         models: (interpret.filters.model_names as string[] | undefined) || merged.model_names || [],
         source: (interpret.filters as any)._ctx_merged ? "previousContext+followup" : "explicit",
       });
+      // PHASE 1.8f — explicit cohort-input log so we can verify the universe
+      // selector receives the inherited sector / canonical group at runtime.
+      console.log(`${logPrefix} [cohort-input]`, {
+        sector: interpret.filters.sector_category || null,
+        previousContextSector: (previousContext as any)?.sector || null,
+        previousCanonicalGroup: (previousContext as any)?.canonical_group || null,
+        isFollowup: followupActive,
+      });
     }
 
     // Direct crisis detection (independent from interpretQueryEdge)
@@ -2819,6 +2827,31 @@ async function buildDataPackFromSkills(
     if (!semanticGroup.canonical_key && originalQuestion && originalQuestion !== question) {
       console.log(`${logPrefix} [SEMANTIC_GROUPS] No match on normalized question, retrying with originalQuestion: "${originalQuestion}"`);
       semanticGroup = await resolveSemanticGroup(originalQuestion, supabaseClient);
+    }
+    // PHASE 1.8f — Follow-up rehydration: if no group resolved on the current
+    // (short) follow-up query but the previousContext carried a canonical_group,
+    // re-fetch the group's tickers by canonical_key. This prevents the cohort
+    // from defaulting to the full IBEX-35 universe in Q1→Q2 conversations.
+    if (!semanticGroup.canonical_key && followupActive && (previousContext as any)?.canonical_group) {
+      const ck = String((previousContext as any).canonical_group);
+      try {
+        const { data: rehyd } = await supabaseClient
+          .from("rix_semantic_groups")
+          .select("canonical_key, display_name, issuer_ids, exclusions")
+          .eq("canonical_key", ck)
+          .maybeSingle();
+        if (rehyd && Array.isArray(rehyd.issuer_ids) && rehyd.issuer_ids.length > 0) {
+          semanticGroup = {
+            canonical_key: rehyd.canonical_key,
+            display_name: rehyd.display_name,
+            issuer_ids: rehyd.issuer_ids,
+            exclusions: rehyd.exclusions || [],
+          };
+          console.log(`${logPrefix} [SEMANTIC_GROUPS] Rehydrated from previousContext.canonical_group="${ck}" → ${rehyd.issuer_ids.length} tickers`);
+        }
+      } catch (rgErr: any) {
+        console.warn(`${logPrefix} [SEMANTIC_GROUPS] Rehydration failed: ${rgErr?.message ?? rgErr}`);
+      }
     }
     let resolvedGroupTickerFilter: string[] | null = null;
     if (semanticGroup.canonical_key) {
@@ -3617,6 +3650,20 @@ async function buildDataPackFromSkills(
     if (_parsedMode) reportContext.parsed_mode = _parsedMode;
     if (_matchedGroup) reportContext.matched_group = _matchedGroup;
     console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
+
+    // PHASE 1.8f — surface the resolved canonical group (if any) so the
+    // frontend can carry it into the next follow-up's previousContext.
+    const _resolvedGroupKey = (interpret.filters as any)._resolved_group as string | undefined;
+    const _resolvedGroupName = (interpret.filters as any)._resolved_group_name as string | undefined;
+    if (_resolvedGroupKey) {
+      (reportContext as any).canonical_group = _resolvedGroupKey;
+      if (_resolvedGroupName) (reportContext as any).canonical_group_name = _resolvedGroupName;
+      // If sector is empty but we have a group display name, surface it as sector
+      if (!reportContext.sector && _resolvedGroupName) {
+        reportContext.sector = _resolvedGroupName;
+      }
+      console.log(`${logPrefix} [REPORT_CTX] canonical_group surfaced: key="${_resolvedGroupKey}" name="${_resolvedGroupName}"`);
+    }
 
     (pack as any).report_context = reportContext;
 
