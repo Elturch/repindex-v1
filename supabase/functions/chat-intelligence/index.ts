@@ -10011,6 +10011,8 @@ async function handleStandardChat(
   rolePrompt?: string,
   streamMode: boolean = false,
   originalUserQuestion?: string,
+  previousContext: any = null,
+  isFollowup: boolean = false,
 ) {
   console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || "General"}`);
 
