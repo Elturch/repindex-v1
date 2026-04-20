@@ -11379,11 +11379,11 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
           uniqueCompanies: uniqueCompaniesCount,
           uniqueWeeks: uniqueWeeksCount,
           methodology: {
-            hasRixData: (allRixData?.length || 0) > 0,
+            hasRixData: observationsCountMethod > 0,
             modelsUsed: modelsUsedMethod,
             periodFrom: periodFromMethod,
             periodTo: periodToMethod,
-            observationsCount: allRixData?.length || 0,
+            observationsCount: observationsCountMethod,
             divergenceLevel: divergenceLevelMethod,
             divergencePoints: divergencePointsMethod,
             uniqueCompanies: uniqueCompaniesCount,
