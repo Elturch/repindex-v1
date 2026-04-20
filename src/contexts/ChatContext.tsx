@@ -700,6 +700,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
         console.warn('[ChatContext] normalize-query failed, using original:', normErr);
       }
 
+      console.log('[FE-BE]', {
+        query: normalizedQuestion,
+        originalQuestion: question,
+        previousContext: lastQueryContextRef.current,
+        isFollowupActive: followupActive,
+      });
+
       if (useStreaming) {
         // =========================================================================
         // STREAMING MODE: Use fetch with ReadableStream for SSE
