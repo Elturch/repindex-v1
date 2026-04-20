@@ -14,6 +14,9 @@ import {
   mergeFollowupWithPrevious,
   hasSectorHint,
   hasCompanyHint,
+  parseModelRankingForEntity,
+  parsePeriodWeeks,
+  parseMultiSectorComparison,
   type PreviousQueryContext,
 } from "../_shared/modelsEnum.ts";
 import {
