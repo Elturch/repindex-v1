@@ -19,6 +19,10 @@ export interface ReportContext {
   quantifier_count?: number;
   quantifier_mode?: "top" | "bottom";
   quantifier_total?: number;
+  // PHASE 1.9 — A2/A3 metadata
+  model_ranking_for_entity?: boolean;
+  period_weeks_label?: string;
+  requested_weeks_back?: number;
 }
 
 interface ReportInfoBarProps {
