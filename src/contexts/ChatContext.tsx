@@ -133,6 +133,8 @@ export interface LastQueryContext {
   period_to: string | null;
   ts: number;
   intent?: string | null;
+  canonical_group?: string | null;
+  canonical_group_name?: string | null;
 }
 
 function aliasToCanonical(token: string): string | null {
@@ -422,6 +424,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
       period_to: rc.date_to ?? null,
       ts: Date.now(),
       intent: (rc.intent as string | undefined) ?? null,
+      canonical_group: (rc.canonical_group as string | undefined) ?? null,
+      canonical_group_name: (rc.canonical_group_name as string | undefined) ?? null,
     };
     console.log('[ChatContext] PHASE 1.8 captured lastQueryContext:', lastQueryContextRef.current);
   }, []);
