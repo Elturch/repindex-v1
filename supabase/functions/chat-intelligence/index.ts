@@ -3714,6 +3714,55 @@ async function buildDataPackFromSkills(
       console.warn(`${logPrefix} [QUANTIFIER] error: ${qErr?.message || qErr}`);
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // PHASE 1.9 (A2) — Model-ranking-for-entity flag.
+    // When the user asks "qué modelos miden mejor a {entity}" we flag
+    // the pack so the orchestrator renders a "Modelo · RIX · Cobertura · Δ"
+    // table for that entity instead of a normal company analysis.
+    // ─────────────────────────────────────────────────────────────
+    try {
+      const modelRanking = parseModelRankingForEntity(originalQuestion || question);
+      const hasEntity = !!resolvedTicker || !!interpret.filters.sector_category || !!(interpret.filters as any)._resolved_group;
+      if (modelRanking.active && hasEntity) {
+        (pack as any)._model_ranking_for_entity = true;
+        (pack as any)._model_ranking_label = modelRanking.label;
+        (reportContext as any).model_ranking_for_entity = true;
+        (reportContext as any).quantifier_label = modelRanking.label;
+        console.log(`${logPrefix} [A2] model_ranking_for_entity ACTIVE — entity=${resolvedTicker || interpret.filters.sector_category || (interpret.filters as any)._resolved_group}`);
+      }
+    } catch (mrErr: any) {
+      console.warn(`${logPrefix} [A2] model_ranking detect error: ${mrErr?.message || mrErr}`);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // PHASE 1.9 (A3) — Period weeks parser ("últimas N semanas").
+    // Captures explicit N (cap 12) and surfaces it in InfoBar even when
+    // parseTemporalExpression already set date_from/to. Crucially we
+    // override report_context.weeks_analyzed so the InfoBar reflects the
+    // user's request, not just the snapshot data window.
+    // ─────────────────────────────────────────────────────────────
+    try {
+      const periodWeeks = parsePeriodWeeks(originalQuestion || question);
+      if (periodWeeks) {
+        (pack as any)._requested_weeks_back = periodWeeks.weeks;
+        (reportContext as any).requested_weeks_back = periodWeeks.weeks;
+        // Surface as the canonical period label in the InfoBar.
+        const wksLabel = periodWeeks.unit === "months"
+          ? `Período: últimos ${Math.round(periodWeeks.weeks / 4)} mes${Math.round(periodWeeks.weeks / 4) > 1 ? "es" : ""} (${periodWeeks.weeks} semanas)`
+          : `Período: últimas ${periodWeeks.weeks} semanas`;
+        (reportContext as any).period_weeks_label = wksLabel;
+        // Only override weeks_analyzed when the snapshot came back narrower
+        // than what the user asked for (otherwise keep the actual count).
+        const currentWeeks = Number(reportContext.weeks_analyzed || 0);
+        if (currentWeeks < periodWeeks.weeks) {
+          reportContext.weeks_analyzed = periodWeeks.weeks;
+        }
+        console.log(`${logPrefix} [A3] period_weeks=${periodWeeks.weeks} (unit=${periodWeeks.unit}) injected into reportContext`);
+      }
+    } catch (pwErr: any) {
+      console.warn(`${logPrefix} [A3] parsePeriodWeeks error: ${pwErr?.message || pwErr}`);
+    }
+
     return pack;
   } catch (e: any) {
     console.error(`${logPrefix} [SKILLS-v2] buildDataPackFromSkills failed: ${e.message || e}`);
