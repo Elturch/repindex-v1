@@ -515,6 +515,104 @@ export function parseQuantifier(question: string | null | undefined): Quantifier
   return null;
 }
 
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.8b — Company-ranking quantifiers ("top 3 empresas", "los 5
+// mejores", "peores 2"). MUST NOT fire when the qualifier is followed
+// by "modelos|ias|iaas" (that case is handled by parseQuantifier and
+// targets MODEL selection, not company ranking).
+// ──────────────────────────────────────────────────────────────────
+
+export interface CompanyQuantifierResult {
+  /** Number of companies to keep. 1..N. */
+  count: number;
+  /** "top" → keep highest scores; "bottom" → keep lowest. */
+  mode: "top" | "bottom";
+  /** Original matched fragment, useful for logs. */
+  raw_match: string;
+  /** Localized label for the InfoBar (e.g. "Top 3", "Peores 2"). */
+  label: string;
+}
+
+// Negative lookahead: must NOT be followed (within ~30 chars) by "modelos|ias|iaas".
+// We test the trailing fragment manually to keep the regex simple/portable.
+const COMPANY_QUANT_TOP_REGEX =
+  /\b(?:top|los?|las?)\s+(\d+|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:mejores?|principales|primer[oa]s?|m[aá]s\s+(?:relevantes?|destacad[oa]s?))?\s*(empresas?|compañ[ií]as?|cotizadas?|firmas?|grupos?)?\b/i;
+const COMPANY_QUANT_BOTTOM_REGEX =
+  /\b(?:bottom|peores?|últim[oa]s?|ultim[oa]s?|los?|las?)\s+(\d+|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:peores?|últim[oa]s?|ultim[oa]s?|colistas?|m[aá]s\s+(?:bajos?|rezagad[oa]s?))\s*(empresas?|compañ[ií]as?|cotizadas?|firmas?|grupos?)?\b/i;
+// Bare "top N" / "bottom N"
+const BARE_TOP_REGEX = /\btop\s+(\d+)\b/i;
+const BARE_BOTTOM_REGEX = /\b(?:bottom|peores)\s+(\d+)\b/i;
+
+const COMPANY_NUMBER_WORDS: Record<string, number> = {
+  ...NUMBER_WORDS_ES,
+  "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+};
+
+function isFollowedByModelsKeyword(question: string, matchEnd: number): boolean {
+  const tail = question.slice(matchEnd, matchEnd + 40).toLowerCase();
+  return /\b(modelos?|ias?|iaas?)\b/.test(tail);
+}
+
+export function parseCompanyQuantifier(
+  question: string | null | undefined,
+): CompanyQuantifierResult | null {
+  if (!question) return null;
+
+  // Bare "top 3" / "bottom 5" — strong signal, no need for lookahead trick.
+  // Still skip if followed by modelos.
+  const bareTop = question.match(BARE_TOP_REGEX);
+  if (bareTop && typeof bareTop.index === "number") {
+    const end = bareTop.index + bareTop[0].length;
+    if (!isFollowedByModelsKeyword(question, end)) {
+      const n = parseInt(bareTop[1], 10);
+      if (n >= 1 && n <= 50) {
+        return { count: n, mode: "top", raw_match: bareTop[0], label: `Top ${n}` };
+      }
+    }
+  }
+  const bareBot = question.match(BARE_BOTTOM_REGEX);
+  if (bareBot && typeof bareBot.index === "number") {
+    const end = bareBot.index + bareBot[0].length;
+    if (!isFollowedByModelsKeyword(question, end)) {
+      const n = parseInt(bareBot[1], 10);
+      if (n >= 1 && n <= 50) {
+        return { count: n, mode: "bottom", raw_match: bareBot[0], label: `Peores ${n}` };
+      }
+    }
+  }
+
+  // "los 3 mejores empresas" / "las 5 peores cotizadas"
+  const top = question.match(COMPANY_QUANT_TOP_REGEX);
+  if (top && typeof top.index === "number") {
+    const end = top.index + top[0].length;
+    // Reject if the trailing context says "modelos" → that's parseQuantifier's job.
+    if (!isFollowedByModelsKeyword(question, end)) {
+      const tok = top[1].toLowerCase();
+      const n = /^\d+$/.test(tok) ? parseInt(tok, 10) : (COMPANY_NUMBER_WORDS[tok] ?? 0);
+      // Require either an explicit company keyword OR a "mejores/principales" qualifier
+      // to avoid catching "los 3 últimos días" etc.
+      const hasCompanyWord = !!top[2];
+      const hasQualifier = /\b(mejores?|principales|primer[oa]s?|m[aá]s\s+(?:relevantes?|destacad[oa]s?))\b/i.test(top[0]);
+      if (n >= 1 && n <= 50 && (hasCompanyWord || hasQualifier)) {
+        return { count: n, mode: "top", raw_match: top[0], label: `Top ${n}` };
+      }
+    }
+  }
+  const bot = question.match(COMPANY_QUANT_BOTTOM_REGEX);
+  if (bot && typeof bot.index === "number") {
+    const end = bot.index + bot[0].length;
+    if (!isFollowedByModelsKeyword(question, end)) {
+      const tok = bot[1].toLowerCase();
+      const n = /^\d+$/.test(tok) ? parseInt(tok, 10) : (COMPANY_NUMBER_WORDS[tok] ?? 0);
+      if (n >= 1 && n <= 50) {
+        return { count: n, mode: "bottom", raw_match: bot[0], label: `Peores ${n}` };
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Sector hint detection — used by caller to decide whether a follow-up
  * query introduces a NEW sector (in which case we must NOT inherit
