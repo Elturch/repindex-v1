@@ -8399,6 +8399,8 @@ serve(async (req) => {
       rolePrompt,
       streamMode, // Pass streaming mode to standard chat handler
       originalQuestion, // Pass original user question for report_context
+      previousContext, // PHASE 1.8b — previous query context for follow-ups
+      isFollowup,      // PHASE 1.8b — flag to enable merge logic
     );
   } catch (error) {
     console.error(`${logPrefix} Error in chat-intelligence function:`, error);
