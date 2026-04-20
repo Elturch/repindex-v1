@@ -3627,7 +3627,8 @@ async function buildDataPackFromSkills(
     // "modelos|ias" (those are model selectors handled by parseQuantifier
     // and live in the separate model-filter pipeline).
     try {
-      const cQuant = parseCompanyQuantifier(originalQuestion || question);
+      const quantParse = parseQuantifiers(originalQuestion || question);
+      const cQuant = quantParse.companyQuantifier;
       if (cQuant && Array.isArray(pack.ranking) && pack.ranking.length > 0) {
         const total = pack.ranking.length;
         const sorted = [...pack.ranking].sort((a: any, b: any) => {
