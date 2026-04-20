@@ -18,8 +18,9 @@
  */
 
 // ── T1: negative / zero period ─────────────────────────────────────
+// `\b` does not match between a space and `-`; allow optional minus directly.
 const NEGATIVE_PERIOD_REGEX =
-  /\b(?:[uú]ltim[oa]s?|past|previous|last|durante|during)\s+(-\s*\d+|0)\s+(semanas?|weeks?|meses?|months?|d[ií]as?|days?)\b/i;
+  /(?:^|[^\p{L}])(?:[uú]ltim[oa]s?|past|previous|last|durante|during)\s+(-\s*\d+|0)\s+(semanas?|weeks?|meses?|months?|d[ií]as?|days?)\b/iu;
 
 export interface InvalidPeriodResult {
   invalid: boolean;
