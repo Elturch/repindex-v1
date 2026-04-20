@@ -41,7 +41,15 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   if (!context) return null;
 
   const hasDateRange = context.date_from || context.date_to;
-  const label = context.company || context.sector || null;
+  // PHASE 1.8e — When a quantifier is active and we have a sector (no company),
+  // surface the chip as "Sector: {sector} · {quantifier_label}" to avoid
+  // showing the leader company as if it were the entity of analysis.
+  const sectorLabel = languageCode === "en" ? "Sector" : "Sector";
+  const baseLabel = context.company || context.sector || null;
+  const isAggregatedWithQuantifier = !context.company && !!context.sector && !!context.quantifier_label;
+  const label = isAggregatedWithQuantifier
+    ? `${sectorLabel}: ${context.sector} · ${context.quantifier_label}`
+    : baseLabel;
   const hasQuestion = !!context.user_question;
   if (!label && !hasDateRange && !hasQuestion) return null;
 
@@ -120,7 +128,7 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
       )}
 
       {/* Top-N / Bottom-N quantifier (PHASE 1.8b) */}
-      {context.quantifier_label && (
+      {context.quantifier_label && !isAggregatedWithQuantifier && (
         <span className="flex items-center gap-1 font-medium text-foreground/80">
           <Building2 className="h-3 w-3 shrink-0" />
           {context.quantifier_label}
