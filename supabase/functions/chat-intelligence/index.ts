@@ -2446,6 +2446,8 @@ async function buildDataPackFromSkills(
   companiesCacheLocal: any[] | null,
   logPrefix: string,
   originalQuestion?: string,
+  previousContext: PreviousQueryContext | null = null,
+  isFollowup: boolean = false,
 ): Promise<(DataPack & { divergencias_detalle?: any[] }) | null> {
   const totalStart = Date.now();
   try {
