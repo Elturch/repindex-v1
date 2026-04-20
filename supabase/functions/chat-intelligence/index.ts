@@ -3534,6 +3534,16 @@ async function buildDataPackFromSkills(
       missing,
     };
     (pack as any).models_coverage = reportContext.models_coverage;
+    // PHASE 1.7: propagate unsupported-models warning + parser mode into reportContext
+    const _unsupported = (interpret.filters as any)._unsupported_models as string[] | undefined;
+    const _parsedMode = (interpret.filters as any)._parsed_mode as string | undefined;
+    const _matchedGroup = (interpret.filters as any)._matched_group as string | undefined;
+    if (_unsupported && _unsupported.length > 0) {
+      reportContext.unsupported_models = _unsupported;
+      (pack as any).unsupported_models = _unsupported;
+    }
+    if (_parsedMode) reportContext.parsed_mode = _parsedMode;
+    if (_matchedGroup) reportContext.matched_group = _matchedGroup;
     console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
 
     (pack as any).report_context = reportContext;

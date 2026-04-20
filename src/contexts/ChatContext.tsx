@@ -72,24 +72,99 @@ async function invokeWithTimeout(
 }
 
 // Loading messages for long operations (rotating every 15 seconds).
-// Built dynamically so the model count matches the user's query.
-const CLIENT_MODEL_REGEX = /\b(chatgpt|chat\s*gpt|gpt|perplexity|ppx|gemini|deepseek|deep\s*seek|dsk|grok|qwen)\b/gi;
+// PHASE 1.7: client-side mirror of parseModelsWithNegation. Handles negation
+// ("sin contar X"), semantic groups ("americanas", "chinos", "openai"),
+// and the expanded alias table. MUST stay in sync with
+// supabase/functions/_shared/modelsEnum.ts so the loader count matches the
+// model_names that the backend will compute.
+const ALL_MODELS_CLIENT = ["ChatGPT", "Perplexity", "Gemini", "DeepSeek", "Grok", "Qwen"] as const;
+const CLIENT_MODEL_GROUPS: Record<string, readonly string[]> = {
+  "ias americanas": ["ChatGPT", "Gemini", "Grok", "Perplexity"],
+  "modelos americanos": ["ChatGPT", "Gemini", "Grok", "Perplexity"],
+  "americanas": ["ChatGPT", "Gemini", "Grok", "Perplexity"],
+  "americanos": ["ChatGPT", "Gemini", "Grok", "Perplexity"],
+  "ias chinas": ["DeepSeek", "Qwen"],
+  "modelos chinos": ["DeepSeek", "Qwen"],
+  "chinos": ["DeepSeek", "Qwen"],
+  "chinas": ["DeepSeek", "Qwen"],
+  "open source": ["DeepSeek", "Qwen"],
+  "openai": ["ChatGPT"],
+  "google": ["Gemini"],
+  "anthropic": [],
+  "todos los modelos": [...ALL_MODELS_CLIENT],
+  "todos": [...ALL_MODELS_CLIENT],
+  "todas": [...ALL_MODELS_CLIENT],
+  "los 6": [...ALL_MODELS_CLIENT],
+};
+const CLIENT_MODEL_REGEX = /\b(chatgpt|chat\s*gpt|gpt[\s-]?[345](?:\.\d|o)?|gpt|perplexity|perplex|ppx|gemini(?:\s*\d(?:\.\d)?)?|deepseek|deep\s*seek|dsk|grok(?:\s*\d)?|qwen|openai|google\s+gemini|bard|xai)\b/gi;
+const CLIENT_NEGATION_REGEX = /\b(sin(\s+contar|\s+incluir)?|excepto|salvo|menos|no\s+inclu(y|i)as?|fuera\s+de|exclu[yi]e?n?d?o?|quitando|except|excluding|without)\b/gi;
+const CLIENT_SECTOR_REGEX = /\b(banca|banc[ao]s?|tecnol[oó]gic[ao]s?|hospitalari[oa]s?|asegurador[ae]s?|farmac[eé]utic[ao]s?|inmobiliari[ao]s?|energ[eé]tic[ao]s?|teleco|telecos|retailers?|seguros|salud|farma|sector|ibex|ibex\s*35|ibex35)\b/i;
+
+function aliasToCanonical(token: string): string | null {
+  const t = token.toLowerCase().replace(/\s+/g, " ").trim();
+  if (t === "chatgpt" || t === "openai" || t.startsWith("gpt")) return "ChatGPT";
+  if (t === "perplexity" || t === "perplex" || t === "ppx") return "Perplexity";
+  if (t === "gemini" || t === "google gemini" || t === "bard" || t.startsWith("gemini")) return "Gemini";
+  if (t === "deepseek" || t === "deep seek" || t === "dsk") return "DeepSeek";
+  if (t === "grok" || t === "xai" || t.startsWith("grok")) return "Grok";
+  if (t === "qwen") return "Qwen";
+  return null;
+}
+
+interface ClientParsedModels {
+  modelNames: string[];
+  mode: "inclusive" | "exclusive" | "group" | "none";
+}
+
+function parseModelsClient(question: string): ClientParsedModels {
+  if (!question) return { modelNames: [], mode: "none" };
+  // Collect alias hits with positions
+  type Hit = { canonical: string; index: number };
+  const hits: Hit[] = [];
+  for (const m of question.matchAll(CLIENT_MODEL_REGEX)) {
+    const canonical = aliasToCanonical(m[1]);
+    if (canonical && typeof m.index === "number") hits.push({ canonical, index: m.index });
+  }
+  const negs: number[] = [];
+  for (const m of question.matchAll(CLIENT_NEGATION_REGEX)) {
+    if (typeof m.index === "number") negs.push(m.index);
+  }
+  // Negation path
+  if (negs.length > 0 && hits.length > 0) {
+    const excluded = new Set<string>();
+    let any = false;
+    for (const h of hits) {
+      if (negs.some((ni) => Math.abs(h.index - ni) <= 25 && ni <= h.index)) {
+        excluded.add(h.canonical);
+        any = true;
+      }
+    }
+    if (any) {
+      return { modelNames: ALL_MODELS_CLIENT.filter((m) => !excluded.has(m)), mode: "exclusive" };
+    }
+  }
+  // Group path (only when no plain alias)
+  const lower = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (hits.length === 0) {
+    for (const groupKey of Object.keys(CLIENT_MODEL_GROUPS).sort((a, b) => b.length - a.length)) {
+      const re = new RegExp(`\\b${groupKey.replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (re.test(lower)) {
+        return { modelNames: [...CLIENT_MODEL_GROUPS[groupKey]], mode: "group" };
+      }
+    }
+  }
+  // Inclusive path
+  if (hits.length > 0) {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const h of hits) if (!seen.has(h.canonical)) { seen.add(h.canonical); out.push(h.canonical); }
+    return { modelNames: out, mode: "inclusive" };
+  }
+  return { modelNames: [], mode: "none" };
+}
 
 function detectModelCountFromQuery(question: string): number {
-  const matches = question.match(CLIENT_MODEL_REGEX) ?? [];
-  const normalized = new Set(
-    matches.map((m) => {
-      const t = m.toLowerCase().replace(/\s+/g, "");
-      if (t === "chatgpt" || t === "gpt") return "ChatGPT";
-      if (t === "perplexity" || t === "ppx") return "Perplexity";
-      if (t === "gemini") return "Gemini";
-      if (t === "deepseek" || t === "dsk") return "DeepSeek";
-      if (t === "grok") return "Grok";
-      if (t === "qwen") return "Qwen";
-      return t;
-    }),
-  );
-  return normalized.size;
+  return parseModelsClient(question).modelNames.length;
 }
 
 function buildLoadingMessages(modelCount: number): string[] {
@@ -502,8 +577,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
           const normData = await normResp.json();
           _normalizationMeta = normData;
           
-          // If needs clarification, show it as assistant message and stop
-          if (normData.needs_clarification && normData.clarification_message) {
+          // PHASE 1.7 BUG B FIX: Don't honor LLM's needs_clarification when our
+          // deterministic parser detects a sector OR a supported model. The
+          // LLM tends to mis-classify queries like "compara GPT4 vs claude
+          // para tecnologicas" as off-topic just because Claude isn't supported.
+          const hasDeterministicSector = CLIENT_SECTOR_REGEX.test(question);
+          const hasDeterministicModel = parseModelsClient(question).modelNames.length > 0;
+          const overrideClarification = hasDeterministicSector || hasDeterministicModel;
+          if (normData.needs_clarification && normData.clarification_message && !overrideClarification) {
             const clarificationMsg: Message = {
               role: 'assistant',
               content: normData.clarification_message,
@@ -524,6 +605,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
             setIsLoading(false);
             setIsStreaming(false);
             return;
+          }
+          if (normData.needs_clarification && overrideClarification) {
+            console.log('[ChatContext] PHASE 1.7: ignoring needs_clarification — deterministic parser found sector/model in query');
           }
           
           // Use normalized query if available
