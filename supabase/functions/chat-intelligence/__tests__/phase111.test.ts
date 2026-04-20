@@ -15,6 +15,8 @@ import {
   detectFuturePeriod,
   fuzzyCompanyMatch,
   detectPromptInjection,
+  extractCompanyBrand,
+  fuzzyCompanyMatchSql,
 } from "../../_shared/queryGuards.ts";
 
 // ─── T1: ranking de Naturgy últimas -3 semanas ───────────────────
@@ -71,6 +73,93 @@ Deno.test("1.11-T5: 'reputación FantasyCorp SL' → fuzzy match suggestions", (
   assert(r.length <= 3, "should cap at 3");
   // Best match must be the closest by edit distance
   assertEquals(r[0].issuer_name, "Fantasy Group SA");
+});
+
+// ─── T5-a (PHASE 1.12): runtime guard never emits placeholder names ──
+Deno.test("1.12-T5-a: runtime gate response interpolates REAL issuer names (no placeholders)", async () => {
+  // Fake supabase client that mimics the two paths used by fuzzyCompanyMatchSql:
+  //   (1) ilike substring lookup → returns empty (truly unknown brand)
+  //   (2) rpc('fuzzy_match_issuers') → returns 3 real issuer names
+  let llmCalls = 0;
+  const fakeSupabase = {
+    from(_t: string) {
+      return {
+        select(_s: string) {
+          return {
+            ilike(_c: string, _v: string) {
+              return {
+                limit(_n: number) {
+                  return Promise.resolve({ data: [], error: null });
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+    rpc(_fn: string, _args: any) {
+      // simulate spy on the LLM pipeline — must NEVER fire from inside a guard
+      return Promise.resolve({
+        data: [
+          { issuer_name: "Renta Corporación", ticker: "REN", sim: 0.11 },
+          { issuer_name: "Faes Farma", ticker: "FAE", sim: 0.10 },
+          { issuer_name: "Banco Santander", ticker: "SAN", sim: 0.07 },
+        ],
+        error: null,
+      });
+    },
+  };
+  const result = await fuzzyCompanyMatchSql("reputación de FantasyCorp SL", fakeSupabase, { limit: 3, floor: 0.05 });
+  assertEquals(result.status, "unknown_with_suggestions");
+  assertEquals(result.suggestions.length, 3);
+  // BUG T5-a: no placeholder strings of the form [Empresa A]/[Empresa B]
+  const joined = result.suggestions.map((s) => s.issuer_name).join(" | ");
+  assertEquals(joined.match(/\[Empresa [A-Z]\]/g), null, "must NOT contain placeholders");
+  assert(joined.includes("Renta Corporación"), "must include the real top-1 match");
+  // BUG T5-b: the gate is sync-cheap, no LLM calls (llmCalls counter is the spy)
+  assertEquals(llmCalls, 0, "fuzzy gate must NOT trigger any LLM pipeline");
+});
+
+// ─── T5-b (PHASE 1.12): brand extractor only fires for company-shaped queries
+Deno.test("1.12-T5-b: extractCompanyBrand requires a corporate suffix to fire", () => {
+  // Fires (corporate suffix present)
+  assertEquals(extractCompanyBrand("reputación de FantasyCorp SL"), "FantasyCorp");
+  assertEquals(extractCompanyBrand("informe sobre Acme Holdings"), "Acme");
+  // Does NOT fire (no suffix → cheap reject, no DB call, no false positive)
+  assertEquals(extractCompanyBrand("ranking de Naturgy últimas 4 semanas"), null);
+  assertEquals(extractCompanyBrand("reputación de Iberdrola"), null);
+  assertEquals(extractCompanyBrand(""), null);
+  assertEquals(extractCompanyBrand(null), null);
+});
+
+// ─── T5-c (PHASE 1.12): known-brand short-circuit returns "known" ─────
+Deno.test("1.12-T5-c: known issuer brand returns status='known' (no clarification fired)", async () => {
+  const fakeSupabase = {
+    from(_t: string) {
+      return {
+        select(_s: string) {
+          return {
+            ilike(_c: string, _v: string) {
+              return {
+                limit(_n: number) {
+                  return Promise.resolve({
+                    data: [{ issuer_name: "Iberdrola Holdings", ticker: "IBE" }],
+                    error: null,
+                  });
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+    rpc(_fn: string, _args: any) {
+      throw new Error("rpc must not be called when ilike already found a hit");
+    },
+  };
+  const result = await fuzzyCompanyMatchSql("informe sobre Iberdrola Holdings", fakeSupabase, {});
+  assertEquals(result.status, "known");
+  assertEquals(result.suggestions.length, 0);
 });
 
 // ─── T6: prompt-injection ────────────────────────────────────────

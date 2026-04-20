@@ -219,6 +219,113 @@ export function fuzzyCompanyMatch(
   return scored.slice(0, limit);
 }
 
+// ── T5 (runtime): pg_trgm-backed fuzzy matcher ─────────────────────
+/**
+ * Extract the candidate brand stem from a free-text question. Returns
+ * `null` when the question does not look like a company-shaped query
+ * (no capitalized token followed by a corporate suffix). Used by the
+ * SQL-backed runtime guard below to avoid a DB round-trip on queries
+ * that obviously do not name a company (e.g. "ranking IBEX-35").
+ */
+export function extractCompanyBrand(question: string | null | undefined): string | null {
+  if (!question) return null;
+  const corpSuffix = /\b(s\.?l\.?u?\.?|s\.?a\.?|inc\.?|corp(?:oration)?\.?|ltd\.?|gmbh|plc|ag|holding(?:s)?)\b/i;
+  // Require a corporate suffix to be present for the runtime gate. Without
+  // a suffix, the cost of a false-positive clarification is too high for
+  // legitimate one-word queries like "Naturgy" or "Telefónica".
+  if (!corpSuffix.test(question)) return null;
+  const brandMatch = question.match(
+    /\b([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ]+)*)\b/,
+  );
+  if (!brandMatch) return null;
+  const brand = brandMatch[1].replace(corpSuffix, "").trim();
+  if (brand.length < 4) return null;
+  return brand;
+}
+
+/**
+ * Live, pg_trgm-backed fuzzy matcher for the runtime gate. Hits
+ * `repindex_root_issuers` with `similarity(issuer_name, $1) >= floor`
+ * and returns the top `limit` real issuer names.
+ *
+ *  - If the brand resolves to an exact / substring match on a known
+ *    issuer, returns `null` (signal: NOT unknown, let pipeline run).
+ *  - If no candidate clears the floor, returns `[]` (signal: unknown
+ *    AND no useful suggestion — let pipeline run rather than mislead).
+ *  - Otherwise returns up to `limit` suggestions sorted by similarity.
+ *
+ * The `supabase` parameter is typed `any` to avoid pulling the SDK
+ * types into this shared module (also imported by Deno tests with no
+ * network access).
+ */
+export async function fuzzyCompanyMatchSql(
+  question: string | null | undefined,
+  supabase: any,
+  opts: { limit?: number; floor?: number } = {},
+): Promise<{ status: "known" | "unknown_no_match" | "unknown_with_suggestions"; suggestions: FuzzySuggestion[]; brand: string | null }> {
+  const brand = extractCompanyBrand(question);
+  if (!brand) {
+    return { status: "known", suggestions: [], brand: null };
+  }
+  const limit = opts.limit ?? 3;
+  const floor = opts.floor ?? 0.15;
+  // 1) Exact/substring shortcut — cheaper than a trigram scan and avoids
+  //    false-positives on real issuers whose name happens to be short.
+  try {
+    const { data: exact } = await supabase
+      .from("repindex_root_issuers")
+      .select("issuer_name, ticker")
+      .ilike("issuer_name", `%${brand}%`)
+      .limit(1);
+    if (exact && exact.length > 0) {
+      return { status: "known", suggestions: [], brand };
+    }
+  } catch (_e) {
+    // fall through to trigram path
+  }
+  // 2) pg_trgm similarity ranking via the public.similarity() wrapper
+  //    installed by migration 20260420_pg_trgm_for_fuzzy_company_match.
+  try {
+    const { data, error } = await supabase.rpc("fuzzy_match_issuers", {
+      brand_in: brand,
+      floor_in: floor,
+      limit_in: limit,
+    });
+    if (error) throw error;
+    if (Array.isArray(data) && data.length > 0) {
+      const suggestions: FuzzySuggestion[] = data.map((r: any) => ({
+        issuer_name: r.issuer_name,
+        ticker: r.ticker ?? undefined,
+        score: typeof r.sim === "number" ? r.sim : Number(r.sim),
+      }));
+      return { status: "unknown_with_suggestions", suggestions, brand };
+    }
+  } catch (_e) {
+    // RPC not available — fall back to client-side ordering on a
+    // bounded pull. This keeps the gate functional even if the
+    // migration has not propagated yet.
+    try {
+      const { data: pool } = await supabase
+        .from("repindex_root_issuers")
+        .select("issuer_name, ticker")
+        .limit(500);
+      if (pool && pool.length > 0) {
+        const suggestions = fuzzyCompanyMatch(
+          brand,
+          pool.map((c: any) => ({ issuer_name: c.issuer_name, ticker: c.ticker })),
+          limit,
+        );
+        if (suggestions.length > 0) {
+          return { status: "unknown_with_suggestions", suggestions, brand };
+        }
+      }
+    } catch (_e2) {
+      // give up silently
+    }
+  }
+  return { status: "unknown_no_match", suggestions: [], brand };
+}
+
 // ── T6: prompt-injection / system-prompt exfiltration ──────────────
 const PROMPT_INJECTION_REGEX =
   /\b(?:ignore|ignora|olvida|forget|disregard)\s+(?:all\s+|todas?\s+las\s+|previous\s+|prior\s+|anterior(?:es)?\s+)?(?:instructions?|instrucci[oó]n(?:es)?|prompt|messages?|reglas?|rules?)\b/i;

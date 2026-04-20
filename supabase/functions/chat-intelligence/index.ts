@@ -30,6 +30,7 @@ import {
   detectFuturePeriod,
   fuzzyCompanyMatch,
   detectPromptInjection,
+  fuzzyCompanyMatchSql,
 } from "../_shared/queryGuards.ts";
 
 const corsHeaders = {
@@ -8605,21 +8606,34 @@ serve(async (req) => {
         : `Detecto dos posibles entidades con el mismo nombre raíz «${hom.stem}». ¿A cuál te refieres: ${hom.variants.join(" o ")}?`;
       return await _gateRespond(msg, hom.variants, `homonym:${hom.stem}`);
     }
-    // T5: fuzzy unknown company (lazy-load catalog).
-    if (!companiesCache || Date.now() - cacheTimestamp > CACHE_TTL) {
-      const { data: companies } = await supabaseClient
-        .from("repindex_root_issuers")
-        .select("issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms");
-      if (companies) { companiesCache = companies; cacheTimestamp = Date.now(); }
-    }
-    if (companiesCache && companiesCache.length > 0) {
-      const sugg = fuzzyCompanyMatch(runtimeQuery, companiesCache.map((c: any) => ({ issuer_name: c.issuer_name, ticker: c.ticker })), 3);
-      if (sugg.length > 0 && /\b(s\.?l\.?|s\.?a\.?|inc\.?|corp\.?|ltd\.?)\b/i.test(runtimeQuery)) {
-        const list = sugg.map((s) => s.issuer_name).join(", ");
+    // T5: fuzzy unknown company — pg_trgm-backed, real catalog lookup.
+    // Cheap (< 30 ms) and runs BEFORE the first LLM call so we never burn
+    // tokens on a non-existent issuer. The guard only fires when the
+    // user's query carries a corporate suffix (SL, SA, Inc, Corp…) that
+    // strongly signals "this is meant to be a company name".
+    {
+      const fuzzy = await fuzzyCompanyMatchSql(runtimeQuery, supabaseClient, { limit: 3, floor: 0.15 });
+      if (fuzzy.status === "unknown_with_suggestions" && fuzzy.suggestions.length > 0) {
+        const names = fuzzy.suggestions.map((s) => s.issuer_name);
+        const list = names.map((n) => `• ${n}`).join("\n");
         const msg = language === "en"
-          ? `I couldn't find that exact issuer in my catalog. Did you mean: ${list}?`
-          : `No encuentro esa entidad en mi catálogo. ¿Quizás te refieres a: ${list}?`;
-        return await _gateRespond(msg, sugg.map((s) => `Reputación de ${s.issuer_name}`), "fuzzy_unknown_company");
+          ? `I couldn't find "${fuzzy.brand}" in the RepIndex universe. Did you mean one of these?\n${list}`
+          : `No encuentro «${fuzzy.brand}» en el universo RepIndex. ¿Quizás te refieres a alguna de estas?\n${list}`;
+        return await _gateRespond(
+          msg,
+          names.map((n) => `Reputación de ${n}`),
+          "fuzzy_unknown_company",
+        );
+      }
+      if (fuzzy.status === "unknown_no_match" && fuzzy.brand) {
+        const msg = language === "en"
+          ? `I couldn't find "${fuzzy.brand}" in the RepIndex universe and have no close matches. Try a Spanish listed issuer (e.g. Iberdrola, Telefónica, Inditex).`
+          : `No encuentro «${fuzzy.brand}» en el universo RepIndex y no tengo coincidencias cercanas. Prueba con una empresa española cotizada (p. ej. Iberdrola, Telefónica, Inditex).`;
+        return await _gateRespond(
+          msg,
+          ["Reputación de Iberdrola", "Reputación de Telefónica", "Ranking IBEX-35 últimas 4 semanas"],
+          "fuzzy_no_match",
+        );
       }
     }
 
