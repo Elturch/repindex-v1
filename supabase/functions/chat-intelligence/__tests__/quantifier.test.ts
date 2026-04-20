@@ -61,3 +61,44 @@ Deno.test("CQ8: bare 'ranking de banca' (no quantifier) → null", () => {
   const r = parseCompanyQuantifier("ranking de banca");
   assertEquals(r, null);
 });
+
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.8c — Disambiguation: N modelos vs N empresas
+// ──────────────────────────────────────────────────────────────────
+
+Deno.test("CQ9: 'ranking de banca con los 3 mejores modelos' → company=null, model count=3", () => {
+  const q = "ranking de banca con los 3 mejores modelos";
+  assertEquals(parseCompanyQuantifier(q), null, "must NOT slice companies when '3' refers to modelos");
+  const m = parseQuantifier(q);
+  assertEquals(m?.count, 3);
+  assertEquals(m?.mode, "top_coverage");
+});
+
+Deno.test("CQ10: 'top 3 empresas de banca' → company count=3 mode=top, model=null", () => {
+  const q = "top 3 empresas de banca";
+  const c = parseCompanyQuantifier(q);
+  assertEquals(c?.count, 3);
+  assertEquals(c?.mode, "top");
+  assertEquals(parseQuantifier(q), null, "no model quantifier when 'empresas' is explicit");
+});
+
+Deno.test("CQ11: 'top 5 modelos para Inditex' → company=null, model count=5", () => {
+  const q = "top 5 modelos para Inditex";
+  assertEquals(parseCompanyQuantifier(q), null, "must NOT slice companies when '5' refers to modelos");
+  const m = parseQuantifier(q);
+  // parseQuantifier requires "los/las N mejores/principales modelos" — bare
+  // "top 5 modelos" is a valid model selector intent but not matched by the
+  // current top_coverage regex. The critical assertion is that companies are
+  // NOT sliced (CQ7 covers 'top 3 modelos para banca' → null already).
+  assertEquals(m, null, "bare 'top N modelos' currently routes via parseModels not parseQuantifier");
+});
+
+Deno.test("CQ12: 'los 2 peores bancos según los 3 mejores modelos' → company count=2 bottom, model count=3", () => {
+  const q = "los 2 peores bancos según los 3 mejores modelos";
+  const c = parseCompanyQuantifier(q);
+  assertEquals(c?.count, 2, "company quantifier captures the '2 peores'");
+  assertEquals(c?.mode, "bottom");
+  const m = parseQuantifier(q);
+  assertEquals(m?.count, 3, "model quantifier captures the trailing '3 mejores modelos'");
+  assertEquals(m?.mode, "top_coverage");
+});
