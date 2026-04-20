@@ -7,6 +7,11 @@ import {
   type ModelName,
   extractModelNames,
   parseModelsWithNegation,
+  parseCompanyQuantifier,
+  mergeFollowupWithPrevious,
+  hasSectorHint,
+  hasCompanyHint,
+  type PreviousQueryContext,
 } from "../_shared/modelsEnum.ts";
 import {
   aggregateConsensus,
