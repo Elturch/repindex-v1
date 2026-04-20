@@ -100,6 +100,35 @@ const CLIENT_MODEL_REGEX = /\b(chatgpt|chat\s*gpt|gpt[\s-]?[345](?:\.\d|o)?|gpt|
 const CLIENT_NEGATION_REGEX = /\b(sin(\s+contar|\s+incluir)?|excepto|salvo|menos|no\s+inclu(y|i)as?|fuera\s+de|exclu[yi]e?n?d?o?|quitando|except|excluding|without)\b/gi;
 const CLIENT_SECTOR_REGEX = /\b(banca|banc[ao]s?|tecnol[oó]gic[ao]s?|hospitalari[oa]s?|asegurador[ae]s?|farmac[eé]utic[ao]s?|inmobiliari[ao]s?|energ[eé]tic[ao]s?|teleco|telecos|retailers?|seguros|salud|farma|sector|ibex|ibex\s*35|ibex35)\b/i;
 
+// PHASE 1.8 — Conversational memory (Bug E).
+// We keep the last successful query context client-side so that short
+// follow-up questions ("y sin Grok?", "y ahora con Qwen?") can be merged
+// with the previous sector / company / model_names before being sent to
+// the backend. TTL = 5 minutes; reset on clearConversation().
+const FOLLOWUP_TTL_MS = 5 * 60 * 1000;
+const CLIENT_FOLLOWUP_PREFIX_REGEX =
+  /^[¿\s]*(y|ahora|sin|con|tambi[eé]n|pero|en\s+cambio|y\s+si|y\s+ahora|quita|quitando|excluye|excluyendo|a[ñn]ade|a[ñn]adiendo|incluye|incluyendo|adem[aá]s)\b/i;
+const CLIENT_FOLLOWUP_ANAPHOR_REGEX =
+  /\b(ese|esa|esos|esas|este|esta|estos|estas|aquel|aquella|el\s+anterior|el\s+ultimo|el\s+último|los\s+mismos|esa\s+misma)\b/i;
+
+function isFollowupClient(question: string): boolean {
+  if (!question) return false;
+  const t = question.trim();
+  const wc = t.split(/\s+/).filter(Boolean).length;
+  if (wc === 0 || wc > 10) return false;
+  return CLIENT_FOLLOWUP_ANAPHOR_REGEX.test(t) || CLIENT_FOLLOWUP_PREFIX_REGEX.test(t);
+}
+
+export interface LastQueryContext {
+  sector: string | null;
+  company: string | null;
+  model_names: string[];
+  mode: "inclusive" | "exclusive" | "group" | "none";
+  period_from: string | null;
+  period_to: string | null;
+  ts: number;
+}
+
 function aliasToCanonical(token: string): string | null {
   const t = token.toLowerCase().replace(/\s+/g, " ").trim();
   if (t === "chatgpt" || t === "openai" || t.startsWith("gpt")) return "ChatGPT";
@@ -373,6 +402,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isStarred, setIsStarred] = useState(false);
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // PHASE 1.8 — last successful query context for follow-up merging.
+  const lastQueryContextRef = useRef<LastQueryContext | null>(null);
   const { toast } = useToast();
   
   // Session configuration state
