@@ -8487,6 +8487,30 @@ serve(async (req) => {
       isFollowup,
     });
 
+    // ─────────────────────────────────────────────────────────────────
+    // PHASE 1.11 — Edge-case query guards (T1..T6).
+    // Deterministic, no LLM. Each gate returns a clarification BEFORE
+    // the heavy data pipeline. Order matters (first hit wins):
+    //   T6 prompt-injection  → fixed answer, never echoes system prompt
+    //   T2 welcome / empty   → friendly welcome card
+    //   T1 negative period   → "no puedo retroceder N negativo"
+    //   T4 future date       → "sin datos posteriores a <floor>"
+    //   T3 homonym           → disambiguation prompt
+    //   T5 fuzzy unknown     → top-3 catalog suggestions
+    // (Heavy guards: lazy-load company cache only when T3/T5 need it.)
+    // ─────────────────────────────────────────────────────────────────
+    const phase111Gate = await runPhase111Guards({
+      runtimeQuery,
+      question,
+      sessionId,
+      userId,
+      depthLevel,
+      language,
+      supabase: supabaseClient,
+      logPrefix,
+    });
+    if (phase111Gate) return phase111Gate;
+
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
     // =============================================================================
