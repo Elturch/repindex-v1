@@ -660,6 +660,141 @@ export function hasCompanyHint(question: string): boolean {
   return !!question && COMPANY_HINT_REGEX.test(question);
 }
 
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.9 — A2  Model-ranking-for-entity intent
+// PHASE 1.9 — A3  Period weeks parser (cap 12)
+// PHASE 1.9 — A1  Multi-sector comparison detector
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * A2 — Detects queries asking which AI MODELS are best at evaluating an
+ * entity (company / sector). e.g. "qué modelos miden mejor a CaixaBank",
+ * "ranking de modelos para Inditex", "qué IA evalúa mejor el IBEX".
+ * MUST be paired with an entity hint downstream — this helper only signals
+ * the linguistic pattern.
+ */
+const MODEL_RANKING_REGEX = /\b(?:qu[eé]\s+(?:modelos?|ias?|llms?)|ranking\s+de\s+(?:modelos?|ias?|llms?)|qu[eé]\s+ia\s+(?:mide|eval[uú]a|cubre|analiza)|cu[aá]l(?:es)?\s+(?:modelos?|ias?)\s+(?:mide|eval[uú]a|cubre|analiza|funciona)|which\s+(?:models?|ais?|llms?)\s+(?:rank|measure|evaluate|cover)|best\s+(?:models?|ais?|llms?)\s+(?:for|to))\b/i;
+
+export interface ModelRankingResult {
+  active: boolean;
+  raw_match: string | null;
+  label: string; // e.g., "Ranking de modelos"
+}
+
+export function parseModelRankingForEntity(
+  question: string | null | undefined,
+): ModelRankingResult {
+  if (!question) return { active: false, raw_match: null, label: "" };
+  const m = question.match(MODEL_RANKING_REGEX);
+  if (!m) return { active: false, raw_match: null, label: "" };
+  return {
+    active: true,
+    raw_match: m[0],
+    label: "Ranking de modelos",
+  };
+}
+
+/**
+ * A3 — Extracts a relative period in weeks from queries like
+ * "últimas 8 semanas", "past 12 weeks", "los 3 meses" (months → weeks*4).
+ * Capped at 12 weeks (system limit). Returns null if no explicit N.
+ */
+const PERIOD_WEEKS_REGEX =
+  /\b(?:[uú]ltim[oa]s?|past|previous|last|durante|during)\s+(\d{1,2})\s+(semanas?|weeks?|meses?|months?|d[ií]as?|days?)\b/i;
+
+export interface PeriodWeeksResult {
+  weeks: number;
+  raw_match: string;
+  unit: "weeks" | "months" | "days";
+}
+
+export function parsePeriodWeeks(
+  question: string | null | undefined,
+): PeriodWeeksResult | null {
+  if (!question) return null;
+  const m = question.match(PERIOD_WEEKS_REGEX);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  if (!Number.isFinite(n) || n < 1) return null;
+  const unitRaw = m[2].toLowerCase();
+  let weeks = n;
+  let unit: PeriodWeeksResult["unit"] = "weeks";
+  if (unitRaw.startsWith("mes") || unitRaw.startsWith("month")) {
+    weeks = n * 4;
+    unit = "months";
+  } else if (unitRaw.startsWith("d")) {
+    weeks = Math.max(1, Math.ceil(n / 7));
+    unit = "days";
+  }
+  weeks = Math.min(12, Math.max(1, weeks));
+  return { weeks, raw_match: m[0], unit };
+}
+
+/**
+ * A1 — Detects multi-sector comparison queries
+ * ("compara banca y energía", "banca vs tecnología").
+ * Returns the canonical sector tokens detected (>= 2 distinct sectors)
+ * so the caller can ask the user to choose ONE.
+ */
+const SECTOR_TOKEN_MAP: Record<string, string> = {
+  "banca": "banca",
+  "bancos": "banca",
+  "banking": "banca",
+  "energ[ií]a": "energía",
+  "energetic": "energía",
+  "energy": "energía",
+  "tecnolog": "tecnología",
+  "technology": "tecnología",
+  "tech": "tecnología",
+  "salud": "salud",
+  "farma": "farmacéuticas",
+  "pharma": "farmacéuticas",
+  "telecom": "telecomunicaciones",
+  "teleco": "telecomunicaciones",
+  "seguros": "seguros",
+  "insurance": "seguros",
+  "retail": "retail",
+  "inmobiliari": "inmobiliarias",
+  "real estate": "inmobiliarias",
+  "construcci": "construcción",
+  "automoci": "automoción",
+  "turismo": "turismo",
+  "hotel": "turismo",
+};
+
+const MULTI_SECTOR_TRIGGER_REGEX =
+  /\b(compara|comparar|comparativa|vs\.?|versus|frente\s+a|y|e|contra)\b/i;
+
+export interface MultiSectorResult {
+  active: boolean;
+  sectors: string[];
+  raw_match: string;
+}
+
+export function parseMultiSectorComparison(
+  question: string | null | undefined,
+): MultiSectorResult {
+  const empty: MultiSectorResult = { active: false, sectors: [], raw_match: "" };
+  if (!question) return empty;
+  const lower = stripAccents(question.toLowerCase());
+  // Must contain a comparator
+  if (!MULTI_SECTOR_TRIGGER_REGEX.test(lower)) return empty;
+  // Need at least one explicit "compara/vs/versus/frente" — bare "y" alone is too weak
+  const hasStrongComparator = /\b(compara|comparar|comparativa|vs\.?|versus|frente\s+a|contra)\b/i.test(lower);
+  if (!hasStrongComparator) return empty;
+  const detected: string[] = [];
+  const seen = new Set<string>();
+  for (const [pattern, canonical] of Object.entries(SECTOR_TOKEN_MAP)) {
+    const re = new RegExp(`\\b${pattern}[a-z]*\\b`, "i");
+    if (re.test(lower) && !seen.has(canonical)) {
+      seen.add(canonical);
+      detected.push(canonical);
+    }
+  }
+  if (detected.length < 2) return empty;
+  return { active: true, sectors: detected.slice(0, 4), raw_match: question.slice(0, 80) };
+}
+
 /**
  * Conversational memory snapshot stored client-side and forwarded in the
  * request body as `previousContext`.
