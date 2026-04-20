@@ -46,7 +46,9 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
 
   const periodLabel = languageCode === "en" ? "Period" : "Período";
   const weeksLabel = languageCode === "en" ? "weeks" : "semanas";
-  const modelsLabel = languageCode === "en" ? "models" : "modelos";
+  const modelsLabelPlural = languageCode === "en" ? "models" : "modelos";
+  const modelsLabelSingular = languageCode === "en" ? "model" : "modelo";
+  const modelsLabel = (n: number) => (n === 1 ? modelsLabelSingular : modelsLabelPlural);
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
   const questionLabel = languageCode === "en" ? "Query" : "Consulta";
   const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
@@ -100,7 +102,7 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
       {(context.models_count ?? 0) > 0 && (
         <span className="flex items-center gap-1">
           <Brain className="h-3 w-3 shrink-0" />
-          {context.models_count} {modelsLabel}{!compact && modelNames.length > 0 && `: ${modelNames.join(", ")}`}
+          {context.models_count} {modelsLabel(context.models_count ?? 0)}{!compact && modelNames.length > 0 && `: ${modelNames.join(", ")}`}
         </span>
       )}
 
@@ -125,7 +127,9 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
 
   const periodLabel = languageCode === "en" ? "Period" : "Período";
   const weeksLabel = languageCode === "en" ? "weeks" : "semanas";
-  const modelsLabel = languageCode === "en" ? "models" : "modelos";
+  const modelsLabelPlural = languageCode === "en" ? "models" : "modelos";
+  const modelsLabelSingular = languageCode === "en" ? "model" : "modelo";
+  const modelsLabelHtml = (n: number) => (n === 1 ? modelsLabelSingular : modelsLabelPlural);
   const obsLabel = languageCode === "en" ? "observations" : "observaciones";
   const questionLabel = languageCode === "en" ? "Query" : "Consulta";
 
@@ -152,7 +156,7 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
     items.push(`<span>🕐 ${context.weeks_analyzed} ${weeksLabel}</span>`);
   }
   if ((context.models_count ?? 0) > 0) {
-    items.push(`<span>🧠 ${context.models_count} ${modelsLabel}${modelNames.length > 0 ? ": " + modelNames.join(", ") : ""}</span>`);
+    items.push(`<span>🧠 ${context.models_count} ${modelsLabelHtml(context.models_count ?? 0)}${modelNames.length > 0 ? ": " + modelNames.join(", ") : ""}</span>`);
   }
   if ((context.sample_size ?? 0) > 0) {
     items.push(`<span>🗄️ ${context.sample_size} ${obsLabel}</span>`);

@@ -2,6 +2,15 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+import {
+  MODEL_ENUM,
+  type ModelName,
+  extractModelNames,
+} from "../_shared/modelsEnum.ts";
+import {
+  aggregateConsensus,
+  compareConsensus,
+} from "../_shared/consensusRanking.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -222,11 +231,17 @@ async function executeSkillGetCompanyScores(supabase: any, params: { ticker?: st
 }
 
 // ── Inlined skill: Company Ranking ──────────────────────────────────
-async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string; ticker_filter?: string[] }) {
+async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string; model_names?: string[]; ticker_filter?: string[] }) {
   const start = Date.now();
   try {
     const topN = params.top_n ?? 50;
-    const filterByModel = params.model_name || null;
+    // Normalize: prefer model_names[] (Phase 1 multi-model), fall back to legacy single model_name
+    const modelNamesArr: string[] = (params.model_names && params.model_names.length > 0)
+      ? params.model_names
+      : (params.model_name ? [params.model_name] : []);
+    const isSubsetFilter = modelNamesArr.length > 0 && modelNamesArr.length < 6;
+    const isSingleModel = modelNamesArr.length === 1;
+    const filterByModel = isSingleModel ? modelNamesArr[0] : null; // legacy var, only when EXACTLY 1
     let batchDate = params.batch_date;
     if (!batchDate) {
       const sr = await getLatestValidSundayEdge(supabase);
@@ -249,17 +264,25 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       let q = supabase.from("rix_runs_v2").select("02_model_name,03_target_name,05_ticker,09_rix_score")
         .gte("batch_execution_date", gte).lt("batch_execution_date", lt).range(page * 1000, (page + 1) * 1000 - 1);
       if (tickerFilter) q = q.in("05_ticker", tickerFilter);
-      if (filterByModel) q = q.eq("02_model_name", filterByModel);
+      if (isSingleModel) {
+        q = q.eq("02_model_name", filterByModel);
+      } else if (isSubsetFilter) {
+        // Phase 1 multi-model subset: filter to the requested 2-5 models
+        q = q.in("02_model_name", modelNamesArr);
+      }
       const { data, error } = await q;
       if (error) return { success: false, error: error.message };
       if (!data || data.length === 0) break;
       allData = allData.concat(data);
       if (data.length < 1000) break;
     }
-    if (allData.length === 0) return { success: false, error: `No ranking data for ${batchDate}${filterByModel ? ` (model: ${filterByModel})` : ""}` };
+    if (allData.length === 0) {
+      const modelLabel = modelNamesArr.length > 0 ? ` (models: ${modelNamesArr.join(", ")})` : "";
+      return { success: false, error: `No ranking data for ${batchDate}${modelLabel}` };
+    }
     
     // When filtering by a single model, use direct scores instead of median
-    if (filterByModel) {
+    if (isSingleModel) {
       const ranking = allData.map((row: any) => ({
         company: row["03_target_name"] || "",
         ticker: row["05_ticker"] || "",
@@ -280,34 +303,48 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       if (!grouped.has(t)) grouped.set(t, { company: row["03_target_name"] || "", ticker: t, scores: [] });
       grouped.get(t)!.scores.push({ model: row["02_model_name"] || "", rix_score: row["09_rix_score"] });
     }
-    const ranking = Array.from(grouped.values()).map(g => {
-      const valid = g.scores.map(s => s.rix_score).filter((v): v is number => v != null);
-      const med = medianEdge(valid);
+    // Use the SHARED consensus algorithm — produces bit-identical orderings to the dashboard
+    // (src/lib/consensusRanking.ts ↔ supabase/functions/_shared/consensusRanking.ts)
+    const consensusRows = Array.from(grouped.entries()).flatMap(([ticker, g]) =>
+      g.scores
+        .filter((s) => s.rix_score != null)
+        .map((s) => ({ ticker, rix_score: s.rix_score as number }))
+    );
+    const aggregates = aggregateConsensus(consensusRows);
+    const ranking = Array.from(grouped.values()).map((g) => {
+      const valid = g.scores.map((s) => s.rix_score).filter((v): v is number => v != null);
       const min = valid.length > 0 ? Math.min(...valid) : 0;
       const max = valid.length > 0 ? Math.max(...valid) : 0;
-      const range = max - min;
-      const consensus_level = range <= 10 ? "alto" : range <= 20 ? "medio" : "bajo";
-      // Majority block: largest cluster of models within ±5 pts
-      let bestBlock: number[] = [];
-      for (const anchor of valid) {
-        const block = valid.filter(v => Math.abs(v - anchor) <= 5);
-        if (block.length > bestBlock.length) bestBlock = block;
-      }
-      const majority_block_score = bestBlock.length > 0 ? Math.round(bestBlock.reduce((a, b) => a + b, 0) / bestBlock.length) : med;
-      const majority_block_models = g.scores
-        .filter(s => s.rix_score != null && bestBlock.includes(s.rix_score))
-        .map(s => s.model);
-      // Per-model scores map
+      const med = medianEdge(valid);
+      const agg = aggregates.get(g.ticker);
+      const consensus_level = agg?.consensusLevel ?? "bajo";
+      const range = agg?.range ?? max - min;
+      const majority_block_score = agg ? Math.round(agg.majorityScore) : med;
+      // Recover which models contributed to the majority block (drop top + bottom when >=4)
+      const sortedScored = [...g.scores]
+        .filter((s) => s.rix_score != null)
+        .sort((a, b) => (a.rix_score as number) - (b.rix_score as number));
+      const majority_block_models = sortedScored.length >= 4
+        ? sortedScored.slice(1, -1).map((s) => s.model)
+        : sortedScored.map((s) => s.model);
       const scores_individuales: Record<string, number | null> = {};
       for (const s of g.scores) scores_individuales[s.model] = s.rix_score;
-      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level, scores_by_model: g.scores, majority_block_score, majority_block_models, scores_individuales };
+      return {
+        company: g.company, ticker: g.ticker,
+        median_rix: med, min_rix: min, max_rix: max, range,
+        consensus_level,
+        scores_by_model: g.scores,
+        majority_block_score,
+        majority_block_models,
+        scores_individuales,
+      };
     })
-    // Primary sort: consensus alto first, then by majority block score
+    // Primary sort: consensus alto first, then by majority block score (matches dashboard exactly)
     .sort((a, b) => {
-      const order: Record<string, number> = { alto: 0, medio: 1, bajo: 2 };
-      const cDiff = (order[a.consensus_level] ?? 1) - (order[b.consensus_level] ?? 1);
-      if (cDiff !== 0) return cDiff;
-      return b.majority_block_score - a.majority_block_score;
+      const aggA = aggregates.get(a.ticker);
+      const aggB = aggregates.get(b.ticker);
+      if (!aggA || !aggB) return 0;
+      return compareConsensus(aggA, aggB, false);
     }).slice(0, topN);
     console.log(`[SKILL] CompanyRanking: ${ranking.length} companies in ${Date.now() - start}ms`);
     return { success: true, data: { batch_date: batchDate, filter: params.sector_category || params.ibex_family_code || "all", ranking } };
@@ -2202,10 +2239,10 @@ async function lookupGlossaryTerms(supabase: any, query: string, maxResults = 3)
   return matches.slice(0, maxResults).map(m => m.term);
 }
 
-async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, string>; recommended_skills: string[]; confidence: number }> {
+async function interpretQueryEdge(question: string): Promise<{ intent: string; entities: string[]; filters: Record<string, any>; recommended_skills: string[]; confidence: number }> {
   const lower = question.toLowerCase();
   const entities: string[] = [];
-  const filters: Record<string, string> = {};
+  const filters: Record<string, any> = {};
   let intent = "general_question";
   const recommended_skills: string[] = [];
   let confidence = 0.6;
@@ -2231,14 +2268,16 @@ async function interpretQueryEdge(question: string): Promise<{ intent: string; e
   const hasIbex = IBEX_PATTERNS_EDGE.test(lower);
   const hasAlert = ALERT_PATTERNS_EDGE.test(lower);
 
-  // Detect AI model mentioned in query
-  const MODEL_NAME_PATTERNS = /\b(chatgpt|chat\s*gpt|perplexity|gemini|deepseek|deep\s*seek|grok|qwen)\b/i;
-  const modelMatch = lower.match(MODEL_NAME_PATTERNS);
-  if (modelMatch) {
-    const MODEL_MAP: Record<string, string> = { chatgpt: "ChatGPT", "chat gpt": "ChatGPT", perplexity: "Perplexity", gemini: "Google Gemini", deepseek: "DeepSeek", "deep seek": "DeepSeek", grok: "Grok", qwen: "Qwen" };
-    const key = modelMatch[1].toLowerCase().replace(/\s+/g, " ");
-    filters.model_name = MODEL_MAP[key] || MODEL_MAP[key.replace(/\s/g, "")] || modelMatch[1];
-    console.log(`[INTERPRET] Detected model filter: ${filters.model_name}`);
+  // Detect AI models mentioned in query (Phase 1: deterministic global regex, multi-model)
+  const detectedModels = extractModelNames(question);
+  if (detectedModels.length > 0) {
+    filters.model_names = detectedModels;
+    // Legacy single-value field kept for backwards compatibility with downstream code
+    // that hasn't been migrated yet. Equals detectedModels[0] when exactly one model.
+    filters.model_name = detectedModels.length === 1 ? detectedModels[0] : undefined;
+    console.log(`[INTERPRET] [models_names_detected] count=${detectedModels.length} models=[${detectedModels.join(", ")}]`);
+  } else {
+    console.log(`[INTERPRET] [models_names_detected] count=0 (no models mentioned → all 6 implicit)`);
   }
 
   if (hasAlert && !hasEvolution && !hasDivergence) {
@@ -2590,16 +2629,13 @@ async function buildDataPackFromSkills(
       } as any;
     }
 
-    // Fallback: if model not detected in normalized question, try original question
-    if (originalQuestion && !interpret.filters.model_name) {
-      const origLower = originalQuestion.toLowerCase();
-      const MODEL_NAME_PATTERNS_FALLBACK = /\b(chatgpt|chat\s*gpt|perplexity|gemini|deepseek|deep\s*seek|grok|qwen)\b/i;
-      const origModelMatch = origLower.match(MODEL_NAME_PATTERNS_FALLBACK);
-      if (origModelMatch) {
-        const MODEL_MAP_FALLBACK: Record<string, string> = { chatgpt: "ChatGPT", "chat gpt": "ChatGPT", perplexity: "Perplexity", gemini: "Google Gemini", deepseek: "DeepSeek", "deep seek": "DeepSeek", grok: "Grok", qwen: "Qwen" };
-        const key = origModelMatch[1].toLowerCase().replace(/\s+/g, " ");
-        interpret.filters.model_name = MODEL_MAP_FALLBACK[key] || MODEL_MAP_FALLBACK[key.replace(/\s/g, "")] || origModelMatch[1];
-        console.log(`${logPrefix} [SKILLS-v2] Model detected from originalQuestion fallback: ${interpret.filters.model_name}`);
+    // Fallback: if no models detected in normalized question, try original question
+    if (originalQuestion && (!interpret.filters.model_names || (interpret.filters.model_names as string[]).length === 0)) {
+      const fallbackModels = extractModelNames(originalQuestion);
+      if (fallbackModels.length > 0) {
+        interpret.filters.model_names = fallbackModels;
+        interpret.filters.model_name = fallbackModels.length === 1 ? fallbackModels[0] : undefined;
+        console.log(`${logPrefix} [SKILLS-v2] [models_names_detected] fallback=originalQuestion count=${fallbackModels.length} models=[${fallbackModels.join(", ")}]`);
       }
     }
 
@@ -2712,6 +2748,9 @@ async function buildDataPackFromSkills(
     // ── Build skill options from temporal range and model filter ──
     const skillDateRange = temporalRange ? { from: temporalRange.from, to: temporalRange.to } : undefined;
     const skillModelFilter = interpret.filters.model_name || undefined;
+    const skillModelNamesFilter: string[] | undefined = (interpret.filters.model_names && (interpret.filters.model_names as string[]).length > 0)
+      ? (interpret.filters.model_names as string[])
+      : undefined;
 
     // ── Execute NEW consolidated skills in parallel ──────────────
     const skillCalls: Record<string, Promise<any>> = {};
@@ -2749,6 +2788,7 @@ async function buildDataPackFromSkills(
         sector_category: resolvedGroupTickerFilter ? undefined : sectorCategory,
         ticker_filter: resolvedGroupTickerFilter || undefined,
         model_name: interpret.filters.model_name,
+        model_names: skillModelNamesFilter,
       });
     }
 
@@ -3223,6 +3263,8 @@ async function buildDataPackFromSkills(
             eGte = df.gte; eLt = df.lt;
           }
           const modelFilter = interpret.filters.model_name || null;
+          const modelFilterArr: string[] = (interpret.filters.model_names as string[] | undefined) || [];
+          const useArrFilter = modelFilterArr.length > 1 && modelFilterArr.length < 6;
 
           let enrichData: any[] = [];
           for (let page = 0; page < 4; page++) {
@@ -3231,7 +3273,11 @@ async function buildDataPackFromSkills(
               .gte("batch_execution_date", eGte).lte("batch_execution_date", eLt)
               .in("05_ticker", enrichTickers)
               .range(page * 1000, (page + 1) * 1000 - 1);
-            if (modelFilter) eq = eq.eq("02_model_name", modelFilter);
+            if (useArrFilter) {
+              eq = eq.in("02_model_name", modelFilterArr);
+            } else if (modelFilter) {
+              eq = eq.eq("02_model_name", modelFilter);
+            }
             const { data: eRows, error: eErr } = await eq;
             if (eErr) { console.warn(`${logPrefix} [SKILLS-v2] Enrichment query error: ${eErr.message}`); break; }
             if (!eRows || eRows.length === 0) break;
@@ -3349,6 +3395,11 @@ async function buildDataPackFromSkills(
 
     // ── Build report_context for InfoBar ─────────────────────────
     const filterByModel = interpret.filters.model_name || null;
+    const requestedModels: string[] = (interpret.filters.model_names as string[] | undefined) && (interpret.filters.model_names as string[]).length > 0
+      ? (interpret.filters.model_names as string[])
+      : (filterByModel ? [filterByModel] : []);
+    const ALL_MODELS_CANONICAL = [...MODEL_ENUM] as string[];
+    const effectiveModels: string[] = requestedModels.length > 0 ? requestedModels : ALL_MODELS_CANONICAL;
     const reportContext: Record<string, unknown> = {
       company: resolvedTicker ? (cp?.empresa || resolvedName || resolvedTicker) : null,
       sector: interpret.filters.sector_category || (cp ? resultMap.detail?.sector_category : ss?.sector) || null,
@@ -3357,9 +3408,9 @@ async function buildDataPackFromSkills(
       date_from: null,
       date_to: null,
       timezone: "Europe/Madrid (CET/CEST)",
-      models: filterByModel ? [filterByModel] : ["ChatGPT", "Perplexity", "Google Gemini", "DeepSeek", "Grok", "Qwen"],
+      models: effectiveModels,
       sample_size: 0,
-      models_count: filterByModel ? 1 : 6,
+      models_count: effectiveModels.length,
       weeks_analyzed: 0,
     };
 
@@ -3439,6 +3490,31 @@ async function buildDataPackFromSkills(
         (pack as any).date_range_note = "Los datos completos de RepIndex están disponibles desde el 1 de enero de 2026, cuando comenzaron los barridos dominicales sistemáticos con las 6 IAs. Se muestran los datos disponibles desde esa fecha.";
       }
     }
+
+    // ── Compute models_coverage (anti-hallucination guardrail) ─────
+    // Inspect snapshot + per_model_detail to find which models actually have data.
+    const withDataSet = new Set<string>();
+    const collectModelsFromArr = (arr: any[] | undefined, key: string) => {
+      if (!arr) return;
+      for (const row of arr) {
+        const m = row?.[key];
+        if (typeof m === "string" && m.trim()) withDataSet.add(m.trim());
+      }
+    };
+    collectModelsFromArr(pack.snapshot, "modelo");
+    collectModelsFromArr(pack.snapshot, "model_name");
+    collectModelsFromArr(ss?.per_model_detail, "02_model_name");
+    collectModelsFromArr(pack.raw_texts, "modelo");
+    const requestedForCoverage = requestedModels.length > 0 ? requestedModels : ALL_MODELS_CANONICAL;
+    const withData = requestedForCoverage.filter((m) => withDataSet.has(m));
+    const missing = requestedForCoverage.filter((m) => !withDataSet.has(m));
+    reportContext.models_coverage = {
+      requested: requestedForCoverage,
+      with_data: withData,
+      missing,
+    };
+    (pack as any).models_coverage = reportContext.models_coverage;
+    console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
 
     (pack as any).report_context = reportContext;
 
@@ -6407,6 +6483,13 @@ function buildOrchestratorPrompt(
 Responde SIEMPRE en ${languageName}. Sin excepciones.
 
 REGLA #1 (PRIORIDAD MÁXIMA): Tu valor diferencial es el ANÁLISIS CRUZADO ENTRE MODELOS DE IA. El core de cada informe es: qué dice cada IA, dónde coinciden, dónde divergen, y POR QUÉ. Cada métrica debe analizarse modelo a modelo. NUNCA resumas los 6 scores en una mediana o promedio único.
+
+REGLA #1.B — COBERTURA DE MODELOS (PRIORIDAD MÁXIMA, ANTI-ALUCINACIÓN):
+• El DataPack incluye un bloque \`models_coverage\` con TRES arrays: \`requested\` (modelos que el usuario pidió o los 6 por defecto), \`with_data\` (modelos con datos reales en este informe) y \`missing\` (modelos sin datos).
+• Usa EXACTAMENTE esos tres arrays. NO inventes presencia ni ausencia de modelos.
+• NUNCA digas que un modelo "no ha emitido puntuaciones", "no aporta datos" o equivalente si ese modelo aparece en \`with_data\`.
+• Si un modelo aparece en \`missing\`, indícalo de forma neutra una sola vez ("Sin datos de X en este corte temporal") y continúa el análisis con los modelos disponibles.
+• Si \`requested\` tiene menos de 6 modelos (filtro de subconjunto), el informe debe ceñirse EXCLUSIVAMENTE a esos modelos. NO menciones los otros como ausentes; simplemente no existen para esta consulta.
 
 Eres el Agente Rix de RepIndex. Redactas informes ejecutivos para alta dirección usando EXCLUSIVAMENTE los datos proporcionados.
 

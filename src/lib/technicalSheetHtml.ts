@@ -516,7 +516,8 @@ export function generateReportHeaderCardHtml(options?: TechnicalSheetOptions): s
   }
 
   if (options.modelsUsed?.length) {
-    rows.push(`<div class="header-row"><span class="header-label">Modelos consultados:</span> ${options.modelsUsed.join(', ')} (${options.modelsUsed.length} modelos)</div>`);
+    const n = options.modelsUsed.length;
+    rows.push(`<div class="header-row"><span class="header-label">${n === 1 ? 'Modelo consultado' : 'Modelos consultados'}:</span> ${options.modelsUsed.join(', ')} (${n} ${n === 1 ? 'modelo' : 'modelos'})</div>`);
   }
 
   if (options.observationsCount) {
