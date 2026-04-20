@@ -980,6 +980,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           title: "Respuesta recibida",
           description: `${data.metadata?.documentsFound || 0} documentos, ${data.metadata?.structuredDataFound || 0} registros analizados`,
         });
+        // PHASE 1.8 — capture context for follow-up merging (non-streaming)
+        captureLastQueryContext(data.metadata?.reportContext);
       }
     } catch (error) {
       console.error('Error in chat intelligence:', error);
