@@ -118,6 +118,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
           {context.sample_size} {obsLabel}
         </span>
       )}
+
+      {/* Top-N / Bottom-N quantifier (PHASE 1.8b) */}
+      {context.quantifier_label && (
+        <span className="flex items-center gap-1 font-medium text-foreground/80">
+          <Building2 className="h-3 w-3 shrink-0" />
+          {context.quantifier_label}
+        </span>
+      )}
     </div>
   );
 }
