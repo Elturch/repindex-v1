@@ -544,7 +544,30 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
     
     // Start rotating loading messages — first one reflects the actual model count detected in the query.
-    const detectedModelCount = detectModelCountFromQuery(question);
+    // PHASE 1.8 — Follow-up memory merge for the loader count.
+    const lastCtx = lastQueryContextRef.current;
+    const followupActive =
+      isFollowupClient(question) &&
+      lastCtx !== null &&
+      Date.now() - lastCtx.ts < FOLLOWUP_TTL_MS;
+    let detectedModelCount = detectModelCountFromQuery(question);
+    if (followupActive) {
+      const parsed = parseModelsClient(question);
+      if (parsed.mode === "exclusive" && parsed.modelNames.length > 0) {
+        // Subtract the excluded models from previous list
+        const stillIn = new Set(parsed.modelNames);
+        const excluded = ALL_MODELS_CLIENT.filter((m) => !stillIn.has(m));
+        const merged = (lastCtx?.model_names ?? [...ALL_MODELS_CLIENT]).filter(
+          (m) => !excluded.includes(m as any),
+        );
+        detectedModelCount = merged.length || (lastCtx?.model_names?.length ?? 6);
+      } else if ((parsed.mode === "inclusive" || parsed.mode === "group") && parsed.modelNames.length > 0) {
+        detectedModelCount = parsed.modelNames.length;
+      } else {
+        detectedModelCount = lastCtx?.model_names?.length ?? 6;
+      }
+      console.log(`[ChatContext] PHASE 1.8 follow-up active: loader count = ${detectedModelCount}`);
+    }
     const loadingMessages = buildLoadingMessages(detectedModelCount);
     let loadingIndex = 0;
     setLoadingMessage(loadingMessages[0]);
