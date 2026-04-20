@@ -7062,8 +7062,22 @@ cubrir las ${totalCompaniesInRanking} empresas del DATAPACK COMPLETAS.
 ═══════════════════════════════════════════════════════════════\n`
     : "";
 
+  // PHASE 1.9 (A2) — Per-model ranking guard.
+  const modelRankingForEntity = (dataPack as any)._model_ranking_for_entity === true;
+  const modelRankingGuard = modelRankingForEntity
+    ? "\n\n=== INSTRUCCION DE FORMATO (A2 - RANKING DE MODELOS) ===\n" +
+      "La pregunta del usuario es '¿que modelos miden mejor a esta entidad?'. El informe DEBE estructurarse como un ranking de los 6 modelos de IA, NO como un analisis tradicional de empresa.\n" +
+      "Estructura obligatoria:\n" +
+      "  1. Titular: 'Ranking de modelos para {entidad}'.\n" +
+      "  2. Tabla principal con columnas: Modelo | RIX medio | Cobertura (semanas) | Delta vs mediana. Calcula los valores a partir del DATAPACK; si faltan datos, escribe 'datos insuficientes' en la celda.\n" +
+      "  3. Parrafo de cierre: 2-3 frases interpretando que modelo destaca y por que.\n" +
+      "PROHIBIDO redactar un analisis ESG, financiero o corporativo de la entidad. PROHIBIDO incluir secciones de competidores, evolucion temporal o noticias.\n" +
+      "===============================================================\n"
+    : "";
+
   const userPrompt = `PREGUNTA: "${question}"
 ${antiPodiumGuard}
+${modelRankingGuard}
 
 CLASIFICACIÓN (E1): tipo=${classifier.tipo}, intención=${classifier.intencion}
 
