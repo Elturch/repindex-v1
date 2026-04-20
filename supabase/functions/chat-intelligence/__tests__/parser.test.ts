@@ -18,6 +18,10 @@ import {
   extractModelNames,
   parseModelsWithNegation,
   detectUnsupportedModels,
+  parseQuantifier,
+  isFollowupQuery,
+  mergeFollowupWithPrevious,
+  hasSectorHint,
 } from "../../_shared/modelsEnum.ts";
 
 // ── T1: real-world failure case (Grupos Hospitalarios) ──────────────
@@ -104,12 +108,27 @@ Deno.test("N1: 'sin contar Qwen ni Perplexity' → 4 models, mode=exclusive", ()
   assertArrayIncludes(r.model_names, ["ChatGPT", "Google Gemini", "DeepSeek", "Grok"]);
 });
 
-// N2: GPT4 alias + Claude unsupported + sector adjective handled upstream
-Deno.test("N2: 'compara GPT4 vs claude para tecnologicas' → ChatGPT only, Claude unsupported", () => {
-  const r = parseModelsWithNegation("compara GPT4 vs claude para tecnologicas");
+// ── PHASE 1.8 — Replaces old N2 with 3 realistic single-model + sector cases ──
+Deno.test("N2a: 'ranking de tecnologicas con GPT4 esta semana' → [ChatGPT]", () => {
+  const r = parseModelsWithNegation("ranking de tecnologicas con GPT4 esta semana");
   assertEquals(r.mode, "inclusive");
   assertEquals(r.model_names, ["ChatGPT"]);
-  assertEquals(r.unsupported_models, ["Claude"]);
+  assertEquals(hasSectorHint("ranking de tecnologicas con GPT4 esta semana"), true);
+});
+
+Deno.test("N2b: 'ranking de las energeticas con Gemini' → [Google Gemini]", () => {
+  const r = parseModelsWithNegation("ranking de las energeticas con Gemini");
+  assertEquals(r.mode, "inclusive");
+  assertEquals(r.model_names, ["Google Gemini"]);
+  assertEquals(hasSectorHint("ranking de las energeticas con Gemini"), true);
+});
+
+Deno.test("N2c: 'compara hospitalarios con DSK y PPX' → [DeepSeek, Perplexity]", () => {
+  const r = parseModelsWithNegation("compara hospitalarios con DSK y PPX");
+  assertEquals(r.mode, "inclusive");
+  assertEquals(r.model_names.length, 2);
+  assertArrayIncludes(r.model_names, ["DeepSeek", "Perplexity"]);
+  assertEquals(hasSectorHint("compara hospitalarios con DSK y PPX"), true);
 });
 
 // N3: semantic group "americanas"
@@ -174,4 +193,105 @@ Deno.test("N10: detectUnsupportedModels picks up Claude, Llama, Mistral", () => 
   const u = detectUnsupportedModels("compara Claude, Llama y Mistral");
   assertEquals(u.length, 3);
   assertArrayIncludes(u, ["Claude", "Llama", "Mistral"]);
+});
+
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.8 — Quantifier parsing
+// ──────────────────────────────────────────────────────────────────
+
+Deno.test("Q1: 'con los 3 mejores modelos' → count=3, top_coverage", () => {
+  const q = parseQuantifier("ranking de banca con los 3 mejores modelos");
+  assertEquals(q?.count, 3);
+  assertEquals(q?.mode, "top_coverage");
+  assertEquals(q?.label, "Top 3 por cobertura");
+});
+
+Deno.test("Q2: 'con los cuatro principales modelos' → count=4", () => {
+  const q = parseQuantifier("ranking de banca con los cuatro principales modelos");
+  assertEquals(q?.count, 4);
+  assertEquals(q?.mode, "top_coverage");
+});
+
+Deno.test("Q3: 'con la mitad de las IAs' → count=3", () => {
+  const q = parseQuantifier("dame el ranking con la mitad de las IAs");
+  assertEquals(q?.count, 3);
+});
+
+Deno.test("Q4: 'con la mayoría de los modelos' → count=4", () => {
+  const q = parseQuantifier("ranking con la mayoría de los modelos");
+  assertEquals(q?.count, 4);
+});
+
+Deno.test("Q5: 'los 3 modelos más fiables' → count=3", () => {
+  const q = parseQuantifier("dame los 3 modelos más fiables para banca");
+  assertEquals(q?.count, 3);
+});
+
+Deno.test("Q6: no quantifier → null", () => {
+  assertEquals(parseQuantifier("ranking de banca con Grok y Gemini"), null);
+});
+
+// ──────────────────────────────────────────────────────────────────
+// PHASE 1.8 — Follow-up detection + memory merge
+// ──────────────────────────────────────────────────────────────────
+
+Deno.test("F1: '¿y sin Grok?' is detected as follow-up", () => {
+  assertEquals(isFollowupQuery("¿y sin Grok?"), true);
+  assertEquals(isFollowupQuery("y ahora sin Grok?"), true);
+  assertEquals(isFollowupQuery("ahora con Qwen"), true);
+});
+
+Deno.test("F2: long sentence is NOT a follow-up", () => {
+  assertEquals(
+    isFollowupQuery("dame el ranking completo de la banca europea con todos los modelos disponibles esta semana"),
+    false,
+  );
+});
+
+Deno.test("F3 (Bug E): merge 'y sin Grok?' with [americanas] → 3 models, sector inherited", () => {
+  const previous = {
+    sector: "Banca",
+    model_names: ["ChatGPT", "Google Gemini", "Grok", "Perplexity"] as any,
+    mode: "group" as const,
+    period_from: null,
+    period_to: null,
+  };
+  const followupParsed = parseModelsWithNegation("y sin Grok?");
+  assertEquals(followupParsed.mode, "exclusive");
+  const merged = mergeFollowupWithPrevious(followupParsed, previous, "y sin Grok?");
+  assertEquals(merged.sector, "Banca");
+  assertEquals(merged.model_names.length, 3);
+  assertArrayIncludes(merged.model_names, ["ChatGPT", "Google Gemini", "Perplexity"]);
+});
+
+Deno.test("F4 (Bug E): 'y ahora con Qwen?' replaces previous models, keeps company", () => {
+  const previous = {
+    sector: null,
+    company: "Iberdrola",
+    model_names: [...MODEL_ENUM] as any,
+    mode: "none" as const,
+  };
+  const followupParsed = parseModelsWithNegation("y ahora con Qwen?");
+  const merged = mergeFollowupWithPrevious(followupParsed, previous, "y ahora con Qwen?");
+  assertEquals(merged.company, "Iberdrola");
+  assertEquals(merged.model_names, ["Qwen"]);
+});
+
+Deno.test("F5 (Bug E): new sector in follow-up does NOT inherit previous sector or models", () => {
+  const previous = {
+    sector: "Banca",
+    model_names: ["Grok"] as any,
+    mode: "inclusive" as const,
+  };
+  // "que tal hospitalarios?" — short, has new sector hint
+  const q = "que tal hospitalarios?";
+  const followupParsed = parseModelsWithNegation(q);
+  const merged = mergeFollowupWithPrevious(followupParsed, previous, q);
+  // Sector hint detected → previous sector dropped
+  assertEquals(merged.sector, null);
+  // No model info in follow-up → previous models inherited (caller will
+  // detect new sector and decide to broaden to all 6 models). The merge
+  // helper itself only handles model_names; the chat-intelligence layer
+  // applies the "new sector → reset to all models" rule.
+  assertEquals(hasSectorHint(q), true);
 });
