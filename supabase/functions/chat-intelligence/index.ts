@@ -3606,6 +3606,38 @@ async function buildDataPackFromSkills(
 
     (pack as any).report_context = reportContext;
 
+    // ──────────────────────────────────────────────────────────────
+    // PHASE 1.8b — Company quantifier (top-N / bottom-N over ranking)
+    // ──────────────────────────────────────────────────────────────
+    // CRITICAL: parseCompanyQuantifier ignores patterns followed by
+    // "modelos|ias" (those are model selectors handled by parseQuantifier
+    // and live in the separate model-filter pipeline).
+    try {
+      const cQuant = parseCompanyQuantifier(originalQuestion || question);
+      if (cQuant && Array.isArray(pack.ranking) && pack.ranking.length > 0) {
+        const total = pack.ranking.length;
+        const sorted = [...pack.ranking].sort((a: any, b: any) => {
+          const sa = Number(a?.rix_avg ?? a?.rix_mediano ?? a?.median_rix ?? a?.["09_rix_score"] ?? 0);
+          const sb = Number(b?.rix_avg ?? b?.rix_mediano ?? b?.median_rix ?? b?.["09_rix_score"] ?? 0);
+          return cQuant.mode === "top" ? sb - sa : sa - sb;
+        });
+        const truncated = sorted.slice(0, cQuant.count).map((r: any, i: number) => ({ ...r, pos: i + 1 }));
+        // IMPORTANT: keep raw_texts / snapshot intact — only the visible ranking is truncated.
+        (pack as any)._ranking_full = pack.ranking;
+        pack.ranking = truncated;
+        // Surface to InfoBar / report_context
+        (reportContext as any).quantifier_label = `${cQuant.label} de ${total} empresas`;
+        (reportContext as any).quantifier_count = cQuant.count;
+        (reportContext as any).quantifier_mode = cQuant.mode;
+        (reportContext as any).quantifier_total = total;
+        console.log(`${logPrefix} [QUANTIFIER] company top-N applied: mode=${cQuant.mode} count=${cQuant.count} total=${total} match="${cQuant.raw_match}"`);
+      } else if (cQuant) {
+        console.log(`${logPrefix} [QUANTIFIER] detected but no ranking to slice (mode=${cQuant.mode} count=${cQuant.count})`);
+      }
+    } catch (qErr: any) {
+      console.warn(`${logPrefix} [QUANTIFIER] error: ${qErr?.message || qErr}`);
+    }
+
     return pack;
   } catch (e: any) {
     console.error(`${logPrefix} [SKILLS-v2] buildDataPackFromSkills failed: ${e.message || e}`);
