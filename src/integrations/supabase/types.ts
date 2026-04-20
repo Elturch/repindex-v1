@@ -3553,6 +3553,14 @@ export type Database = {
         Args: { p_depth?: number; p_ticker: string; p_weeks?: number }
         Returns: Json
       }
+      fuzzy_match_issuers: {
+        Args: { brand_in: string; floor_in?: number; limit_in?: number }
+        Returns: {
+          issuer_name: string
+          sim: number
+          ticker: string
+        }[]
+      }
       get_sector_graph: {
         Args: { p_include_scores?: boolean; p_sector: string }
         Returns: Json

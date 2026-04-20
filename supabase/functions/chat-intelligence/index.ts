@@ -30,6 +30,7 @@ import {
   detectFuturePeriod,
   fuzzyCompanyMatch,
   detectPromptInjection,
+  fuzzyCompanyMatchSql,
 } from "../_shared/queryGuards.ts";
 
 const corsHeaders = {
