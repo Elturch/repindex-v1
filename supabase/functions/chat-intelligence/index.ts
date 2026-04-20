@@ -2729,6 +2729,14 @@ async function buildDataPackFromSkills(
         models: (interpret.filters.model_names as string[] | undefined) || merged.model_names || [],
         source: (interpret.filters as any)._ctx_merged ? "previousContext+followup" : "explicit",
       });
+      // PHASE 1.8f — explicit cohort-input log so we can verify the universe
+      // selector receives the inherited sector / canonical group at runtime.
+      console.log(`${logPrefix} [cohort-input]`, {
+        sector: interpret.filters.sector_category || null,
+        previousContextSector: (previousContext as any)?.sector || null,
+        previousCanonicalGroup: (previousContext as any)?.canonical_group || null,
+        isFollowup: followupActive,
+      });
     }
 
     // Direct crisis detection (independent from interpretQueryEdge)
