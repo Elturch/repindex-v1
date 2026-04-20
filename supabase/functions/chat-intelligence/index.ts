@@ -264,17 +264,25 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       let q = supabase.from("rix_runs_v2").select("02_model_name,03_target_name,05_ticker,09_rix_score")
         .gte("batch_execution_date", gte).lt("batch_execution_date", lt).range(page * 1000, (page + 1) * 1000 - 1);
       if (tickerFilter) q = q.in("05_ticker", tickerFilter);
-      if (filterByModel) q = q.eq("02_model_name", filterByModel);
+      if (isSingleModel) {
+        q = q.eq("02_model_name", filterByModel);
+      } else if (isSubsetFilter) {
+        // Phase 1 multi-model subset: filter to the requested 2-5 models
+        q = q.in("02_model_name", modelNamesArr);
+      }
       const { data, error } = await q;
       if (error) return { success: false, error: error.message };
       if (!data || data.length === 0) break;
       allData = allData.concat(data);
       if (data.length < 1000) break;
     }
-    if (allData.length === 0) return { success: false, error: `No ranking data for ${batchDate}${filterByModel ? ` (model: ${filterByModel})` : ""}` };
+    if (allData.length === 0) {
+      const modelLabel = modelNamesArr.length > 0 ? ` (models: ${modelNamesArr.join(", ")})` : "";
+      return { success: false, error: `No ranking data for ${batchDate}${modelLabel}` };
+    }
     
     // When filtering by a single model, use direct scores instead of median
-    if (filterByModel) {
+    if (isSingleModel) {
       const ranking = allData.map((row: any) => ({
         company: row["03_target_name"] || "",
         ticker: row["05_ticker"] || "",
@@ -295,34 +303,48 @@ async function executeSkillGetCompanyRanking(supabase: any, params: { sector_cat
       if (!grouped.has(t)) grouped.set(t, { company: row["03_target_name"] || "", ticker: t, scores: [] });
       grouped.get(t)!.scores.push({ model: row["02_model_name"] || "", rix_score: row["09_rix_score"] });
     }
-    const ranking = Array.from(grouped.values()).map(g => {
-      const valid = g.scores.map(s => s.rix_score).filter((v): v is number => v != null);
-      const med = medianEdge(valid);
+    // Use the SHARED consensus algorithm — produces bit-identical orderings to the dashboard
+    // (src/lib/consensusRanking.ts ↔ supabase/functions/_shared/consensusRanking.ts)
+    const consensusRows = Array.from(grouped.entries()).flatMap(([ticker, g]) =>
+      g.scores
+        .filter((s) => s.rix_score != null)
+        .map((s) => ({ ticker, rix_score: s.rix_score as number }))
+    );
+    const aggregates = aggregateConsensus(consensusRows);
+    const ranking = Array.from(grouped.values()).map((g) => {
+      const valid = g.scores.map((s) => s.rix_score).filter((v): v is number => v != null);
       const min = valid.length > 0 ? Math.min(...valid) : 0;
       const max = valid.length > 0 ? Math.max(...valid) : 0;
-      const range = max - min;
-      const consensus_level = range <= 10 ? "alto" : range <= 20 ? "medio" : "bajo";
-      // Majority block: largest cluster of models within ±5 pts
-      let bestBlock: number[] = [];
-      for (const anchor of valid) {
-        const block = valid.filter(v => Math.abs(v - anchor) <= 5);
-        if (block.length > bestBlock.length) bestBlock = block;
-      }
-      const majority_block_score = bestBlock.length > 0 ? Math.round(bestBlock.reduce((a, b) => a + b, 0) / bestBlock.length) : med;
-      const majority_block_models = g.scores
-        .filter(s => s.rix_score != null && bestBlock.includes(s.rix_score))
-        .map(s => s.model);
-      // Per-model scores map
+      const med = medianEdge(valid);
+      const agg = aggregates.get(g.ticker);
+      const consensus_level = agg?.consensusLevel ?? "bajo";
+      const range = agg?.range ?? max - min;
+      const majority_block_score = agg ? Math.round(agg.majorityScore) : med;
+      // Recover which models contributed to the majority block (drop top + bottom when >=4)
+      const sortedScored = [...g.scores]
+        .filter((s) => s.rix_score != null)
+        .sort((a, b) => (a.rix_score as number) - (b.rix_score as number));
+      const majority_block_models = sortedScored.length >= 4
+        ? sortedScored.slice(1, -1).map((s) => s.model)
+        : sortedScored.map((s) => s.model);
       const scores_individuales: Record<string, number | null> = {};
       for (const s of g.scores) scores_individuales[s.model] = s.rix_score;
-      return { company: g.company, ticker: g.ticker, median_rix: med, min_rix: min, max_rix: max, range, consensus_level, scores_by_model: g.scores, majority_block_score, majority_block_models, scores_individuales };
+      return {
+        company: g.company, ticker: g.ticker,
+        median_rix: med, min_rix: min, max_rix: max, range,
+        consensus_level,
+        scores_by_model: g.scores,
+        majority_block_score,
+        majority_block_models,
+        scores_individuales,
+      };
     })
-    // Primary sort: consensus alto first, then by majority block score
+    // Primary sort: consensus alto first, then by majority block score (matches dashboard exactly)
     .sort((a, b) => {
-      const order: Record<string, number> = { alto: 0, medio: 1, bajo: 2 };
-      const cDiff = (order[a.consensus_level] ?? 1) - (order[b.consensus_level] ?? 1);
-      if (cDiff !== 0) return cDiff;
-      return b.majority_block_score - a.majority_block_score;
+      const aggA = aggregates.get(a.ticker);
+      const aggB = aggregates.get(b.ticker);
+      if (!aggA || !aggB) return 0;
+      return compareConsensus(aggA, aggB, false);
     }).slice(0, topN);
     console.log(`[SKILL] CompanyRanking: ${ranking.length} companies in ${Date.now() - start}ms`);
     return { success: true, data: { batch_date: batchDate, filter: params.sector_category || params.ibex_family_code || "all", ranking } };
