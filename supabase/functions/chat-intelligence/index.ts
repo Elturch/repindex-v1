@@ -23,6 +23,14 @@ import {
   aggregateConsensus,
   compareConsensus,
 } from "../_shared/consensusRanking.ts";
+import {
+  detectInvalidPeriod,
+  isWelcomeQuery,
+  detectHomonymAmbiguity,
+  detectFuturePeriod,
+  fuzzyCompanyMatch,
+  detectPromptInjection,
+} from "../_shared/queryGuards.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
