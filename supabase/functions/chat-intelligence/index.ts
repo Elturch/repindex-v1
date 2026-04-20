@@ -231,11 +231,17 @@ async function executeSkillGetCompanyScores(supabase: any, params: { ticker?: st
 }
 
 // ── Inlined skill: Company Ranking ──────────────────────────────────
-async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string; ticker_filter?: string[] }) {
+async function executeSkillGetCompanyRanking(supabase: any, params: { sector_category?: string; ibex_family_code?: string; top_n?: number; batch_date?: string; model_name?: string; model_names?: string[]; ticker_filter?: string[] }) {
   const start = Date.now();
   try {
     const topN = params.top_n ?? 50;
-    const filterByModel = params.model_name || null;
+    // Normalize: prefer model_names[] (Phase 1 multi-model), fall back to legacy single model_name
+    const modelNamesArr: string[] = (params.model_names && params.model_names.length > 0)
+      ? params.model_names
+      : (params.model_name ? [params.model_name] : []);
+    const isSubsetFilter = modelNamesArr.length > 0 && modelNamesArr.length < 6;
+    const isSingleModel = modelNamesArr.length === 1;
+    const filterByModel = isSingleModel ? modelNamesArr[0] : null; // legacy var, only when EXACTLY 1
     let batchDate = params.batch_date;
     if (!batchDate) {
       const sr = await getLatestValidSundayEdge(supabase);
