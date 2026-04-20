@@ -458,6 +458,11 @@ export interface QuantifierResult {
   label: string; // e.g., "Top 3 por cobertura"
 }
 
+export interface QuantifierParseResult {
+  companyQuantifier: CompanyQuantifierResult | null;
+  modelFilter: QuantifierResult | null;
+}
+
 const NUMBER_WORDS_ES: Record<string, number> = {
   "uno": 1, "una": 1,
   "dos": 2,
@@ -515,6 +520,32 @@ export function parseQuantifier(question: string | null | undefined): Quantifier
   return null;
 }
 
+const MODEL_N_REGEX = /\b(\d+)\s+(?:mejores?|peores?|primeros?|ultimos?|últimos?)?\s*(modelos?|ias?|llms?)\b/i;
+
+export function parseQuantifiers(question: string | null | undefined): QuantifierParseResult {
+  if (!question) return { companyQuantifier: null, modelFilter: null };
+  const modelFilter = parseQuantifier(question);
+  if (modelFilter) {
+    return { companyQuantifier: null, modelFilter };
+  }
+  const modelN = question.match(MODEL_N_REGEX);
+  if (modelN) {
+    const n = parseInt(modelN[1], 10);
+    if (n >= 1 && n <= MODEL_ENUM.length) {
+      return {
+        companyQuantifier: null,
+        modelFilter: {
+          count: n,
+          mode: "top_coverage",
+          raw_match: modelN[0],
+          label: `Top ${n} por cobertura`,
+        },
+      };
+    }
+  }
+  return { companyQuantifier: parseCompanyQuantifier(question), modelFilter: null };
+}
+
 // ──────────────────────────────────────────────────────────────────
 // PHASE 1.8b — Company-ranking quantifiers ("top 3 empresas", "los 5
 // mejores", "peores 2"). MUST NOT fire when the qualifier is followed
@@ -549,12 +580,8 @@ const COMPANY_NUMBER_WORDS: Record<string, number> = {
 };
 
 function isFollowedByModelsKeyword(question: string, matchEnd: number): boolean {
-  // Look only at the immediate tail (≤15 chars / ≈3 tokens). A distant
-  // "modelos" later in the sentence (e.g. "los 2 peores bancos SEGÚN
-  // los 3 mejores MODELOS") refers to a separate model-quantifier and
-  // must NOT disqualify the company quantifier match.
-  const tail = question.slice(matchEnd, matchEnd + 15).toLowerCase();
-  return /^\s*(?:de\s+)?(?:los?|las?)?\s*(?:modelos?|ias?|iaas?|llms?)\b/.test(tail);
+  const tail = question.slice(matchEnd, matchEnd + 40).toLowerCase();
+  return /^\s*(?:de\s+|con\s+|para\s+|seg[uú]n\s+)?(?:los?|las?)?\s*(?:\d+\s+)?(?:mejores?|peores?|primeros?|ultimos?|últimos?)?\s*(?:modelos?|ias?|iaas?|llms?)\b/.test(tail);
 }
 
 export function parseCompanyQuantifier(

@@ -110,6 +110,7 @@ const CLIENT_FOLLOWUP_PREFIX_REGEX =
   /^[¿\s]*(y|ahora|sin|con|tambi[eé]n|pero|en\s+cambio|y\s+si|y\s+ahora|quita|quitando|excluye|excluyendo|a[ñn]ade|a[ñn]adiendo|incluye|incluyendo|adem[aá]s)\b/i;
 const CLIENT_FOLLOWUP_ANAPHOR_REGEX =
   /\b(ese|esa|esos|esas|este|esta|estos|estas|aquel|aquella|el\s+anterior|el\s+ultimo|el\s+último|los\s+mismos|esa\s+misma)\b/i;
+const CLIENT_MODEL_QUANTIFIER_REGEX = /\b(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:mejores?|peores?|principales|primeros?|ultimos?|últimos?)\s+(?:modelos?|ias?|llms?)\b/i;
 
 function isFollowupClient(question: string): boolean {
   if (!question) return false;
@@ -117,6 +118,10 @@ function isFollowupClient(question: string): boolean {
   const wc = t.split(/\s+/).filter(Boolean).length;
   if (wc === 0 || wc > 10) return false;
   return CLIENT_FOLLOWUP_ANAPHOR_REGEX.test(t) || CLIENT_FOLLOWUP_PREFIX_REGEX.test(t);
+}
+
+function hasModelQuantifierClient(question: string): boolean {
+  return !!question && CLIENT_MODEL_QUANTIFIER_REGEX.test(question);
 }
 
 export interface LastQueryContext {
@@ -688,17 +693,40 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // original short query so the backend ctx-merge can apply (otherwise
           // the LLM rewrite strips the conversational link, e.g. "y los 3
           // mejores" → "Top 3 del sector banca" loses the model intent).
-          if (normData.normalized_query && normData.confidence > 0.3 && !hasFollowupContext) {
+          const shouldPreserveOriginalForParser = hasModelQuantifierClient(question);
+          if (normData.normalized_query && normData.confidence > 0.3 && !hasFollowupContext && !shouldPreserveOriginalForParser) {
             normalizedQuestion = normData.normalized_query;
             console.log('[ChatContext] Query normalized:', question, '->', normalizedQuestion);
           } else if (hasFollowupContext) {
             console.log('[ChatContext] PHASE 1.8c: skipping normalize-query rewrite for follow-up — preserving original to enable ctx-merge.');
+          } else if (shouldPreserveOriginalForParser) {
+            console.log('[ChatContext] preserving original query — model quantifier must not drift into company top-N.');
           }
         }
       } catch (normErr) {
         // Graceful degradation: just use original query
         console.warn('[ChatContext] normalize-query failed, using original:', normErr);
       }
+
+      const previousContextPayload = followupActive && lastQueryContextRef.current
+        ? {
+            ...lastQueryContextRef.current,
+            entity: lastQueryContextRef.current.company,
+            models: lastQueryContextRef.current.model_names,
+            period: {
+              from: lastQueryContextRef.current.period_from,
+              to: lastQueryContextRef.current.period_to,
+            },
+            timestamp: lastQueryContextRef.current.ts,
+          }
+        : null;
+
+      console.log('[FE-BE]', {
+        query: normalizedQuestion,
+        originalQuestion: question,
+        previousContext: previousContextPayload,
+        isFollowupActive: followupActive,
+      });
 
       if (useStreaming) {
         // =========================================================================
@@ -736,7 +764,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               rolePrompt: role?.prompt,
               streamMode: true, // Enable streaming in edge function
               // PHASE 1.8 — Conversational memory for short follow-ups.
-              previousContext: followupActive ? lastCtx : null,
+              previousContext: previousContextPayload,
               isFollowup: followupActive,
             }),
           }
@@ -940,7 +968,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           rolePrompt: role?.prompt,
           streamMode: false,
           // PHASE 1.8 — Conversational memory for short follow-ups.
-          previousContext: followupActive ? lastCtx : null,
+          previousContext: previousContextPayload,
           isFollowup: followupActive,
         }, timeoutMs) as { data: any; error: Error | null };
 

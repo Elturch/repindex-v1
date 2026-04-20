@@ -8,6 +8,9 @@ import {
   extractModelNames,
   parseModelsWithNegation,
   parseCompanyQuantifier,
+  parseQuantifiers,
+  parseQuantifier,
+  isFollowupQuery,
   mergeFollowupWithPrevious,
   hasSectorHint,
   hasCompanyHint,
@@ -2674,17 +2677,18 @@ async function buildDataPackFromSkills(
     // in the new short query. NEVER overwrite anything explicit in the
     // current parse.
     const FOLLOWUP_TTL_MS_BACKEND = 5 * 60 * 1000;
+    const followupQuestion = originalQuestion || question;
     const ctxFresh = !!(previousContext && previousContext.ts && (Date.now() - previousContext.ts) < FOLLOWUP_TTL_MS_BACKEND);
-    const followupActive = !!isFollowup && ctxFresh;
+    const parsedFollowup = isFollowupQuery(followupQuestion);
+    const followupActive = !!(isFollowup || parsedFollowup) && ctxFresh;
     if (isFollowup && !ctxFresh) {
       console.log(`${logPrefix} [ctx-merge] SKIPPED — previousContext stale or missing (ts=${previousContext?.ts ?? "null"})`);
     }
     if (followupActive) {
-      const followupQ = originalQuestion || question;
-      const newSectorMentioned = hasSectorHint(followupQ);
-      const newCompanyMentioned = hasCompanyHint(followupQ);
-      const followupParsed = parseModelsWithNegation(followupQ);
-      const merged = mergeFollowupWithPrevious(followupParsed, previousContext, followupQ);
+      const newSectorMentioned = hasSectorHint(followupQuestion);
+      const newCompanyMentioned = hasCompanyHint(followupQuestion);
+      const followupParsed = parseModelsWithNegation(followupQuestion);
+      const merged = mergeFollowupWithPrevious(followupParsed, previousContext, followupQuestion);
 
       // Inherit sector ONLY when the follow-up does not introduce one and we don't
       // already have one in the current interpret.
@@ -2715,6 +2719,16 @@ async function buildDataPackFromSkills(
         interpret.confidence = Math.max(interpret.confidence, 0.7);
         console.log(`${logPrefix} [ctx-merge] promoted intent=ranking from previousContext`);
       }
+      console.log(`${logPrefix} [BE-merged]`, {
+        entity: interpret.filters.ticker || previousContext?.company || null,
+        sector: interpret.filters.sector_category || merged.sector || null,
+        period: {
+          from: previousContext?.period_from ?? null,
+          to: previousContext?.period_to ?? null,
+        },
+        models: (interpret.filters.model_names as string[] | undefined) || merged.model_names || [],
+        source: (interpret.filters as any)._ctx_merged ? "previousContext+followup" : "explicit",
+      });
     }
 
     // Direct crisis detection (independent from interpretQueryEdge)
@@ -3613,7 +3627,8 @@ async function buildDataPackFromSkills(
     // "modelos|ias" (those are model selectors handled by parseQuantifier
     // and live in the separate model-filter pipeline).
     try {
-      const cQuant = parseCompanyQuantifier(originalQuestion || question);
+      const quantParse = parseQuantifiers(originalQuestion || question);
+      const cQuant = quantParse.companyQuantifier;
       if (cQuant && Array.isArray(pack.ranking) && pack.ranking.length > 0) {
         const total = pack.ranking.length;
         const sorted = [...pack.ranking].sort((a: any, b: any) => {
@@ -8285,6 +8300,26 @@ serve(async (req) => {
       previousContext = null,
       isFollowup = false,
     } = body;
+    const runtimeQuery = originalQuestion || question;
+    const normalizedPreviousContext = previousContext
+      ? {
+          ...previousContext,
+          company: previousContext.company ?? previousContext.entity ?? null,
+          model_names: previousContext.model_names ?? previousContext.models ?? [],
+          period_from: previousContext.period_from ?? previousContext.period?.from ?? null,
+          period_to: previousContext.period_to ?? previousContext.period?.to ?? null,
+          ts: previousContext.ts ?? previousContext.timestamp ?? null,
+        }
+      : null;
+    const ctxAge = normalizedPreviousContext?.ts ? Date.now() - normalizedPreviousContext.ts : null;
+    console.log(`${logPrefix} [BE-FE]`, {
+      query: runtimeQuery,
+      previousContext: normalizedPreviousContext,
+      parsedFollowup: isFollowupQuery(runtimeQuery),
+      parsedQuant: parseQuantifier(runtimeQuery),
+      ctxAge,
+      isFollowup,
+    });
 
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
@@ -8367,11 +8402,14 @@ serve(async (req) => {
     // =============================================================================
     // GUARDRAILS: CATEGORIZE QUESTION AND REDIRECT IF NEEDED
     // =============================================================================
-    const questionCategory = categorizeQuestion(question, companiesCache || []);
-    console.log(`${logPrefix} Question category: ${questionCategory}`);
+    const effectiveQuestionCategory =
+      isFollowup && normalizedPreviousContext && (normalizedPreviousContext.sector || normalizedPreviousContext.company)
+        ? "corporate_analysis"
+        : categorizeQuestion(runtimeQuery, companiesCache || []);
+    console.log(`${logPrefix} Question category: ${effectiveQuestionCategory}`);
 
-    if (questionCategory !== "corporate_analysis") {
-      const redirectResponse = getRedirectResponse(questionCategory, question, language, languageName, companiesCache || []);
+    if (effectiveQuestionCategory !== "corporate_analysis") {
+      const redirectResponse = getRedirectResponse(effectiveQuestionCategory, runtimeQuery, language, languageName, companiesCache || []);
 
       // Save to database
       if (sessionId) {
@@ -8381,7 +8419,7 @@ serve(async (req) => {
             role: "user",
             content: question,
             user_id: userId,
-            question_category: questionCategory,
+            question_category: effectiveQuestionCategory,
             depth_level: depthLevel,
           },
           {
@@ -8390,7 +8428,7 @@ serve(async (req) => {
             content: redirectResponse.answer,
             suggested_questions: redirectResponse.suggestedQuestions,
             user_id: userId,
-            question_category: questionCategory,
+            question_category: effectiveQuestionCategory,
           },
         ]);
       }
@@ -8401,7 +8439,7 @@ serve(async (req) => {
           suggestedQuestions: redirectResponse.suggestedQuestions,
           metadata: {
             type: "redirect",
-            questionCategory,
+            questionCategory: effectiveQuestionCategory,
           },
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -8489,7 +8527,7 @@ serve(async (req) => {
       rolePrompt,
       streamMode, // Pass streaming mode to standard chat handler
       originalQuestion, // Pass original user question for report_context
-      previousContext, // PHASE 1.8b — previous query context for follow-ups
+      normalizedPreviousContext, // PHASE 1.8b — previous query context for follow-ups
       isFollowup,      // PHASE 1.8b — flag to enable merge logic
     );
   } catch (error) {
