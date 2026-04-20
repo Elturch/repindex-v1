@@ -8191,6 +8191,9 @@ serve(async (req) => {
       languageName = "Español",
       depthLevel = "complete",
       streamMode = false, // NEW: enable SSE streaming
+      // ── PHASE 1.8b — Conversational memory carried by the client ──
+      previousContext = null,
+      isFollowup = false,
     } = body;
 
     // =============================================================================
