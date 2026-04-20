@@ -10029,7 +10029,7 @@ async function handleStandardChat(
   if (USE_SKILLS_PIPELINE) {
     console.log(`${logPrefix} [SKILLS] Attempting skills-based pipeline...`);
     const skillsStart = Date.now();
-    const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix, originalUserQuestion);
+    const skillsPack = await buildDataPackFromSkills(question, supabaseClient, companiesCache, logPrefix, originalUserQuestion, previousContext, isFollowup);
     // ── NO_DISPONIBLE short-circuit: entity not in database, return explanatory answer directly ──
     if (skillsPack && (skillsPack as any).no_disponible === true) {
       const detail = (skillsPack as any).no_disponible_detail || "entidad no monitorizada";
