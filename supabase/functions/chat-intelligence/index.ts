@@ -3643,6 +3643,20 @@ async function buildDataPackFromSkills(
     if (_matchedGroup) reportContext.matched_group = _matchedGroup;
     console.log(`${logPrefix} [MODELS_COVERAGE] requested=[${requestedForCoverage.join(", ")}] with_data=[${withData.join(", ")}] missing=[${missing.join(", ")}]`);
 
+    // PHASE 1.8f — surface the resolved canonical group (if any) so the
+    // frontend can carry it into the next follow-up's previousContext.
+    const _resolvedGroupKey = (interpret.filters as any)._resolved_group as string | undefined;
+    const _resolvedGroupName = (interpret.filters as any)._resolved_group_name as string | undefined;
+    if (_resolvedGroupKey) {
+      (reportContext as any).canonical_group = _resolvedGroupKey;
+      if (_resolvedGroupName) (reportContext as any).canonical_group_name = _resolvedGroupName;
+      // If sector is empty but we have a group display name, surface it as sector
+      if (!reportContext.sector && _resolvedGroupName) {
+        reportContext.sector = _resolvedGroupName;
+      }
+      console.log(`${logPrefix} [REPORT_CTX] canonical_group surfaced: key="${_resolvedGroupKey}" name="${_resolvedGroupName}"`);
+    }
+
     (pack as any).report_context = reportContext;
 
     // ──────────────────────────────────────────────────────────────
