@@ -653,7 +653,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // para tecnologicas" as off-topic just because Claude isn't supported.
           const hasDeterministicSector = CLIENT_SECTOR_REGEX.test(question);
           const hasDeterministicModel = parseModelsClient(question).modelNames.length > 0;
-          const overrideClarification = hasDeterministicSector || hasDeterministicModel;
+          // PHASE 1.8c BUG #1 FIX: also override when this is a follow-up with
+          // a fresh previousContext that already has sector/company. Otherwise
+          // queries like "y los 3 mejores" trigger an LLM clarification.
+          const hasFollowupContext = followupActive && !!(lastCtx?.sector || lastCtx?.company);
+          const overrideClarification = hasDeterministicSector || hasDeterministicModel || hasFollowupContext;
           if (normData.needs_clarification && normData.clarification_message && !overrideClarification) {
             const clarificationMsg: Message = {
               role: 'assistant',
@@ -677,13 +681,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
             return;
           }
           if (normData.needs_clarification && overrideClarification) {
-            console.log('[ChatContext] PHASE 1.7: ignoring needs_clarification — deterministic parser found sector/model in query');
+            console.log('[ChatContext] PHASE 1.7/1.8c: ignoring needs_clarification — deterministic parser found sector/model OR follow-up context active');
           }
           
-          // Use normalized query if available
-          if (normData.normalized_query && normData.confidence > 0.3) {
+          // Use normalized query if available — BUT for follow-ups, keep the
+          // original short query so the backend ctx-merge can apply (otherwise
+          // the LLM rewrite strips the conversational link, e.g. "y los 3
+          // mejores" → "Top 3 del sector banca" loses the model intent).
+          if (normData.normalized_query && normData.confidence > 0.3 && !hasFollowupContext) {
             normalizedQuestion = normData.normalized_query;
             console.log('[ChatContext] Query normalized:', question, '->', normalizedQuestion);
+          } else if (hasFollowupContext) {
+            console.log('[ChatContext] PHASE 1.8c: skipping normalize-query rewrite for follow-up — preserving original to enable ctx-merge.');
           }
         }
       } catch (normErr) {
