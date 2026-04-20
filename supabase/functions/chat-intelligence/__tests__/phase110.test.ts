@@ -44,8 +44,8 @@ Deno.test("1.10-1: 'últimas 20 semanas' → InfoBar y report ambos = 12 (cap)",
     date_to: "2026-04-19",
   });
   assertEquals(ctx.weeks_analyzed, 12);
-  // date_from se realinea al cap (12 semanas antes de date_to)
-  assertEquals(ctx.date_from, "2026-01-24");
+  // date_from se realinea al cap (12·7 = 84 días antes de date_to)
+  assertEquals(ctx.date_from, "2026-01-25");
 });
 
 Deno.test("1.10-2: 'últimas 30 semanas' → cap 12, InfoBar = report", () => {
