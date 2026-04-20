@@ -6939,7 +6939,32 @@ PATRÓN DETECTADO: 4 de 6 IAs coinciden en que Autoridad de Fuentes es la métri
   // Build cross-model table (pre-calculated, injected BEFORE datapack)
   const crossModelTable = buildCrossModelTable(dataPack);
 
+  // PHASE 1.8e — Anti-podium guard for model-only quantifiers.
+  // When the user asked for "los N mejores modelos" (model filter, NOT a
+  // company top-N), the LLM must NOT narrate a podium of N companies. Instead
+  // it must describe the FULL ranking (all companies in dataPack.ranking).
+  const modelOnlyQuant = (dataPack as any)._model_only_quantifier === true;
+  const modelOnlyQuantLabel = (dataPack as any)._model_only_quantifier_label || "";
+  const totalCompaniesInRanking = Array.isArray(dataPack.ranking) ? dataPack.ranking.length : 0;
+  const antiPodiumGuard = modelOnlyQuant
+    ? `\n\n═══ AVISO CRÍTICO DE NARRATIVA (PROHIBIDO IGNORAR) ═══
+La pregunta menciona "${modelOnlyQuantLabel}" pero ese cuantificador se refiere
+a los MODELOS DE IA consultados, NO a las empresas a rankear. El ranking debe
+cubrir las ${totalCompaniesInRanking} empresas del DATAPACK COMPLETAS.
+- PROHIBIDO en el TITULAR y en el primer párrafo: usar las palabras "podio",
+  "top 3", "top tres", "los tres mejores", "comparten el liderazgo",
+  "cierran el podio", "los N mejores bancos/empresas", o cualquier formulación
+  que implique que solo hay N empresas líderes.
+- OBLIGATORIO: el titular y el lead describen el SECTOR COMPLETO con sus
+  ${totalCompaniesInRanking} empresas. La tabla de la sección de ranking sí
+  lista las ${totalCompaniesInRanking} empresas en orden.
+- Si quieres referirte a la cobertura de modelos, hazlo en una sola frase
+  ("Análisis basado en ${modelOnlyQuantLabel}") fuera del titular.
+═══════════════════════════════════════════════════════════════\n`
+    : "";
+
   const userPrompt = `PREGUNTA: "${question}"
+${antiPodiumGuard}
 
 CLASIFICACIÓN (E1): tipo=${classifier.tipo}, intención=${classifier.intencion}
 
