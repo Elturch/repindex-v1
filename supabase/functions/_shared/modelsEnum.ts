@@ -549,8 +549,12 @@ const COMPANY_NUMBER_WORDS: Record<string, number> = {
 };
 
 function isFollowedByModelsKeyword(question: string, matchEnd: number): boolean {
-  const tail = question.slice(matchEnd, matchEnd + 40).toLowerCase();
-  return /\b(modelos?|ias?|iaas?)\b/.test(tail);
+  // Look only at the immediate tail (≤15 chars / ≈3 tokens). A distant
+  // "modelos" later in the sentence (e.g. "los 2 peores bancos SEGÚN
+  // los 3 mejores MODELOS") refers to a separate model-quantifier and
+  // must NOT disqualify the company quantifier match.
+  const tail = question.slice(matchEnd, matchEnd + 15).toLowerCase();
+  return /^\s*(?:de\s+)?(?:los?|las?)?\s*(?:modelos?|ias?|iaas?|llms?)\b/.test(tail);
 }
 
 export function parseCompanyQuantifier(
