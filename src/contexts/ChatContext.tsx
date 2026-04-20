@@ -710,6 +710,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
               roleName: role ? `${role.emoji} ${role.name}` : undefined,
               rolePrompt: role?.prompt,
               streamMode: true, // Enable streaming in edge function
+              // PHASE 1.8 — Conversational memory for short follow-ups.
+              previousContext: followupActive ? lastCtx : null,
+              isFollowup: followupActive,
             }),
           }
         );
