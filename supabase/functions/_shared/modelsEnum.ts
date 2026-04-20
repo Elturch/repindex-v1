@@ -469,6 +469,9 @@ const NUMBER_WORDS_ES: Record<string, number> = {
 
 const QUANT_TOPN_REGEX =
   /\b(?:los?|las?)\s+(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:mejores?|principales|m[aá]s\s+(?:fiables|completos?|robustos?|relevantes?))\s+(?:modelos?|ias?|iaas?)\b/i;
+// Variant: "los 3 modelos más fiables" (modelos before the qualifier)
+const QUANT_TOPN_REGEX_INV =
+  /\b(?:los?|las?)\s+(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:modelos?|ias?)\s+(?:mejores?|principales|m[aá]s\s+(?:fiables|completos?|robustos?|relevantes?))\b/i;
 const QUANT_HALF_REGEX = /\b(?:la\s+mitad|las?\s+mitad)\s+de\s+(?:los?|las?)\s+(?:modelos?|ias?)\b/i;
 const QUANT_MAJORITY_REGEX = /\b(?:la\s+mayor[ií]a)\s+de\s+(?:los?|las?)\s+(?:modelos?|ias?)\b/i;
 
@@ -476,7 +479,7 @@ export function parseQuantifier(question: string | null | undefined): Quantifier
   if (!question) return null;
   const max = MODEL_ENUM.length;
 
-  const m = question.match(QUANT_TOPN_REGEX);
+  const m = question.match(QUANT_TOPN_REGEX) || question.match(QUANT_TOPN_REGEX_INV);
   if (m) {
     const tok = m[1].toLowerCase();
     const n = /^\d+$/.test(tok) ? parseInt(tok, 10) : (NUMBER_WORDS_ES[tok] ?? 0);
