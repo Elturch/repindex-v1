@@ -3263,6 +3263,8 @@ async function buildDataPackFromSkills(
             eGte = df.gte; eLt = df.lt;
           }
           const modelFilter = interpret.filters.model_name || null;
+          const modelFilterArr: string[] = (interpret.filters.model_names as string[] | undefined) || [];
+          const useArrFilter = modelFilterArr.length > 1 && modelFilterArr.length < 6;
 
           let enrichData: any[] = [];
           for (let page = 0; page < 4; page++) {
@@ -3271,7 +3273,11 @@ async function buildDataPackFromSkills(
               .gte("batch_execution_date", eGte).lte("batch_execution_date", eLt)
               .in("05_ticker", enrichTickers)
               .range(page * 1000, (page + 1) * 1000 - 1);
-            if (modelFilter) eq = eq.eq("02_model_name", modelFilter);
+            if (useArrFilter) {
+              eq = eq.in("02_model_name", modelFilterArr);
+            } else if (modelFilter) {
+              eq = eq.eq("02_model_name", modelFilter);
+            }
             const { data: eRows, error: eErr } = await eq;
             if (eErr) { console.warn(`${logPrefix} [SKILLS-v2] Enrichment query error: ${eErr.message}`); break; }
             if (!eRows || eRows.length === 0) break;
