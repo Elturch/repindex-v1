@@ -8288,6 +8288,26 @@ serve(async (req) => {
       previousContext = null,
       isFollowup = false,
     } = body;
+    const runtimeQuery = originalQuestion || question;
+    const normalizedPreviousContext = previousContext
+      ? {
+          ...previousContext,
+          company: previousContext.company ?? previousContext.entity ?? null,
+          model_names: previousContext.model_names ?? previousContext.models ?? [],
+          period_from: previousContext.period_from ?? previousContext.period?.from ?? null,
+          period_to: previousContext.period_to ?? previousContext.period?.to ?? null,
+          ts: previousContext.ts ?? previousContext.timestamp ?? null,
+        }
+      : null;
+    const ctxAge = normalizedPreviousContext?.ts ? Date.now() - normalizedPreviousContext.ts : null;
+    console.log(`${logPrefix} [BE-FE]`, {
+      query: runtimeQuery,
+      previousContext: normalizedPreviousContext,
+      parsedFollowup: isFollowupQuery(runtimeQuery),
+      parsedQuant: parseQuantifier(runtimeQuery),
+      ctxAge,
+      isFollowup,
+    });
 
     // =============================================================================
     // EXTRACT USER ID FROM JWT TOKEN
@@ -8370,11 +8390,14 @@ serve(async (req) => {
     // =============================================================================
     // GUARDRAILS: CATEGORIZE QUESTION AND REDIRECT IF NEEDED
     // =============================================================================
-    const questionCategory = categorizeQuestion(question, companiesCache || []);
-    console.log(`${logPrefix} Question category: ${questionCategory}`);
+    const effectiveQuestionCategory =
+      isFollowup && normalizedPreviousContext && (normalizedPreviousContext.sector || normalizedPreviousContext.company)
+        ? "corporate_analysis"
+        : categorizeQuestion(runtimeQuery, companiesCache || []);
+    console.log(`${logPrefix} Question category: ${effectiveQuestionCategory}`);
 
-    if (questionCategory !== "corporate_analysis") {
-      const redirectResponse = getRedirectResponse(questionCategory, question, language, languageName, companiesCache || []);
+    if (effectiveQuestionCategory !== "corporate_analysis") {
+      const redirectResponse = getRedirectResponse(effectiveQuestionCategory, runtimeQuery, language, languageName, companiesCache || []);
 
       // Save to database
       if (sessionId) {
@@ -8384,7 +8407,7 @@ serve(async (req) => {
             role: "user",
             content: question,
             user_id: userId,
-            question_category: questionCategory,
+            question_category: effectiveQuestionCategory,
             depth_level: depthLevel,
           },
           {
@@ -8393,7 +8416,7 @@ serve(async (req) => {
             content: redirectResponse.answer,
             suggested_questions: redirectResponse.suggestedQuestions,
             user_id: userId,
-            question_category: questionCategory,
+            question_category: effectiveQuestionCategory,
           },
         ]);
       }
@@ -8404,7 +8427,7 @@ serve(async (req) => {
           suggestedQuestions: redirectResponse.suggestedQuestions,
           metadata: {
             type: "redirect",
-            questionCategory,
+            questionCategory: effectiveQuestionCategory,
           },
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -8492,7 +8515,7 @@ serve(async (req) => {
       rolePrompt,
       streamMode, // Pass streaming mode to standard chat handler
       originalQuestion, // Pass original user question for report_context
-      previousContext, // PHASE 1.8b — previous query context for follow-ups
+      normalizedPreviousContext, // PHASE 1.8b — previous query context for follow-ups
       isFollowup,      // PHASE 1.8b — flag to enable merge logic
     );
   } catch (error) {
