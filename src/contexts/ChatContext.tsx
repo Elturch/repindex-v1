@@ -416,6 +416,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       period_from: rc.date_from ?? null,
       period_to: rc.date_to ?? null,
       ts: Date.now(),
+      intent: (rc.intent as string | undefined) ?? null,
     };
     console.log('[ChatContext] PHASE 1.8 captured lastQueryContext:', lastQueryContextRef.current);
   }, []);
