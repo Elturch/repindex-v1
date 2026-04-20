@@ -10652,16 +10652,29 @@ async function handleStandardChat(
           // Drumroll question generation disabled
 
           // Calculate methodology metadata
+          // PHASE 1.5 FIX: Honor user-requested model subset from report_context.models
+          // (which is filtered by interpret.filters.model_names upstream). Fallback to
+          // unique models present in raw data when no specific filter was requested.
+          const requestedModelsForMethod: string[] = Array.isArray((dataPack as any)?.report_context?.models)
+            ? ((dataPack as any).report_context.models as string[])
+            : [];
+          const modelsInData = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])] as string[];
+          // If a real subset was requested (1..5 models), restrict scope to that subset.
+          // If 0 or 6 (= "all models" semantics), use whatever is present in the data.
+          const isRealSubset = requestedModelsForMethod.length > 0 && requestedModelsForMethod.length < 6;
+          const scopedRixData = isRealSubset
+            ? (allRixData || []).filter((r: any) => requestedModelsForMethod.includes(r["02_model_name"]))
+            : (allRixData || []);
           const modelScores =
-            allRixData
-              ?.filter((r) => r["09_rix_score"] != null && r["09_rix_score"] > 0)
-              ?.map((r) => r["09_rix_score"]) || [];
+            scopedRixData
+              ?.filter((r: any) => r["09_rix_score"] != null && r["09_rix_score"] > 0)
+              ?.map((r: any) => r["09_rix_score"]) || [];
           const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePointsMethod = maxScoreMethod - minScoreMethod;
           const divergenceLevelMethod =
             divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
-          const modelsUsedMethod = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+          const modelsUsedMethod = isRealSubset ? requestedModelsForMethod : modelsInData;
           const periodFromRaw = allRixData
             ?.map((r) => r["06_period_from"])
             .filter(Boolean)
@@ -10674,8 +10687,9 @@ async function handleStandardChat(
           // ALWAYS use real data dates for methodology — never override with user-requested range
           const periodFromMethod = (dataPack as any)?.report_context?.date_from || periodFromRaw;
           const periodToMethod = (dataPack as any)?.report_context?.date_to || periodToRaw;
-          const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
-          const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
+          const uniqueCompaniesCount = new Set(scopedRixData?.map((r: any) => r["05_ticker"]).filter(Boolean) || []).size;
+          const uniqueWeeksCount = scopedRixData ? [...new Set(scopedRixData.map((r: any) => r.batch_execution_date))].length : 0;
+          const observationsCountMethod = scopedRixData?.length || 0;
 
           // Save to database
           if (sessionId) {
@@ -10741,11 +10755,11 @@ async function handleStandardChat(
                 hadForbiddenPattern,
                 finalOutputLength: answer.length,
                 methodology: {
-                  hasRixData: (allRixData?.length || 0) > 0,
+                  hasRixData: observationsCountMethod > 0,
                   modelsUsed: modelsUsedMethod,
                   periodFrom: periodFromMethod,
                   periodTo: periodToMethod,
-                  observationsCount: allRixData?.length || 0,
+                  observationsCount: observationsCountMethod,
                   divergenceLevel: divergenceLevelMethod,
                   divergencePoints: divergencePointsMethod,
                   uniqueCompanies: uniqueCompaniesCount,
@@ -11304,8 +11318,17 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     }
 
     // Calculate divergence for methodology metadata
+    // PHASE 1.5 FIX: scope methodology to requested model subset (report_context.models)
+    const requestedModelsForMethod: string[] = Array.isArray((dataPack as any)?.report_context?.models)
+      ? ((dataPack as any).report_context.models as string[])
+      : [];
+    const modelsInData = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])] as string[];
+    const isRealSubset = requestedModelsForMethod.length > 0 && requestedModelsForMethod.length < 6;
+    const scopedRixData = isRealSubset
+      ? (allRixData || []).filter((r: any) => requestedModelsForMethod.includes(r["02_model_name"]))
+      : (allRixData || []);
     const modelScores =
-      allRixData?.filter((r) => r["09_rix_score"] != null && r["09_rix_score"] > 0)?.map((r) => r["09_rix_score"]) ||
+      scopedRixData?.filter((r: any) => r["09_rix_score"] != null && r["09_rix_score"] > 0)?.map((r: any) => r["09_rix_score"]) ||
       [];
     const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
     const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
@@ -11314,7 +11337,8 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
 
     // Extract unique models used
-    const modelsUsedMethod = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+    const modelsUsedMethod = isRealSubset ? requestedModelsForMethod : modelsInData;
+    const observationsCountMethod = scopedRixData?.length || 0;
 
     // Extract period info
     const periodFromRaw = allRixData
@@ -11331,8 +11355,8 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     const periodToMethod = (dataPack as any)?.report_context?.date_to || periodToRaw;
 
     // Extract unique companies and weeks
-    const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
-    const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
+    const uniqueCompaniesCount = new Set(scopedRixData?.map((r: any) => r["05_ticker"]).filter(Boolean) || []).size;
+    const uniqueWeeksCount = scopedRixData ? [...new Set(scopedRixData.map((r: any) => r.batch_execution_date))].length : 0;
 
     return new Response(
       JSON.stringify({
@@ -11355,11 +11379,11 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
           uniqueCompanies: uniqueCompaniesCount,
           uniqueWeeks: uniqueWeeksCount,
           methodology: {
-            hasRixData: (allRixData?.length || 0) > 0,
+            hasRixData: observationsCountMethod > 0,
             modelsUsed: modelsUsedMethod,
             periodFrom: periodFromMethod,
             periodTo: periodToMethod,
-            observationsCount: allRixData?.length || 0,
+            observationsCount: observationsCountMethod,
             divergenceLevel: divergenceLevelMethod,
             divergencePoints: divergencePointsMethod,
             uniqueCompanies: uniqueCompaniesCount,
