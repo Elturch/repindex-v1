@@ -57,12 +57,12 @@ Deno.test("T5: 'compara GPT vs Claude' → 1 model (only ChatGPT, Claude not in 
 });
 
 // ── T6: literal "los 6 modelos" → 0 (no model names mentioned literally) ──
-// Design choice: "los 6 modelos" is a quantity, not a list of model names.
-// Empty array means "all 6 implicit" downstream. Either 0 or 6 is acceptable
-// per the spec — we choose 0 to keep the parser purely literal (no inference).
-Deno.test("T6: 'ranking de los 6 modelos' → 0 (no literal model names)", () => {
+// Phase 1.7 update: "los 6" / "todos los modelos" are now MODEL_GROUPS keys
+// that expand to the full enum. Spec accepted either 0 or 6 — we choose 6
+// for explicit user intent (the user did mention all of them).
+Deno.test("T6: 'ranking de los 6 modelos' → 6 (group expansion via MODEL_GROUPS)", () => {
   const result = extractModelNames("ranking de los 6 modelos");
-  assertEquals(result.length, 0);
+  assertEquals(result.length, 6);
 });
 
 // ── Bonus: dedup, order, and case variants ──────────────────────────
