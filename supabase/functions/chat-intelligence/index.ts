@@ -11318,8 +11318,17 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     }
 
     // Calculate divergence for methodology metadata
+    // PHASE 1.5 FIX: scope methodology to requested model subset (report_context.models)
+    const requestedModelsForMethod: string[] = Array.isArray((dataPack as any)?.report_context?.models)
+      ? ((dataPack as any).report_context.models as string[])
+      : [];
+    const modelsInData = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])] as string[];
+    const isRealSubset = requestedModelsForMethod.length > 0 && requestedModelsForMethod.length < 6;
+    const scopedRixData = isRealSubset
+      ? (allRixData || []).filter((r: any) => requestedModelsForMethod.includes(r["02_model_name"]))
+      : (allRixData || []);
     const modelScores =
-      allRixData?.filter((r) => r["09_rix_score"] != null && r["09_rix_score"] > 0)?.map((r) => r["09_rix_score"]) ||
+      scopedRixData?.filter((r: any) => r["09_rix_score"] != null && r["09_rix_score"] > 0)?.map((r: any) => r["09_rix_score"]) ||
       [];
     const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
     const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
@@ -11328,7 +11337,8 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
       divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
 
     // Extract unique models used
-    const modelsUsedMethod = [...new Set(allRixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+    const modelsUsedMethod = isRealSubset ? requestedModelsForMethod : modelsInData;
+    const observationsCountMethod = scopedRixData?.length || 0;
 
     // Extract period info
     const periodFromRaw = allRixData
@@ -11345,8 +11355,8 @@ Respond ONLY with a JSON array of 3 strings in ${languageName}:
     const periodToMethod = (dataPack as any)?.report_context?.date_to || periodToRaw;
 
     // Extract unique companies and weeks
-    const uniqueCompaniesCount = new Set(allRixData?.map((r) => r["05_ticker"]).filter(Boolean) || []).size;
-    const uniqueWeeksCount = allRixData ? [...new Set(allRixData.map((r) => r.batch_execution_date))].length : 0;
+    const uniqueCompaniesCount = new Set(scopedRixData?.map((r: any) => r["05_ticker"]).filter(Boolean) || []).size;
+    const uniqueWeeksCount = scopedRixData ? [...new Set(scopedRixData.map((r: any) => r.batch_execution_date))].length : 0;
 
     return new Response(
       JSON.stringify({
