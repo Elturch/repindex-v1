@@ -228,17 +228,30 @@ Deno.test("T-inv-A: data starts 16-ene → Q1 disclaimer present", async () => {
   assert(!w.isComplete, "must NOT be complete (gap at start)");
   const disc = buildTemporalDisclaimer(w, TODAY);
   assert(disc.length > 0, "disclaimer must be present");
-  assertStringIncludes(disc, "2026-01-18");
+  // 07_period_to of first sweep SUN 18-ene = 17-ene.
+  assertStringIncludes(disc, "2026-01-17");
 });
 
 Deno.test("T-inv-B: data backfilled to 1-ene → Q1 emits NO disclaimer", async () => {
   // Simulate a future backfill: snapshots cover the entire Q1 2026 perfectly
+  // Sweep SUN 4-ene → 07_period_to = 3-ene. To cover Q1 perfectly under
+  // the new canon (07_period_to ∈ Q1 means SAT in [1-ene, 31-mar]) we
+  // need the first sweep to be SUN 11-ene (07_period_to = 10-ene).
+  // Wait — Q1 starts 1-ene. The first valid 07_period_to inside Q1 must
+  // be ≥ 1-ene. Earliest such SAT = SAT 3-ene → preceded by sweep SUN
+  // 4-ene. So sweep range 4-ene…29-mar covers 07_period_to 3-ene…28-mar
+  // → 13 SATs in Q1. Use 4-ene as the first sweep date.
   const sup = makeMockSupabase({ IBE: sundaysBetween("2026-01-04", "2026-04-19") });
   const intent = parseTemporalIntent("Iberdrola Q1 2026", TODAY);
   const w = await reconcileWindow(sup, "IBE", intent.primary!);
-  // Q1 has 13 Sundays (4-ene through 29-mar inclusive)
-  assertEquals(w.n_expected, 13);
+  // 07_period_to canon: count distinct SATs of evaluated weeks ∈ [1-ene, 31-mar].
+  // Sweep SUN 4-ene gives 07_period_to 3-ene (in Q1). Last Q1 sweep SUN
+  // 29-mar → 07_period_to 28-mar (in Q1). Total = 13 distinct SATs.
   assertEquals(w.n_real, 13);
+  // n_expected counts Sundays in [first_avail, end_t]; this is unchanged
+  // arithmetic, so it remains 13 when the company is on board for all
+  // Sundays in Q1 (first_avail = 3-ene ≤ first Sunday of Q1 = 4-ene).
+  assertEquals(w.n_expected, 13);
   assert(w.isComplete, "Q1 must be complete after backfill");
   const disc = buildTemporalDisclaimer(w, TODAY);
   assertEquals(disc, "", "no disclaimer when window is fully covered");
@@ -249,9 +262,10 @@ Deno.test("T-inv-C: company onboarded 15-feb → disclaimer cites company-specif
   const sup = makeMockSupabase({ NEW: sundaysBetween("2026-02-15", "2026-04-19") });
   const intent = parseTemporalIntent("NewCo Q1 2026", TODAY);
   const w = await reconcileWindow(sup, "NEW", intent.primary!);
-  assertEquals(w.first_available_snapshot, "2026-02-15");
+  // Sweep SUN 15-feb → 07_period_to = 14-feb.
+  assertEquals(w.first_available_snapshot, "2026-02-14");
   const disc = buildTemporalDisclaimer(w, TODAY);
-  assertStringIncludes(disc, "2026-02-15");
+  assertStringIncludes(disc, "2026-02-14");
 });
 
 // ── Sanity: nextExpectedSundaySnapshot is pure ─────────────────────
