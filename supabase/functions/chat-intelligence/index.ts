@@ -8908,6 +8908,8 @@ serve(async (req) => {
       originalQuestion, // Pass original user question for report_context
       normalizedPreviousContext, // PHASE 1.8b — previous query context for follow-ups
       isFollowup,      // PHASE 1.8b — flag to enable merge logic
+      temporalDisclaimer, // PHASE 1.14 — disclaimer string ("" if none)
+      temporalReportCtx,  // PHASE 1.14 — fields merged into report_context
     );
   } catch (error) {
     console.error(`${logPrefix} Error in chat-intelligence function:`, error);
