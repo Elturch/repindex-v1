@@ -31,6 +31,11 @@ export interface ReportContext {
   temporal_last_available?: string | null;
   temporal_next_snapshot?: string | null;
   temporal_is_open_ended?: boolean;
+  // PHASE 1.14c — last sweep day (batch_execution_date), shown as
+  // technical metadata next to the canonical "Período" so users can
+  // tell apart "evaluated week" (period_from→period_to) from "sweep
+  // day" (the Sunday the pipeline ran).
+  last_batch_date?: string | null;
 }
 
 interface ReportInfoBarProps {
