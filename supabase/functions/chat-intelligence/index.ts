@@ -10401,10 +10401,15 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           const maxScore = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScore = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePoints = maxScore - minScore;
-          const divergenceLevel = divergencePoints <= 8 ? "low" : divergencePoints <= 15 ? "medium" : "high";
-
           // Extract unique models used
           const modelsUsed = [...new Set(rixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+          // PHASE 1.16b — V5 statistical guard: σ=0 with n<3 is NOT "consenso robusto".
+          // Override divergenceLevel to 'unknown' so the UI renders "No calculable".
+          const _sampleVal = validateSampleSize(rixData?.length || 0, modelsUsed.length);
+          const divergenceLevel: "low" | "medium" | "high" | "unknown" =
+            !_sampleVal.isStatisticallyValid
+              ? "unknown"
+              : (divergencePoints <= 8 ? "low" : divergencePoints <= 15 ? "medium" : "high");
 
           // Extract period info
           const periodFrom = rixData
@@ -10460,6 +10465,12 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
                   divergencePoints,
                   uniqueCompanies: 1,
                   uniqueWeeks: uniquePeriods.length,
+                  // PHASE 1.16b — surface the statistical-validity warning so the
+                  // UI can render "No calculable" / "1 modelo (no representativo)".
+                  sampleSizeValid: _sampleVal.isStatisticallyValid,
+                  sampleSizeWarning: _sampleVal.warning,
+                  consensusLabel: _sampleVal.consensusLabel || null,
+                  divergenceLabelOverride: _sampleVal.divergenceLabel || null,
                 },
               },
             }),
@@ -11463,9 +11474,18 @@ async function handleStandardChat(
           const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePointsMethod = maxScoreMethod - minScoreMethod;
-          const divergenceLevelMethod =
-            divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
           const modelsUsedMethod = isRealSubset ? requestedModelsForMethod : modelsInData;
+          // PHASE 1.16b — V5 statistical guard. σ=0 with n<3 is NOT a robust
+          // consensus; collapse divergenceLevel to 'unknown' so MethodologyFooter
+          // renders "No calculable" instead of "Consenso robusto".
+          const _sampleValStd = validateSampleSize(
+            scopedRixData?.length || 0,
+            modelsUsedMethod.length,
+          );
+          const divergenceLevelMethod: "low" | "medium" | "high" | "unknown" =
+            !_sampleValStd.isStatisticallyValid
+              ? "unknown"
+              : (divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high");
           const periodFromRaw = allRixData
             ?.map((r) => r["06_period_from"])
             .filter(Boolean)
@@ -11555,6 +11575,11 @@ async function handleStandardChat(
                   divergencePoints: divergencePointsMethod,
                   uniqueCompanies: uniqueCompaniesCount,
                   uniqueWeeks: uniqueWeeksCount,
+                  // PHASE 1.16b — V5 statistical-validity surfaces.
+                  sampleSizeValid: _sampleValStd.isStatisticallyValid,
+                  sampleSizeWarning: _sampleValStd.warning,
+                  consensusLabel: _sampleValStd.consensusLabel || null,
+                  divergenceLabelOverride: _sampleValStd.divergenceLabel || null,
                 },
               },
             }),

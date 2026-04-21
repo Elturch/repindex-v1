@@ -14,6 +14,11 @@ export interface MethodologyMetadata {
   rSquared?: number;
   pValue?: number;
   hasRegressionData?: boolean;
+  // PHASE 1.16b — V5 statistical-validity guards from inputValidator.
+  sampleSizeValid?: boolean;
+  sampleSizeWarning?: string | null;
+  consensusLabel?: string | null;
+  divergenceLabelOverride?: string | null;
 }
 
 interface MethodologyFooterProps {
@@ -67,7 +72,7 @@ function getDivergenceLabel(level: string, points: number, langCode: string): { 
       };
     default:
       return { 
-        text: isSpanish ? 'N/A' : 'N/A',
+        text: isSpanish ? 'No calculable (muestra insuficiente)' : 'Not computable (insufficient sample)',
         color: 'text-muted-foreground'
       };
   }
@@ -84,13 +89,16 @@ export function MethodologyFooter({ metadata, languageCode = 'es' }: Methodology
   // Only render if there's RIX data
   if (!metadata.hasRixData) return null;
   
-  const divergence = getDivergenceLabel(
-    metadata.divergenceLevel || 'unknown', 
-    metadata.divergencePoints || 0,
-    languageCode
-  );
-  
   const isSpanish = languageCode === 'es';
+  // PHASE 1.16b — when V5 (validateSampleSize) flagged the sample as
+  // insufficient, prefer the explicit override label over the σ-based one.
+  const divergence = metadata.divergenceLabelOverride
+    ? { text: metadata.divergenceLabelOverride, color: 'text-amber-600 dark:text-amber-400' }
+    : getDivergenceLabel(
+        metadata.divergenceLevel || 'unknown',
+        metadata.divergencePoints || 0,
+        languageCode,
+      );
 
   return (
     <div className="mt-6 pt-4 border-t border-border/30 space-y-3 select-none">
@@ -110,7 +118,11 @@ export function MethodologyFooter({ metadata, languageCode = 'es' }: Methodology
           <span className="font-medium text-muted-foreground/90">
             {isSpanish ? 'Modelos:' : 'Models:'}
           </span>{' '}
-          <span>{formatModels(metadata.modelsUsed || [])}</span>
+          <span>
+            {metadata.consensusLabel
+              ? metadata.consensusLabel
+              : formatModels(metadata.modelsUsed || [])}
+          </span>
         </div>
         
         <div>
@@ -147,6 +159,13 @@ export function MethodologyFooter({ metadata, languageCode = 'es' }: Methodology
               <span className="text-green-600 dark:text-green-400 ml-1">(p&lt;0.05)</span>
             )}
           </span>
+        </div>
+      )}
+
+      {/* PHASE 1.16b — surface the V5 sample-size warning when present. */}
+      {metadata.sampleSizeWarning && (
+        <div className="text-[8px] italic text-amber-600 dark:text-amber-400 mt-1 leading-snug">
+          ⚠ {metadata.sampleSizeWarning}
         </div>
       )}
       
