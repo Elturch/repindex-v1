@@ -168,7 +168,7 @@ Deno.test("1.16-A5-default: 'Compara Iberdrola y Endesa' (no window) → applies
   const d = inferDefaultWindow("Compara Iberdrola y Endesa");
   assertEquals(d.appliedDefault, true);
   assert(d.disclosure?.includes("últimas 4 semanas"));
-  assert(d.disclosure?.includes("default"));
+  assert(d.disclosure?.includes("por defecto"));
 });
 
 Deno.test("1.16-V4-explicit: 'Iberdrola Q1 2026' → no default applied", () => {
