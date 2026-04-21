@@ -8650,6 +8650,85 @@ serve(async (req) => {
       throw new Error("OpenAI API key not configured");
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // PHASE 1.14 — Temporal Window Guard.
+    // Reconciles the user-requested window against the actual snapshots
+    // available in `rix_runs_v2` (per company, live, no hardcoded floor).
+    // - If the user asked for a comparison and one side has zero data,
+    //   short-circuit with a friendly clarification (no LLM call).
+    // - Otherwise stash the disclaimer + normalisation note so the
+    //   downstream pipeline can inject them into the system prompt and
+    //   the ReportInfoBar metadata.
+    // ─────────────────────────────────────────────────────────────────
+    let temporalDisclaimer: string = "";
+    let temporalReportCtx: Record<string, unknown> | null = null;
+    try {
+      const tIntent = parseTemporalIntent(runtimeQuery, new Date());
+      if (tIntent.primary) {
+        // Make sure the company cache is warm — used to resolve a ticker
+        // for the per-company snapshot floor. Fallback to global lookup
+        // (ticker=null) when no company is detected (sector/index queries).
+        if (!companiesCache || Date.now() - cacheTimestamp > CACHE_TTL) {
+          const { data: _co } = await supabaseClient
+            .from("repindex_root_issuers")
+            .select("issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms");
+          if (_co) { companiesCache = _co; cacheTimestamp = Date.now(); }
+        }
+        const detectedForTemporal = detectCompaniesInQuestion(runtimeQuery, companiesCache || []);
+        const tickerForTemporal: string | null = detectedForTemporal[0]?.ticker ?? null;
+        const wPrimary = await reconcileWindow(supabaseClient, tickerForTemporal, tIntent.primary);
+        // Comparison branch: hard block when either side has zero data.
+        if (tIntent.isComparison && tIntent.secondary) {
+          const wSecondary = await reconcileWindow(supabaseClient, tickerForTemporal, tIntent.secondary);
+          const block = blockIfImpossibleComparison(wPrimary, wSecondary);
+          if (block.blocked) {
+            console.log(`${logPrefix} [PHASE-1.14] Blocking impossible comparison (empty_side=${block.empty_side})`);
+            const altPrimary = wPrimary.n_real > 0 ? wPrimary.requested.label : null;
+            const altSecondary = wSecondary.n_real > 0 ? wSecondary.requested.label : null;
+            const sugg: string[] = [];
+            if (altPrimary) sugg.push(`Analiza solo ${altPrimary}`);
+            if (altSecondary) sugg.push(`Analiza solo ${altSecondary}`);
+            sugg.push("Ranking IBEX-35 últimas 4 semanas");
+            return await _gateRespond(block.message, sugg.slice(0, 3), `temporal_block:${block.empty_side}`);
+          }
+          // Both sides have data → attach normalisation note when n differs.
+          const normNote = buildNormalisationNote(wPrimary, wSecondary);
+          const dPrimary = buildTemporalDisclaimer(wPrimary, new Date());
+          const dSecondary = buildTemporalDisclaimer(wSecondary, new Date());
+          temporalDisclaimer = [dPrimary, dSecondary, normNote].filter(Boolean).join(" ");
+          temporalReportCtx = {
+            temporal_disclaimer: temporalDisclaimer || null,
+            temporal_window_requested: { from: tIntent.primary.start_t, to: tIntent.primary.end_t, label: tIntent.primary.label },
+            temporal_window_real: { from: wPrimary.start_r, to: wPrimary.end_r, n: wPrimary.n_real, expected_n: wPrimary.n_expected },
+            temporal_window_secondary: { from: wSecondary.start_r, to: wSecondary.end_r, n: wSecondary.n_real, label: tIntent.secondary.label },
+            temporal_first_available: wPrimary.first_available_snapshot,
+            temporal_last_available: wPrimary.last_available_snapshot,
+            temporal_next_snapshot: nextExpectedSundaySnapshot(new Date()),
+          };
+        } else {
+          // Single-window path: emit disclaimer when the real window
+          // doesn't perfectly match the requested one (gap_start /
+          // gap_end / company onboarded mid-window). Also handle YTD
+          // naturally — buildTemporalDisclaimer cites the next Sunday.
+          temporalDisclaimer = buildTemporalDisclaimer(wPrimary, new Date());
+          temporalReportCtx = {
+            temporal_disclaimer: temporalDisclaimer || null,
+            temporal_window_requested: { from: tIntent.primary.start_t, to: tIntent.primary.end_t, label: tIntent.primary.label },
+            temporal_window_real: { from: wPrimary.start_r, to: wPrimary.end_r, n: wPrimary.n_real, expected_n: wPrimary.n_expected },
+            temporal_first_available: wPrimary.first_available_snapshot,
+            temporal_last_available: wPrimary.last_available_snapshot,
+            temporal_next_snapshot: nextExpectedSundaySnapshot(new Date()),
+            temporal_is_open_ended: tIntent.isOpenEnded,
+          };
+          if (temporalDisclaimer) {
+            console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer attached: "${temporalDisclaimer.slice(0, 140)}…"`);
+          }
+        }
+      }
+    } catch (tErr) {
+      console.warn(`${logPrefix} [PHASE-1.14] Temporal guard failed (non-fatal):`, tErr);
+    }
+
     // Load or refresh company cache
     const now = Date.now();
     if (!companiesCache || now - cacheTimestamp > CACHE_TTL) {
