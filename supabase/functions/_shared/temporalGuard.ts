@@ -428,14 +428,16 @@ export async function reconcileWindow(
 
   const gapStart = startR ? Math.max(0, diffDays(requested.start_t, startR)) : diffDays(requested.start_t, requested.end_t) + 1;
   const gapEnd = endR ? Math.max(0, diffDays(endR, requested.end_t)) : diffDays(requested.start_t, requested.end_t) + 1;
-  // "Complete" means we have every weekly snapshot expected inside the
-  // window. A gap measured in *days* between requested.start_t and the
-  // first real Sunday is NOT a defect — Q1 (1-ene) starting on the
-  // first Sunday (4-ene) is structurally inevitable for a weekly grain.
-  // What matters is: did we get every Sunday that exists between the
-  // effective floor and end_t? If yes, the window is complete and we
-  // do NOT emit a disclaimer.
-  const isComplete = !!startR && !!endR && distinctDates.size >= expectedN;
+  // "Complete" means: (1) we got every weekly snapshot expected after
+  // clamping to the per-company floor AND (2) the per-company floor
+  // does NOT itself fall inside the requested window. The latter is
+  // critical: when a company is onboarded mid-Q1, the user still needs
+  // a disclaimer even though we delivered every snapshot the company
+  // ever had. A gap measured in *days* between requested.start_t and
+  // the first real Sunday (e.g. Q1 starts Thu 1-ene, first Sunday
+  // 4-ene) is NOT a defect on its own.
+  const floorInsideWindow = !!firstAvail && firstAvail > requested.start_t && firstAvail <= requested.end_t;
+  const isComplete = !!startR && !!endR && distinctDates.size >= expectedN && !floorInsideWindow;
 
   return {
     requested,
