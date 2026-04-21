@@ -166,7 +166,17 @@ export function resolveEntity(
     }
     if (ticker && ticker.length >= 2) {
       const re = new RegExp(`\\b${ticker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-      if (re.test(normPrompt)) exactHits.push(row);
+      if (re.test(normPrompt)) { exactHits.push(row); continue; }
+    }
+    // Multi-word brands ("Banco Santander", "Inmobiliaria Colonial"): also
+    // match when the most distinctive word (longest non-generic token) is
+    // present as a standalone token in the prompt. Prevents the foreign
+    // qualifier branch from missing "Santander UK" when the catalog row
+    // is "Banco Santander".
+    const tokens = name.split(/\s+/).filter((t) => t.length >= 5 && !GENERIC_BRAND_TOKENS.has(t));
+    for (const tok of tokens) {
+      const re = new RegExp(`\\b${tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (re.test(normPrompt)) { exactHits.push(row); break; }
     }
   }
 
