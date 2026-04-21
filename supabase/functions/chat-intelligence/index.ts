@@ -10940,6 +10940,15 @@ async function handleStandardChat(
     enrichedUserPrompt += `\n\n═══ ANÁLISIS ESTADÍSTICO (complementario) ═══\n${regressionContextString}`;
   }
 
+  // ── PHASE 1.14 — Temporal Window Guard injection into the LLM prompt.
+  // Forces the model to respect the *real* data window and to surface
+  // it explicitly in the headline + methodology footer instead of
+  // silently re-labelling a partial window as if it were the full one.
+  if (temporalDisclaimer && temporalDisclaimer.length > 0) {
+    enrichedUserPrompt += `\n\n═══ VENTANA REAL CON DATOS (PHASE 1.14 — OBLIGATORIO) ═══\n${temporalDisclaimer}\n\nReglas estrictas para tu informe:\n1. El TITULAR-RESPUESTA debe citar la VENTANA REAL (no la solicitada) si difieren.\n2. La FICHA METODOLÓGICA / sección de Período debe reflejar la ventana real con datos y, si procede, mencionar que no existe dato anterior al primer snapshot disponible para esta empresa.\n3. Si se proporciona "Próximo snapshot programado", inclúyelo cuando la consulta sea abierta (YTD / "lo que va de año" / "hasta hoy").\n4. PROHIBIDO inventar fechas o snapshots fuera de la ventana real declarada arriba.`;
+    console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer injected into LLM prompt (${temporalDisclaimer.length} chars)`);
+  }
+
   console.log(`${logPrefix} [E5] Prompt built. System: ${systemPrompt.length} chars, User: ${enrichedUserPrompt.length} chars`);
 
   // --- Assemble messages for LLM ---
