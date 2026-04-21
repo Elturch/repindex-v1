@@ -8905,6 +8905,24 @@ serve(async (req) => {
       console.warn(`${logPrefix} [PHASE-1.14] Temporal guard failed (non-fatal):`, tErr);
     }
 
+    // PHASE 1.16 — fold V1/V3/V4 disclosures into the report context so
+    // they reach the ReportInfoBar + ficha + body as a single string.
+    if (entityAssumptionDisclosure || defaultWindowDisclosure) {
+      const extra = [entityAssumptionDisclosure, defaultWindowDisclosure].filter(Boolean).join(" ");
+      const prev = (temporalReportCtx?.temporal_disclaimer as string | null) || "";
+      const merged = [prev, extra].filter(Boolean).join(" ").trim();
+      temporalDisclaimer = merged;
+      temporalReportCtx = {
+        ...(temporalReportCtx || {}),
+        temporal_disclaimer: merged || null,
+        input_validator: {
+          entity_disclosure: entityAssumptionDisclosure,
+          default_window_disclosure: defaultWindowDisclosure,
+        },
+      };
+      console.log(`${logPrefix} [PHASE-1.16] Disclosures attached: "${merged.slice(0, 140)}…"`);
+    }
+
     // Load or refresh company cache
     const now = Date.now();
     if (!companiesCache || now - cacheTimestamp > CACHE_TTL) {
