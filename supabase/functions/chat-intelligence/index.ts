@@ -48,6 +48,13 @@ import {
   nextExpectedSundaySnapshot,
 } from "../_shared/temporalGuard.ts";
 
+// PHASE 1.19a — Period-mode aggregation (mean / first→last / delta / min / max / sd)
+// for multi-week ranges. Snapshot-mode (single week) keeps current behaviour.
+import {
+  computePeriodAggregation,
+  renderPeriodAggregationBlock,
+} from "../_shared/periodAggregation.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
