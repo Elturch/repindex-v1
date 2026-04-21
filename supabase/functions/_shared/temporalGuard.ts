@@ -428,7 +428,14 @@ export async function reconcileWindow(
 
   const gapStart = startR ? Math.max(0, diffDays(requested.start_t, startR)) : diffDays(requested.start_t, requested.end_t) + 1;
   const gapEnd = endR ? Math.max(0, diffDays(endR, requested.end_t)) : diffDays(requested.start_t, requested.end_t) + 1;
-  const isComplete = !!startR && !!endR && distinctDates.size >= expectedN && gapStart === 0 && gapEnd === 0;
+  // "Complete" means we have every weekly snapshot expected inside the
+  // window. A gap measured in *days* between requested.start_t and the
+  // first real Sunday is NOT a defect — Q1 (1-ene) starting on the
+  // first Sunday (4-ene) is structurally inevitable for a weekly grain.
+  // What matters is: did we get every Sunday that exists between the
+  // effective floor and end_t? If yes, the window is complete and we
+  // do NOT emit a disclaimer.
+  const isComplete = !!startR && !!endR && distinctDates.size >= expectedN;
 
   return {
     requested,
