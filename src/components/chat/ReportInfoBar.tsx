@@ -31,6 +31,11 @@ export interface ReportContext {
   temporal_last_available?: string | null;
   temporal_next_snapshot?: string | null;
   temporal_is_open_ended?: boolean;
+  // PHASE 1.14c — last sweep day (batch_execution_date), shown as
+  // technical metadata next to the canonical "Período" so users can
+  // tell apart "evaluated week" (period_from→period_to) from "sweep
+  // day" (the Sunday the pipeline ran).
+  last_batch_date?: string | null;
 }
 
 interface ReportInfoBarProps {
@@ -129,6 +134,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
         </span>
       )}
 
+      {/* PHASE 1.14c — secondary technical metadata: last sweep day. */}
+      {context.last_batch_date && (
+        <span className="flex items-center gap-1 opacity-70">
+          <Clock className="h-3 w-3 shrink-0" />
+          {languageCode === "en" ? "Last sweep" : "Último barrido"}: {formatDate(context.last_batch_date, languageCode)}
+        </span>
+      )}
+
       {/* Weeks */}
       {(context.weeks_analyzed ?? 0) > 0 && (
         <span className="flex items-center gap-1">
@@ -204,6 +217,11 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
     const from = context.date_from ? context.date_from.slice(0, 10) : "–";
     const to = context.date_to ? context.date_to.slice(0, 10) : "–";
     items.push(`<span>📅 ${periodLabel}: ${from} — ${to}</span>`);
+  }
+  if (context.last_batch_date) {
+    const lb = context.last_batch_date.slice(0, 10);
+    const label = languageCode === "en" ? "Last sweep" : "Último barrido";
+    items.push(`<span style="opacity:0.7;">🕐 ${label}: ${lb}</span>`);
   }
   if ((context.weeks_analyzed ?? 0) > 0) {
     items.push(`<span>🕐 ${context.weeks_analyzed} ${weeksLabel}</span>`);

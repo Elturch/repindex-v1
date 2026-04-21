@@ -8711,6 +8711,16 @@ serve(async (req) => {
           // gap_end / company onboarded mid-window). Also handle YTD
           // naturally — buildTemporalDisclaimer cites the next Sunday.
           temporalDisclaimer = buildTemporalDisclaimer(wPrimary, new Date());
+          // PHASE 1.14c — also reconcile against `batch_execution_date`
+          // to expose the "last sweep day" as technical metadata. We do
+          // not use it for the user-facing window; it sits beside the
+          // canonical "Período" so analysts can correlate the evaluated
+          // week with the actual pipeline execution day.
+          let lastBatchDate: string | null = null;
+          try {
+            const wBatch = await reconcileWindow(supabaseClient, tickerForTemporal, tIntent.primary, { useColumn: "batch_execution_date" });
+            lastBatchDate = wBatch.last_available_snapshot;
+          } catch { /* non-fatal */ }
           temporalReportCtx = {
             temporal_disclaimer: temporalDisclaimer || null,
             temporal_window_requested: { from: tIntent.primary.start_t, to: tIntent.primary.end_t, label: tIntent.primary.label },
@@ -8719,6 +8729,7 @@ serve(async (req) => {
             temporal_last_available: wPrimary.last_available_snapshot,
             temporal_next_snapshot: nextExpectedSundaySnapshot(new Date()),
             temporal_is_open_ended: tIntent.isOpenEnded,
+            last_batch_date: lastBatchDate,
           };
           if (temporalDisclaimer) {
             console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer attached: "${temporalDisclaimer.slice(0, 140)}…"`);
@@ -10953,6 +10964,26 @@ async function handleStandardChat(
   // headline. Safe even when no temporal expression was detected.
   if (temporalReportCtx && (dataPack as any).report_context) {
     Object.assign((dataPack as any).report_context, temporalReportCtx);
+    // PHASE 1.14c — SINGLE SOURCE OF TRUTH for "Período".
+    // The methodology footer (front-end ReportInfoBar) renders
+    // `date_from` / `date_to`. Pre-1.14c they were derived from
+    // cp.raw_runs (06_period_from / 07_period_to of returned skill
+    // rows) while the disclaimer used reconcileWindow against
+    // batch_execution_date — different columns, 1-day drift in the
+    // ficha vs. body. Now reconcileWindow reads 07_period_to (canon)
+    // and we overwrite the InfoBar window with that same value so
+    // chip + body + ficha all show the same dates. We keep the
+    // legacy values as `date_from_skill` / `date_to_skill` for
+    // debugging only.
+    const real = (temporalReportCtx as any).temporal_window_real;
+    if (real && real.from && real.to) {
+      const ctx = (dataPack as any).report_context as Record<string, unknown>;
+      if (ctx.date_from && ctx.date_from !== real.from) (ctx as any).date_from_skill = ctx.date_from;
+      if (ctx.date_to && ctx.date_to !== real.to) (ctx as any).date_to_skill = ctx.date_to;
+      ctx.date_from = real.from;
+      ctx.date_to = real.to;
+      console.log(`${logPrefix} [PHASE-1.14c] Unified InfoBar period to temporal_window_real: ${real.from} → ${real.to}`);
+    }
   }
 
   console.log(`${logPrefix} [E5] Prompt built. System: ${systemPrompt.length} chars, User: ${enrichedUserPrompt.length} chars`);

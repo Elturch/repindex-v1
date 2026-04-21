@@ -26,29 +26,93 @@ import {
 } from "../../_shared/temporalGuard.ts";
 
 // ── Mock Supabase client ───────────────────────────────────────────
+/**
+ * PHASE 1.14c — Column-aware mock.
+ *
+ * Each input date is interpreted as the Sunday on which the sweep ran
+ * (`batch_execution_date`). The mock derives the *evaluated week*
+ * window for that sweep:
+ *
+ *   batch_execution_date = SUN  (e.g. 2026-01-18)
+ *   07_period_to         = SAT  one day before  (2026-01-17)  — end of evaluated week
+ *   06_period_from       = SUN  seven days before (2026-01-11) — start of evaluated week
+ *
+ * Filters (`gte` / `lte`) and ordering apply to whichever column the
+ * caller actually requested in `.select()` / `.order()` / `.gte()` /
+ * `.lte()`. This way the test suite proves that `reconcileWindow`
+ * really reads from the column it claims to read from — no silent
+ * column drift.
+ */
+const KNOWN_COLS = new Set([
+  "batch_execution_date",
+  "06_period_from",
+  "07_period_to",
+]);
+
+function deriveRow(sweepDate: string): Record<string, string> {
+  const sweep = new Date(`${sweepDate}T00:00:00Z`);
+  const periodTo = new Date(sweep);
+  periodTo.setUTCDate(periodTo.getUTCDate() - 1); // SAT before sweep SUN
+  const periodFrom = new Date(sweep);
+  periodFrom.setUTCDate(periodFrom.getUTCDate() - 7); // SUN one week before
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    batch_execution_date: `${sweepDate}T00:00:00Z`,
+    "07_period_to": `${iso(periodTo)}T00:00:00Z`,
+    "06_period_from": `${iso(periodFrom)}T00:00:00Z`,
+  };
+}
+
 function makeMockSupabase(snapshotsByTicker: Record<string, string[]>) {
-  // snapshotsByTicker: ticker → array of ISO dates (YYYY-MM-DD)
+  // snapshotsByTicker: ticker → array of sweep dates (Sundays, YYYY-MM-DD)
   return {
     from(_table: string) {
-      const state: any = { _ticker: null, _gte: null, _lte: null, _order: { col: null, asc: true }, _limit: 2000 };
+      const state: any = {
+        _ticker: null,
+        _selectCol: null as string | null,
+        _gteCol: null as string | null,
+        _gte: null as string | null,
+        _lteCol: null as string | null,
+        _lte: null as string | null,
+        _order: { col: null as string | null, asc: true },
+        _limit: 2000,
+      };
       const builder: any = {
-        select(_cols: string) { return builder; },
+        select(cols: string) {
+          // Pick the first known temporal column appearing in the SELECT.
+          const trimmed = String(cols || "").split(",").map((s) => s.trim());
+          for (const c of trimmed) if (KNOWN_COLS.has(c)) { state._selectCol = c; break; }
+          return builder;
+        },
         eq(col: string, val: string) { if (col === "05_ticker") state._ticker = val; return builder; },
-        gte(_col: string, val: string) { state._gte = String(val).slice(0, 10); return builder; },
-        lte(_col: string, val: string) { state._lte = String(val).slice(0, 10); return builder; },
+        gte(col: string, val: string) { state._gteCol = col; state._gte = String(val).slice(0, 10); return builder; },
+        lte(col: string, val: string) { state._lteCol = col; state._lte = String(val).slice(0, 10); return builder; },
         order(col: string, opts: { ascending: boolean }) { state._order = { col, asc: opts.ascending }; return builder; },
         limit(n: number) { state._limit = n; return builder; },
         then(resolve: (v: any) => void) {
-          // Pick the source set
-          const source = state._ticker
+          const sweepDates = state._ticker
             ? (snapshotsByTicker[state._ticker] ?? [])
             : Array.from(new Set(Object.values(snapshotsByTicker).flat()));
-          let dates = [...source].sort();
-          if (state._gte) dates = dates.filter((d) => d >= state._gte);
-          if (state._lte) dates = dates.filter((d) => d <= state._lte);
-          if (!state._order.asc) dates.reverse();
-          dates = dates.slice(0, state._limit);
-          resolve({ data: dates.map((d) => ({ batch_execution_date: `${d}T00:00:00Z` })), error: null });
+          let rows = sweepDates.map(deriveRow);
+          // Filter by whichever column the caller filtered on.
+          const filterCol = state._gteCol || state._lteCol;
+          if (filterCol && KNOWN_COLS.has(filterCol)) {
+            rows = rows.filter((r) => {
+              const v = String(r[filterCol] || "").slice(0, 10);
+              if (state._gte && v < state._gte) return false;
+              if (state._lte && v > state._lte) return false;
+              return true;
+            });
+          }
+          // Sort by whichever column was requested in .order(); fall back
+          // to the SELECT column. Defaults to batch_execution_date.
+          const sortCol = (state._order.col && KNOWN_COLS.has(state._order.col))
+            ? state._order.col
+            : (state._selectCol || "batch_execution_date");
+          rows.sort((a, b) => String(a[sortCol]).localeCompare(String(b[sortCol])));
+          if (!state._order.asc) rows.reverse();
+          rows = rows.slice(0, state._limit);
+          resolve({ data: rows, error: null });
         },
       };
       return builder;
@@ -78,13 +142,16 @@ Deno.test("T1: Iberdrola Q1 2026 — disclaimer cites real window 16-ene→29-ma
   const intent = parseTemporalIntent("Evolución Iberdrola Q1 2026", TODAY);
   assert(intent.primary, "should parse Q1 2026");
   const w = await reconcileWindow(sup, "IBE", intent.primary!);
-  assertEquals(w.start_r, "2026-01-18"); // first Sunday >= 16-ene
-  assertEquals(w.end_r, "2026-03-29");
+  // Canonical column is now `07_period_to` (= SAT before each sweep SUN).
+  // First sweep SUN = 18-ene → 07_period_to = 17-ene.
+  // Last sweep SUN inside Q1 = 29-mar → 07_period_to = 28-mar.
+  assertEquals(w.start_r, "2026-01-17");
+  assertEquals(w.end_r, "2026-03-28");
   assert(w.n_real >= 10 && w.n_real <= 12, `n_real=${w.n_real}`);
   const disc = buildTemporalDisclaimer(w, TODAY);
   assertStringIncludes(disc, "Q1 2026");
-  assertStringIncludes(disc, "2026-01-18");
-  assertStringIncludes(disc, "2026-03-29");
+  assertStringIncludes(disc, "2026-01-17");
+  assertStringIncludes(disc, "2026-03-28");
 });
 
 // ── T2 — Repsol YTD with cutoff and next-snapshot mention ──────────
@@ -97,7 +164,8 @@ Deno.test("T2: Repsol YTD — disclaimer mentions next snapshot date", async () 
   const disc = buildTemporalDisclaimer(w, TODAY);
   // Next Sunday >= 21-abr-2026 = 26-abr-2026
   assertStringIncludes(disc, "2026-04-26");
-  assertStringIncludes(disc, "2026-04-19");
+  // Last sweep SUN = 19-abr → 07_period_to = 18-abr.
+  assertStringIncludes(disc, "2026-04-18");
 });
 
 // ── T3 — BBVA Q1-2026 vs Q1-2025 → block ────────────────────────────
@@ -122,9 +190,10 @@ Deno.test("T4: Exolum Q1 2026 — disclaimer cites company-specific first snapsh
   const sup = makeMockSupabase({ EXO: sundaysBetween("2026-01-18", "2026-04-19") });
   const intent = parseTemporalIntent("Reputación Exolum Q1 2026", TODAY);
   const w = await reconcileWindow(sup, "EXO", intent.primary!);
-  assertEquals(w.first_available_snapshot, "2026-01-18");
+  // First sweep SUN = 18-ene → canonical 07_period_to = 17-ene.
+  assertEquals(w.first_available_snapshot, "2026-01-17");
   const disc = buildTemporalDisclaimer(w, TODAY);
-  assertStringIncludes(disc, "2026-01-18");
+  assertStringIncludes(disc, "2026-01-17");
 });
 
 // ── A1 — "diciembre 2025" pre-index → no data ──────────────────────
@@ -159,17 +228,30 @@ Deno.test("T-inv-A: data starts 16-ene → Q1 disclaimer present", async () => {
   assert(!w.isComplete, "must NOT be complete (gap at start)");
   const disc = buildTemporalDisclaimer(w, TODAY);
   assert(disc.length > 0, "disclaimer must be present");
-  assertStringIncludes(disc, "2026-01-18");
+  // 07_period_to of first sweep SUN 18-ene = 17-ene.
+  assertStringIncludes(disc, "2026-01-17");
 });
 
 Deno.test("T-inv-B: data backfilled to 1-ene → Q1 emits NO disclaimer", async () => {
   // Simulate a future backfill: snapshots cover the entire Q1 2026 perfectly
+  // Sweep SUN 4-ene → 07_period_to = 3-ene. To cover Q1 perfectly under
+  // the new canon (07_period_to ∈ Q1 means SAT in [1-ene, 31-mar]) we
+  // need the first sweep to be SUN 11-ene (07_period_to = 10-ene).
+  // Wait — Q1 starts 1-ene. The first valid 07_period_to inside Q1 must
+  // be ≥ 1-ene. Earliest such SAT = SAT 3-ene → preceded by sweep SUN
+  // 4-ene. So sweep range 4-ene…29-mar covers 07_period_to 3-ene…28-mar
+  // → 13 SATs in Q1. Use 4-ene as the first sweep date.
   const sup = makeMockSupabase({ IBE: sundaysBetween("2026-01-04", "2026-04-19") });
   const intent = parseTemporalIntent("Iberdrola Q1 2026", TODAY);
   const w = await reconcileWindow(sup, "IBE", intent.primary!);
-  // Q1 has 13 Sundays (4-ene through 29-mar inclusive)
-  assertEquals(w.n_expected, 13);
+  // 07_period_to canon: count distinct SATs of evaluated weeks ∈ [1-ene, 31-mar].
+  // Sweep SUN 4-ene gives 07_period_to 3-ene (in Q1). Last Q1 sweep SUN
+  // 29-mar → 07_period_to 28-mar (in Q1). Total = 13 distinct SATs.
   assertEquals(w.n_real, 13);
+  // n_expected counts Sundays in [first_avail, end_t]; this is unchanged
+  // arithmetic, so it remains 13 when the company is on board for all
+  // Sundays in Q1 (first_avail = 3-ene ≤ first Sunday of Q1 = 4-ene).
+  assertEquals(w.n_expected, 13);
   assert(w.isComplete, "Q1 must be complete after backfill");
   const disc = buildTemporalDisclaimer(w, TODAY);
   assertEquals(disc, "", "no disclaimer when window is fully covered");
@@ -180,9 +262,10 @@ Deno.test("T-inv-C: company onboarded 15-feb → disclaimer cites company-specif
   const sup = makeMockSupabase({ NEW: sundaysBetween("2026-02-15", "2026-04-19") });
   const intent = parseTemporalIntent("NewCo Q1 2026", TODAY);
   const w = await reconcileWindow(sup, "NEW", intent.primary!);
-  assertEquals(w.first_available_snapshot, "2026-02-15");
+  // Sweep SUN 15-feb → 07_period_to = 14-feb.
+  assertEquals(w.first_available_snapshot, "2026-02-14");
   const disc = buildTemporalDisclaimer(w, TODAY);
-  assertStringIncludes(disc, "2026-02-15");
+  assertStringIncludes(disc, "2026-02-14");
 });
 
 // ── Sanity: nextExpectedSundaySnapshot is pure ─────────────────────
@@ -191,4 +274,34 @@ Deno.test("nextExpectedSundaySnapshot — pure date arithmetic", () => {
   assertEquals(nextExpectedSundaySnapshot(new Date("2026-04-21T10:00:00Z")), "2026-04-26");
   // Sunday 26-abr-2026 → same day
   assertEquals(nextExpectedSundaySnapshot(new Date("2026-04-26T10:00:00Z")), "2026-04-26");
+});
+
+// ══════════════════════════════════════════════════════════════════
+// T-col — Mock + reconcileWindow truly discriminate by column.
+// Same ticker, same requested window, but reading from
+// `07_period_to` (canon) vs `batch_execution_date` (legacy) yields
+// distinct windows offset by 1 day. This test would silently pass
+// pre-1.14c (because the old mock ignored _col) — its presence proves
+// the mock and the reconciler are now genuinely column-aware.
+// ══════════════════════════════════════════════════════════════════
+Deno.test("T-col: column discrimination — period_to vs batch_execution_date", async () => {
+  const sup = makeMockSupabase({ IBE: sundaysBetween("2026-01-18", "2026-04-19") });
+  const intent = parseTemporalIntent("Iberdrola Q1 2026", TODAY);
+  assert(intent.primary);
+
+  // Canon column (default): 07_period_to → SAT before each sweep SUN.
+  const wPeriod = await reconcileWindow(sup, "IBE", intent.primary!);
+  assertEquals(wPeriod.start_r, "2026-01-17"); // SAT before 18-ene
+  assertEquals(wPeriod.end_r, "2026-03-28");   // SAT before 29-mar
+
+  // Legacy column override: batch_execution_date → the sweep SUN itself.
+  const wBatch = await reconcileWindow(sup, "IBE", intent.primary!, { useColumn: "batch_execution_date" });
+  assertEquals(wBatch.start_r, "2026-01-18"); // SUN of first sweep
+  assertEquals(wBatch.end_r, "2026-03-29");   // SUN of last Q1 sweep
+
+  // Discriminator: the two windows must differ by exactly 1 day on each
+  // side. If the mock were column-blind both calls would return the
+  // same dates and this assertion would fail.
+  assert(wPeriod.start_r !== wBatch.start_r, "start_r must differ across columns");
+  assert(wPeriod.end_r !== wBatch.end_r, "end_r must differ across columns");
 });
