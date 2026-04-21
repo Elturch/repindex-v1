@@ -372,11 +372,13 @@ export const RIX_METRICS_WHITELIST = [
 ] as const;
 
 /** Common external metrics clients confuse with RIX (blacklist). */
-export const EXTERNAL_METRICS_BLACKLIST = [
+export const EXTERNAL_METRICS_BLACKLIST: ReadonlyArray<{
+  tokens: readonly string[]; label: string; suggest: string;
+}> = [
   { tokens: ["esg", "sustainalytics", "msci esg", "cdp"], label: "ESG", suggest: "GAM" },
   { tokens: ["credit rating", "moody", "moodys", "moody's", "s&p rating", "fitch rating"], label: "rating crediticio", suggest: "RMM" },
   { tokens: ["refinitiv"], label: "Refinitiv", suggest: "GAM" },
-] as const;
+];
 
 export interface MetricDetection {
   requestedMetric: string | null;
