@@ -567,13 +567,23 @@ export function detectGranularity(
     };
   }
 
-  // Day granularity: "el 15 de febrero (de 2026)?" or "15-02-2026".
+  // Day granularity. Accept the following Spanish / numeric forms:
+  //   "el 15 de febrero (de 2026)?"      ← strict, with article
+  //   "15 de febrero (de 2026)?"          ← article-less natural language
+  //   "15-feb-2026" / "15 feb 2026"       ← abbreviated month
+  //   "15-02-2026" / "15/02/2026"         ← numeric DMY
+  //   "2026-02-15"                         ← ISO YMD
   let day: number | null = null, month: number | null = null, year: number | null = today.getUTCFullYear();
+  // (1) "el 15 de febrero (de 2026)?" — strict.
   let m = norm.match(/\bel\s+(\d{1,2})\s+de\s+([a-z]+)(?:\s+(?:de\s+)?(\d{4}))?\b/);
-  if (m) {
+  // (2) "15 de febrero (de 2026)?" — article-less natural language.
+  if (!m) m = norm.match(/\b(\d{1,2})\s+de\s+([a-záéíóúñ]+)(?:\s+(?:de\s+)?(\d{4}))?\b/);
+  // (3) "15-feb-2026" / "15 feb 2026" — abbreviated month token.
+  if (!m) m = norm.match(/\b(\d{1,2})[\s\-\/]+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)[\s\-\/]+(\d{2,4})\b/);
+  if (m && SPANISH_MONTHS[m[2]] !== undefined) {
     day = parseInt(m[1], 10);
     month = SPANISH_MONTHS[m[2]] ?? null;
-    if (m[3]) year = parseInt(m[3], 10);
+    if (m[3]) year = parseInt(m[3].length === 2 ? `20${m[3]}` : m[3], 10);
   } else {
     m = norm.match(/\b(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})\b/);
     if (m) {

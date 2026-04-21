@@ -10401,10 +10401,15 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
           const maxScore = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScore = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePoints = maxScore - minScore;
-          const divergenceLevel = divergencePoints <= 8 ? "low" : divergencePoints <= 15 ? "medium" : "high";
-
           // Extract unique models used
           const modelsUsed = [...new Set(rixData?.map((r) => r["02_model_name"]).filter(Boolean) || [])];
+          // PHASE 1.16b — V5 statistical guard: σ=0 with n<3 is NOT "consenso robusto".
+          // Override divergenceLevel to 'unknown' so the UI renders "No calculable".
+          const _sampleVal = validateSampleSize(rixData?.length || 0, modelsUsed.length);
+          const divergenceLevel: "low" | "medium" | "high" | "unknown" =
+            !_sampleVal.isStatisticallyValid
+              ? "unknown"
+              : (divergencePoints <= 8 ? "low" : divergencePoints <= 15 ? "medium" : "high");
 
           // Extract period info
           const periodFrom = rixData
