@@ -163,6 +163,27 @@ Deno.test("1.16-V3-quarter: 'Iberdrola Q1 2026' → unknown (handed off to tempo
   assertEquals(g.block_message, null);
 });
 
+// PHASE 1.16b — V3 parser robustness (article-less + abbreviated month).
+Deno.test("1.16b-V3-no-article: 'Iberdrola 15 de febrero 2026' → day", () => {
+  const g = detectGranularity("Iberdrola 15 de febrero 2026");
+  assertEquals(g.requestedGranularity, "day");
+  assertEquals(g.requestedDayISO, "2026-02-15");
+  assertEquals(g.isCompatible, true);
+  assert(g.redirect_disclosure?.includes("2026-02-15"));
+});
+
+Deno.test("1.16b-V3-abbrev: 'Iberdrola 15-feb-2026' → day", () => {
+  const g = detectGranularity("Iberdrola 15-feb-2026");
+  assertEquals(g.requestedGranularity, "day");
+  assertEquals(g.requestedDayISO, "2026-02-15");
+});
+
+Deno.test("1.16b-V3-iso: '2026-02-15 Iberdrola' → day", () => {
+  const g = detectGranularity("Reputación Iberdrola 2026-02-15");
+  assertEquals(g.requestedGranularity, "day");
+  assertEquals(g.requestedDayISO, "2026-02-15");
+});
+
 // ───────────────────────── V4: inferDefaultWindow ────────────────────
 Deno.test("1.16-A5-default: 'Compara Iberdrola y Endesa' (no window) → applies default + disclosure", () => {
   const d = inferDefaultWindow("Compara Iberdrola y Endesa");
