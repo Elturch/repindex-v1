@@ -10465,6 +10465,12 @@ Usa SOLO estos datos para generar el boletín. Sigue el formato exacto especific
                   divergencePoints,
                   uniqueCompanies: 1,
                   uniqueWeeks: uniquePeriods.length,
+                  // PHASE 1.16b — surface the statistical-validity warning so the
+                  // UI can render "No calculable" / "1 modelo (no representativo)".
+                  sampleSizeValid: _sampleVal.isStatisticallyValid,
+                  sampleSizeWarning: _sampleVal.warning,
+                  consensusLabel: _sampleVal.consensusLabel || null,
+                  divergenceLabelOverride: _sampleVal.divergenceLabel || null,
                 },
               },
             }),
@@ -11569,6 +11575,11 @@ async function handleStandardChat(
                   divergencePoints: divergencePointsMethod,
                   uniqueCompanies: uniqueCompaniesCount,
                   uniqueWeeks: uniqueWeeksCount,
+                  // PHASE 1.16b — V5 statistical-validity surfaces.
+                  sampleSizeValid: _sampleValStd.isStatisticallyValid,
+                  sampleSizeWarning: _sampleValStd.warning,
+                  consensusLabel: _sampleValStd.consensusLabel || null,
+                  divergenceLabelOverride: _sampleValStd.divergenceLabel || null,
                 },
               },
             }),
