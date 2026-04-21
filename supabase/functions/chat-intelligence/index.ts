@@ -6775,6 +6775,13 @@ function buildOrchestratorPrompt(
     competidores_verificados: dataPack.competidores_verificados,
     competidores_metricas_avg: dataPack.competidores_metricas_avg,
     competidores_por_empresa: (dataPack as any).competidores_por_empresa || null,
+    // PHASE 1.15 — full per-model breakdown for the Sección 6 cross-model
+    // competitive table. Without this the LLM has no per-model numbers and
+    // the table collapses to "n/d" everywhere.
+    competidores_directos: (dataPack as any).competidores_directos || null,
+    competidores_sin_datos: (dataPack as any).competidores_sin_datos || null,
+    competidores_nota: (dataPack as any).competidores_nota || null,
+    competidores_fuente: (dataPack as any).competidores_fuente || null,
     evolucion: dataPack.evolucion,
     divergencia: dataPack.divergencia,
     divergencias_detalle: (dataPack as any).divergencias_detalle || null,
