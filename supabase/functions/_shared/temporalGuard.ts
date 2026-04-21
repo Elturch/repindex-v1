@@ -370,15 +370,24 @@ export function parseTemporalIntent(question: string | null | undefined, today: 
  *
  * When `ticker` is null we use the global rix_runs_v2 floor instead
  * (used for sector / ranking queries). The query uses the same column
- * `batch_execution_date` everywhere — no schema branching.
+ * `07_period_to` (end of evaluated week) everywhere — no schema
+ * branching. PHASE 1.14c: We deliberately read the "semana evaluada"
+ * (07_period_to / 06_period_from) instead of the sweep day
+ * (batch_execution_date) so that the disclaimer, the ReportInfoBar
+ * and the methodology footer all agree on the same notion of "ventana
+ * temporal" — namely the week the data describes, not the day the
+ * pipeline ran.
  */
 export async function reconcileWindow(
   supabase: any,
   ticker: string | null,
   requested: TheoreticalWindow,
+  opts?: { useColumn?: "07_period_to" | "batch_execution_date" | "06_period_from" },
 ): Promise<ReconciledWindow> {
   const TABLE = "rix_runs_v2";
-  const COL = "batch_execution_date";
+  // Canonical temporal column = end of the evaluated week. Override is
+  // exposed only for tests that prove column discrimination.
+  const COL = opts?.useColumn ?? "07_period_to";
   // ── 1. Per-company (or global) MIN/MAX ─────────────────────────
   let firstAvail: string | null = null;
   let lastAvail: string | null = null;
