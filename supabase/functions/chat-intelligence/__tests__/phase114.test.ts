@@ -275,3 +275,33 @@ Deno.test("nextExpectedSundaySnapshot — pure date arithmetic", () => {
   // Sunday 26-abr-2026 → same day
   assertEquals(nextExpectedSundaySnapshot(new Date("2026-04-26T10:00:00Z")), "2026-04-26");
 });
+
+// ══════════════════════════════════════════════════════════════════
+// T-col — Mock + reconcileWindow truly discriminate by column.
+// Same ticker, same requested window, but reading from
+// `07_period_to` (canon) vs `batch_execution_date` (legacy) yields
+// distinct windows offset by 1 day. This test would silently pass
+// pre-1.14c (because the old mock ignored _col) — its presence proves
+// the mock and the reconciler are now genuinely column-aware.
+// ══════════════════════════════════════════════════════════════════
+Deno.test("T-col: column discrimination — period_to vs batch_execution_date", async () => {
+  const sup = makeMockSupabase({ IBE: sundaysBetween("2026-01-18", "2026-04-19") });
+  const intent = parseTemporalIntent("Iberdrola Q1 2026", TODAY);
+  assert(intent.primary);
+
+  // Canon column (default): 07_period_to → SAT before each sweep SUN.
+  const wPeriod = await reconcileWindow(sup, "IBE", intent.primary!);
+  assertEquals(wPeriod.start_r, "2026-01-17"); // SAT before 18-ene
+  assertEquals(wPeriod.end_r, "2026-03-28");   // SAT before 29-mar
+
+  // Legacy column override: batch_execution_date → the sweep SUN itself.
+  const wBatch = await reconcileWindow(sup, "IBE", intent.primary!, { useColumn: "batch_execution_date" });
+  assertEquals(wBatch.start_r, "2026-01-18"); // SUN of first sweep
+  assertEquals(wBatch.end_r, "2026-03-29");   // SUN of last Q1 sweep
+
+  // Discriminator: the two windows must differ by exactly 1 day on each
+  // side. If the mock were column-blind both calls would return the
+  // same dates and this assertion would fail.
+  assert(wPeriod.start_r !== wBatch.start_r, "start_r must differ across columns");
+  assert(wPeriod.end_r !== wBatch.end_r, "end_r must differ across columns");
+});
