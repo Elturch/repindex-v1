@@ -198,7 +198,13 @@ export function resolveEntity(
   const foreign = detectForeignQualifier(prompt);
   if (foreign && exactHits.length > 0) {
     const parent = exactHits[0];
-    const foreignInput = `${parent.issuer_name} ${foreign[0].toUpperCase()}${foreign.slice(1)}`;
+    // Pick the most distinctive (longest non-generic) word from the
+    // parent's name to build a clean foreign_input label. Avoids
+    // "Reputación Uk" style misinterpolation when the prompt's leading
+    // word is an action verb.
+    const stem = pickBrandStem(parent.issuer_name);
+    const foreignLabel = foreign.toUpperCase().length <= 3 ? foreign.toUpperCase() : (foreign[0].toUpperCase() + foreign.slice(1));
+    const foreignInput = `${stem} ${foreignLabel}`;
     return {
       matched: false,
       empresa_id: null,
@@ -302,10 +308,11 @@ export function resolveEntity(
 
   // Pure typo path: edit-distance ≤ 2 → fuzzy resolve with disclosure.
   const fuzzy = findClosestCatalog(brandToken, catalog);
-  if (fuzzy && editDistance(
+  const fuzzyDistance = fuzzy ? editDistance(
     brandToken.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
     fuzzy.issuer_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/)[0],
-  ) <= 2) {
+  ) : 99;
+  if (fuzzy && fuzzyDistance <= 2) {
     return {
       matched: true,
       empresa_id: null,
@@ -320,7 +327,17 @@ export function resolveEntity(
     };
   }
 
-  // ── (6) NOT FOUND: top-5 suggestions ─────────────────────────────
+  // ── (6) Weak fuzzy (distance > 2): the brand token is probably NOT a
+  //        company name (generic verb / sector noun). Return matched=true
+  //        with no entity, so the sector / ranking flow can take over.
+  //        Only block as "not_found" when the brand token clearly looks
+  //        like a corporate name (Capitalised, ≥5 chars, not a common
+  //        Spanish word).
+  if (!looksLikeCorporateName(brandToken)) {
+    return empty;
+  }
+
+  // ── (7) NOT FOUND: top-5 suggestions ─────────────────────────────
   const ranked = catalog
     .map((r) => ({ row: r, d: editDistance(
       brandToken.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
