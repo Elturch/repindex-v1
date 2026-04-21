@@ -48,6 +48,13 @@ import {
   nextExpectedSundaySnapshot,
 } from "../_shared/temporalGuard.ts";
 
+// PHASE 1.19a — Period-mode aggregation (mean / first→last / delta / min / max / sd)
+// for multi-week ranges. Snapshot-mode (single week) keeps current behaviour.
+import {
+  computePeriodAggregation,
+  renderPeriodAggregationBlock,
+} from "../_shared/periodAggregation.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -11282,6 +11289,34 @@ async function handleStandardChat(
     enrichedUserPrompt += `\n\n═══ COBERTURA TEMPORAL PARCIAL (PHASE 1.17 — OBLIGATORIO, NO OMITIR) ═══\n${_cov.warning}\nPeríodo solicitado: ${reqLbl} (${_cov.requested_period?.from} → ${_cov.requested_period?.to}, ${_cov.requested_snapshots} snapshots esperados).\nPeríodo real con datos: ${realFrom} → ${realTo} (${_cov.actual_snapshots} snapshots, ${pct}% del período).\n${_cov.missing_period ? `Tramo sin datos: ${_cov.missing_period}.` : ""}\n\nREGLA DE COBERTURA TEMPORAL (INQUEBRANTABLE):\n1. ANTES del Titular-Respuesta y del Resumen Ejecutivo, abre el informe con un párrafo de aviso EN LENGUAJE NATURAL (no técnico) que diga textualmente:\n   "Datos parciales: El período solicitado (${reqLbl}) solo dispone de datos desde ${realFrom} hasta ${realTo}, lo que representa el ${pct}% del período. Los resultados reflejan únicamente este período parcial."\n2. En toda la narrativa, refiérete al PERÍODO REAL DE DATOS (${realFrom} → ${realTo}). PROHIBIDO decir "esta semana", "este mes" o "el semestre" cuando los datos cubren un fragmento distinto.\n3. El Titular-Respuesta debe acotar la afirmación al período real, no al solicitado.\n4. Esta advertencia NO puede omitirse bajo ninguna circunstancia.`;
     console.log(`${logPrefix} [PHASE-1.17] Coverage warning injected (ratio=${_cov.ratio}, ${_cov.actual_snapshots}/${_cov.requested_snapshots})`);
   }
+
+  // ── PHASE 1.19a — Period aggregation. Cuando los datos cubren >1 semana,
+  // calcula media / inicio→fin / delta / min / max / sd por métrica e
+  // inyecta una tabla "MEDIA PERÍODO / INICIO→FIN / DELTA / MIN / MAX"
+  // junto con la regla anti-"esta semana". Si solo hay 1 snapshot, se
+  // mantiene el comportamiento actual (valor puntual + delta vs anterior).
+  try {
+    const _rawRuns: any[] = (dataPack as any)?._rawRunsForSources || [];
+    if (Array.isArray(_rawRuns) && _rawRuns.length > 0) {
+      const _agg = computePeriodAggregation(_rawRuns);
+      if (_agg.period_summary.mode === "period" && _agg.period_summary.weeks_count > 1) {
+        const _block = renderPeriodAggregationBlock(_agg);
+        if (_block) {
+          enrichedUserPrompt += `\n\n${_block}`;
+          console.log(`${logPrefix} [PHASE-1.19a] period_aggregation injected: mode=period, weeks=${_agg.period_summary.weeks_count}, RIX mean=${_agg.period_summary.rix_mean}, delta=${_agg.period_summary.rix_delta}`);
+        }
+        if ((dataPack as any).report_context) {
+          (dataPack as any).report_context.period_aggregation = _agg.period_aggregation;
+          (dataPack as any).report_context.period_summary = _agg.period_summary;
+        }
+      } else {
+        console.log(`${logPrefix} [PHASE-1.19a] mode=snapshot (weeks=${_agg.period_summary.weeks_count}) — no aggregation injected`);
+      }
+    }
+  } catch (aggErr) {
+    console.warn(`${logPrefix} [PHASE-1.19a] period_aggregation failed (non-fatal):`, aggErr);
+  }
+
   // PHASE 1.14 — Merge temporal metadata into report_context so the
   // ReportInfoBar (front-end) can render the disclaimer chip above the
   // headline. Safe even when no temporal expression was detected.
