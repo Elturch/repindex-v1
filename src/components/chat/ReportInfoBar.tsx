@@ -134,6 +134,14 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
         </span>
       )}
 
+      {/* PHASE 1.14c — secondary technical metadata: last sweep day. */}
+      {context.last_batch_date && (
+        <span className="flex items-center gap-1 opacity-70">
+          <Clock className="h-3 w-3 shrink-0" />
+          {languageCode === "en" ? "Last sweep" : "Último barrido"}: {formatDate(context.last_batch_date, languageCode)}
+        </span>
+      )}
+
       {/* Weeks */}
       {(context.weeks_analyzed ?? 0) > 0 && (
         <span className="flex items-center gap-1">
