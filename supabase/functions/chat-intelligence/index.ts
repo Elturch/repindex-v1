@@ -2820,6 +2820,44 @@ async function buildDataPackFromSkills(
       console.log(`${logPrefix} [SKILLS-v2] Skipping fuzzy company match — semantic group "${semanticGroupPending.canonical_key}" resolved`);
     }
 
+    // ── PHASE 1.18 — Conversational entity inheritance ──
+    // If no entity was detected in the current question AND we have a fresh
+    // previousContext with a company, inherit the previous company. This
+    // handles follow-ups like "expandir el informe hasta ayer" after a
+    // company-specific report. The user must NOT mention a different company
+    // (hasCompanyHint guards explicit overrides). We resolve the previous
+    // company NAME → ticker via the companies cache.
+    if (
+      !resolvedTicker &&
+      !hasSemanticGroupMatch &&
+      followupActive &&
+      previousContext?.company &&
+      !hasCompanyHint(followupQuestion) &&
+      companiesCacheLocal &&
+      companiesCacheLocal.length > 0
+    ) {
+      const prevName = String(previousContext.company).toLowerCase().trim();
+      const prevNameNA = prevName.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const match = companiesCacheLocal.find((c: any) => {
+        const n = String(c.issuer_name || "").toLowerCase();
+        const nNA = n.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return n === prevName || nNA === prevNameNA || n.includes(prevName) || nNA.includes(prevNameNA);
+      });
+      if (match) {
+        resolvedTicker = match.ticker;
+        resolvedName = match.issuer_name;
+        console.log(`${logPrefix} [CONTEXT] Inherited entity from conversation: ${resolvedName} (${resolvedTicker})`);
+        // Force company_analysis intent if it was misclassified
+        if (interpret.intent === "general_question" || interpret.intent === "alert") {
+          interpret.intent = "company_analysis";
+          interpret.confidence = Math.max(interpret.confidence, 0.7);
+          console.log(`${logPrefix} [CONTEXT] Promoted intent=company_analysis (entity inherited)`);
+        }
+      } else {
+        console.log(`${logPrefix} [CONTEXT] previousContext.company="${previousContext.company}" not found in companies cache — skipping inheritance`);
+      }
+    }
+
     const shouldRunCrisisScan = !resolvedTicker && (hasDirectCrisisKeywords || interpret.intent === "alert");
     console.log(`${logPrefix} [SKILLS-v2] crisis detection: direct=${hasDirectCrisisKeywords}, interpretAlert=${interpret.intent === "alert"}, resolvedTicker=${resolvedTicker || "none"}, shouldRun=${shouldRunCrisisScan}`);
 
