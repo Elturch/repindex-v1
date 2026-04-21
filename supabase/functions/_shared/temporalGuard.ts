@@ -428,16 +428,20 @@ export async function reconcileWindow(
 
   const gapStart = startR ? Math.max(0, diffDays(requested.start_t, startR)) : diffDays(requested.start_t, requested.end_t) + 1;
   const gapEnd = endR ? Math.max(0, diffDays(endR, requested.end_t)) : diffDays(requested.start_t, requested.end_t) + 1;
-  // "Complete" means: (1) we got every weekly snapshot expected after
-  // clamping to the per-company floor AND (2) the per-company floor
-  // does NOT itself fall inside the requested window. The latter is
-  // critical: when a company is onboarded mid-Q1, the user still needs
-  // a disclaimer even though we delivered every snapshot the company
-  // ever had. A gap measured in *days* between requested.start_t and
-  // the first real Sunday (e.g. Q1 starts Thu 1-ene, first Sunday
-  // 4-ene) is NOT a defect on its own.
-  const floorInsideWindow = !!firstAvail && firstAvail > requested.start_t && firstAvail <= requested.end_t;
-  const isComplete = !!startR && !!endR && distinctDates.size >= expectedN && !floorInsideWindow;
+  // "Complete" means: we delivered every Sunday that fits inside the
+  // window, AND the company floor is not strictly later than the first
+  // Sunday of the window. Concretely: Q1 starts Thu 1-ene; the first
+  // Sunday is 4-ene. If `firstAvail` <= 4-ene (i.e. the company has
+  // data from the first natural Sunday onwards) we treat the window as
+  // complete and emit NO disclaimer. If `firstAvail` falls on a later
+  // Sunday (company onboarded mid-window), we keep the disclaimer.
+  const firstSundayOfWindow = (() => {
+    const d = parseISODate(requested.start_t);
+    while (d.getUTCDay() !== 0) d.setUTCDate(d.getUTCDate() + 1);
+    return toISODate(d);
+  })();
+  const onboardedMidWindow = !!firstAvail && firstAvail > firstSundayOfWindow && firstAvail <= requested.end_t;
+  const isComplete = !!startR && !!endR && distinctDates.size >= expectedN && !onboardedMidWindow;
 
   return {
     requested,
