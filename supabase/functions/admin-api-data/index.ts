@@ -1,26 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { requireAdmin, logAdminAction } from '../_shared/requireAdmin.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
-
-// Check if request comes from Preview/development environment
-function isAllowedOrigin(req: Request): boolean {
-  const origin = req.headers.get('origin') || ''
-  const referer = req.headers.get('referer') || ''
-  
-  const allowedPatterns = [
-    'localhost',
-    'preview',
-    'lovable.dev',
-    'lovableproject.com',
-    '127.0.0.1'
-  ]
-  
-  const source = origin || referer
-  console.log('Checking origin:', source)
-  return allowedPatterns.some(pattern => source.toLowerCase().includes(pattern))
 }
 
 Deno.serve(async (req) => {
@@ -30,14 +13,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Security check: only allow Preview/development origins
-    if (!isAllowedOrigin(req)) {
-      console.log('Blocked request from non-preview origin:', req.headers.get('origin'))
-      return new Response(
-        JSON.stringify({ error: 'Forbidden: Admin API only available in Preview' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    // Phase 1.13 — replace client-side hostname check with server-side JWT + admin role guard.
+    const guard = await requireAdmin(req, corsHeaders)
+    if ('response' in guard) {
+      return guard.response
     }
+    const admin = guard.admin
 
     // Create admin client with service role (bypasses RLS)
     const supabaseAdmin = createClient(
@@ -48,6 +29,18 @@ Deno.serve(async (req) => {
 
     const url = new URL(req.url)
     const path = url.pathname.replace('/admin-api-data', '')
+
+    // Audit each authorised admin call (best-effort).
+    await logAdminAction({
+      serviceClient: supabaseAdmin,
+      admin,
+      edgeFunction: 'admin-api-data',
+      action: `${req.method} ${path}`,
+      resource: url.searchParams.get('period') || null,
+      payload: Object.fromEntries(url.searchParams.entries()),
+      req,
+      statusCode: 200,
+    })
     
     // Helper function to fetch ALL usage logs with pagination (bypasses 1000 row limit)
     async function fetchAllUsageLogs(
