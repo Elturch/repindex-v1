@@ -218,7 +218,13 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${context.quantifier_label}</span>`);
   }
 
+  // PHASE 1.14 — Render the temporal disclaimer above the standard info-bar
+  // when present, with an amber/warning style so it reads as a precondition.
+  const disclaimerHtml = context.temporal_disclaimer
+    ? `<div style="display:flex;align-items:flex-start;gap:6px;padding:8px 12px;margin-bottom:8px;border-radius:8px;border:1px solid #fcd34d;background:#fffbeb;color:#78350f;font-size:12px;line-height:1.5;"><span>⏱️</span><span><strong>${languageCode === "en" ? "Temporal window:" : "Ventana temporal:"}</strong> ${context.temporal_disclaimer}</span></div>`
+    : "";
   return `
+    ${disclaimerHtml}
     <div style="display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:10px 16px;margin-bottom:24px;border-radius:8px;border:1px solid #e5e7eb;background:#f7f9fa;font-size:12px;color:#536471;line-height:1.6;">
       ${items.join("\n      ")}
     </div>`;
