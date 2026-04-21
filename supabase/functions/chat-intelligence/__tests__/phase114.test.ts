@@ -26,29 +26,93 @@ import {
 } from "../../_shared/temporalGuard.ts";
 
 // ── Mock Supabase client ───────────────────────────────────────────
+/**
+ * PHASE 1.14c — Column-aware mock.
+ *
+ * Each input date is interpreted as the Sunday on which the sweep ran
+ * (`batch_execution_date`). The mock derives the *evaluated week*
+ * window for that sweep:
+ *
+ *   batch_execution_date = SUN  (e.g. 2026-01-18)
+ *   07_period_to         = SAT  one day before  (2026-01-17)  — end of evaluated week
+ *   06_period_from       = SUN  seven days before (2026-01-11) — start of evaluated week
+ *
+ * Filters (`gte` / `lte`) and ordering apply to whichever column the
+ * caller actually requested in `.select()` / `.order()` / `.gte()` /
+ * `.lte()`. This way the test suite proves that `reconcileWindow`
+ * really reads from the column it claims to read from — no silent
+ * column drift.
+ */
+const KNOWN_COLS = new Set([
+  "batch_execution_date",
+  "06_period_from",
+  "07_period_to",
+]);
+
+function deriveRow(sweepDate: string): Record<string, string> {
+  const sweep = new Date(`${sweepDate}T00:00:00Z`);
+  const periodTo = new Date(sweep);
+  periodTo.setUTCDate(periodTo.getUTCDate() - 1); // SAT before sweep SUN
+  const periodFrom = new Date(sweep);
+  periodFrom.setUTCDate(periodFrom.getUTCDate() - 7); // SUN one week before
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return {
+    batch_execution_date: `${sweepDate}T00:00:00Z`,
+    "07_period_to": `${iso(periodTo)}T00:00:00Z`,
+    "06_period_from": `${iso(periodFrom)}T00:00:00Z`,
+  };
+}
+
 function makeMockSupabase(snapshotsByTicker: Record<string, string[]>) {
-  // snapshotsByTicker: ticker → array of ISO dates (YYYY-MM-DD)
+  // snapshotsByTicker: ticker → array of sweep dates (Sundays, YYYY-MM-DD)
   return {
     from(_table: string) {
-      const state: any = { _ticker: null, _gte: null, _lte: null, _order: { col: null, asc: true }, _limit: 2000 };
+      const state: any = {
+        _ticker: null,
+        _selectCol: null as string | null,
+        _gteCol: null as string | null,
+        _gte: null as string | null,
+        _lteCol: null as string | null,
+        _lte: null as string | null,
+        _order: { col: null as string | null, asc: true },
+        _limit: 2000,
+      };
       const builder: any = {
-        select(_cols: string) { return builder; },
+        select(cols: string) {
+          // Pick the first known temporal column appearing in the SELECT.
+          const trimmed = String(cols || "").split(",").map((s) => s.trim());
+          for (const c of trimmed) if (KNOWN_COLS.has(c)) { state._selectCol = c; break; }
+          return builder;
+        },
         eq(col: string, val: string) { if (col === "05_ticker") state._ticker = val; return builder; },
-        gte(_col: string, val: string) { state._gte = String(val).slice(0, 10); return builder; },
-        lte(_col: string, val: string) { state._lte = String(val).slice(0, 10); return builder; },
+        gte(col: string, val: string) { state._gteCol = col; state._gte = String(val).slice(0, 10); return builder; },
+        lte(col: string, val: string) { state._lteCol = col; state._lte = String(val).slice(0, 10); return builder; },
         order(col: string, opts: { ascending: boolean }) { state._order = { col, asc: opts.ascending }; return builder; },
         limit(n: number) { state._limit = n; return builder; },
         then(resolve: (v: any) => void) {
-          // Pick the source set
-          const source = state._ticker
+          const sweepDates = state._ticker
             ? (snapshotsByTicker[state._ticker] ?? [])
             : Array.from(new Set(Object.values(snapshotsByTicker).flat()));
-          let dates = [...source].sort();
-          if (state._gte) dates = dates.filter((d) => d >= state._gte);
-          if (state._lte) dates = dates.filter((d) => d <= state._lte);
-          if (!state._order.asc) dates.reverse();
-          dates = dates.slice(0, state._limit);
-          resolve({ data: dates.map((d) => ({ batch_execution_date: `${d}T00:00:00Z` })), error: null });
+          let rows = sweepDates.map(deriveRow);
+          // Filter by whichever column the caller filtered on.
+          const filterCol = state._gteCol || state._lteCol;
+          if (filterCol && KNOWN_COLS.has(filterCol)) {
+            rows = rows.filter((r) => {
+              const v = String(r[filterCol] || "").slice(0, 10);
+              if (state._gte && v < state._gte) return false;
+              if (state._lte && v > state._lte) return false;
+              return true;
+            });
+          }
+          // Sort by whichever column was requested in .order(); fall back
+          // to the SELECT column. Defaults to batch_execution_date.
+          const sortCol = (state._order.col && KNOWN_COLS.has(state._order.col))
+            ? state._order.col
+            : (state._selectCol || "batch_execution_date");
+          rows.sort((a, b) => String(a[sortCol]).localeCompare(String(b[sortCol])));
+          if (!state._order.asc) rows.reverse();
+          rows = rows.slice(0, state._limit);
+          resolve({ data: rows, error: null });
         },
       };
       return builder;
