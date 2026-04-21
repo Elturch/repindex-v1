@@ -10948,6 +10948,12 @@ async function handleStandardChat(
     enrichedUserPrompt += `\n\n═══ VENTANA REAL CON DATOS (PHASE 1.14 — OBLIGATORIO) ═══\n${temporalDisclaimer}\n\nReglas estrictas para tu informe:\n1. El TITULAR-RESPUESTA debe citar la VENTANA REAL (no la solicitada) si difieren.\n2. La FICHA METODOLÓGICA / sección de Período debe reflejar la ventana real con datos y, si procede, mencionar que no existe dato anterior al primer snapshot disponible para esta empresa.\n3. Si se proporciona "Próximo snapshot programado", inclúyelo cuando la consulta sea abierta (YTD / "lo que va de año" / "hasta hoy").\n4. PROHIBIDO inventar fechas o snapshots fuera de la ventana real declarada arriba.`;
     console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer injected into LLM prompt (${temporalDisclaimer.length} chars)`);
   }
+  // PHASE 1.14 — Merge temporal metadata into report_context so the
+  // ReportInfoBar (front-end) can render the disclaimer chip above the
+  // headline. Safe even when no temporal expression was detected.
+  if (temporalReportCtx && (dataPack as any).report_context) {
+    Object.assign((dataPack as any).report_context, temporalReportCtx);
+  }
 
   console.log(`${logPrefix} [E5] Prompt built. System: ${systemPrompt.length} chars, User: ${enrichedUserPrompt.length} chars`);
 
