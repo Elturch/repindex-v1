@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "npm:resend@4.0.0";
+import { requireAdmin, logAdminAction } from "../_shared/requireAdmin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,6 +78,13 @@ serve(async (req) => {
   }
 
   try {
+    // Phase 1.13 — JWT + admin role guard. Blocks unauthenticated/non-admin callers.
+    const guard = await requireAdmin(req, corsHeaders);
+    if ("response" in guard) {
+      return guard.response;
+    }
+    const admin = guard.admin;
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
@@ -89,6 +97,18 @@ serve(async (req) => {
     });
 
     const { action, data } = await req.json();
+
+    // Audit every authorised admin invocation (best-effort, non-blocking).
+    await logAdminAction({
+      serviceClient: supabaseAdmin,
+      admin,
+      edgeFunction: 'admin-api',
+      action: typeof action === 'string' ? action : 'unknown',
+      resource: data?.id ?? data?.email ?? data?.user_id ?? null,
+      payload: data ?? null,
+      req,
+      statusCode: 200,
+    });
 
     switch (action) {
       // ==================== COMPANIES ====================
