@@ -142,13 +142,16 @@ Deno.test("T1: Iberdrola Q1 2026 — disclaimer cites real window 16-ene→29-ma
   const intent = parseTemporalIntent("Evolución Iberdrola Q1 2026", TODAY);
   assert(intent.primary, "should parse Q1 2026");
   const w = await reconcileWindow(sup, "IBE", intent.primary!);
-  assertEquals(w.start_r, "2026-01-18"); // first Sunday >= 16-ene
-  assertEquals(w.end_r, "2026-03-29");
+  // Canonical column is now `07_period_to` (= SAT before each sweep SUN).
+  // First sweep SUN = 18-ene → 07_period_to = 17-ene.
+  // Last sweep SUN inside Q1 = 29-mar → 07_period_to = 28-mar.
+  assertEquals(w.start_r, "2026-01-17");
+  assertEquals(w.end_r, "2026-03-28");
   assert(w.n_real >= 10 && w.n_real <= 12, `n_real=${w.n_real}`);
   const disc = buildTemporalDisclaimer(w, TODAY);
   assertStringIncludes(disc, "Q1 2026");
-  assertStringIncludes(disc, "2026-01-18");
-  assertStringIncludes(disc, "2026-03-29");
+  assertStringIncludes(disc, "2026-01-17");
+  assertStringIncludes(disc, "2026-03-28");
 });
 
 // ── T2 — Repsol YTD with cutoff and next-snapshot mention ──────────
@@ -161,7 +164,8 @@ Deno.test("T2: Repsol YTD — disclaimer mentions next snapshot date", async () 
   const disc = buildTemporalDisclaimer(w, TODAY);
   // Next Sunday >= 21-abr-2026 = 26-abr-2026
   assertStringIncludes(disc, "2026-04-26");
-  assertStringIncludes(disc, "2026-04-19");
+  // Last sweep SUN = 19-abr → 07_period_to = 18-abr.
+  assertStringIncludes(disc, "2026-04-18");
 });
 
 // ── T3 — BBVA Q1-2026 vs Q1-2025 → block ────────────────────────────
@@ -186,9 +190,10 @@ Deno.test("T4: Exolum Q1 2026 — disclaimer cites company-specific first snapsh
   const sup = makeMockSupabase({ EXO: sundaysBetween("2026-01-18", "2026-04-19") });
   const intent = parseTemporalIntent("Reputación Exolum Q1 2026", TODAY);
   const w = await reconcileWindow(sup, "EXO", intent.primary!);
-  assertEquals(w.first_available_snapshot, "2026-01-18");
+  // First sweep SUN = 18-ene → canonical 07_period_to = 17-ene.
+  assertEquals(w.first_available_snapshot, "2026-01-17");
   const disc = buildTemporalDisclaimer(w, TODAY);
-  assertStringIncludes(disc, "2026-01-18");
+  assertStringIncludes(disc, "2026-01-17");
 });
 
 // ── A1 — "diciembre 2025" pre-index → no data ──────────────────────
