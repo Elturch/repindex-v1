@@ -11468,9 +11468,18 @@ async function handleStandardChat(
           const maxScoreMethod = modelScores.length > 0 ? Math.max(...modelScores) : 0;
           const minScoreMethod = modelScores.length > 0 ? Math.min(...modelScores) : 0;
           const divergencePointsMethod = maxScoreMethod - minScoreMethod;
-          const divergenceLevelMethod =
-            divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high";
           const modelsUsedMethod = isRealSubset ? requestedModelsForMethod : modelsInData;
+          // PHASE 1.16b — V5 statistical guard. σ=0 with n<3 is NOT a robust
+          // consensus; collapse divergenceLevel to 'unknown' so MethodologyFooter
+          // renders "No calculable" instead of "Consenso robusto".
+          const _sampleValStd = validateSampleSize(
+            scopedRixData?.length || 0,
+            modelsUsedMethod.length,
+          );
+          const divergenceLevelMethod: "low" | "medium" | "high" | "unknown" =
+            !_sampleValStd.isStatisticallyValid
+              ? "unknown"
+              : (divergencePointsMethod <= 8 ? "low" : divergencePointsMethod <= 15 ? "medium" : "high");
           const periodFromRaw = allRixData
             ?.map((r) => r["06_period_from"])
             .filter(Boolean)
