@@ -218,6 +218,11 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
     const to = context.date_to ? context.date_to.slice(0, 10) : "–";
     items.push(`<span>📅 ${periodLabel}: ${from} — ${to}</span>`);
   }
+  if (context.last_batch_date) {
+    const lb = context.last_batch_date.slice(0, 10);
+    const label = languageCode === "en" ? "Last sweep" : "Último barrido";
+    items.push(`<span style="opacity:0.7;">🕐 ${label}: ${lb}</span>`);
+  }
   if ((context.weeks_analyzed ?? 0) > 0) {
     items.push(`<span>🕐 ${context.weeks_analyzed} ${weeksLabel}</span>`);
   }
