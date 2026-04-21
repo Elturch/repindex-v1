@@ -7863,6 +7863,9 @@ Esto es información valiosa: indica que el competidor NO está siendo monitoriz
 | Competidor | Ticker | ChatGPT | Gemini | Perplexity | DeepSeek | Grok | Qwen | Rango | Consenso |
 |------------|--------|---------|--------|------------|----------|------|------|-------|----------|
 
+FUENTE DE DATOS DE LA TABLA: Cada fila se construye desde DATAPACK.competidores_directos[i].scores_por_modelo, que es un objeto con los nombres de modelo como claves (p.ej. "ChatGPT", "Gemini", "Perplexity", "DeepSeek", "Grok", "Qwen") y la mediana de RIX en la ventana solicitada como valor numérico. Si una clave de modelo no existe en scores_por_modelo, usar guion ("—"); NUNCA inventar.
+Para la primera fila (la empresa analizada), reusar los valores presentes en DATAPACK.snapshot[].rix por modelo. NO mezclar fuentes.
+Si el campo competidor.fuera_de_ventana === true, marcar el nombre del competidor con un asterisco al final (p.ej. "Endesa*") y añadir UNA SOLA nota al pie debajo de la tabla: "*Datos fuera de la ventana solicitada; incluidos como referencia histórica (último snapshot {ultimo_rix_disponible.fecha})".
 Compara los scores individuales de la empresa analizada con cada competidor que tenga datos. Muestra las 6 puntuaciones, NO una mediana única.
 
 ───────────────────────────────────────────────────────────────────────────────
