@@ -426,6 +426,8 @@ const GENERIC_PROMPT_WORDS: ReadonlySet<string> = new Set([
   "resumen", "tabla", "grafica", "gráfica", "datos", "indice", "índice",
   "sector", "sectorial", "esta", "este", "ultimas", "últimas", "ultimos",
   "últimos", "semana", "semanas", "mes", "meses", "trimestre", "año",
+  // Index / market identifiers (not corporate names).
+  "ibex", "ibex35", "ibex-35", "ibex 35", "mercado", "bolsa", "indice", "index",
 ]);
 function looksLikeCorporateName(token: string): boolean {
   if (!token) return false;
