@@ -32,6 +32,14 @@ import {
   detectPromptInjection,
   fuzzyCompanyMatchSql,
 } from "../_shared/queryGuards.ts";
+import {
+  parseTemporalIntent,
+  reconcileWindow,
+  buildTemporalDisclaimer,
+  blockIfImpossibleComparison,
+  buildNormalisationNote,
+  nextExpectedSundaySnapshot,
+} from "../_shared/temporalGuard.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
