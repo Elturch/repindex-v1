@@ -3032,7 +3032,19 @@ async function buildDataPackFromSkills(
       }
     }
 
-    let competidoresDirectos: Array<{ticker: string, issuer_name: string, median_rix: number | null}> = [];
+    // PHASE 1.15 — competidores_directos exposes per-model breakdown so the
+    // Sección 6 cross-model table (ChatGPT|Gemini|Perplexity|DeepSeek|Grok|
+    // Qwen) can be filled. Falling back to median_rix only used to leave the
+    // LLM with no data → it printed "n/d" everywhere.
+    let competidoresDirectos: Array<{
+      ticker: string;
+      issuer_name: string;
+      median_rix: number | null;
+      scores_por_modelo: Record<string, number | null>;
+      ventana_real: { from: string | null; to: string | null; n: number };
+      fuera_de_ventana?: boolean;
+      ultimo_rix_disponible?: { rix: number | null; fecha: string | null } | null;
+    }> = [];
     let competidoresSinDatos: string[] = [];
     let competidoresNota: string | undefined;
     let competitorSource: "verified" | "none" = "none";
@@ -3047,11 +3059,84 @@ async function buildDataPackFromSkills(
           const cr = compResults[ci];
           if (cr.status === "fulfilled" && cr.value?.success && cr.value.data) {
             const cd = cr.value.data;
-            competidoresDirectos.push({ ticker: cd.ticker, issuer_name: cd.empresa, median_rix: cd.rix_mediano });
+            // Build per-model median from raw_runs (rix scores grouped by model_name).
+            const byModel = new Map<string, number[]>();
+            const dates: string[] = [];
+            for (const r of (cd.raw_runs || [])) {
+              const mn = String(r.model_name || "").trim();
+              if (!mn) continue;
+              if (typeof r.rix_score === "number") {
+                if (!byModel.has(mn)) byModel.set(mn, []);
+                byModel.get(mn)!.push(r.rix_score);
+              }
+              const pt = String(r.period_to || r["07_period_to"] || "").slice(0, 10);
+              if (pt) dates.push(pt);
+            }
+            const scoresPorModelo: Record<string, number | null> = {};
+            for (const [mn, vals] of byModel.entries()) {
+              scoresPorModelo[mn] = vals.length > 0 ? medianEdge(vals) : null;
+            }
+            const sortedDates = [...new Set(dates)].sort();
+            competidoresDirectos.push({
+              ticker: cd.ticker,
+              issuer_name: cd.empresa,
+              median_rix: cd.rix_mediano,
+              scores_por_modelo: scoresPorModelo,
+              ventana_real: {
+                from: sortedDates[0] || null,
+                to: sortedDates[sortedDates.length - 1] || null,
+                n: sortedDates.length,
+              },
+            });
           } else {
             // Track competitors without RIX data — don't silently drop them
             competidoresSinDatos.push(compInfo.tickers[ci]);
           }
+        }
+        // PHASE 1.15 — Fallback for competitors with no data inside the window:
+        // fetch their last historical snapshot anywhere in rix_runs_v2 so the
+        // table never collapses to a universal "n/d". The cell is then marked
+        // as `fuera_de_ventana` so the prompt can italicise / footnote it.
+        if (competidoresSinDatos.length > 0) {
+          const fallbackPromises = competidoresSinDatos.map((t) => skillCompanyProfile(supabaseClient, t));
+          const fallbackResults = await Promise.allSettled(fallbackPromises);
+          const stillMissing: string[] = [];
+          for (let fi = 0; fi < competidoresSinDatos.length; fi++) {
+            const fr = fallbackResults[fi];
+            const t = competidoresSinDatos[fi];
+            if (fr.status === "fulfilled" && fr.value?.success && fr.value.data) {
+              const cd = fr.value.data;
+              const byModel = new Map<string, number[]>();
+              const dates: string[] = [];
+              for (const r of (cd.raw_runs || [])) {
+                const mn = String(r.model_name || "").trim();
+                if (!mn) continue;
+                if (typeof r.rix_score === "number") {
+                  if (!byModel.has(mn)) byModel.set(mn, []);
+                  byModel.get(mn)!.push(r.rix_score);
+                }
+                const pt = String(r.period_to || r["07_period_to"] || "").slice(0, 10);
+                if (pt) dates.push(pt);
+              }
+              const scoresPorModelo: Record<string, number | null> = {};
+              for (const [mn, vals] of byModel.entries()) {
+                scoresPorModelo[mn] = vals.length > 0 ? medianEdge(vals) : null;
+              }
+              const sortedDates = [...new Set(dates)].sort();
+              competidoresDirectos.push({
+                ticker: cd.ticker,
+                issuer_name: cd.empresa,
+                median_rix: cd.rix_mediano,
+                scores_por_modelo: scoresPorModelo,
+                ventana_real: { from: sortedDates[0] || null, to: sortedDates[sortedDates.length - 1] || null, n: sortedDates.length },
+                fuera_de_ventana: true,
+                ultimo_rix_disponible: { rix: cd.rix_mediano, fecha: sortedDates[sortedDates.length - 1] || null },
+              });
+            } else {
+              stillMissing.push(t);
+            }
+          }
+          competidoresSinDatos = stillMissing;
         }
         console.log(`${logPrefix} [SKILLS-v2] Competitors resolved: ${competidoresDirectos.length}/${compInfo.tickers.length}, without data: ${competidoresSinDatos.length}`);
       } else {
