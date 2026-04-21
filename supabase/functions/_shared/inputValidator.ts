@@ -47,6 +47,16 @@ export const FOREIGN_QUALIFIERS = [
   "filial", "subsidiary", "branch", "division", "división", "subsidiaria",
 ] as const;
 
+/** Tokens that appear inside multi-word brand names but carry no
+ *  distinctive identifier on their own. Used to pick the brand stem when
+ *  matching "Santander UK" against a catalog row of "Banco Santander". */
+export const GENERIC_BRAND_TOKENS: ReadonlySet<string> = new Set([
+  "banco", "grupo", "compania", "compañia", "company", "holding", "holdings",
+  "corporacion", "corporación", "corporation", "corp", "sociedad",
+  "international", "internacional", "global", "iberica", "ibérica", "ibérico",
+  "espana", "españa", "spain", "ag", "sa", "sl", "plc",
+]);
+
 export interface EntityResolution {
   matched: boolean;
   empresa_id: string | null;
