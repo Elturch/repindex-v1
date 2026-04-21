@@ -400,6 +400,44 @@ function findClosestCatalog(token: string, catalog: CatalogEntry[]): CatalogEntr
   return best ? best.row : null;
 }
 
+/** Pick the most distinctive (longest, non-generic) word of a multi-word
+ *  brand. Used to build clean "Brand UK" / "Brand México" foreign labels. */
+function pickBrandStem(issuerName: string): string {
+  if (!issuerName) return "";
+  const words = issuerName.split(/\s+/);
+  if (words.length === 1) return words[0];
+  const candidates = words
+    .filter((w) => {
+      const norm = w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      return w.length >= 4 && !GENERIC_BRAND_TOKENS.has(norm);
+    })
+    .sort((a, b) => b.length - a.length);
+  return candidates[0] ?? words[words.length - 1];
+}
+
+/** Heuristic: "Acme", "FantasyCorp", "Telefonica" look like brand names.
+ *  "Ranking", "Compara", "Informe" do not. We require either a
+ *  capitalised token of ≥5 chars whose lowercase form isn't a Spanish
+ *  action verb / generic, OR an all-caps token (likely a ticker). */
+const GENERIC_PROMPT_WORDS: ReadonlySet<string> = new Set([
+  "ranking", "compara", "comparar", "informe", "reputacion", "reputación",
+  "score", "analisis", "análisis", "evolucion", "evolución", "dame", "dime",
+  "hazme", "quiero", "necesito", "mostrar", "muestra", "lista", "listame",
+  "resumen", "tabla", "grafica", "gráfica", "datos", "indice", "índice",
+  "sector", "sectorial", "esta", "este", "ultimas", "últimas", "ultimos",
+  "últimos", "semana", "semanas", "mes", "meses", "trimestre", "año",
+]);
+function looksLikeCorporateName(token: string): boolean {
+  if (!token) return false;
+  const norm = token.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (GENERIC_PROMPT_WORDS.has(norm)) return false;
+  // All-caps tokens of ≥3 chars look like tickers/acronyms.
+  if (/^[A-Z]{3,}$/.test(token)) return true;
+  // Capitalised first letter + ≥4 lowercase letters → likely a name.
+  if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}$/.test(token)) return true;
+  return false;
+}
+
 // ─── V2: detectMetric ─────────────────────────────────────────────────
 
 /** Metrics RepIndex DOES compute (whitelist). */
