@@ -8753,6 +8753,69 @@ serve(async (req) => {
     }
 
     // ─────────────────────────────────────────────────────────────────
+    // PHASE 1.16 — InputValidator (entity / metric / granularity / window / sample).
+    // Runs BEFORE temporalGuard. Catches the four classes of silent
+    // corruption observed in atypical batch testing (A1/A2/A4/A5/A6).
+    // Zero hardcoded company names — catalog comes from
+    // repindex_root_issuers (warm cache below).
+    // ─────────────────────────────────────────────────────────────────
+    let entityAssumptionDisclosure: string | null = null;
+    let defaultWindowDisclosure: string | null = null;
+    try {
+      // Warm the catalog cache used by all V1 lookups.
+      if (!companiesCache || Date.now() - cacheTimestamp > CACHE_TTL) {
+        const { data: _co } = await supabaseClient
+          .from("repindex_root_issuers")
+          .select("issuer_name, issuer_id, ticker, sector_category, ibex_family_code, cotiza_en_bolsa, include_terms");
+        if (_co) { companiesCache = _co; cacheTimestamp = Date.now(); }
+      }
+      const catalog116 = (companiesCache || []).map((c: any) => ({
+        issuer_name: c.issuer_name as string,
+        ticker: c.ticker as string,
+      }));
+      // V1: resolveEntity
+      const ent = resolveEntity(runtimeQuery, catalog116);
+      if (!ent.matched && ent.block_message) {
+        const sugg = ent.confidence === "foreign_subsidiary" && ent.parent_suggestion
+          ? [`Reputación de ${ent.parent_suggestion.issuer_name}`, "Ranking IBEX-35 últimas 4 semanas", "Top 5 banca"]
+          : ent.alternatives.length > 0
+          ? ent.alternatives.slice(0, 3).map((a) => `Reputación de ${a.issuer_name}`)
+          : ["Reputación de Iberdrola", "Reputación de Telefónica", "Ranking IBEX-35 últimas 4 semanas"];
+        return await _gateRespond(ent.block_message, sugg, `entity:${ent.confidence}`);
+      }
+      if (ent.assumption_disclosure) entityAssumptionDisclosure = ent.assumption_disclosure;
+
+      // V2: detectMetric
+      const met = detectMetric(runtimeQuery);
+      if (!met.isRixCompatible && met.block_message) {
+        const sugg = met.suggested_dimension
+          ? [`Analiza dimensión ${met.suggested_dimension}`, "Reputación RIX completa", "Ranking IBEX-35 últimas 4 semanas"]
+          : ["Reputación de Iberdrola", "Ranking IBEX-35 últimas 4 semanas", "Top 5 banca"];
+        return await _gateRespond(met.block_message, sugg, `metric:${met.requestedMetric}`);
+      }
+
+      // V3: detectGranularity (day / hour)
+      const gran = detectGranularity(runtimeQuery, new Date());
+      if (!gran.isCompatible && gran.block_message) {
+        return await _gateRespond(
+          gran.block_message,
+          ["Mes completo", "Trimestre completo", "Últimas 4 semanas"],
+          `granularity:${gran.requestedGranularity}`,
+        );
+      }
+      if (gran.redirect_disclosure) {
+        // Soft redirect: piggyback on the temporal disclaimer.
+        entityAssumptionDisclosure = [entityAssumptionDisclosure, gran.redirect_disclosure].filter(Boolean).join(" ");
+      }
+
+      // V4: inferDefaultWindow (only when no temporal hint was provided)
+      const dw = inferDefaultWindow(runtimeQuery);
+      if (dw.appliedDefault) defaultWindowDisclosure = dw.disclosure;
+    } catch (e) {
+      console.warn(`${logPrefix} [PHASE-1.16] inputValidator error (non-fatal):`, e);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // PHASE 1.14 — Temporal Window Guard.
     // Reconciles the user-requested window against the actual snapshots
     // available in `rix_runs_v2` (per company, live, no hardcoded floor).
