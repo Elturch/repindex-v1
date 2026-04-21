@@ -486,9 +486,15 @@ export function buildTemporalDisclaimer(
   parts.push(`Ventana solicitada: ${r.requested.label} (${r.requested.start_t} → ${r.requested.end_t}).`);
   parts.push(`Ventana con datos: ${r.start_r} → ${r.end_r}, ${r.n_real} snapshot${r.n_real === 1 ? "" : "s"} (esperados: ${r.n_expected}).`);
   // Only disclose a "no prior data" gap when the company-specific floor
-  // genuinely falls inside the requested window (i.e., not just because
-  // the first Sunday of the window happens to be a few days into it).
-  if (r.first_available_snapshot && r.first_available_snapshot > r.requested.start_t) {
+  // is strictly later than the first natural Sunday of the window
+  // (i.e., the company was onboarded mid-window). If the floor merely
+  // coincides with the first weekly cadence point, no disclosure.
+  const firstSundayOfWindow = (() => {
+    const d = parseISODate(r.requested.start_t);
+    while (d.getUTCDay() !== 0) d.setUTCDate(d.getUTCDate() + 1);
+    return toISODate(d);
+  })();
+  if (r.first_available_snapshot && r.first_available_snapshot > firstSundayOfWindow && r.first_available_snapshot <= r.requested.end_t) {
     parts.push(`No existe dato RIX anterior al ${r.first_available_snapshot} para esta empresa.`);
   }
   if (r.gap_days_end > 0) {
