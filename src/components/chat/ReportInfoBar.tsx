@@ -23,6 +23,14 @@ export interface ReportContext {
   model_ranking_for_entity?: boolean;
   period_weeks_label?: string;
   requested_weeks_back?: number;
+  // PHASE 1.14 — Temporal Window Guard metadata
+  temporal_disclaimer?: string | null;
+  temporal_window_requested?: { from?: string | null; to?: string | null; label?: string | null } | null;
+  temporal_window_real?: { from?: string | null; to?: string | null; n?: number; expected_n?: number } | null;
+  temporal_first_available?: string | null;
+  temporal_last_available?: string | null;
+  temporal_next_snapshot?: string | null;
+  temporal_is_open_ended?: boolean;
 }
 
 interface ReportInfoBarProps {
@@ -71,6 +79,20 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
 
   return (
+    <>
+      {/* PHASE 1.14 — Temporal Window Guard disclaimer (renders above the InfoBar
+         when the requested temporal window doesn't perfectly match the real
+         data window — partial coverage, late-onboarded company, YTD with cutoff,
+         etc.). Amber/warning style to signal "read me before the headline". */}
+      {context.temporal_disclaimer && (
+        <div className={`flex items-start gap-2 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-amber-900 dark:text-amber-200 mb-2`}>
+          <Clock className="h-3 w-3 shrink-0 mt-0.5" />
+          <span className="leading-snug">
+            <span className="font-semibold mr-1">{languageCode === "en" ? "Temporal window:" : "Ventana temporal:"}</span>
+            {context.temporal_disclaimer}
+          </span>
+        </div>
+      )}
     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/40 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-muted-foreground mb-3`}>
       {/* User question */}
       {hasQuestion && (
@@ -138,7 +160,8 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
           {context.quantifier_label}
         </span>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -195,7 +218,13 @@ export function generateInfoBarHtml(context: ReportContext | null | undefined, l
     items.push(`<span style="display:inline-flex;align-items:center;gap:4px;font-weight:600;color:#0f1419;">🏢 ${context.quantifier_label}</span>`);
   }
 
+  // PHASE 1.14 — Render the temporal disclaimer above the standard info-bar
+  // when present, with an amber/warning style so it reads as a precondition.
+  const disclaimerHtml = context.temporal_disclaimer
+    ? `<div style="display:flex;align-items:flex-start;gap:6px;padding:8px 12px;margin-bottom:8px;border-radius:8px;border:1px solid #fcd34d;background:#fffbeb;color:#78350f;font-size:12px;line-height:1.5;"><span>⏱️</span><span><strong>${languageCode === "en" ? "Temporal window:" : "Ventana temporal:"}</strong> ${context.temporal_disclaimer}</span></div>`
+    : "";
   return `
+    ${disclaimerHtml}
     <div style="display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:10px 16px;margin-bottom:24px;border-radius:8px;border:1px solid #e5e7eb;background:#f7f9fa;font-size:12px;color:#536471;line-height:1.6;">
       ${items.join("\n      ")}
     </div>`;
