@@ -479,10 +479,11 @@ export function buildTemporalDisclaimer(
   const parts: string[] = [];
   parts.push(`Ventana solicitada: ${r.requested.label} (${r.requested.start_t} → ${r.requested.end_t}).`);
   parts.push(`Ventana con datos: ${r.start_r} → ${r.end_r}, ${r.n_real} snapshot${r.n_real === 1 ? "" : "s"} (esperados: ${r.n_expected}).`);
-  if (r.gap_days_start > 0 && r.first_available_snapshot && r.first_available_snapshot > r.requested.start_t) {
+  // Only disclose a "no prior data" gap when the company-specific floor
+  // genuinely falls inside the requested window (i.e., not just because
+  // the first Sunday of the window happens to be a few days into it).
+  if (r.first_available_snapshot && r.first_available_snapshot > r.requested.start_t) {
     parts.push(`No existe dato RIX anterior al ${r.first_available_snapshot} para esta empresa.`);
-  } else if (r.gap_days_start > 0) {
-    parts.push(`No existe dato RIX anterior al ${r.start_r} dentro del periodo solicitado.`);
   }
   if (r.gap_days_end > 0) {
     const nextSnap = nextExpectedSundaySnapshot(today);
