@@ -33,6 +33,13 @@ import {
   fuzzyCompanyMatchSql,
 } from "../_shared/queryGuards.ts";
 import {
+  resolveEntity,
+  detectMetric,
+  detectGranularity,
+  inferDefaultWindow,
+  validateSampleSize,
+} from "../_shared/inputValidator.ts";
+import {
   parseTemporalIntent,
   reconcileWindow,
   buildTemporalDisclaimer,
