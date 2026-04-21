@@ -190,6 +190,23 @@ export function resolveEntity(
     }
   }
 
+  // Specificity preference: when the prompt verbatim contains a LONGER
+  // catalog name (e.g. "Santander Consumer Finance"), drop the shorter
+  // sibling matches (e.g. "Banco Santander") that only triggered via the
+  // shared distinctive-token rule. This converts an apparent ambiguity
+  // into the user's explicit pick.
+  if (exactHits.length >= 2) {
+    const verbatim = exactHits.filter((r) => {
+      const n = (r.issuer_name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      return n.split(/\s+/).length >= 2 && normPrompt.includes(n);
+    });
+    if (verbatim.length === 1) {
+      // Replace the hit list with just the most specific verbatim match.
+      exactHits.length = 0;
+      exactHits.push(verbatim[0]);
+    }
+  }
+
   // ── (2) Foreign-qualifier short-circuit (bug A1) ─────────────────
   // Either: exact match exists AND a foreign qualifier is in the prompt
   // (e.g. "Telefónica Germany" → exact 'Telefónica' + qualifier 'germany'),
