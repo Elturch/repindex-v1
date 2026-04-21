@@ -8711,6 +8711,16 @@ serve(async (req) => {
           // gap_end / company onboarded mid-window). Also handle YTD
           // naturally — buildTemporalDisclaimer cites the next Sunday.
           temporalDisclaimer = buildTemporalDisclaimer(wPrimary, new Date());
+          // PHASE 1.14c — also reconcile against `batch_execution_date`
+          // to expose the "last sweep day" as technical metadata. We do
+          // not use it for the user-facing window; it sits beside the
+          // canonical "Período" so analysts can correlate the evaluated
+          // week with the actual pipeline execution day.
+          let lastBatchDate: string | null = null;
+          try {
+            const wBatch = await reconcileWindow(supabaseClient, tickerForTemporal, tIntent.primary, { useColumn: "batch_execution_date" });
+            lastBatchDate = wBatch.last_available_snapshot;
+          } catch { /* non-fatal */ }
           temporalReportCtx = {
             temporal_disclaimer: temporalDisclaimer || null,
             temporal_window_requested: { from: tIntent.primary.start_t, to: tIntent.primary.end_t, label: tIntent.primary.label },
@@ -8719,6 +8729,7 @@ serve(async (req) => {
             temporal_last_available: wPrimary.last_available_snapshot,
             temporal_next_snapshot: nextExpectedSundaySnapshot(new Date()),
             temporal_is_open_ended: tIntent.isOpenEnded,
+            last_batch_date: lastBatchDate,
           };
           if (temporalDisclaimer) {
             console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer attached: "${temporalDisclaimer.slice(0, 140)}…"`);
