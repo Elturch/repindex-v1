@@ -10536,6 +10536,8 @@ async function handleStandardChat(
   originalUserQuestion?: string,
   previousContext: any = null,
   isFollowup: boolean = false,
+  temporalDisclaimer: string = "",
+  temporalReportCtx: Record<string, unknown> | null = null,
 ) {
   console.log(`${logPrefix} Depth level: ${depthLevel}, Role: ${roleName || "General"}`);
 
