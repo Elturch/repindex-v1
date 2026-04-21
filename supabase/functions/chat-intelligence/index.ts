@@ -8900,6 +8900,7 @@ serve(async (req) => {
           temporalDisclaimer = [dPrimary, dSecondary, normNote].filter(Boolean).join(" ");
           temporalReportCtx = {
             temporal_disclaimer: temporalDisclaimer || null,
+            is_comparison: true,
             temporal_window_requested: { from: tIntent.primary.start_t, to: tIntent.primary.end_t, label: tIntent.primary.label },
             temporal_window_real: { from: wPrimary.start_r, to: wPrimary.end_r, n: wPrimary.n_real, expected_n: wPrimary.n_expected },
             temporal_window_secondary: { from: wSecondary.start_r, to: wSecondary.end_r, n: wSecondary.n_real, label: tIntent.secondary.label },
