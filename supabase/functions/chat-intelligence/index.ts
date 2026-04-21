@@ -8849,6 +8849,23 @@ serve(async (req) => {
     let temporalReportCtx: Record<string, unknown> | null = null;
     try {
       const tIntent = parseTemporalIntent(runtimeQuery, new Date());
+      // PHASE 1.16c — Bug 2: if V3 detected a punctual day with a
+      // viable nearby Sunday, override primary window to that single
+      // week so the report doesn't widen to the whole month.
+      const _dayRedirectISO = (globalThis as any).__phase116c_dayRedirectISO as string | undefined;
+      if (_dayRedirectISO && tIntent.primary) {
+        const _start = new Date(`${_dayRedirectISO}T00:00:00Z`);
+        _start.setUTCDate(_start.getUTCDate() - 6);
+        const _startISO = _start.toISOString().slice(0, 10);
+        tIntent.primary = {
+          ...tIntent.primary,
+          start_t: _startISO,
+          end_t: _dayRedirectISO,
+          label: `semana del ${_dayRedirectISO}`,
+        };
+        // Reset so the override only fires for this request.
+        (globalThis as any).__phase116c_dayRedirectISO = undefined;
+      }
       if (tIntent.primary) {
         // Make sure the company cache is warm — used to resolve a ticker
         // for the per-company snapshot floor. Fallback to global lookup
