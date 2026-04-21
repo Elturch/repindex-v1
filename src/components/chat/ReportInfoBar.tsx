@@ -23,6 +23,14 @@ export interface ReportContext {
   model_ranking_for_entity?: boolean;
   period_weeks_label?: string;
   requested_weeks_back?: number;
+  // PHASE 1.14 — Temporal Window Guard metadata
+  temporal_disclaimer?: string | null;
+  temporal_window_requested?: { from?: string | null; to?: string | null; label?: string | null } | null;
+  temporal_window_real?: { from?: string | null; to?: string | null; n?: number; expected_n?: number } | null;
+  temporal_first_available?: string | null;
+  temporal_last_available?: string | null;
+  temporal_next_snapshot?: string | null;
+  temporal_is_open_ended?: boolean;
 }
 
 interface ReportInfoBarProps {
