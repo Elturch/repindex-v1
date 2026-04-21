@@ -8938,6 +8938,46 @@ serve(async (req) => {
             console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer attached: "${temporalDisclaimer.slice(0, 140)}…"`);
           }
         }
+        // ── PHASE 1.17 — Coverage ratio (real / expected snapshots) so the
+        // LLM de síntesis pueda matizar explícitamente cuando la ventana
+        // solicitada solo dispone de datos parciales. Se calcula tanto en
+        // el flujo single como en comparativa (sobre wPrimary).
+        try {
+          const wRef = wPrimary;
+          if (wRef && wRef.n_expected > 0) {
+            const ratio = Math.max(0, Math.min(1, wRef.n_real / wRef.n_expected));
+            const reqFrom = tIntent.primary.start_t;
+            const reqTo = tIntent.primary.end_t;
+            const realFrom = wRef.start_r;
+            const realTo = wRef.end_r;
+            // Missing tail (most common case: requested H1, real ends in apr).
+            let missingPeriod: string | null = null;
+            if (realTo && reqTo && realTo < reqTo) {
+              // Day after realTo until reqTo.
+              const d = new Date(realTo + "T00:00:00Z");
+              d.setUTCDate(d.getUTCDate() + 1);
+              missingPeriod = `${d.toISOString().slice(0, 10)} -> ${reqTo}`;
+            } else if (realFrom && reqFrom && realFrom > reqFrom) {
+              const d = new Date(realFrom + "T00:00:00Z");
+              d.setUTCDate(d.getUTCDate() - 1);
+              missingPeriod = `${reqFrom} -> ${d.toISOString().slice(0, 10)}`;
+            }
+            (temporalReportCtx as Record<string, unknown>).coverage_ratio = {
+              requested_snapshots: wRef.n_expected,
+              actual_snapshots: wRef.n_real,
+              ratio: Number(ratio.toFixed(2)),
+              requested_period: { from: reqFrom, to: reqTo, label: tIntent.primary.label },
+              real_period: { from: realFrom, to: realTo },
+              missing_period: missingPeriod,
+              warning: ratio < 0.85
+                ? `COBERTURA PARCIAL: solo se dispone del ${Math.round(ratio * 100)}% de los snapshots del período solicitado (${wRef.n_real}/${wRef.n_expected}).`
+                : null,
+            };
+            console.log(`${logPrefix} [PHASE-1.17] coverage_ratio=${ratio.toFixed(2)} (${wRef.n_real}/${wRef.n_expected})`);
+          }
+        } catch (covErr) {
+          console.warn(`${logPrefix} [PHASE-1.17] coverage_ratio compute failed (non-fatal):`, covErr);
+        }
       }
     } catch (tErr) {
       console.warn(`${logPrefix} [PHASE-1.14] Temporal guard failed (non-fatal):`, tErr);
