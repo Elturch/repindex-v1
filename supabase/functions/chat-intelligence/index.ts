@@ -8938,6 +8938,46 @@ serve(async (req) => {
             console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer attached: "${temporalDisclaimer.slice(0, 140)}…"`);
           }
         }
+        // ── PHASE 1.17 — Coverage ratio (real / expected snapshots) so the
+        // LLM de síntesis pueda matizar explícitamente cuando la ventana
+        // solicitada solo dispone de datos parciales. Se calcula tanto en
+        // el flujo single como en comparativa (sobre wPrimary).
+        try {
+          const wRef = wPrimary;
+          if (wRef && wRef.n_expected > 0) {
+            const ratio = Math.max(0, Math.min(1, wRef.n_real / wRef.n_expected));
+            const reqFrom = tIntent.primary.start_t;
+            const reqTo = tIntent.primary.end_t;
+            const realFrom = wRef.start_r;
+            const realTo = wRef.end_r;
+            // Missing tail (most common case: requested H1, real ends in apr).
+            let missingPeriod: string | null = null;
+            if (realTo && reqTo && realTo < reqTo) {
+              // Day after realTo until reqTo.
+              const d = new Date(realTo + "T00:00:00Z");
+              d.setUTCDate(d.getUTCDate() + 1);
+              missingPeriod = `${d.toISOString().slice(0, 10)} -> ${reqTo}`;
+            } else if (realFrom && reqFrom && realFrom > reqFrom) {
+              const d = new Date(realFrom + "T00:00:00Z");
+              d.setUTCDate(d.getUTCDate() - 1);
+              missingPeriod = `${reqFrom} -> ${d.toISOString().slice(0, 10)}`;
+            }
+            (temporalReportCtx as Record<string, unknown>).coverage_ratio = {
+              requested_snapshots: wRef.n_expected,
+              actual_snapshots: wRef.n_real,
+              ratio: Number(ratio.toFixed(2)),
+              requested_period: { from: reqFrom, to: reqTo, label: tIntent.primary.label },
+              real_period: { from: realFrom, to: realTo },
+              missing_period: missingPeriod,
+              warning: ratio < 0.85
+                ? `COBERTURA PARCIAL: solo se dispone del ${Math.round(ratio * 100)}% de los snapshots del período solicitado (${wRef.n_real}/${wRef.n_expected}).`
+                : null,
+            };
+            console.log(`${logPrefix} [PHASE-1.17] coverage_ratio=${ratio.toFixed(2)} (${wRef.n_real}/${wRef.n_expected})`);
+          }
+        } catch (covErr) {
+          console.warn(`${logPrefix} [PHASE-1.17] coverage_ratio compute failed (non-fatal):`, covErr);
+        }
       }
     } catch (tErr) {
       console.warn(`${logPrefix} [PHASE-1.14] Temporal guard failed (non-fatal):`, tErr);
@@ -11191,6 +11231,19 @@ async function handleStandardChat(
     enrichedUserPrompt += `\n\n═══ VENTANA REAL CON DATOS (PHASE 1.14 — OBLIGATORIO) ═══\n${temporalDisclaimer}\n\nReglas estrictas para tu informe:\n1. El TITULAR-RESPUESTA debe citar la VENTANA REAL (no la solicitada) si difieren.\n2. La FICHA METODOLÓGICA / sección de Período debe reflejar la ventana real con datos y, si procede, mencionar que no existe dato anterior al primer snapshot disponible para esta empresa.\n3. Si se proporciona "Próximo snapshot programado", inclúyelo cuando la consulta sea abierta (YTD / "lo que va de año" / "hasta hoy").\n4. PROHIBIDO inventar fechas o snapshots fuera de la ventana real declarada arriba.`;
     console.log(`${logPrefix} [PHASE-1.14] Temporal disclaimer injected into LLM prompt (${temporalDisclaimer.length} chars)`);
   }
+  // ── PHASE 1.17 — Coverage warning. Cuando la ventana solicitada solo
+  // tiene cobertura parcial (<85%), el LLM debe abrir el informe con un
+  // párrafo explícito en lenguaje natural y referirse al período real,
+  // no decir "esta semana" cuando se pidió un semestre.
+  const _cov = (temporalReportCtx as any)?.coverage_ratio;
+  if (_cov && typeof _cov.ratio === "number" && _cov.ratio < 0.85) {
+    const pct = Math.round(_cov.ratio * 100);
+    const reqLbl = _cov.requested_period?.label || `${_cov.requested_period?.from} → ${_cov.requested_period?.to}`;
+    const realFrom = _cov.real_period?.from || "—";
+    const realTo = _cov.real_period?.to || "—";
+    enrichedUserPrompt += `\n\n═══ COBERTURA TEMPORAL PARCIAL (PHASE 1.17 — OBLIGATORIO, NO OMITIR) ═══\n${_cov.warning}\nPeríodo solicitado: ${reqLbl} (${_cov.requested_period?.from} → ${_cov.requested_period?.to}, ${_cov.requested_snapshots} snapshots esperados).\nPeríodo real con datos: ${realFrom} → ${realTo} (${_cov.actual_snapshots} snapshots, ${pct}% del período).\n${_cov.missing_period ? `Tramo sin datos: ${_cov.missing_period}.` : ""}\n\nREGLA DE COBERTURA TEMPORAL (INQUEBRANTABLE):\n1. ANTES del Titular-Respuesta y del Resumen Ejecutivo, abre el informe con un párrafo de aviso EN LENGUAJE NATURAL (no técnico) que diga textualmente:\n   "Datos parciales: El período solicitado (${reqLbl}) solo dispone de datos desde ${realFrom} hasta ${realTo}, lo que representa el ${pct}% del período. Los resultados reflejan únicamente este período parcial."\n2. En toda la narrativa, refiérete al PERÍODO REAL DE DATOS (${realFrom} → ${realTo}). PROHIBIDO decir "esta semana", "este mes" o "el semestre" cuando los datos cubren un fragmento distinto.\n3. El Titular-Respuesta debe acotar la afirmación al período real, no al solicitado.\n4. Esta advertencia NO puede omitirse bajo ninguna circunstancia.`;
+    console.log(`${logPrefix} [PHASE-1.17] Coverage warning injected (ratio=${_cov.ratio}, ${_cov.actual_snapshots}/${_cov.requested_snapshots})`);
+  }
   // PHASE 1.14 — Merge temporal metadata into report_context so the
   // ReportInfoBar (front-end) can render the disclaimer chip above the
   // headline. Safe even when no temporal expression was detected.
@@ -11215,6 +11268,22 @@ async function handleStandardChat(
       ctx.date_from = real.from;
       ctx.date_to = real.to;
       console.log(`${logPrefix} [PHASE-1.14c] Unified InfoBar period to temporal_window_real: ${real.from} → ${real.to}`);
+      // ── PHASE 1.17 (Bug B) — Recompute weeks_analyzed from the REAL
+      // window so the InfoBar no muestra "4 semanas" cuando los datos
+      // reales cubren ~13 semanas. Math.round((to - from) / 7d).
+      try {
+        const dFrom = new Date(real.from + "T00:00:00Z").getTime();
+        const dTo = new Date(real.to + "T00:00:00Z").getTime();
+        if (!isNaN(dFrom) && !isNaN(dTo) && dTo >= dFrom) {
+          const weeks = Math.max(1, Math.round((dTo - dFrom) / (7 * 24 * 60 * 60 * 1000)) + 1);
+          const prev = Number(ctx.weeks_analyzed || 0);
+          if (prev !== weeks) {
+            (ctx as any).weeks_analyzed_skill = prev;
+            ctx.weeks_analyzed = weeks;
+            console.log(`${logPrefix} [PHASE-1.17] weeks_analyzed recomputed from real window: ${prev} → ${weeks}`);
+          }
+        }
+      } catch { /* keep existing weeks_analyzed on parse failure */ }
     }
   }
 
