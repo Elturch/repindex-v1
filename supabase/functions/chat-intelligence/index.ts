@@ -11248,6 +11248,58 @@ async function handleStandardChat(
     "44_cxm_score": s.cxm,
     batch_execution_date: s.period_to,
   }));
+  // PHASE 1.16c — Bug 1: when the user asked a company-vs-company
+  // comparativa, the methodology footer must aggregate models / records
+  // across BOTH entities. allRixData only carries the primary entity
+  // (empresa_primaria) — the secondary entities live inside
+  // dataPack.competidores_directos with per-model medians (no per-week
+  // rows). We synthesise pseudo-rows so the methodology counters reflect
+  // the real footprint of the comparativa.
+  const _isCompanyComparison =
+    /\b(compara(?:r|ndo)?|comparativa|vs\.?|versus|frente\s+a|contra)\b/i.test(
+      runtimeQuery,
+    ) && (detectedCompanies?.length ?? 0) >= 2;
+  if (_isCompanyComparison) {
+    const compDir: any[] = (dataPack as any)?.competidores_directos || [];
+    const primaryTickerLower = (dataPack?.empresa_primaria?.ticker || "")
+      .toLowerCase();
+    const wantedTickers = new Set(
+      (detectedCompanies || [])
+        .map((c: any) => String(c.ticker || "").toLowerCase())
+        .filter((t: string) => t && t !== primaryTickerLower),
+    );
+    for (const comp of compDir) {
+      const tickerLow = String(comp?.ticker || "").toLowerCase();
+      if (!wantedTickers.has(tickerLow)) continue;
+      const ventana = comp?.ventana_real || {};
+      const periodFrom = ventana.from || null;
+      const periodTo = ventana.to || null;
+      const scoresPorModelo = (comp?.scores_por_modelo || {}) as Record<
+        string,
+        number | null
+      >;
+      for (const [modelName, rix] of Object.entries(scoresPorModelo)) {
+        if (rix == null) continue;
+        allRixData.push({
+          "02_model_name": modelName,
+          "03_target_name": comp.issuer_name || "",
+          "05_ticker": comp.ticker || "",
+          "06_period_from": periodFrom,
+          "07_period_to": periodTo,
+          "09_rix_score": rix,
+          batch_execution_date: periodTo,
+          _synthetic_comparison_row: true,
+        });
+      }
+    }
+    if (compDir.length > 0) {
+      console.log(
+        `[PHASE-1.16c] Comparativa: appended ${
+          allRixData.filter((r: any) => r._synthetic_comparison_row).length
+        } synthetic rows from ${compDir.length} competidores_directos for methodology aggregation`,
+      );
+    }
+  }
   // Use raw runs from skills pipeline for source extraction (they contain 20_res_gpt_bruto, 21_res_perplex_bruto)
   const detectedCompanyFullData: any[] = (dataPack as any)?._rawRunsForSources || allRixData;
 
