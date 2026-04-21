@@ -11257,7 +11257,7 @@ async function handleStandardChat(
   // the real footprint of the comparativa.
   const _isCompanyComparison =
     /\b(compara(?:r|ndo)?|comparativa|vs\.?|versus|frente\s+a|contra)\b/i.test(
-      runtimeQuery,
+      question,
     ) && (detectedCompanies?.length ?? 0) >= 2;
   if (_isCompanyComparison) {
     const compDir: any[] = (dataPack as any)?.competidores_directos || [];
