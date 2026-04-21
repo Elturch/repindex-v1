@@ -8806,6 +8806,26 @@ serve(async (req) => {
       if (gran.redirect_disclosure) {
         // Soft redirect: piggyback on the temporal disclaimer.
         entityAssumptionDisclosure = [entityAssumptionDisclosure, gran.redirect_disclosure].filter(Boolean).join(" ");
+        // PHASE 1.16c — Bug 2: when the user pinned a specific day and we
+        // can redirect to a nearby Sunday snapshot, force the temporal
+        // pipeline to use that single week instead of inflating to the
+        // whole month/quarter via parseTemporalIntent (which sees
+        // "febrero 2026" inside "el 15 de febrero de 2026" and widens
+        // the window). We rewrite runtimeQuery so parseTemporalIntent
+        // resolves to the single Sunday week.
+        if (gran.requestedDayISO) {
+          // Re-derive the nearest Sunday inline (same arithmetic as in
+          // detectGranularity) so we don't have to expand its return.
+          const _t = new Date(`${gran.requestedDayISO}T00:00:00Z`);
+          const _back = _t.getUTCDay();
+          const _sun = new Date(_t.getTime() - _back * 86400000)
+            .toISOString()
+            .slice(0, 10);
+          (globalThis as any).__phase116c_dayRedirectISO = _sun;
+          console.log(
+            `${logPrefix} [PHASE-1.16c] Day redirect active: requested=${gran.requestedDayISO} → snapshot=${_sun}`,
+          );
+        }
       }
 
       // V4: inferDefaultWindow (only when no temporal hint was provided)
