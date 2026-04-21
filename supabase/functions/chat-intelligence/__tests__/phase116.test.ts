@@ -184,6 +184,15 @@ Deno.test("1.16b-V3-iso: '2026-02-15 Iberdrola' → day", () => {
   assertEquals(g.requestedDayISO, "2026-02-15");
 });
 
+// PHASE 1.16c — V3: natural language with article must still resolve
+// to "day" granularity even when the prompt mixes the company name.
+Deno.test("1.16c-V3-natural: 'Iberdrola el 15 de febrero de 2026' → day + redirect", () => {
+  const g = detectGranularity("Iberdrola el 15 de febrero de 2026");
+  assertEquals(g.requestedGranularity, "day");
+  assertEquals(g.requestedDayISO, "2026-02-15");
+  assert(g.redirect_disclosure?.includes("2026-02-15"));
+});
+
 // ───────────────────────── V4: inferDefaultWindow ────────────────────
 Deno.test("1.16-A5-default: 'Compara Iberdrola y Endesa' (no window) → applies default + disclosure", () => {
   const d = inferDefaultWindow("Compara Iberdrola y Endesa");

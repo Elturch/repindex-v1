@@ -8806,6 +8806,26 @@ serve(async (req) => {
       if (gran.redirect_disclosure) {
         // Soft redirect: piggyback on the temporal disclaimer.
         entityAssumptionDisclosure = [entityAssumptionDisclosure, gran.redirect_disclosure].filter(Boolean).join(" ");
+        // PHASE 1.16c — Bug 2: when the user pinned a specific day and we
+        // can redirect to a nearby Sunday snapshot, force the temporal
+        // pipeline to use that single week instead of inflating to the
+        // whole month/quarter via parseTemporalIntent (which sees
+        // "febrero 2026" inside "el 15 de febrero de 2026" and widens
+        // the window). We rewrite runtimeQuery so parseTemporalIntent
+        // resolves to the single Sunday week.
+        if (gran.requestedDayISO) {
+          // Re-derive the nearest Sunday inline (same arithmetic as in
+          // detectGranularity) so we don't have to expand its return.
+          const _t = new Date(`${gran.requestedDayISO}T00:00:00Z`);
+          const _back = _t.getUTCDay();
+          const _sun = new Date(_t.getTime() - _back * 86400000)
+            .toISOString()
+            .slice(0, 10);
+          (globalThis as any).__phase116c_dayRedirectISO = _sun;
+          console.log(
+            `${logPrefix} [PHASE-1.16c] Day redirect active: requested=${gran.requestedDayISO} → snapshot=${_sun}`,
+          );
+        }
       }
 
       // V4: inferDefaultWindow (only when no temporal hint was provided)
@@ -8829,6 +8849,23 @@ serve(async (req) => {
     let temporalReportCtx: Record<string, unknown> | null = null;
     try {
       const tIntent = parseTemporalIntent(runtimeQuery, new Date());
+      // PHASE 1.16c — Bug 2: if V3 detected a punctual day with a
+      // viable nearby Sunday, override primary window to that single
+      // week so the report doesn't widen to the whole month.
+      const _dayRedirectISO = (globalThis as any).__phase116c_dayRedirectISO as string | undefined;
+      if (_dayRedirectISO && tIntent.primary) {
+        const _start = new Date(`${_dayRedirectISO}T00:00:00Z`);
+        _start.setUTCDate(_start.getUTCDate() - 6);
+        const _startISO = _start.toISOString().slice(0, 10);
+        tIntent.primary = {
+          ...tIntent.primary,
+          start_t: _startISO,
+          end_t: _dayRedirectISO,
+          label: `semana del ${_dayRedirectISO}`,
+        };
+        // Reset so the override only fires for this request.
+        (globalThis as any).__phase116c_dayRedirectISO = undefined;
+      }
       if (tIntent.primary) {
         // Make sure the company cache is warm — used to resolve a ticker
         // for the per-company snapshot floor. Fallback to global lookup
@@ -8863,6 +8900,7 @@ serve(async (req) => {
           temporalDisclaimer = [dPrimary, dSecondary, normNote].filter(Boolean).join(" ");
           temporalReportCtx = {
             temporal_disclaimer: temporalDisclaimer || null,
+            is_comparison: true,
             temporal_window_requested: { from: tIntent.primary.start_t, to: tIntent.primary.end_t, label: tIntent.primary.label },
             temporal_window_real: { from: wPrimary.start_r, to: wPrimary.end_r, n: wPrimary.n_real, expected_n: wPrimary.n_expected },
             temporal_window_secondary: { from: wSecondary.start_r, to: wSecondary.end_r, n: wSecondary.n_real, label: tIntent.secondary.label },
@@ -11210,6 +11248,58 @@ async function handleStandardChat(
     "44_cxm_score": s.cxm,
     batch_execution_date: s.period_to,
   }));
+  // PHASE 1.16c — Bug 1: when the user asked a company-vs-company
+  // comparativa, the methodology footer must aggregate models / records
+  // across BOTH entities. allRixData only carries the primary entity
+  // (empresa_primaria) — the secondary entities live inside
+  // dataPack.competidores_directos with per-model medians (no per-week
+  // rows). We synthesise pseudo-rows so the methodology counters reflect
+  // the real footprint of the comparativa.
+  const _isCompanyComparison =
+    /\b(compara(?:r|ndo)?|comparativa|vs\.?|versus|frente\s+a|contra)\b/i.test(
+      runtimeQuery,
+    ) && (detectedCompanies?.length ?? 0) >= 2;
+  if (_isCompanyComparison) {
+    const compDir: any[] = (dataPack as any)?.competidores_directos || [];
+    const primaryTickerLower = (dataPack?.empresa_primaria?.ticker || "")
+      .toLowerCase();
+    const wantedTickers = new Set(
+      (detectedCompanies || [])
+        .map((c: any) => String(c.ticker || "").toLowerCase())
+        .filter((t: string) => t && t !== primaryTickerLower),
+    );
+    for (const comp of compDir) {
+      const tickerLow = String(comp?.ticker || "").toLowerCase();
+      if (!wantedTickers.has(tickerLow)) continue;
+      const ventana = comp?.ventana_real || {};
+      const periodFrom = ventana.from || null;
+      const periodTo = ventana.to || null;
+      const scoresPorModelo = (comp?.scores_por_modelo || {}) as Record<
+        string,
+        number | null
+      >;
+      for (const [modelName, rix] of Object.entries(scoresPorModelo)) {
+        if (rix == null) continue;
+        allRixData.push({
+          "02_model_name": modelName,
+          "03_target_name": comp.issuer_name || "",
+          "05_ticker": comp.ticker || "",
+          "06_period_from": periodFrom,
+          "07_period_to": periodTo,
+          "09_rix_score": rix,
+          batch_execution_date: periodTo,
+          _synthetic_comparison_row: true,
+        });
+      }
+    }
+    if (compDir.length > 0) {
+      console.log(
+        `[PHASE-1.16c] Comparativa: appended ${
+          allRixData.filter((r: any) => r._synthetic_comparison_row).length
+        } synthetic rows from ${compDir.length} competidores_directos for methodology aggregation`,
+      );
+    }
+  }
   // Use raw runs from skills pipeline for source extraction (they contain 20_res_gpt_bruto, 21_res_perplex_bruto)
   const detectedCompanyFullData: any[] = (dataPack as any)?._rawRunsForSources || allRixData;
 
