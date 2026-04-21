@@ -79,6 +79,20 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
   const perspectiveLabel = languageCode === "en" ? "Perspective" : "Perspectiva";
 
   return (
+    <>
+      {/* PHASE 1.14 — Temporal Window Guard disclaimer (renders above the InfoBar
+         when the requested temporal window doesn't perfectly match the real
+         data window — partial coverage, late-onboarded company, YTD with cutoff,
+         etc.). Amber/warning style to signal "read me before the headline". */}
+      {context.temporal_disclaimer && (
+        <div className={`flex items-start gap-2 rounded-md border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-amber-900 dark:text-amber-200 mb-2`}>
+          <Clock className="h-3 w-3 shrink-0 mt-0.5" />
+          <span className="leading-snug">
+            <span className="font-semibold mr-1">{languageCode === "en" ? "Temporal window:" : "Ventana temporal:"}</span>
+            {context.temporal_disclaimer}
+          </span>
+        </div>
+      )}
     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/60 bg-muted/40 ${compact ? "px-2.5 py-1.5 text-[10px]" : "px-3 py-2 text-xs"} text-muted-foreground mb-3`}>
       {/* User question */}
       {hasQuestion && (
@@ -146,7 +160,8 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
           {context.quantifier_label}
         </span>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
