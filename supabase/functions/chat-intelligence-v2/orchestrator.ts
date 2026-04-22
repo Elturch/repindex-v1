@@ -427,10 +427,30 @@ export async function process(
       periodFrom: skillOut.datapack?.temporal?.from ?? parsed.temporal.from,
       periodTo: skillOut.datapack?.temporal?.to ?? parsed.temporal.to,
       observationsCount: skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0,
-      divergenceLevel: skillOut.metadata?.divergence_level,
+      // PROBLEMA 1 — ES→EN safety net at the orchestrator boundary. Skills
+      // historically emitted Spanish ("alto"/"medio"/"bajo") which the FE
+      // MethodologyFooter (low|medium|high|unknown) silently mapped to
+      // "unknown" → "No calculable". Map here so every skill stays correct
+      // even if it ships the legacy strings.
+      divergenceLevel: mapDivergenceToEN(skillOut.metadata?.divergence_level),
       divergencePoints: skillOut.metadata?.divergence_points,
       uniqueCompanies: skillOut.metadata?.unique_companies,
       uniqueWeeks: skillOut.metadata?.unique_weeks,
     },
   };
+}
+
+/**
+ * PROBLEMA 1 — Normalise the divergence level to the EN enum that the FE
+ * MethodologyFooter consumes. Accepts both ES (alto/medio/bajo, alta/media/baja)
+ * and EN (high/medium/low). Anything else collapses to "unknown" which renders
+ * as "No calculable (muestra insuficiente)".
+ */
+function mapDivergenceToEN(level: string | null | undefined): "low" | "medium" | "high" | "unknown" {
+  if (!level) return "unknown";
+  const s = String(level).toLowerCase().trim();
+  if (s === "low" || s === "bajo" || s === "baja") return "low";
+  if (s === "medium" || s === "medio" || s === "media") return "medium";
+  if (s === "high" || s === "alto" || s === "alta") return "high";
+  return "unknown";
 }
