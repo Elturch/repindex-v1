@@ -24,6 +24,7 @@ import {
   renderMethodologyFooter,
   selectBlocks,
 } from "../datapack/reportAssembler.ts";
+import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 
 /**
  * Build a high-priority coverage warning that the LLM MUST surface in the
@@ -39,7 +40,7 @@ function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: numb
 }
 
 const RANKING_SELECT =
-  "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date";
+  "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from";
 
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
@@ -86,8 +87,8 @@ async function fetchRankingRows(
   let q = supabase
     .from("rix_runs_v2")
     .select(RANKING_SELECT)
-    .gte("batch_execution_date", fromISO)
-    .lte("batch_execution_date", toISO)
+    .gte("06_period_from", fromISO)
+    .lte("06_period_from", toISO)
     .not("09_rix_score", "is", null);
   // Resolve scope filter (sector OR ibex membership) → list of tickers.
   if ((sector && sector.trim().length > 0) || ibexOnly) {
@@ -96,21 +97,23 @@ async function fetchRankingRows(
       scopeQ = scopeQ.eq("sector_category", sector);
     }
     if (ibexOnly) {
-      // IBEX-35 membership lives in ibex_status / ibex_family_code.
-      scopeQ = scopeQ.eq("ibex_status", "IBEX-35");
+      // IBEX membership uses ibex_status='active' (130 active issuers).
+      scopeQ = scopeQ.eq("ibex_status", "active");
     }
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
     if (list.length > 0) q = q.in("05_ticker", list);
   }
   const all: any[] = [];
-  for (let p = 0; p < 5; p++) {
+  // 13 weeks × 130 issuers × 6 models ≈ 10k rows. Use 15 pages × 1000 = 15k cap.
+  for (let p = 0; p < 15; p++) {
     const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
     if (error) { console.error("[RIX-V2][sectorRanking]", error.message); break; }
     if (!data || data.length === 0) break;
     all.push(...data);
     if (data.length < 1000) break;
   }
+  console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"}`);
   return all;
 }
 
@@ -167,6 +170,50 @@ function renderRankingTable(rows: RankingRow[], models: ModelName[]): string {
   ].join("\n");
 }
 
+/**
+ * BLOQUE 3C — Competitive context: group the top-N ranking by sector,
+ * highlighting which sector dominates the leaderboard. Uses the
+ * sector_category field from repindex_root_issuers (fetched here, single
+ * additional SQL — same pattern as companyAnalysis competitiveContext).
+ */
+async function buildCompetitiveContextBlock(
+  supabase: any,
+  ranking: RankingRow[],
+): Promise<string> {
+  if (ranking.length === 0) return "";
+  const tickers = ranking.map((r) => r.ticker);
+  const { data } = await supabase
+    .from("repindex_root_issuers")
+    .select("ticker, sector_category")
+    .in("ticker", tickers);
+  const sectorByTicker = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row?.ticker) sectorByTicker.set(row.ticker, row.sector_category ?? "Sin sector");
+  }
+  const bySector = new Map<string, RankingRow[]>();
+  for (const r of ranking) {
+    const s = sectorByTicker.get(r.ticker) ?? "Sin sector";
+    if (!bySector.has(s)) bySector.set(s, []);
+    bySector.get(s)!.push(r);
+  }
+  const sortedSectors = [...bySector.entries()].sort((a, b) => b[1].length - a[1].length);
+  const lines: string[] = [
+    "**Contexto competitivo — distribución sectorial del top**",
+    "",
+    "| Sector | Empresas en el top | Tickers | RIX medio del grupo |",
+    "|---|---|---|---|",
+  ];
+  for (const [sector, list] of sortedSectors) {
+    const groupAvg = list.reduce((a, r) => a + r.rix_mean, 0) / list.length;
+    lines.push(`| ${sector} | ${list.length} | ${list.map((r) => r.ticker).join(", ")} | ${fmt(groupAvg)} |`);
+  }
+  const dominant = sortedSectors[0];
+  if (dominant && dominant[1].length >= 2) {
+    lines.push("", `_Sector dominante en el top: **${dominant[0]}** (${dominant[1].length} de ${ranking.length} empresas)._`);
+  }
+  return lines.join("\n");
+}
+
 function buildUserMessage(question: string, scope: string, table: string, rows: RankingRow[]): string {
   const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
   return [
@@ -197,13 +244,21 @@ function buildUserMessageWithAssembler(
   fromISO: string,
   toISO: string,
   models: string[],
+  competitiveContext: string,
 ): string {
   const metrics = metricsFromRows(rawRows);
-  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", competitiveContext });
   const blocks = selectBlocks(report, "sectorRanking");
+  const divergence = computeDivergenceStats(rawRows);
+  const uniqueWeeks = new Set(
+    rawRows.map((r) => String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10)).filter(Boolean),
+  ).size;
   const methodology = renderMethodologyFooter({
     fromISO, toISO, models, observationsCount: rawRows.length,
-    uniqueWeeks: new Set(rawRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size,
+    uniqueWeeks,
+    divergenceLevel: divergence.models_count > 0
+      ? `${divergence.level} (σ inter-modelo = ${(Math.round(divergence.sigma * 10) / 10)} pts, snapshot ${divergence.snapshot_date ?? "n/d"})`
+      : "no calculable",
   });
   const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
   return [
@@ -211,33 +266,56 @@ function buildUserMessageWithAssembler(
     "",
     `ALCANCE: ${scope}`,
     "",
+    `MÉTRICAS GLOBALES VERIFICADAS (úsalas literalmente, NO recalcules):`,
+    `• Observaciones totales: ${rawRows.length}`,
+    `• Semanas únicas con datos: ${uniqueWeeks}`,
+    `• Empresas únicas analizadas: ${new Set(rawRows.map((r) => r["05_ticker"])).size}`,
+    "",
+    "ETIQUETADO OBLIGATORIO (no confundir):",
+    "• 'Volatilidad temporal (SD)' = dispersión semanal del RIX medio del índice (suele ser baja, ~2 pts).",
+    "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
+    "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
+    "",
     buildPreRenderedSection(rankingTable, blocks, methodology),
     "",
     "ESTRUCTURA OBLIGATORIA DEL INFORME:",
-    "## 1. Titular — 2 frases con la conclusión del ranking.",
+    "## 1. Titular — 3-4 frases incluyendo: empresa #1, tendencia general del período (alcista/bajista/estable), dato cuantitativo de evolución temporal (delta total Q1) y empresa o sector destacado.",
     "## 2. Ranking — inserta literalmente la tabla de ranking.",
     "## 3. Visión por modelo — inserta literalmente el bloque de breakdown.",
     "## 4. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
-    "## 5. KPIs agregados del alcance — inserta literalmente la tabla de KPIs.",
-    "## 6. Ficha metodológica — inserta literalmente el bloque metodológico.",
+    "## 5. Evolución temporal — inserta literalmente la tabla de evolución y añade UNA frase de tendencia (ej. 'Tendencia bajista sostenida: el RIX medio cayó X pts').",
+    "## 6. KPIs agregados del alcance — inserta literalmente la tabla de KPIs (etiqueta como 'Volatilidad temporal (SD)').",
+    "## 7. Recomendaciones — inserta literalmente el bloque de recomendaciones.",
+    "## 8. Contexto competitivo — inserta literalmente la tabla sectorial y la ficha metodológica al final.",
     "",
     "RESUMEN COMPACTO PARA REFERENCIA:",
     compact,
   ].join("\n");
 }
 
-function buildMetadata(rows: RankingRow[], fromISO: string, toISO: string, models: ModelName[]): ReportMetadata {
-  const rixs = rows.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
+function buildMetadata(
+  ranking: RankingRow[],
+  rawRows: any[],
+  fromISO: string,
+  toISO: string,
+  models: ModelName[],
+): ReportMetadata {
+  const rixs = ranking.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
   const range = rixs.length ? Math.max(...rixs) - Math.min(...rixs) : 0;
+  const uniqueWeeks = new Set(
+    rawRows.map((r) => String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10)).filter(Boolean),
+  ).size;
+  const uniqueCompanies = new Set(rawRows.map((r) => r["05_ticker"]).filter(Boolean)).size;
   return {
     models_used: models.join(","),
     period_from: fromISO,
     period_to: toISO,
-    observations_count: rows.reduce((a, r) => a + r.obs, 0),
+    // BLOQUE 2 fix: single source of truth = full SQL result count.
+    observations_count: rawRows.length,
     divergence_level: range < 10 ? "bajo" : range < 25 ? "medio" : "alto",
     divergence_points: Math.round(range),
-    unique_companies: rows.length,
-    unique_weeks: 0,
+    unique_companies: uniqueCompanies || ranking.length,
+    unique_weeks: uniqueWeeks,
   };
 }
 
@@ -290,7 +368,7 @@ export const sectorRankingSkill: Skill = {
       return {
         datapack: { ...datapack, pre_rendered_tables: [fallback] },
         prompt_modules: modules,
-        metadata: buildMetadata([], sqlFrom, sqlTo, models),
+        metadata: buildMetadata([], rows, sqlFrom, sqlTo, models),
       };
     }
 
@@ -304,6 +382,7 @@ export const sectorRankingSkill: Skill = {
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
     ].filter(Boolean).join("\n\n");
 
+    const competitiveContext = await buildCompetitiveContextBlock(supabase, ranking);
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
@@ -313,6 +392,7 @@ export const sectorRankingSkill: Skill = {
       sqlFrom,
       sqlTo,
       models,
+      competitiveContext,
     );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
@@ -330,7 +410,7 @@ export const sectorRankingSkill: Skill = {
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
       prompt_modules: modules,
-      metadata: buildMetadata(ranking, sqlFrom, sqlTo, models),
+      metadata: buildMetadata(ranking, rows, sqlFrom, sqlTo, models),
     };
   },
 };

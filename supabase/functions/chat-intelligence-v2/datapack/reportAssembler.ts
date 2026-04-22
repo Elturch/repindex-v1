@@ -86,7 +86,7 @@ export function assembleReport(input: AssembleInput): AssembledReport {
 /** Sections each skill must surface. Drives prompt structure + block order. */
 export const SECTIONS_BY_SKILL = {
   companyAnalysis: ["kpiTable", "modelBreakdown", "temporalEvolution", "competitiveContext", "recommendations", "divergenceStats"] as const,
-  sectorRanking:   ["kpiTable", "modelBreakdown", "divergenceStats"] as const,
+  sectorRanking:   ["modelBreakdown", "divergenceStats", "temporalEvolution", "kpiTable", "recommendations", "competitiveContext"] as const,
   comparison:      ["kpiTable", "modelBreakdown", "recommendations", "divergenceStats"] as const,
   modelDivergence: ["modelBreakdown", "divergenceStats", "kpiTable"] as const,
   periodEvolution: ["temporalEvolution", "kpiTable", "modelBreakdown", "divergenceStats"] as const,
