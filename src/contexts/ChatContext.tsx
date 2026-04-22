@@ -1196,8 +1196,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [messages, sessionId, toast, currentUserId, language]);
 
   const clearConversation = useCallback(() => {
+    // Phase 4 — UX: tear down any pending loaders so the new conversation
+    // doesn't inherit a stale "Consultando…" state.
+    if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
+    if (initialLoaderTimeoutRef.current) { clearTimeout(initialLoaderTimeoutRef.current); initialLoaderTimeoutRef.current = null; }
+    setIsLoading(false);
+    setIsStreaming(false);
+    setLoadingMessage(DEFAULT_LOADING_MESSAGES[0]);
+
     setMessages([]);
-    setSessionId(crypto.randomUUID());
+    const fresh = crypto.randomUUID();
+    persistSessionId(fresh);
+    setSessionId(fresh);
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(false);
@@ -1211,6 +1221,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [toast]);
 
   const loadConversation = useCallback((newSessionId: string) => {
+    if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
+    if (initialLoaderTimeoutRef.current) { clearTimeout(initialLoaderTimeoutRef.current); initialLoaderTimeoutRef.current = null; }
+    setIsLoading(false);
+    setIsStreaming(false);
+    persistSessionId(newSessionId);
     setSessionId(newSessionId as `${string}-${string}-${string}-${string}-${string}`);
     setMessages([]);
     setConversationId(null);
