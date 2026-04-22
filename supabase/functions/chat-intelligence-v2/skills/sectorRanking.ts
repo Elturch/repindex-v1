@@ -222,7 +222,7 @@ export const sectorRankingSkill: Skill = {
 
     const datapack: DataPack = {
       entity: parsed.entities[0] ?? { ticker: "N/A", company_name: scopeLabel, sector_category: sector, source: "exact" },
-      temporal: parsed.temporal,
+      temporal: { ...parsed.temporal, from: sqlFrom, to: sqlTo },
       mode: parsed.mode,
       models_used: models,
       models_coverage: { requested: models, with_data: models, missing: [] },
@@ -235,12 +235,12 @@ export const sectorRankingSkill: Skill = {
     if (parsed.mode === "period") modules.push("periodMode"); else modules.push("snapshotMode");
 
     if (ranking.length === 0) {
-      const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${parsed.temporal.from} → ${parsed.temporal.to}._`;
+      const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${sqlFrom} → ${sqlTo}._`;
       try { onChunk?.(fallback); } catch (_) { /* noop */ }
       return {
         datapack: { ...datapack, pre_rendered_tables: [fallback] },
         prompt_modules: modules,
-        metadata: buildMetadata([], parsed.temporal.from, parsed.temporal.to, models),
+        metadata: buildMetadata([], sqlFrom, sqlTo, models),
       };
     }
 
@@ -249,8 +249,8 @@ export const sectorRankingSkill: Skill = {
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       parsed.mode === "period"
-        ? buildPeriodRules({ fromISO: parsed.temporal.from, toISO: parsed.temporal.to, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
-        : buildSnapshotRules({ weekFromISO: parsed.temporal.from, weekToISO: parsed.temporal.to }),
+        ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
+        : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
     ].filter(Boolean).join("\n\n");
 
@@ -271,7 +271,7 @@ export const sectorRankingSkill: Skill = {
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
       prompt_modules: modules,
-      metadata: buildMetadata(ranking, parsed.temporal.from, parsed.temporal.to, models),
+      metadata: buildMetadata(ranking, sqlFrom, sqlTo, models),
     };
   },
 };
