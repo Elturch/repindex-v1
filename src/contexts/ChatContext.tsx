@@ -862,13 +862,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = data.suggestedQuestions || [];
               lastMsg.drumrollQuestion = data.drumrollQuestion || null;
+              const reportCtxJson = data.metadata?.reportContext || undefined;
+              const guardKindJson = detectGuardRejection(lastMsg.content, !!reportCtxJson);
               lastMsg.metadata = {
-                type: data.metadata?.type || 'standard',
+                type: guardKindJson ? 'guard_rejection' : (data.metadata?.type || 'standard'),
+                guardKind: guardKindJson || undefined,
                 companyName: data.metadata?.companyName,
                 documentsFound: data.metadata?.documentsFound,
                 structuredDataFound: data.metadata?.structuredDataFound,
                 depthLevel: options?.depthLevel || sessionDepthLevel,
                 questionCategory: data.metadata?.questionCategory,
+                reportContext: reportCtxJson,
                 methodology: data.metadata?.methodology || {
                   hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
                   modelsUsed: data.metadata?.modelsUsed || [],
