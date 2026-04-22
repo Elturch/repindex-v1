@@ -351,5 +351,22 @@ export async function process(
     content,
     datapack: skillOut.datapack,
     metadata: skillOut.metadata,
+    intent: parsed.intent,
+    entities: parsed.entities,
+    period_from: parsed.temporal.from,
+    period_to: parsed.temporal.to,
+    models_used: parsed.models,
+    data_count: skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0,
+    methodology: {
+      hasRixData: (skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0) > 0,
+      modelsUsed: parsed.models,
+      periodFrom: parsed.temporal.from,
+      periodTo: parsed.temporal.to,
+      observationsCount: skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0,
+      divergenceLevel: skillOut.metadata?.divergence_level,
+      divergencePoints: skillOut.metadata?.divergence_points,
+      uniqueCompanies: skillOut.metadata?.unique_companies,
+      uniqueWeeks: skillOut.metadata?.unique_weeks,
+    },
   };
 }

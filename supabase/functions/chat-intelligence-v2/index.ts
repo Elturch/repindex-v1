@@ -115,6 +115,32 @@ serve(async (req: Request) => {
             isFollowup,
             onChunk,
           );
+          const resultMeta = result as Record<string, any>;
+          const reportContext = {
+            company: resultMeta.entities?.[0]?.company_name ?? result.datapack?.entity?.company_name ?? null,
+            ticker: resultMeta.entities?.[0]?.ticker ?? result.datapack?.entity?.ticker ?? null,
+            sector: resultMeta.entities?.[0]?.sector_category ?? result.datapack?.entity?.sector_category ?? null,
+            intent: resultMeta.intent ?? null,
+            user_question: question,
+            date_from: resultMeta.period_from ?? result.metadata?.period_from ?? result.datapack?.temporal?.from ?? null,
+            date_to: resultMeta.period_to ?? result.metadata?.period_to ?? result.datapack?.temporal?.to ?? null,
+            models: resultMeta.models_used ?? result.datapack?.models_used ?? [],
+            sample_size: resultMeta.data_count ?? result.metadata?.observations_count ?? 0,
+            models_count: Array.isArray(resultMeta.models_used ?? result.datapack?.models_used)
+              ? (resultMeta.models_used ?? result.datapack?.models_used).length
+              : 0,
+            weeks_analyzed: result.metadata?.unique_weeks ?? result.datapack?.temporal?.snapshots_available ?? null,
+            _parsed_mode: result.datapack?.mode ?? null,
+          };
+
+          controller.enqueue(sseEncode({
+            metadata: true,
+            reportContext,
+            documentsFound: resultMeta.data_count ?? result.metadata?.observations_count ?? 0,
+            structuredDataFound: resultMeta.data_count ?? result.metadata?.observations_count ?? 0,
+            questionCategory: resultMeta.intent ?? null,
+            methodology: resultMeta.methodology ?? null,
+          }));
 
           // Final "done" event with metadata in the v1-compatible shape.
           controller.enqueue(sseEncode({
@@ -126,6 +152,13 @@ serve(async (req: Request) => {
               entity: result.datapack?.entity?.company_name ?? null,
               ticker: result.datapack?.entity?.ticker ?? null,
               models: result.datapack?.models_used ?? [],
+              modelsUsed: resultMeta.models_used ?? result.datapack?.models_used ?? [],
+              companyName: reportContext.company,
+              documentsFound: resultMeta.data_count ?? result.metadata?.observations_count ?? 0,
+              structuredDataFound: resultMeta.data_count ?? result.metadata?.observations_count ?? 0,
+              questionCategory: resultMeta.intent ?? null,
+              methodology: resultMeta.methodology ?? null,
+              reportContext,
               coverage_ratio: result.datapack?.temporal?.coverage_ratio ?? null,
               is_partial: result.datapack?.temporal?.is_partial ?? null,
               snapshots_available: result.datapack?.temporal?.snapshots_available ?? null,
