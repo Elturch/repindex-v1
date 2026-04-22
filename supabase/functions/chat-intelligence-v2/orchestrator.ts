@@ -206,11 +206,12 @@ export async function process(
   // 9. Prompt composition
   const systemPrompt = composePrompt(skillOut.prompt_modules);
 
-  // 10. Content: real skills (e.g. companyAnalysis) deposit the LLM answer
-  //     as the FIRST pre-rendered table. Stub skills fall back to a deterministic
-  //     placeholder so the response still streams something readable.
+  // 10. Content: real skills deposit the LLM answer as the first pre-rendered
+  //     "table" entry. Stub skills leave that array empty → fall back to the
+  //     deterministic placeholder so the response still streams something.
+  const REAL_SKILLS = new Set(["companyAnalysis"]);
   const skillContent = skillOut.datapack.pre_rendered_tables[0];
-  const content = (skillContent && skill.name !== "generalQuestion" && skill.name.startsWith("company") )
+  const content = (REAL_SKILLS.has(skill.name) && skillContent && skillContent.length > 0)
     ? skillContent
     : await synthesize(systemPrompt, skillOut.datapack, question);
 
