@@ -853,7 +853,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
         : null;
 
       const activeAgentVersion = getAgentVersion();
-      const edgeFn = getEdgeFunctionName(activeAgentVersion);
+      const isFallbackAttempt = forceV1FallbackRef.current;
+      const effectiveAgentVersion: AgentVersion = isFallbackAttempt ? 'v1' : activeAgentVersion;
+      const edgeFn = getEdgeFunctionName(effectiveAgentVersion);
+
+      // Step 4 — streaming metrics. Captured per attempt; flushed onto the
+      // assistant message right before we mark it complete (preview-only UI).
+      const __metricsStart = performance.now();
+      let __metricsFirstChunkAt: number | null = null;
+      let __metricsChunks = 0;
+
+      // v2 calls get an extra 90s safety timeout so a hung stream triggers
+      // the fallback rather than spinning forever. v1 keeps current behavior.
+      const v2AbortController =
+        effectiveAgentVersion === 'v2' ? new AbortController() : null;
+      const v2AbortTimeout = v2AbortController
+        ? setTimeout(() => v2AbortController.abort(), 90000)
+        : null;
 
       console.log('[FE-BE]', {
         query: normalizedQuestion,
@@ -861,7 +877,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         previousContext: previousContextPayload,
         isFollowupActive: followupActive,
         edgeFn,
-        agentVersion: activeAgentVersion,
+        agentVersion: effectiveAgentVersion,
+        isFallbackAttempt,
       });
 
       if (useStreaming) {
