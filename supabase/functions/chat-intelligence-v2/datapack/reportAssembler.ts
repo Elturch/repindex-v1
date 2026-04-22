@@ -70,6 +70,9 @@ export interface AssembleInput {
   mode: Mode;
   /** Optional pre-rendered competitive context (companyAnalysis only). */
   competitiveContext?: string;
+  /** Period dates — drive Window vs Reinforcement classification of cited sources. */
+  periodFrom?: string | null;
+  periodTo?: string | null;
 }
 
 /**
@@ -86,7 +89,7 @@ export function assembleReport(input: AssembleInput): AssembledReport {
     divergenceStats: renderDivergenceBlock(input.raw_rows),
     recommendations: renderRecommendationsBlock(input.metrics),
     competitiveContext: input.competitiveContext ?? "",
-    citedSources: renderCitedSourcesBlock(citedSourcesReport),
+    citedSources: renderCitedSourcesBlock(citedSourcesReport, input.periodFrom, input.periodTo),
     citedSourcesReport,
   };
 }
