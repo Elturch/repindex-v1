@@ -40,15 +40,20 @@ function extractPreviousContext(history: ConversationMessage[]): PreviousContext
 // ── Fallback: infer previous entity from assistant text when report_context
 // is missing. Looks for the canonical "**EMPRESA (TICKER)**" header that all
 // v2 skills emit, or a bare 3-6 letter uppercase ticker on a line by itself.
-function inferEntityFromAssistantText(history: ConversationMessage[]):
-  { ticker: string; company_name: string } | null {
+function inferEntitySeedFromAssistantText(history: ConversationMessage[]): string | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
     if (m?.role !== "assistant" || !m.content) continue;
-    const txt = String(m.content);
-    // Pattern 1: "**Análisis de Iberdrola (IBE)**" / "Iberdrola (IBE)"
-    const m1 = txt.match(/([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ\.\- ]{2,40})\s*\(([A-Z][A-Z0-9\.]{1,9})\)/);
-    if (m1) return { company_name: m1[1].trim(), ticker: m1[2].toUpperCase() };
+    const txt = String(m.content).slice(0, 320);
+    const headerWithTicker = txt.match(
+      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80}?)\s*\(([A-Z][A-Z0-9\.]{1,9})\)/i,
+    );
+    if (headerWithTicker?.[2]) return headerWithTicker[2].toUpperCase();
+
+    const headerWithName = txt.match(
+      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80})/i,
+    );
+    if (headerWithName?.[1]) return headerWithName[1].trim();
   }
   return null;
 }
@@ -185,29 +190,29 @@ export async function process(
   }
 
   if (entities.length === 0 && history.length > 0) {
-    const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
+    const prev = extractPreviousContext(history);
+    const lastUser = [...history].reverse().find((m) => m.role === "user" && !!m.content?.trim());
+    const assistantSeed = inferEntitySeedFromAssistantText(history);
 
-    if (lastAssistant?.content) {
-      // Search the FULL assistant message (not just the first 500 chars) for
-      // a ticker pattern "(TICKER)". v2 reports often place the canonical
-      // header deep into the body.
-      const tickerMatch = lastAssistant.content.match(/\(([A-Z]{2,6})\)/);
+    const seeds = [
+      prev?.company_name,
+      prev?.ticker,
+      lastUser?.content ? String(lastUser.content).slice(0, 160) : null,
+      assistantSeed,
+    ].filter((seed): seed is string => !!seed && seed.trim().length > 0);
 
-      if (tickerMatch) {
-        const [, ticker] = tickerMatch;
-        entity = await resolveEntity(ticker, supabase);
-
-        if (entity && entity.ticker !== "N/A") {
-          entities = [entity];
-          inheritedContext = {
-            ticker: entity.ticker,
-            company_name: entity.company_name,
-            sector_category: entity.sector_category ?? null,
-          };
-          console.log(`${logPrefix} FOLLOWUP from history ticker regex: ${entity.ticker}`);
-
-          if (intent === "general_question") intent = "company_analysis";
-        }
+    for (const seed of seeds) {
+      entity = await resolveEntity(seed, supabase);
+      if (entity && entity.ticker !== "N/A") {
+        entities = [entity];
+        inheritedContext = {
+          ticker: entity.ticker,
+          company_name: entity.company_name,
+          sector_category: entity.sector_category ?? null,
+        };
+        console.log(`${logPrefix} inherited entity: ${entity.company_name} from history`);
+        if (intent === "general_question") intent = "company_analysis";
+        break;
       }
     }
   }
@@ -290,28 +295,25 @@ export async function process(
       if (parsed.intent === "general_question") parsed.intent = "company_analysis";
     } else {
       // Fallback: scan assistant text for "Name (TICKER)" pattern.
-      const inferred = inferEntityFromAssistantText(history);
-      if (inferred) {
-        parsed.entities = [
-          { ticker: inferred.ticker, company_name: inferred.company_name, sector_category: null, source: "inherited" },
-        ];
-        console.info(`[RIX-V2][orch] inherited entity from previous turn (text-inferred): ${inferred.ticker} (${inferred.company_name})`);
-        if (parsed.intent === "general_question") parsed.intent = "company_analysis";
-      } else {
-        // Last-resort fallback: resolve entity from last assistant message text directly.
-        const lastAssistant = [...history].reverse().find((m) => m?.role === "assistant" && m?.content);
-        if (lastAssistant?.content) {
-          const entityMatch = await resolveEntity(String(lastAssistant.content).substring(0, 200), supabase);
-          if (entityMatch && entityMatch.ticker !== "N/A") {
-            parsed.entities = [{ ...entityMatch, source: "inherited" }];
-            parsed.inherited_context = {
-              ticker: entityMatch.ticker,
-              company_name: entityMatch.company_name,
-              sector_category: entityMatch.sector_category ?? null,
-            };
-            console.log(`${logPrefix} inherited entity from assistant text fallback: ${entityMatch.ticker}`);
-            if (parsed.intent === "general_question") parsed.intent = "company_analysis";
-          }
+      const assistantSeed = inferEntitySeedFromAssistantText(history);
+      const lastUser = [...history].reverse().find((m) => m?.role === "user" && !!m?.content);
+      const seeds = [
+        lastUser?.content ? String(lastUser.content).slice(0, 160) : null,
+        assistantSeed,
+      ].filter((seed): seed is string => !!seed && seed.trim().length > 0);
+
+      for (const seed of seeds) {
+        const entityMatch = await resolveEntity(seed, supabase);
+        if (entityMatch && entityMatch.ticker !== "N/A") {
+          parsed.entities = [{ ...entityMatch, source: "inherited" }];
+          parsed.inherited_context = {
+            ticker: entityMatch.ticker,
+            company_name: entityMatch.company_name,
+            sector_category: entityMatch.sector_category ?? null,
+          };
+          console.log(`${logPrefix} inherited entity: ${entityMatch.company_name} from history`);
+          if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+          break;
         }
       }
     }
