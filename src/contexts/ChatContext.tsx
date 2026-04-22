@@ -1288,7 +1288,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         variant: 'destructive',
       });
     } finally {
-      if (v2AbortTimeout) clearTimeout(v2AbortTimeout);
+      if (v2AbortTimeoutId) clearTimeout(v2AbortTimeoutId);
       if (loadingIntervalRef.current) {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
