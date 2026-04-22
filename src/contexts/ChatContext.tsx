@@ -620,13 +620,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
       console.log(`[ChatContext] PHASE 1.8 follow-up active: loader count = ${detectedModelCount}`);
     }
+    // Phase 4 — UX: start with a generic "Analizando consulta…" so quick
+    // guard rejections never expose "Consultando 6 modelos de IA".
     const loadingMessages = buildLoadingMessages(detectedModelCount);
     let loadingIndex = 0;
-    setLoadingMessage(loadingMessages[0]);
-    loadingIntervalRef.current = setInterval(() => {
-      loadingIndex = (loadingIndex + 1) % loadingMessages.length;
-      setLoadingMessage(loadingMessages[loadingIndex]);
-    }, 15000); // Rotate every 15 seconds
+    setLoadingMessage(INITIAL_LOADER_MESSAGE);
+    if (initialLoaderTimeoutRef.current) clearTimeout(initialLoaderTimeoutRef.current);
+    initialLoaderTimeoutRef.current = setTimeout(() => {
+      // Escalate to the model-specific message + start the rotation.
+      setLoadingMessage(loadingMessages[0]);
+      loadingIntervalRef.current = setInterval(() => {
+        loadingIndex = (loadingIndex + 1) % loadingMessages.length;
+        setLoadingMessage(loadingMessages[loadingIndex]);
+      }, 15000);
+    }, INITIAL_LOADER_DURATION_MS);
 
     const userMessage: Message = {
       role: 'user',
