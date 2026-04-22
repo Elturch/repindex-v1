@@ -215,16 +215,29 @@ export async function process(
   }
 
   // 3. Context inheritance
-  if (parsed.is_followup && parsed.entities.length === 0) {
+  // Trigger when entityResolver failed AND we have any prior history
+  // (regardless of intent). This covers follow-ups like "expandir el
+  // informe" where v1's Phase 1.18 logic was missing in v2.
+  if (parsed.entities.length === 0 && history && history.length > 0) {
     const prev = extractPreviousContext(history);
     if (prev) {
       parsed.inherited_context = prev;
       parsed.entities = [
         { ticker: prev.ticker, company_name: prev.company_name, sector_category: prev.sector_category, source: "inherited" },
       ];
-      console.log(`${logPrefix} inherited entity ${prev.ticker} (${prev.company_name})`);
+      console.info(`[RIX-V2][orch] inherited entity from previous turn: ${prev.ticker} (${prev.company_name})`);
       // Promote intent if it was a generic fallback.
       if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+    } else {
+      // Fallback: scan assistant text for "Name (TICKER)" pattern.
+      const inferred = inferEntityFromAssistantText(history);
+      if (inferred) {
+        parsed.entities = [
+          { ticker: inferred.ticker, company_name: inferred.company_name, sector_category: null, source: "inherited" },
+        ];
+        console.info(`[RIX-V2][orch] inherited entity from previous turn (text-inferred): ${inferred.ticker} (${inferred.company_name})`);
+        if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+      }
     }
   }
 
