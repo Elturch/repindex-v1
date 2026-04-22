@@ -1,6 +1,6 @@
 // Agente Rix v2 — orchestrator (dispatch + prompt composition, max 300 LOC)
 // See specs/architecture.md and specs/constraints.md.
-// Steps 1-6 are stubs in this skeleton; concrete parsers/skills land in next phases.
+// Parsers are real (Phase 2). Skills are still stubs (Phase 3).
 import type {
   ConversationMessage,
   DataPack,
@@ -14,38 +14,10 @@ import type {
   Skill,
   SkillOutput,
 } from "./types.ts";
-
-// ---------- Parser stubs ----------
-function classifyIntent(question: string): Intent {
-  const q = question.toLowerCase();
-  if (/comparar|compara|vs\b/.test(q)) return "comparison";
-  if (/ranking|top\s*\d|mejor(es)?\s+(empresa|del)/.test(q)) return "sector_ranking";
-  if (/divergen|consenso/.test(q)) return "model_divergence";
-  if (/evoluci[oó]n|tendencia/.test(q)) return "period_evolution";
-  if (/tiempo|clima|f[uú]tbol|receta/.test(q)) return "out_of_scope";
-  return "company_analysis";
-}
-
-function resolveEntityStub(_question: string): ResolvedEntity[] {
-  return [];
-}
-
-function parseTemporalStub(): ResolvedTemporal {
-  const today = new Date().toISOString().slice(0, 10);
-  return {
-    from: today,
-    to: today,
-    requested_label: "esta semana",
-    snapshots_expected: 1,
-    snapshots_available: 1,
-    coverage_ratio: 1,
-    is_partial: false,
-  };
-}
-
-function parseModelsStub(): ParsedQuery["models"] {
-  return ["ChatGPT", "Perplexity", "Gemini", "DeepSeek", "Grok", "Qwen"];
-}
+import { classifyIntent } from "./parsers/intentClassifier.ts";
+import { resolveEntity } from "./parsers/entityResolver.ts";
+import { parseTemporal, inferMode } from "./parsers/temporalParser.ts";
+import { parseModels, allModels } from "./parsers/modelParser.ts";
 
 function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -177,12 +149,14 @@ export async function process(
   const logPrefix = "[RIX-V2][orch]";
   console.log(`${logPrefix} processing | q="${question.slice(0, 80)}" | history=${history?.length ?? 0}`);
 
-  // 1. Parsers (stubs)
+  // 1. Parsers (real)
   const intent = classifyIntent(question);
-  const entities = resolveEntityStub(question);
-  const temporal = parseTemporalStub();
-  const models = parseModelsStub();
-  const mode: ParsedQuery["mode"] = "snapshot";
+  const entity = await resolveEntity(question, supabase);
+  const entities: ResolvedEntity[] = entity ? [entity] : [];
+  const temporal: ResolvedTemporal = await parseTemporal(question, supabase, entity?.ticker ?? null);
+  const explicitModels = parseModels(question);
+  const models = explicitModels.length > 0 ? explicitModels : allModels();
+  const mode = inferMode(temporal);
 
   // 2. ParsedQuery
   const parsed: ParsedQuery = {
@@ -204,6 +178,8 @@ export async function process(
         { ticker: prev.ticker, company_name: prev.company_name, sector_category: prev.sector_category, source: "inherited" },
       ];
       console.log(`${logPrefix} inherited entity ${prev.ticker} (${prev.company_name})`);
+      // Promote intent if it was a generic fallback.
+      if (parsed.intent === "general_question") parsed.intent = "company_analysis";
     }
   }
 
