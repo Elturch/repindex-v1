@@ -28,15 +28,20 @@ serve(async (req: Request) => {
     const url = new URL(req.url);
     if (url.searchParams.get("test") === "regression") {
       try {
-        // Self-call URL: derive from SUPABASE_URL (the public ingress)
-        // because req.url inside the runtime points at an internal host
-        // that does not accept further function invocations.
+        // Self-call URL: derive from SUPABASE_URL (public ingress) because
+        // req.url inside the runtime points at an internal host that does
+        // not accept further function invocations. Forward the inbound
+        // Authorization header AND the apikey so the gateway accepts the
+        // recursive call (Supabase requires apikey for /functions/v1/*).
         const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
         const baseUrl = supabaseUrl
           ? `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/chat-intelligence-v2`
           : `${url.origin}${url.pathname}`;
         const authHeader = req.headers.get("authorization");
-        const summary = await runAllTests({ baseUrl, authHeader });
+        const apiKey = req.headers.get("apikey")
+          ?? Deno.env.get("SUPABASE_ANON_KEY")
+          ?? null;
+        const summary = await runAllTests({ baseUrl, authHeader, apiKey });
         return new Response(JSON.stringify(summary, null, 2), {
           status: summary.failed === 0 ? 200 : 207,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
