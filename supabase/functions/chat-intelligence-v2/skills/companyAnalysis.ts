@@ -18,6 +18,14 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import { renderModelBreakdownTable } from "../datapack/modelBreakdown.ts";
+import { renderTemporalEvolutionTable } from "../datapack/temporalEvolution.ts";
+import { renderDivergenceBlock } from "../datapack/divergenceStats.ts";
+import { renderRecommendationsBlock } from "../datapack/recommendations.ts";
+import {
+  buildCompetitiveContext,
+  renderCompetitiveContextTable,
+} from "../datapack/competitiveContext.ts";
 
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
@@ -79,8 +87,23 @@ function buildUserMessage(question: string, datapack: DataPack): string {
   ].join("\n");
 
   const tables = datapack.pre_rendered_tables.length
-    ? "TABLAS PRE-RENDERIZADAS (úsalas literalmente, NO las regeneres):\n\n" +
-      datapack.pre_rendered_tables.join("\n\n")
+    ? [
+      "TABLAS PRE-RENDERIZADAS (inclúyelas LITERALMENTE en las secciones indicadas, NO las regeneres):",
+      "",
+      "ESTRUCTURA OBLIGATORIA DEL INFORME (8 secciones, en este orden EXACTO):",
+      "## 1. Contexto General — narrativa breve (3-4 frases) sobre el período y la empresa.",
+      "## 2. Tabla de KPIs — inserta literalmente la tabla [KPI_TABLE].",
+      "## 3. Visión por Modelo de IA — inserta literalmente la tabla [MODEL_BREAKDOWN_TABLE] + 1 párrafo interpretativo.",
+      "## 4. Evolución Temporal — inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE] + 1 párrafo de tendencia.",
+      "## 5. Contexto Competitivo — inserta literalmente la tabla [COMPETITIVE_TABLE] + 1 párrafo de posicionamiento.",
+      "## 6. Análisis de Métricas — narrativa por dimensión (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM) explicando fortalezas y debilidades.",
+      "## 7. Recomendaciones — inserta literalmente el bloque [RECOMMENDATIONS_BLOCK].",
+      "## 8. Ficha Metodológica — período, modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
+      "",
+      "BLOQUES PRE-RENDERIZADOS (cópialos tal cual donde corresponda):",
+      "",
+      datapack.pre_rendered_tables.join("\n\n"),
+    ].join("\n")
     : "TABLAS PRE-RENDERIZADAS: (ninguna — datos insuficientes)";
 
   const summary = datapack.period_summary
@@ -156,6 +179,35 @@ export const companyAnalysisSkill: Skill = {
     console.log(
       `${tag} datapack ready | obs=${observations_count} | models_with_data=${datapack.models_coverage.with_data.length}`,
     );
+
+    // 1b. PARALLEL ENRICHMENT: pre-render the 5 additional blocks.
+    //     4 of them are pure functions over raw_rows (no extra SQL).
+    //     Only competitiveContext executes one extra query, in parallel.
+    const t0 = Date.now();
+    const [competitive] = await Promise.all([
+      buildCompetitiveContext(supabase, datapack.entity, datapack.temporal).catch((e) => {
+        console.warn(`${tag} competitive failed:`, e?.message ?? e);
+        return { entity_rank: null, total: 0, table: [] };
+      }),
+    ]);
+    const modelBreakdown = renderModelBreakdownTable(datapack.raw_rows);
+    const temporalEvo = renderTemporalEvolutionTable(datapack.raw_rows);
+    const divergence = renderDivergenceBlock(datapack.raw_rows);
+    const recommendations = renderRecommendationsBlock(datapack.metrics);
+    const competitiveTable = renderCompetitiveContextTable(competitive, datapack.entity.ticker);
+    console.log(`${tag} enrichment done in ${Date.now() - t0}ms`);
+
+    // 1c. Append the new blocks (in canonical order) AFTER the existing
+    //     pre-rendered tables (KPI table is already in datapack.pre_rendered_tables[0]).
+    const enrichedTables = [
+      ...datapack.pre_rendered_tables,
+      modelBreakdown,
+      temporalEvo,
+      competitiveTable,
+      recommendations,
+      divergence,
+    ].filter((s) => s && s.trim().length > 0);
+    datapack = { ...datapack, pre_rendered_tables: enrichedTables };
 
     // 2. Select prompt modules based on mode + coverage
     const modules: string[] = ["base", "antiHallucination"];

@@ -1,10 +1,7 @@
 // Agente Rix v2 — Bloque 4: Contexto competitivo sectorial (max 200 LOC)
-// Query SQL adicional: trae top empresas del mismo sector en el período y
-// calcula el rango de la entidad analizada. Devuelve markdown pre-renderizado.
+// Dos queries: (1) tickers del sector desde repindex_root_issuers,
+// (2) scores desde rix_runs_v2 IN (...). Evita asumir FK declarada.
 import type { ResolvedEntity, ResolvedTemporal } from "../types.ts";
-
-const COMPETITIVE_SELECT =
-  "05_ticker, 03_target_name, 09_rix_score, batch_execution_date";
 
 function fmt(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "n/d";
@@ -65,15 +62,29 @@ export async function buildCompetitiveContext(
   const empty: CompetitiveContext = { entity_rank: null, total: 0, table: [] };
   if (!entity.sector_category) return empty;
 
+  // 1) Tickers del mismo sector
+  const { data: peers, error: peersErr } = await supabase
+    .from("repindex_root_issuers")
+    .select("ticker, issuer_name")
+    .eq("sector_category", entity.sector_category)
+    .limit(60);
+  if (peersErr || !peers || peers.length === 0) {
+    if (peersErr) console.warn("[RIX-V2][competitive] peers error:", peersErr.message);
+    return empty;
+  }
+  const tickers = peers.map((p: any) => String(p.ticker)).filter(Boolean);
+  if (tickers.length === 0) return empty;
+
+  // 2) Scores del período para esos tickers
   const { data, error } = await supabase
     .from("rix_runs_v2")
-    .select(`${COMPETITIVE_SELECT}, repindex_root_issuers!inner(sector_category)`)
-    .eq("repindex_root_issuers.sector_category", entity.sector_category)
+    .select("05_ticker, 03_target_name, 09_rix_score, batch_execution_date")
+    .in("05_ticker", tickers)
     .gte("batch_execution_date", temporal.from)
     .lte("batch_execution_date", temporal.to)
     .limit(5000);
   if (error) {
-    console.warn("[RIX-V2][competitive] query error:", error.message);
+    console.warn("[RIX-V2][competitive] scores error:", error.message);
     return empty;
   }
   const grouped = aggregateBySector(data ?? []);
