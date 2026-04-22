@@ -172,13 +172,7 @@ export async function process(
   //  • everything else → single entity.
   let entities: ResolvedEntity[] = [];
   let inheritedContext: PreviousContext | undefined;
-  if (intent === "sector_ranking") {
-    // Skip: the skill builds its own scope from the question.
-    entities = [];
-  } else if (intent === "comparison") {
-    entities = await resolveMultipleEntities(question, supabase);
-    console.log(`${logPrefix} comparison | entities=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
-  } else if (isFollowup && previousContext?.entity) {
+  if (isFollowup && previousContext?.entity) {
     const prevEntity = await resolveEntity(previousContext.entity, supabase);
     if (prevEntity && prevEntity.ticker !== "N/A") {
       entities = [prevEntity];
@@ -189,6 +183,12 @@ export async function process(
       };
       console.log(`${logPrefix} FOLLOWUP: inherited entity from FE: ${prevEntity.ticker}`);
     }
+  } else if (intent === "sector_ranking") {
+    // Skip: the skill builds its own scope from the question.
+    entities = [];
+  } else if (intent === "comparison") {
+    entities = await resolveMultipleEntities(question, supabase);
+    console.log(`${logPrefix} comparison | entities=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
   } else {
     const single = await resolveEntity(question, supabase);
     if (single) entities = [single];
