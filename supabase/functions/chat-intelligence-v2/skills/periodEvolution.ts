@@ -13,6 +13,13 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildEvolutionRules } from "../prompts/evolutionMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import {
+  assembleReport,
+  buildPreRenderedSection,
+  metricsFromRows,
+  renderMethodologyFooter,
+  selectBlocks,
+} from "../datapack/reportAssembler.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -125,6 +132,45 @@ function buildUserMessage(question: string, ticker: string, table: string, serie
   ].join("\n");
 }
 
+/** FASE D — periodEvolution assembled with the transversal helper. */
+function buildUserMessageWithAssembler(
+  question: string,
+  ticker: string,
+  evolutionTable: string,
+  series: WeekPoint[],
+  rawRows: any[],
+  fromISO: string,
+  toISO: string,
+  models: string[],
+): string {
+  const metrics = metricsFromRows(rawRows);
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const blocks = selectBlocks(report, "periodEvolution");
+  const methodology = renderMethodologyFooter({
+    fromISO, toISO, models, observationsCount: rawRows.length,
+    uniqueWeeks: series.length,
+  });
+  const compact = series.map((p) => `${p.week}: RIX=${fmt(p.rix_avg)} (${p.models_count} modelos)`).join("\n");
+  return [
+    `PREGUNTA DEL USUARIO: ${question}`,
+    "",
+    `EMPRESA: ${ticker}`,
+    "",
+    buildPreRenderedSection(evolutionTable, blocks, methodology),
+    "",
+    "ESTRUCTURA OBLIGATORIA DEL INFORME:",
+    "## 1. Titular — 2 frases con la tendencia inicio→fin.",
+    "## 2. Evolución temporal — inserta literalmente la tabla de evolución.",
+    "## 3. KPIs agregados del período — inserta literalmente la tabla de KPIs.",
+    "## 4. Visión por modelo — inserta literalmente el bloque de breakdown.",
+    "## 5. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
+    "## 6. Ficha metodológica — inserta literalmente el bloque metodológico.",
+    "",
+    "SERIE COMPACTA PARA CITAR:",
+    compact,
+  ].join("\n");
+}
+
 function buildMetadata(series: WeekPoint[], fromISO: string, toISO: string): ReportMetadata {
   const vals = series.map((p) => p.rix_avg).filter((x) => Number.isFinite(x));
   const sd = stdev(vals);
@@ -204,7 +250,14 @@ export const periodEvolutionSkill: Skill = {
       }),
     ].filter(Boolean).join("\n\n");
 
-    const userMessage = buildUserMessage(parsed.raw_question, entity.ticker, table, series);
+    const userMessage = buildUserMessageWithAssembler(
+      parsed.effective_question ?? parsed.raw_question,
+      entity.ticker, table, series,
+      rows,
+      parsed.temporal.from,
+      parsed.temporal.to,
+      parsed.models,
+    );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },

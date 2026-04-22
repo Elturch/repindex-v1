@@ -17,6 +17,13 @@ import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import {
+  assembleReport,
+  buildPreRenderedSection,
+  metricsFromRows,
+  renderMethodologyFooter,
+  selectBlocks,
+} from "../datapack/reportAssembler.ts";
 
 /**
  * Build a high-priority coverage warning that the LLM MUST surface in the
@@ -176,6 +183,49 @@ function buildUserMessage(question: string, scope: string, table: string, rows: 
   ].join("\n");
 }
 
+/**
+ * FASE D — Build the user message using the transversal reportAssembler.
+ * The ranking table is the skill's primary block; modelBreakdown +
+ * divergenceStats + KPI table + methodology footer are appended.
+ */
+function buildUserMessageWithAssembler(
+  question: string,
+  scope: string,
+  rankingTable: string,
+  rows: RankingRow[],
+  rawRows: any[],
+  fromISO: string,
+  toISO: string,
+  models: string[],
+): string {
+  const metrics = metricsFromRows(rawRows);
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const blocks = selectBlocks(report, "sectorRanking");
+  const methodology = renderMethodologyFooter({
+    fromISO, toISO, models, observationsCount: rawRows.length,
+    uniqueWeeks: new Set(rawRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size,
+  });
+  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
+  return [
+    `PREGUNTA DEL USUARIO: ${question}`,
+    "",
+    `ALCANCE: ${scope}`,
+    "",
+    buildPreRenderedSection(rankingTable, blocks, methodology),
+    "",
+    "ESTRUCTURA OBLIGATORIA DEL INFORME:",
+    "## 1. Titular — 2 frases con la conclusión del ranking.",
+    "## 2. Ranking — inserta literalmente la tabla de ranking.",
+    "## 3. Visión por modelo — inserta literalmente el bloque de breakdown.",
+    "## 4. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
+    "## 5. KPIs agregados del alcance — inserta literalmente la tabla de KPIs.",
+    "## 6. Ficha metodológica — inserta literalmente el bloque metodológico.",
+    "",
+    "RESUMEN COMPACTO PARA REFERENCIA:",
+    compact,
+  ].join("\n");
+}
+
 function buildMetadata(rows: RankingRow[], fromISO: string, toISO: string, models: ModelName[]): ReportMetadata {
   const rixs = rows.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
   const range = rixs.length ? Math.max(...rixs) - Math.min(...rixs) : 0;
@@ -254,7 +304,16 @@ export const sectorRankingSkill: Skill = {
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
     ].filter(Boolean).join("\n\n");
 
-    const userMessage = buildUserMessage(parsed.raw_question, scopeLabel, table, ranking);
+    const userMessage = buildUserMessageWithAssembler(
+      parsed.effective_question ?? parsed.raw_question,
+      scopeLabel,
+      table,
+      ranking,
+      rows,
+      sqlFrom,
+      sqlTo,
+      models,
+    );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },

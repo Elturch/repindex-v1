@@ -171,6 +171,7 @@ serve(async (req: Request) => {
             onChunk,
             previousContext,
             isFollowup,
+            question, // FASE C — display-only; orchestrator stores it on parsed.normalized_question
           );
           const resultMeta = result as Record<string, any>;
           const reportContext = {

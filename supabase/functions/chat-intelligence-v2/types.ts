@@ -48,6 +48,17 @@ export interface ParsedQuery {
   models: ModelName[];
   mode: Mode;
   raw_question: string;
+  /**
+   * FASE C — canonical pregunta to use everywhere downstream
+   * (parsers, skills, regex, "top N" detection, ibex hint, etc.).
+   * Equals `originalQuestion ?? normalizedQuestion`, never the
+   * normalised query (which strips temporal markers like "primer
+   * trimestre"). Mirrors `raw_question` for back-compat but is
+   * named explicitly so future code never picks the wrong one.
+   */
+  effective_question: string;
+  /** Display-only / logging. The output of normalize-query (if any). */
+  normalized_question: string;
   is_followup: boolean;
   inherited_context?: PreviousContext;
 }
