@@ -3,7 +3,12 @@ import { ChatLanguage } from "@/lib/chatLanguages";
 
 interface ChatQueryGuideProps {
   language: ChatLanguage;
+  /** Fills the input with the example so the user can edit before sending. */
   onSelectExample: (text: string) => void;
+  /** Phase 4 — UX: when provided, clicking the chip sends the example directly. */
+  onSendExample?: (text: string) => void;
+  /** Disables the chip while a request is in flight. */
+  disabled?: boolean;
 }
 
 const LABEL: Record<string, string> = {
@@ -91,7 +96,7 @@ const ALL_EXAMPLES = CATEGORIES.flatMap((cat) =>
   cat.examples.map((text) => ({ icon: cat.icon, text }))
 );
 
-export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProps) {
+export function ChatQueryGuide({ language, onSelectExample, onSendExample, disabled }: ChatQueryGuideProps) {
   const lang = language.code;
   const prompt = LABEL[lang] || LABEL["en"] || LABEL["es"];
   const [index, setIndex] = useState(() => Math.floor(Math.random() * ALL_EXAMPLES.length));
@@ -114,10 +119,19 @@ export function ChatQueryGuide({ language, onSelectExample }: ChatQueryGuideProp
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
       <button
-        onClick={() => onSelectExample(current.text)}
-        className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-all duration-200 ${
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          // Phase 4 — UX: prefer direct send when the parent supports it; fall
+          // back to filling the input so users can still edit the example.
+          if (onSendExample) onSendExample(current.text);
+          else onSelectExample(current.text);
+        }}
+        className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
           fade ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
         }`}
+        title={onSendExample ? "Enviar ejemplo" : "Rellenar input"}
       >
         <span className="text-sm leading-none">{current.icon}</span>
         <span className="line-clamp-1">{current.text}</span>
