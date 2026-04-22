@@ -111,9 +111,9 @@ serve(async (req: Request) => {
             question,
             conversationHistory,
             supabase,
+            onChunk,
             previousContext,
             isFollowup,
-            onChunk,
           );
           const resultMeta = result as Record<string, any>;
           const reportContext = {
