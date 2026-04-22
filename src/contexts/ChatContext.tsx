@@ -1033,6 +1033,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   const parsed = JSON.parse(data);
                   
                   if (parsed.type === 'chunk' && parsed.text) {
+                    if (__metricsFirstChunkAt === null) {
+                      __metricsFirstChunkAt = performance.now();
+                    }
+                    __metricsChunks += 1;
                     accumulatedContent += parsed.text;
                     accumulatedContent = sanitizeStreamContent(accumulatedContent);
 
