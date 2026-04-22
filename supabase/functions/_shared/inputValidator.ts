@@ -288,6 +288,29 @@ export function resolveEntity(
     };
   }
 
+  // ── (4b) Multiple distinct entities with NO shared stem → comparison /
+  //         multi-entity query (e.g. "diferencias entre Endesa e Iberdrola").
+  //         These are NOT ambiguous and MUST NOT fall through to NOT_FOUND
+  //         where extractBrandToken would mis-tag the first capitalised
+  //         word ("Cuáles", "Compara"…) as an unknown company. We resolve
+  //         to the first hit so the pipeline can proceed; downstream skills
+  //         already handle multi-entity comparisons via the question text.
+  if (exactHits.length >= 2) {
+    const primary = exactHits[0];
+    return {
+      matched: true,
+      empresa_id: null,
+      empresa_nombre: primary.issuer_name,
+      ticker: primary.ticker,
+      confidence: "exact",
+      alternatives: exactHits.slice(1, 5).map((r) => ({ issuer_name: r.issuer_name, ticker: r.ticker })),
+      assumption_disclosure: null,
+      block_message: null,
+      foreign_input: null,
+      parent_suggestion: null,
+    };
+  }
+
   // ── (5) Look for a brand-shaped token (Capitalised word) and try
   //        fuzzy match against catalog. Only triggers when a brand-like
   //        token is present, so generic queries don't hit this branch.
