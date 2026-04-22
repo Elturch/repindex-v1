@@ -17,6 +17,7 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
+import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
@@ -95,66 +96,6 @@ function buildUserMessage(question: string, datapack: DataPack): string {
     : "";
 
   return [head, tables, summary].join("\n");
-}
-
-/**
- * Llama a OpenAI Chat Completions (no-stream). El index.ts hace el SSE-chunking
- * sobre el resultado completo, así que aquí basta una llamada simple.
- * Modelo extraído de v1 (línea 4744 / 4749): "o3" con reasoning_effort=medium,
- * fallback a "gpt-4o-mini" si no hay clave de o3.
- */
-async function callOpenAI(
-  systemPrompt: string,
-  userMessage: string,
-  logPrefix: string,
-): Promise<{ content: string; error?: string }> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) {
-    return {
-      content: "",
-      error: "OPENAI_API_KEY no configurada en el entorno de la edge function.",
-    };
-  }
-
-  const model = "gpt-4o-mini"; // modelo rápido y barato para skeleton v2
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90_000);
-
-  try {
-    console.log(`${logPrefix} OpenAI call | model=${model} | prompt_chars=${systemPrompt.length}`);
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_completion_tokens: 4000,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    clearTimeout(timeoutId);
-
-    if (!resp.ok) {
-      const txt = await resp.text();
-      console.error(`${logPrefix} OpenAI error ${resp.status}:`, txt.slice(0, 500));
-      return { content: "", error: `OpenAI ${resp.status}` };
-    }
-    const json = await resp.json();
-    const content = json?.choices?.[0]?.message?.content ?? "";
-    return { content };
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    const msg = e?.name === "AbortError" ? "OpenAI timeout (90s)" : e?.message ?? "Unknown OpenAI error";
-    console.error(`${logPrefix} OpenAI exception:`, msg);
-    return { content: "", error: msg };
-  }
 }
 
 function buildMetadata(datapack: DataPack, observations: number): ReportMetadata {
