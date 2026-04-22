@@ -27,6 +27,7 @@ import {
   renderCompetitiveContextTable,
 } from "../datapack/competitiveContext.ts";
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
+import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
 
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
@@ -222,6 +223,11 @@ export const companyAnalysisSkill: Skill = {
     const divergence = renderDivergenceBlock(datapack.raw_rows);
     const recommendations = renderRecommendationsBlock(datapack.metrics);
     const competitiveTable = renderCompetitiveContextTable(competitive, datapack.entity.ticker);
+    // Cited sources (real URLs from the 8 raw-response columns). Pre-rendered
+    // as a markdown block; also returned structurally so the FE can show it
+    // in the HTML export with clickable <a> tags.
+    const citedSourcesReport = extractCitedSources(datapack.raw_rows);
+    const citedSources = renderCitedSourcesBlock(citedSourcesReport);
     console.log(`${tag} enrichment done in ${Date.now() - t0}ms`);
 
     // 1c. Append the new blocks (in canonical order) AFTER the existing
@@ -232,6 +238,7 @@ export const companyAnalysisSkill: Skill = {
       temporalEvo,
       competitiveTable,
       recommendations,
+      citedSources,
       divergence,
     ].filter((s) => s && s.trim().length > 0);
     datapack = { ...datapack, pre_rendered_tables: enrichedTables };
