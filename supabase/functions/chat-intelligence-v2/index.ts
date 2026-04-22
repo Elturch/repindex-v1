@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { process as orchestratorProcess } from "./orchestrator.ts";
 import type { ConversationMessage } from "./types.ts";
+import { runAllTests } from "./tests/regression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +19,30 @@ function sseEncode(payload: unknown): Uint8Array {
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // ── Regression suite endpoint: GET /chat-intelligence-v2?test=regression ──
+  // Hits the same edge function recursively (sequential cases). Useful for
+  // smoke-testing v2 after a deploy without booting the frontend.
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    if (url.searchParams.get("test") === "regression") {
+      try {
+        // Self-call URL: same origin, no query string.
+        const baseUrl = `${url.origin}${url.pathname}`;
+        const authHeader = req.headers.get("authorization");
+        const summary = await runAllTests({ baseUrl, authHeader });
+        return new Response(JSON.stringify(summary, null, 2), {
+          status: summary.failed === 0 ? 200 : 207,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: e instanceof Error ? e.message : "regression failed" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
   }
 
   try {
