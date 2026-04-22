@@ -173,14 +173,21 @@ export async function process(
   }
 
   // 4-5. Guards
-  for (const [name, msg] of [
-    ["inputGuard", inputGuard(question)],
-    ["scopeGuard", scopeGuard(parsed)],
-    ["temporalGuard", temporalGuardCheck(parsed)],
-  ] as const) {
-    if (msg) {
+  const guardChain: Array<[string, () => { pass: boolean; reply?: string; warnings?: string[] }]> = [
+    ["inputGuard", () => checkInput(question)],
+    ["scopeGuard", () => checkScope(parsed.entities[0] ?? null, question)],
+    ["temporalGuard", () => checkTemporal(parsed.temporal)],
+  ];
+  const collectedWarnings: string[] = [];
+  for (const [name, run] of guardChain) {
+    const res = run();
+    if (!res.pass) {
       console.log(`${logPrefix} rejected by ${name}`);
-      return { type: "guard_rejection", content: msg };
+      return { type: "guard_rejection", content: res.reply ?? "Consulta no admitida." };
+    }
+    if (res.warnings && res.warnings.length > 0) {
+      collectedWarnings.push(...res.warnings);
+      console.log(`${logPrefix} ${name} warnings: ${res.warnings.length}`);
     }
   }
 
@@ -190,6 +197,10 @@ export async function process(
     return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
   }
   const skillOut = await skill.execute({ parsed, supabase, logPrefix });
+  if (collectedWarnings.length > 0) {
+    skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
+    (skillOut as any).warnings = collectedWarnings;
+  }
 
   // 9. Prompt composition
   const systemPrompt = composePrompt(skillOut.prompt_modules);
