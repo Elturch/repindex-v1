@@ -220,6 +220,32 @@ function buildLoadingMessages(modelCount: number): string[] {
 
 const DEFAULT_LOADING_MESSAGES = buildLoadingMessages(6);
 
+// Phase 4 — UX: short generic loader shown for the first ~600ms so users
+// don't see "Consultando 6 modelos de IA" for queries the guards will reject
+// in milliseconds (off-topic, future predictions, greetings, etc.).
+const INITIAL_LOADER_MESSAGE = "Analizando consulta…";
+const INITIAL_LOADER_DURATION_MS = 600;
+
+// Phase 4 — UX: persist sessionId across reloads so the user does not lose
+// the current conversation. Clearing or loading another one rotates the key.
+const SESSION_STORAGE_KEY = "repindex.chat.sessionId";
+function loadPersistedSessionId(): string {
+  if (typeof window === "undefined") return crypto.randomUUID();
+  try {
+    const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing && /^[0-9a-f-]{36}$/i.test(existing)) return existing;
+  } catch {
+    // localStorage unavailable (SSR / privacy mode) — fall through.
+  }
+  const fresh = crypto.randomUUID();
+  try { window.localStorage.setItem(SESSION_STORAGE_KEY, fresh); } catch { /* noop */ }
+  return fresh;
+}
+function persistSessionId(id: string) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(SESSION_STORAGE_KEY, id); } catch { /* noop */ }
+}
+
 /**
  * Normalize text for compliance matching (mirrors backend logic):
  * lowercase, strip diacritics, collapse whitespace, normalize quotes.
