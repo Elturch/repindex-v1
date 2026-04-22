@@ -16,6 +16,48 @@ function sseEncode(payload: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function inferEntityFromAssistantHistory(history: ConversationMessage[]): {
+  entity: string;
+  company_name?: string;
+  ticker?: string;
+} | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i];
+    if (msg?.role !== "assistant" || !msg.content) continue;
+    const text = String(msg.content).slice(0, 400);
+
+    const withTicker = text.match(
+      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80}?)\s*\(([A-Z][A-Z0-9\.]{1,9})\)/i,
+    );
+    if (withTicker?.[2]) {
+      return {
+        entity: withTicker[2].toUpperCase(),
+        company_name: withTicker[1].trim(),
+        ticker: withTicker[2].toUpperCase(),
+      };
+    }
+
+    const withName = text.match(
+      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80})/i,
+    );
+    if (withName?.[1]) {
+      return {
+        entity: withName[1].trim(),
+        company_name: withName[1].trim(),
+      };
+    }
+  }
+  return null;
+}
+
+function shouldInheritFromHistory(question: string): boolean {
+  const q = (question || "").trim();
+  if (!q) return false;
+  const followupCue = /\b(expand(?:e|ir)?|ampl[ií]a(?:r)?|profundiza(?:r)?|detalla(?:r)?|contin[uú]a(?:r)?|sigue|actualiza(?:r)?|extiend(?:e|er)|desarrolla(?:r)?|completa(?:r)?|hasta\s+(?:ayer|hoy|el\s+d[ií]a)|informe|an[aá]lisis|reporte|respuesta)\b/i;
+  const explicitEntityHint = /\(([A-Z]{2,5})\)|\b[A-Z]{2,5}\b|\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})*\b/;
+  return followupCue.test(q) && !explicitEntityHint.test(q);
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -64,7 +106,7 @@ serve(async (req: Request) => {
       : Array.isArray(body?.conversationHistory)
         ? body.conversationHistory
         : [];
-    const previousContext = body?.previousContext || null;
+    let previousContext = body?.previousContext || null;
     const isFollowup = body?.isFollowup === true;
 
     if (!question) {
@@ -79,7 +121,25 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!,
     );
 
-    console.log("[RIX-V2] Request received", { sessionId, history: conversationHistory.length });
+    if (!previousContext?.entity && conversationHistory.length > 0 && shouldInheritFromHistory(question)) {
+      const inherited = inferEntityFromAssistantHistory(conversationHistory);
+      if (inherited?.entity) {
+        previousContext = {
+          ...(previousContext ?? {}),
+          entity: inherited.entity,
+          company_name: inherited.company_name ?? null,
+          ticker: inherited.ticker ?? null,
+          source: "history_assistant_regex",
+        };
+        console.log("[RIX-V2] inherited entity from history:", inherited.entity);
+      }
+    }
+
+    console.log("[RIX-V2] Request received", {
+      sessionId,
+      history: conversationHistory.length,
+      inheritedEntity: previousContext?.entity ?? null,
+    });
 
     // Real progressive streaming: the orchestrator → skill → streamOpenAIResponse
     // chain calls onChunk for every LLM delta. We pipe each delta into the SSE
