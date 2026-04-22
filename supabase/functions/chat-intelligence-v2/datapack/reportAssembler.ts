@@ -14,6 +14,37 @@ import { renderModelBreakdownTable } from "./modelBreakdown.ts";
 import { renderTemporalEvolutionTable } from "./temporalEvolution.ts";
 import { renderDivergenceBlock } from "./divergenceStats.ts";
 import { renderRecommendationsBlock } from "./recommendations.ts";
+import { computePeriodAggregation, type RawRunRow } from "../../_shared/periodAggregation.ts";
+
+/**
+ * Convert raw rix_runs_v2 rows into the canonical MetricAggregation[]
+ * shape required by the KPI table + recommendations renderers. Any skill
+ * holding raw rows can call this; it reuses the same period aggregator
+ * the main builder uses, so numbers stay consistent across reports.
+ */
+export function metricsFromRows(rows: RawRunRow[]): MetricAggregation[] {
+  if (!rows.length) return [];
+  const agg = computePeriodAggregation(rows);
+  const out: MetricAggregation[] = [];
+  for (const k of ["RIX", "NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"]) {
+    const a = agg.period_aggregation[k];
+    if (!a || a.weeks_count === 0) continue;
+    out.push({
+      metric: k as MetricAggregation["metric"],
+      mean: a.mean ?? 0,
+      median: a.median ?? 0,
+      min: a.min ?? 0,
+      max: a.max ?? 0,
+      first_week: a.first_week_value ?? 0,
+      last_week: a.last_week_value ?? 0,
+      delta_period: a.delta_period ?? 0,
+      trend: (a.trend === "n/d" ? "estable" : a.trend) as MetricAggregation["trend"],
+      volatility: a.volatility ?? 0,
+      weeks_count: a.weeks_count,
+    });
+  }
+  return out;
+}
 
 /** All canonical blocks the assembler can produce. Empty string = N/A. */
 export interface AssembledReport {
