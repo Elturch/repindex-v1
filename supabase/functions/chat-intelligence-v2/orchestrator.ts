@@ -157,41 +157,44 @@ export async function process(
   question: string,
   history: ConversationMessage[],
   supabase: any,
+  onChunk?: (delta: string) => void,
   previousContext?: any,
   isFollowup?: boolean,
-  onChunk?: (delta: string) => void,
 ): Promise<OrchestratorResponse> {
   const logPrefix = "[RIX-V2][orch]";
   console.log(`${logPrefix} processing | q="${question.slice(0, 80)}" | history=${history?.length ?? 0}`);
 
   // 1. Parsers (real)
   const intent = classifyIntent(question);
-  // Entity resolution depends on intent:
-  //  • sector_ranking  → no specific entity (skill aggregates everything).
-  //  • comparison      → resolve multiple entities.
-  //  • everything else → single entity.
+  let entity: ResolvedEntity | null = null;
   let entities: ResolvedEntity[] = [];
   let inheritedContext: PreviousContext | undefined;
+
+  // PRIORITY: follow-up inherits entity from previous context
   if (isFollowup && previousContext?.entity) {
-    const prevEntity = await resolveEntity(previousContext.entity, supabase);
-    if (prevEntity && prevEntity.ticker !== "N/A") {
-      entities = [prevEntity];
+    entity = await resolveEntity(previousContext.entity, supabase);
+    if (entity && entity.ticker !== "N/A") {
+      entities = [entity];
       inheritedContext = {
-        ticker: prevEntity.ticker,
-        company_name: prevEntity.company_name,
-        sector_category: prevEntity.sector_category ?? null,
+        ticker: entity.ticker,
+        company_name: entity.company_name,
+        sector_category: entity.sector_category ?? null,
       };
-      console.log(`${logPrefix} FOLLOWUP: inherited entity from FE: ${prevEntity.ticker}`);
+      console.log(`${logPrefix} FOLLOWUP: inherited entity from FE previousContext: ${entity.ticker}`);
     }
-  } else if (intent === "sector_ranking") {
-    // Skip: the skill builds its own scope from the question.
-    entities = [];
-  } else if (intent === "comparison") {
-    entities = await resolveMultipleEntities(question, supabase);
-    console.log(`${logPrefix} comparison | entities=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
-  } else {
-    const single = await resolveEntity(question, supabase);
-    if (single) entities = [single];
+  }
+
+  // Normal entity resolution for non-followup
+  if (entities.length === 0) {
+    if (intent === "sector_ranking") {
+      entities = [];
+    } else if (intent === "comparison") {
+      entities = await resolveMultipleEntities(question, supabase);
+      console.log(`${logPrefix} comparison | entities=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
+    } else {
+      entity = await resolveEntity(question, supabase);
+      entities = entity ? [entity] : [];
+    }
   }
   const primaryTicker = entities[0]?.ticker ?? null;
   const temporal: ResolvedTemporal = await parseTemporal(question, supabase, primaryTicker);
