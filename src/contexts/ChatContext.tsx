@@ -13,6 +13,18 @@ import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceEx
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU";
 
+// Feature flag: route to chat-intelligence-v2 when URL contains ?agent=v2
+// Preview-only switch — defaults to v1 (chat-intelligence). Does not affect production users.
+function getChatIntelligenceFunctionName(): 'chat-intelligence' | 'chat-intelligence-v2' {
+  if (typeof window === 'undefined') return 'chat-intelligence';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('agent') === 'v2' ? 'chat-intelligence-v2' : 'chat-intelligence';
+  } catch {
+    return 'chat-intelligence';
+  }
+}
+
 // Helper to get timeout based on depth level
 function getTimeoutForRequest(depthLevel: string = 'complete'): number {
   switch (depthLevel) {
@@ -859,7 +871,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setMessages(prev => [...prev, streamingMessage]);
 
         const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/chat-intelligence`,
+          `${SUPABASE_URL}/functions/v1/${getChatIntelligenceFunctionName()}`,
           {
             method: 'POST',
             headers: {
@@ -1098,7 +1110,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // =========================================================================
         // NON-STREAMING MODE: Use invokeWithTimeout (original behavior)
         // =========================================================================
-        const { data, error } = await invokeWithTimeout('chat-intelligence', {
+        const { data, error } = await invokeWithTimeout(getChatIntelligenceFunctionName(), {
           question: normalizedQuestion,
           originalQuestion: question !== normalizedQuestion ? question : undefined,
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
