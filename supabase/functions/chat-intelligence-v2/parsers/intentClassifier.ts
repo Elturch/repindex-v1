@@ -30,6 +30,9 @@ const DIVERGENCE_RE = /\b(divergen(?:cia|tes?)|discrepan(?:cia|tes?)|consenso|di
 // ── Period evolution: temporal trend / history ─────────────────────
 const EVOLUTION_RE = /\b(evoluci[oó]n|evoluciona|tendencia|trayectoria|historic[oa]|hist[oó]ric[oa]|ha\s+(?:subido|bajado|mejorado|empeorado)|c[oó]mo\s+(?:ha\s+)?cambiado|trimestre|semestre|[uú]ltim[oa]s?\s+\d+\s+(?:semanas?|meses?)|primer\s+(?:trimestre|semestre)|segundo\s+(?:trimestre|semestre))\b/i;
 
+// ── Explicit AI model names (used to demote false sector_ranking) ──
+const MODEL_NAMES_RE = /\b(grok|perplexity|deepseek|deep\s*seek|chatgpt|chat\s*gpt|gpt[-\s]?\d?|gemini|qwen|claude|llama)\b/i;
+
 // Crude entity counter: count of capitalised tokens that look like brands.
 function approxEntityCount(question: string): number {
   const matches = question.match(/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b|\b[A-Z]{3,}\b/g) || [];
