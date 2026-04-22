@@ -21,6 +21,9 @@ import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
+import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
+
+console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
 function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -81,7 +84,7 @@ const stubSkill = (name: string, intents: Intent[]): Skill => ({
 });
 
 const SKILL_REGISTRY: Skill[] = [
-  stubSkill("companyAnalysis", ["company_analysis"]),
+  companyAnalysisSkill,
   stubSkill("sectorRanking", ["sector_ranking"]),
   stubSkill("comparison", ["comparison"]),
   stubSkill("modelDivergence", ["model_divergence"]),
@@ -196,6 +199,7 @@ export async function process(
   if (!skill) {
     return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
   }
+  console.log(`${logPrefix} dispatching | intent=${parsed.intent} | skill=${skill.name}`);
   const skillOut = await skill.execute({ parsed, supabase, logPrefix });
   if (collectedWarnings.length > 0) {
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
@@ -205,8 +209,14 @@ export async function process(
   // 9. Prompt composition
   const systemPrompt = composePrompt(skillOut.prompt_modules);
 
-  // 10. LLM synthesis (stub)
-  const content = await synthesize(systemPrompt, skillOut.datapack, question);
+  // 10. Content: real skills deposit the LLM answer as the first pre-rendered
+  //     "table" entry. Stub skills leave that array empty → fall back to the
+  //     deterministic placeholder so the response still streams something.
+  const REAL_SKILLS = new Set(["companyAnalysis"]);
+  const skillContent = skillOut.datapack.pre_rendered_tables[0];
+  const content = (REAL_SKILLS.has(skill.name) && skillContent && skillContent.length > 0)
+    ? skillContent
+    : await synthesize(systemPrompt, skillOut.datapack, question);
 
   // 11. Response
   return {

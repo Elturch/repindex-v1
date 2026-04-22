@@ -1,0 +1,199 @@
+// Agente Rix v2 — DataPack builder (real Supabase queries, max 200 LOC)
+// Extrae filas reales de rix_runs_v2 para una entidad + rango temporal,
+// computa agregación de período (reutiliza _shared/periodAggregation.ts) y
+// devuelve un DataPack listo para el LLM.
+import {
+  computePeriodAggregation,
+  type RawRunRow,
+} from "../../_shared/periodAggregation.ts";
+import type {
+  DataPack,
+  MetricAggregation,
+  MetricName,
+  ModelName,
+  ParsedQuery,
+  ResolvedEntity,
+} from "../types.ts";
+import {
+  renderEvolutionTable,
+  renderModelTable,
+  renderPeriodKpiTable,
+} from "./tableRenderer.ts";
+
+// Extraído de v1/index.ts línea 887 (FULL_SELECT) — columnas que la skill
+// principal necesita para construir tablas + agregados + textos brutos.
+const FULL_SELECT =
+  "05_ticker, 02_model_name, 03_target_name, 09_rix_score, " +
+  "10_resumen, 11_puntos_clave, 17_flags, " +
+  "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, " +
+  "35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, " +
+  "25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, " +
+  "37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, " +
+  "48_precio_accion, 06_period_from, 07_period_to, batch_execution_date, " +
+  "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto";
+
+const MODEL_NAME_MAP: Array<[string, ModelName]> = [
+  ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
+  ["perplexity", "Perplexity"], ["perp", "Perplexity"],
+  ["gemini", "Gemini"], ["google", "Gemini"],
+  ["deepseek", "DeepSeek"],
+  ["grok", "Grok"], ["xai", "Grok"],
+  ["qwen", "Qwen"], ["alibaba", "Qwen"],
+];
+
+function normalizeModelName(raw: unknown): ModelName | null {
+  const s = String(raw ?? "").toLowerCase().trim();
+  for (const [k, v] of MODEL_NAME_MAP) if (s.includes(k)) return v;
+  return null;
+}
+
+function toMetricAggregation(
+  k: string,
+  agg: ReturnType<typeof computePeriodAggregation>["period_aggregation"][string],
+): MetricAggregation | null {
+  if (!agg || agg.weeks_count === 0) return null;
+  return {
+    metric: k as MetricName,
+    mean: agg.mean ?? 0,
+    median: agg.median ?? 0,
+    min: agg.min ?? 0,
+    max: agg.max ?? 0,
+    first_week: agg.first_week_value ?? 0,
+    last_week: agg.last_week_value ?? 0,
+    delta_period: agg.delta_period ?? 0,
+    trend: (agg.trend === "n/d" ? "estable" : agg.trend) as MetricAggregation["trend"],
+    volatility: agg.volatility ?? 0,
+    weeks_count: agg.weeks_count,
+  };
+}
+
+/**
+ * Lee filas reales de rix_runs_v2 para la entidad y rango de la pregunta.
+ * Pagina hasta 5 páginas de 1000 filas (suficiente para análisis típicos).
+ */
+async function fetchRows(
+  supabase: any,
+  entity: ResolvedEntity,
+  fromISO: string,
+  toISO: string,
+): Promise<RawRunRow[]> {
+  const all: RawRunRow[] = [];
+  for (let page = 0; page < 5; page++) {
+    const { data, error } = await supabase
+      .from("rix_runs_v2")
+      .select(FULL_SELECT)
+      .eq("05_ticker", entity.ticker)
+      .gte("batch_execution_date", fromISO)
+      .lte("batch_execution_date", toISO)
+      .order("batch_execution_date", { ascending: false })
+      .range(page * 1000, (page + 1) * 1000 - 1);
+    if (error) {
+      console.error("[RIX-V2][datapack] fetchRows error:", error.message);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < 1000) break;
+  }
+  return all;
+}
+
+export interface BuiltDataPack {
+  datapack: DataPack;
+  raw_rows: RawRunRow[];
+  observations_count: number;
+}
+
+/**
+ * Build a real DataPack from Supabase for the company referenced by parsedQuery.
+ * Falls back to empty datapack (with explicit coverage) if no rows are returned.
+ */
+export async function buildDataPack(
+  supabase: any,
+  parsed: ParsedQuery,
+): Promise<BuiltDataPack> {
+  const entity = parsed.entities[0];
+  if (!entity || entity.ticker === "N/A") {
+    return {
+      datapack: emptyDatapack(parsed),
+      raw_rows: [],
+      observations_count: 0,
+    };
+  }
+
+  const rows = await fetchRows(supabase, entity, parsed.temporal.from, parsed.temporal.to);
+  console.log(
+    `[RIX-V2][datapack] ${entity.ticker} ${parsed.temporal.from}→${parsed.temporal.to}: ${rows.length} rows`,
+  );
+
+  // Modelos presentes en los datos
+  const modelsPresent = new Set<ModelName>();
+  for (const r of rows) {
+    const m = normalizeModelName(r["02_model_name"]);
+    if (m) modelsPresent.add(m);
+  }
+  const requested = parsed.models;
+  const withData = requested.filter((m) => modelsPresent.has(m));
+  const missing = requested.filter((m) => !modelsPresent.has(m));
+
+  // Agregación de período (reutiliza _shared/periodAggregation.ts)
+  const agg = computePeriodAggregation(rows);
+  const metrics: MetricAggregation[] = [];
+  for (const k of ["RIX", "NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"]) {
+    const m = toMetricAggregation(k, agg.period_aggregation[k]);
+    if (m) metrics.push(m);
+  }
+
+  const periodSummary = metrics.length > 0
+    ? {
+      rix_mean: agg.period_summary.rix_mean ?? 0,
+      rix_trend: agg.period_summary.rix_trend,
+      strongest: (agg.period_summary.strongest_metric ?? "RIX") as MetricName,
+      weakest: (agg.period_summary.weakest_metric ?? "RIX") as MetricName,
+      most_volatile: (agg.period_summary.most_volatile ?? "RIX") as MetricName,
+    }
+    : undefined;
+
+  // Pre-renderizar tablas (todas en markdown, NUNCA las genera el LLM — constraint #9)
+  const preRendered: string[] = [];
+  if (metrics.length > 0) preRendered.push(renderPeriodKpiTable(metrics, parsed.mode));
+  if (rows.length > 0) preRendered.push(renderModelTable(rows));
+  if (parsed.mode === "period" && rows.length > 1) {
+    preRendered.push(renderEvolutionTable(rows));
+  }
+
+  const datapack: DataPack = {
+    entity,
+    temporal: parsed.temporal,
+    mode: parsed.mode,
+    models_used: withData.length > 0 ? withData : requested,
+    models_coverage: { requested, with_data: withData, missing },
+    metrics,
+    raw_rows: rows,
+    pre_rendered_tables: preRendered,
+    period_summary: periodSummary,
+  };
+
+  return { datapack, raw_rows: rows, observations_count: rows.length };
+}
+
+function emptyDatapack(parsed: ParsedQuery): DataPack {
+  const entity: ResolvedEntity = parsed.entities[0] ?? {
+    ticker: "N/A",
+    company_name: "N/A",
+    sector_category: null,
+    source: "exact",
+  };
+  return {
+    entity,
+    temporal: parsed.temporal,
+    mode: parsed.mode,
+    models_used: parsed.models,
+    models_coverage: { requested: parsed.models, with_data: [], missing: parsed.models },
+    metrics: [],
+    raw_rows: [],
+    pre_rendered_tables: [],
+  };
+}
+
+export const __test__ = { normalizeModelName, FULL_SELECT };
