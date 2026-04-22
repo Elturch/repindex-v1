@@ -372,6 +372,24 @@ export function ChatMessages({
                 </div>
               )}
             </div>
+            {/* Streaming metrics — preview-only diagnostic shown beneath
+                each assistant bubble so we can compare v1 vs v2 latency. */}
+            {message.role === 'assistant' &&
+              !message.isStreaming &&
+              showPreviewSignals &&
+              message.streamMetrics && (
+                <div className="mt-1 px-1 text-[10px] font-mono text-muted-foreground/70">
+                  {(message.fallbackUsed ? 'v1 (fallback)' : (message.agentVersion ?? 'v1'))}
+                  {' | TTFB: '}
+                  {message.streamMetrics.latencyMs !== null
+                    ? `${(message.streamMetrics.latencyMs / 1000).toFixed(1)}s`
+                    : 'n/a'}
+                  {' | Total: '}
+                  {(message.streamMetrics.totalMs / 1000).toFixed(1)}s
+                  {' | '}
+                  {message.streamMetrics.chunksCount} chunks
+                </div>
+              )}
           </div>
         ))}
         
