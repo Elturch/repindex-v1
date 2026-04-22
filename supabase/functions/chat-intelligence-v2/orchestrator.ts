@@ -280,6 +280,15 @@ export async function process(
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
     (skillOut as any).warnings = collectedWarnings;
   }
+  // Always force coverageRules when temporal coverage is below threshold.
+  // Skills that didn't include it will at least carry the prompt-module
+  // marker so downstream metadata reflects the partial-coverage state.
+  if (parsed.temporal.is_partial || (parsed.temporal.coverage_ratio ?? 1) < 0.9) {
+    skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
+    console.info(
+      `[RIX-V2][orch] coverage partial detected | ratio=${parsed.temporal.coverage_ratio} | available=${parsed.temporal.snapshots_available}/${parsed.temporal.snapshots_expected}`,
+    );
+  }
 
   // 9. Prompt composition
   const systemPrompt = composePrompt(skillOut.prompt_modules);
