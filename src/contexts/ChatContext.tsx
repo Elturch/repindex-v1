@@ -515,6 +515,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const initialLoaderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Step 3 — automatic v1 fallback. When v2 fails (HTTP/timeout/empty
+  // stream) we re-invoke sendMessage forcing v1. This ref forces the next
+  // call to ignore the toggle and use v1 + tag the bubble as fallback.
+  const forceV1FallbackRef = useRef<boolean>(false);
   // PHASE 1.8 — last successful query context for follow-up merging.
   const lastQueryContextRef = useRef<LastQueryContext | null>(null);
   // Capture the just-generated reportContext into the follow-up memory.
