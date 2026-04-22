@@ -209,14 +209,20 @@ export const sectorRankingSkill: Skill = {
       ? `sector ${sector}`
       : (ibexOnly ? "IBEX-35" : "todas las empresas cubiertas");
 
-    const rows = await fetchRankingRows(supabase, parsed.temporal.from, parsed.temporal.to, sector, ibexOnly);
+    // Use the REQUESTED window (e.g. Q1 = 2026-01-01 → 2026-03-31) for the
+    // SQL bounds, NOT the reconciled/clamped window which may collapse to a
+    // 1-2 day range when reconcileWindow's row-limit truncates the scan.
+    const sqlFrom = parsed.temporal.requested_from ?? parsed.temporal.from;
+    const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
+    console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
+    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0 ? renderRankingTable(ranking, models) : "_Sin datos para el período/alcance solicitado._";
 
     const datapack: DataPack = {
       entity: parsed.entities[0] ?? { ticker: "N/A", company_name: scopeLabel, sector_category: sector, source: "exact" },
-      temporal: parsed.temporal,
+      temporal: { ...parsed.temporal, from: sqlFrom, to: sqlTo },
       mode: parsed.mode,
       models_used: models,
       models_coverage: { requested: models, with_data: models, missing: [] },
@@ -229,12 +235,12 @@ export const sectorRankingSkill: Skill = {
     if (parsed.mode === "period") modules.push("periodMode"); else modules.push("snapshotMode");
 
     if (ranking.length === 0) {
-      const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${parsed.temporal.from} → ${parsed.temporal.to}._`;
+      const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${sqlFrom} → ${sqlTo}._`;
       try { onChunk?.(fallback); } catch (_) { /* noop */ }
       return {
         datapack: { ...datapack, pre_rendered_tables: [fallback] },
         prompt_modules: modules,
-        metadata: buildMetadata([], parsed.temporal.from, parsed.temporal.to, models),
+        metadata: buildMetadata([], sqlFrom, sqlTo, models),
       };
     }
 
@@ -243,8 +249,8 @@ export const sectorRankingSkill: Skill = {
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       parsed.mode === "period"
-        ? buildPeriodRules({ fromISO: parsed.temporal.from, toISO: parsed.temporal.to, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
-        : buildSnapshotRules({ weekFromISO: parsed.temporal.from, weekToISO: parsed.temporal.to }),
+        ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
+        : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
     ].filter(Boolean).join("\n\n");
 
@@ -265,7 +271,7 @@ export const sectorRankingSkill: Skill = {
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
       prompt_modules: modules,
-      metadata: buildMetadata(ranking, parsed.temporal.from, parsed.temporal.to, models),
+      metadata: buildMetadata(ranking, sqlFrom, sqlTo, models),
     };
   },
 };

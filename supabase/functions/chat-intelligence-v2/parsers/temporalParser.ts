@@ -38,6 +38,8 @@ function reconciledToResolved(rec: ReconciledWindow): ResolvedTemporal {
     snapshots_available: available,
     coverage_ratio: Number(coverage.toFixed(3)),
     is_partial: isPartial,
+    requested_from: rec.requested.start_t,
+    requested_to: rec.requested.end_t,
   };
 }
 

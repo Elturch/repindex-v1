@@ -25,6 +25,11 @@ export interface ResolvedTemporal {
   snapshots_available: number;
   coverage_ratio: number;
   is_partial: boolean;
+  /** Original requested window (Q1 = 2026-01-01 → 2026-03-31). Used by skills
+   *  for SQL bounds when they want to query the FULL window regardless of
+   *  how much real data exists. Falls back to from/to if not present. */
+  requested_from?: string;
+  requested_to?: string;
 }
 
 export interface PreviousContext {

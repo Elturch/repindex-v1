@@ -418,15 +418,18 @@ export async function process(
     metadata: skillOut.metadata,
     intent: parsed.intent,
     entities: parsed.entities,
-    period_from: parsed.temporal.from,
-    period_to: parsed.temporal.to,
+    // Prefer the skill's effective window (skills may override `from`/`to`
+    // to reflect the REQUESTED window — e.g. sectorRanking uses Q1 full
+    // range for SQL bounds even when reconcileWindow narrowed it).
+    period_from: skillOut.datapack?.temporal?.from ?? parsed.temporal.from,
+    period_to: skillOut.datapack?.temporal?.to ?? parsed.temporal.to,
     models_used: parsed.models,
     data_count: skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0,
     methodology: {
       hasRixData: (skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0) > 0,
       modelsUsed: parsed.models,
-      periodFrom: parsed.temporal.from,
-      periodTo: parsed.temporal.to,
+      periodFrom: skillOut.datapack?.temporal?.from ?? parsed.temporal.from,
+      periodTo: skillOut.datapack?.temporal?.to ?? parsed.temporal.to,
       observationsCount: skillOut.metadata?.observations_count ?? skillOut.datapack?.raw_rows?.length ?? 0,
       divergenceLevel: skillOut.metadata?.divergence_level,
       divergencePoints: skillOut.metadata?.divergence_points,
