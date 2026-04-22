@@ -748,6 +748,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       depth_level: options?.depthLevel || sessionDepthLevel,
     });
 
+    // Step 3 — declared outside try so the finally block can clear the v2
+    // safety timeout regardless of where the failure happened.
+    let v2AbortTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
       const timeoutMs = getTimeoutForRequest(options?.depthLevel || sessionDepthLevel);
