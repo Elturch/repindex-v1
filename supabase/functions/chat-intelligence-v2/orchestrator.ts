@@ -237,6 +237,22 @@ export async function process(
         ];
         console.info(`[RIX-V2][orch] inherited entity from previous turn (text-inferred): ${inferred.ticker} (${inferred.company_name})`);
         if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+      } else {
+        // Last-resort fallback: resolve entity from last assistant message text directly.
+        const lastAssistant = [...history].reverse().find((m) => m?.role === "assistant" && m?.content);
+        if (lastAssistant?.content) {
+          const entityMatch = await resolveEntity(String(lastAssistant.content).substring(0, 200), supabase);
+          if (entityMatch && entityMatch.ticker !== "N/A") {
+            parsed.entities = [{ ...entityMatch, source: "inherited" }];
+            parsed.inherited_context = {
+              ticker: entityMatch.ticker,
+              company_name: entityMatch.company_name,
+              sector_category: entityMatch.sector_category ?? null,
+            };
+            console.log(`${logPrefix} inherited entity from assistant text fallback: ${entityMatch.ticker}`);
+            if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+          }
+        }
       }
     }
   }
