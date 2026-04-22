@@ -344,7 +344,7 @@ export interface ReportContext {
 }
 
 export interface MessageMetadata {
-  type?: 'standard' | 'enriched';
+  type?: 'standard' | 'enriched' | 'guard_rejection';
   companyName?: string;
   documentsFound?: number;
   structuredDataFound?: number;
@@ -358,6 +358,8 @@ export interface MessageMetadata {
   verifiedSources?: VerifiedSource[];
   // Report context for InfoBar
   reportContext?: ReportContext;
+  // Phase 4 — UX: guard rejection sub-type for visual differentiation.
+  guardKind?: 'off_topic' | 'predictive' | 'out_of_scope' | 'no_data' | 'greeting' | 'generic';
 }
 
 export interface Message {
