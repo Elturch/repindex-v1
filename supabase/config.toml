@@ -15,6 +15,9 @@ verify_jwt = false
 [functions.chat-intelligence]
 verify_jwt = false
 
+[functions.chat-intelligence-v2]
+verify_jwt = false
+
 [functions.generate-news-story]
 verify_jwt = false
 
