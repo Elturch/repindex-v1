@@ -15,7 +15,7 @@ import type {
   SkillOutput,
 } from "./types.ts";
 import { classifyIntent } from "./parsers/intentClassifier.ts";
-import { resolveEntity } from "./parsers/entityResolver.ts";
+import { resolveEntity, resolveMultipleEntities } from "./parsers/entityResolver.ts";
 import { parseTemporal, inferMode } from "./parsers/temporalParser.ts";
 import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
@@ -148,9 +148,22 @@ export async function process(
 
   // 1. Parsers (real)
   const intent = classifyIntent(question);
-  const entity = await resolveEntity(question, supabase);
-  const entities: ResolvedEntity[] = entity ? [entity] : [];
-  const temporal: ResolvedTemporal = await parseTemporal(question, supabase, entity?.ticker ?? null);
+  // Entity resolution depends on intent:
+  //  • sector_ranking  → no specific entity (skill aggregates everything).
+  //  • comparison      → resolve multiple entities.
+  //  • everything else → single entity.
+  let entities: ResolvedEntity[] = [];
+  if (intent === "sector_ranking") {
+    // Skip: the skill builds its own scope from the question.
+    entities = [];
+  } else if (intent === "comparison") {
+    entities = await resolveMultipleEntities(question, supabase);
+  } else {
+    const single = await resolveEntity(question, supabase);
+    if (single) entities = [single];
+  }
+  const primaryTicker = entities[0]?.ticker ?? null;
+  const temporal: ResolvedTemporal = await parseTemporal(question, supabase, primaryTicker);
   const explicitModels = parseModels(question);
   const models = explicitModels.length > 0 ? explicitModels : allModels();
   const mode = inferMode(temporal);
@@ -199,11 +212,16 @@ export async function process(
   }
 
   // 4-5. Guards
+  // scopeGuard only makes sense when we actually expected to resolve a single
+  // company. For sector_ranking we have no entity by design; for comparison
+  // we accept N>=1 (the skill will reply gracefully if N<2).
   const guardChain: Array<[string, () => { pass: boolean; reply?: string; warnings?: string[] }]> = [
     ["inputGuard", () => checkInput(question)],
-    ["scopeGuard", () => checkScope(parsed.entities[0] ?? null, question)],
-    ["temporalGuard", () => checkTemporal(parsed.temporal, question)],
   ];
+  if (parsed.intent !== "sector_ranking" && parsed.intent !== "comparison") {
+    guardChain.push(["scopeGuard", () => checkScope(parsed.entities[0] ?? null, question)]);
+  }
+  guardChain.push(["temporalGuard", () => checkTemporal(parsed.temporal, question)]);
   const collectedWarnings: string[] = [];
   for (const [name, run] of guardChain) {
     const res = run();

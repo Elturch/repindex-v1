@@ -134,4 +134,53 @@ export async function resolveEntity(
   return null;
 }
 
+/**
+ * Resolve multiple entities mentioned in a single question (used by
+ * `comparison` intent). Strategy:
+ *  1. Split the question on common comparison connectors ("vs", "versus",
+ *     "frente a", "contra", "y", ",") and try resolveEntity on each chunk.
+ *  2. Also run resolveEntity on the full question to catch the first hit.
+ *  3. Deduplicate by ticker, preserve order, return up to `max` matches.
+ */
+export async function resolveMultipleEntities(
+  question: string,
+  supabase: any,
+  max = 4,
+): Promise<ResolvedEntity[]> {
+  if (!question || !question.trim()) return [];
+  const out: ResolvedEntity[] = [];
+  const seen = new Set<string>();
+  const push = (e: ResolvedEntity | null) => {
+    if (!e || !e.ticker || e.ticker === "N/A") return;
+    const key = e.ticker.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(e);
+  };
+
+  // (a) Split on comparison connectors and resolve each chunk.
+  const chunks = question
+    .split(/\b(?:vs\.?|versus|frente\s+a|contra|compara(?:r|me)?|comparar|y)\b|,/gi)
+    .map((c) => c.trim())
+    .filter((c) => c.length >= 2);
+
+  for (const chunk of chunks) {
+    if (out.length >= max) break;
+    try {
+      const e = await resolveEntity(chunk, supabase);
+      push(e);
+    } catch (_) { /* noop */ }
+  }
+
+  // (b) Fallback: try the full question (covers single-entity edge cases).
+  if (out.length < max) {
+    try {
+      const e = await resolveEntity(question, supabase);
+      push(e);
+    } catch (_) { /* noop */ }
+  }
+
+  return out.slice(0, max);
+}
+
 export const __test__ = { loadCatalog, semanticBridge };
