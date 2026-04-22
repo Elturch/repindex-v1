@@ -26,6 +26,7 @@ import {
   buildCompetitiveContext,
   renderCompetitiveContextTable,
 } from "../datapack/competitiveContext.ts";
+import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
@@ -75,12 +76,23 @@ export function composePrompt(
 
 /** Render the user message: question + pre-rendered tables + raw evidence. */
 function buildUserMessage(question: string, datapack: DataPack): string {
+  // PROBLEMA 3 — surface requested-vs-available distinction so the LLM can
+  // (and the user sees) the difference between the period asked for and the
+  // period actually covered by data in BD.
+  const requestedFrom = datapack.temporal.requested_from ?? datapack.temporal.from;
+  const requestedTo = datapack.temporal.requested_to ?? datapack.temporal.to;
+  const periodLine = (requestedFrom !== datapack.temporal.from || requestedTo !== datapack.temporal.to)
+    ? [
+        `PERÍODO SOLICITADO: ${requestedFrom} → ${requestedTo} (lo que pidió el usuario)`,
+        `DATOS DISPONIBLES: ${datapack.temporal.from} → ${datapack.temporal.to} (${datapack.temporal.snapshots_available} semanas con observaciones)`,
+      ].join("\n")
+    : `PERÍODO: ${datapack.temporal.from} → ${datapack.temporal.to} (${datapack.temporal.snapshots_available} semanas)`;
   const head = [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
     `EMPRESA: ${datapack.entity.company_name} (${datapack.entity.ticker})`,
     `SECTOR: ${datapack.entity.sector_category ?? "n/d"}`,
-    `PERÍODO: ${datapack.temporal.from} → ${datapack.temporal.to} (${datapack.temporal.snapshots_available} semanas)`,
+    periodLine,
     `MODELOS CON DATOS: ${datapack.models_coverage.with_data.join(", ") || "(ninguno)"}`,
     `MODELOS SIN DATOS: ${datapack.models_coverage.missing.join(", ") || "(ninguno)"}`,
     "",
@@ -91,14 +103,20 @@ function buildUserMessage(question: string, datapack: DataPack): string {
       "TABLAS PRE-RENDERIZADAS (inclúyelas LITERALMENTE en las secciones indicadas, NO las regeneres):",
       "",
       "ESTRUCTURA OBLIGATORIA DEL INFORME (8 secciones, en este orden EXACTO):",
-      "## 1. Contexto General — narrativa breve (3-4 frases) sobre el período y la empresa.",
-      "## 2. Tabla de KPIs — inserta literalmente la tabla [KPI_TABLE].",
-      "## 3. Visión por Modelo de IA — inserta literalmente la tabla [MODEL_BREAKDOWN_TABLE] + 1 párrafo interpretativo.",
-      "## 4. Evolución Temporal — inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE] + 1 párrafo de tendencia.",
-      "## 5. Contexto Competitivo — inserta literalmente la tabla [COMPETITIVE_TABLE] + 1 párrafo de posicionamiento.",
-      "## 6. Análisis de Métricas — narrativa por dimensión (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM) explicando fortalezas y debilidades.",
-      "## 7. Recomendaciones — inserta literalmente el bloque [RECOMMENDATIONS_BLOCK].",
-      "## 8. Ficha Metodológica — período, modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
+      "REGLA TRANSVERSAL DE NARRATIVA (PROBLEMA 6): cada sección que contenga una tabla DEBE seguir el patrón:",
+      "(1) párrafo interpretativo ANTES de la tabla (2-3 frases que adelanten lo más relevante),",
+      "(2) la tabla pre-renderizada copiada LITERALMENTE,",
+      "(3) párrafo de conclusión DESPUÉS de la tabla (1-2 frases con la implicación).",
+      "Nunca pegues una tabla 'desnuda' sin narrativa antes y después.",
+      "",
+      "## 1. Contexto General — 4-5 frases que incluyan: (a) posición competitiva (ranking estimado dentro del sector si está disponible en el bloque competitivo), (b) un dato cuantitativo clave (ej. 'la mayor caída fue en SIM, de X a Y'), (c) frase de cierre temporal (ej. 'el período cierra con tendencia descendente tras abrir en un máximo de Z').",
+      "## 2. Tabla de KPIs — narrativa breve + tabla [KPI_TABLE] + conclusión (qué KPIs en verde, cuáles en rojo).",
+      "## 3. Visión por Modelo de IA — narrativa (qué modelos coinciden más / menos) + tabla [MODEL_BREAKDOWN_TABLE] + conclusión (implicación de la divergencia).",
+      "## 4. Evolución Temporal — narrativa de tendencia + tabla [TEMPORAL_EVOLUTION_TABLE] + conclusión (implicaciones).",
+      "## 5. Contexto Competitivo — narrativa de posicionamiento + tabla [COMPETITIVE_TABLE] + conclusión (oportunidades).",
+      "## 6. Análisis de Métricas — interpretación cualitativa OBLIGATORIA dimensión por dimensión. Para cada KPI crítico (rojo / amarillo): nombre canónico (NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM) + valor + lectura ejecutiva + recomendación específica con target numérico. Ejemplo: 'SIM (37.7) está en nivel crítico. Indica que las fuentes citadas son débiles. Acción: fortalecer presencia en medios Tier 1 y mejorar trazabilidad de datos financieros para llevar SIM por encima de 53.'",
+      "## 7. Recomendaciones — inserta literalmente el bloque [RECOMMENDATIONS_BLOCK]. Las recomendaciones DEBEN referenciar KPIs por nombre y dar targets numéricos (ej. 'llevar SIM de 37.7 a 53+').",
+      "## 8. Ficha Metodológica — período (declarando solicitado vs disponible si difieren), modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
       "",
       "BLOQUES PRE-RENDERIZADOS (cópialos tal cual donde corresponda):",
       "",
@@ -122,20 +140,26 @@ function buildUserMessage(question: string, datapack: DataPack): string {
 }
 
 function buildMetadata(datapack: DataPack, observations: number): ReportMetadata {
-  const ranges: number[] = [];
-  for (const m of datapack.metrics) {
-    const r = (m.max ?? 0) - (m.min ?? 0);
-    if (Number.isFinite(r)) ranges.push(r);
-  }
-  const avgRange = ranges.length ? ranges.reduce((a, b) => a + b, 0) / ranges.length : 0;
-  const divergence_level = avgRange < 10 ? "alto" : avgRange < 20 ? "medio" : "bajo";
+  // PROBLEMA 1 (regresión) — divergence inversion: previously low range
+  // returned "alto" which caused the FE Methodology Footer to render
+  // "No calculable" via the unknown fallback. Now we use the same canonical
+  // divergenceStats helper as section 8 so header / footer / FE all agree.
+  const div = computeDivergenceStats(datapack.raw_rows);
+  // Map to the EN enum the FE expects (low/medium/high). Skill metadata used
+  // to ship Spanish strings, which the FE silently mapped to "unknown" →
+  // "No calculable". The orchestrator does an additional ES→EN safety net
+  // (see orchestrator.ts methodology mapping) so any skill that still ships
+  // Spanish keeps working.
+  const divergence_level = div.models_count === 0
+    ? "unknown"
+    : div.level === "alta" ? "high" : div.level === "media" ? "medium" : "low";
   return {
     models_used: datapack.models_coverage.with_data.join(","),
     period_from: datapack.temporal.from,
     period_to: datapack.temporal.to,
     observations_count: observations,
     divergence_level,
-    divergence_points: Math.round(avgRange),
+    divergence_points: Math.round(div.sigma * 10) / 10,
     unique_companies: 1,
     unique_weeks: datapack.temporal.snapshots_available,
   };
