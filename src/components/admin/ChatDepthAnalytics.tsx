@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
-import { Rocket, Zap, Flame, FileText, Sparkles, Users, DollarSign, Hash } from 'lucide-react';
+import { Rocket, Zap, Flame, FileText, Sparkles, Users, DollarSign, Hash, ShieldAlert, Timer, AlertTriangle, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface DepthStat {
@@ -43,6 +43,234 @@ interface DepthAnalyticsData {
 interface ChatDepthAnalyticsProps {
   period: string;
 }
+
+// Phase 5 — Observabilidad. Métricas agregadas desde la edge function
+// admin-chat-observability (lee chat_logs + chat_guard_alerts).
+interface ObservabilityData {
+  period: string;
+  summary: {
+    total: number;
+    reports: number;
+    guard_rejections: number;
+    errors: number;
+    guard_ratio: number;
+    avg_duration_ms: number;
+    p50_duration_ms: number;
+    p95_duration_ms: number;
+  };
+  guard_breakdown: Record<string, number>;
+  model_usage: Record<string, number>;
+  recent_alerts: Array<{
+    window_start: string;
+    window_end: string;
+    total_queries: number;
+    guard_queries: number;
+    guard_ratio: number;
+    dominant_guard_type: string | null;
+    created_at: string;
+  }>;
+}
+
+function fmtMs(ms: number): string {
+  if (!ms || ms <= 0) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+const ChatObservabilitySection: React.FC<{ period: string }> = ({ period }) => {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<ObservabilityData | null>(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        // Map external period (24h/7d/30d) to the obs endpoint vocabulary.
+        const obsPeriod = period === '24h' ? '24h' : period === '30d' ? '30d' : '7d';
+        const resp = await fetch(
+          `https://jzkjykmrwisijiqlwuua.supabase.co/functions/v1/admin-chat-observability?period=${obsPeriod}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session?.session?.access_token || ''}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
+        if (resp.ok) {
+          const json = (await resp.json()) as ObservabilityData;
+          setData(json);
+        }
+      } catch (err) {
+        console.error('Error fetching chat observability:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [period]);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i} className="animate-pulse">
+            <CardContent className="pt-6 h-24 bg-muted/20" />
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (!data || data.summary.total === 0) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center text-sm text-muted-foreground">
+          Aún no hay consultas registradas en chat_logs para este período. Las nuevas consultas del Agente Rix se registrarán automáticamente.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { summary, guard_breakdown, model_usage, recent_alerts } = data;
+  const guardPct = (summary.guard_ratio * 100).toFixed(1);
+  const topModels = Object.entries(model_usage)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6);
+  const topGuards = Object.entries(guard_breakdown).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="space-y-4">
+      {/* Summary metric cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <Activity className="h-4 w-4" />
+              Total consultas
+            </div>
+            <div className="text-2xl font-bold">{summary.total}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {summary.reports} informes · {summary.errors} errores
+            </div>
+          </CardContent>
+        </Card>
+        <Card className={summary.guard_ratio > 0.5 ? 'border-amber-500/50' : ''}>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <ShieldAlert className="h-4 w-4" />
+              % Guards activados
+            </div>
+            <div className="text-2xl font-bold">{guardPct}%</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {summary.guard_rejections} de {summary.total}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <Timer className="h-4 w-4" />
+              Latencia media
+            </div>
+            <div className="text-2xl font-bold">{fmtMs(summary.avg_duration_ms)}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              p50 {fmtMs(summary.p50_duration_ms)} · p95 {fmtMs(summary.p95_duration_ms)}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className={recent_alerts.length > 0 ? 'border-amber-500/50' : ''}>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+              <AlertTriangle className="h-4 w-4" />
+              Alertas activas
+            </div>
+            <div className="text-2xl font-bold">{recent_alerts.length}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Últimas 24h
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Guard breakdown + model usage */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4" />
+              Desglose de guards
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topGuards.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Ningún guard activado en el período.</p>
+            ) : (
+              <div className="space-y-2">
+                {topGuards.map(([kind, count]) => (
+                  <div key={kind} className="flex justify-between items-center text-sm">
+                    <Badge variant="outline">{kind}</Badge>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Hash className="h-4 w-4" />
+              Frecuencia de modelos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topModels.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Sin datos de modelos en informes recientes.</p>
+            ) : (
+              <div className="space-y-2">
+                {topModels.map(([model, count]) => (
+                  <div key={model} className="flex justify-between items-center text-sm">
+                    <span>{model}</span>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent alerts */}
+      {recent_alerts.length > 0 && (
+        <Card className="border-amber-500/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-4 w-4" />
+              Alertas de guards (&gt;50% en 1h)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {recent_alerts.map((a, i) => (
+                <div key={i} className="text-xs flex justify-between items-center border-b pb-1 last:border-0">
+                  <div>
+                    <div className="font-medium">
+                      {(a.guard_ratio * 100).toFixed(1)}% — {a.guard_queries}/{a.total_queries} consultas
+                    </div>
+                    <div className="text-muted-foreground">
+                      Dominante: {a.dominant_guard_type ?? 'n/a'} · {new Date(a.created_at).toLocaleString('es-ES')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
 
 const DEPTH_CONFIG = {
   quick: { 
@@ -156,6 +384,9 @@ export const ChatDepthAnalytics: React.FC<ChatDepthAnalyticsProps> = ({ period }
 
   return (
     <div className="space-y-6">
+      {/* Phase 5 — Observabilidad: nueva sección en lo más alto */}
+      <ChatObservabilitySection period={period} />
+
       {/* Summary Cards - Main Depth Levels */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {['quick', 'complete', 'exhaustive'].map(level => {
