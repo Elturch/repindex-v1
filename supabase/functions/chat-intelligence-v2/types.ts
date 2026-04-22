@@ -78,6 +78,13 @@ export interface SkillInput {
   parsed: ParsedQuery;
   supabase: any;
   logPrefix: string;
+  /**
+   * Optional streaming callback. When provided, the skill MUST emit the LLM
+   * answer through this callback as it generates (token-by-token). The skill
+   * still returns the full text in datapack.pre_rendered_tables[0] so the
+   * orchestrator/test layer can use the non-streaming view.
+   */
+  onChunk?: (delta: string) => void;
 }
 
 export interface ReportMetadata {
