@@ -39,7 +39,7 @@ function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: numb
 }
 
 const RANKING_SELECT =
-  "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date";
+  "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from";
 
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
@@ -86,8 +86,8 @@ async function fetchRankingRows(
   let q = supabase
     .from("rix_runs_v2")
     .select(RANKING_SELECT)
-    .gte("batch_execution_date", fromISO)
-    .lte("batch_execution_date", toISO)
+    .gte("06_period_from", fromISO)
+    .lte("06_period_from", toISO)
     .not("09_rix_score", "is", null);
   // Resolve scope filter (sector OR ibex membership) → list of tickers.
   if ((sector && sector.trim().length > 0) || ibexOnly) {
@@ -96,21 +96,23 @@ async function fetchRankingRows(
       scopeQ = scopeQ.eq("sector_category", sector);
     }
     if (ibexOnly) {
-      // IBEX-35 membership lives in ibex_status / ibex_family_code.
-      scopeQ = scopeQ.eq("ibex_status", "IBEX-35");
+      // IBEX membership uses ibex_status='active' (130 active issuers).
+      scopeQ = scopeQ.eq("ibex_status", "active");
     }
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
     if (list.length > 0) q = q.in("05_ticker", list);
   }
   const all: any[] = [];
-  for (let p = 0; p < 5; p++) {
+  // 13 weeks × 130 issuers × 6 models ≈ 10k rows. Use 15 pages × 1000 = 15k cap.
+  for (let p = 0; p < 15; p++) {
     const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
     if (error) { console.error("[RIX-V2][sectorRanking]", error.message); break; }
     if (!data || data.length === 0) break;
     all.push(...data);
     if (data.length < 1000) break;
   }
+  console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"}`);
   return all;
 }
 
