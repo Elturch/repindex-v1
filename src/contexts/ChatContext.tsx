@@ -662,6 +662,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
     if (useStreaming) {
       setIsStreaming(true);
     }
+
+    // Phase 5 — Observabilidad. Track wall-clock duration + final response
+    // shape so we can log a single chat_logs row at the end of this turn.
+    const __obsStart = performance.now();
+    let __obsResponseType: "guard_rejection" | "report" | "error" = "report";
+    let __obsGuardType: string | null = null;
+    let __obsGuardReason: string | null = null;
+    let __obsModels: string[] | null = null;
+    let __obsIntent: string | null = null;
+    let __obsTicker: string | null = null;
+    let __obsError: string | null = null;
     
     // Start rotating loading messages — first one reflects the actual model count detected in the query.
     // PHASE 1.8 — Follow-up memory merge for the loader count.
