@@ -164,6 +164,9 @@ export const companyAnalysisSkill: Skill = {
     const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[companyAnalysis]`;
     console.log(`${tag} START | ticker=${parsed.entities[0]?.ticker ?? "n/a"} | mode=${parsed.mode}`);
+    console.log(
+      `${tag} temporal window before buildDataPack | from=${parsed.temporal.from} | to=${parsed.temporal.to} | requested=${parsed.temporal.requested_label}`,
+    );
 
     // 1. Build the real DataPack from Supabase
     let datapack;
