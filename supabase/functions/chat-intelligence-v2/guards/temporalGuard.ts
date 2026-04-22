@@ -15,8 +15,9 @@ const COVERAGE_WARNING_THRESHOLD = 0.85;
 // Example: "¿Cómo será la reputación de Iberdrola en 2026?" — even if 2026 has
 // past weeks, the question itself is forecast-oriented and must be rejected.
 const PREDICTIVE_PATTERNS: RegExp[] = [
-  // Spanish future tense ("será", "tendrá", "evolucionará", "se comportará"...)
-  /\b\w{3,}(r[áa]|r[ée](is|n)?|remos|r[áa]s|r[áa]n)\b/i,
+  // Spanish future tense — restricted to common reputation/forecast verbs to
+  // avoid false positives on past-tense or unrelated words.
+  /\b(ser[áa]n?|tendr[áa]n?|evolucionar[áa]n?|comportar[áa]n?|reaccionar[áa]n?|cambiar[áa]n?|mejorar[áa]n?|empeorar[áa]n?|subir[áa]n?|bajar[áa]n?|crecer[áa]n?|caer[áa]n?|terminar[áa]n?|acabar[áa]n?|pasar[áa]n?|ocurrir[áa]n?|suceder[áa]n?|llegar[áa]n?|alcanzar[áa]n?|superar[áa]n?)\b/i,
   // Explicit forecasting vocabulary
   /\b(predicci[óo]n|predice|predecir|pron[óo]stico|pronostic[ao]r?|forecast|proyecci[óo]n|proyect[ao]r?)\b/i,
   /\b(futuro|en el futuro|a futuro|de cara al futuro)\b/i,
