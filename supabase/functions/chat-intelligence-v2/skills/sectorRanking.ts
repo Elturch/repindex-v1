@@ -61,6 +61,7 @@ async function fetchRankingRows(
   fromISO: string,
   toISO: string,
   sector: string | null,
+  ibexOnly: boolean,
 ): Promise<any[]> {
   let q = supabase
     .from("rix_runs_v2")
@@ -68,13 +69,17 @@ async function fetchRankingRows(
     .gte("batch_execution_date", fromISO)
     .lte("batch_execution_date", toISO)
     .not("09_rix_score", "is", null);
-  if (sector && sector.trim().length > 0) {
-    // Join lógico vía repindex_root_issuers no disponible aquí: filtramos por
-    // tickers que pertenezcan al sector mediante una sub-consulta.
-    const { data: tks } = await supabase
-      .from("repindex_root_issuers")
-      .select("ticker")
-      .eq("sector_category", sector);
+  // Resolve scope filter (sector OR ibex membership) → list of tickers.
+  if ((sector && sector.trim().length > 0) || ibexOnly) {
+    let scopeQ = supabase.from("repindex_root_issuers").select("ticker");
+    if (sector && sector.trim().length > 0) {
+      scopeQ = scopeQ.eq("sector_category", sector);
+    }
+    if (ibexOnly) {
+      // IBEX-35 membership lives in ibex_status / ibex_family_code.
+      scopeQ = scopeQ.eq("ibex_status", "IBEX-35");
+    }
+    const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
     if (list.length > 0) q = q.in("05_ticker", list);
   }
@@ -181,10 +186,17 @@ export const sectorRankingSkill: Skill = {
     const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[sectorRanking]`;
     const sector = parsed.entities[0]?.sector_category ?? null;
-    const scopeLabel = sector ? `sector ${sector}` : "todas las empresas cubiertas";
-    const topN = 15;
+    // Detect IBEX hint directly from the raw question (sector_ranking has
+    // no resolved entity by design).
+    const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
+    // Detect explicit "top N" → cap N between 3 and 35.
+    const topMatch = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
+    const topN = topMatch ? Math.max(3, Math.min(35, parseInt(topMatch[1], 10))) : 15;
+    const scopeLabel = sector
+      ? `sector ${sector}`
+      : (ibexOnly ? "IBEX-35" : "todas las empresas cubiertas");
 
-    const rows = await fetchRankingRows(supabase, parsed.temporal.from, parsed.temporal.to, sector);
+    const rows = await fetchRankingRows(supabase, parsed.temporal.from, parsed.temporal.to, sector, ibexOnly);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0 ? renderRankingTable(ranking, models) : "_Sin datos para el período/alcance solicitado._";
