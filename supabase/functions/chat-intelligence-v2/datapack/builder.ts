@@ -32,26 +32,18 @@ const FULL_SELECT =
   "48_precio_accion, 06_period_from, 07_period_to, batch_execution_date, " +
   "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto";
 
-const MODEL_NAME_MAP: Record<string, ModelName> = {
-  chatgpt: "ChatGPT",
-  gpt: "ChatGPT",
-  openai: "ChatGPT",
-  perplexity: "Perplexity",
-  perp: "Perplexity",
-  gemini: "Gemini",
-  google: "Gemini",
-  deepseek: "DeepSeek",
-  grok: "Grok",
-  xai: "Grok",
-  qwen: "Qwen",
-  alibaba: "Qwen",
-};
+const MODEL_NAME_MAP: Array<[string, ModelName]> = [
+  ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
+  ["perplexity", "Perplexity"], ["perp", "Perplexity"],
+  ["gemini", "Gemini"], ["google", "Gemini"],
+  ["deepseek", "DeepSeek"],
+  ["grok", "Grok"], ["xai", "Grok"],
+  ["qwen", "Qwen"], ["alibaba", "Qwen"],
+];
 
 function normalizeModelName(raw: unknown): ModelName | null {
   const s = String(raw ?? "").toLowerCase().trim();
-  for (const [k, v] of Object.entries(MODEL_NAME_MAP)) {
-    if (s.includes(k)) return v;
-  }
+  for (const [k, v] of MODEL_NAME_MAP) if (s.includes(k)) return v;
   return null;
 }
 
