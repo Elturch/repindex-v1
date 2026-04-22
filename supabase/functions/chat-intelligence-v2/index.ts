@@ -69,6 +69,7 @@ serve(async (req: Request) => {
     const originalQuestion = (body?.originalQuestion || "").toString().trim();
     const effectiveQuestion = originalQuestion || question;
     const sessionId = (body?.session_id || body?.sessionId || "").toString().trim();
+    const conversationId = (body?.conversationId || body?.conversation_id || "").toString().trim();
     const conversationHistory: ConversationMessage[] = Array.isArray(body?.conversation_history)
       ? body.conversation_history
       : Array.isArray(body?.conversationHistory)
@@ -89,24 +90,49 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!,
     );
 
-    if (!previousContext?.entity && conversationHistory.length > 0 && shouldInheritFromHistory(question)) {
-      const inherited = inferEntityFromAssistantHistory(conversationHistory);
-      if (inherited?.entity) {
-        previousContext = {
-          ...(previousContext ?? {}),
-          entity: inherited.entity,
-          company_name: inherited.company_name ?? null,
-          ticker: inherited.ticker ?? null,
-          source: "history_assistant_regex",
-        };
-        console.log("[RIX-V2] inherited entity from history:", inherited.entity);
+    // FASE A — Hydrate previousContext from `user_conversations.last_report_context`
+    // when the FE didn't ship one (cold reload, conversation re-open from the
+    // sidebar). This replaces the legacy regex-over-assistant-text fallback.
+    if (!previousContext?.entity && (conversationId || sessionId)) {
+      try {
+        const lookup = supabase
+          .from("user_conversations")
+          .select("last_report_context")
+          .order("updated_at", { ascending: false })
+          .limit(1);
+        const { data: convRow } = conversationId
+          ? await lookup.eq("id", conversationId).maybeSingle()
+          : await lookup.eq("session_id", sessionId).maybeSingle();
+        const persisted = (convRow as any)?.last_report_context as
+          | { company?: string; ticker?: string; sector?: string; intent?: string;
+              period_from?: string; period_to?: string; models?: string[] }
+          | null;
+        if (persisted?.ticker || persisted?.company) {
+          previousContext = {
+            ...(previousContext ?? {}),
+            entity: persisted.ticker || persisted.company,
+            company_name: persisted.company ?? null,
+            ticker: persisted.ticker ?? null,
+            sector: persisted.sector ?? null,
+            models: persisted.models ?? null,
+            period: persisted.period_from && persisted.period_to
+              ? { from: persisted.period_from, to: persisted.period_to }
+              : null,
+            source: "user_conversations.last_report_context",
+          };
+          console.log("[RIX-V2] hydrated previousContext from user_conversations:", previousContext.entity);
+        }
+      } catch (lookupErr) {
+        console.warn("[RIX-V2] last_report_context lookup failed (non-fatal):", lookupErr);
       }
     }
 
     console.log("[RIX-V2] Request received", {
       sessionId,
+      conversationId: conversationId || null,
       history: conversationHistory.length,
       inheritedEntity: previousContext?.entity ?? null,
+      inheritedSource: previousContext?.source ?? null,
       question,
       originalQuestion: originalQuestion || null,
       effectiveQuestion,
