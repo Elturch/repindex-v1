@@ -64,6 +64,8 @@ serve(async (req: Request) => {
       : Array.isArray(body?.conversationHistory)
         ? body.conversationHistory
         : [];
+    const previousContext = body?.previousContext || null;
+    const isFollowup = body?.isFollowup === true;
 
     if (!question) {
       return new Response(JSON.stringify({ error: "Missing user question" }), {
@@ -105,7 +107,14 @@ serve(async (req: Request) => {
         };
 
         try {
-          const result = await orchestratorProcess(question, conversationHistory, supabase, onChunk);
+          const result = await orchestratorProcess(
+            question,
+            conversationHistory,
+            supabase,
+            previousContext,
+            isFollowup,
+            onChunk,
+          );
 
           // Final "done" event with metadata in the v1-compatible shape.
           controller.enqueue(sseEncode({
