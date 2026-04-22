@@ -1253,13 +1253,38 @@ export function ChatProvider({ children }: ChatProviderProps) {
           return prev;
         });
       }
-      
+
+      // Step 3 — automatic v1 fallback: if v2 was the failed attempt and we
+      // are NOT already in a fallback retry, warn the user and re-invoke
+      // sendMessage forcing v1. The toggle stays on v2 (UX requirement).
+      const shouldFallback =
+        getAgentVersion() === 'v2' && !forceV1FallbackRef.current;
+      if (shouldFallback) {
+        console.warn(
+          '[ChatContext] v2 failed, retrying with v1 fallback. Original error:',
+          error,
+        );
+        toast({
+          title: 'v2 falló, reintentando con v1...',
+          description:
+            error instanceof Error ? error.message : 'Error desconocido en v2',
+        });
+        forceV1FallbackRef.current = true;
+        try {
+          await sendMessage(question, options);
+        } finally {
+          forceV1FallbackRef.current = false;
+        }
+        return;
+      }
+
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error en el análisis",
-        variant: "destructive",
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Error en el análisis',
+        variant: 'destructive',
       });
     } finally {
+      if (v2AbortTimeout) clearTimeout(v2AbortTimeout);
       if (loadingIntervalRef.current) {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
