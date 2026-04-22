@@ -148,6 +148,8 @@ export default function ChatIntelligence() {
                 <ChatQueryGuide
                   language={language}
                   onSelectExample={handleSelectExample}
+                  onSendExample={(text) => sendMessage(text)}
+                  disabled={isLoading}
                 />
               )}
               <ChatInput

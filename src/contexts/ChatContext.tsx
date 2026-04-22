@@ -220,6 +220,59 @@ function buildLoadingMessages(modelCount: number): string[] {
 
 const DEFAULT_LOADING_MESSAGES = buildLoadingMessages(6);
 
+// Phase 4 — UX: detect short guard-rejection answers so the UI can render
+// them with a distinct icon/color. Heuristic-only (no backend contract change):
+// rejections are short, lack a reportContext and match well-known patterns
+// from the v1/v2 guards. If unsure we return null and the message is treated
+// as a normal assistant reply.
+const GUARD_PATTERNS: Array<{ kind: NonNullable<MessageMetadata["guardKind"]>; re: RegExp }> = [
+  { kind: 'predictive', re: /no\s+puedo\s+predecir|datos\s+futuros|solo\s+dispongo\s+de\s+datos\s+observados|no\s+dispongo\s+de\s+datos\s+futuros|prueba\s+con:\s*reputaci[oó]n\s+actual/i },
+  { kind: 'out_of_scope', re: /\u00e1mbito\s+espa[nñ]ol|cubre\s+exclusivamente\s+el\s+\u00e1mbito|no\s+encuentro\s+esa\s+empresa|empresa\s+matriz/i },
+  { kind: 'no_data', re: /no\s+hay\s+datos\s+disponibles\s+para\s+ese\s+per[ií]odo|datos\s+parciales:\s*solo\s+el/i },
+  { kind: 'greeting', re: /^\s*(hola|bienvenid[oa]|encantad[oa])/i },
+  { kind: 'off_topic', re: /solo\s+puedo\s+analizar\s+reputaci[oó]n|consulta\s+no\s+admitida|no\s+es\s+un\s+tema\s+que\s+pueda\s+analizar/i },
+];
+
+function detectGuardRejection(
+  content: string | undefined | null,
+  hasReportContext: boolean,
+): NonNullable<MessageMetadata["guardKind"]> | null {
+  if (!content) return null;
+  if (hasReportContext) return null;
+  const trimmed = content.trim();
+  if (trimmed.length === 0 || trimmed.length > 1200) return null;
+  for (const { kind, re } of GUARD_PATTERNS) {
+    if (re.test(trimmed)) return kind;
+  }
+  return null;
+}
+
+// Phase 4 — UX: short generic loader shown for the first ~600ms so users
+// don't see "Consultando 6 modelos de IA" for queries the guards will reject
+// in milliseconds (off-topic, future predictions, greetings, etc.).
+const INITIAL_LOADER_MESSAGE = "Analizando consulta…";
+const INITIAL_LOADER_DURATION_MS = 600;
+
+// Phase 4 — UX: persist sessionId across reloads so the user does not lose
+// the current conversation. Clearing or loading another one rotates the key.
+const SESSION_STORAGE_KEY = "repindex.chat.sessionId";
+function loadPersistedSessionId(): string {
+  if (typeof window === "undefined") return crypto.randomUUID();
+  try {
+    const existing = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (existing && /^[0-9a-f-]{36}$/i.test(existing)) return existing;
+  } catch {
+    // localStorage unavailable (SSR / privacy mode) — fall through.
+  }
+  const fresh = crypto.randomUUID();
+  try { window.localStorage.setItem(SESSION_STORAGE_KEY, fresh); } catch { /* noop */ }
+  return fresh;
+}
+function persistSessionId(id: string) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(SESSION_STORAGE_KEY, id); } catch { /* noop */ }
+}
+
 /**
  * Normalize text for compliance matching (mirrors backend logic):
  * lowercase, strip diacritics, collapse whitespace, normalize quotes.
@@ -318,7 +371,7 @@ export interface ReportContext {
 }
 
 export interface MessageMetadata {
-  type?: 'standard' | 'enriched';
+  type?: 'standard' | 'enriched' | 'guard_rejection';
   companyName?: string;
   documentsFound?: number;
   structuredDataFound?: number;
@@ -332,6 +385,8 @@ export interface MessageMetadata {
   verifiedSources?: VerifiedSource[];
   // Report context for InfoBar
   reportContext?: ReportContext;
+  // Phase 4 — UX: guard rejection sub-type for visual differentiation.
+  guardKind?: 'off_topic' | 'predictive' | 'out_of_scope' | 'no_data' | 'greeting' | 'generic';
 }
 
 export interface Message {
@@ -398,7 +453,7 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState<string>(() => loadPersistedSessionId());
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -410,6 +465,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isStarred, setIsStarred] = useState(false);
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const initialLoaderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // PHASE 1.8 — last successful query context for follow-up merging.
   const lastQueryContextRef = useRef<LastQueryContext | null>(null);
   // Capture the just-generated reportContext into the follow-up memory.
@@ -593,13 +649,20 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
       console.log(`[ChatContext] PHASE 1.8 follow-up active: loader count = ${detectedModelCount}`);
     }
+    // Phase 4 — UX: start with a generic "Analizando consulta…" so quick
+    // guard rejections never expose "Consultando 6 modelos de IA".
     const loadingMessages = buildLoadingMessages(detectedModelCount);
     let loadingIndex = 0;
-    setLoadingMessage(loadingMessages[0]);
-    loadingIntervalRef.current = setInterval(() => {
-      loadingIndex = (loadingIndex + 1) % loadingMessages.length;
-      setLoadingMessage(loadingMessages[loadingIndex]);
-    }, 15000); // Rotate every 15 seconds
+    setLoadingMessage(INITIAL_LOADER_MESSAGE);
+    if (initialLoaderTimeoutRef.current) clearTimeout(initialLoaderTimeoutRef.current);
+    initialLoaderTimeoutRef.current = setTimeout(() => {
+      // Escalate to the model-specific message + start the rotation.
+      setLoadingMessage(loadingMessages[0]);
+      loadingIntervalRef.current = setInterval(() => {
+        loadingIndex = (loadingIndex + 1) % loadingMessages.length;
+        setLoadingMessage(loadingMessages[loadingIndex]);
+      }, 15000);
+    }, INITIAL_LOADER_DURATION_MS);
 
     const userMessage: Message = {
       role: 'user',
@@ -799,13 +862,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = data.suggestedQuestions || [];
               lastMsg.drumrollQuestion = data.drumrollQuestion || null;
+              const reportCtxJson = data.metadata?.reportContext || undefined;
+              const guardKindJson = detectGuardRejection(lastMsg.content, !!reportCtxJson);
               lastMsg.metadata = {
-                type: data.metadata?.type || 'standard',
+                type: guardKindJson ? 'guard_rejection' : (data.metadata?.type || 'standard'),
+                guardKind: guardKindJson || undefined,
                 companyName: data.metadata?.companyName,
                 documentsFound: data.metadata?.documentsFound,
                 structuredDataFound: data.metadata?.structuredDataFound,
                 depthLevel: options?.depthLevel || sessionDepthLevel,
                 questionCategory: data.metadata?.questionCategory,
+                reportContext: reportCtxJson,
                 methodology: data.metadata?.methodology || {
                   hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
                   modelsUsed: data.metadata?.modelsUsed || [],
@@ -915,8 +982,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = suggestedQuestions;
               lastMsg.drumrollQuestion = drumrollQuestion;
+              const reportCtx = finalMetadata?.reportContext || undefined;
+              const guardKind = detectGuardRejection(lastMsg.content, !!reportCtx);
               lastMsg.metadata = {
-                type: finalMetadata?.type || 'standard',
+                type: guardKind ? 'guard_rejection' : (finalMetadata?.type || 'standard'),
+                guardKind: guardKind || undefined,
                 companyName: finalMetadata?.companyName,
                 documentsFound: finalMetadata?.documentsFound,
                 structuredDataFound: finalMetadata?.structuredDataFound,
@@ -925,7 +995,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
                 // Report context for InfoBar
-                reportContext: finalMetadata?.reportContext || undefined,
+                reportContext: reportCtx,
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: finalMetadata?.methodology || {
                   hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
@@ -978,20 +1048,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         if (error) throw error;
 
+        const reportCtxNs = data.metadata?.reportContext || undefined;
+        const guardKindNs = detectGuardRejection(data.answer, !!reportCtxNs);
         const assistantMessage: Message = {
           role: 'assistant',
           content: data.answer,
           suggestedQuestions: data.suggestedQuestions,
           drumrollQuestion: data.drumrollQuestion,
           metadata: {
-            type: data.metadata?.type || 'standard',
+            type: guardKindNs ? 'guard_rejection' : (data.metadata?.type || 'standard'),
+            guardKind: guardKindNs || undefined,
             companyName: data.metadata?.companyName,
             documentsFound: data.metadata?.documentsFound,
             structuredDataFound: data.metadata?.structuredDataFound,
             depthLevel: options?.depthLevel || sessionDepthLevel,
             questionCategory: data.metadata?.questionCategory,
             verifiedSources: data.metadata?.verifiedSources,
-            reportContext: data.metadata?.reportContext || undefined,
+            reportContext: reportCtxNs,
             methodology: data.metadata?.methodology || {
               hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
               modelsUsed: data.metadata?.modelsUsed || [],
@@ -1049,6 +1122,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       if (loadingIntervalRef.current) {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
+      }
+      if (initialLoaderTimeoutRef.current) {
+        clearTimeout(initialLoaderTimeoutRef.current);
+        initialLoaderTimeoutRef.current = null;
       }
       setIsLoading(false);
       setIsStreaming(false);
@@ -1158,8 +1235,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [messages, sessionId, toast, currentUserId, language]);
 
   const clearConversation = useCallback(() => {
+    // Phase 4 — UX: tear down any pending loaders so the new conversation
+    // doesn't inherit a stale "Consultando…" state.
+    if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
+    if (initialLoaderTimeoutRef.current) { clearTimeout(initialLoaderTimeoutRef.current); initialLoaderTimeoutRef.current = null; }
+    setIsLoading(false);
+    setIsStreaming(false);
+    setLoadingMessage(DEFAULT_LOADING_MESSAGES[0]);
+
     setMessages([]);
-    setSessionId(crypto.randomUUID());
+    const fresh = crypto.randomUUID();
+    persistSessionId(fresh);
+    setSessionId(fresh);
     setConversationId(null);
     setIsStarred(false);
     setIsLoadingHistory(false);
@@ -1173,6 +1260,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [toast]);
 
   const loadConversation = useCallback((newSessionId: string) => {
+    if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
+    if (initialLoaderTimeoutRef.current) { clearTimeout(initialLoaderTimeoutRef.current); initialLoaderTimeoutRef.current = null; }
+    setIsLoading(false);
+    setIsStreaming(false);
+    persistSessionId(newSessionId);
     setSessionId(newSessionId as `${string}-${string}-${string}-${string}-${string}`);
     setMessages([]);
     setConversationId(null);

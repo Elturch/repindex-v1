@@ -10,7 +10,7 @@ import { ReportInfoBar } from "./ReportInfoBar";
 import { MethodologyFooter } from "./MethodologyFooter";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, RefreshCw, Loader2, Theater, Download } from "lucide-react";
+import { Sparkles, RefreshCw, Loader2, Theater, Download, ShieldAlert } from "lucide-react";
 import { Message } from "@/contexts/ChatContext";
 import { useVectorStoreStatus } from "@/hooks/useVectorStoreStatus";
 import { useSmartSuggestions } from "@/hooks/useSmartSuggestions";
@@ -213,9 +213,29 @@ export function ChatMessages({
               className={`relative ${compact ? 'max-w-[90%]' : 'max-w-[85%]'} rounded-lg ${compact ? 'p-3' : 'p-4'} ${
                 message.role === 'user'
                   ? 'bg-primary text-primary-foreground'
-                  : 'bg-card border border-border'
+                  : message.metadata?.type === 'guard_rejection'
+                    ? 'bg-amber-500/10 border border-amber-500/40 text-foreground'
+                    : 'bg-card border border-border'
               }`}
             >
+              {/* Guard rejection badge */}
+              {message.role === 'assistant' && message.metadata?.type === 'guard_rejection' && (
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-amber-500/30">
+                  <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+                  <Badge variant="outline" className="text-[10px] border-amber-500/50 text-amber-700 bg-amber-500/5">
+                    {(() => {
+                      switch (message.metadata.guardKind) {
+                        case 'predictive': return tr.guardPredictive || 'Consulta predictiva';
+                        case 'out_of_scope': return tr.guardOutOfScope || 'Fuera de cobertura';
+                        case 'no_data': return tr.guardNoData || 'Sin datos disponibles';
+                        case 'greeting': return tr.guardGreeting || 'Bienvenida';
+                        case 'off_topic': return tr.guardOffTopic || 'Tema fuera de alcance';
+                        default: return tr.guardGeneric || 'Consulta no admitida';
+                      }
+                    })()}
+                  </Badge>
+                </div>
+              )}
 
               {/* Enriched response badge */}
               {message.metadata?.type === 'enriched' && message.metadata?.enrichedFromRole && (

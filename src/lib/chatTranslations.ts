@@ -108,6 +108,14 @@ export interface ChatUITranslations {
   
   // Suggested questions
   suggestedQuestionsLabel: string;
+
+  // Phase 4 — Guard rejection badges (optional, fallback in UI)
+  guardPredictive?: string;
+  guardOutOfScope?: string;
+  guardNoData?: string;
+  guardGreeting?: string;
+  guardOffTopic?: string;
+  guardGeneric?: string;
 }
 
 const translations: Record<string, ChatUITranslations> = {
