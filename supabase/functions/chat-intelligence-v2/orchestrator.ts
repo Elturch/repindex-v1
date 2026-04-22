@@ -209,7 +209,9 @@ export async function process(
     const res = run();
     if (!res.pass) {
       console.log(`${logPrefix} rejected by ${name}`);
-      return { type: "guard_rejection", content: res.reply ?? "Consulta no admitida." };
+      const reply = res.reply ?? "Consulta no admitida.";
+      try { onChunk?.(reply); } catch (_) { /* noop */ }
+      return { type: "guard_rejection", content: reply };
     }
     if (res.warnings && res.warnings.length > 0) {
       collectedWarnings.push(...res.warnings);
@@ -220,7 +222,9 @@ export async function process(
   // 6-8. Skill dispatch
   const skill = selectSkill(parsed.intent);
   if (!skill) {
-    return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
+    const reply = `No hay skill registrada para intent=${parsed.intent}`;
+    try { onChunk?.(reply); } catch (_) { /* noop */ }
+    return { type: "guard_rejection", content: reply };
   }
   console.log(`${logPrefix} dispatching | intent=${parsed.intent} | skill=${skill.name}`);
   const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk });
