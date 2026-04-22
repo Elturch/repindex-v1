@@ -157,6 +157,8 @@ export async function process(
   question: string,
   history: ConversationMessage[],
   supabase: any,
+  previousContext?: any,
+  isFollowup?: boolean,
   onChunk?: (delta: string) => void,
 ): Promise<OrchestratorResponse> {
   const logPrefix = "[RIX-V2][orch]";
@@ -193,7 +195,7 @@ export async function process(
     models,
     mode,
     raw_question: question,
-    is_followup: history.length > 0,
+    is_followup: isFollowup === true || history.length > 0,
   };
 
   // 2b. Intent priority override: if a single concrete entity is resolved,
@@ -219,6 +221,15 @@ export async function process(
   // (regardless of intent). This covers follow-ups like "expandir el
   // informe" where v1's Phase 1.18 logic was missing in v2.
   if (parsed.entities.length === 0 && history && history.length > 0) {
+    if (isFollowup && parsed.entities.length === 0 && previousContext?.entity) {
+      const prevEntity = await resolveEntity(previousContext.entity, supabase);
+      if (prevEntity && prevEntity.ticker !== "N/A") {
+        parsed.entities = [prevEntity];
+        parsed.inherited_context = { ticker: prevEntity.ticker, company_name: prevEntity.company_name };
+        console.log(`${logPrefix} inherited entity from FE previousContext: ${prevEntity.ticker}`);
+        if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+      }
+    }
     const prev = extractPreviousContext(history);
     if (prev) {
       parsed.inherited_context = prev;
