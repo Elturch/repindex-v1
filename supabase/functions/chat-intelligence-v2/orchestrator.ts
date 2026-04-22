@@ -176,7 +176,7 @@ export async function process(
   const guardChain: Array<[string, () => { pass: boolean; reply?: string; warnings?: string[] }]> = [
     ["inputGuard", () => checkInput(question)],
     ["scopeGuard", () => checkScope(parsed.entities[0] ?? null, question)],
-    ["temporalGuard", () => checkTemporal(parsed.temporal)],
+    ["temporalGuard", () => checkTemporal(parsed.temporal, question)],
   ];
   const collectedWarnings: string[] = [];
   for (const [name, run] of guardChain) {
