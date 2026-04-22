@@ -150,9 +150,17 @@ export async function process(
   onChunk?: (delta: string) => void,
   previousContext?: any,
   isFollowup?: boolean,
+  normalizedQuestion?: string,
 ): Promise<OrchestratorResponse> {
   const logPrefix = "[RIX-V2][orch]";
-  console.log(`${logPrefix} processing | q="${question.slice(0, 80)}" | history=${history?.length ?? 0}`);
+  // FASE C — `question` is ALWAYS effectiveQuestion (originalQuestion ?? normalizedQuestion).
+  // index.ts guarantees this. Every parser/skill below uses `question` exclusively;
+  // `normalizedQuestion` is forwarded only for display/logging.
+  const effectiveQuestion = question;
+  const displayQuestion = (normalizedQuestion && normalizedQuestion.trim().length > 0)
+    ? normalizedQuestion
+    : question;
+  console.log(`${logPrefix} processing | effective="${effectiveQuestion.slice(0, 80)}" | normalized="${displayQuestion.slice(0, 80)}" | history=${history?.length ?? 0}`);
 
   // 1. Parsers (real)
   let intent = classifyIntent(question);
