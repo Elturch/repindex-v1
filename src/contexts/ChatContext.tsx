@@ -1048,20 +1048,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
         if (error) throw error;
 
+        const reportCtxNs = data.metadata?.reportContext || undefined;
+        const guardKindNs = detectGuardRejection(data.answer, !!reportCtxNs);
         const assistantMessage: Message = {
           role: 'assistant',
           content: data.answer,
           suggestedQuestions: data.suggestedQuestions,
           drumrollQuestion: data.drumrollQuestion,
           metadata: {
-            type: data.metadata?.type || 'standard',
+            type: guardKindNs ? 'guard_rejection' : (data.metadata?.type || 'standard'),
+            guardKind: guardKindNs || undefined,
             companyName: data.metadata?.companyName,
             documentsFound: data.metadata?.documentsFound,
             structuredDataFound: data.metadata?.structuredDataFound,
             depthLevel: options?.depthLevel || sessionDepthLevel,
             questionCategory: data.metadata?.questionCategory,
             verifiedSources: data.metadata?.verifiedSources,
-            reportContext: data.metadata?.reportContext || undefined,
+            reportContext: reportCtxNs,
             methodology: data.metadata?.methodology || {
               hasRixData: (data.metadata?.structuredDataFound || 0) > 0,
               modelsUsed: data.metadata?.modelsUsed || [],
