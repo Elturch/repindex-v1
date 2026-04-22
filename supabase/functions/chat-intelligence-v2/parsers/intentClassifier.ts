@@ -58,11 +58,18 @@ export function classifyIntent(question: string): Intent {
 
   if (COMPARISON_RE.test(raw) && approxEntityCount(raw) >= 2) return "comparison";
 
-  if (RANKING_RE.test(raw) && (SECTOR_HINT_RE.test(raw) || /\bibex/i.test(raw))) {
+  // ── Ranking branch ────────────────────────────────────────────────
+  // If "ranking" appears WITH explicit AI-model names (Grok, Perplexity…)
+  // AND a company/sector hint, it is actually a model-divergence query
+  // ("which model rates X higher?"), NOT a sector ranking. Demote.
+  if (RANKING_RE.test(raw)) {
+    const mentionsModels = MODEL_NAMES_RE.test(raw);
+    const hasCompanyOrGroup = approxEntityCount(raw) >= 1 || SECTOR_HINT_RE.test(raw);
+    if (mentionsModels && hasCompanyOrGroup) return "model_divergence";
+    if (SECTOR_HINT_RE.test(raw) || /\bibex/i.test(raw)) return "sector_ranking";
+    // "ranking" alone (no sector, no company) → default sector ranking.
     return "sector_ranking";
   }
-  // "ranking" alone (without explicit sector) still defaults to sector_ranking
-  if (RANKING_RE.test(raw)) return "sector_ranking";
 
   if (DIVERGENCE_RE.test(lower)) return "model_divergence";
 
