@@ -978,8 +978,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = suggestedQuestions;
               lastMsg.drumrollQuestion = drumrollQuestion;
+              const reportCtx = finalMetadata?.reportContext || undefined;
+              const guardKind = detectGuardRejection(lastMsg.content, !!reportCtx);
               lastMsg.metadata = {
-                type: finalMetadata?.type || 'standard',
+                type: guardKind ? 'guard_rejection' : (finalMetadata?.type || 'standard'),
+                guardKind: guardKind || undefined,
                 companyName: finalMetadata?.companyName,
                 documentsFound: finalMetadata?.documentsFound,
                 structuredDataFound: finalMetadata?.structuredDataFound,
@@ -988,7 +991,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                 // Verified sources from ChatGPT and Perplexity for bibliography
                 verifiedSources: finalMetadata?.verifiedSources,
                 // Report context for InfoBar
-                reportContext: finalMetadata?.reportContext || undefined,
+                reportContext: reportCtx,
                 // Methodology metadata for "Radar Reputacional" validation sheet
                 methodology: finalMetadata?.methodology || {
                   hasRixData: (finalMetadata?.structuredDataFound || 0) > 0,
