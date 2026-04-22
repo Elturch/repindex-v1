@@ -293,18 +293,29 @@ function buildUserMessageWithAssembler(
   ].join("\n");
 }
 
-function buildMetadata(rows: RankingRow[], fromISO: string, toISO: string, models: ModelName[]): ReportMetadata {
-  const rixs = rows.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
+function buildMetadata(
+  ranking: RankingRow[],
+  rawRows: any[],
+  fromISO: string,
+  toISO: string,
+  models: ModelName[],
+): ReportMetadata {
+  const rixs = ranking.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
   const range = rixs.length ? Math.max(...rixs) - Math.min(...rixs) : 0;
+  const uniqueWeeks = new Set(
+    rawRows.map((r) => String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10)).filter(Boolean),
+  ).size;
+  const uniqueCompanies = new Set(rawRows.map((r) => r["05_ticker"]).filter(Boolean)).size;
   return {
     models_used: models.join(","),
     period_from: fromISO,
     period_to: toISO,
-    observations_count: rows.reduce((a, r) => a + r.obs, 0),
+    // BLOQUE 2 fix: single source of truth = full SQL result count.
+    observations_count: rawRows.length,
     divergence_level: range < 10 ? "bajo" : range < 25 ? "medio" : "alto",
     divergence_points: Math.round(range),
-    unique_companies: rows.length,
-    unique_weeks: 0,
+    unique_companies: uniqueCompanies || ranking.length,
+    unique_weeks: uniqueWeeks,
   };
 }
 
@@ -357,7 +368,7 @@ export const sectorRankingSkill: Skill = {
       return {
         datapack: { ...datapack, pre_rendered_tables: [fallback] },
         prompt_modules: modules,
-        metadata: buildMetadata([], sqlFrom, sqlTo, models),
+        metadata: buildMetadata([], rows, sqlFrom, sqlTo, models),
       };
     }
 
@@ -371,6 +382,7 @@ export const sectorRankingSkill: Skill = {
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
     ].filter(Boolean).join("\n\n");
 
+    const competitiveContext = await buildCompetitiveContextBlock(supabase, ranking);
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
@@ -380,6 +392,7 @@ export const sectorRankingSkill: Skill = {
       sqlFrom,
       sqlTo,
       models,
+      competitiveContext,
     );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
@@ -397,7 +410,7 @@ export const sectorRankingSkill: Skill = {
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
       prompt_modules: modules,
-      metadata: buildMetadata(ranking, sqlFrom, sqlTo, models),
+      metadata: buildMetadata(ranking, rows, sqlFrom, sqlTo, models),
     };
   },
 };
