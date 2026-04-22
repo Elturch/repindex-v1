@@ -439,6 +439,12 @@ export interface Message {
   metadata?: MessageMetadata;
   isStreaming?: boolean; // indicates if message is currently being streamed
   agentVersion?: AgentVersion; // which engine produced this message (preview only)
+  fallbackUsed?: boolean; // true when v2 failed and we fell back to v1
+  streamMetrics?: {
+    latencyMs: number | null; // TTFB: send → first chunk
+    totalMs: number;          // send → stream complete
+    chunksCount: number;      // SSE chunk count (0 for JSON responses)
+  };
 }
 
 interface PageContext {
