@@ -98,6 +98,7 @@ const TIMEOUT_MS = 60_000;
 async function runOneCase(
   baseUrl: string,
   authHeader: string | null,
+  apiKey: string | null,
   testCase: RegressionCase,
 ): Promise<CaseResult> {
   const errors: string[] = [];
@@ -112,6 +113,7 @@ async function runOneCase(
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (authHeader) headers["Authorization"] = authHeader;
+    if (apiKey) headers["apikey"] = apiKey;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     const res = await fetch(baseUrl, {
