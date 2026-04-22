@@ -200,6 +200,7 @@ export const comparisonSkill: Skill = {
 
     const modules = ["base", "antiHallucination", parsed.mode === "period" ? "periodMode" : "snapshotMode", "comparisonMode"];
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       parsed.mode === "period"
@@ -210,7 +211,7 @@ export const comparisonSkill: Skill = {
         weeksCount: parsed.temporal.snapshots_available,
         modelsWithData: commonModels,
       }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, table, aggs);
     const { fullText, error } = await streamOpenAIResponse({

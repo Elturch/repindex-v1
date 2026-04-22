@@ -190,6 +190,7 @@ export const periodEvolutionSkill: Skill = {
     const trend: string = Math.abs(delta) < 2 ? "estable" : delta > 0 ? "alcista" : "bajista";
 
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       buildPeriodRules({
@@ -201,7 +202,7 @@ export const periodEvolutionSkill: Skill = {
         fromISO: parsed.temporal.from, toISO: parsed.temporal.to,
         rixFirst, rixLast, trend, mostVolatile: "RIX",
       }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, entity.ticker, table, series);
     const { fullText, error } = await streamOpenAIResponse({

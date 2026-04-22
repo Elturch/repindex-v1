@@ -239,13 +239,14 @@ export const sectorRankingSkill: Skill = {
     }
 
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       parsed.mode === "period"
         ? buildPeriodRules({ fromISO: parsed.temporal.from, toISO: parsed.temporal.to, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
         : buildSnapshotRules({ weekFromISO: parsed.temporal.from, weekToISO: parsed.temporal.to }),
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, scopeLabel, table, ranking);
     const { fullText, error } = await streamOpenAIResponse({

@@ -203,13 +203,14 @@ export const modelDivergenceSkill: Skill = {
     }
 
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       buildDivergenceRules({
         ticker: entity.ticker, modelsCount: aggs.length, weeksCount: parsed.temporal.snapshots_available,
         sigmaRix, highestModel: top, lowestModel: bot,
       }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, entity.ticker, table, sigmaRix, top, bot);
     const { fullText, error } = await streamOpenAIResponse({
