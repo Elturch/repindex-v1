@@ -3,10 +3,9 @@
 // shared validators (NO duplicated logic). Max 300 LOC.
 import {
   resolveEntity as sharedResolveEntity,
-  fuzzyCompanyMatch,
   type CatalogEntry,
 } from "../../_shared/inputValidator.ts";
-import { fuzzyCompanyMatchSql } from "../../_shared/queryGuards.ts";
+import { fuzzyCompanyMatch, fuzzyCompanyMatchSql } from "../../_shared/queryGuards.ts";
 import type { ResolvedEntity } from "../types.ts";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000; // 5 min
