@@ -199,6 +199,31 @@ serve(async (req: Request) => {
             methodology: resultMeta.methodology ?? null,
           }));
 
+          // FASE A — persist structured context for the next turn. We write
+          // to user_conversations.last_report_context (JSONB). Best-effort:
+          // failures must never break the SSE stream.
+          if ((conversationId || sessionId) && (reportContext.ticker || reportContext.company)) {
+            try {
+              const updatePayload = {
+                last_report_context: reportContext,
+                last_message_at: new Date().toISOString(),
+              } as const;
+              const updater = supabase
+                .from("user_conversations")
+                .update(updatePayload);
+              const { error: updErr } = conversationId
+                ? await updater.eq("id", conversationId)
+                : await updater.eq("session_id", sessionId);
+              if (updErr) {
+                console.warn("[RIX-V2] last_report_context persist warning:", updErr.message);
+              } else {
+                console.log("[RIX-V2] persisted last_report_context for", conversationId || sessionId);
+              }
+            } catch (persistErr) {
+              console.warn("[RIX-V2] persist last_report_context failed (non-fatal):", persistErr);
+            }
+          }
+
           // Final "done" event with metadata in the v1-compatible shape.
           controller.enqueue(sseEncode({
             type: "done",
