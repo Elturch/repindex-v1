@@ -69,6 +69,7 @@ function avg(values: number[]): number | null {
 
 async function fetchEntity(supabase: any, ticker: string, fromISO: string, toISO: string): Promise<any[]> {
   const all: any[] = [];
+  console.log(`[RIX-V2][comparison] fetchEntity ticker=${ticker} from=${fromISO} to=${toISO}`);
   for (let p = 0; p < 3; p++) {
     const { data, error } = await supabase
       .from("rix_runs_v2")
@@ -82,6 +83,8 @@ async function fetchEntity(supabase: any, ticker: string, fromISO: string, toISO
     all.push(...data);
     if (data.length < 1000) break;
   }
+  const distinctModels = new Set(all.map((r) => r["02_model_name"]));
+  console.log(`[RIX-V2][comparison] fetchEntity ticker=${ticker} rows=${all.length} models=${[...distinctModels].join(",")}`);
   return all;
 }
 
