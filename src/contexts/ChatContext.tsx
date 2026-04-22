@@ -871,7 +871,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // the fallback rather than spinning forever. v1 keeps current behavior.
       const v2AbortController =
         effectiveAgentVersion === 'v2' ? new AbortController() : null;
-      const v2AbortTimeout = v2AbortController
+      v2AbortTimeoutId = v2AbortController
         ? setTimeout(() => v2AbortController.abort(), 90000)
         : null;
 
