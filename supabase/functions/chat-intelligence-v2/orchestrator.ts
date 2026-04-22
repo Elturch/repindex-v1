@@ -82,7 +82,7 @@ const stubSkill = (name: string, intents: Intent[]): Skill => ({
 });
 
 const SKILL_REGISTRY: Skill[] = [
-  stubSkill("companyAnalysis", ["company_analysis"]),
+  companyAnalysisSkill,
   stubSkill("sectorRanking", ["sector_ranking"]),
   stubSkill("comparison", ["comparison"]),
   stubSkill("modelDivergence", ["model_divergence"]),
