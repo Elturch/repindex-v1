@@ -438,6 +438,7 @@ export interface Message {
   drumrollQuestion?: DrumrollQuestion;
   metadata?: MessageMetadata;
   isStreaming?: boolean; // indicates if message is currently being streamed
+  agentVersion?: AgentVersion; // which engine produced this message (preview only)
 }
 
 interface PageContext {
@@ -841,7 +842,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
         : null;
 
-      const edgeFn = window.location.search.includes('agent=v2') ? 'chat-intelligence-v2' : 'chat-intelligence';
+      const activeAgentVersion = getAgentVersion();
+      const edgeFn = getEdgeFunctionName(activeAgentVersion);
 
       console.log('[FE-BE]', {
         query: normalizedQuestion,
@@ -849,6 +851,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         previousContext: previousContextPayload,
         isFollowupActive: followupActive,
         edgeFn,
+        agentVersion: activeAgentVersion,
       });
 
       if (useStreaming) {
@@ -861,6 +864,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: '',
           isStreaming: true,
+          agentVersion: activeAgentVersion,
         };
         setMessages(prev => [...prev, streamingMessage]);
 
