@@ -18,6 +18,9 @@ import { classifyIntent } from "./parsers/intentClassifier.ts";
 import { resolveEntity } from "./parsers/entityResolver.ts";
 import { parseTemporal, inferMode } from "./parsers/temporalParser.ts";
 import { parseModels, allModels } from "./parsers/modelParser.ts";
+import { checkInput } from "./guards/inputGuard.ts";
+import { checkScope } from "./guards/scopeGuard.ts";
+import { checkTemporal } from "./guards/temporalGuard.ts";
 
 function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -27,21 +30,7 @@ function extractPreviousContext(history: ConversationMessage[]): PreviousContext
   return undefined;
 }
 
-// ---------- Guard stubs ----------
-function inputGuard(question: string): string | null {
-  if (!question || question.length < 2) return "Pregunta vacia o demasiado corta.";
-  return null;
-}
-function scopeGuard(parsed: ParsedQuery): string | null {
-  // Real check delegated to next phase; here we only flag obvious out-of-scope intent.
-  if (parsed.intent === "out_of_scope") {
-    return "Esta consulta queda fuera del ambito del Agente Rix (empresas cotizadas espanolas y reputacion algoritmica).";
-  }
-  return null;
-}
-function temporalGuardCheck(_parsed: ParsedQuery): string | null {
-  return null;
-}
+// Guards moved to ./guards/* (real implementations).
 
 // ---------- Skill registry (stubs, real skills land in skills/ next phase) ----------
 function buildMockDatapack(parsed: ParsedQuery): DataPack {
@@ -184,14 +173,21 @@ export async function process(
   }
 
   // 4-5. Guards
-  for (const [name, msg] of [
-    ["inputGuard", inputGuard(question)],
-    ["scopeGuard", scopeGuard(parsed)],
-    ["temporalGuard", temporalGuardCheck(parsed)],
-  ] as const) {
-    if (msg) {
+  const guardChain: Array<[string, () => { pass: boolean; reply?: string; warnings?: string[] }]> = [
+    ["inputGuard", () => checkInput(question)],
+    ["scopeGuard", () => checkScope(parsed.entities[0] ?? null, question)],
+    ["temporalGuard", () => checkTemporal(parsed.temporal)],
+  ];
+  const collectedWarnings: string[] = [];
+  for (const [name, run] of guardChain) {
+    const res = run();
+    if (!res.pass) {
       console.log(`${logPrefix} rejected by ${name}`);
-      return { type: "guard_rejection", content: msg };
+      return { type: "guard_rejection", content: res.reply ?? "Consulta no admitida." };
+    }
+    if (res.warnings && res.warnings.length > 0) {
+      collectedWarnings.push(...res.warnings);
+      console.log(`${logPrefix} ${name} warnings: ${res.warnings.length}`);
     }
   }
 
@@ -201,6 +197,10 @@ export async function process(
     return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
   }
   const skillOut = await skill.execute({ parsed, supabase, logPrefix });
+  if (collectedWarnings.length > 0) {
+    skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
+    (skillOut as any).warnings = collectedWarnings;
+  }
 
   // 9. Prompt composition
   const systemPrompt = composePrompt(skillOut.prompt_modules);
