@@ -218,6 +218,19 @@ export function ChatMessages({
                     : 'bg-card border border-border'
               }`}
             >
+              {/* Agent v2 badge — only visible when this assistant message
+                  came from chat-intelligence-v2 (preview-only A/B). */}
+              {message.role === 'assistant' && message.agentVersion === 'v2' && (
+                <div className="mb-2 flex justify-end">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] font-mono uppercase tracking-wider border-primary/40 text-primary bg-primary/5"
+                  >
+                    v2
+                  </Badge>
+                </div>
+              )}
+
               {/* Guard rejection badge */}
               {message.role === 'assistant' && message.metadata?.type === 'guard_rejection' && (
                 <div className="flex items-center gap-2 mb-2 pb-2 border-b border-amber-500/30">
