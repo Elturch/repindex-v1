@@ -24,6 +24,7 @@ import {
   renderMethodologyFooter,
   selectBlocks,
 } from "../datapack/reportAssembler.ts";
+import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 
 /**
  * Build a high-priority coverage warning that the LLM MUST surface in the
@@ -169,6 +170,50 @@ function renderRankingTable(rows: RankingRow[], models: ModelName[]): string {
   ].join("\n");
 }
 
+/**
+ * BLOQUE 3C — Competitive context: group the top-N ranking by sector,
+ * highlighting which sector dominates the leaderboard. Uses the
+ * sector_category field from repindex_root_issuers (fetched here, single
+ * additional SQL — same pattern as companyAnalysis competitiveContext).
+ */
+async function buildCompetitiveContextBlock(
+  supabase: any,
+  ranking: RankingRow[],
+): Promise<string> {
+  if (ranking.length === 0) return "";
+  const tickers = ranking.map((r) => r.ticker);
+  const { data } = await supabase
+    .from("repindex_root_issuers")
+    .select("ticker, sector_category")
+    .in("ticker", tickers);
+  const sectorByTicker = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row?.ticker) sectorByTicker.set(row.ticker, row.sector_category ?? "Sin sector");
+  }
+  const bySector = new Map<string, RankingRow[]>();
+  for (const r of ranking) {
+    const s = sectorByTicker.get(r.ticker) ?? "Sin sector";
+    if (!bySector.has(s)) bySector.set(s, []);
+    bySector.get(s)!.push(r);
+  }
+  const sortedSectors = [...bySector.entries()].sort((a, b) => b[1].length - a[1].length);
+  const lines: string[] = [
+    "**Contexto competitivo — distribución sectorial del top**",
+    "",
+    "| Sector | Empresas en el top | Tickers | RIX medio del grupo |",
+    "|---|---|---|---|",
+  ];
+  for (const [sector, list] of sortedSectors) {
+    const groupAvg = list.reduce((a, r) => a + r.rix_mean, 0) / list.length;
+    lines.push(`| ${sector} | ${list.length} | ${list.map((r) => r.ticker).join(", ")} | ${fmt(groupAvg)} |`);
+  }
+  const dominant = sortedSectors[0];
+  if (dominant && dominant[1].length >= 2) {
+    lines.push("", `_Sector dominante en el top: **${dominant[0]}** (${dominant[1].length} de ${ranking.length} empresas)._`);
+  }
+  return lines.join("\n");
+}
+
 function buildUserMessage(question: string, scope: string, table: string, rows: RankingRow[]): string {
   const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
   return [
@@ -199,13 +244,21 @@ function buildUserMessageWithAssembler(
   fromISO: string,
   toISO: string,
   models: string[],
+  competitiveContext: string,
 ): string {
   const metrics = metricsFromRows(rawRows);
-  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", competitiveContext });
   const blocks = selectBlocks(report, "sectorRanking");
+  const divergence = computeDivergenceStats(rawRows);
+  const uniqueWeeks = new Set(
+    rawRows.map((r) => String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10)).filter(Boolean),
+  ).size;
   const methodology = renderMethodologyFooter({
     fromISO, toISO, models, observationsCount: rawRows.length,
-    uniqueWeeks: new Set(rawRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size,
+    uniqueWeeks,
+    divergenceLevel: divergence.models_count > 0
+      ? `${divergence.level} (σ inter-modelo = ${(Math.round(divergence.sigma * 10) / 10)} pts, snapshot ${divergence.snapshot_date ?? "n/d"})`
+      : "no calculable",
   });
   const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
   return [
@@ -213,15 +266,27 @@ function buildUserMessageWithAssembler(
     "",
     `ALCANCE: ${scope}`,
     "",
+    `MÉTRICAS GLOBALES VERIFICADAS (úsalas literalmente, NO recalcules):`,
+    `• Observaciones totales: ${rawRows.length}`,
+    `• Semanas únicas con datos: ${uniqueWeeks}`,
+    `• Empresas únicas analizadas: ${new Set(rawRows.map((r) => r["05_ticker"])).size}`,
+    "",
+    "ETIQUETADO OBLIGATORIO (no confundir):",
+    "• 'Volatilidad temporal (SD)' = dispersión semanal del RIX medio del índice (suele ser baja, ~2 pts).",
+    "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
+    "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
+    "",
     buildPreRenderedSection(rankingTable, blocks, methodology),
     "",
     "ESTRUCTURA OBLIGATORIA DEL INFORME:",
-    "## 1. Titular — 2 frases con la conclusión del ranking.",
+    "## 1. Titular — 3-4 frases incluyendo: empresa #1, tendencia general del período (alcista/bajista/estable), dato cuantitativo de evolución temporal (delta total Q1) y empresa o sector destacado.",
     "## 2. Ranking — inserta literalmente la tabla de ranking.",
     "## 3. Visión por modelo — inserta literalmente el bloque de breakdown.",
     "## 4. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
-    "## 5. KPIs agregados del alcance — inserta literalmente la tabla de KPIs.",
-    "## 6. Ficha metodológica — inserta literalmente el bloque metodológico.",
+    "## 5. Evolución temporal — inserta literalmente la tabla de evolución y añade UNA frase de tendencia (ej. 'Tendencia bajista sostenida: el RIX medio cayó X pts').",
+    "## 6. KPIs agregados del alcance — inserta literalmente la tabla de KPIs (etiqueta como 'Volatilidad temporal (SD)').",
+    "## 7. Recomendaciones — inserta literalmente el bloque de recomendaciones.",
+    "## 8. Contexto competitivo — inserta literalmente la tabla sectorial y la ficha metodológica al final.",
     "",
     "RESUMEN COMPACTO PARA REFERENCIA:",
     compact,
