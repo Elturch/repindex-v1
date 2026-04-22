@@ -188,18 +188,23 @@ export async function process(
     const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
 
     if (lastAssistant?.content) {
-      entity = await resolveEntity(lastAssistant.content.substring(0, 300), supabase);
+      const tickerMatch = lastAssistant.content.substring(0, 500).match(/\(([A-Z]{2,5})\)/);
 
-      if (entity && entity.ticker !== "N/A") {
-        entities = [entity];
-        inheritedContext = {
-          ticker: entity.ticker,
-          company_name: entity.company_name,
-          sector_category: entity.sector_category ?? null,
-        };
-        console.log(`${logPrefix} FOLLOWUP from history text: ${entity.ticker}`);
+      if (tickerMatch) {
+        const [, ticker] = tickerMatch;
+        entity = await resolveEntity(ticker, supabase);
 
-        if (intent === "general_question") intent = "company_analysis";
+        if (entity && entity.ticker !== "N/A") {
+          entities = [entity];
+          inheritedContext = {
+            ticker: entity.ticker,
+            company_name: entity.company_name,
+            sector_category: entity.sector_category ?? null,
+          };
+          console.log(`${logPrefix} FOLLOWUP from history ticker regex: ${entity.ticker}`);
+
+          if (intent === "general_question") intent = "company_analysis";
+        }
       }
     }
   }
