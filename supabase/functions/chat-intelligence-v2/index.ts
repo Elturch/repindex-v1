@@ -45,16 +45,52 @@ serve(async (req: Request) => {
     console.log("[RIX-V2] Request received", { sessionId, history: conversationHistory.length });
 
     const result = await orchestratorProcess(question, conversationHistory, supabase);
+    // Emit SSE in the SAME shape v1 (chat-intelligence) emits, so the frontend
+    // parser in src/contexts/ChatContext.tsx (which only understands
+    // {type:"chunk",text} / {type:"done",metadata,...}) can render v2 responses
+    // without any client-side change. Keeping the contract aligned is what
+    // makes the v1/v2 toggle interchangeable.
     const stream = new ReadableStream({
       start(controller) {
         try {
+          // 1) "start" event with minimal metadata (mirrors v1 first frame).
+          controller.enqueue(sseEncode({
+            type: "start",
+            metadata: {
+              agentVersion: "v2",
+              entity: result.datapack?.entity?.company_name ?? null,
+              ticker: result.datapack?.entity?.ticker ?? null,
+              models: result.datapack?.models_used ?? [],
+            },
+          }));
+
+          // 2) Stream the synthesized content as {type:"chunk",text} frames.
           const text = result.content || "";
           const chunkSize = 256;
           for (let i = 0; i < text.length; i += chunkSize) {
-            controller.enqueue(sseEncode({ choices: [{ delta: { content: text.slice(i, i + chunkSize) } }] }));
+            controller.enqueue(sseEncode({ type: "chunk", text: text.slice(i, i + chunkSize) }));
           }
-          if (result.metadata) controller.enqueue(sseEncode({ metadata: result.metadata }));
+
+          // 3) Final "done" event carrying metadata in the v1-compatible shape.
+          controller.enqueue(sseEncode({
+            type: "done",
+            metadata: {
+              ...(result.metadata ?? {}),
+              agentVersion: "v2",
+              responseType: result.type,
+            },
+            suggestedQuestions: [],
+            drumrollQuestion: null,
+          }));
+
+          // 4) Terminator (v1 also closes the SSE without [DONE], but harmless).
           controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        } catch (streamErr) {
+          console.error("[RIX-V2] stream error:", streamErr);
+          controller.enqueue(sseEncode({
+            type: "error",
+            error: streamErr instanceof Error ? streamErr.message : "Stream error",
+          }));
         } finally {
           controller.close();
         }
