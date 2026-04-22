@@ -201,28 +201,81 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
 
 /**
  * Pre-renderiza la sección "Fuentes citadas por los modelos de IA" en
- * Markdown. Esta sección se inserta DESPUÉS de Recomendaciones y ANTES de
- * la Ficha Metodológica.
+ * Markdown. Cada URL aparece individualmente con badge del modelo, dominio,
+ * título y enlace clicable. Se separan en "Menciones de Ventana" (fechas
+ * dentro del período analizado) y "Menciones de Refuerzo" (históricas o
+ * sin fecha). NO se aplica límite de URLs — si hay 99, se muestran las 99.
+ *
+ * @param report   Output de extractCitedSources
+ * @param periodFrom ISO date inicio del período analizado (opcional)
+ * @param periodTo   ISO date fin del período analizado (opcional)
  */
-export function renderCitedSourcesBlock(report: CitedSourcesReport, maxPerDomain = 8): string {
+export function renderCitedSourcesBlock(
+  report: CitedSourcesReport,
+  periodFrom?: string | null,
+  periodTo?: string | null,
+): string {
   if (report.totalUrls === 0) return "";
-  const lines: string[] = ["**Fuentes citadas por los modelos de IA**", ""];
-  for (const group of report.byDomain) {
-    const modelsLabel = group.models.length === 1
-      ? `citado por 1 modelo (${group.models[0]})`
-      : `citado por ${group.models.length} modelos (${group.models.join(", ")})`;
-    lines.push(`**${group.domain}** — ${modelsLabel} · ${group.sources.length} URL${group.sources.length === 1 ? "" : "s"}`);
-    const visible = group.sources.slice(0, maxPerDomain);
-    for (const s of visible) {
-      const title = s.title && s.title.trim().length > 0 ? s.title : s.url;
-      lines.push(`• [${title}](${s.url})`);
+
+  const fromTs = periodFrom ? Date.parse(periodFrom) : NaN;
+  const toTs = periodTo ? Date.parse(periodTo) : NaN;
+  const hasWindow = Number.isFinite(fromTs) && Number.isFinite(toTs);
+
+  // Clasificación temporal de cada fuente
+  const windowSources: CitedSource[] = [];
+  const reinforcementSources: CitedSource[] = [];
+  for (const s of report.sources) {
+    if (hasWindow && s.detectedDate) {
+      const ts = Date.parse(s.detectedDate);
+      // Ventana extendida ±3 días para tolerar zonas horarias
+      const within = Number.isFinite(ts) && ts >= fromTs - 3 * 86400000 && ts <= toTs + 3 * 86400000;
+      if (within) windowSources.push(s);
+      else reinforcementSources.push(s);
+    } else {
+      reinforcementSources.push(s);
     }
-    if (group.sources.length > maxPerDomain) {
-      lines.push(`• …y ${group.sources.length - maxPerDomain} URLs adicionales en este dominio.`);
-    }
+  }
+
+  const lines: string[] = [
+    "**Fuentes citadas por los modelos de IA**",
+    "",
+    "_Política de Cero Invención: todas las fuentes listadas han sido extraídas directamente de las respuestas brutas de los modelos de IA. No se ha añadido, inventado ni modificado ninguna URL._",
+    "",
+  ];
+
+  const renderSource = (s: CitedSource): string => {
+    const badges = s.models
+      .map((m) => `\`${MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?"}\``)
+      .join("");
+    const title = (s.title && s.title.trim().length > 0) ? s.title : s.domain;
+    const dateLabel = s.detectedDate ? ` _(${s.detectedDate})_` : "";
+    // Markdown: badges + dominio + título clicable + fecha + URL completa
+    return `- ${badges} **${s.domain}** · [${title}](${s.url})${dateLabel}`;
+  };
+
+  if (windowSources.length > 0) {
+    lines.push(`**Menciones de Ventana** (dentro del período analizado · ${windowSources.length})`);
+    lines.push("");
+    for (const s of windowSources) lines.push(renderSource(s));
     lines.push("");
   }
-  lines.push(`_Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos._`);
+
+  if (reinforcementSources.length > 0) {
+    const label = hasWindow
+      ? `**Menciones de Refuerzo** (históricas o sin fecha clasificable · ${reinforcementSources.length})`
+      : `**Otras Referencias** (${reinforcementSources.length})`;
+    lines.push(label);
+    lines.push("");
+    for (const s of reinforcementSources) lines.push(renderSource(s));
+    lines.push("");
+  }
+
+  // Leyenda de badges
+  lines.push(
+    "_Leyenda: `C` ChatGPT · `P` Perplexity · `G` Gemini · `D` DeepSeek · `K` Grok · `Q` Qwen · `L` Claude_",
+  );
+  lines.push("");
+  lines.push(`_Total: ${report.totalUrls} fuentes únicas de ${report.totalDomains} medios distintos._`);
   return lines.join("\n").trimEnd();
 }
 
