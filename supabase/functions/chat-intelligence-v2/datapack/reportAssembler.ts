@@ -94,10 +94,13 @@ export function assembleReport(input: AssembleInput): AssembledReport {
 /** Sections each skill must surface. Drives prompt structure + block order. */
 export const SECTIONS_BY_SKILL = {
   companyAnalysis: ["kpiTable", "modelBreakdown", "temporalEvolution", "competitiveContext", "recommendations", "citedSources", "divergenceStats"] as const,
-  sectorRanking:   ["modelBreakdown", "divergenceStats", "temporalEvolution", "kpiTable", "recommendations", "competitiveContext", "citedSources"] as const,
+  // sectorRanking returns thousands of rows; including the 7 raw-text columns
+  // in the SELECT is too heavy. Cited sources are intentionally OFF here.
+  sectorRanking:   ["modelBreakdown", "divergenceStats", "temporalEvolution", "kpiTable", "recommendations", "competitiveContext"] as const,
   comparison:      ["kpiTable", "modelBreakdown", "recommendations", "citedSources", "divergenceStats"] as const,
   modelDivergence: ["modelBreakdown", "divergenceStats", "kpiTable", "citedSources"] as const,
-  periodEvolution: ["temporalEvolution", "kpiTable", "modelBreakdown", "divergenceStats", "citedSources"] as const,
+  // periodEvolution scans many weeks; raw text columns would explode payload.
+  periodEvolution: ["temporalEvolution", "kpiTable", "modelBreakdown", "divergenceStats"] as const,
 } as const;
 
 export type SkillKey = keyof typeof SECTIONS_BY_SKILL;
