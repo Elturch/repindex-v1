@@ -19,6 +19,28 @@ const RAW_FIELDS = [
   "respuesta_bruto_qwen",
 ] as const;
 
+// Map field name → canonical model label used in badges
+const FIELD_TO_MODEL: Record<string, string> = {
+  "20_res_gpt_bruto": "ChatGPT",
+  "21_res_perplex_bruto": "Perplexity",
+  "22_res_gemini_bruto": "Gemini",
+  "23_res_deepseek_bruto": "DeepSeek",
+  "respuesta_bruto_claude": "Claude",
+  "respuesta_bruto_grok": "Grok",
+  "respuesta_bruto_qwen": "Qwen",
+};
+
+// Single-letter badge per model (markdown-safe — no inline HTML needed)
+const MODEL_BADGE: Record<string, string> = {
+  ChatGPT: "C",
+  Perplexity: "P",
+  Gemini: "G",
+  DeepSeek: "D",
+  Claude: "L",
+  Grok: "K",
+  Qwen: "Q",
+};
+
 // Markdown link: [title](url) — captura título y URL
 const MD_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)\]"<>]+)\)/g;
 // URL suelta (sin pertenecer a un enlace markdown). Excluye comas, paréntesis,
@@ -39,6 +61,8 @@ export interface CitedSource {
   title: string | null;
   models: string[]; // Modelos que citan esta URL (deduplicados)
   citations: number; // = models.length
+  /** ISO date string detected near the URL in the raw text (yyyy-mm-dd) */
+  detectedDate?: string | null;
 }
 
 export interface CitedSourcesReport {
@@ -69,19 +93,47 @@ function extractDomain(url: string): string {
 }
 
 /**
+ * Extract an ISO date (yyyy-mm-dd) from the URL path itself when present.
+ * Common patterns: /2026/03/15/, /2026-03-15-, /20260315/. Returns null
+ * if no date is detected. Pure heuristic — best-effort.
+ */
+function extractDateFromUrl(url: string): string | null {
+  // /YYYY/MM/DD/
+  let m = url.match(/\/(20\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[\/_\-]|$)/);
+  if (m) {
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  // YYYYMMDD as a single token
+  m = url.match(/(20\d{2})(\d{2})(\d{2})/);
+  if (m) {
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  return null;
+}
+
+/**
  * Extrae todas las URLs citadas de las filas. Cada fila contribuye con UN modelo
  * (su 02_model_name). Si el mismo modelo cita la misma URL en varias semanas,
  * cuenta como 1 modelo (deduplicado por (model, url)).
  */
 export function extractCitedSources(rows: any[]): CitedSourcesReport {
-  // Mapa url → { title, modelSet }
-  const map = new Map<string, { title: string | null; models: Set<string> }>();
+  // Mapa url → { title, modelSet, dateNear }
+  const map = new Map<string, { title: string | null; models: Set<string>; detectedDate: string | null }>();
 
   for (const row of rows) {
-    const model = String(row?.["02_model_name"] ?? "").trim() || "(desconocido)";
+    const rowModel = String(row?.["02_model_name"] ?? "").trim();
     for (const field of RAW_FIELDS) {
       const text = row?.[field];
       if (!text || typeof text !== "string") continue;
+      // Prefer the model implied by the field name (raw column owner). Fall
+      // back to the row's 02_model_name if the column is generic.
+      const model = FIELD_TO_MODEL[field] || rowModel || "(desconocido)";
 
       // 1. Enlaces Markdown [title](url)
       let m: RegExpExecArray | null;
@@ -93,7 +145,7 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
         const domain = extractDomain(url);
         if (NOISE_DOMAINS.has(domain)) continue;
         seenInThisField.add(url);
-        const entry = map.get(url) ?? { title: null, models: new Set<string>() };
+        const entry = map.get(url) ?? { title: null, models: new Set<string>(), detectedDate: extractDateFromUrl(url) };
         if (!entry.title && title.length > 0 && title.length < 240) entry.title = title;
         entry.models.add(model);
         map.set(url, entry);
@@ -106,7 +158,7 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
         if (seenInThisField.has(url)) continue;
         const domain = extractDomain(url);
         if (NOISE_DOMAINS.has(domain)) continue;
-        const entry = map.get(url) ?? { title: null, models: new Set<string>() };
+        const entry = map.get(url) ?? { title: null, models: new Set<string>(), detectedDate: extractDateFromUrl(url) };
         entry.models.add(model);
         map.set(url, entry);
       }
@@ -114,13 +166,14 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
   }
 
   const sources: CitedSource[] = [];
-  for (const [url, { title, models }] of map.entries()) {
+  for (const [url, { title, models, detectedDate }] of map.entries()) {
     sources.push({
       url,
       domain: extractDomain(url),
       title,
       models: [...models].sort(),
       citations: models.size,
+      detectedDate,
     });
   }
   // Sort por citations desc, luego por dominio asc
@@ -148,28 +201,81 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
 
 /**
  * Pre-renderiza la sección "Fuentes citadas por los modelos de IA" en
- * Markdown. Esta sección se inserta DESPUÉS de Recomendaciones y ANTES de
- * la Ficha Metodológica.
+ * Markdown. Cada URL aparece individualmente con badge del modelo, dominio,
+ * título y enlace clicable. Se separan en "Menciones de Ventana" (fechas
+ * dentro del período analizado) y "Menciones de Refuerzo" (históricas o
+ * sin fecha). NO se aplica límite de URLs — si hay 99, se muestran las 99.
+ *
+ * @param report   Output de extractCitedSources
+ * @param periodFrom ISO date inicio del período analizado (opcional)
+ * @param periodTo   ISO date fin del período analizado (opcional)
  */
-export function renderCitedSourcesBlock(report: CitedSourcesReport, maxPerDomain = 8): string {
+export function renderCitedSourcesBlock(
+  report: CitedSourcesReport,
+  periodFrom?: string | null,
+  periodTo?: string | null,
+): string {
   if (report.totalUrls === 0) return "";
-  const lines: string[] = ["**Fuentes citadas por los modelos de IA**", ""];
-  for (const group of report.byDomain) {
-    const modelsLabel = group.models.length === 1
-      ? `citado por 1 modelo (${group.models[0]})`
-      : `citado por ${group.models.length} modelos (${group.models.join(", ")})`;
-    lines.push(`**${group.domain}** — ${modelsLabel} · ${group.sources.length} URL${group.sources.length === 1 ? "" : "s"}`);
-    const visible = group.sources.slice(0, maxPerDomain);
-    for (const s of visible) {
-      const title = s.title && s.title.trim().length > 0 ? s.title : s.url;
-      lines.push(`• [${title}](${s.url})`);
+
+  const fromTs = periodFrom ? Date.parse(periodFrom) : NaN;
+  const toTs = periodTo ? Date.parse(periodTo) : NaN;
+  const hasWindow = Number.isFinite(fromTs) && Number.isFinite(toTs);
+
+  // Clasificación temporal de cada fuente
+  const windowSources: CitedSource[] = [];
+  const reinforcementSources: CitedSource[] = [];
+  for (const s of report.sources) {
+    if (hasWindow && s.detectedDate) {
+      const ts = Date.parse(s.detectedDate);
+      // Ventana extendida ±3 días para tolerar zonas horarias
+      const within = Number.isFinite(ts) && ts >= fromTs - 3 * 86400000 && ts <= toTs + 3 * 86400000;
+      if (within) windowSources.push(s);
+      else reinforcementSources.push(s);
+    } else {
+      reinforcementSources.push(s);
     }
-    if (group.sources.length > maxPerDomain) {
-      lines.push(`• …y ${group.sources.length - maxPerDomain} URLs adicionales en este dominio.`);
-    }
+  }
+
+  const lines: string[] = [
+    "**Fuentes citadas por los modelos de IA**",
+    "",
+    "_Política de Cero Invención: todas las fuentes listadas han sido extraídas directamente de las respuestas brutas de los modelos de IA. No se ha añadido, inventado ni modificado ninguna URL._",
+    "",
+  ];
+
+  const renderSource = (s: CitedSource): string => {
+    const badges = s.models
+      .map((m) => `\`${MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?"}\``)
+      .join("");
+    const title = (s.title && s.title.trim().length > 0) ? s.title : s.domain;
+    const dateLabel = s.detectedDate ? ` _(${s.detectedDate})_` : "";
+    // Markdown: badges + dominio + título clicable + fecha + URL completa
+    return `- ${badges} **${s.domain}** · [${title}](${s.url})${dateLabel}`;
+  };
+
+  if (windowSources.length > 0) {
+    lines.push(`**Menciones de Ventana** (dentro del período analizado · ${windowSources.length})`);
+    lines.push("");
+    for (const s of windowSources) lines.push(renderSource(s));
     lines.push("");
   }
-  lines.push(`_Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos._`);
+
+  if (reinforcementSources.length > 0) {
+    const label = hasWindow
+      ? `**Menciones de Refuerzo** (históricas o sin fecha clasificable · ${reinforcementSources.length})`
+      : `**Otras Referencias** (${reinforcementSources.length})`;
+    lines.push(label);
+    lines.push("");
+    for (const s of reinforcementSources) lines.push(renderSource(s));
+    lines.push("");
+  }
+
+  // Leyenda de badges
+  lines.push(
+    "_Leyenda: `C` ChatGPT · `P` Perplexity · `G` Gemini · `D` DeepSeek · `K` Grok · `Q` Qwen · `L` Claude_",
+  );
+  lines.push("");
+  lines.push(`_Total: ${report.totalUrls} fuentes únicas de ${report.totalDomains} medios distintos._`);
   return lines.join("\n").trimEnd();
 }
 

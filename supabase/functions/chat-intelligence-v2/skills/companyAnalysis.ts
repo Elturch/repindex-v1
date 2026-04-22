@@ -233,7 +233,11 @@ export const companyAnalysisSkill: Skill = {
     // as a markdown block; also returned structurally so the FE can show it
     // in the HTML export with clickable <a> tags.
     const citedSourcesReport = extractCitedSources(datapack.raw_rows);
-    const citedSources = renderCitedSourcesBlock(citedSourcesReport);
+    const citedSources = renderCitedSourcesBlock(
+      citedSourcesReport,
+      datapack.temporal.from,
+      datapack.temporal.to,
+    );
     console.log(`${tag} enrichment done in ${Date.now() - t0}ms`);
 
     // 1c. Append the new blocks (in canonical order) AFTER the existing
