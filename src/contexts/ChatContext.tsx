@@ -1084,6 +1084,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
       }
+      if (initialLoaderTimeoutRef.current) {
+        clearTimeout(initialLoaderTimeoutRef.current);
+        initialLoaderTimeoutRef.current = null;
+      }
       setIsLoading(false);
       setIsStreaming(false);
     }
