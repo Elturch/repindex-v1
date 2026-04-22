@@ -297,12 +297,13 @@ export async function process(
       // Promote intent if it was a generic fallback.
       if (parsed.intent === "general_question") parsed.intent = "company_analysis";
     } else {
-      // Fallback: scan assistant text for "Name (TICKER)" pattern.
-      const assistantSeed = inferEntitySeedFromAssistantText(history);
+      // FASE A — Fallback: only re-resolve from the LAST USER message text.
+      // The assistant-text regex fallback was removed in favour of the
+      // structured `previousContext` (hydrated upstream from
+      // user_conversations.last_report_context when missing on FE).
       const lastUser = [...history].reverse().find((m) => m?.role === "user" && !!m?.content);
       const seeds = [
         lastUser?.content ? String(lastUser.content).slice(0, 160) : null,
-        assistantSeed,
       ].filter((seed): seed is string => !!seed && seed.trim().length > 0);
 
       for (const seed of seeds) {
