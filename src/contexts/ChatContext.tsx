@@ -8,22 +8,13 @@ import { convertMarkdownToHtml, premiumTableStyles, emojiGridStyles } from "@/li
 import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/chatLanguages";
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
+import { getAgentVersion, getEdgeFunctionName, type AgentVersion } from "@/lib/agentVersion";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6a2p5a21yd2lzaWppcWx3dXVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTQyODgsImV4cCI6MjA3Mzc3MDI4OH0.9Uw6nBNjo7zOHPyC8zcJLaEvaoLzBNf65U5QOb0XVQU";
 
-// Feature flag: route to chat-intelligence-v2 when URL contains ?agent=v2
-// Preview-only switch — defaults to v1 (chat-intelligence). Does not affect production users.
-function getChatIntelligenceFunctionName(): 'chat-intelligence' | 'chat-intelligence-v2' {
-  if (typeof window === 'undefined') return 'chat-intelligence';
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('agent') === 'v2' ? 'chat-intelligence-v2' : 'chat-intelligence';
-  } catch {
-    return 'chat-intelligence';
-  }
-}
+// Agent version routing now lives in src/lib/agentVersion.ts (URL param + localStorage + preview-only).
 
 // Helper to get timeout based on depth level
 function getTimeoutForRequest(depthLevel: string = 'complete'): number {
