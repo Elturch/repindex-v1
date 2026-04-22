@@ -17,6 +17,7 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
+import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
@@ -97,66 +98,6 @@ function buildUserMessage(question: string, datapack: DataPack): string {
   return [head, tables, summary].join("\n");
 }
 
-/**
- * Llama a OpenAI Chat Completions (no-stream). El index.ts hace el SSE-chunking
- * sobre el resultado completo, así que aquí basta una llamada simple.
- * Modelo extraído de v1 (línea 4744 / 4749): "o3" con reasoning_effort=medium,
- * fallback a "gpt-4o-mini" si no hay clave de o3.
- */
-async function callOpenAI(
-  systemPrompt: string,
-  userMessage: string,
-  logPrefix: string,
-): Promise<{ content: string; error?: string }> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) {
-    return {
-      content: "",
-      error: "OPENAI_API_KEY no configurada en el entorno de la edge function.",
-    };
-  }
-
-  const model = "gpt-4o-mini"; // modelo rápido y barato para skeleton v2
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90_000);
-
-  try {
-    console.log(`${logPrefix} OpenAI call | model=${model} | prompt_chars=${systemPrompt.length}`);
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_completion_tokens: 4000,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    });
-    clearTimeout(timeoutId);
-
-    if (!resp.ok) {
-      const txt = await resp.text();
-      console.error(`${logPrefix} OpenAI error ${resp.status}:`, txt.slice(0, 500));
-      return { content: "", error: `OpenAI ${resp.status}` };
-    }
-    const json = await resp.json();
-    const content = json?.choices?.[0]?.message?.content ?? "";
-    return { content };
-  } catch (e: any) {
-    clearTimeout(timeoutId);
-    const msg = e?.name === "AbortError" ? "OpenAI timeout (90s)" : e?.message ?? "Unknown OpenAI error";
-    console.error(`${logPrefix} OpenAI exception:`, msg);
-    return { content: "", error: msg };
-  }
-}
-
 function buildMetadata(datapack: DataPack, observations: number): ReportMetadata {
   const ranges: number[] = [];
   for (const m of datapack.metrics) {
@@ -197,7 +138,7 @@ export const companyAnalysisSkill: Skill = {
   intents: ["company_analysis"],
 
   async execute(input: SkillInput): Promise<SkillOutput> {
-    const { parsed, supabase, logPrefix } = input;
+    const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[companyAnalysis]`;
     console.log(`${tag} START | ticker=${parsed.entities[0]?.ticker ?? "n/a"} | mode=${parsed.mode}`);
 
@@ -230,6 +171,8 @@ export const companyAnalysisSkill: Skill = {
     if (observations_count === 0) {
       const metadata = buildMetadata(datapack, 0);
       const fallback = buildFallbackContent(datapack, undefined);
+      // Emit the fallback as a single chunk so the stream still produces output.
+      try { onChunk?.(fallback); } catch (_) { /* noop */ }
       return {
         datapack: {
           ...datapack,
@@ -245,11 +188,20 @@ export const companyAnalysisSkill: Skill = {
     const systemPrompt = composePrompt(modules, datapack, parsed.temporal.from, parsed.temporal.to);
     const userMessage = buildUserMessage(parsed.raw_question, datapack);
 
-    // 5. Call the LLM (graceful fallback to pre-rendered tables on error)
-    const { content, error } = await callOpenAI(systemPrompt, userMessage, tag);
-    const finalContent = content && content.trim().length > 0
-      ? content
-      : buildFallbackContent(datapack, error);
+    // 5. Stream the LLM (token-by-token via onChunk). On error, fallback to
+    //    pre-rendered tables and emit them as a single chunk so the SSE pipe
+    //    still delivers something to the client.
+    const { fullText, error } = await streamOpenAIResponse({
+      systemPrompt,
+      userMessage,
+      logPrefix: tag,
+      onChunk: (delta) => { try { onChunk?.(delta); } catch (_) { /* noop */ } },
+    });
+    let finalContent = fullText;
+    if (!finalContent || finalContent.trim().length === 0) {
+      finalContent = buildFallbackContent(datapack, error);
+      try { onChunk?.(finalContent); } catch (_) { /* noop */ }
+    }
 
     // 6. Inject the final content as the FIRST pre-rendered "table"
     //    so the orchestrator can stream it as the answer body.

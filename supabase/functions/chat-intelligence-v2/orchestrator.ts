@@ -22,6 +22,10 @@ import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
+import { sectorRankingSkill } from "./skills/sectorRanking.ts";
+import { comparisonSkill } from "./skills/comparison.ts";
+import { modelDivergenceSkill } from "./skills/modelDivergence.ts";
+import { periodEvolutionSkill } from "./skills/periodEvolution.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
@@ -85,10 +89,10 @@ const stubSkill = (name: string, intents: Intent[]): Skill => ({
 
 const SKILL_REGISTRY: Skill[] = [
   companyAnalysisSkill,
-  stubSkill("sectorRanking", ["sector_ranking"]),
-  stubSkill("comparison", ["comparison"]),
-  stubSkill("modelDivergence", ["model_divergence"]),
-  stubSkill("periodEvolution", ["period_evolution"]),
+  sectorRankingSkill,
+  comparisonSkill,
+  modelDivergenceSkill,
+  periodEvolutionSkill,
   stubSkill("generalQuestion", ["general_question"]),
 ];
 
@@ -137,6 +141,7 @@ export async function process(
   question: string,
   history: ConversationMessage[],
   supabase: any,
+  onChunk?: (delta: string) => void,
 ): Promise<OrchestratorResponse> {
   const logPrefix = "[RIX-V2][orch]";
   console.log(`${logPrefix} processing | q="${question.slice(0, 80)}" | history=${history?.length ?? 0}`);
@@ -162,11 +167,11 @@ export async function process(
   };
 
   // 2b. Intent priority override: if a single concrete entity is resolved,
-  //     promote temporal/divergence intents to company_analysis so the real
-  //     skill handles it (period_evolution / model_divergence stubs would
-  //     otherwise short-circuit the response). Sector rankings and explicit
-  //     comparisons (>= 2 entities) keep their original intent.
-  const PROMOTABLE_INTENTS: Intent[] = ["period_evolution", "model_divergence", "general_question"];
+  //     `general_question` falls back to companyAnalysis when we have a clear
+  //     entity; `period_evolution` and `model_divergence` now have their own
+  //     real skills so they NO LONGER get promoted. Sector rankings and
+  //     explicit comparisons (>= 2 entities) also keep their original intent.
+  const PROMOTABLE_INTENTS: Intent[] = ["general_question"];
   if (
     entities.length === 1 &&
     PROMOTABLE_INTENTS.includes(parsed.intent) &&
@@ -204,7 +209,9 @@ export async function process(
     const res = run();
     if (!res.pass) {
       console.log(`${logPrefix} rejected by ${name}`);
-      return { type: "guard_rejection", content: res.reply ?? "Consulta no admitida." };
+      const reply = res.reply ?? "Consulta no admitida.";
+      try { onChunk?.(reply); } catch (_) { /* noop */ }
+      return { type: "guard_rejection", content: reply };
     }
     if (res.warnings && res.warnings.length > 0) {
       collectedWarnings.push(...res.warnings);
@@ -215,10 +222,12 @@ export async function process(
   // 6-8. Skill dispatch
   const skill = selectSkill(parsed.intent);
   if (!skill) {
-    return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
+    const reply = `No hay skill registrada para intent=${parsed.intent}`;
+    try { onChunk?.(reply); } catch (_) { /* noop */ }
+    return { type: "guard_rejection", content: reply };
   }
   console.log(`${logPrefix} dispatching | intent=${parsed.intent} | skill=${skill.name}`);
-  const skillOut = await skill.execute({ parsed, supabase, logPrefix });
+  const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk });
   if (collectedWarnings.length > 0) {
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
     (skillOut as any).warnings = collectedWarnings;
@@ -228,13 +237,25 @@ export async function process(
   const systemPrompt = composePrompt(skillOut.prompt_modules);
 
   // 10. Content: real skills deposit the LLM answer as the first pre-rendered
-  //     "table" entry. Stub skills leave that array empty → fall back to the
-  //     deterministic placeholder so the response still streams something.
-  const REAL_SKILLS = new Set(["companyAnalysis"]);
+  //     "table" entry AND stream it via onChunk. Stub skills leave that array
+  //     empty → fall back to the deterministic placeholder so the response
+  //     still produces output (and we emit it as a single chunk).
+  const REAL_SKILLS = new Set([
+    "companyAnalysis",
+    "sectorRanking",
+    "comparison",
+    "modelDivergence",
+    "periodEvolution",
+  ]);
   const skillContent = skillOut.datapack.pre_rendered_tables[0];
-  const content = (REAL_SKILLS.has(skill.name) && skillContent && skillContent.length > 0)
-    ? skillContent
-    : await synthesize(systemPrompt, skillOut.datapack, question);
+  let content: string;
+  if (REAL_SKILLS.has(skill.name) && skillContent && skillContent.length > 0) {
+    content = skillContent;
+  } else {
+    content = await synthesize(systemPrompt, skillOut.datapack, question);
+    // Stub path didn't stream — emit once so the SSE pipe has something.
+    try { onChunk?.(content); } catch (_) { /* noop */ }
+  }
 
   // 11. Response
   return {
