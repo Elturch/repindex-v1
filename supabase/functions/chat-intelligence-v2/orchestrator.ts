@@ -262,11 +262,11 @@ export async function process(
   if (inheritedContext) parsed.inherited_context = inheritedContext;
 
   // 2b. Intent priority override: if a single concrete entity is resolved,
-  //     `general_question` falls back to companyAnalysis when we have a clear
-  //     entity; `period_evolution` and `model_divergence` now have their own
-  //     real skills so they NO LONGER get promoted. Sector rankings and
-  //     explicit comparisons (>= 2 entities) also keep their original intent.
-  const PROMOTABLE_INTENTS: Intent[] = ["general_question"];
+  //     `general_question` and `period_evolution` fall back to
+  //     companyAnalysis (which now produces the full 8-section report with
+  //     pre-rendered tables). Sector rankings, comparisons (>=2 entities)
+  //     and model_divergence keep their dedicated skills.
+  const PROMOTABLE_INTENTS: Intent[] = ["general_question", "period_evolution"];
   if (
     entities.length === 1 &&
     PROMOTABLE_INTENTS.includes(parsed.intent) &&
