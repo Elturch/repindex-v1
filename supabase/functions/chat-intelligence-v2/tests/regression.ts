@@ -205,11 +205,12 @@ async function runOneCase(
 export async function runAllTests(opts: {
   baseUrl: string;
   authHeader?: string | null;
+  apiKey?: string | null;
 }): Promise<RegressionSummary> {
   const ranAt = new Date().toISOString();
   const cases: CaseResult[] = [];
   for (const c of REGRESSION_CASES) {
-    const r = await runOneCase(opts.baseUrl, opts.authHeader ?? null, c);
+    const r = await runOneCase(opts.baseUrl, opts.authHeader ?? null, opts.apiKey ?? null, c);
     cases.push(r);
   }
   return {
