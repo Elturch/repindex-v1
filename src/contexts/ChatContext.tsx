@@ -891,7 +891,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: '',
           isStreaming: true,
-          agentVersion: activeAgentVersion,
+          agentVersion: effectiveAgentVersion,
+          fallbackUsed: isFallbackAttempt,
         };
         setMessages(prev => [...prev, streamingMessage]);
 
@@ -921,6 +922,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               previousContext: previousContextPayload,
               isFollowup: followupActive,
             }),
+            signal: v2AbortController?.signal,
           }
         );
 
