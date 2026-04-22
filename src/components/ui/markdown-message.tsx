@@ -1,5 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { Button } from './button';
 import { Download } from 'lucide-react';
 import { format } from 'date-fns';
@@ -49,6 +50,7 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
     <div className="relative group markdown-content">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
         components={{
           // Headers with visual hierarchy
           h1: ({ children }) => (

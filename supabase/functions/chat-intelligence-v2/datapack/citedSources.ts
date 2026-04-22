@@ -30,7 +30,7 @@ const FIELD_TO_MODEL: Record<string, string> = {
   "respuesta_bruto_qwen": "Qwen",
 };
 
-// Single-letter badge per model (markdown-safe — no inline HTML needed)
+// Single-letter badge per model
 const MODEL_BADGE: Record<string, string> = {
   ChatGPT: "C",
   Perplexity: "P",
@@ -39,6 +39,16 @@ const MODEL_BADGE: Record<string, string> = {
   Claude: "L",
   Grok: "K",
   Qwen: "Q",
+};
+
+const MODEL_BADGE_COLOR: Record<string, string> = {
+  ChatGPT: "#6b7280",
+  Perplexity: "#3b82f6",
+  Gemini: "#22c55e",
+  Grok: "#22c55e",
+  DeepSeek: "#f97316",
+  Qwen: "#8b5cf6",
+  Claude: "#ef4444",
 };
 
 // Markdown link: [title](url) — captura título y URL
@@ -239,43 +249,37 @@ export function renderCitedSourcesBlock(
   const lines: string[] = [
     "**Fuentes citadas por los modelos de IA**",
     "",
-    "_Política de Cero Invención: todas las fuentes listadas han sido extraídas directamente de las respuestas brutas de los modelos de IA. No se ha añadido, inventado ni modificado ninguna URL._",
+    "Todas las fuentes listadas han sido extraídas directamente de las respuestas brutas de los modelos de IA. No se ha añadido, inventado ni modificado ninguna URL.",
     "",
   ];
 
   const renderSource = (s: CitedSource): string => {
     const badges = s.models
-      .map((m) => `\`${MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?"}\``)
+      .map((m) => {
+        const letter = MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?";
+        const color = MODEL_BADGE_COLOR[m] ?? "#6b7280";
+        return `<span style="background-color:${color};color:white;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:bold;margin-right:2px;display:inline-block;line-height:1.2">${letter}</span>`;
+      })
       .join("");
     const title = (s.title && s.title.trim().length > 0) ? s.title : s.domain;
-    const dateLabel = s.detectedDate ? ` _(${s.detectedDate})_` : "";
-    // Markdown: badges + dominio + título clicable + fecha + URL completa
-    return `- ${badges} **${s.domain}** · [${title}](${s.url})${dateLabel}`;
+    const dateLabel = s.detectedDate ? ` <span style="color:#6b7280;font-size:11px">(${s.detectedDate})</span>` : "";
+    return `- ${badges} <strong>${s.domain}</strong>${dateLabel}<br><a href="${s.url}" target="_blank" rel="noopener noreferrer">${title}</a><br><a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.url}</a>`;
   };
 
-  if (windowSources.length > 0) {
-    lines.push(`**Menciones de Ventana** (dentro del período analizado · ${windowSources.length})`);
-    lines.push("");
-    for (const s of windowSources) lines.push(renderSource(s));
-    lines.push("");
-  }
-
-  if (reinforcementSources.length > 0) {
-    const label = hasWindow
-      ? `**Menciones de Refuerzo** (históricas o sin fecha clasificable · ${reinforcementSources.length})`
-      : `**Otras Referencias** (${reinforcementSources.length})`;
-    lines.push(label);
-    lines.push("");
-    for (const s of reinforcementSources) lines.push(renderSource(s));
-    lines.push("");
-  }
-
-  // Leyenda de badges
-  lines.push(
-    "_Leyenda: `C` ChatGPT · `P` Perplexity · `G` Gemini · `D` DeepSeek · `K` Grok · `Q` Qwen · `L` Claude_",
-  );
+  lines.push(`**Menciones de Ventana** (${windowSources.length})`);
   lines.push("");
-  lines.push(`_Total: ${report.totalUrls} fuentes únicas de ${report.totalDomains} medios distintos._`);
+  if (windowSources.length > 0) {
+    for (const s of windowSources) lines.push(renderSource(s));
+  }
+  lines.push("");
+
+  lines.push(`**Menciones de Refuerzo** (${reinforcementSources.length})`);
+  lines.push("");
+  if (reinforcementSources.length > 0) {
+    for (const s of reinforcementSources) lines.push(renderSource(s));
+  }
+  lines.push("");
+  lines.push(`Total: ${report.totalUrls} fuentes únicas de ${report.totalDomains} medios distintos`);
   return lines.join("\n").trimEnd();
 }
 
