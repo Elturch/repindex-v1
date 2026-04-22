@@ -37,6 +37,22 @@ function extractPreviousContext(history: ConversationMessage[]): PreviousContext
   return undefined;
 }
 
+// ── Fallback: infer previous entity from assistant text when report_context
+// is missing. Looks for the canonical "**EMPRESA (TICKER)**" header that all
+// v2 skills emit, or a bare 3-6 letter uppercase ticker on a line by itself.
+function inferEntityFromAssistantText(history: ConversationMessage[]):
+  { ticker: string; company_name: string } | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m?.role !== "assistant" || !m.content) continue;
+    const txt = String(m.content);
+    // Pattern 1: "**Análisis de Iberdrola (IBE)**" / "Iberdrola (IBE)"
+    const m1 = txt.match(/([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ\.\- ]{2,40})\s*\(([A-Z][A-Z0-9\.]{1,9})\)/);
+    if (m1) return { company_name: m1[1].trim(), ticker: m1[2].toUpperCase() };
+  }
+  return null;
+}
+
 // Guards moved to ./guards/* (real implementations).
 
 // ---------- Skill registry (stubs, real skills land in skills/ next phase) ----------
@@ -199,16 +215,29 @@ export async function process(
   }
 
   // 3. Context inheritance
-  if (parsed.is_followup && parsed.entities.length === 0) {
+  // Trigger when entityResolver failed AND we have any prior history
+  // (regardless of intent). This covers follow-ups like "expandir el
+  // informe" where v1's Phase 1.18 logic was missing in v2.
+  if (parsed.entities.length === 0 && history && history.length > 0) {
     const prev = extractPreviousContext(history);
     if (prev) {
       parsed.inherited_context = prev;
       parsed.entities = [
         { ticker: prev.ticker, company_name: prev.company_name, sector_category: prev.sector_category, source: "inherited" },
       ];
-      console.log(`${logPrefix} inherited entity ${prev.ticker} (${prev.company_name})`);
+      console.info(`[RIX-V2][orch] inherited entity from previous turn: ${prev.ticker} (${prev.company_name})`);
       // Promote intent if it was a generic fallback.
       if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+    } else {
+      // Fallback: scan assistant text for "Name (TICKER)" pattern.
+      const inferred = inferEntityFromAssistantText(history);
+      if (inferred) {
+        parsed.entities = [
+          { ticker: inferred.ticker, company_name: inferred.company_name, sector_category: null, source: "inherited" },
+        ];
+        console.info(`[RIX-V2][orch] inherited entity from previous turn (text-inferred): ${inferred.ticker} (${inferred.company_name})`);
+        if (parsed.intent === "general_question") parsed.intent = "company_analysis";
+      }
     }
   }
 
@@ -250,6 +279,15 @@ export async function process(
   if (collectedWarnings.length > 0) {
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
     (skillOut as any).warnings = collectedWarnings;
+  }
+  // Always force coverageRules when temporal coverage is below threshold.
+  // Skills that didn't include it will at least carry the prompt-module
+  // marker so downstream metadata reflects the partial-coverage state.
+  if (parsed.temporal.is_partial || (parsed.temporal.coverage_ratio ?? 1) < 0.9) {
+    skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
+    console.info(
+      `[RIX-V2][orch] coverage partial detected | ratio=${parsed.temporal.coverage_ratio} | available=${parsed.temporal.snapshots_available}/${parsed.temporal.snapshots_expected}`,
+    );
   }
 
   // 9. Prompt composition

@@ -14,6 +14,15 @@ import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildDivergenceRules } from "../prompts/divergenceMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 
+function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
+  if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
+  const pct = Math.round((t.coverage_ratio ?? 0) * 100);
+  return `IMPORTANTE — COBERTURA PARCIAL (PRIORIDAD MÁXIMA):
+• El período solicitado solo dispone de datos desde ${t.from} hasta ${t.to} (${t.snapshots_available}/${t.snapshots_expected} snapshots, ~${pct}%).
+• ABRE el informe declarando esta cobertura parcial en el primer párrafo.
+• PROHIBIDO extrapolar a semanas no cubiertas.`;
+}
+
 const SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, " +
   "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score";
@@ -194,13 +203,14 @@ export const modelDivergenceSkill: Skill = {
     }
 
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       buildDivergenceRules({
         ticker: entity.ticker, modelsCount: aggs.length, weeksCount: parsed.temporal.snapshots_available,
         sigmaRix, highestModel: top, lowestModel: bot,
       }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, entity.ticker, table, sigmaRix, top, bot);
     const { fullText, error } = await streamOpenAIResponse({

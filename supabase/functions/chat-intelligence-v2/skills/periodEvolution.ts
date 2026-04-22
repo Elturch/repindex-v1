@@ -14,6 +14,15 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildEvolutionRules } from "../prompts/evolutionMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 
+function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
+  if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
+  const pct = Math.round((t.coverage_ratio ?? 0) * 100);
+  return `IMPORTANTE — COBERTURA PARCIAL (PRIORIDAD MÁXIMA):
+• El período solicitado solo dispone de datos desde ${t.from} hasta ${t.to} (${t.snapshots_available}/${t.snapshots_expected} snapshots, ~${pct}%).
+• ABRE el informe declarando esta cobertura parcial en el primer párrafo.
+• PROHIBIDO extrapolar a semanas no cubiertas.`;
+}
+
 const SELECT = "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date";
 
 function fmt(n: number | null | undefined): string {
@@ -181,6 +190,7 @@ export const periodEvolutionSkill: Skill = {
     const trend: string = Math.abs(delta) < 2 ? "estable" : delta > 0 ? "alcista" : "bajista";
 
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       buildPeriodRules({
@@ -192,7 +202,7 @@ export const periodEvolutionSkill: Skill = {
         fromISO: parsed.temporal.from, toISO: parsed.temporal.to,
         rixFirst, rixLast, trend, mostVolatile: "RIX",
       }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, entity.ticker, table, series);
     const { fullText, error } = await streamOpenAIResponse({

@@ -18,6 +18,19 @@ import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 
+/**
+ * Build a high-priority coverage warning that the LLM MUST surface in the
+ * first paragraph when the requested period is only partially covered.
+ */
+function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
+  if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
+  const pct = Math.round((t.coverage_ratio ?? 0) * 100);
+  return `IMPORTANTE — COBERTURA PARCIAL (PRIORIDAD MÁXIMA):
+• El período solicitado solo dispone de datos desde ${t.from} hasta ${t.to} (${t.snapshots_available}/${t.snapshots_expected} snapshots, ~${pct}% del período pedido).
+• ABRE el informe declarando esta cobertura parcial en el primer párrafo.
+• PROHIBIDO extrapolar tendencias a las semanas no cubiertas.`;
+}
+
 const RANKING_SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date";
 
@@ -226,13 +239,14 @@ export const sectorRankingSkill: Skill = {
     }
 
     const systemPrompt = [
+      buildCoverageBanner(parsed.temporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       parsed.mode === "period"
         ? buildPeriodRules({ fromISO: parsed.temporal.from, toISO: parsed.temporal.to, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
         : buildSnapshotRules({ weekFromISO: parsed.temporal.from, weekToISO: parsed.temporal.to }),
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessage(parsed.raw_question, scopeLabel, table, ranking);
     const { fullText, error } = await streamOpenAIResponse({

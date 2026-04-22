@@ -30,6 +30,9 @@ const DIVERGENCE_RE = /\b(divergen(?:cia|tes?)|discrepan(?:cia|tes?)|consenso|di
 // ── Period evolution: temporal trend / history ─────────────────────
 const EVOLUTION_RE = /\b(evoluci[oó]n|evoluciona|tendencia|trayectoria|historic[oa]|hist[oó]ric[oa]|ha\s+(?:subido|bajado|mejorado|empeorado)|c[oó]mo\s+(?:ha\s+)?cambiado|trimestre|semestre|[uú]ltim[oa]s?\s+\d+\s+(?:semanas?|meses?)|primer\s+(?:trimestre|semestre)|segundo\s+(?:trimestre|semestre))\b/i;
 
+// ── Explicit AI model names (used to demote false sector_ranking) ──
+const MODEL_NAMES_RE = /\b(grok|perplexity|deepseek|deep\s*seek|chatgpt|chat\s*gpt|gpt[-\s]?\d?|gemini|qwen|claude|llama)\b/i;
+
 // Crude entity counter: count of capitalised tokens that look like brands.
 function approxEntityCount(question: string): number {
   const matches = question.match(/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b|\b[A-Z]{3,}\b/g) || [];
@@ -55,11 +58,18 @@ export function classifyIntent(question: string): Intent {
 
   if (COMPARISON_RE.test(raw) && approxEntityCount(raw) >= 2) return "comparison";
 
-  if (RANKING_RE.test(raw) && (SECTOR_HINT_RE.test(raw) || /\bibex/i.test(raw))) {
+  // ── Ranking branch ────────────────────────────────────────────────
+  // If "ranking" appears WITH explicit AI-model names (Grok, Perplexity…)
+  // AND a company/sector hint, it is actually a model-divergence query
+  // ("which model rates X higher?"), NOT a sector ranking. Demote.
+  if (RANKING_RE.test(raw)) {
+    const mentionsModels = MODEL_NAMES_RE.test(raw);
+    const hasCompanyOrGroup = approxEntityCount(raw) >= 1 || SECTOR_HINT_RE.test(raw);
+    if (mentionsModels && hasCompanyOrGroup) return "model_divergence";
+    if (SECTOR_HINT_RE.test(raw) || /\bibex/i.test(raw)) return "sector_ranking";
+    // "ranking" alone (no sector, no company) → default sector ranking.
     return "sector_ranking";
   }
-  // "ranking" alone (without explicit sector) still defaults to sector_ranking
-  if (RANKING_RE.test(raw)) return "sector_ranking";
 
   if (DIVERGENCE_RE.test(lower)) return "model_divergence";
 
