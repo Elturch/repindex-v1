@@ -165,13 +165,13 @@ export async function process(
   console.log(`${logPrefix} processing | q="${question.slice(0, 80)}" | history=${history?.length ?? 0}`);
 
   // 1. Parsers (real)
-  const intent = classifyIntent(question);
+  let intent = classifyIntent(question);
   let entity: ResolvedEntity | null = null;
   let entities: ResolvedEntity[] = [];
   let inheritedContext: PreviousContext | undefined;
 
   // PRIORITY: follow-up inherits entity from previous context
-  if (isFollowup && previousContext?.entity) {
+  if ((isFollowup || history.length > 0) && previousContext?.entity) {
     entity = await resolveEntity(previousContext.entity, supabase);
     if (entity && entity.ticker !== "N/A") {
       entities = [entity];
@@ -181,6 +181,26 @@ export async function process(
         sector_category: entity.sector_category ?? null,
       };
       console.log(`${logPrefix} FOLLOWUP: inherited entity from FE previousContext: ${entity.ticker}`);
+    }
+  }
+
+  if (entities.length === 0 && history.length > 0) {
+    const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
+
+    if (lastAssistant?.content) {
+      entity = await resolveEntity(lastAssistant.content.substring(0, 300), supabase);
+
+      if (entity && entity.ticker !== "N/A") {
+        entities = [entity];
+        inheritedContext = {
+          ticker: entity.ticker,
+          company_name: entity.company_name,
+          sector_category: entity.sector_category ?? null,
+        };
+        console.log(`${logPrefix} FOLLOWUP from history text: ${entity.ticker}`);
+
+        if (intent === "general_question") intent = "company_analysis";
+      }
     }
   }
 
