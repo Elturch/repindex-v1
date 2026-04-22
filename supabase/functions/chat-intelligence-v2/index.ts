@@ -28,8 +28,13 @@ serve(async (req: Request) => {
     const url = new URL(req.url);
     if (url.searchParams.get("test") === "regression") {
       try {
-        // Self-call URL: same origin, no query string.
-        const baseUrl = `${url.origin}${url.pathname}`;
+        // Self-call URL: derive from SUPABASE_URL (the public ingress)
+        // because req.url inside the runtime points at an internal host
+        // that does not accept further function invocations.
+        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+        const baseUrl = supabaseUrl
+          ? `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/chat-intelligence-v2`
+          : `${url.origin}${url.pathname}`;
         const authHeader = req.headers.get("authorization");
         const summary = await runAllTests({ baseUrl, authHeader });
         return new Response(JSON.stringify(summary, null, 2), {
