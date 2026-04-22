@@ -188,7 +188,10 @@ export async function process(
     const lastAssistant = [...history].reverse().find((m) => m.role === "assistant");
 
     if (lastAssistant?.content) {
-      const tickerMatch = lastAssistant.content.substring(0, 500).match(/\(([A-Z]{2,5})\)/);
+      // Search the FULL assistant message (not just the first 500 chars) for
+      // a ticker pattern "(TICKER)". v2 reports often place the canonical
+      // header deep into the body.
+      const tickerMatch = lastAssistant.content.match(/\(([A-Z]{2,6})\)/);
 
       if (tickerMatch) {
         const [, ticker] = tickerMatch;
@@ -210,7 +213,21 @@ export async function process(
   }
 
   // Normal entity resolution for non-followup
-  if (entities.length === 0) {
+  // ── FIX 1: when history exists and inheritance failed, only call
+  // resolveEntity(question) if the question CLEARLY mentions a company
+  // (capitalised token of length >= 4). Otherwise we risk false positives
+  // such as "día" → DIA on follow-up phrases like "expande el informe
+  // hasta el día de ayer".
+  const FOLLOWUP_CUE_RE = /\b(expand[ae]|amplia|am[pl]liar|prof?undiza|detalla|continua|sigue|y\s+ahora|tambien|adem[aá]s|otra\s+(?:vez|cosa)|otro\s+(?:dato|punto)|hasta\s+(?:hoy|ayer|el\s+d[ií]a)|m[aá]s\s+(?:detalle|info))\b/i;
+  const HAS_CAPITALISED_BRAND = /\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b/.test(question);
+  if (
+    entities.length === 0 &&
+    history.length > 0 &&
+    !HAS_CAPITALISED_BRAND &&
+    FOLLOWUP_CUE_RE.test(question)
+  ) {
+    console.log(`${logPrefix} skipping resolveEntity(question) — looks like pure follow-up without brand mention`);
+  } else if (entities.length === 0) {
     if (intent === "sector_ranking") {
       entities = [];
     } else if (intent === "comparison") {
