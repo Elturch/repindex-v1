@@ -14,17 +14,24 @@ const COVERAGE_WARNING_THRESHOLD = 0.85;
 // regardless of whether the resolved window happens to overlap with past data.
 // Example: "¿Cómo será la reputación de Iberdrola en 2026?" — even if 2026 has
 // past weeks, the question itself is forecast-oriented and must be rejected.
+// Unicode-aware boundary helpers: JavaScript's `\b` is ASCII-only and breaks
+// on accented chars like "será" / "evolucionará".
+const UB = "(?:^|[^\\p{L}])"; // before: start or non-letter
+const UA = "(?=[^\\p{L}]|$)"; // after: non-letter or end
 const PREDICTIVE_PATTERNS: RegExp[] = [
   // Spanish future tense — restricted to common reputation/forecast verbs to
   // avoid false positives on past-tense or unrelated words.
-  /\b(ser[áa]n?|tendr[áa]n?|evolucionar[áa]n?|comportar[áa]n?|reaccionar[áa]n?|cambiar[áa]n?|mejorar[áa]n?|empeorar[áa]n?|subir[áa]n?|bajar[áa]n?|crecer[áa]n?|caer[áa]n?|terminar[áa]n?|acabar[áa]n?|pasar[áa]n?|ocurrir[áa]n?|suceder[áa]n?|llegar[áa]n?|alcanzar[áa]n?|superar[áa]n?)\b/i,
+  new RegExp(
+    UB +
+      "(ser[áa]n?|tendr[áa]n?|evolucionar[áa]n?|comportar[áa]n?|reaccionar[áa]n?|cambiar[áa]n?|mejorar[áa]n?|empeorar[áa]n?|subir[áa]n?|bajar[áa]n?|crecer[áa]n?|caer[áa]n?|terminar[áa]n?|acabar[áa]n?|pasar[áa]n?|ocurrir[áa]n?|suceder[áa]n?|llegar[áa]n?|alcanzar[áa]n?|superar[áa]n?|estar[áa]n?|ir[áa]n?|ver[áa]n?|haber[áa]n?|habr[áa]n?)" +
+      UA,
+    "iu",
+  ),
   // Explicit forecasting vocabulary
-  /\b(predicci[óo]n|predice|predecir|pron[óo]stico|pronostic[ao]r?|forecast|proyecci[óo]n|proyect[ao]r?)\b/i,
-  /\b(futuro|en el futuro|a futuro|de cara al futuro)\b/i,
-  /\b(pr[óo]xim[oa]s? (a[ñn]o|trimestre|semestre|mes|semana|d[íi]a))\b/i,
-  /\b(el a[ñn]o que viene|el pr[óo]ximo a[ñn]o|de aqu[íi] a)\b/i,
-  /\b(c[óo]mo (ser[áa]|evolucionar[áa]|terminar[áa]|acabar[áa]))\b/i,
-  /\b(qu[ée] (pasar[áa]|ocurrir[áa]|suceder[áa]))\b/i,
+  new RegExp(UB + "(predicci[óo]n|predice|predecir|pron[óo]stico|pronostic[ao]r?|forecast|proyecci[óo]n|proyect[ao]r?)" + UA, "iu"),
+  new RegExp(UB + "(futuro|en el futuro|a futuro|de cara al futuro)" + UA, "iu"),
+  /(pr[óo]xim[oa]s? (a[ñn]o|trimestre|semestre|mes|semana|d[íi]a))/iu,
+  /(el a[ñn]o que viene|el pr[óo]ximo a[ñn]o|de aqu[íi] a)/iu,
   // English equivalents (queries can come in EN/PT/CA)
   /\b(will be|forecast|prediction|predict|future)\b/i,
 ];
