@@ -100,6 +100,8 @@ serve(async (req: Request) => {
   try {
     const body = await req.json().catch(() => ({}));
     const question = (body?.question || "").toString().trim();
+    const originalQuestion = (body?.originalQuestion || "").toString().trim();
+    const effectiveQuestion = originalQuestion || question;
     const sessionId = (body?.session_id || body?.sessionId || "").toString().trim();
     const conversationHistory: ConversationMessage[] = Array.isArray(body?.conversation_history)
       ? body.conversation_history
@@ -139,6 +141,9 @@ serve(async (req: Request) => {
       sessionId,
       history: conversationHistory.length,
       inheritedEntity: previousContext?.entity ?? null,
+      question,
+      originalQuestion: originalQuestion || null,
+      effectiveQuestion,
     });
 
     // Real progressive streaming: the orchestrator → skill → streamOpenAIResponse
@@ -168,7 +173,7 @@ serve(async (req: Request) => {
 
         try {
           const result = await orchestratorProcess(
-            question,
+            effectiveQuestion,
             conversationHistory,
             supabase,
             onChunk,
@@ -181,7 +186,7 @@ serve(async (req: Request) => {
             ticker: resultMeta.entities?.[0]?.ticker ?? result.datapack?.entity?.ticker ?? null,
             sector: resultMeta.entities?.[0]?.sector_category ?? result.datapack?.entity?.sector_category ?? null,
             intent: resultMeta.intent ?? null,
-            user_question: question,
+            user_question: effectiveQuestion,
             date_from: resultMeta.period_from ?? result.metadata?.period_from ?? result.datapack?.temporal?.from ?? null,
             date_to: resultMeta.period_to ?? result.metadata?.period_to ?? result.datapack?.temporal?.to ?? null,
             models: resultMeta.models_used ?? result.datapack?.models_used ?? [],
