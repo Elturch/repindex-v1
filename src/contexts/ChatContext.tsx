@@ -273,6 +273,45 @@ function persistSessionId(id: string) {
   try { window.localStorage.setItem(SESSION_STORAGE_KEY, id); } catch { /* noop */ }
 }
 
+// Phase 5 — Observabilidad. Fire-and-forget logger. Inserts a row in
+// chat_logs via the log-chat-query edge function and surfaces a soft rate
+// warning toast when the user exceeds 20 queries / hour. Never throws.
+type LogChatPayload = {
+  user_id: string | null;
+  session_id: string | null;
+  question: string;
+  response_type: "guard_rejection" | "report" | "error";
+  guard_type?: string | null;
+  guard_reason?: string | null;
+  duration_ms?: number | null;
+  models_used?: string[] | null;
+  intent?: string | null;
+  ticker?: string | null;
+  error_message?: string | null;
+};
+
+async function postChatLog(
+  payload: LogChatPayload,
+): Promise<{ rateWarning: boolean }> {
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/log-chat-query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) return { rateWarning: false };
+    const data = await resp.json().catch(() => ({}));
+    return { rateWarning: !!data?.rateWarning };
+  } catch (err) {
+    console.warn("[ChatContext] postChatLog failed (non-fatal)", err);
+    return { rateWarning: false };
+  }
+}
+
 /**
  * Normalize text for compliance matching (mirrors backend logic):
  * lowercase, strip diacritics, collapse whitespace, normalize quotes.
@@ -623,6 +662,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
     if (useStreaming) {
       setIsStreaming(true);
     }
+
+    // Phase 5 — Observabilidad. Track wall-clock duration + final response
+    // shape so we can log a single chat_logs row at the end of this turn.
+    const __obsStart = performance.now();
+    let __obsResponseType: "guard_rejection" | "report" | "error" = "report";
+    let __obsGuardType: string | null = null;
+    let __obsGuardReason: string | null = null;
+    let __obsModels: string[] | null = null;
+    let __obsIntent: string | null = null;
+    let __obsTicker: string | null = null;
+    let __obsError: string | null = null;
     
     // Start rotating loading messages — first one reflects the actual model count detected in the query.
     // PHASE 1.8 — Follow-up memory merge for the loader count.
@@ -895,6 +945,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           });
           // PHASE 1.8 — capture context for follow-up merging
           captureLastQueryContext(data.metadata?.reportContext);
+          // Phase 5 — Observabilidad
+          {
+            const reportCtxJson = data.metadata?.reportContext || undefined;
+            const guardKindJson = detectGuardRejection(data.answer ?? '', !!reportCtxJson);
+            __obsResponseType = guardKindJson ? 'guard_rejection' : 'report';
+            __obsGuardType = guardKindJson;
+            __obsModels = data.metadata?.modelsUsed ?? data.metadata?.methodology?.modelsUsed ?? null;
+            __obsIntent = data.metadata?.questionCategory ?? null;
+            __obsTicker = reportCtxJson?.ticker ?? null;
+          }
 
         } else {
           // =========================================================================
@@ -1022,6 +1082,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           });
           // PHASE 1.8 — capture context for follow-up merging (SSE)
           captureLastQueryContext(finalMetadata?.reportContext);
+          // Phase 5 — Observabilidad (SSE)
+          {
+            const reportCtx = finalMetadata?.reportContext || undefined;
+            const guardKind = detectGuardRejection(accumulatedContent, !!reportCtx);
+            __obsResponseType = guardKind ? 'guard_rejection' : 'report';
+            __obsGuardType = guardKind;
+            __obsModels = finalMetadata?.modelsUsed ?? finalMetadata?.methodology?.modelsUsed ?? null;
+            __obsIntent = finalMetadata?.questionCategory ?? null;
+            __obsTicker = reportCtx?.ticker ?? null;
+          }
         }
 
       } else {
@@ -1098,9 +1168,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
         });
         // PHASE 1.8 — capture context for follow-up merging (non-streaming)
         captureLastQueryContext(data.metadata?.reportContext);
+        // Phase 5 — Observabilidad (non-streaming)
+        {
+          const reportCtxNs2 = data.metadata?.reportContext || undefined;
+          const guardKindNs2 = detectGuardRejection(data.answer, !!reportCtxNs2);
+          __obsResponseType = guardKindNs2 ? 'guard_rejection' : 'report';
+          __obsGuardType = guardKindNs2;
+          __obsModels = data.metadata?.modelsUsed ?? data.metadata?.methodology?.modelsUsed ?? null;
+          __obsIntent = data.metadata?.questionCategory ?? null;
+          __obsTicker = reportCtxNs2?.ticker ?? null;
+        }
       }
     } catch (error) {
       console.error('Error in chat intelligence:', error);
+      __obsResponseType = 'error';
+      __obsError = error instanceof Error ? error.message : String(error);
       
       // If streaming failed, remove the incomplete assistant message
       if (options?.useStreaming) {
@@ -1129,6 +1211,29 @@ export function ChatProvider({ children }: ChatProviderProps) {
       }
       setIsLoading(false);
       setIsStreaming(false);
+
+      // Phase 5 — fire-and-forget logging + soft rate warning.
+      const __obsDuration = Math.round(performance.now() - __obsStart);
+      void postChatLog({
+        user_id: currentUserId,
+        session_id: sessionId,
+        question,
+        response_type: __obsResponseType,
+        guard_type: __obsGuardType,
+        guard_reason: __obsGuardReason,
+        duration_ms: __obsDuration,
+        models_used: __obsModels,
+        intent: __obsIntent,
+        ticker: __obsTicker,
+        error_message: __obsError,
+      }).then(({ rateWarning }) => {
+        if (rateWarning) {
+          toast({
+            title: "Has hecho muchas consultas en la última hora",
+            description: "Para mantener buen rendimiento, considera espaciar las próximas. Sigues pudiendo usar el chat con normalidad.",
+          });
+        }
+      });
     }
   }, [messages, sessionId, toast, currentUserId, ensureConversationRecord, language, captureLastQueryContext]);
 

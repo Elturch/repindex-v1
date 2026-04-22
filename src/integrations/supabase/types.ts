@@ -257,6 +257,39 @@ export type Database = {
           },
         ]
       }
+      chat_guard_alerts: {
+        Row: {
+          created_at: string
+          dominant_guard_type: string | null
+          guard_queries: number
+          guard_ratio: number
+          id: string
+          total_queries: number
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          created_at?: string
+          dominant_guard_type?: string | null
+          guard_queries: number
+          guard_ratio: number
+          id?: string
+          total_queries: number
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          created_at?: string
+          dominant_guard_type?: string | null
+          guard_queries?: number
+          guard_ratio?: number
+          id?: string
+          total_queries?: number
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       chat_history: {
         Row: {
           answer: string | null
@@ -357,6 +390,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      chat_logs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          guard_reason: string | null
+          guard_type: string | null
+          id: string
+          intent: string | null
+          models_used: string[] | null
+          question: string
+          response_type: string
+          session_id: string | null
+          ticker: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          guard_reason?: string | null
+          guard_type?: string | null
+          id?: string
+          intent?: string | null
+          models_used?: string[] | null
+          question: string
+          response_type: string
+          session_id?: string | null
+          ticker?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          guard_reason?: string | null
+          guard_type?: string | null
+          id?: string
+          intent?: string | null
+          models_used?: string[] | null
+          question?: string
+          response_type?: string
+          session_id?: string | null
+          ticker?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
       }
       chat_response_feedback: {
         Row: {
