@@ -98,14 +98,17 @@ function extractDomain(url: string): string {
  * cuenta como 1 modelo (deduplicado por (model, url)).
  */
 export function extractCitedSources(rows: any[]): CitedSourcesReport {
-  // Mapa url → { title, modelSet }
-  const map = new Map<string, { title: string | null; models: Set<string> }>();
+  // Mapa url → { title, modelSet, dateNear }
+  const map = new Map<string, { title: string | null; models: Set<string>; detectedDate: string | null }>();
 
   for (const row of rows) {
-    const model = String(row?.["02_model_name"] ?? "").trim() || "(desconocido)";
+    const rowModel = String(row?.["02_model_name"] ?? "").trim();
     for (const field of RAW_FIELDS) {
       const text = row?.[field];
       if (!text || typeof text !== "string") continue;
+      // Prefer the model implied by the field name (raw column owner). Fall
+      // back to the row's 02_model_name if the column is generic.
+      const model = FIELD_TO_MODEL[field] || rowModel || "(desconocido)";
 
       // 1. Enlaces Markdown [title](url)
       let m: RegExpExecArray | null;
@@ -117,7 +120,7 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
         const domain = extractDomain(url);
         if (NOISE_DOMAINS.has(domain)) continue;
         seenInThisField.add(url);
-        const entry = map.get(url) ?? { title: null, models: new Set<string>() };
+        const entry = map.get(url) ?? { title: null, models: new Set<string>(), detectedDate: extractDateFromUrl(url) };
         if (!entry.title && title.length > 0 && title.length < 240) entry.title = title;
         entry.models.add(model);
         map.set(url, entry);
@@ -130,7 +133,7 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
         if (seenInThisField.has(url)) continue;
         const domain = extractDomain(url);
         if (NOISE_DOMAINS.has(domain)) continue;
-        const entry = map.get(url) ?? { title: null, models: new Set<string>() };
+        const entry = map.get(url) ?? { title: null, models: new Set<string>(), detectedDate: extractDateFromUrl(url) };
         entry.models.add(model);
         map.set(url, entry);
       }
@@ -138,13 +141,14 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
   }
 
   const sources: CitedSource[] = [];
-  for (const [url, { title, models }] of map.entries()) {
+  for (const [url, { title, models, detectedDate }] of map.entries()) {
     sources.push({
       url,
       domain: extractDomain(url),
       title,
       models: [...models].sort(),
       citations: models.size,
+      detectedDate,
     });
   }
   // Sort por citations desc, luego por dominio asc
