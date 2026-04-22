@@ -30,7 +30,11 @@ const FULL_SELECT =
   "25_nvm_categoria, 28_drm_categoria, 31_sim_categoria, 34_rmm_categoria, " +
   "37_cem_categoria, 40_gam_categoria, 43_dcm_categoria, 46_cxm_categoria, " +
   "48_precio_accion, 06_period_from, 07_period_to, batch_execution_date, " +
-  "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto";
+  "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, " +
+  // 8-column coverage for cited-sources extraction (URL bibliography). The
+  // citedSources extractor scans these for [title](url) markdown links and
+  // bare URLs, dedupes, and groups them by domain.
+  "respuesta_bruto_claude, respuesta_bruto_grok, respuesta_bruto_qwen";
 
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],

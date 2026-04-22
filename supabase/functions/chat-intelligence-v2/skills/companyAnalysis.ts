@@ -27,6 +27,7 @@ import {
   renderCompetitiveContextTable,
 } from "../datapack/competitiveContext.ts";
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
+import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
 
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
@@ -115,8 +116,14 @@ function buildUserMessage(question: string, datapack: DataPack): string {
       "## 4. Evolución Temporal — narrativa de tendencia + tabla [TEMPORAL_EVOLUTION_TABLE] + conclusión (implicaciones).",
       "## 5. Contexto Competitivo — narrativa de posicionamiento + tabla [COMPETITIVE_TABLE] + conclusión (oportunidades).",
       "## 6. Análisis de Métricas — interpretación cualitativa OBLIGATORIA dimensión por dimensión. Para cada KPI crítico (rojo / amarillo): nombre canónico (NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM) + valor + lectura ejecutiva + recomendación específica con target numérico. Ejemplo: 'SIM (37.7) está en nivel crítico. Indica que las fuentes citadas son débiles. Acción: fortalecer presencia en medios Tier 1 y mejorar trazabilidad de datos financieros para llevar SIM por encima de 53.'",
-      "## 7. Recomendaciones — inserta literalmente el bloque [RECOMMENDATIONS_BLOCK]. Las recomendaciones DEBEN referenciar KPIs por nombre y dar targets numéricos (ej. 'llevar SIM de 37.7 a 53+').",
-      "## 8. Ficha Metodológica — período (declarando solicitado vs disponible si difieren), modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
+      "## 7. Recomendaciones — primero copia LITERALMENTE el bloque [RECOMMENDATIONS_BLOCK]. A continuación AMPLÍALO con AL MENOS 5 recomendaciones estratégicas adicionales que cumplan TODOS estos criterios:",
+      "  (a) ESPECÍFICAS para esta empresa, NO genéricas. Cada una debe citar el nombre de la empresa.",
+      "  (b) DEBEN referenciar al menos UN dominio/medio concreto extraído de la sección 'Fuentes citadas' (ej: 'Bloomberg y Reuters ya cubren X, pero El Confidencial tiene cobertura limitada → enviar nota de prensa a El Confidencial').",
+      "  (c) DEBEN incluir KPI cuantitativo: valor actual + target numérico + horizonte temporal (ej: 'SIM actual 38.6 → target 52-55 si se consigue cobertura adicional en 3 medios Tier 1 durante el próximo trimestre').",
+      "  (d) Priorizadas por impacto real (alto / medio / bajo) basándose en los datos del período.",
+      "  (e) Acción concreta: verbo de acción + entregable + plazo (ej: 'publicar dossier ESG auditado en Q2 2026').",
+      "## 8. Fuentes citadas por los modelos de IA — copia LITERALMENTE el bloque [CITED_SOURCES_BLOCK]. Esta sección lista las URLs REALES que las IAs usaron como evidencia, agrupadas por dominio y con el conteo de modelos que las citan. NO inventes URLs ni añadas medios que no aparezcan en el bloque pre-renderizado.",
+      "## 9. Ficha Metodológica — período (declarando solicitado vs disponible si difieren), modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
       "",
       "BLOQUES PRE-RENDERIZADOS (cópialos tal cual donde corresponda):",
       "",
@@ -222,6 +229,11 @@ export const companyAnalysisSkill: Skill = {
     const divergence = renderDivergenceBlock(datapack.raw_rows);
     const recommendations = renderRecommendationsBlock(datapack.metrics);
     const competitiveTable = renderCompetitiveContextTable(competitive, datapack.entity.ticker);
+    // Cited sources (real URLs from the 8 raw-response columns). Pre-rendered
+    // as a markdown block; also returned structurally so the FE can show it
+    // in the HTML export with clickable <a> tags.
+    const citedSourcesReport = extractCitedSources(datapack.raw_rows);
+    const citedSources = renderCitedSourcesBlock(citedSourcesReport);
     console.log(`${tag} enrichment done in ${Date.now() - t0}ms`);
 
     // 1c. Append the new blocks (in canonical order) AFTER the existing
@@ -232,6 +244,7 @@ export const companyAnalysisSkill: Skill = {
       temporalEvo,
       competitiveTable,
       recommendations,
+      citedSources,
       divergence,
     ].filter((s) => s && s.trim().length > 0);
     datapack = { ...datapack, pre_rendered_tables: enrichedTables };

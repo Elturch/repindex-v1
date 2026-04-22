@@ -32,7 +32,10 @@ function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: numb
 
 const SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, " +
-  "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score";
+  "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score, " +
+  // Raw response columns for cited-sources extraction (URL bibliography).
+  "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, " +
+  "respuesta_bruto_claude, respuesta_bruto_grok, respuesta_bruto_qwen";
 
 const METRIC_COLS: Array<[string, string]> = [
   ["RIX", "09_rix_score"], ["NVM", "23_nvm_score"], ["DRM", "26_drm_score"],

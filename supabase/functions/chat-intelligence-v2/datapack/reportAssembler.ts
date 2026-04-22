@@ -14,6 +14,7 @@ import { renderModelBreakdownTable } from "./modelBreakdown.ts";
 import { renderTemporalEvolutionTable } from "./temporalEvolution.ts";
 import { renderDivergenceBlock } from "./divergenceStats.ts";
 import { renderRecommendationsBlock } from "./recommendations.ts";
+import { extractCitedSources, renderCitedSourcesBlock, type CitedSourcesReport } from "./citedSources.ts";
 import { computePeriodAggregation, type RawRunRow } from "../../_shared/periodAggregation.ts";
 
 /**
@@ -55,6 +56,10 @@ export interface AssembledReport {
   recommendations: string;
   /** Filled by callers that ran an extra SQL (currently companyAnalysis only). */
   competitiveContext: string;
+  /** Pre-rendered "Fuentes citadas" markdown block (URLs from raw responses). */
+  citedSources: string;
+  /** Structured report behind the citedSources block (for HTML export, FE, etc). */
+  citedSourcesReport: CitedSourcesReport;
 }
 
 export interface AssembleInput {
@@ -73,6 +78,7 @@ export interface AssembleInput {
  * concatenating. This is a pure function: no SQL, no I/O.
  */
 export function assembleReport(input: AssembleInput): AssembledReport {
+  const citedSourcesReport = extractCitedSources(input.raw_rows);
   return {
     kpiTable: input.metrics.length > 0 ? renderPeriodKpiTable(input.metrics, input.mode) : "",
     modelBreakdown: renderModelBreakdownTable(input.raw_rows),
@@ -80,15 +86,20 @@ export function assembleReport(input: AssembleInput): AssembledReport {
     divergenceStats: renderDivergenceBlock(input.raw_rows),
     recommendations: renderRecommendationsBlock(input.metrics),
     competitiveContext: input.competitiveContext ?? "",
+    citedSources: renderCitedSourcesBlock(citedSourcesReport),
+    citedSourcesReport,
   };
 }
 
 /** Sections each skill must surface. Drives prompt structure + block order. */
 export const SECTIONS_BY_SKILL = {
-  companyAnalysis: ["kpiTable", "modelBreakdown", "temporalEvolution", "competitiveContext", "recommendations", "divergenceStats"] as const,
+  companyAnalysis: ["kpiTable", "modelBreakdown", "temporalEvolution", "competitiveContext", "recommendations", "citedSources", "divergenceStats"] as const,
+  // sectorRanking returns thousands of rows; including the 7 raw-text columns
+  // in the SELECT is too heavy. Cited sources are intentionally OFF here.
   sectorRanking:   ["modelBreakdown", "divergenceStats", "temporalEvolution", "kpiTable", "recommendations", "competitiveContext"] as const,
-  comparison:      ["kpiTable", "modelBreakdown", "recommendations", "divergenceStats"] as const,
-  modelDivergence: ["modelBreakdown", "divergenceStats", "kpiTable"] as const,
+  comparison:      ["kpiTable", "modelBreakdown", "recommendations", "citedSources", "divergenceStats"] as const,
+  modelDivergence: ["modelBreakdown", "divergenceStats", "kpiTable", "citedSources"] as const,
+  // periodEvolution scans many weeks; raw text columns would explode payload.
   periodEvolution: ["temporalEvolution", "kpiTable", "modelBreakdown", "divergenceStats"] as const,
 } as const;
 
@@ -102,7 +113,10 @@ export type SkillKey = keyof typeof SECTIONS_BY_SKILL;
 export function selectBlocks(report: AssembledReport, skill: SkillKey): string[] {
   const order = SECTIONS_BY_SKILL[skill];
   return order
-    .map((k) => report[k as keyof AssembledReport])
+    .map((k) => {
+      const v = report[k as keyof AssembledReport];
+      return typeof v === "string" ? v : "";
+    })
     .filter((s): s is string => typeof s === "string" && s.trim().length > 0);
 }
 
