@@ -93,6 +93,31 @@ function extractDomain(url: string): string {
 }
 
 /**
+ * Extract an ISO date (yyyy-mm-dd) from the URL path itself when present.
+ * Common patterns: /2026/03/15/, /2026-03-15-, /20260315/. Returns null
+ * if no date is detected. Pure heuristic — best-effort.
+ */
+function extractDateFromUrl(url: string): string | null {
+  // /YYYY/MM/DD/
+  let m = url.match(/\/(20\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[\/_\-]|$)/);
+  if (m) {
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  // YYYYMMDD as a single token
+  m = url.match(/(20\d{2})(\d{2})(\d{2})/);
+  if (m) {
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  return null;
+}
+
+/**
  * Extrae todas las URLs citadas de las filas. Cada fila contribuye con UN modelo
  * (su 02_model_name). Si el mismo modelo cita la misma URL en varias semanas,
  * cuenta como 1 modelo (deduplicado por (model, url)).
