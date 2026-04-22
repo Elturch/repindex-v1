@@ -1177,7 +1177,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
           content: data.answer,
           suggestedQuestions: data.suggestedQuestions,
           drumrollQuestion: data.drumrollQuestion,
-          agentVersion: activeAgentVersion,
+          agentVersion: effectiveAgentVersion,
+          fallbackUsed: isFallbackAttempt,
+          streamMetrics: {
+            latencyMs: Math.round(performance.now() - __metricsStart),
+            totalMs: Math.round(performance.now() - __metricsStart),
+            chunksCount: 0,
+          },
           metadata: {
             type: guardKindNs ? 'guard_rejection' : (data.metadata?.type || 'standard'),
             guardKind: guardKindNs || undefined,
