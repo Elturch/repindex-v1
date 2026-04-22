@@ -13,6 +13,13 @@ import { buildBasePrompt } from "../prompts/base.ts";
 import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildDivergenceRules } from "../prompts/divergenceMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import {
+  assembleReport,
+  buildPreRenderedSection,
+  metricsFromRows,
+  renderMethodologyFooter,
+  selectBlocks,
+} from "../datapack/reportAssembler.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -141,6 +148,44 @@ function buildUserMessage(question: string, ticker: string, table: string, sigma
   ].join("\n");
 }
 
+/** FASE D — modelDivergence assembled with the transversal helper. */
+function buildUserMessageWithAssembler(
+  question: string,
+  ticker: string,
+  modelTable: string,
+  sigmaRix: number,
+  top: string,
+  bot: string,
+  rawRows: any[],
+  fromISO: string,
+  toISO: string,
+  models: string[],
+): string {
+  const metrics = metricsFromRows(rawRows);
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const blocks = selectBlocks(report, "modelDivergence");
+  const methodology = renderMethodologyFooter({
+    fromISO, toISO, models, observationsCount: rawRows.length,
+    uniqueWeeks: new Set(rawRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size,
+  });
+  return [
+    `PREGUNTA DEL USUARIO: ${question}`,
+    "",
+    `EMPRESA: ${ticker}`,
+    `σ inter-modelo del RIX: ${sigmaRix.toFixed(1)} | Modelo más alto: ${top} | Modelo más bajo: ${bot}`,
+    "",
+    buildPreRenderedSection(modelTable, blocks, methodology),
+    "",
+    "ESTRUCTURA OBLIGATORIA DEL INFORME:",
+    "## 1. Titular — 2 frases con el nivel de divergencia.",
+    "## 2. Tabla modelo a modelo — inserta literalmente la tabla principal.",
+    "## 3. Visión por modelo — inserta literalmente el bloque de breakdown.",
+    "## 4. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
+    "## 5. KPIs agregados — inserta literalmente la tabla de KPIs.",
+    "## 6. Ficha metodológica — inserta literalmente el bloque metodológico.",
+  ].join("\n");
+}
+
 function buildMetadata(aggs: ModelAgg[], fromISO: string, toISO: string, sigma: number): ReportMetadata {
   return {
     models_used: aggs.map((a) => a.model).join(","),
@@ -212,7 +257,14 @@ export const modelDivergenceSkill: Skill = {
       }),
     ].filter(Boolean).join("\n\n");
 
-    const userMessage = buildUserMessage(parsed.raw_question, entity.ticker, table, sigmaRix, top, bot);
+    const userMessage = buildUserMessageWithAssembler(
+      parsed.effective_question ?? parsed.raw_question,
+      entity.ticker, table, sigmaRix, top, bot,
+      rows,
+      parsed.temporal.from,
+      parsed.temporal.to,
+      aggs.map((a) => a.model),
+    );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },

@@ -15,6 +15,13 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildComparisonRules } from "../prompts/comparisonMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import {
+  assembleReport,
+  buildPreRenderedSection,
+  metricsFromRows,
+  renderMethodologyFooter,
+  selectBlocks,
+} from "../datapack/reportAssembler.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -142,6 +149,43 @@ function buildUserMessage(question: string, table: string, entities: EntityAgg[]
   ].join("\n");
 }
 
+/** FASE D — Comparison skill assembled with the transversal helper. */
+function buildUserMessageWithAssembler(
+  question: string,
+  comparisonTable: string,
+  entities: EntityAgg[],
+  rawRows: any[],
+  fromISO: string,
+  toISO: string,
+  models: string[],
+): string {
+  const metrics = metricsFromRows(rawRows);
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const blocks = selectBlocks(report, "comparison");
+  const methodology = renderMethodologyFooter({
+    fromISO, toISO, models, observationsCount: rawRows.length,
+    uniqueWeeks: new Set(rawRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size,
+  });
+  const compact = entities.map((e) => `• ${e.name} (${e.ticker}) → ${e.obs} obs, modelos: ${e.models.join(", ") || "(ninguno)"}`).join("\n");
+  return [
+    `PREGUNTA DEL USUARIO: ${question}`,
+    "",
+    buildPreRenderedSection(comparisonTable, blocks, methodology),
+    "",
+    "ESTRUCTURA OBLIGATORIA DEL INFORME:",
+    "## 1. Titular — 2 frases con la conclusión de la comparación.",
+    "## 2. Tabla comparativa — inserta literalmente la tabla.",
+    "## 3. KPIs agregados — inserta literalmente la tabla de KPIs.",
+    "## 4. Visión por modelo — inserta literalmente el bloque de breakdown.",
+    "## 5. Recomendaciones — inserta literalmente el bloque de recomendaciones.",
+    "## 6. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
+    "## 7. Ficha metodológica — inserta literalmente el bloque metodológico.",
+    "",
+    "COBERTURA POR EMPRESA:",
+    compact,
+  ].join("\n");
+}
+
 function buildMetadata(entities: EntityAgg[], fromISO: string, toISO: string): ReportMetadata {
   const allRix = entities.map((e) => e.per_metric["RIX"]).filter((v): v is number => Number.isFinite(v as number));
   const range = allRix.length >= 2 ? Math.max(...allRix) - Math.min(...allRix) : 0;
@@ -216,7 +260,15 @@ export const comparisonSkill: Skill = {
       }),
     ].filter(Boolean).join("\n\n");
 
-    const userMessage = buildUserMessage(parsed.raw_question, table, aggs);
+    const userMessage = buildUserMessageWithAssembler(
+      parsed.effective_question ?? parsed.raw_question,
+      table,
+      aggs,
+      rowsPerEntity.flat(),
+      parsed.temporal.from,
+      parsed.temporal.to,
+      commonModels,
+    );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
