@@ -21,6 +21,7 @@ import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
+import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 
 function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
