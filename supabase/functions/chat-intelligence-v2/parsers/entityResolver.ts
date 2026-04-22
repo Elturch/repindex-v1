@@ -159,10 +159,13 @@ export async function resolveMultipleEntities(
   };
 
   // (a) Split on comparison connectors and resolve each chunk.
+  //     We include "con" and "y" as Spanish comparison connectors
+  //     ("compara X con Y", "compara X y Z"), plus the typical "vs" family.
   const chunks = question
-    .split(/\b(?:vs\.?|versus|frente\s+a|contra|compara(?:r|me)?|comparar|y)\b|,/gi)
+    .split(/\b(?:vs\.?|versus|frente\s+a|contra|compara(?:r|me|tiva)?|comparar|con|y)\b|,/gi)
     .map((c) => c.trim())
     .filter((c) => c.length >= 2);
+  console.log(`[RIX-V2][entity] resolveMultiple chunks=${JSON.stringify(chunks)}`);
 
   for (const chunk of chunks) {
     if (out.length >= max) break;
