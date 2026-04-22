@@ -19,6 +19,28 @@ const RAW_FIELDS = [
   "respuesta_bruto_qwen",
 ] as const;
 
+// Map field name → canonical model label used in badges
+const FIELD_TO_MODEL: Record<string, string> = {
+  "20_res_gpt_bruto": "ChatGPT",
+  "21_res_perplex_bruto": "Perplexity",
+  "22_res_gemini_bruto": "Gemini",
+  "23_res_deepseek_bruto": "DeepSeek",
+  "respuesta_bruto_claude": "Claude",
+  "respuesta_bruto_grok": "Grok",
+  "respuesta_bruto_qwen": "Qwen",
+};
+
+// Single-letter badge per model (markdown-safe — no inline HTML needed)
+const MODEL_BADGE: Record<string, string> = {
+  ChatGPT: "C",
+  Perplexity: "P",
+  Gemini: "G",
+  DeepSeek: "D",
+  Claude: "L",
+  Grok: "K",
+  Qwen: "Q",
+};
+
 // Markdown link: [title](url) — captura título y URL
 const MD_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)\]"<>]+)\)/g;
 // URL suelta (sin pertenecer a un enlace markdown). Excluye comas, paréntesis,
@@ -39,6 +61,8 @@ export interface CitedSource {
   title: string | null;
   models: string[]; // Modelos que citan esta URL (deduplicados)
   citations: number; // = models.length
+  /** ISO date string detected near the URL in the raw text (yyyy-mm-dd) */
+  detectedDate?: string | null;
 }
 
 export interface CitedSourcesReport {
