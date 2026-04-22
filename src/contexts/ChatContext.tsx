@@ -951,6 +951,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = data.suggestedQuestions || [];
               lastMsg.drumrollQuestion = data.drumrollQuestion || null;
+              lastMsg.streamMetrics = {
+                latencyMs: Math.round(performance.now() - __metricsStart),
+                totalMs: Math.round(performance.now() - __metricsStart),
+                chunksCount: 0,
+              };
               const reportCtxJson = data.metadata?.reportContext || undefined;
               const guardKindJson = detectGuardRejection(lastMsg.content, !!reportCtxJson);
               lastMsg.metadata = {
