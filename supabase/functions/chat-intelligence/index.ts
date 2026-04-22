@@ -8741,7 +8741,28 @@ serve(async (req) => {
         : `El período «${badPeriod.raw_match}» no es válido (no puedo retroceder un número ${badPeriod.reason === "negative" ? "negativo" : "de cero"} de semanas). Prueba con «últimas 4 semanas» o «últimos 3 meses».`;
       return await _gateRespond(msg, ["últimas 4 semanas", "últimas 8 semanas", "últimos 3 meses"], `invalid_period:${badPeriod.reason}`);
     }
-    // T4: future period beyond data floor.
+    // T4a: predictive / speculative future intent.
+    {
+      const qNorm = (runtimeQuery || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      const currentYear = new Date().getUTCFullYear();
+      const explicitFutureYear = Array.from(qNorm.matchAll(/\b(20\d{2})\b/g)).some((m) => Number(m[1]) > currentYear);
+      const predictiveIntent =
+        explicitFutureYear ||
+        /(prediccion|prediccion reputacional|pronostico|forecast|prediction|predict|future|futuro|en el futuro|proximo ano|el ano que viene|de aqui a)/i.test(qNorm) ||
+        /(^|[^a-z])(sera|seran|tendra|tendran|evolucionara|evolucionaran|pasara|pasaran|ocurrira|ocurriran|sucedera|sucederan|mejorara|mejoraran|empeorara|empeoraran|subira|subiran|bajara|bajaran)([^a-z]|$)/i.test(qNorm);
+      if (predictiveIntent) {
+        const sundayRes = await getLatestValidSundayEdge(supabaseClient);
+        const dataAvailableTo = sundayRes.success ? sundayRes.data! : new Date().toISOString().slice(0, 10);
+        const msg = language === "en"
+          ? `I only have observed data up to ${dataAvailableTo}. I can't forecast future reputation. Try: current reputation of Iberdrola.`
+          : `Solo dispongo de datos observados hasta ${dataAvailableTo}. No puedo predecir la reputación futura. Prueba con: reputación actual de Iberdrola.`;
+        return await _gateRespond(msg, ["Reputación actual de Iberdrola", "Evolución de Iberdrola último trimestre", "Ranking IBEX-35 esta semana"], "predictive_future_intent");
+      }
+    }
+    // T4b: future period beyond data floor.
     {
       const sundayRes = await getLatestValidSundayEdge(supabaseClient);
       const dataAvailableTo = sundayRes.success ? sundayRes.data! : new Date().toISOString().slice(0, 10);
