@@ -199,9 +199,19 @@ export const companyAnalysisSkill: Skill = {
   async execute(input: SkillInput): Promise<SkillOutput> {
     const { parsed, supabase, logPrefix } = input;
     const tag = `${logPrefix}[companyAnalysis]`;
+    console.log(`${tag} START | ticker=${parsed.entities[0]?.ticker ?? "n/a"} | mode=${parsed.mode}`);
 
     // 1. Build the real DataPack from Supabase
-    const { datapack, observations_count } = await buildDataPack(supabase, parsed);
+    let datapack;
+    let observations_count = 0;
+    try {
+      const built = await buildDataPack(supabase, parsed);
+      datapack = built.datapack;
+      observations_count = built.observations_count;
+    } catch (e: any) {
+      console.error(`${tag} buildDataPack threw:`, e?.message ?? e);
+      throw e;
+    }
     console.log(
       `${tag} datapack ready | obs=${observations_count} | models_with_data=${datapack.models_coverage.with_data.length}`,
     );
@@ -219,13 +229,12 @@ export const companyAnalysisSkill: Skill = {
     // 3. If no data at all, skip the LLM call to save tokens.
     if (observations_count === 0) {
       const metadata = buildMetadata(datapack, 0);
+      const fallback = buildFallbackContent(datapack, undefined);
       return {
         datapack: {
           ...datapack,
-          pre_rendered_tables: [
-            ...datapack.pre_rendered_tables,
-            buildFallbackContent(datapack, undefined),
-          ],
+          // El orchestrator usa pre_rendered_tables[0] como respuesta principal.
+          pre_rendered_tables: [fallback, ...datapack.pre_rendered_tables],
         },
         prompt_modules: modules,
         metadata,
