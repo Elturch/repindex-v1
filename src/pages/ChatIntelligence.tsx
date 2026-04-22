@@ -16,6 +16,7 @@ import { ChatMessages } from "@/components/chat/ChatMessages";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ChatQueryGuide } from "@/components/chat/ChatQueryGuide";
 import { getChatTranslations } from "@/lib/chatTranslations";
+import { AgentVersionToggle } from "@/components/chat/AgentVersionToggle";
 
 export default function ChatIntelligence() {
   const {
@@ -70,7 +71,8 @@ export default function ChatIntelligence() {
 
 
         {/* Action Buttons */}
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end items-center gap-2">
+          <AgentVersionToggle />
           <Button
             variant="outline"
             size="sm"
