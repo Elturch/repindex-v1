@@ -16,47 +16,13 @@ function sseEncode(payload: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function inferEntityFromAssistantHistory(history: ConversationMessage[]): {
-  entity: string;
-  company_name?: string;
-  ticker?: string;
-} | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i];
-    if (msg?.role !== "assistant" || !msg.content) continue;
-    const text = String(msg.content).slice(0, 400);
-
-    const withTicker = text.match(
-      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80}?)\s*\(([A-Z][A-Z0-9\.]{1,9})\)/i,
-    );
-    if (withTicker?.[2]) {
-      return {
-        entity: withTicker[2].toUpperCase(),
-        company_name: withTicker[1].trim(),
-        ticker: withTicker[2].toUpperCase(),
-      };
-    }
-
-    const withName = text.match(
-      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80})/i,
-    );
-    if (withName?.[1]) {
-      return {
-        entity: withName[1].trim(),
-        company_name: withName[1].trim(),
-      };
-    }
-  }
-  return null;
-}
-
-function shouldInheritFromHistory(question: string): boolean {
-  const q = (question || "").trim();
-  if (!q) return false;
-  const followupCue = /\b(expand(?:e|ir)?|ampl[ií]a(?:r)?|profundiza(?:r)?|detalla(?:r)?|contin[uú]a(?:r)?|sigue|actualiza(?:r)?|extiend(?:e|er)|desarrolla(?:r)?|completa(?:r)?|hasta\s+(?:ayer|hoy|el\s+d[ií]a)|informe|an[aá]lisis|reporte|respuesta)\b/i;
-  const explicitEntityHint = /\(([A-Z]{2,5})\)|\b[A-Z]{2,5}\b|\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})*\b/;
-  return followupCue.test(q) && !explicitEntityHint.test(q);
-}
+// FASE A — Removed fragile regex helpers (inferEntityFromAssistantHistory,
+// shouldInheritFromHistory). Conversational context is now sourced from a
+// single, structured channel: the `previousContext` field that the frontend
+// builds from `lastQueryContextRef` (ChatContext.tsx). For users with
+// authenticated sessions we additionally hydrate from the persisted
+// `user_conversations.last_report_context` JSONB column when the FE payload
+// is missing (cold reload, conversation re-open).
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -103,6 +69,7 @@ serve(async (req: Request) => {
     const originalQuestion = (body?.originalQuestion || "").toString().trim();
     const effectiveQuestion = originalQuestion || question;
     const sessionId = (body?.session_id || body?.sessionId || "").toString().trim();
+    const conversationId = (body?.conversationId || body?.conversation_id || "").toString().trim();
     const conversationHistory: ConversationMessage[] = Array.isArray(body?.conversation_history)
       ? body.conversation_history
       : Array.isArray(body?.conversationHistory)
@@ -123,24 +90,49 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!,
     );
 
-    if (!previousContext?.entity && conversationHistory.length > 0 && shouldInheritFromHistory(question)) {
-      const inherited = inferEntityFromAssistantHistory(conversationHistory);
-      if (inherited?.entity) {
-        previousContext = {
-          ...(previousContext ?? {}),
-          entity: inherited.entity,
-          company_name: inherited.company_name ?? null,
-          ticker: inherited.ticker ?? null,
-          source: "history_assistant_regex",
-        };
-        console.log("[RIX-V2] inherited entity from history:", inherited.entity);
+    // FASE A — Hydrate previousContext from `user_conversations.last_report_context`
+    // when the FE didn't ship one (cold reload, conversation re-open from the
+    // sidebar). This replaces the legacy regex-over-assistant-text fallback.
+    if (!previousContext?.entity && (conversationId || sessionId)) {
+      try {
+        const lookup = supabase
+          .from("user_conversations")
+          .select("last_report_context")
+          .order("updated_at", { ascending: false })
+          .limit(1);
+        const { data: convRow } = conversationId
+          ? await lookup.eq("id", conversationId).maybeSingle()
+          : await lookup.eq("session_id", sessionId).maybeSingle();
+        const persisted = (convRow as any)?.last_report_context as
+          | { company?: string; ticker?: string; sector?: string; intent?: string;
+              period_from?: string; period_to?: string; models?: string[] }
+          | null;
+        if (persisted?.ticker || persisted?.company) {
+          previousContext = {
+            ...(previousContext ?? {}),
+            entity: persisted.ticker || persisted.company,
+            company_name: persisted.company ?? null,
+            ticker: persisted.ticker ?? null,
+            sector: persisted.sector ?? null,
+            models: persisted.models ?? null,
+            period: persisted.period_from && persisted.period_to
+              ? { from: persisted.period_from, to: persisted.period_to }
+              : null,
+            source: "user_conversations.last_report_context",
+          };
+          console.log("[RIX-V2] hydrated previousContext from user_conversations:", previousContext.entity);
+        }
+      } catch (lookupErr) {
+        console.warn("[RIX-V2] last_report_context lookup failed (non-fatal):", lookupErr);
       }
     }
 
     console.log("[RIX-V2] Request received", {
       sessionId,
+      conversationId: conversationId || null,
       history: conversationHistory.length,
       inheritedEntity: previousContext?.entity ?? null,
+      inheritedSource: previousContext?.source ?? null,
       question,
       originalQuestion: originalQuestion || null,
       effectiveQuestion,
@@ -206,6 +198,31 @@ serve(async (req: Request) => {
             questionCategory: resultMeta.intent ?? null,
             methodology: resultMeta.methodology ?? null,
           }));
+
+          // FASE A — persist structured context for the next turn. We write
+          // to user_conversations.last_report_context (JSONB). Best-effort:
+          // failures must never break the SSE stream.
+          if ((conversationId || sessionId) && (reportContext.ticker || reportContext.company)) {
+            try {
+              const updatePayload = {
+                last_report_context: reportContext,
+                last_message_at: new Date().toISOString(),
+              } as const;
+              const updater = supabase
+                .from("user_conversations")
+                .update(updatePayload);
+              const { error: updErr } = conversationId
+                ? await updater.eq("id", conversationId)
+                : await updater.eq("session_id", sessionId);
+              if (updErr) {
+                console.warn("[RIX-V2] last_report_context persist warning:", updErr.message);
+              } else {
+                console.log("[RIX-V2] persisted last_report_context for", conversationId || sessionId);
+              }
+            } catch (persistErr) {
+              console.warn("[RIX-V2] persist last_report_context failed (non-fatal):", persistErr);
+            }
+          }
 
           // Final "done" event with metadata in the v1-compatible shape.
           controller.enqueue(sseEncode({

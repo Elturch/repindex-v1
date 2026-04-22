@@ -3029,6 +3029,7 @@ export type Database = {
           is_archived: boolean | null
           is_starred: boolean | null
           last_message_at: string | null
+          last_report_context: Json | null
           messages_count: number | null
           session_depth_level: string | null
           session_id: string
@@ -3043,6 +3044,7 @@ export type Database = {
           is_archived?: boolean | null
           is_starred?: boolean | null
           last_message_at?: string | null
+          last_report_context?: Json | null
           messages_count?: number | null
           session_depth_level?: string | null
           session_id: string
@@ -3057,6 +3059,7 @@ export type Database = {
           is_archived?: boolean | null
           is_starred?: boolean | null
           last_message_at?: string | null
+          last_report_context?: Json | null
           messages_count?: number | null
           session_depth_level?: string | null
           session_id?: string
