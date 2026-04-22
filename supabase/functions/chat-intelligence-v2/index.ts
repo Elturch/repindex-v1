@@ -16,47 +16,13 @@ function sseEncode(payload: unknown): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function inferEntityFromAssistantHistory(history: ConversationMessage[]): {
-  entity: string;
-  company_name?: string;
-  ticker?: string;
-} | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i];
-    if (msg?.role !== "assistant" || !msg.content) continue;
-    const text = String(msg.content).slice(0, 400);
-
-    const withTicker = text.match(
-      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80}?)\s*\(([A-Z][A-Z0-9\.]{1,9})\)/i,
-    );
-    if (withTicker?.[2]) {
-      return {
-        entity: withTicker[2].toUpperCase(),
-        company_name: withTicker[1].trim(),
-        ticker: withTicker[2].toUpperCase(),
-      };
-    }
-
-    const withName = text.match(
-      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80})/i,
-    );
-    if (withName?.[1]) {
-      return {
-        entity: withName[1].trim(),
-        company_name: withName[1].trim(),
-      };
-    }
-  }
-  return null;
-}
-
-function shouldInheritFromHistory(question: string): boolean {
-  const q = (question || "").trim();
-  if (!q) return false;
-  const followupCue = /\b(expand(?:e|ir)?|ampl[ií]a(?:r)?|profundiza(?:r)?|detalla(?:r)?|contin[uú]a(?:r)?|sigue|actualiza(?:r)?|extiend(?:e|er)|desarrolla(?:r)?|completa(?:r)?|hasta\s+(?:ayer|hoy|el\s+d[ií]a)|informe|an[aá]lisis|reporte|respuesta)\b/i;
-  const explicitEntityHint = /\(([A-Z]{2,5})\)|\b[A-Z]{2,5}\b|\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})*\b/;
-  return followupCue.test(q) && !explicitEntityHint.test(q);
-}
+// FASE A — Removed fragile regex helpers (inferEntityFromAssistantHistory,
+// shouldInheritFromHistory). Conversational context is now sourced from a
+// single, structured channel: the `previousContext` field that the frontend
+// builds from `lastQueryContextRef` (ChatContext.tsx). For users with
+// authenticated sessions we additionally hydrate from the persisted
+// `user_conversations.last_report_context` JSONB column when the FE payload
+// is missing (cold reload, conversation re-open).
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
