@@ -23,6 +23,8 @@ import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 
+console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
+
 function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
