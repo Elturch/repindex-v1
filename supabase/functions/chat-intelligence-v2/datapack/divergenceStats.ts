@@ -37,15 +37,13 @@ export function computeDivergenceStats(rows: any[]): DivergenceStats {
   };
   if (!rows.length) return empty;
 
-  const sorted = [...rows].sort((a, b) =>
-    String(b.batch_execution_date).localeCompare(String(a.batch_execution_date)),
-  );
-  const latest = String(sorted[0]?.batch_execution_date ?? "").slice(0, 10);
+  // Prefer 06_period_from (semantic week) over batch_execution_date (run date).
+  const weekKey = (r: any) => String(r["06_period_from"] ?? r.batch_execution_date ?? "");
+  const sorted = [...rows].sort((a, b) => weekKey(b).localeCompare(weekKey(a)));
+  const latest = weekKey(sorted[0]).slice(0, 10);
   if (!latest) return empty;
 
-  const sameWeek = sorted.filter(
-    (r) => String(r.batch_execution_date).slice(0, 10) === latest,
-  );
+  const sameWeek = sorted.filter((r) => weekKey(r).slice(0, 10) === latest);
   const scores: number[] = [];
   for (const r of sameWeek) {
     const v = typeof r["09_rix_score"] === "number"

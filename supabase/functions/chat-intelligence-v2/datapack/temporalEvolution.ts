@@ -33,7 +33,8 @@ export interface TemporalEvolutionRow {
 export function computeTemporalEvolution(rows: any[]): TemporalEvolutionRow[] {
   const byWeek = new Map<string, number[]>();
   for (const r of rows) {
-    const w = String(r.batch_execution_date ?? "").slice(0, 10);
+    // Prefer 06_period_from (semantic week) over batch_execution_date (run date).
+    const w = String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10);
     if (!w) continue;
     const v = typeof r["09_rix_score"] === "number"
       ? r["09_rix_score"]
