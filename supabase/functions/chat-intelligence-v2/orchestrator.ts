@@ -1,0 +1,242 @@
+// Agente Rix v2 — orchestrator (dispatch + prompt composition, max 300 LOC)
+// See specs/architecture.md and specs/constraints.md.
+// Steps 1-6 are stubs in this skeleton; concrete parsers/skills land in next phases.
+import type {
+  ConversationMessage,
+  DataPack,
+  Intent,
+  OrchestratorResponse,
+  ParsedQuery,
+  PreviousContext,
+  ReportMetadata,
+  ResolvedEntity,
+  ResolvedTemporal,
+  Skill,
+  SkillOutput,
+} from "./types.ts";
+
+// ---------- Parser stubs ----------
+function classifyIntent(question: string): Intent {
+  const q = question.toLowerCase();
+  if (/comparar|compara|vs\b/.test(q)) return "comparison";
+  if (/ranking|top\s*\d|mejor(es)?\s+(empresa|del)/.test(q)) return "sector_ranking";
+  if (/divergen|consenso/.test(q)) return "model_divergence";
+  if (/evoluci[oó]n|tendencia/.test(q)) return "period_evolution";
+  if (/tiempo|clima|f[uú]tbol|receta/.test(q)) return "out_of_scope";
+  return "company_analysis";
+}
+
+function resolveEntityStub(_question: string): ResolvedEntity[] {
+  return [];
+}
+
+function parseTemporalStub(): ResolvedTemporal {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    from: today,
+    to: today,
+    requested_label: "esta semana",
+    snapshots_expected: 1,
+    snapshots_available: 1,
+    coverage_ratio: 1,
+    is_partial: false,
+  };
+}
+
+function parseModelsStub(): ParsedQuery["models"] {
+  return ["ChatGPT", "Perplexity", "Gemini", "DeepSeek", "Grok", "Qwen"];
+}
+
+function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m?.role === "assistant" && m.report_context) return m.report_context;
+  }
+  return undefined;
+}
+
+// ---------- Guard stubs ----------
+function inputGuard(question: string): string | null {
+  if (!question || question.length < 2) return "Pregunta vacia o demasiado corta.";
+  return null;
+}
+function scopeGuard(parsed: ParsedQuery): string | null {
+  // Real check delegated to next phase; here we only flag obvious out-of-scope intent.
+  if (parsed.intent === "out_of_scope") {
+    return "Esta consulta queda fuera del ambito del Agente Rix (empresas cotizadas espanolas y reputacion algoritmica).";
+  }
+  return null;
+}
+function temporalGuardCheck(_parsed: ParsedQuery): string | null {
+  return null;
+}
+
+// ---------- Skill registry (stubs, real skills land in skills/ next phase) ----------
+function buildMockDatapack(parsed: ParsedQuery): DataPack {
+  const entity: ResolvedEntity =
+    parsed.entities[0] ??
+    {
+      ticker: "N/A",
+      company_name: "N/A",
+      sector_category: null,
+      source: "exact",
+    };
+  return {
+    entity,
+    temporal: parsed.temporal,
+    mode: parsed.mode,
+    models_used: parsed.models,
+    models_coverage: { requested: parsed.models, with_data: parsed.models, missing: [] },
+    metrics: [],
+    raw_rows: [],
+    pre_rendered_tables: [],
+  };
+}
+
+function buildMockMetadata(parsed: ParsedQuery): ReportMetadata {
+  return {
+    models_used: parsed.models.join(","),
+    period_from: parsed.temporal.from,
+    period_to: parsed.temporal.to,
+    observations_count: 0,
+    divergence_level: "n/a",
+    divergence_points: 0,
+    unique_companies: parsed.entities.length,
+    unique_weeks: parsed.temporal.snapshots_available,
+  };
+}
+
+const stubSkill = (name: string, intents: Intent[]): Skill => ({
+  name,
+  intents,
+  async execute({ parsed }) {
+    const out: SkillOutput = {
+      datapack: buildMockDatapack(parsed),
+      prompt_modules: ["base", "antiHallucination", parsed.mode === "period" ? "periodMode" : "snapshotMode"],
+      metadata: buildMockMetadata(parsed),
+    };
+    return out;
+  },
+});
+
+const SKILL_REGISTRY: Skill[] = [
+  stubSkill("companyAnalysis", ["company_analysis"]),
+  stubSkill("sectorRanking", ["sector_ranking"]),
+  stubSkill("comparison", ["comparison"]),
+  stubSkill("modelDivergence", ["model_divergence"]),
+  stubSkill("periodEvolution", ["period_evolution"]),
+  stubSkill("generalQuestion", ["general_question"]),
+];
+
+function selectSkill(intent: Intent): Skill | null {
+  return SKILL_REGISTRY.find((s) => s.intents.includes(intent)) ?? null;
+}
+
+// ---------- Prompt composition (modules resolved in prompts/ next phase) ----------
+const PROMPT_MODULE_STUBS: Record<string, string> = {
+  base: "Eres el Agente Rix v2. Responde en espanol, tono profesional y didactico.",
+  antiHallucination:
+    "PROHIBIDO inventar datos, fechas o metricas. Si el datapack no contiene un valor, dilo explicitamente.",
+  periodMode:
+    "El modo es period: usa MEDIA del periodo, tendencia inicio->fin, min/max. NUNCA digas 'esta semana'.",
+  snapshotMode:
+    "El modo es snapshot: muestra el valor puntual y el delta vs la semana previa.",
+  coverageRules:
+    "Si la cobertura es parcial (coverage_ratio < 1), advierte al usuario en el primer parrafo.",
+};
+
+function composePrompt(modules: string[]): string {
+  return modules
+    .map((m) => PROMPT_MODULE_STUBS[m])
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+// ---------- LLM synthesis (stub: returns a deterministic placeholder) ----------
+async function synthesize(systemPrompt: string, datapack: DataPack, question: string): Promise<string> {
+  // Real call to OpenAI o3/4.1 lands in next phase.
+  console.log("[RIX-V2] synth stub | prompt_chars=", systemPrompt.length, "| entity=", datapack.entity.ticker);
+  return [
+    `**Agente Rix v2 (skeleton)**`,
+    ``,
+    `Pregunta: ${question}`,
+    `Entidad: ${datapack.entity.company_name} (${datapack.entity.ticker})`,
+    `Periodo: ${datapack.temporal.from} -> ${datapack.temporal.to} (${datapack.mode})`,
+    `Modelos: ${datapack.models_used.join(", ")}`,
+    ``,
+    `_Respuesta sintetica pendiente de implementacion en proxima fase._`,
+  ].join("\n");
+}
+
+// ---------- Public entry point ----------
+export async function process(
+  question: string,
+  history: ConversationMessage[],
+  supabase: any,
+): Promise<OrchestratorResponse> {
+  const logPrefix = "[RIX-V2][orch]";
+  console.log(`${logPrefix} processing | q="${question.slice(0, 80)}" | history=${history?.length ?? 0}`);
+
+  // 1. Parsers (stubs)
+  const intent = classifyIntent(question);
+  const entities = resolveEntityStub(question);
+  const temporal = parseTemporalStub();
+  const models = parseModelsStub();
+  const mode: ParsedQuery["mode"] = "snapshot";
+
+  // 2. ParsedQuery
+  const parsed: ParsedQuery = {
+    intent,
+    entities,
+    temporal,
+    models,
+    mode,
+    raw_question: question,
+    is_followup: history.length > 0,
+  };
+
+  // 3. Context inheritance
+  if (parsed.is_followup && parsed.entities.length === 0) {
+    const prev = extractPreviousContext(history);
+    if (prev) {
+      parsed.inherited_context = prev;
+      parsed.entities = [
+        { ticker: prev.ticker, company_name: prev.company_name, sector_category: prev.sector_category, source: "inherited" },
+      ];
+      console.log(`${logPrefix} inherited entity ${prev.ticker} (${prev.company_name})`);
+    }
+  }
+
+  // 4-5. Guards
+  for (const [name, msg] of [
+    ["inputGuard", inputGuard(question)],
+    ["scopeGuard", scopeGuard(parsed)],
+    ["temporalGuard", temporalGuardCheck(parsed)],
+  ] as const) {
+    if (msg) {
+      console.log(`${logPrefix} rejected by ${name}`);
+      return { type: "guard_rejection", content: msg };
+    }
+  }
+
+  // 6-8. Skill dispatch
+  const skill = selectSkill(parsed.intent);
+  if (!skill) {
+    return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
+  }
+  const skillOut = await skill.execute({ parsed, supabase, logPrefix });
+
+  // 9. Prompt composition
+  const systemPrompt = composePrompt(skillOut.prompt_modules);
+
+  // 10. LLM synthesis (stub)
+  const content = await synthesize(systemPrompt, skillOut.datapack, question);
+
+  // 11. Response
+  return {
+    type: "llm_synthesis",
+    content,
+    datapack: skillOut.datapack,
+    metadata: skillOut.metadata,
+  };
+}
