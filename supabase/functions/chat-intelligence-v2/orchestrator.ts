@@ -199,6 +199,7 @@ export async function process(
   if (!skill) {
     return { type: "guard_rejection", content: `No hay skill registrada para intent=${parsed.intent}` };
   }
+  console.log(`${logPrefix} dispatching | intent=${parsed.intent} | skill=${skill.name}`);
   const skillOut = await skill.execute({ parsed, supabase, logPrefix });
   if (collectedWarnings.length > 0) {
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
