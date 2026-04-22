@@ -78,6 +78,7 @@ async function fetchRows(
   toISO: string,
 ): Promise<RawRunRow[]> {
   const all: RawRunRow[] = [];
+  console.log(`[RIX-V2][datapack] SQL window | ticker=${entity.ticker} | from=${fromISO} | to=${toISO}`);
   for (let page = 0; page < 5; page++) {
     const { data, error } = await supabase
       .from("rix_runs_v2")

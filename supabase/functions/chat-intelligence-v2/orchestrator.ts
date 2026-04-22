@@ -248,6 +248,9 @@ export async function process(
   const explicitModels = parseModels(question);
   const models = explicitModels.length > 0 ? explicitModels : allModels();
   const mode = inferMode(temporal);
+  console.log(
+    `${logPrefix} parsed temporal | q="${question.slice(0, 120)}" | from=${temporal.from} | to=${temporal.to} | requested=${temporal.requested_label} | mode=${mode}`,
+  );
 
   // 2. ParsedQuery
   const parsed: ParsedQuery = {
