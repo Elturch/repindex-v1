@@ -209,7 +209,13 @@ export const sectorRankingSkill: Skill = {
       ? `sector ${sector}`
       : (ibexOnly ? "IBEX-35" : "todas las empresas cubiertas");
 
-    const rows = await fetchRankingRows(supabase, parsed.temporal.from, parsed.temporal.to, sector, ibexOnly);
+    // Use the REQUESTED window (e.g. Q1 = 2026-01-01 → 2026-03-31) for the
+    // SQL bounds, NOT the reconciled/clamped window which may collapse to a
+    // 1-2 day range when reconcileWindow's row-limit truncates the scan.
+    const sqlFrom = parsed.temporal.requested_from ?? parsed.temporal.from;
+    const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
+    console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
+    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0 ? renderRankingTable(ranking, models) : "_Sin datos para el período/alcance solicitado._";
