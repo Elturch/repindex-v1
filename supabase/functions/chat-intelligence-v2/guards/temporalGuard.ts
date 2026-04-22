@@ -10,15 +10,60 @@ export interface TemporalResult {
 
 const COVERAGE_WARNING_THRESHOLD = 0.85;
 
+// Predictive / speculative intent: the user asks about the FUTURE,
+// regardless of whether the resolved window happens to overlap with past data.
+// Example: "¿Cómo será la reputación de Iberdrola en 2026?" — even if 2026 has
+// past weeks, the question itself is forecast-oriented and must be rejected.
+const PREDICTIVE_PATTERNS: RegExp[] = [
+  // Spanish future tense ("será", "tendrá", "evolucionará", "se comportará"...)
+  /\b\w{3,}(r[áa]|r[ée](is|n)?|remos|r[áa]s|r[áa]n)\b/i,
+  // Explicit forecasting vocabulary
+  /\b(predicci[óo]n|predice|predecir|pron[óo]stico|pronostic[ao]r?|forecast|proyecci[óo]n|proyect[ao]r?)\b/i,
+  /\b(futuro|en el futuro|a futuro|de cara al futuro)\b/i,
+  /\b(pr[óo]xim[oa]s? (a[ñn]o|trimestre|semestre|mes|semana|d[íi]a))\b/i,
+  /\b(el a[ñn]o que viene|el pr[óo]ximo a[ñn]o|de aqu[íi] a)\b/i,
+  /\b(c[óo]mo (ser[áa]|evolucionar[áa]|terminar[áa]|acabar[áa]))\b/i,
+  /\b(qu[ée] (pasar[áa]|ocurrir[áa]|suceder[áa]))\b/i,
+  // English equivalents (queries can come in EN/PT/CA)
+  /\b(will be|forecast|prediction|predict|future)\b/i,
+];
+
+const PREDICTIVE_REPLY =
+  "No puedo predecir el futuro. RepIndex solo analiza datos ya recogidos por barridos semanales (domingos). " +
+  "Reformula tu pregunta hacia datos hist\u00f3ricos o el periodo m\u00e1s reciente disponible. " +
+  "Por ejemplo: \u201creputaci\u00f3n actual de Iberdrola\u201d, \u201cevoluci\u00f3n de Iberdrola en el \u00faltimo trimestre\u201d.";
+
+function looksPredictive(question: string): boolean {
+  const q = (question ?? "").trim();
+  if (!q) return false;
+  // Explicit far-future year mention (>= currentYear + 1) is always predictive.
+  const yearMatch = q.match(/\b(20\d{2})\b/);
+  if (yearMatch) {
+    const y = parseInt(yearMatch[1], 10);
+    const currentYear = new Date().getUTCFullYear();
+    if (y > currentYear) return true;
+  }
+  for (const re of PREDICTIVE_PATTERNS) {
+    if (re.test(q)) return true;
+  }
+  return false;
+}
+
 /**
  * Rules:
+ *   0. If the question itself is predictive/forecast → reject.
  *   1. If the requested window starts strictly in the future → reject.
  *   2. If snapshots_available === 0 → reject (no data at all).
  *   3. If coverage_ratio < 0.85 → pass but emit a warning that the
  *      synthesis layer must surface to the user.
  *   4. Else → pass clean.
  */
-export function checkTemporal(temporal: ResolvedTemporal): TemporalResult {
+export function checkTemporal(temporal: ResolvedTemporal, question?: string): TemporalResult {
+  // (0) Predictive intent triage — independent of resolved window.
+  if (question && looksPredictive(question)) {
+    return { pass: false, reply: PREDICTIVE_REPLY };
+  }
+
   if (!temporal) {
     return {
       pass: false,
@@ -99,4 +144,4 @@ function formatHuman(d: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export const __test__ = { COVERAGE_WARNING_THRESHOLD };
+export const __test__ = { COVERAGE_WARNING_THRESHOLD, looksPredictive, PREDICTIVE_PATTERNS };
