@@ -262,7 +262,9 @@ export async function process(
     temporal,
     models,
     mode,
-    raw_question: question,
+    raw_question: effectiveQuestion,
+    effective_question: effectiveQuestion,
+    normalized_question: displayQuestion,
     is_followup: isFollowup === true || history.length > 0,
   };
   if (inheritedContext) parsed.inherited_context = inheritedContext;
