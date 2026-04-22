@@ -850,11 +850,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
           }
         : null;
 
+      const edgeFn = window.location.search.includes('agent=v2') ? 'chat-intelligence-v2' : 'chat-intelligence';
+
       console.log('[FE-BE]', {
         query: normalizedQuestion,
         originalQuestion: question,
         previousContext: previousContextPayload,
         isFollowupActive: followupActive,
+        edgeFn,
       });
 
       if (useStreaming) {
@@ -871,7 +874,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setMessages(prev => [...prev, streamingMessage]);
 
         const response = await fetch(
-          `${SUPABASE_URL}/functions/v1/${getChatIntelligenceFunctionName()}`,
+          `${SUPABASE_URL}/functions/v1/${edgeFn}`,
           {
             method: 'POST',
             headers: {
@@ -1110,7 +1113,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         // =========================================================================
         // NON-STREAMING MODE: Use invokeWithTimeout (original behavior)
         // =========================================================================
-        const { data, error } = await invokeWithTimeout(getChatIntelligenceFunctionName(), {
+        const { data, error } = await invokeWithTimeout(edgeFn, {
           question: normalizedQuestion,
           originalQuestion: question !== normalizedQuestion ? question : undefined,
           conversationHistory: messages.map(m => ({ role: m.role, content: m.content })),
