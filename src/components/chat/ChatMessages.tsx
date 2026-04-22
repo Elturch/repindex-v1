@@ -19,6 +19,7 @@ import { getRoleById } from "@/lib/chatRoles";
 import { getChatTranslations } from "@/lib/chatTranslations";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { isPreviewEnvironment } from "@/lib/agentVersion";
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -49,6 +50,9 @@ export function ChatMessages({
   const { user } = useAuth();
   
   const { toast } = useToast();
+  // Streaming metrics + fallback badge are preview-only signals to compare
+  // v1 vs v2 side by side; production users never see them.
+  const showPreviewSignals = isPreviewEnvironment();
 
   const downloadMessage = (message: Message) => {
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
@@ -218,17 +222,30 @@ export function ChatMessages({
                     : 'bg-card border border-border'
               }`}
             >
-              {/* Agent v2 badge — only visible when this assistant message
-                  came from chat-intelligence-v2 (preview-only A/B). */}
-              {message.role === 'assistant' && message.agentVersion === 'v2' && (
-                <div className="mb-2 flex justify-end">
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] font-mono uppercase tracking-wider border-primary/40 text-primary bg-primary/5"
-                  >
-                    v2
-                  </Badge>
-                </div>
+              {/* Agent badge — preview-only A/B signal.
+                  Shows "v2" when the message came from chat-intelligence-v2,
+                  or "v1 (fallback)" when v2 failed and we re-tried with v1
+                  while keeping the toggle on v2. */}
+              {message.role === 'assistant' && showPreviewSignals && (
+                message.fallbackUsed ? (
+                  <div className="mb-2 flex justify-end">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] font-mono uppercase tracking-wider border-amber-500/50 text-amber-700 bg-amber-500/5"
+                    >
+                      v1 (fallback)
+                    </Badge>
+                  </div>
+                ) : message.agentVersion === 'v2' ? (
+                  <div className="mb-2 flex justify-end">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] font-mono uppercase tracking-wider border-primary/40 text-primary bg-primary/5"
+                    >
+                      v2
+                    </Badge>
+                  </div>
+                ) : null
               )}
 
               {/* Guard rejection badge */}
