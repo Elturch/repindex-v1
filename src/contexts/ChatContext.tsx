@@ -220,6 +220,33 @@ function buildLoadingMessages(modelCount: number): string[] {
 
 const DEFAULT_LOADING_MESSAGES = buildLoadingMessages(6);
 
+// Phase 4 — UX: detect short guard-rejection answers so the UI can render
+// them with a distinct icon/color. Heuristic-only (no backend contract change):
+// rejections are short, lack a reportContext and match well-known patterns
+// from the v1/v2 guards. If unsure we return null and the message is treated
+// as a normal assistant reply.
+const GUARD_PATTERNS: Array<{ kind: NonNullable<MessageMetadata["guardKind"]>; re: RegExp }> = [
+  { kind: 'predictive', re: /no\s+puedo\s+predecir|datos\s+futuros|solo\s+dispongo\s+de\s+datos\s+observados|no\s+dispongo\s+de\s+datos\s+futuros|prueba\s+con:\s*reputaci[oó]n\s+actual/i },
+  { kind: 'out_of_scope', re: /\u00e1mbito\s+espa[nñ]ol|cubre\s+exclusivamente\s+el\s+\u00e1mbito|no\s+encuentro\s+esa\s+empresa|empresa\s+matriz/i },
+  { kind: 'no_data', re: /no\s+hay\s+datos\s+disponibles\s+para\s+ese\s+per[ií]odo|datos\s+parciales:\s*solo\s+el/i },
+  { kind: 'greeting', re: /^\s*(hola|bienvenid[oa]|encantad[oa])/i },
+  { kind: 'off_topic', re: /solo\s+puedo\s+analizar\s+reputaci[oó]n|consulta\s+no\s+admitida|no\s+es\s+un\s+tema\s+que\s+pueda\s+analizar/i },
+];
+
+function detectGuardRejection(
+  content: string | undefined | null,
+  hasReportContext: boolean,
+): NonNullable<MessageMetadata["guardKind"]> | null {
+  if (!content) return null;
+  if (hasReportContext) return null;
+  const trimmed = content.trim();
+  if (trimmed.length === 0 || trimmed.length > 1200) return null;
+  for (const { kind, re } of GUARD_PATTERNS) {
+    if (re.test(trimmed)) return kind;
+  }
+  return null;
+}
+
 // Phase 4 — UX: short generic loader shown for the first ~600ms so users
 // don't see "Consultando 6 modelos de IA" for queries the guards will reject
 // in milliseconds (off-topic, future predictions, greetings, etc.).
