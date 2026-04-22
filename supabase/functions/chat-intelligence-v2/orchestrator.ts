@@ -175,8 +175,18 @@ export async function process(
   let entities: ResolvedEntity[] = [];
   let inheritedContext: PreviousContext | undefined;
 
+  // ── FIX: ranking-style intents must NEVER inherit a single entity from
+  // history. They are sector/index-wide queries by definition. Allowing
+  // inheritance pollutes the report metadata (e.g. "top 5 IBEX" showing
+  // ferrovial as the entity just because it was the previous turn).
+  const NO_INHERIT_INTENTS: Intent[] = ["sector_ranking", "comparison", "model_divergence"];
+  const skipInheritance = NO_INHERIT_INTENTS.includes(intent);
+  if (skipInheritance) {
+    console.log(`${logPrefix} intent=${intent} → skipping all entity inheritance from history`);
+  }
+
   // PRIORITY: follow-up inherits entity from previous context
-  if ((isFollowup || history.length > 0) && previousContext?.entity) {
+  if (!skipInheritance && (isFollowup || history.length > 0) && previousContext?.entity) {
     entity = await resolveEntity(previousContext.entity, supabase);
     if (entity && entity.ticker !== "N/A") {
       entities = [entity];
@@ -189,7 +199,7 @@ export async function process(
     }
   }
 
-  if (entities.length === 0 && history.length > 0) {
+  if (!skipInheritance && entities.length === 0 && history.length > 0) {
     const prev = extractPreviousContext(history);
     const lastUser = [...history].reverse().find((m) => m.role === "user" && !!m.content?.trim());
     const assistantSeed = inferEntitySeedFromAssistantText(history);
@@ -286,7 +296,12 @@ export async function process(
   // Trigger when entityResolver failed AND we have any prior history
   // (regardless of intent). This covers follow-ups like "expandir el
   // informe" where v1's Phase 1.18 logic was missing in v2.
-  if (parsed.entities.length === 0 && history && history.length > 0) {
+  if (
+    !NO_INHERIT_INTENTS.includes(parsed.intent) &&
+    parsed.entities.length === 0 &&
+    history &&
+    history.length > 0
+  ) {
     const prev = extractPreviousContext(history);
     if (prev) {
       parsed.inherited_context = prev;
