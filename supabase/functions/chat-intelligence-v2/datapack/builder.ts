@@ -84,9 +84,14 @@ async function fetchRows(
       .from("rix_runs_v2")
       .select(FULL_SELECT)
       .eq("05_ticker", entity.ticker)
-      .gte("batch_execution_date", fromISO)
-      .lte("batch_execution_date", toISO)
-      .order("batch_execution_date", { ascending: false })
+      // BLOQUE 1 fix: filter by semantic week (06_period_from), not by run
+      // date. batch_execution_date is the date the LLM was run; period_from
+      // is the Sunday-anchored snapshot week. Using period_from aligns with
+      // sectorRanking / divergenceStats / temporalEvolution and makes Q1
+      // return the full ~13 weeks instead of ~11.
+      .gte("06_period_from", fromISO)
+      .lte("06_period_from", toISO)
+      .order("06_period_from", { ascending: false })
       .range(page * 1000, (page + 1) * 1000 - 1);
     if (error) {
       console.error("[RIX-V2][datapack] fetchRows error:", error.message);
