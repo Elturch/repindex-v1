@@ -273,6 +273,45 @@ function persistSessionId(id: string) {
   try { window.localStorage.setItem(SESSION_STORAGE_KEY, id); } catch { /* noop */ }
 }
 
+// Phase 5 — Observabilidad. Fire-and-forget logger. Inserts a row in
+// chat_logs via the log-chat-query edge function and surfaces a soft rate
+// warning toast when the user exceeds 20 queries / hour. Never throws.
+type LogChatPayload = {
+  user_id: string | null;
+  session_id: string | null;
+  question: string;
+  response_type: "guard_rejection" | "report" | "error";
+  guard_type?: string | null;
+  guard_reason?: string | null;
+  duration_ms?: number | null;
+  models_used?: string[] | null;
+  intent?: string | null;
+  ticker?: string | null;
+  error_message?: string | null;
+};
+
+async function postChatLog(
+  payload: LogChatPayload,
+): Promise<{ rateWarning: boolean }> {
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/log-chat-query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) return { rateWarning: false };
+    const data = await resp.json().catch(() => ({}));
+    return { rateWarning: !!data?.rateWarning };
+  } catch (err) {
+    console.warn("[ChatContext] postChatLog failed (non-fatal)", err);
+    return { rateWarning: false };
+  }
+}
+
 /**
  * Normalize text for compliance matching (mirrors backend logic):
  * lowercase, strip diacritics, collapse whitespace, normalize quotes.
