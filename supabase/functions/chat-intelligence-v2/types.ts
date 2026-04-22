@@ -115,6 +115,23 @@ export interface OrchestratorResponse {
   content: string;
   datapack?: DataPack;
   metadata?: ReportMetadata;
+  intent?: Intent;
+  entities?: ResolvedEntity[];
+  period_from?: string;
+  period_to?: string;
+  models_used?: ModelName[];
+  data_count?: number;
+  methodology?: {
+    hasRixData?: boolean;
+    modelsUsed?: string[];
+    periodFrom?: string;
+    periodTo?: string;
+    observationsCount?: number;
+    divergenceLevel?: string;
+    divergencePoints?: number;
+    uniqueCompanies?: number;
+    uniqueWeeks?: number;
+  };
 }
 
 export interface ConversationMessage {
