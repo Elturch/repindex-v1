@@ -206,8 +206,13 @@ export async function process(
   // 9. Prompt composition
   const systemPrompt = composePrompt(skillOut.prompt_modules);
 
-  // 10. LLM synthesis (stub)
-  const content = await synthesize(systemPrompt, skillOut.datapack, question);
+  // 10. Content: real skills (e.g. companyAnalysis) deposit the LLM answer
+  //     as the FIRST pre-rendered table. Stub skills fall back to a deterministic
+  //     placeholder so the response still streams something readable.
+  const skillContent = skillOut.datapack.pre_rendered_tables[0];
+  const content = (skillContent && skill.name !== "generalQuestion" && skill.name.startsWith("company") )
+    ? skillContent
+    : await synthesize(systemPrompt, skillOut.datapack, question);
 
   // 11. Response
   return {
