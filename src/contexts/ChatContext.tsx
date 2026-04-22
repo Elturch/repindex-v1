@@ -1135,6 +1135,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           content: data.answer,
           suggestedQuestions: data.suggestedQuestions,
           drumrollQuestion: data.drumrollQuestion,
+          agentVersion: activeAgentVersion,
           metadata: {
             type: guardKindNs ? 'guard_rejection' : (data.metadata?.type || 'standard'),
             guardKind: guardKindNs || undefined,
