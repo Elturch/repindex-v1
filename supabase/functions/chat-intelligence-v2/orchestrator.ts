@@ -161,6 +161,24 @@ export async function process(
     is_followup: history.length > 0,
   };
 
+  // 2b. Intent priority override: if a single concrete entity is resolved,
+  //     promote temporal/divergence intents to company_analysis so the real
+  //     skill handles it (period_evolution / model_divergence stubs would
+  //     otherwise short-circuit the response). Sector rankings and explicit
+  //     comparisons (>= 2 entities) keep their original intent.
+  const PROMOTABLE_INTENTS: Intent[] = ["period_evolution", "model_divergence", "general_question"];
+  if (
+    entities.length === 1 &&
+    PROMOTABLE_INTENTS.includes(parsed.intent) &&
+    parsed.entities[0]?.ticker &&
+    parsed.entities[0].ticker !== "N/A"
+  ) {
+    console.log(
+      `${logPrefix} intent promoted ${parsed.intent} → company_analysis (entity=${parsed.entities[0].ticker})`,
+    );
+    parsed.intent = "company_analysis";
+  }
+
   // 3. Context inheritance
   if (parsed.is_followup && parsed.entities.length === 0) {
     const prev = extractPreviousContext(history);
