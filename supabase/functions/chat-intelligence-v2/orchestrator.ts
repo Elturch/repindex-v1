@@ -37,26 +37,11 @@ function extractPreviousContext(history: ConversationMessage[]): PreviousContext
   return undefined;
 }
 
-// ── Fallback: infer previous entity from assistant text when report_context
-// is missing. Looks for the canonical "**EMPRESA (TICKER)**" header that all
-// v2 skills emit, or a bare 3-6 letter uppercase ticker on a line by itself.
-function inferEntitySeedFromAssistantText(history: ConversationMessage[]): string | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const m = history[i];
-    if (m?.role !== "assistant" || !m.content) continue;
-    const txt = String(m.content).slice(0, 320);
-    const headerWithTicker = txt.match(
-      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80}?)\s*\(([A-Z][A-Z0-9\.]{1,9})\)/i,
-    );
-    if (headerWithTicker?.[2]) return headerWithTicker[2].toUpperCase();
-
-    const headerWithName = txt.match(
-      /(?:^##\s*)?(?:an[aá]lisis de(?: la reputaci[oó]n de)?|informe ejecutivo(?: sobre|:)?|informe de reputaci[oó]n(?: sobre|:)?|informe(?: sobre|de|para))\s+([^\n\(]{2,80})/i,
-    );
-    if (headerWithName?.[1]) return headerWithName[1].trim();
-  }
-  return null;
-}
+// FASE A — Removed inferEntitySeedFromAssistantText (fragile regex over
+// assistant text). Inheritance now flows exclusively from the structured
+// `previousContext` payload (FE) or `extractPreviousContext` (history with
+// embedded report_context). Hydration from `user_conversations.last_report_context`
+// happens upstream in index.ts.
 
 // Guards moved to ./guards/* (real implementations).
 
