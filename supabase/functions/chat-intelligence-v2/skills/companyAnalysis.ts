@@ -138,7 +138,7 @@ export const companyAnalysisSkill: Skill = {
   intents: ["company_analysis"],
 
   async execute(input: SkillInput): Promise<SkillOutput> {
-    const { parsed, supabase, logPrefix } = input;
+    const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[companyAnalysis]`;
     console.log(`${tag} START | ticker=${parsed.entities[0]?.ticker ?? "n/a"} | mode=${parsed.mode}`);
 
@@ -171,6 +171,8 @@ export const companyAnalysisSkill: Skill = {
     if (observations_count === 0) {
       const metadata = buildMetadata(datapack, 0);
       const fallback = buildFallbackContent(datapack, undefined);
+      // Emit the fallback as a single chunk so the stream still produces output.
+      try { onChunk?.(fallback); } catch (_) { /* noop */ }
       return {
         datapack: {
           ...datapack,
@@ -186,11 +188,20 @@ export const companyAnalysisSkill: Skill = {
     const systemPrompt = composePrompt(modules, datapack, parsed.temporal.from, parsed.temporal.to);
     const userMessage = buildUserMessage(parsed.raw_question, datapack);
 
-    // 5. Call the LLM (graceful fallback to pre-rendered tables on error)
-    const { content, error } = await callOpenAI(systemPrompt, userMessage, tag);
-    const finalContent = content && content.trim().length > 0
-      ? content
-      : buildFallbackContent(datapack, error);
+    // 5. Stream the LLM (token-by-token via onChunk). On error, fallback to
+    //    pre-rendered tables and emit them as a single chunk so the SSE pipe
+    //    still delivers something to the client.
+    const { fullText, error } = await streamOpenAIResponse({
+      systemPrompt,
+      userMessage,
+      logPrefix: tag,
+      onChunk: (delta) => { try { onChunk?.(delta); } catch (_) { /* noop */ } },
+    });
+    let finalContent = fullText;
+    if (!finalContent || finalContent.trim().length === 0) {
+      finalContent = buildFallbackContent(datapack, error);
+      try { onChunk?.(finalContent); } catch (_) { /* noop */ }
+    }
 
     // 6. Inject the final content as the FIRST pre-rendered "table"
     //    so the orchestrator can stream it as the answer body.
