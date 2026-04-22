@@ -760,7 +760,15 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
   </main>
   
   ${generateBibliographyHtml(verifiedSources || [], effectivePeriodFrom, effectivePeriodTo)}
-  
+
+  ${generateFuentesSectionHtml({
+    periodFrom: effectivePeriodFrom,
+    periodTo: effectivePeriodTo,
+    observationsCount: typeof reportContext?.sample_size === 'number' ? reportContext.sample_size : undefined,
+    modelsUsed: Array.isArray(reportContext?.models) ? reportContext.models as string[] : undefined,
+    languageCode,
+  })}
+
   <footer class="report-footer">
     <div class="footer-logo">RepIndex</div>
     <div class="footer-tagline">${tr.pdfFooterTagline}</div>
@@ -775,6 +783,94 @@ export function generateExportHtml(markdown: string, tr: ChatUITranslations, lan
   ${generateTechnicalSheetHtml()}
 </body>
 </html>`;
+}
+
+/**
+ * PROBLEMA 5 — Fuentes section for HTML/PDF exports.
+ * Lists the 6 AI models, source table, period, observations, methodology
+ * note and generation date. Rendered between the bibliography and the
+ * technical sheet. Pure presentation: no business logic.
+ */
+function generateFuentesSectionHtml(opts: {
+  periodFrom?: string;
+  periodTo?: string;
+  observationsCount?: number;
+  modelsUsed?: string[];
+  languageCode: string;
+}): string {
+  const isES = (opts.languageCode || 'es').startsWith('es');
+  const generatedAt = format(new Date(), 'dd/MM/yyyy HH:mm');
+  const period = opts.periodFrom && opts.periodTo
+    ? `${opts.periodFrom} → ${opts.periodTo}`
+    : (isES ? 'No especificado' : 'Not specified');
+  const obsLabel = isES ? 'Observaciones totales utilizadas' : 'Total observations used';
+  const titleLabel = isES ? 'Fuentes' : 'Sources';
+  const modelsHeader = isES ? 'Modelos de IA consultados' : 'AI models consulted';
+  const tableHeader = isES ? 'Tabla de origen de datos' : 'Source data table';
+  const periodLabel = isES ? 'Período de extracción' : 'Extraction period';
+  const noteLabel = isES ? 'Nota metodológica' : 'Methodological note';
+  const note = isES
+    ? 'Los datos RIX se generan mediante consultas sistemáticas a 6 modelos de IA, evaluando 9 dimensiones reputacionales. Cada observación es un score 0-100 por modelo, empresa y semana. Frecuencia: semanal (domingos). Temperatura: 0 (determinismo máximo). Sin contexto de usuario ni historial conversacional.'
+    : 'RIX data is generated via systematic queries to 6 AI models, evaluating 9 reputational dimensions. Each observation is a 0-100 score per model, company and week. Frequency: weekly (Sundays). Temperature: 0 (maximum determinism). No user context or conversational history.';
+  const generatedLabel = isES ? 'Fecha de generación del informe' : 'Report generation date';
+
+  const canonicalModels: Array<{ name: string; provider: string; method: string }> = [
+    { name: 'GPT-4.1',         provider: 'OpenAI',          method: 'Web Search Preview' },
+    { name: 'Gemini 2.5 Pro',  provider: 'Google',          method: 'Google Search Grounding' },
+    { name: 'Perplexity Sonar', provider: 'Perplexity AI',  method: 'Native search + citations' },
+    { name: 'DeepSeek Chat',   provider: 'DeepSeek + Tavily', method: 'RAG with Tavily API' },
+    { name: 'Grok-3',          provider: 'xAI',             method: 'Live Search + X' },
+    { name: 'Qwen Max',        provider: 'Alibaba',         method: 'DashScope Web Search' },
+  ];
+  const usedSet = new Set((opts.modelsUsed || []).map((m) => String(m).toLowerCase()));
+  const modelRow = (m: { name: string; provider: string; method: string }) => {
+    const inUse = usedSet.size === 0
+      ? true
+      : [...usedSet].some((u) => m.name.toLowerCase().includes(u) || u.includes(m.name.split(' ')[0].toLowerCase()) || u.includes(m.provider.toLowerCase()));
+    const badge = inUse
+      ? '<span style="display:inline-block;padding:1px 6px;border-radius:8px;background:#d1fae5;color:#065f46;font-size:7px;font-weight:700;margin-left:6px;">EN USO</span>'
+      : '<span style="display:inline-block;padding:1px 6px;border-radius:8px;background:#f3f4f6;color:#6b7280;font-size:7px;font-weight:600;margin-left:6px;">DISPONIBLE</span>';
+    return `<tr>
+      <td><strong>${m.name}</strong>${badge}</td>
+      <td>${m.provider}</td>
+      <td>${m.method}</td>
+    </tr>`;
+  };
+
+  return `
+    <section class="fuentes" style="margin-top:48px;padding:24px 28px;border:1px solid #e5e7eb;border-radius:8px;background:#fafbfc;font-family:'DM Sans',sans-serif;color:#1f2937;page-break-before:always;">
+      <h2 style="font-size:18px;font-weight:700;margin:0 0 6px 0;color:#0f1419;border:none;display:flex;align-items:center;gap:8px;">
+        📚 ${titleLabel}
+      </h2>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:18px;">
+        ${generatedLabel}: <strong>${generatedAt}</strong>
+      </div>
+
+      <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#374151;margin:18px 0 8px 0;">${modelsHeader}</h3>
+      <table style="width:100%;font-size:11px;border-collapse:collapse;background:#fff;">
+        <thead>
+          <tr style="background:#f3f4f6;">
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;font-weight:600;">Modelo</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;font-weight:600;">Proveedor</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;font-weight:600;">Método de grounding</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${canonicalModels.map(modelRow).join('\n')}
+        </tbody>
+      </table>
+
+      <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#374151;margin:20px 0 6px 0;">${tableHeader}</h3>
+      <p style="margin:0 0 6px 0;font-size:11px;"><code style="background:#f3f4f6;padding:2px 6px;border-radius:3px;font-family:'JetBrains Mono',monospace;">rix_runs_v2</code> (Supabase) — ~9.300 filas/Q × 130 emisores activos × 6 modelos.</p>
+
+      <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#374151;margin:20px 0 6px 0;">${periodLabel}</h3>
+      <p style="margin:0;font-size:11px;">${period}</p>
+      ${typeof opts.observationsCount === 'number' ? `<p style="margin:6px 0 0 0;font-size:11px;"><strong>${obsLabel}:</strong> ${opts.observationsCount.toLocaleString('es-ES')}</p>` : ''}
+
+      <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#374151;margin:20px 0 6px 0;">${noteLabel}</h3>
+      <p style="margin:0;font-size:11px;line-height:1.55;color:#4b5563;">${note}</p>
+    </section>
+  `;
 }
 
 // Local converter removed — using shared convertMarkdownToHtml from @/lib/markdownToHtml
