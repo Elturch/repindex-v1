@@ -165,7 +165,6 @@ export async function resolveMultipleEntities(
     .split(/\b(?:vs\.?|versus|frente\s+a|contra|compara(?:r|me|tiva)?|comparar|con|y)\b|,/gi)
     .map((c) => c.trim())
     .filter((c) => c.length >= 2);
-  console.log(`[RIX-V2][entity] resolveMultiple chunks=${JSON.stringify(chunks)}`);
 
   for (const chunk of chunks) {
     if (out.length >= max) break;

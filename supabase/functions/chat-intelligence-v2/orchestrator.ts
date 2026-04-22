@@ -158,7 +158,7 @@ export async function process(
     entities = [];
   } else if (intent === "comparison") {
     entities = await resolveMultipleEntities(question, supabase);
-    console.log(`${logPrefix} comparison entities resolved=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
+    console.log(`${logPrefix} comparison | entities=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
   } else {
     const single = await resolveEntity(question, supabase);
     if (single) entities = [single];
