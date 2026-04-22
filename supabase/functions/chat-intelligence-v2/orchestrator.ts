@@ -187,13 +187,13 @@ export async function process(
   if (!skipInheritance && entities.length === 0 && history.length > 0) {
     const prev = extractPreviousContext(history);
     const lastUser = [...history].reverse().find((m) => m.role === "user" && !!m.content?.trim());
-    const assistantSeed = inferEntitySeedFromAssistantText(history);
-
+    // FASE A — only structured seeds (prev report_context + last user text).
+    // The assistant-text regex fallback was removed; the previousContext
+    // payload from FE / DB hydration covers that gap.
     const seeds = [
       prev?.company_name,
       prev?.ticker,
       lastUser?.content ? String(lastUser.content).slice(0, 160) : null,
-      assistantSeed,
     ].filter((seed): seed is string => !!seed && seed.trim().length > 0);
 
     for (const seed of seeds) {
