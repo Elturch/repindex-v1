@@ -296,7 +296,12 @@ export async function process(
   // Trigger when entityResolver failed AND we have any prior history
   // (regardless of intent). This covers follow-ups like "expandir el
   // informe" where v1's Phase 1.18 logic was missing in v2.
-  if (parsed.entities.length === 0 && history && history.length > 0) {
+  if (
+    !NO_INHERIT_INTENTS.includes(parsed.intent) &&
+    parsed.entities.length === 0 &&
+    history &&
+    history.length > 0
+  ) {
     const prev = extractPreviousContext(history);
     if (prev) {
       parsed.inherited_context = prev;
