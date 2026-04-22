@@ -1067,14 +1067,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // Safety check: if stream ended with empty content, show error
           if (!accumulatedContent.trim()) {
             console.error('[ChatContext] Stream completed but no content received');
-            toast({
-              title: "Error en la respuesta",
-              description: "No se recibió contenido del asistente. Intenta de nuevo.",
-              variant: "destructive",
-            });
-            // Remove the empty assistant message
+            // Remove the empty bubble before throwing so the catch block can
+            // decide whether to fallback (v2 → v1) or surface a destructive
+            // toast (already on v1).
             setMessages(prev => prev.filter((_, idx) => idx !== prev.length - 1));
-            return;
+            throw new Error('Stream vacío: no se recibió contenido del asistente');
           }
 
           // Mark streaming as complete and add final metadata including methodology
@@ -1085,6 +1082,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = suggestedQuestions;
               lastMsg.drumrollQuestion = drumrollQuestion;
+              lastMsg.streamMetrics = {
+                latencyMs: __metricsFirstChunkAt !== null
+                  ? Math.round(__metricsFirstChunkAt - __metricsStart)
+                  : null,
+                totalMs: Math.round(performance.now() - __metricsStart),
+                chunksCount: __metricsChunks,
+              };
               const reportCtx = finalMetadata?.reportContext || undefined;
               const guardKind = detectGuardRejection(lastMsg.content, !!reportCtx);
               lastMsg.metadata = {
