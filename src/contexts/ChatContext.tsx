@@ -439,6 +439,12 @@ export interface Message {
   metadata?: MessageMetadata;
   isStreaming?: boolean; // indicates if message is currently being streamed
   agentVersion?: AgentVersion; // which engine produced this message (preview only)
+  fallbackUsed?: boolean; // true when v2 failed and we fell back to v1
+  streamMetrics?: {
+    latencyMs: number | null; // TTFB: send → first chunk
+    totalMs: number;          // send → stream complete
+    chunksCount: number;      // SSE chunk count (0 for JSON responses)
+  };
 }
 
 interface PageContext {
@@ -509,6 +515,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const initialLoaderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Step 3 — automatic v1 fallback. When v2 fails (HTTP/timeout/empty
+  // stream) we re-invoke sendMessage forcing v1. This ref forces the next
+  // call to ignore the toggle and use v1 + tag the bubble as fallback.
+  const forceV1FallbackRef = useRef<boolean>(false);
   // PHASE 1.8 — last successful query context for follow-up merging.
   const lastQueryContextRef = useRef<LastQueryContext | null>(null);
   // Capture the just-generated reportContext into the follow-up memory.
@@ -738,6 +748,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
       depth_level: options?.depthLevel || sessionDepthLevel,
     });
 
+    // Step 3 — declared outside try so the finally block can clear the v2
+    // safety timeout regardless of where the failure happened.
+    let v2AbortTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
       const timeoutMs = getTimeoutForRequest(options?.depthLevel || sessionDepthLevel);
@@ -843,7 +857,23 @@ export function ChatProvider({ children }: ChatProviderProps) {
         : null;
 
       const activeAgentVersion = getAgentVersion();
-      const edgeFn = getEdgeFunctionName(activeAgentVersion);
+      const isFallbackAttempt = forceV1FallbackRef.current;
+      const effectiveAgentVersion: AgentVersion = isFallbackAttempt ? 'v1' : activeAgentVersion;
+      const edgeFn = getEdgeFunctionName(effectiveAgentVersion);
+
+      // Step 4 — streaming metrics. Captured per attempt; flushed onto the
+      // assistant message right before we mark it complete (preview-only UI).
+      const __metricsStart = performance.now();
+      let __metricsFirstChunkAt: number | null = null;
+      let __metricsChunks = 0;
+
+      // v2 calls get an extra 90s safety timeout so a hung stream triggers
+      // the fallback rather than spinning forever. v1 keeps current behavior.
+      const v2AbortController =
+        effectiveAgentVersion === 'v2' ? new AbortController() : null;
+      v2AbortTimeoutId = v2AbortController
+        ? setTimeout(() => v2AbortController.abort(), 90000)
+        : null;
 
       console.log('[FE-BE]', {
         query: normalizedQuestion,
@@ -851,7 +881,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         previousContext: previousContextPayload,
         isFollowupActive: followupActive,
         edgeFn,
-        agentVersion: activeAgentVersion,
+        agentVersion: effectiveAgentVersion,
+        isFallbackAttempt,
       });
 
       if (useStreaming) {
@@ -864,7 +895,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
           role: 'assistant',
           content: '',
           isStreaming: true,
-          agentVersion: activeAgentVersion,
+          agentVersion: effectiveAgentVersion,
+          fallbackUsed: isFallbackAttempt,
         };
         setMessages(prev => [...prev, streamingMessage]);
 
@@ -894,6 +926,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               previousContext: previousContextPayload,
               isFollowup: followupActive,
             }),
+            signal: v2AbortController?.signal,
           }
         );
 
@@ -922,6 +955,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = data.suggestedQuestions || [];
               lastMsg.drumrollQuestion = data.drumrollQuestion || null;
+              lastMsg.streamMetrics = {
+                latencyMs: Math.round(performance.now() - __metricsStart),
+                totalMs: Math.round(performance.now() - __metricsStart),
+                chunksCount: 0,
+              };
               const reportCtxJson = data.metadata?.reportContext || undefined;
               const guardKindJson = detectGuardRejection(lastMsg.content, !!reportCtxJson);
               lastMsg.metadata = {
@@ -1004,6 +1042,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   const parsed = JSON.parse(data);
                   
                   if (parsed.type === 'chunk' && parsed.text) {
+                    if (__metricsFirstChunkAt === null) {
+                      __metricsFirstChunkAt = performance.now();
+                    }
+                    __metricsChunks += 1;
                     accumulatedContent += parsed.text;
                     accumulatedContent = sanitizeStreamContent(accumulatedContent);
 
@@ -1034,14 +1076,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
           // Safety check: if stream ended with empty content, show error
           if (!accumulatedContent.trim()) {
             console.error('[ChatContext] Stream completed but no content received');
-            toast({
-              title: "Error en la respuesta",
-              description: "No se recibió contenido del asistente. Intenta de nuevo.",
-              variant: "destructive",
-            });
-            // Remove the empty assistant message
+            // Remove the empty bubble before throwing so the catch block can
+            // decide whether to fallback (v2 → v1) or surface a destructive
+            // toast (already on v1).
             setMessages(prev => prev.filter((_, idx) => idx !== prev.length - 1));
-            return;
+            throw new Error('Stream vacío: no se recibió contenido del asistente');
           }
 
           // Mark streaming as complete and add final metadata including methodology
@@ -1052,6 +1091,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
               lastMsg.isStreaming = false;
               lastMsg.suggestedQuestions = suggestedQuestions;
               lastMsg.drumrollQuestion = drumrollQuestion;
+              lastMsg.streamMetrics = {
+                latencyMs: __metricsFirstChunkAt !== null
+                  ? Math.round(__metricsFirstChunkAt - __metricsStart)
+                  : null,
+                totalMs: Math.round(performance.now() - __metricsStart),
+                chunksCount: __metricsChunks,
+              };
               const reportCtx = finalMetadata?.reportContext || undefined;
               const guardKind = detectGuardRejection(lastMsg.content, !!reportCtx);
               lastMsg.metadata = {
@@ -1135,7 +1181,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
           content: data.answer,
           suggestedQuestions: data.suggestedQuestions,
           drumrollQuestion: data.drumrollQuestion,
-          agentVersion: activeAgentVersion,
+          agentVersion: effectiveAgentVersion,
+          fallbackUsed: isFallbackAttempt,
+          streamMetrics: {
+            latencyMs: Math.round(performance.now() - __metricsStart),
+            totalMs: Math.round(performance.now() - __metricsStart),
+            chunksCount: 0,
+          },
           metadata: {
             type: guardKindNs ? 'guard_rejection' : (data.metadata?.type || 'standard'),
             guardKind: guardKindNs || undefined,
@@ -1205,13 +1257,38 @@ export function ChatProvider({ children }: ChatProviderProps) {
           return prev;
         });
       }
-      
+
+      // Step 3 — automatic v1 fallback: if v2 was the failed attempt and we
+      // are NOT already in a fallback retry, warn the user and re-invoke
+      // sendMessage forcing v1. The toggle stays on v2 (UX requirement).
+      const shouldFallback =
+        getAgentVersion() === 'v2' && !forceV1FallbackRef.current;
+      if (shouldFallback) {
+        console.warn(
+          '[ChatContext] v2 failed, retrying with v1 fallback. Original error:',
+          error,
+        );
+        toast({
+          title: 'v2 falló, reintentando con v1...',
+          description:
+            error instanceof Error ? error.message : 'Error desconocido en v2',
+        });
+        forceV1FallbackRef.current = true;
+        try {
+          await sendMessage(question, options);
+        } finally {
+          forceV1FallbackRef.current = false;
+        }
+        return;
+      }
+
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Error en el análisis",
-        variant: "destructive",
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Error en el análisis',
+        variant: 'destructive',
       });
     } finally {
+      if (v2AbortTimeoutId) clearTimeout(v2AbortTimeoutId);
       if (loadingIntervalRef.current) {
         clearInterval(loadingIntervalRef.current);
         loadingIntervalRef.current = null;
