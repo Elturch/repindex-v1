@@ -113,6 +113,12 @@ const CLIENT_FOLLOWUP_PREFIX_REGEX =
   /^[¿\s]*(y|ahora|sin|con|tambi[eé]n|pero|en\s+cambio|y\s+si|y\s+ahora|quita|quitando|excluye|excluyendo|a[ñn]ade|a[ñn]adiendo|incluye|incluyendo|adem[aá]s)\b/i;
 const CLIENT_FOLLOWUP_ANAPHOR_REGEX =
   /\b(ese|esa|esos|esas|este|esta|estos|estas|aquel|aquella|el\s+anterior|el\s+ultimo|el\s+último|los\s+mismos|esa\s+misma)\b/i;
+const CLIENT_FOLLOWUP_ACTION_REGEX =
+  /\b(expand(?:e|ir)?|ampl[ií]a(?:r)?|profundiza(?:r)?|detalla(?:r)?|contin[uú]a(?:r)?|sigue|actualiza(?:r)?|extiend(?:e|er)|desarrolla(?:r)?|completa(?:r)?)\b/i;
+const CLIENT_FOLLOWUP_REPORT_REGEX =
+  /\b(informe|an[aá]lisis|reporte|resultado|respuesta)\b/i;
+const CLIENT_FOLLOWUP_TIME_REGEX =
+  /\bhasta\s+(?:ayer|hoy|el\s+d[ií]a\s+de\s+ayer|el\s+d[ií]a\s+de\s+hoy)\b/i;
 const CLIENT_MODEL_QUANTIFIER_REGEX = /\b(\d+|uno|una|dos|tres|cuatro|cinco|seis)\s+(?:mejores?|peores?|principales|primeros?|ultimos?|últimos?)\s+(?:modelos?|ias?|llms?)\b/i;
 
 function isFollowupClient(question: string): boolean {
@@ -120,7 +126,12 @@ function isFollowupClient(question: string): boolean {
   const t = question.trim();
   const wc = t.split(/\s+/).filter(Boolean).length;
   if (wc === 0 || wc > 10) return false;
-  return CLIENT_FOLLOWUP_ANAPHOR_REGEX.test(t) || CLIENT_FOLLOWUP_PREFIX_REGEX.test(t);
+  return (
+    CLIENT_FOLLOWUP_ANAPHOR_REGEX.test(t) ||
+    CLIENT_FOLLOWUP_PREFIX_REGEX.test(t) ||
+    CLIENT_FOLLOWUP_ACTION_REGEX.test(t) ||
+    (CLIENT_FOLLOWUP_REPORT_REGEX.test(t) && CLIENT_FOLLOWUP_TIME_REGEX.test(t))
+  );
 }
 
 function hasModelQuantifierClient(question: string): boolean {
