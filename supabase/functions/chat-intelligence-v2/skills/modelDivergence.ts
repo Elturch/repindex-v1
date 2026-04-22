@@ -165,7 +165,7 @@ function buildUserMessageWithAssembler(
   models: string[],
 ): string {
   const metrics = metricsFromRows(rawRows);
-  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period" });
+  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", periodFrom: fromISO, periodTo: toISO });
   const blocks = selectBlocks(report, "modelDivergence");
   const methodology = renderMethodologyFooter({
     fromISO, toISO, models, observationsCount: rawRows.length,
