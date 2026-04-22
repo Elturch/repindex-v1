@@ -424,7 +424,7 @@ interface ChatProviderProps {
 }
 
 export function ChatProvider({ children }: ChatProviderProps) {
-  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState<string>(() => loadPersistedSessionId());
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -436,6 +436,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const [isStarred, setIsStarred] = useState(false);
   const [language, setLanguageState] = useState<ChatLanguage>(() => getSavedLanguage());
   const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const initialLoaderTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // PHASE 1.8 — last successful query context for follow-up merging.
   const lastQueryContextRef = useRef<LastQueryContext | null>(null);
   // Capture the just-generated reportContext into the follow-up memory.
