@@ -110,7 +110,10 @@ export type SkillKey = keyof typeof SECTIONS_BY_SKILL;
 export function selectBlocks(report: AssembledReport, skill: SkillKey): string[] {
   const order = SECTIONS_BY_SKILL[skill];
   return order
-    .map((k) => report[k as keyof AssembledReport])
+    .map((k) => {
+      const v = report[k as keyof AssembledReport];
+      return typeof v === "string" ? v : "";
+    })
     .filter((s): s is string => typeof s === "string" && s.trim().length > 0);
 }
 
