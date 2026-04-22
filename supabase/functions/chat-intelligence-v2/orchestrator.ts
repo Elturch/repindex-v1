@@ -37,6 +37,22 @@ function extractPreviousContext(history: ConversationMessage[]): PreviousContext
   return undefined;
 }
 
+// ── Fallback: infer previous entity from assistant text when report_context
+// is missing. Looks for the canonical "**EMPRESA (TICKER)**" header that all
+// v2 skills emit, or a bare 3-6 letter uppercase ticker on a line by itself.
+function inferEntityFromAssistantText(history: ConversationMessage[]):
+  { ticker: string; company_name: string } | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (m?.role !== "assistant" || !m.content) continue;
+    const txt = String(m.content);
+    // Pattern 1: "**Análisis de Iberdrola (IBE)**" / "Iberdrola (IBE)"
+    const m1 = txt.match(/([A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ\.\- ]{2,40})\s*\(([A-Z][A-Z0-9\.]{1,9})\)/);
+    if (m1) return { company_name: m1[1].trim(), ticker: m1[2].toUpperCase() };
+  }
+  return null;
+}
+
 // Guards moved to ./guards/* (real implementations).
 
 // ---------- Skill registry (stubs, real skills land in skills/ next phase) ----------
