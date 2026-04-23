@@ -348,12 +348,12 @@ export async function process(
     console.log(`${logPrefix} skipping resolveEntity(question) — looks like pure follow-up without brand mention`);
   } else if (entities.length === 0) {
     if (intent === "sector_ranking") {
-      entities = await autoResolveEntitiesBySector(question, supabase, 10);
+      entities = await autoResolveEntitiesBySector(question, supabase, 5);
     } else if (intent === "comparison") {
       entities = await resolveMultipleEntities(question, supabase);
       console.log(`${logPrefix} comparison | entities=${entities.length} | ${entities.map((e) => e.ticker).join(",")}`);
       if (entities.length < 2) {
-        const sectorEntities = await autoResolveEntitiesBySector(question, supabase, 10);
+        const sectorEntities = await autoResolveEntitiesBySector(question, supabase, 5);
         if (sectorEntities.length >= 2) {
           entities = sectorEntities;
           console.log(`${logPrefix} comparison | sectorAutoResolve fallback applied | entities=${entities.length}`);
