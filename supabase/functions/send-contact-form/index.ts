@@ -198,10 +198,13 @@ const generateConfirmationEmailHtml = (name: string): string => {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); padding: 32px; border-radius: 12px 12px 0 0; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
-                ¡Gracias por contactarnos!
+            <td style="background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%); padding: 32px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
+                RepIndex
               </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Hemos recibido tu solicitud
+              </p>
             </td>
           </tr>
           
@@ -213,35 +216,12 @@ const generateConfirmationEmailHtml = (name: string): string => {
               </p>
               
               <p style="margin: 0 0 20px 0; font-size: 16px; color: #475569; line-height: 1.7;">
-                Hemos recibido tu mensaje correctamente. Nuestro equipo lo revisará y <strong>nos pondremos en contacto contigo lo antes posible</strong>.
+                Hemos recibido tu solicitud correctamente. Nuestro equipo revisará tu mensaje y se pondrá en contacto contigo en las próximas <strong>24-48 horas</strong>.
               </p>
-              
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #475569; line-height: 1.7;">
-                Normalmente respondemos en un plazo de <strong>24-48 horas laborables</strong>.
+
+              <p style="margin: 0; font-size: 16px; color: #475569; line-height: 1.7;">
+                Gracias por tu interés en RepIndex.
               </p>
-              
-              <!-- Divider -->
-              <div style="border-top: 1px solid #e2e8f0; margin: 32px 0;"></div>
-              
-              <!-- What is RepIndex -->
-              <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
-                ¿Qué es RepIndex?
-              </p>
-              
-              <p style="margin: 0 0 20px 0; font-size: 15px; color: #475569; line-height: 1.7;">
-                RepIndex mide cómo las principales IAs (ChatGPT, Perplexity, Gemini, DeepSeek, Grok, Qwen) describen a las empresas del IBEX 35 y empresas cotizadas. Es el primer índice de reputación algorítmica en España.
-              </p>
-              
-              <!-- CTA -->
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center" style="padding-top: 16px;">
-                    <a href="https://repindex.ai" style="display: inline-block; padding: 14px 28px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px;">
-                      Explorar RepIndex
-                    </a>
-                  </td>
-                </tr>
-              </table>
             </td>
           </tr>
           
@@ -343,7 +323,7 @@ const handler = async (req: Request): Promise<Response> => {
     const { data: confirmationEmailData, error: confirmationEmailError } = await resend.emails.send({
       from: "RepIndex <no-reply@repindex.ai>",
       to: [email],
-      subject: "¡Gracias por contactar con RepIndex!",
+      subject: "RepIndex - Hemos recibido tu solicitud",
       html: confirmationHtml,
     });
 
