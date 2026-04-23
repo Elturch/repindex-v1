@@ -884,7 +884,21 @@ function preprocessRawMarkdown(markdown: string): string {
 export function convertMarkdownToHtml(markdown: string): string {
   // Step 0: Preprocess raw markdown to isolate inline structural elements
   let html = preprocessRawMarkdown(markdown);
-  
+
+  // Step 0.5: PROTECT inline HTML tags (especially <a href="..._blank">,
+  // <span style="...">, <br>) from the markdown regex transforms below.
+  // Without this, URLs containing underscores get mangled by the italic
+  // regex (`_..._` → `<em>...</em>`), breaking href attributes and the
+  // entire bibliography section. We replace each HTML tag with a
+  // placeholder, run the markdown pipeline, and restore at the end.
+  const htmlTagSlots: string[] = [];
+  const HTML_TAG_RE = /<\/?[a-zA-Z][^<>]*>/g;
+  html = html.replace(HTML_TAG_RE, (tag) => {
+    const idx = htmlTagSlots.length;
+    htmlTagSlots.push(tag);
+    return `\u0000HTMLTAG${idx}\u0000`;
+  });
+
   // Process tables first
   html = processMarkdownTables(html);
   
