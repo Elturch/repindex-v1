@@ -61,14 +61,60 @@ function detectSectorCategory(question: string): string | null {
   return null;
 }
 
+// Sub-filter rules: when the question contains certain keywords, narrow
+// the sector match by an ILIKE on issuer_name to favour entities whose
+// brand actually matches the user's intent (e.g. "hospitalarios" → only
+// issuers with hospital/clínica in the name, not the full health sector).
+const SECTOR_NAME_SUBFILTERS: Array<{ trigger: RegExp; ilikeAny: string[] }> = [
+  { trigger: /\b(hospital(?:es|ario|arios)?|cl[ií]nicas?)\b/i, ilikeAny: ["%hospital%", "%clinica%", "%clínica%", "%hosp%"] },
+  { trigger: /\b(asegurador[oa]s?|seguros?)\b/i, ilikeAny: ["%seguros%", "%mapfre%", "%mutua%"] },
+  { trigger: /\b(hotel(?:es|er[oa]s?)?)\b/i, ilikeAny: ["%hotel%", "%meli[aá]%", "%nh%"] },
+  { trigger: /\b(supermercados?)\b/i, ilikeAny: ["%mercadona%", "%dia%", "%carrefour%", "%lidl%", "%alcampo%"] },
+];
+
+function detectNameSubfilter(question: string): string[] | null {
+  for (const { trigger, ilikeAny } of SECTOR_NAME_SUBFILTERS) {
+    if (trigger.test(question)) return ilikeAny;
+  }
+  return null;
+}
+
 async function autoResolveEntitiesBySector(
   question: string,
   supabase: any,
-  limit = 10,
+  limit = 5,
 ): Promise<ResolvedEntity[]> {
   const sector = detectSectorCategory(question);
   if (!sector) return [];
   try {
+    // (a) Try the name sub-filter first, when the query gives us a brand-name
+    //     hint (e.g. "hospitalarios", "aseguradoras"). If we find >=2 hits
+    //     that match the sub-filter, use ONLY those.
+    const subfilter = detectNameSubfilter(question);
+    if (subfilter && subfilter.length > 0) {
+      const orExpr = subfilter.map((p) => `issuer_name.ilike.${p}`).join(",");
+      const { data: subRows, error: subErr } = await supabase
+        .from("repindex_root_issuers")
+        .select("issuer_name, ticker, sector_category")
+        .eq("sector_category", sector)
+        .or(orExpr)
+        .limit(limit);
+      if (!subErr && Array.isArray(subRows) && subRows.length >= 2) {
+        const filtered: ResolvedEntity[] = subRows
+          .filter((r: any) => r?.ticker && r?.issuer_name)
+          .map((r: any) => ({
+            ticker: String(r.ticker).toUpperCase(),
+            company_name: r.issuer_name,
+            sector_category: r.sector_category ?? sector,
+            source: "semantic_bridge" as ResolvedEntity["source"],
+          }));
+        console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | subfilter applied | resolved=${filtered.length} | tickers=${filtered.map((e) => e.ticker).join(",")}`);
+        return filtered;
+      }
+      console.log(`[RIX-V2][orch] sectorAutoResolve | subfilter matched <2 rows (${subRows?.length ?? 0}), falling back to full sector`);
+    }
+
+    // (b) Fallback: full sector with hard cap.
     const { data, error } = await supabase
       .from("repindex_root_issuers")
       .select("issuer_name, ticker, sector_category")
