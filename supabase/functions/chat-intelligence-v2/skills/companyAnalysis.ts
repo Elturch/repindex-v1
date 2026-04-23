@@ -325,6 +325,21 @@ export const companyAnalysisSkill: Skill = {
       try { onChunk?.(finalContent); } catch (_) { /* noop */ }
     }
 
+    // Substitute the placeholder with the full cited-sources bibliography.
+    // If the LLM forgot the marker, append the block at the end. Either way,
+    // emit the resulting block via onChunk so the streaming client sees it.
+    if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
+      const MARKER = "<!--CITED_SOURCES_HERE-->";
+      if (finalContent.includes(MARKER)) {
+        finalContent = finalContent.replace(MARKER, citedSourcesFull);
+        try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
+      } else {
+        const tail = "\n\n" + citedSourcesFull;
+        finalContent = finalContent + tail;
+        try { onChunk?.(tail); } catch (_) { /* noop */ }
+      }
+    }
+
     // 6. Inject the final content as the FIRST pre-rendered "table"
     //    so the orchestrator can stream it as the answer body.
     const enrichedDatapack: DataPack = {
