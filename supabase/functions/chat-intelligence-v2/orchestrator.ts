@@ -84,7 +84,7 @@ async function autoResolveEntitiesBySector(
         ticker: String(r.ticker).toUpperCase(),
         company_name: r.issuer_name,
         sector_category: r.sector_category ?? sector,
-        source: "sector_auto" as ResolvedEntity["source"],
+        source: "semantic_bridge" as ResolvedEntity["source"],
       }));
     console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | resolved=${out.length} | tickers=${out.map((e) => e.ticker).join(",")}`);
     return out;
