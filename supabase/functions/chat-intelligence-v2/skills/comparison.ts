@@ -145,40 +145,50 @@ function buildUserMessage(question: string, table: string, entities: EntityAgg[]
   ].join("\n");
 }
 
-/** FASE D — Comparison skill assembled with the transversal helper. */
-function buildUserMessageWithAssembler(
+/**
+ * COMPACT prompt builder for multi-entity comparisons.
+ * Sends ONLY the numeric comparison table + minimal coverage metadata.
+ * Excludes raw text, URLs, model breakdowns and other heavy blocks to
+ * stay well under the OpenAI 400 payload threshold for 5+ entities.
+ * Cited sources are appended after streaming via the standard pipeline.
+ */
+function buildCompactComparisonMessage(
   question: string,
   comparisonTable: string,
   entities: EntityAgg[],
-  rawRows: any[],
   fromISO: string,
   toISO: string,
   models: string[],
+  observationsCount: number,
+  uniqueWeeks: number,
 ): string {
-  const metrics = metricsFromRows(rawRows);
-  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", periodFrom: fromISO, periodTo: toISO });
-  const blocks = selectBlocks(report, "comparison");
-  const methodology = renderMethodologyFooter({
-    fromISO, toISO, models, observationsCount: rawRows.length,
-    uniqueWeeks: new Set(rawRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size,
-  });
-  const compact = entities.map((e) => `• ${e.name} (${e.ticker}) → ${e.obs} obs, modelos: ${e.models.join(", ") || "(ninguno)"}`).join("\n");
+  const compact = entities
+    .map((e) => `• ${e.name} (${e.ticker}) → ${e.obs} obs · modelos: ${e.models.join(", ") || "n/d"}`)
+    .join("\n");
+  const methodology = [
+    "**Ficha metodológica**",
+    `• Período: ${fromISO} → ${toISO}`,
+    `• Modelos: ${models.length ? models.join(", ") : "n/d"}`,
+    `• Observaciones: ${observationsCount} · Semanas con datos: ${uniqueWeeks}`,
+  ].join("\n");
   return [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
-    buildPreRenderedSection(comparisonTable, blocks, methodology),
+    "TABLA COMPARATIVA PRE-RENDERIZADA (úsala literalmente, NO la regeneres):",
     "",
-    "ESTRUCTURA OBLIGATORIA DEL INFORME:",
-    "## 1. Titular — 2 frases con la conclusión de la comparación.",
-    "## 2. Tabla comparativa — inserta literalmente la tabla.",
-    "## 3. KPIs agregados — inserta literalmente la tabla de KPIs.",
-    "## 4. Visión por modelo — inserta literalmente el bloque de breakdown.",
-    "## 5. Recomendaciones — inserta literalmente el bloque de recomendaciones.",
-    "## 6. Divergencia inter-modelo — inserta literalmente el bloque de divergencia.",
-    "## 7. Ficha metodológica — inserta literalmente el bloque metodológico.",
+    comparisonTable,
     "",
     "COBERTURA POR EMPRESA:",
     compact,
+    "",
+    methodology,
+    "",
+    "ESTRUCTURA OBLIGATORIA DEL INFORME:",
+    "## 1. Titular — 2 frases con la conclusión de la comparación.",
+    "## 2. Tabla comparativa — inserta literalmente la tabla pre-renderizada.",
+    "## 3. Lectura por empresa — 1 párrafo breve por cada empresa explicando sus fortalezas/debilidades según las métricas.",
+    "## 4. Conclusiones — 3-5 bullets accionables.",
+    "## 5. Ficha metodológica — inserta literalmente el bloque metodológico.",
   ].join("\n");
 }
 
