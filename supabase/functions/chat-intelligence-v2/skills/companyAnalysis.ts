@@ -29,6 +29,29 @@ import {
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
 
+/**
+ * Build a COMPACT summary of cited sources for the LLM prompt only.
+ * The full block (potentially hundreds of URLs, thousands of tokens) is
+ * NEVER sent to the LLM — it is appended to the final response after the
+ * LLM finishes streaming. This avoids OpenAI 400 (token limit) errors
+ * while keeping section 8 fully populated for the FE.
+ */
+function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>): string {
+  if (report.totalUrls === 0) return "";
+  const topDomains = report.byDomain.slice(0, 10)
+    .map((d) => `${d.domain} (${d.sources.length})`)
+    .join(", ");
+  return [
+    "**Resumen de fuentes citadas (para narrativa, NO copies este bloque):**",
+    `- Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos`,
+    `- Top 10 dominios por número de fuentes: ${topDomains}`,
+    "",
+    "INSTRUCCIÓN ESPECIAL SECCIÓN 8: NO intentes listar las URLs. Escribe únicamente un párrafo introductorio (2-3 frases) sobre la procedencia de las fuentes (ej. 'Las IAs citaron N URLs de M medios, con dominio principal en prensa económica española...') y termina la sección con la línea exacta:",
+    "<!--CITED_SOURCES_HERE-->",
+    "El sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y URLs clicables.",
+  ].join("\n");
+}
+
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
   modules: string[],
@@ -122,7 +145,7 @@ function buildUserMessage(question: string, datapack: DataPack): string {
       "  (c) DEBEN incluir KPI cuantitativo: valor actual + target numérico + horizonte temporal (ej: 'SIM actual 38.6 → target 52-55 si se consigue cobertura adicional en 3 medios Tier 1 durante el próximo trimestre').",
       "  (d) Priorizadas por impacto real (alto / medio / bajo) basándose en los datos del período.",
       "  (e) Acción concreta: verbo de acción + entregable + plazo (ej: 'publicar dossier ESG auditado en Q2 2026').",
-      "## 8. Fuentes citadas por los modelos de IA — copia LITERALMENTE el bloque [CITED_SOURCES_BLOCK]. Esta sección lista las URLs REALES que las IAs usaron como evidencia, agrupadas por dominio y con el conteo de modelos que las citan. NO inventes URLs ni añadas medios que no aparezcan en el bloque pre-renderizado.",
+      "## 8. Fuentes citadas por los modelos de IA — escribe SOLO un párrafo introductorio (2-3 frases) usando los totales del 'Resumen de fuentes citadas' que aparece más abajo (cuántas URLs únicas, cuántos medios, qué dominios dominan). Termina la sección con la línea EXACTA `<!--CITED_SOURCES_HERE-->` en su propia línea y NADA más después. NO intentes listar las URLs individuales: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs manualmente, serán eliminadas.",
       "## 9. Ficha Metodológica — período (declarando solicitado vs disponible si difieren), modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
       "",
       "BLOQUES PRE-RENDERIZADOS (cópialos tal cual donde corresponda):",
@@ -233,11 +256,14 @@ export const companyAnalysisSkill: Skill = {
     // as a markdown block; also returned structurally so the FE can show it
     // in the HTML export with clickable <a> tags.
     const citedSourcesReport = extractCitedSources(datapack.raw_rows);
-    const citedSources = renderCitedSourcesBlock(
+    const citedSourcesFull = renderCitedSourcesBlock(
       citedSourcesReport,
       datapack.temporal.from,
       datapack.temporal.to,
     );
+    // Compact summary that REPLACES the heavy block in the prompt. The full
+    // bibliography is appended to the LLM's output AFTER streaming ends.
+    const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
     console.log(`${tag} enrichment done in ${Date.now() - t0}ms`);
 
     // 1c. Append the new blocks (in canonical order) AFTER the existing
@@ -248,7 +274,7 @@ export const companyAnalysisSkill: Skill = {
       temporalEvo,
       competitiveTable,
       recommendations,
-      citedSources,
+      citedSourcesSummary,
       divergence,
     ].filter((s) => s && s.trim().length > 0);
     datapack = { ...datapack, pre_rendered_tables: enrichedTables };
@@ -297,6 +323,21 @@ export const companyAnalysisSkill: Skill = {
     if (!finalContent || finalContent.trim().length === 0) {
       finalContent = buildFallbackContent(datapack, error);
       try { onChunk?.(finalContent); } catch (_) { /* noop */ }
+    }
+
+    // Substitute the placeholder with the full cited-sources bibliography.
+    // If the LLM forgot the marker, append the block at the end. Either way,
+    // emit the resulting block via onChunk so the streaming client sees it.
+    if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
+      const MARKER = "<!--CITED_SOURCES_HERE-->";
+      if (finalContent.includes(MARKER)) {
+        finalContent = finalContent.replace(MARKER, citedSourcesFull);
+        try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
+      } else {
+        const tail = "\n\n" + citedSourcesFull;
+        finalContent = finalContent + tail;
+        try { onChunk?.(tail); } catch (_) { /* noop */ }
+      }
     }
 
     // 6. Inject the final content as the FIRST pre-rendered "table"
