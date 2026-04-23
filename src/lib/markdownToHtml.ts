@@ -965,7 +965,12 @@ export function convertMarkdownToHtml(markdown: string): string {
   
   // Apply smart keyword highlights ONLY to <p> content (after all structural processing)
   html = applyHighlightsToParas(html);
-  
+
+  // RESTORE protected HTML tags (Step 0.5).
+  if (htmlTagSlots.length > 0) {
+    html = html.replace(/\u0000HTMLTAG(\d+)\u0000/g, (_, n) => htmlTagSlots[Number(n)] ?? "");
+  }
+
   return html;
 }
 
