@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 // Track call order to ensure toast fires BEFORE the form unmounts
 const callOrder: string[] = [];
 
-const invokeMock = vi.fn(async () => {
+const invokeMock = vi.fn(async (..._args: unknown[]) => {
   callOrder.push("invoke");
   return { data: { success: true }, error: null };
 });
@@ -14,14 +14,14 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: { functions: { invoke: (...args: unknown[]) => invokeMock(...args) } },
 }));
 
-const useToastMock = vi.fn(() => {
+const useToastMock = vi.fn((..._args: unknown[]) => {
   callOrder.push("useToast.toast");
 });
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: useToastMock }),
 }));
 
-const sonnerSuccessMock = vi.fn(() => {
+const sonnerSuccessMock = vi.fn((..._args: unknown[]) => {
   callOrder.push("sonner.success");
 });
 vi.mock("sonner", () => ({
