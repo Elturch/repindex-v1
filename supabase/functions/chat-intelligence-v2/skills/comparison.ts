@@ -266,15 +266,19 @@ export const comparisonSkill: Skill = {
       }),
     ].filter(Boolean).join("\n\n");
 
-    const userMessage = buildUserMessageWithAssembler(
+    const flatRows = rowsPerEntity.flat();
+    const uniqueWeeks = new Set(flatRows.map((r) => String(r.batch_execution_date).slice(0, 10))).size;
+    const userMessage = buildCompactComparisonMessage(
       parsed.effective_question ?? parsed.raw_question,
       table,
       aggs,
-      rowsPerEntity.flat(),
       parsed.temporal.from,
       parsed.temporal.to,
       commonModels,
+      flatRows.length,
+      uniqueWeeks,
     );
+    console.log(`${tag} compact prompt | entities=${aggs.length} | user_chars=${userMessage.length} | sys_chars≈pending`);
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
