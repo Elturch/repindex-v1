@@ -13,3 +13,16 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => {},
   }),
 });
+
+class IntersectionObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+}
+(globalThis as unknown as { IntersectionObserver: typeof IntersectionObserverStub }).IntersectionObserver =
+  IntersectionObserverStub;
+(window as unknown as { IntersectionObserver: typeof IntersectionObserverStub }).IntersectionObserver =
+  IntersectionObserverStub;
