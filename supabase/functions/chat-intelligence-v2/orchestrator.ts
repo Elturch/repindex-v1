@@ -29,6 +29,71 @@ import { periodEvolutionSkill } from "./skills/periodEvolution.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
+// ── Sector keyword → repindex_root_issuers.sector_category map ─────
+// Used as a fallback when the user asks a sector-wide ranking/comparison
+// without naming explicit companies (e.g. "principales grupos hospitalarios
+// en España"). Keys are lowercase regex fragments, values are the EXACT
+// sector_category strings stored in the DB.
+const SECTOR_KEYWORD_MAP: Array<{ re: RegExp; sector: string }> = [
+  { re: /\b(hospital(?:es|ario|arios)?|sanitari[oa]s?|salud|cl[ií]nicas?|farma|farmac[eé]utic[oa]s?)\b/i, sector: "Salud y Farmacéutico" },
+  { re: /\b(banc[oa]s?|banca|servicios?\s+financier[oa]s?|financier[oa]s?)\b/i, sector: "Banca y Servicios Financieros" },
+  { re: /\b(seguros?|asegurador[oa]s?)\b/i, sector: "Seguros" },
+  { re: /\b(telecos?|telecomunicaciones?|tecnolog[ií]a|tech)\b/i, sector: "Telecomunicaciones y Tecnología" },
+  { re: /\b(petr[oó]le[oa]|petrolera|gas|energ[ií]a)\b/i, sector: "Petróleo y Energía" },
+  { re: /\b(el[eé]ctric[oa]s?|utilities?)\b/i, sector: "Energía y Gas" },
+  { re: /\b(construc(?:cion|toras?|ci[oó]n)|infraestructur[oa]s?)\b/i, sector: "Construcción e Infraestructuras" },
+  { re: /\b(materias\s+primas|siderurgia|sider[uú]rgic[oa]s?|acero)\b/i, sector: "Materias Primas y Siderurgia" },
+  { re: /\b(hotel(?:es|er[oa]s?)?|tur[ií]stic[oa]s?|turismo)\b/i, sector: "Hoteles y Turismo" },
+  { re: /\b(alimentaci[oó]n|alimentari[oa]s?|supermercados?|distribuci[oó]n\s+aliment)\b/i, sector: "Alimentación" },
+  { re: /\b(consultor[ií]a|auditor[ií]a|auditoras?)\b/i, sector: "Consultoría y Auditoría" },
+  { re: /\b(distribuci[oó]n|retail|comercio\s+minorista)\b/i, sector: "Distribución" },
+  { re: /\b(log[ií]stica|transport(?:e|istas?)|paqueter[ií]a)\b/i, sector: "Logística" },
+  { re: /\b(industria(?:l(?:es)?)?|manufactur[oa]s?|qu[ií]mic[oa]s?|petroqu[ií]mica)\b/i, sector: "Industria" },
+  { re: /\b(automoci[oó]n|automotriz|autom[oó]vil(?:es)?)\b/i, sector: "Automoción" },
+  { re: /\b(restauraci[oó]n|restaurantes?)\b/i, sector: "Restauración" },
+  { re: /\b(inmobiliari[oa]s?|socimi)\b/i, sector: "Inmobiliaria" },
+];
+
+function detectSectorCategory(question: string): string | null {
+  for (const { re, sector } of SECTOR_KEYWORD_MAP) {
+    if (re.test(question)) return sector;
+  }
+  return null;
+}
+
+async function autoResolveEntitiesBySector(
+  question: string,
+  supabase: any,
+  limit = 10,
+): Promise<ResolvedEntity[]> {
+  const sector = detectSectorCategory(question);
+  if (!sector) return [];
+  try {
+    const { data, error } = await supabase
+      .from("repindex_root_issuers")
+      .select("issuer_name, ticker, sector_category")
+      .eq("sector_category", sector)
+      .limit(limit);
+    if (error || !Array.isArray(data) || data.length === 0) {
+      console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | rows=0 | err=${error?.message ?? "none"}`);
+      return [];
+    }
+    const out: ResolvedEntity[] = data
+      .filter((r: any) => r?.ticker && r?.issuer_name)
+      .map((r: any) => ({
+        ticker: String(r.ticker).toUpperCase(),
+        company_name: r.issuer_name,
+        sector_category: r.sector_category ?? sector,
+        source: "sector_auto" as ResolvedEntity["source"],
+      }));
+    console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | resolved=${out.length} | tickers=${out.map((e) => e.ticker).join(",")}`);
+    return out;
+  } catch (e) {
+    console.error(`[RIX-V2][orch] sectorAutoResolve error:`, e);
+    return [];
+  }
+}
+
 function extractPreviousContext(history: ConversationMessage[]): PreviousContext | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i];
