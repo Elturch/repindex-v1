@@ -145,7 +145,7 @@ function buildUserMessage(question: string, datapack: DataPack): string {
       "  (c) DEBEN incluir KPI cuantitativo: valor actual + target numérico + horizonte temporal (ej: 'SIM actual 38.6 → target 52-55 si se consigue cobertura adicional en 3 medios Tier 1 durante el próximo trimestre').",
       "  (d) Priorizadas por impacto real (alto / medio / bajo) basándose en los datos del período.",
       "  (e) Acción concreta: verbo de acción + entregable + plazo (ej: 'publicar dossier ESG auditado en Q2 2026').",
-      "## 8. Fuentes citadas por los modelos de IA — copia LITERALMENTE el bloque [CITED_SOURCES_BLOCK]. Esta sección lista las URLs REALES que las IAs usaron como evidencia, agrupadas por dominio y con el conteo de modelos que las citan. NO inventes URLs ni añadas medios que no aparezcan en el bloque pre-renderizado.",
+      "## 8. Fuentes citadas por los modelos de IA — escribe SOLO un párrafo introductorio (2-3 frases) usando los totales del 'Resumen de fuentes citadas' que aparece más abajo (cuántas URLs únicas, cuántos medios, qué dominios dominan). Termina la sección con la línea EXACTA `<!--CITED_SOURCES_HERE-->` en su propia línea y NADA más después. NO intentes listar las URLs individuales: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs manualmente, serán eliminadas.",
       "## 9. Ficha Metodológica — período (declarando solicitado vs disponible si difieren), modelos usados, observaciones, divergencia inter-modelo (incluye [DIVERGENCE_BLOCK]).",
       "",
       "BLOQUES PRE-RENDERIZADOS (cópialos tal cual donde corresponda):",
