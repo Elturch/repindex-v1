@@ -61,20 +61,38 @@ function detectSectorCategory(question: string): string | null {
   return null;
 }
 
-// Sub-filter rules: when the question contains certain keywords, narrow
-// the sector match by an ILIKE on issuer_name to favour entities whose
-// brand actually matches the user's intent (e.g. "hospitalarios" → only
-// issuers with hospital/clínica in the name, not the full health sector).
-const SECTOR_NAME_SUBFILTERS: Array<{ trigger: RegExp; ilikeAny: string[] }> = [
-  { trigger: /\b(hospital(?:es|ario|arios)?|cl[ií]nicas?)\b/i, ilikeAny: ["%hospital%", "%clinica%", "%clínica%", "%hosp%"] },
-  { trigger: /\b(asegurador[oa]s?|seguros?)\b/i, ilikeAny: ["%seguros%", "%mapfre%", "%mutua%"] },
-  { trigger: /\b(hotel(?:es|er[oa]s?)?)\b/i, ilikeAny: ["%hotel%", "%meli[aá]%", "%nh%"] },
-  { trigger: /\b(supermercados?)\b/i, ilikeAny: ["%mercadona%", "%dia%", "%carrefour%", "%lidl%", "%alcampo%"] },
-];
+// Hardcoded sub-segments inside a sector_category. When the query is more
+// specific than the broad sector (e.g. "grupos hospitalarios" inside
+// "Salud y Farmacéutico"), restrict resolution to a curated ticker list.
+// Brand names like Quirónsalud, Vithas or Sanitas don't contain "hospital"
+// in their name, so an ILIKE filter would miss them — explicit tickers
+// are the only reliable strategy.
+const SECTOR_SUBSEGMENT: Record<string, { keywords: RegExp; tickers: string[] }> = {
+  grupos_hospitalarios: {
+    keywords: /\b(hospital(?:es|ario|arios)?|grupo(?:s)?\s*hospitalarios?|cl[ií]nica(?:s)?\s*privadas?)\b/i,
+    tickers: ["QS", "HOS", "HMH", "HLA", "VIT", "RS", "VIA", "SANITAS"],
+  },
+  farmaceuticas: {
+    keywords: /\b(farmac[eé]utica?s?|laboratorios?|farma|biotech|biotec(?:nolog[ií]a)?)\b/i,
+    tickers: ["GRF", "ROVI", "PHM", "FAE", "ORY", "RJF"],
+  },
+  oftalmologia: {
+    keywords: /\b(oftalmolog[ií]a|oftalmol[oó]gic[oa]s?|baviera|visi[oó]n|ocular)\b/i,
+    tickers: ["CBAV"],
+  },
+  telemedicina: {
+    keywords: /\b(telemedicina|salud\s*digital|atrys)\b/i,
+    tickers: ["ATR"],
+  },
+};
 
-function detectNameSubfilter(question: string): string[] | null {
-  for (const { trigger, ilikeAny } of SECTOR_NAME_SUBFILTERS) {
-    if (trigger.test(question)) return ilikeAny;
+function detectSubsegmentTickers(question: string): string[] | null {
+  for (const key of Object.keys(SECTOR_SUBSEGMENT)) {
+    const seg = SECTOR_SUBSEGMENT[key];
+    if (seg.keywords.test(question)) {
+      console.log(`[RIX-V2][orch] sectorAutoResolve | subsegment matched="${key}" | tickers=${seg.tickers.join(",")}`);
+      return seg.tickers;
+    }
   }
   return null;
 }
@@ -87,31 +105,35 @@ async function autoResolveEntitiesBySector(
   const sector = detectSectorCategory(question);
   if (!sector) return [];
   try {
-    // (a) Try the name sub-filter first, when the query gives us a brand-name
-    //     hint (e.g. "hospitalarios", "aseguradoras"). If we find >=2 hits
-    //     that match the sub-filter, use ONLY those.
-    const subfilter = detectNameSubfilter(question);
-    if (subfilter && subfilter.length > 0) {
-      const orExpr = subfilter.map((p) => `issuer_name.ilike.${p}`).join(",");
+    // (a) Hardcoded sub-segment: explicit ticker list for queries that are
+    //     more specific than the broad sector (e.g. "grupos hospitalarios").
+    const subTickers = detectSubsegmentTickers(question);
+    if (subTickers && subTickers.length > 0) {
       const { data: subRows, error: subErr } = await supabase
         .from("repindex_root_issuers")
         .select("issuer_name, ticker, sector_category")
-        .eq("sector_category", sector)
-        .or(orExpr)
-        .limit(limit);
-      if (!subErr && Array.isArray(subRows) && subRows.length >= 2) {
-        const filtered: ResolvedEntity[] = subRows
+        .in("ticker", subTickers);
+      if (!subErr && Array.isArray(subRows) && subRows.length >= 1) {
+        // Preserve curated order from the subsegment list, then cap to `limit`.
+        const byTicker = new Map<string, any>(
+          subRows.map((r: any) => [String(r.ticker).toUpperCase(), r]),
+        );
+        const ordered: ResolvedEntity[] = subTickers
+          .map((t) => byTicker.get(t.toUpperCase()))
           .filter((r: any) => r?.ticker && r?.issuer_name)
+          .slice(0, limit)
           .map((r: any) => ({
             ticker: String(r.ticker).toUpperCase(),
             company_name: r.issuer_name,
             sector_category: r.sector_category ?? sector,
             source: "semantic_bridge" as ResolvedEntity["source"],
           }));
-        console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | subfilter applied | resolved=${filtered.length} | tickers=${filtered.map((e) => e.ticker).join(",")}`);
-        return filtered;
+        if (ordered.length >= 1) {
+          console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | subsegment applied | resolved=${ordered.length} | tickers=${ordered.map((e) => e.ticker).join(",")}`);
+          return ordered;
+        }
       }
-      console.log(`[RIX-V2][orch] sectorAutoResolve | subfilter matched <2 rows (${subRows?.length ?? 0}), falling back to full sector`);
+      console.log(`[RIX-V2][orch] sectorAutoResolve | subsegment hit but DB returned 0 rows, falling back to full sector`);
     }
 
     // (b) Fallback: full sector with hard cap.
