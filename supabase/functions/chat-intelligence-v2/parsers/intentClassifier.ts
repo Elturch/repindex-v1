@@ -22,7 +22,7 @@ const COMPARISON_RE = /\b(compara(?:r|me|cion|ci[oó]n)?|versus|\bvs\.?\b|frente
 
 // ── Sector ranking: ranking/top/best/worst over a sector or index ──
 const RANKING_RE = /\b(ranking|top\s*\d{1,2}|top\b|mejores?|peores?|m[aá]s\s+(?:reputad[oa]s?|valorad[oa]s?))\b/i;
-const SECTOR_HINT_RE = /\b(sector|ibex(?:[-\s]?\d+)?|bancos?|el[eé]ctric[oa]s?|energ[ií]a|farma|farmac[eé]uticas?|telecos?|telecomunicaciones?|construc(?:cion|toras?)|retail|supermercados?|aerolineas?|aerol[ií]neas?)\b/i;
+const SECTOR_HINT_RE = /\b(sector|ibex(?:[-\s]?\d+)?|bancos?|el[eé]ctric[oa]s?|energ[ií]a|farma|farmac[eé]uticas?|telecos?|telecomunicaciones?|construc(?:cion|toras?)|retail|supermercados?|aerolineas?|aerol[ií]neas?|hospital(?:es|ario|arios)?|sanitari[oa]s?|salud|cl[ií]nicas?|seguros?|asegurador[oa]s?|alimentaci[oó]n|automoci[oó]n|automotriz|inmobiliari[oa]s?|hoteler[oa]s?|turismo|tur[ií]stic[oa]s?|log[ií]stica|distribuci[oó]n|restauraci[oó]n|consultor[ií]a|siderurgia|petroqu[ií]mica|industrial(?:es)?|qu[ií]mic[oa]s?|textil)\b/i;
 
 // ── Model divergence: explicit comparison of AI models / consensus ─
 const DIVERGENCE_RE = /\b(divergen(?:cia|tes?)|discrepan(?:cia|tes?)|consenso|disenso|en\s+qu[eé]\s+coinciden|en\s+qu[eé]\s+(?:no\s+)?se\s+ponen\s+de\s+acuerdo|diferencias?\s+entre\s+(?:ias?|modelos?|llms?))\b/i;
