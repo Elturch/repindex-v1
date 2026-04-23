@@ -15,13 +15,6 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildComparisonRules } from "../prompts/comparisonMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
-import {
-  assembleReport,
-  buildPreRenderedSection,
-  metricsFromRows,
-  renderMethodologyFooter,
-  selectBlocks,
-} from "../datapack/reportAssembler.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
