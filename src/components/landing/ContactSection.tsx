@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { toast as sonnerToast } from "sonner";
 
 const contactSchema = z.object({
   name: z
@@ -87,12 +88,16 @@ export function ContactSection() {
         throw new Error(response.error);
       }
 
-      setStatus("success");
-      form.reset();
+      // Show toast BEFORE state change so it fires before the form unmounts
       toast({
         title: "¡Mensaje enviado!",
         description: "Nos pondremos en contacto contigo pronto.",
       });
+      sonnerToast.success("¡Mensaje enviado!", {
+        description: "Nos pondremos en contacto contigo pronto.",
+      });
+      setStatus("success");
+      form.reset();
 
       // Reset to idle after 5 seconds
       setTimeout(() => setStatus("idle"), 5000);
@@ -103,6 +108,9 @@ export function ContactSection() {
         title: "Error al enviar",
         description: "Por favor, inténtalo de nuevo más tarde.",
         variant: "destructive",
+      });
+      sonnerToast.error("Error al enviar", {
+        description: "Por favor, inténtalo de nuevo más tarde.",
       });
 
       // Reset to idle after 3 seconds
