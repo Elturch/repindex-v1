@@ -29,6 +29,29 @@ import {
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
 
+/**
+ * Build a COMPACT summary of cited sources for the LLM prompt only.
+ * The full block (potentially hundreds of URLs, thousands of tokens) is
+ * NEVER sent to the LLM — it is appended to the final response after the
+ * LLM finishes streaming. This avoids OpenAI 400 (token limit) errors
+ * while keeping section 8 fully populated for the FE.
+ */
+function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>): string {
+  if (report.totalUrls === 0) return "";
+  const topDomains = report.byDomain.slice(0, 10)
+    .map((d) => `${d.domain} (${d.sources.length})`)
+    .join(", ");
+  return [
+    "**Resumen de fuentes citadas (para narrativa, NO copies este bloque):**",
+    `- Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos`,
+    `- Top 10 dominios por número de fuentes: ${topDomains}`,
+    "",
+    "INSTRUCCIÓN ESPECIAL SECCIÓN 8: NO intentes listar las URLs. Escribe únicamente un párrafo introductorio (2-3 frases) sobre la procedencia de las fuentes (ej. 'Las IAs citaron N URLs de M medios, con dominio principal en prensa económica española...') y termina la sección con la línea exacta:",
+    "<!--CITED_SOURCES_HERE-->",
+    "El sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y URLs clicables.",
+  ].join("\n");
+}
+
 /** Compose the system prompt from the requested modules. */
 export function composePrompt(
   modules: string[],
