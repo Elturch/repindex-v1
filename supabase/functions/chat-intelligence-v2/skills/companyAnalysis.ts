@@ -256,11 +256,14 @@ export const companyAnalysisSkill: Skill = {
     // as a markdown block; also returned structurally so the FE can show it
     // in the HTML export with clickable <a> tags.
     const citedSourcesReport = extractCitedSources(datapack.raw_rows);
-    const citedSources = renderCitedSourcesBlock(
+    const citedSourcesFull = renderCitedSourcesBlock(
       citedSourcesReport,
       datapack.temporal.from,
       datapack.temporal.to,
     );
+    // Compact summary that REPLACES the heavy block in the prompt. The full
+    // bibliography is appended to the LLM's output AFTER streaming ends.
+    const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
     console.log(`${tag} enrichment done in ${Date.now() - t0}ms`);
 
     // 1c. Append the new blocks (in canonical order) AFTER the existing
@@ -271,7 +274,7 @@ export const companyAnalysisSkill: Skill = {
       temporalEvo,
       competitiveTable,
       recommendations,
-      citedSources,
+      citedSourcesSummary,
       divergence,
     ].filter((s) => s && s.trim().length > 0);
     datapack = { ...datapack, pre_rendered_tables: enrichedTables };
