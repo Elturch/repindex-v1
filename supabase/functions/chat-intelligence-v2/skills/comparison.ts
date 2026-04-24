@@ -304,6 +304,10 @@ export const comparisonSkill: Skill = {
     console.log(`${tag} compact prompt | entities=${aggs.length} | user_chars=${userMessage.length} | sys_chars≈pending`);
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
+      model: "o3",
+      reasoning_effort: "medium",
+      maxTokens: 24000,
+      temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
     });
     const finalContent = fullText && fullText.trim().length > 0
