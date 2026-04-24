@@ -317,6 +317,10 @@ export const companyAnalysisSkill: Skill = {
       systemPrompt,
       userMessage,
       logPrefix: tag,
+      model: "o3",
+      reasoning_effort: "medium",
+      maxTokens: 32000,
+      temperature: 0,
       onChunk: (delta) => { try { onChunk?.(delta); } catch (_) { /* noop */ } },
     });
     let finalContent = fullText;
