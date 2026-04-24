@@ -243,9 +243,22 @@ export async function buildDataPack(
     `[RIX-V2][datapack] ${entity.ticker} ${parsed.temporal.from}→${parsed.temporal.to}: ${rows.length} rows`,
   );
 
+  // T2 Fase B — companyAnalysis.needsCitedSources = true. When LAZY flag is
+  // on the rows above are LIGHT (no *_bruto). Hydrate the 7 raw columns now
+  // so extractCitedSources downstream sees the same payload as FULL_SELECT.
+  let workingRows = rows;
+  if (isLazyBrutoEnabled() && rows.length > 0) {
+    const { rows: hydrated } = await hydrateBrutoColumns(
+      supabase,
+      rows,
+      `companyAnalysis:${entity.ticker}`,
+    );
+    workingRows = hydrated;
+  }
+
   // Modelos presentes en los datos
   const modelsPresent = new Set<ModelName>();
-  for (const r of rows) {
+  for (const r of workingRows) {
     const m = normalizeModelName(r["02_model_name"]);
     if (m) modelsPresent.add(m);
   }
@@ -254,7 +267,7 @@ export async function buildDataPack(
   const missing = requested.filter((m) => !modelsPresent.has(m));
 
   // Agregación de período (reutiliza _shared/periodAggregation.ts)
-  const agg = computePeriodAggregation(rows);
+  const agg = computePeriodAggregation(workingRows);
   const metrics: MetricAggregation[] = [];
   for (const k of ["RIX", "NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"]) {
     const m = toMetricAggregation(k, agg.period_aggregation[k]);
@@ -274,9 +287,9 @@ export async function buildDataPack(
   // Pre-renderizar tablas (todas en markdown, NUNCA las genera el LLM — constraint #9)
   const preRendered: string[] = [];
   if (metrics.length > 0) preRendered.push(renderPeriodKpiTable(metrics, parsed.mode));
-  if (rows.length > 0) preRendered.push(renderModelTable(rows));
-  if (parsed.mode === "period" && rows.length > 1) {
-    preRendered.push(renderEvolutionTable(rows));
+  if (workingRows.length > 0) preRendered.push(renderModelTable(workingRows));
+  if (parsed.mode === "period" && workingRows.length > 1) {
+    preRendered.push(renderEvolutionTable(workingRows));
   }
 
   const datapack: DataPack = {
@@ -286,12 +299,12 @@ export async function buildDataPack(
     models_used: withData.length > 0 ? withData : requested,
     models_coverage: { requested, with_data: withData, missing },
     metrics,
-    raw_rows: rows,
+    raw_rows: workingRows,
     pre_rendered_tables: preRendered,
     period_summary: periodSummary,
   };
 
-  return { datapack, raw_rows: rows, observations_count: rows.length };
+  return { datapack, raw_rows: workingRows, observations_count: workingRows.length };
 }
 
 function emptyDatapack(parsed: ParsedQuery): DataPack {
