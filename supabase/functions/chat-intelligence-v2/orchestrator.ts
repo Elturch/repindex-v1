@@ -415,6 +415,31 @@ export async function process(
   //     pre-rendered tables). Sector rankings, comparisons (>=2 entities)
   //     and model_divergence keep their dedicated skills.
   const PROMOTABLE_INTENTS: Intent[] = ["general_question", "period_evolution"];
+  // BUG FIX: queries that mention a sector keyword (e.g. "grupos
+  // hospitalarios", "bancos", "eléctricas") must NEVER be promoted to
+  // company_analysis, even if a stray fuzzy entity slipped through.
+  // Force sector_ranking and re-resolve entities by sector.
+  const sectorHint = detectSectorCategory(question);
+  if (sectorHint) {
+    if (parsed.intent !== "sector_ranking" && parsed.intent !== "comparison") {
+      console.log(
+        `${logPrefix} sector hint detected ("${sectorHint}") → forcing sector_ranking (was=${parsed.intent})`,
+      );
+      parsed.intent = "sector_ranking";
+    }
+    // If entity resolution returned a single suspicious entity but the
+    // query is sector-wide, drop it and resolve by sector instead.
+    if (parsed.intent === "sector_ranking") {
+      const sectorEntities = await autoResolveEntitiesBySector(question, supabase, 5);
+      if (sectorEntities.length >= 1) {
+        parsed.entities = sectorEntities;
+        entities = sectorEntities;
+        console.log(
+          `${logPrefix} sector-forced re-resolution | entities=${sectorEntities.length} | tickers=${sectorEntities.map((e) => e.ticker).join(",")}`,
+        );
+      }
+    }
+  }
   if (
     entities.length === 1 &&
     PROMOTABLE_INTENTS.includes(parsed.intent) &&
