@@ -3562,6 +3562,21 @@ export type Database = {
       }
     }
     Views: {
+      rix_runs_v2_cited_urls: {
+        Row: {
+          batch_execution_date: string | null
+          col_label: string | null
+          domain: string | null
+          id: string | null
+          period_from: string | null
+          period_to: string | null
+          row_model: string | null
+          ticker: string | null
+          title: string | null
+          url: string | null
+        }
+        Relationships: []
+      }
       v_evaluation_composite: {
         Row: {
           composite_chatgpt: number | null
