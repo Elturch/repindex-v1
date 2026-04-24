@@ -149,10 +149,28 @@ serve(async (req: Request) => {
     const stream = new ReadableStream({
       async start(controller) {
         let startEmitted = false;
+        // When the upstream client disconnects (browser closes tab, curl
+        // times out, proxy drops), the SSE controller is closed but the
+        // orchestrator keeps producing chunks. Without a guard, every
+        // subsequent enqueue throws and floods the logs with hundreds of
+        // identical TypeErrors. Latch a flag on the first failure so the
+        // remaining deltas are silently dropped.
+        let clientClosed = false;
+        const safeEnqueue = (payload: Uint8Array) => {
+          if (clientClosed) return;
+          try {
+            controller.enqueue(payload);
+          } catch (e) {
+            if (!clientClosed) {
+              clientClosed = true;
+              console.warn("[RIX-V2] client disconnected, suppressing remaining chunks:", String(e).slice(0, 120));
+            }
+          }
+        };
         const emitStartOnce = (meta: Record<string, unknown>) => {
           if (startEmitted) return;
           startEmitted = true;
-          controller.enqueue(sseEncode({ type: "start", metadata: { agentVersion: "v2", ...meta } }));
+          safeEnqueue(sseEncode({ type: "start", metadata: { agentVersion: "v2", ...meta } }));
         };
         // Emit the start frame immediately so the frontend can render the
         // assistant bubble and start measuring TTFB.
@@ -160,11 +178,7 @@ serve(async (req: Request) => {
 
         const onChunk = (delta: string) => {
           if (!delta) return;
-          try {
-            controller.enqueue(sseEncode({ type: "chunk", text: delta }));
-          } catch (e) {
-            console.error("[RIX-V2] enqueue chunk failed:", e);
-          }
+          safeEnqueue(sseEncode({ type: "chunk", text: delta }));
         };
 
         try {
