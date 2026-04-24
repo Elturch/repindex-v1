@@ -13,6 +13,8 @@ import { buildBasePrompt } from "../prompts/base.ts";
 import { buildAntiHallucinationRules } from "../prompts/antiHallucination.ts";
 import { buildDivergenceRules } from "../prompts/divergenceMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import { isLazyBrutoEnabled } from "../shared/featureFlags.ts";
+import { hydrateBrutoColumns } from "../datapack/builder.ts";
 import {
   assembleReport,
   buildPreRenderedSection,
@@ -36,6 +38,12 @@ const SELECT =
   // Raw response columns for cited-sources extraction (URL bibliography).
   "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, " +
   "respuesta_bruto_claude, respuesta_bruto_grok, respuesta_bruto_qwen";
+
+// T2 — LIGHT projection (no *_bruto). Hydrated on demand under
+// CHAT_V2_LAZY_BRUTO=true (modelDivergence.needsCitedSources=true).
+const LIGHT_SELECT =
+  "id, 05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, " +
+  "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score";
 
 const METRIC_COLS: Array<[string, string]> = [
   ["RIX", "09_rix_score"], ["NVM", "23_nvm_score"], ["DRM", "26_drm_score"],
@@ -75,10 +83,12 @@ function stdev(arr: number[]): number {
 
 async function fetchRows(supabase: any, ticker: string, fromISO: string, toISO: string): Promise<any[]> {
   const all: any[] = [];
+  const lazy = isLazyBrutoEnabled();
+  const projection = lazy ? LIGHT_SELECT : SELECT;
   for (let p = 0; p < 3; p++) {
     const { data, error } = await supabase
       .from("rix_runs_v2")
-      .select(SELECT)
+      .select(projection)
       .eq("05_ticker", ticker)
       .gte("batch_execution_date", fromISO)
       .lte("batch_execution_date", toISO)
@@ -88,6 +98,7 @@ async function fetchRows(supabase: any, ticker: string, fromISO: string, toISO: 
     all.push(...data);
     if (data.length < 1000) break;
   }
+  console.log(`[RIX-V2][egress] skill=modelDivergence ticker=${ticker} path=${lazy ? "LIGHT_SELECT" : "FULL_SELECT"} rows=${all.length} bytes_fetched_supabase=${(() => { try { return JSON.stringify(all).length; } catch { return 0; } })()}`);
   return all;
 }
 
@@ -226,7 +237,19 @@ export const modelDivergenceSkill: Skill = {
     }
 
     const rows = await fetchRows(supabase, entity.ticker, parsed.temporal.from, parsed.temporal.to);
-    const aggs = aggregateByModel(rows);
+    // T2 Fase B — modelDivergence.needsCitedSources = true. Hydrate *_bruto
+    // on demand when LAZY flag is on so future citation extractors stay
+    // parity-clean.
+    let workingRows = rows;
+    if (isLazyBrutoEnabled()) {
+      const { rows: hydrated } = await hydrateBrutoColumns(
+        supabase,
+        rows,
+        `modelDivergence:${entity.ticker}`,
+      );
+      workingRows = hydrated;
+    }
+    const aggs = aggregateByModel(workingRows);
     const rixVals = aggs.map((a) => a.per_metric["RIX"]).filter((x) => Number.isFinite(x));
     const sigmaRix = stdev(rixVals);
     const top = aggs[0]?.model ?? "n/d";
@@ -237,7 +260,7 @@ export const modelDivergenceSkill: Skill = {
       entity, temporal: parsed.temporal, mode: parsed.mode,
       models_used: aggs.map((a) => a.model),
       models_coverage: { requested: parsed.models, with_data: aggs.map((a) => a.model), missing: parsed.models.filter((m) => !aggs.find((a) => a.model === m)) },
-      metrics: [], raw_rows: rows, pre_rendered_tables: [table],
+      metrics: [], raw_rows: workingRows, pre_rendered_tables: [table],
     };
 
     if (aggs.length === 0) {
@@ -263,7 +286,7 @@ export const modelDivergenceSkill: Skill = {
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       entity.ticker, table, sigmaRix, top, bot,
-      rows,
+      workingRows,
       parsed.temporal.from,
       parsed.temporal.to,
       aggs.map((a) => a.model),
