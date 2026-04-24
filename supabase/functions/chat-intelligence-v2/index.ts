@@ -10,6 +10,10 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  // Expose RIX-specific headers so the frontend can verify the effective
+  // model and fallback state without parsing logs.
+  "Access-Control-Expose-Headers":
+    "x-rix-model-requested, x-rix-model-effective, x-rix-fallback, x-rix-engine-version",
 };
 
 function sseEncode(payload: unknown): Uint8Array {
@@ -145,10 +149,28 @@ serve(async (req: Request) => {
     const stream = new ReadableStream({
       async start(controller) {
         let startEmitted = false;
+        // When the upstream client disconnects (browser closes tab, curl
+        // times out, proxy drops), the SSE controller is closed but the
+        // orchestrator keeps producing chunks. Without a guard, every
+        // subsequent enqueue throws and floods the logs with hundreds of
+        // identical TypeErrors. Latch a flag on the first failure so the
+        // remaining deltas are silently dropped.
+        let clientClosed = false;
+        const safeEnqueue = (payload: Uint8Array) => {
+          if (clientClosed) return;
+          try {
+            controller.enqueue(payload);
+          } catch (e) {
+            if (!clientClosed) {
+              clientClosed = true;
+              console.warn("[RIX-V2] client disconnected, suppressing remaining chunks:", String(e).slice(0, 120));
+            }
+          }
+        };
         const emitStartOnce = (meta: Record<string, unknown>) => {
           if (startEmitted) return;
           startEmitted = true;
-          controller.enqueue(sseEncode({ type: "start", metadata: { agentVersion: "v2", ...meta } }));
+          safeEnqueue(sseEncode({ type: "start", metadata: { agentVersion: "v2", ...meta } }));
         };
         // Emit the start frame immediately so the frontend can render the
         // assistant bubble and start measuring TTFB.
@@ -156,11 +178,7 @@ serve(async (req: Request) => {
 
         const onChunk = (delta: string) => {
           if (!delta) return;
-          try {
-            controller.enqueue(sseEncode({ type: "chunk", text: delta }));
-          } catch (e) {
-            console.error("[RIX-V2] enqueue chunk failed:", e);
-          }
+          safeEnqueue(sseEncode({ type: "chunk", text: delta }));
         };
 
         try {
@@ -269,6 +287,15 @@ serve(async (req: Request) => {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+        // Engine identity headers — readable by the frontend (CORS exposed
+        // above). `x-rix-model-effective` reflects the configured default
+        // for the V2 engine (o3 + reasoning_effort=medium); the actual
+        // upstream model id (and any Gemini fallback) is also surfaced via
+        // the `done` SSE event so the FE can confirm post-stream.
+        "x-rix-engine-version": "v2",
+        "x-rix-model-requested": "o3",
+        "x-rix-model-effective": "o3",
+        "x-rix-fallback": "none",
       },
     });
   } catch (err) {
