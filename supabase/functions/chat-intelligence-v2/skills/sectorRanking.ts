@@ -83,6 +83,7 @@ async function fetchRankingRows(
   toISO: string,
   sector: string | null,
   ibexOnly: boolean,
+  scopeTickers?: string[] | null,
 ): Promise<any[]> {
   let q = supabase
     .from("rix_runs_v2")
@@ -90,8 +91,13 @@ async function fetchRankingRows(
     .gte("06_period_from", fromISO)
     .lte("06_period_from", toISO)
     .not("09_rix_score", "is", null);
-  // Resolve scope filter (sector OR ibex membership) → list of tickers.
-  if ((sector && sector.trim().length > 0) || ibexOnly) {
+  // PRIORITY: explicit scope_tickers (sub-segment) override sector/ibex.
+  if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
+    const upper = scopeTickers.map((t) => String(t).toUpperCase());
+    q = q.in("05_ticker", upper);
+    console.log(`[RIX-V2][sectorRanking] scope_tickers applied | n=${upper.length} | tickers=${upper.join(",")}`);
+  } else if ((sector && sector.trim().length > 0) || ibexOnly) {
+    // Resolve scope filter (sector OR ibex membership) → list of tickers.
     let scopeQ = supabase.from("repindex_root_issuers").select("ticker");
     if (sector && sector.trim().length > 0) {
       scopeQ = scopeQ.eq("sector_category", sector);
@@ -113,7 +119,7 @@ async function fetchRankingRows(
     all.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"}`);
+  console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"} | scope_tickers=${scopeTickers?.length ?? 0}`);
   return all;
 }
 
