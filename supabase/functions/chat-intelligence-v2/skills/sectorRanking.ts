@@ -435,8 +435,10 @@ export const sectorRankingSkill: Skill = {
       pre_rendered_tables: [table],
     };
 
-    const modules = ["base", "antiHallucination", "rankingMode"];
+    const modules: string[] = ["base", "antiHallucination", "rankingMode"];
     if (parsed.mode === "period") modules.push("periodMode"); else modules.push("snapshotMode");
+    // Always include coverageRules so consensus/divergence rules apply (parity with companyAnalysis).
+    modules.push("coverageRules");
 
     if (ranking.length === 0) {
       const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${sqlFrom} → ${sqlTo}._`;
@@ -456,9 +458,26 @@ export const sectorRankingSkill: Skill = {
         ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
         : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
       buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
+      buildCoverageRules({
+        requested: models,
+        withData: models,
+        missing: [],
+        snapshotsExpected: parsed.temporal.snapshots_expected,
+        snapshotsAvailable: parsed.temporal.snapshots_available,
+        coverageRatio: parsed.temporal.coverage_ratio,
+        isPartial: parsed.temporal.is_partial,
+      }),
     ].filter(Boolean).join("\n\n");
 
     const competitiveContext = await buildCompetitiveContextBlock(supabase, ranking);
+    // Cited sources (real URLs from raw-response columns). Pre-rendered as a
+    // markdown block; appended AFTER streaming via the marker substitution.
+    const citedSourcesReport = extractCitedSources(rows);
+    const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
+    const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
+    const perCompanySources = buildPerCompanySourceList(rows);
+    console.log(`${tag} cited sources | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
+
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
@@ -469,19 +488,36 @@ export const sectorRankingSkill: Skill = {
       sqlTo,
       models,
       competitiveContext,
+      citedSourcesSummary,
+      perCompanySources,
     );
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
     });
 
-    const finalContent = fullText && fullText.trim().length > 0
+    let finalContent = fullText && fullText.trim().length > 0
       ? fullText
       : (() => {
           const fb = `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
           try { onChunk?.(fb); } catch (_) { /* noop */ }
           return fb;
         })();
+
+    // Substitute <!--CITED_SOURCES_HERE--> with the full bibliography. If the
+    // LLM omitted the marker, append the block at the end. Mirrors the same
+    // logic used by companyAnalysis.ts to keep section 8 fully populated.
+    if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
+      const MARKER = "<!--CITED_SOURCES_HERE-->";
+      if (finalContent.includes(MARKER)) {
+        finalContent = finalContent.replace(MARKER, citedSourcesFull);
+        try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
+      } else {
+        const tail = "\n\n" + citedSourcesFull;
+        finalContent = finalContent + tail;
+        try { onChunk?.(tail); } catch (_) { /* noop */ }
+      }
+    }
 
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
