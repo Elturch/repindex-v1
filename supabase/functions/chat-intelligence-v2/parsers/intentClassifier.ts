@@ -28,7 +28,7 @@ const SECTOR_HINT_RE = /\b(sector|ibex(?:[-\s]?\d+)?|bancos?|el[eé]ctric[oa]s?|
 const DIVERGENCE_RE = /\b(divergen(?:cia|tes?)|discrepan(?:cia|tes?)|consenso|disenso|en\s+qu[eé]\s+coinciden|en\s+qu[eé]\s+(?:no\s+)?se\s+ponen\s+de\s+acuerdo|diferencias?\s+entre\s+(?:ias?|modelos?|llms?))\b/i;
 
 // ── Period evolution: temporal trend / history ─────────────────────
-const EVOLUTION_RE = /\b(evoluci[oó]n|evoluciona|tendencia|trayectoria|historic[oa]|hist[oó]ric[oa]|ha\s+(?:subido|bajado|mejorado|empeorado)|c[oó]mo\s+(?:ha\s+)?cambiado|trimestre|semestre|[uú]ltim[oa]s?\s+\d+\s+(?:semanas?|meses?)|primer\s+(?:trimestre|semestre)|segundo\s+(?:trimestre|semestre))\b/i;
+const EVOLUTION_RE = /\b(evoluci[oó]n|evoluciona|tendencia|trayectoria|historic[oa]|hist[oó]ric[oa]|ha\s+(?:subido|bajado|mejorado|empeorado)|c[oó]mo\s+(?:ha\s+)?cambiado|trimestre|semestre|[uú]ltim[oa]s?\s+(?:\d+\s+)?(?:semanas?|meses?)|primer\s+(?:trimestre|semestre)|segundo\s+(?:trimestre|semestre))\b/i;
 
 // ── Explicit AI model names (used to demote false sector_ranking) ──
 const MODEL_NAMES_RE = /\b(grok|perplexity|deepseek|deep\s*seek|chatgpt|chat\s*gpt|gpt[-\s]?\d?|gemini|qwen|claude|llama)\b/i;
@@ -74,6 +74,9 @@ export function classifyIntent(question: string): Intent {
   if (DIVERGENCE_RE.test(lower)) return "model_divergence";
 
   if (EVOLUTION_RE.test(lower)) return "period_evolution";
+
+  // Sector hint without explicit ranking keyword → still sector_ranking
+  if (SECTOR_HINT_RE.test(raw) || SECTOR_HINT_RE.test(lower)) return "sector_ranking";
 
   return "company_analysis";
 }
