@@ -15,6 +15,8 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildComparisonRules } from "../prompts/comparisonMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import { isLazyBrutoEnabled } from "../shared/featureFlags.ts";
+import { hydrateBrutoColumns } from "../datapack/builder.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -31,6 +33,13 @@ const SELECT =
   // Raw response columns for cited-sources extraction (URL bibliography).
   "20_res_gpt_bruto, 21_res_perplex_bruto, 22_res_gemini_bruto, 23_res_deepseek_bruto, " +
   "respuesta_bruto_claude, respuesta_bruto_grok, respuesta_bruto_qwen";
+
+// T2 — LIGHT projection (no *_bruto). When CHAT_V2_LAZY_BRUTO=true the
+// fetchEntity call uses LIGHT_SELECT and Fase B hydration loads the bruto
+// columns on demand (needsCitedSources=true for comparison).
+const LIGHT_SELECT =
+  "id, 05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, " +
+  "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, 35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score";
 
 const METRIC_COLS: Array<[string, string]> = [
   ["RIX", "09_rix_score"],
@@ -72,11 +81,13 @@ function avg(values: number[]): number | null {
 
 async function fetchEntity(supabase: any, ticker: string, fromISO: string, toISO: string): Promise<any[]> {
   const all: any[] = [];
-  console.log(`[RIX-V2][comparison] fetchEntity ticker=${ticker} from=${fromISO} to=${toISO}`);
+  const lazy = isLazyBrutoEnabled();
+  const projection = lazy ? LIGHT_SELECT : SELECT;
+  console.log(`[RIX-V2][comparison] fetchEntity ticker=${ticker} from=${fromISO} to=${toISO} projection=${lazy ? "LIGHT" : "FULL"}`);
   for (let p = 0; p < 3; p++) {
     const { data, error } = await supabase
       .from("rix_runs_v2")
-      .select(SELECT)
+      .select(projection)
       .eq("05_ticker", ticker)
       .gte("batch_execution_date", fromISO)
       .lte("batch_execution_date", toISO)
@@ -87,7 +98,7 @@ async function fetchEntity(supabase: any, ticker: string, fromISO: string, toISO
     if (data.length < 1000) break;
   }
   const distinctModels = new Set(all.map((r) => r["02_model_name"]));
-  console.log(`[RIX-V2][comparison] fetchEntity ticker=${ticker} rows=${all.length} models=${[...distinctModels].join(",")}`);
+  console.log(`[RIX-V2][egress] skill=comparison ticker=${ticker} path=${lazy ? "LIGHT_SELECT" : "FULL_SELECT"} rows=${all.length} bytes_fetched_supabase=${(() => { try { return JSON.stringify(all).length; } catch { return 0; } })()} models=${[...distinctModels].join(",")}`);
   return all;
 }
 
@@ -236,6 +247,18 @@ export const comparisonSkill: Skill = {
     const rowsPerEntity = await Promise.all(
       targets.map((e) => fetchEntity(supabase, e.ticker, parsed.temporal.from, parsed.temporal.to)),
     );
+    // T2 Fase B — comparison.needsCitedSources = true. Hydrate *_bruto on
+    // demand when LAZY flag is on so downstream extractors stay parity-clean.
+    if (isLazyBrutoEnabled()) {
+      for (let i = 0; i < rowsPerEntity.length; i++) {
+        const { rows: hydrated } = await hydrateBrutoColumns(
+          supabase,
+          rowsPerEntity[i],
+          `comparison:${targets[i].ticker}`,
+        );
+        rowsPerEntity[i] = hydrated;
+      }
+    }
     const aggs = targets.map((e, i) => aggregateEntity(e.ticker, rowsPerEntity[i]));
     const table = renderComparisonTable(aggs);
     const commonModels = aggs.reduce<ModelName[]>((acc, a, i) => i === 0 ? a.models : acc.filter((m) => a.models.includes(m)), [] as ModelName[]);
