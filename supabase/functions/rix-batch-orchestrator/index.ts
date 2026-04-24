@@ -1211,6 +1211,29 @@ async function processCronTriggers(
           (sanitizeResult?.invalid ?? 0) === 0;
 
         if (sweepIsClean) {
+          // ═════════════════════════════════════════════════════════════════
+          // T1b: REFRESH MATERIALIZED VIEW rix_runs_v2_cited_urls.
+          // Soft-fail: if the refresh errors or runs long, we log and CONTINUE
+          // — the matview just stays at its previous snapshot until the next
+          // batch. The chat builder still works (it queries by ticker/period
+          // and either gets stale data or falls back to legacy *_bruto via the
+          // CHAT_V2_CITED_URLS_VIEW flag, which currently is false).
+          // ═════════════════════════════════════════════════════════════════
+          try {
+            const refreshT0 = Date.now();
+            const { error: refreshErr } = await supabase.rpc('execute_sql', {
+              sql_query: 'REFRESH MATERIALIZED VIEW CONCURRENTLY public.rix_runs_v2_cited_urls'
+            });
+            const refreshMs = Date.now() - refreshT0;
+            if (refreshErr) {
+              console.warn(`[t1b_refresh] REFRESH MATERIALIZED VIEW failed (soft): ${refreshErr.message} (${refreshMs}ms)`);
+            } else {
+              console.log(`[t1b_refresh] REFRESH MATERIALIZED VIEW rix_runs_v2_cited_urls OK in ${refreshMs}ms`);
+            }
+          } catch (e) {
+            console.warn(`[t1b_refresh] REFRESH MATERIALIZED VIEW exception (soft): ${(e as Error)?.message ?? e}`);
+          }
+
           // Verificar que no existe ya un trigger pendiente/processing para evitar duplicados
           const { data: existingVectorTrigger } = await supabase
             .from('cron_triggers')
