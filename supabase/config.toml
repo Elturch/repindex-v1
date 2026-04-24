@@ -12,9 +12,6 @@ verify_jwt = false
 [functions.populate-feedback-vectors]
 verify_jwt = false
 
-[functions.chat-intelligence]
-verify_jwt = false
-
 [functions.chat-intelligence-v2]
 verify_jwt = false
 
