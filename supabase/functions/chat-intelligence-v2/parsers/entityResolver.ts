@@ -11,6 +11,35 @@ import type { ResolvedEntity } from "../types.ts";
 const CATALOG_TTL_MS = 5 * 60 * 1000; // 5 min
 let catalogCache: { ts: number; rows: CatalogEntry[] } | null = null;
 
+// Spanish leading verbs / conversational filler that the fuzzy matcher
+// must NOT treat as a brand candidate. Without this, "dame" → fuzzy
+// matches "Damm" (cervecera), "dime" → "DIA", etc. We strip these
+// tokens from the question before handing it to fuzzyCompanyMatch.
+const FUZZY_STOP_WORDS = new Set<string>([
+  "dame", "dime", "muestrame", "muéstrame", "ensename", "enséñame",
+  "cuentame", "cuéntame", "hazme", "quiero", "necesito", "mostrar",
+  "muestra", "lista", "listame", "listame", "dale", "dadme",
+  "explicame", "explícame", "resume", "resumeme", "resúmeme",
+]);
+
+function stripFuzzyStopWords(question: string): string {
+  if (!question) return question;
+  const tokens = question.split(/(\s+)/);
+  return tokens
+    .map((tok) => {
+      const stripped = tok
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zñ]/g, "");
+      if (stripped && FUZZY_STOP_WORDS.has(stripped)) return " ";
+      // Also handle accented form against the un-normalised set
+      if (FUZZY_STOP_WORDS.has(tok.toLowerCase())) return " ";
+      return tok;
+    })
+    .join("");
+}
+
 async function loadCatalog(supabase: any): Promise<CatalogEntry[]> {
   if (catalogCache && Date.now() - catalogCache.ts < CATALOG_TTL_MS) {
     return catalogCache.rows;
@@ -113,7 +142,8 @@ export async function resolveEntity(
   if (bridged) return bridged;
 
   // (3) Fuzzy fallback on the in-memory catalog.
-  const fuzzy = fuzzyCompanyMatch(question, catalog, 1);
+  const sanitisedQuestion = stripFuzzyStopWords(question);
+  const fuzzy = fuzzyCompanyMatch(sanitisedQuestion, catalog, 1);
   if (fuzzy.length > 0 && fuzzy[0].ticker) {
     return buildEntity(fuzzy[0].ticker, fuzzy[0].issuer_name, "fuzzy");
   }
@@ -122,7 +152,7 @@ export async function resolveEntity(
   //     unknown corporate-shaped names (returns suggestions, not a hit
   //     we can adopt). We only adopt when status === "known".
   try {
-    const sql = await fuzzyCompanyMatchSql(question, supabase);
+    const sql = await fuzzyCompanyMatchSql(sanitisedQuestion, supabase);
     if (sql.status === "known" && sql.brand) {
       // The shared resolver already covered exact substring; nothing new.
       return null;

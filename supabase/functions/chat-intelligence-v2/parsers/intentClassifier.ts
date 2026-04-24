@@ -71,12 +71,16 @@ export function classifyIntent(question: string): Intent {
     return "sector_ranking";
   }
 
+  // Sector hint without explicit ranking keyword → still sector_ranking.
+  // Must be checked BEFORE divergence/evolution so that queries like
+  // "dame los datos de la última semana de los grupos hospitalarios"
+  // are not mis-classified as period_evolution (which then gets promoted
+  // to company_analysis once a stray fuzzy entity is resolved).
+  if (SECTOR_HINT_RE.test(raw) || SECTOR_HINT_RE.test(lower)) return "sector_ranking";
+
   if (DIVERGENCE_RE.test(lower)) return "model_divergence";
 
   if (EVOLUTION_RE.test(lower)) return "period_evolution";
-
-  // Sector hint without explicit ranking keyword → still sector_ranking
-  if (SECTOR_HINT_RE.test(raw) || SECTOR_HINT_RE.test(lower)) return "sector_ranking";
 
   return "company_analysis";
 }
