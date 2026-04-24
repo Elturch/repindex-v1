@@ -757,8 +757,8 @@ Asigna cada usuario a la persona que mejor le corresponda según su comportamien
     console.error("Error in analyze-user-profiles:", error);
     return new Response(
       JSON.stringify({ 
-        error: error.message,
-        stack: error.stack 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
