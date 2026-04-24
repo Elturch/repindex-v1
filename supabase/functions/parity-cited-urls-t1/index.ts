@@ -84,26 +84,43 @@ Deno.serve(async (req) => {
       stratRows.push(r);
     }
 
-    // 2. Random 23 rows in ONE query with random offset window.
+    // 2. Targeted Claude rows: ensure col_label coverage ≥5 for Claude (the
+    //    column most often empty in older batches).
+    const seenIds = new Set(stratRows.map((r) => r.id));
+    const { data: claudePool } = await supabase
+      .from("rix_runs_v2")
+      .select(SELECT_COLS)
+      .not("respuesta_bruto_claude", "is", null)
+      .order("batch_execution_date", { ascending: false })
+      .limit(15);
+    const claudeRows: any[] = [];
+    for (const r of claudePool ?? []) {
+      if (seenIds.has(r.id)) continue;
+      seenIds.add(r.id);
+      claudeRows.push(r);
+      if (claudeRows.length >= 8) break;
+    }
+
+    // 3. Random rows to fill up to 50 total.
     const { count: totalCount } = await supabase
       .from("rix_runs_v2")
       .select("id", { count: "exact", head: true });
     const total = totalCount ?? 0;
-    const offset = Math.max(0, Math.floor(Math.random() * Math.max(1, total - 100)));
+    const offset = Math.max(0, Math.floor(Math.random() * Math.max(1, total - 200)));
     const { data: randomPool } = await supabase
       .from("rix_runs_v2")
       .select(SELECT_COLS)
-      .range(offset, offset + 80);
-    const seenIds = new Set(stratRows.map((r) => r.id));
+      .range(offset, offset + 150);
+    const wanted = 50 - stratRows.length - claudeRows.length;
     const randomRows: any[] = [];
     for (const r of randomPool ?? []) {
       if (seenIds.has(r.id)) continue;
       seenIds.add(r.id);
       randomRows.push(r);
-      if (randomRows.length >= 23) break;
+      if (randomRows.length >= wanted) break;
     }
 
-    const sampleRows = [...stratRows, ...randomRows];
+    const sampleRows = [...stratRows, ...claudeRows, ...randomRows];
 
     // 3. ONE bulk query against the view for all sample IDs.
     const allIds = sampleRows.map((r) => r.id);
@@ -201,12 +218,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4. EXPLAIN ANALYZE on representative query.
-    const explainSql = `EXPLAIN (ANALYZE, FORMAT JSON) SELECT id, col_label, url, title FROM public.rix_runs_v2_cited_urls WHERE ticker = 'IBE' AND period_from >= '2026-01-01'`;
-    const { data: explainData, error: explainErr } = await supabase.rpc(
-      "execute_sql",
-      { sql_query: explainSql },
-    );
+    // 5. Latency probe: measure round-trip duration of representative query
+    //    5 times via the supabase-js client (TCP+server). Reports min, median,
+    //    p95 (here = max of 5).
+    const latencies: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      const { error: lqErr } = await supabase
+        .from("rix_runs_v2_cited_urls")
+        .select("id, col_label, url, title")
+        .eq("ticker", "IBE")
+        .gte("period_from", "2026-01-01");
+      const dt = performance.now() - t0;
+      if (!lqErr) latencies.push(dt);
+    }
+    latencies.sort((a, b) => a - b);
+    const p50 = latencies[Math.floor(latencies.length / 2)] ?? null;
+    const p95 =
+      latencies.length > 0
+        ? latencies[Math.min(latencies.length - 1, Math.ceil(latencies.length * 0.95) - 1)]
+        : null;
+    const explainData = {
+      query:
+        "SELECT id, col_label, url, title FROM public.rix_runs_v2_cited_urls WHERE ticker='IBE' AND period_from >= '2026-01-01'",
+      samples_ms: latencies.map((x) => Math.round(x * 100) / 100),
+      min_ms: latencies[0] ?? null,
+      p50_ms: p50,
+      p95_ms: p95,
+    };
+    const explainErr = null as any;
 
     // 5. Aggregates + verdict.
     const totalRowsTested = perRow.length;
