@@ -70,7 +70,7 @@ function detectSectorCategory(question: string): string | null {
 const SECTOR_SUBSEGMENT: Record<string, { keywords: RegExp; tickers: string[] }> = {
   grupos_hospitalarios: {
     keywords: /\b(hospital(?:es|ario|arios)?|grupo(?:s)?\s*hospitalarios?|cl[ií]nica(?:s)?\s*privadas?)\b/i,
-    tickers: ["QS", "HOS", "HMH", "HLA", "VIT", "RS", "VIA", "SANITAS"],
+    tickers: ["HMH", "QS", "HOS", "HLA", "VIA", "VIT"],
   },
   farmaceuticas: {
     keywords: /\b(farmac[eé]utica?s?|laboratorios?|farma|biotech|biotec(?:nolog[ií]a)?)\b/i,
@@ -133,7 +133,8 @@ async function autoResolveEntitiesBySector(
           return ordered;
         }
       }
-      console.log(`[RIX-V2][orch] sectorAutoResolve | subsegment hit but DB returned 0 rows, falling back to full sector`);
+      console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | subsegment matched but curated tickers returned 0 rows; skipping full-sector fallback`);
+      return [];
     }
 
     // (b) Fallback: full sector with hard cap.
