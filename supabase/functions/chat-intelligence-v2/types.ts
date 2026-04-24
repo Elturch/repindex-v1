@@ -61,6 +61,13 @@ export interface ParsedQuery {
   normalized_question: string;
   is_followup: boolean;
   inherited_context?: PreviousContext;
+  /**
+   * Optional explicit ticker scope. When set, sector_ranking / comparison
+   * skills MUST filter `WHERE ticker IN (...)` and ignore sector_category.
+   * Populated by the orchestrator when a sub-segment match is detected
+   * (e.g. "grupos hospitalarios" → ['HMH','QS','HOS','HLA','VIA','VIT']).
+   */
+  scope_tickers?: string[];
 }
 
 export interface MetricAggregation {

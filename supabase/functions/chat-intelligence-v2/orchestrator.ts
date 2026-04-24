@@ -410,6 +410,17 @@ export async function process(
   };
   if (inheritedContext) parsed.inherited_context = inheritedContext;
 
+  // Sub-segment ticker scope (applies to sector_ranking / comparison).
+  // When the user query matches a curated sub-segment (e.g. "grupos
+  // hospitalarios"), the skills must filter SQL by these explicit tickers
+  // instead of the broad sector_category. Detected here and forwarded to
+  // skills via `parsed.scope_tickers`.
+  const subsegmentTickers = detectSubsegmentTickers(question);
+  if (subsegmentTickers && subsegmentTickers.length > 0) {
+    parsed.scope_tickers = subsegmentTickers;
+    console.log(`${logPrefix} sub-segment scope tickers attached to parsed | tickers=${subsegmentTickers.join(",")}`);
+  }
+
   // 2b. Intent priority override: if a single concrete entity is resolved,
   //     `general_question` and `period_evolution` fall back to
   //     companyAnalysis (which now produces the full 8-section report with
