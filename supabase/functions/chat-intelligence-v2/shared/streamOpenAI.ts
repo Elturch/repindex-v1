@@ -215,21 +215,46 @@ export async function streamOpenAIResponse(
     timeoutMs = 90_000,
     reasoning_effort = "medium",
     provider = "openai",
-    maxContinuations = 4,
-    globalCharCap = 480_000,
     onChunk,
     logPrefix,
   } = input;
 
+  const tStart = Date.now();
+
+  // Structured start log — pipe to dashboard for model verification.
+  console.log(JSON.stringify({
+    event: "llm_call_start",
+    log: logPrefix,
+    model_requested: model,
+    provider_requested: provider,
+    maxTokens,
+    reasoning_effort: isReasoningModel(model) ? reasoning_effort : null,
+    temperature: isReasoningModel(model) ? null : temperature,
+    timestamp: new Date().toISOString(),
+  }));
+
   // If primary is gemini (rare, explicit override), go straight to fallback path.
   if (provider === "gemini") {
     const r = await callGeminiFallback(systemPrompt, userMessage, onChunk, logPrefix, timeoutMs);
+    console.log(JSON.stringify({
+      event: "llm_call_end",
+      log: logPrefix,
+      model_effective: "gemini-2.5-pro",
+      provider_used: "gemini",
+      finish_reason: r.error ? "error" : "stop",
+      fallback_triggered: false,
+      chars_out: r.text.length,
+      duration_ms: Date.now() - tStart,
+      error: r.error ?? null,
+      timestamp: new Date().toISOString(),
+    }));
     return {
       fullText: r.text,
       error: r.error,
       chunksCount: r.text ? 1 : 0,
       providerUsed: "gemini",
-      continuations: 0,
+      modelEffective: "gemini-2.5-pro",
+      finishReason: r.error ? "error" : "stop",
     };
   }
 
@@ -237,12 +262,26 @@ export async function streamOpenAIResponse(
     // No OpenAI key → try Gemini directly so the user still gets an answer.
     console.warn(`${logPrefix} OPENAI_API_KEY missing → Gemini fallback`);
     const r = await callGeminiFallback(systemPrompt, userMessage, onChunk, logPrefix, timeoutMs);
+    console.log(JSON.stringify({
+      event: "llm_call_end",
+      log: logPrefix,
+      model_effective: "gemini-2.5-pro",
+      provider_used: "gemini-fallback",
+      finish_reason: r.error ? "error" : "stop",
+      fallback_triggered: true,
+      fallback_reason: "openai_key_missing",
+      chars_out: r.text.length,
+      duration_ms: Date.now() - tStart,
+      error: r.error ?? null,
+      timestamp: new Date().toISOString(),
+    }));
     return {
       fullText: r.text,
       error: r.error ?? "OPENAI_API_KEY no configurada",
       chunksCount: r.text ? 1 : 0,
       providerUsed: "gemini-fallback",
-      continuations: 0,
+      modelEffective: "gemini-2.5-pro",
+      finishReason: r.error ? "error" : "stop",
     };
   }
 
@@ -250,85 +289,80 @@ export async function streamOpenAIResponse(
     `${logPrefix} stream OpenAI | model=${model} | reasoning=${isReasoningModel(model) ? reasoning_effort : "n/a"} | maxTokens=${maxTokens} | sys_chars=${systemPrompt.length}`,
   );
 
-  // Conversation accumulator. Each continuation appends an assistant turn
-  // and a "continúa exactamente donde lo dejaste" user message.
+  // SINGLE-SHOT (auto-continuation removed 2026-04-24 — see header).
   const messages: Array<{ role: string; content: string }> = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userMessage },
   ];
-  let fullText = "";
-  let chunksCount = 0;
-  let continuations = 0;
-  let lastError: string | undefined;
 
-  for (let turn = 0; turn <= maxContinuations; turn++) {
-    const turnRes = await streamOpenAITurn(
-      apiKey,
-      model,
-      messages,
-      maxTokens,
-      temperature,
-      reasoning_effort,
-      timeoutMs,
-      onChunk,
-      `${logPrefix}[turn=${turn}]`,
-    );
-    chunksCount += turnRes.chunks;
-    fullText += turnRes.text;
+  const turnRes = await streamOpenAITurn(
+    apiKey,
+    model,
+    messages,
+    maxTokens,
+    temperature,
+    reasoning_effort,
+    timeoutMs,
+    onChunk,
+    logPrefix,
+  );
 
-    if (turnRes.error) {
-      lastError = turnRes.error;
-      // If the FIRST turn failed AND we have no text → engage Gemini fallback.
-      if (turn === 0 && !turnRes.text) {
-        console.error(`${logPrefix} primary failed (${turnRes.error}) → Gemini fallback`);
-        const fb = await callGeminiFallback(systemPrompt, userMessage, onChunk, logPrefix, timeoutMs);
-        if (fb.text) {
-          return {
-            fullText: fb.text,
-            chunksCount: 1,
-            providerUsed: "gemini-fallback",
-            continuations: 0,
-          };
-        }
-        return {
-          fullText: "",
-          error: `${turnRes.error} | gemini: ${fb.error ?? "sin texto"}`,
-          chunksCount: 0,
-          providerUsed: "openai",
-          continuations: 0,
-        };
-      }
-      // Mid-stream error → return what we have.
-      break;
+  // Primary failed AND produced no text → engage Gemini fallback once.
+  if (turnRes.error && !turnRes.text) {
+    console.error(`${logPrefix} primary failed (${turnRes.error}) → Gemini fallback`);
+    const fb = await callGeminiFallback(systemPrompt, userMessage, onChunk, logPrefix, timeoutMs);
+    const ok = fb.text.length > 0;
+    console.log(JSON.stringify({
+      event: "llm_call_end",
+      log: logPrefix,
+      model_effective: ok ? "gemini-2.5-pro" : (turnRes.modelEffective ?? model),
+      provider_used: ok ? "gemini-fallback" : "openai",
+      finish_reason: ok ? "stop" : "error",
+      fallback_triggered: true,
+      fallback_reason: turnRes.error,
+      chars_out: ok ? fb.text.length : 0,
+      duration_ms: Date.now() - tStart,
+      error: ok ? null : `${turnRes.error} | gemini: ${fb.error ?? "sin texto"}`,
+      timestamp: new Date().toISOString(),
+    }));
+    if (ok) {
+      return {
+        fullText: fb.text,
+        chunksCount: 1,
+        providerUsed: "gemini-fallback",
+        modelEffective: "gemini-2.5-pro",
+        finishReason: "stop",
+      };
     }
-
-    if (turnRes.finishReason !== "length") break; // natural stop
-    if (fullText.length >= globalCharCap) {
-      console.warn(`${logPrefix} global char cap reached (${fullText.length}); stopping continuations`);
-      break;
-    }
-    if (turn >= maxContinuations) {
-      console.warn(`${logPrefix} maxContinuations (${maxContinuations}) reached`);
-      break;
-    }
-    continuations++;
-    console.log(`${logPrefix} finish_reason=length → continuation ${continuations}/${maxContinuations}`);
-    messages.push({ role: "assistant", content: turnRes.text });
-    messages.push({
-      role: "user",
-      content:
-        "Continúa EXACTAMENTE donde lo dejaste. No repitas lo ya escrito, no añadas preámbulos, no resumas. Sigue desde la última frase, completando el informe hasta el cierre canónico.",
-    });
+    return {
+      fullText: "",
+      error: `${turnRes.error} | gemini: ${fb.error ?? "sin texto"}`,
+      chunksCount: 0,
+      providerUsed: "openai",
+      modelEffective: turnRes.modelEffective ?? model,
+      finishReason: "error",
+    };
   }
 
-  console.log(
-    `${logPrefix} stream done | chunks=${chunksCount} | chars=${fullText.length} | continuations=${continuations}`,
-  );
+  console.log(JSON.stringify({
+    event: "llm_call_end",
+    log: logPrefix,
+    model_effective: turnRes.modelEffective ?? model,
+    provider_used: "openai",
+    finish_reason: turnRes.finishReason,
+    fallback_triggered: false,
+    chunks: turnRes.chunks,
+    chars_out: turnRes.text.length,
+    duration_ms: Date.now() - tStart,
+    error: turnRes.error ?? null,
+    timestamp: new Date().toISOString(),
+  }));
   return {
-    fullText,
-    error: lastError && !fullText ? lastError : undefined,
-    chunksCount,
+    fullText: turnRes.text,
+    error: turnRes.error && !turnRes.text ? turnRes.error : undefined,
+    chunksCount: turnRes.chunks,
     providerUsed: "openai",
-    continuations,
+    modelEffective: turnRes.modelEffective ?? model,
+    finishReason: turnRes.finishReason,
   };
 }
