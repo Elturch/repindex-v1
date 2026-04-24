@@ -25,6 +25,70 @@ import {
   selectBlocks,
 } from "../datapack/reportAssembler.ts";
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
+import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
+
+/**
+ * Compact summary of cited URLs for the LLM prompt only. Mirrors the helper
+ * in companyAnalysis.ts: full bibliography is appended AFTER streaming via
+ * the <!--CITED_SOURCES_HERE--> marker, so we never blow OpenAI 400 limits.
+ */
+function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>): string {
+  if (report.totalUrls === 0) return "";
+  const topDomains = report.byDomain.slice(0, 10)
+    .map((d) => `${d.domain} (${d.sources.length})`)
+    .join(", ");
+  return [
+    "**Resumen de fuentes citadas (para narrativa, NO copies este bloque):**",
+    `- Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos`,
+    `- Top 10 dominios: ${topDomains}`,
+    "",
+    "INSTRUCCIÓN SECCIÓN 8: NO listes URLs a mano. Escribe 2-3 frases introductorias y termina con la línea exacta `<!--CITED_SOURCES_HERE-->`. El sistema sustituirá ese marcador por la bibliografía completa.",
+  ].join("\n");
+}
+
+/**
+ * Build a per-company source listing (top dominios por empresa) so the LLM
+ * pueda citar medios concretos en la sección 3 (análisis empresa-por-empresa)
+ * y en la sección 7 (recomendaciones accionables). Limita a 5 dominios por
+ * empresa para no inflar el prompt.
+ */
+function buildPerCompanySourceList(rows: any[]): string {
+  const RAW_FIELDS = [
+    "20_res_gpt_bruto", "21_res_perplex_bruto", "22_res_gemini_bruto",
+    "23_res_deepseek_bruto", "respuesta_bruto_claude", "respuesta_bruto_grok", "respuesta_bruto_qwen",
+  ];
+  const URL_RE = /https?:\/\/[^\s)\]"<>]+/g;
+  const byTicker = new Map<string, { name: string; domains: Map<string, number> }>();
+  for (const r of rows) {
+    const t = String(r["05_ticker"] ?? "").trim();
+    if (!t) continue;
+    const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), domains: new Map() };
+    for (const f of RAW_FIELDS) {
+      const txt = r[f];
+      if (!txt || typeof txt !== "string") continue;
+      const matches = txt.match(URL_RE) ?? [];
+      for (const u of matches) {
+        try {
+          const d = new URL(u).hostname.replace(/^www\./, "").toLowerCase();
+          if (!d || d === "schema.org" || d === "w3.org") continue;
+          slot.domains.set(d, (slot.domains.get(d) ?? 0) + 1);
+        } catch { /* skip */ }
+      }
+    }
+    byTicker.set(t, slot);
+  }
+  if (byTicker.size === 0) return "";
+  const lines = ["**FUENTES DISPONIBLES POR EMPRESA (úsalas para citar medios reales en secciones 3 y 7):**", ""];
+  for (const [ticker, info] of byTicker) {
+    const top = [...info.domains.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([d, n]) => `${d} (${n})`)
+      .join(", ");
+    if (top) lines.push(`- ${info.name} (${ticker}): ${top}`);
+  }
+  return lines.join("\n");
+}
 
 /**
  * Build a high-priority coverage warning that the LLM MUST surface in the
