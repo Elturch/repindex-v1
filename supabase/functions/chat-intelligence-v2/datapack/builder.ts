@@ -19,6 +19,7 @@ import {
   renderModelTable,
   renderPeriodKpiTable,
 } from "./tableRenderer.ts";
+import { snapshotFlags } from "../shared/featureFlags.ts";
 
 // Extraído de v1/index.ts línea 887 (FULL_SELECT) — columnas que la skill
 // principal necesita para construir tablas + agregados + textos brutos.
@@ -35,6 +36,33 @@ const FULL_SELECT =
   // citedSources extractor scans these for [title](url) markdown links and
   // bare URLs, dedupes, and groups them by domain.
   "respuesta_bruto_claude, respuesta_bruto_grok, respuesta_bruto_qwen";
+
+// T0 — heavy *_bruto columns isolated, used by the legacy fetch path. When
+// CHAT_V2_LAZY_BRUTO becomes true (T2), these are excluded from the main
+// SELECT and fetched on demand by skills that consume citations.
+const BRUTO_COLUMNS = [
+  "20_res_gpt_bruto",
+  "21_res_perplex_bruto",
+  "22_res_gemini_bruto",
+  "23_res_deepseek_bruto",
+  "respuesta_bruto_claude",
+  "respuesta_bruto_grok",
+  "respuesta_bruto_qwen",
+] as const;
+
+/**
+ * Rough byte-size estimate of a fetched row set. Used only for egress
+ * instrumentation (T0). Cheap and intentionally not exact: JSON.stringify
+ * length is a faithful proxy for the wire payload Supabase REST returns.
+ */
+function estimateBytes(rows: unknown[]): number {
+  if (!rows || rows.length === 0) return 0;
+  try {
+    return JSON.stringify(rows).length;
+  } catch {
+    return 0;
+  }
+}
 
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
@@ -82,7 +110,10 @@ async function fetchRows(
   toISO: string,
 ): Promise<RawRunRow[]> {
   const all: RawRunRow[] = [];
-  console.log(`[RIX-V2][datapack] SQL window | ticker=${entity.ticker} | from=${fromISO} | to=${toISO}`);
+  const flags = snapshotFlags();
+  console.log(
+    `[RIX-V2][datapack] SQL window | ticker=${entity.ticker} | from=${fromISO} | to=${toISO} | flags=${JSON.stringify(flags)}`,
+  );
   for (let page = 0; page < 5; page++) {
     const { data, error } = await supabase
       .from("rix_runs_v2")
@@ -105,6 +136,11 @@ async function fetchRows(
     all.push(...data);
     if (data.length < 1000) break;
   }
+  // T0 instrumentation — bytes fetched from Supabase for this skill call.
+  const bytes = estimateBytes(all);
+  console.log(
+    `[RIX-V2][egress] skill=companyAnalysis path=FULL_SELECT rows=${all.length} bytes_fetched_supabase=${bytes}`,
+  );
   return all;
 }
 
@@ -206,4 +242,4 @@ function emptyDatapack(parsed: ParsedQuery): DataPack {
   };
 }
 
-export const __test__ = { normalizeModelName, FULL_SELECT };
+export const __test__ = { normalizeModelName, FULL_SELECT, BRUTO_COLUMNS, estimateBytes };

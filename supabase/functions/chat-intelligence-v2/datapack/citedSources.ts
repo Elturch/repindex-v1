@@ -58,7 +58,7 @@ const MD_LINK_RE = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)\]"<>]+)\)/g;
 const BARE_URL_RE = /https?:\/\/[^\s)\]"<>]+/g;
 
 // Dominios que rara vez son fuentes citables (evitar ruido)
-const NOISE_DOMAINS = new Set([
+export const NOISE_DOMAINS = new Set([
   "schema.org",
   "w3.org",
   "example.com",
@@ -83,7 +83,7 @@ export interface CitedSourcesReport {
 }
 
 /** Limpia trailing punctuation que el regex puede arrastrar (.,;:!?). */
-function cleanUrl(raw: string): string {
+export function cleanUrl(raw: string): string {
   let u = raw.trim();
   while (u.length > 0 && /[.,;:!?]$/.test(u)) u = u.slice(0, -1);
   // Cierra paréntesis de markdown si quedó suelto
@@ -93,7 +93,7 @@ function cleanUrl(raw: string): string {
   return u;
 }
 
-function extractDomain(url: string): string {
+export function extractDomain(url: string): string {
   try {
     const u = new URL(url);
     return u.hostname.replace(/^www\./, "").toLowerCase();
@@ -107,7 +107,7 @@ function extractDomain(url: string): string {
  * Common patterns: /2026/03/15/, /2026-03-15-, /20260315/. Returns null
  * if no date is detected. Pure heuristic — best-effort.
  */
-function extractDateFromUrl(url: string): string | null {
+export function extractDateFromUrl(url: string): string | null {
   // /YYYY/MM/DD/
   let m = url.match(/\/(20\d{2})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[\/_\-]|$)/);
   if (m) {
