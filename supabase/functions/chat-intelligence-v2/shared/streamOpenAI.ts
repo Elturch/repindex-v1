@@ -70,12 +70,13 @@ async function streamOpenAITurn(
   timeoutMs: number,
   onChunk: (d: string) => void,
   logPrefix: string,
-): Promise<{ text: string; chunks: number; finishReason: string | null; error?: string }> {
+): Promise<{ text: string; chunks: number; finishReason: string | null; modelEffective?: string; error?: string }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   let text = "";
   let chunks = 0;
   let finishReason: string | null = null;
+  let modelEffective: string | undefined;
 
   const body: Record<string, unknown> = {
     model,
@@ -129,6 +130,9 @@ async function streamOpenAITurn(
         try {
           const parsed = JSON.parse(payload);
           const choice = parsed?.choices?.[0];
+          if (!modelEffective && typeof parsed?.model === "string") {
+            modelEffective = parsed.model;
+          }
           const delta = choice?.delta?.content;
           if (typeof delta === "string" && delta.length > 0) {
             text += delta;
@@ -146,11 +150,11 @@ async function streamOpenAITurn(
     }
 
     clearTimeout(timeoutId);
-    return { text, chunks, finishReason };
+    return { text, chunks, finishReason, modelEffective };
   } catch (e: any) {
     clearTimeout(timeoutId);
     const msg = e?.name === "AbortError" ? "OpenAI timeout" : (e?.message ?? "Unknown");
-    return { text, chunks, finishReason, error: msg };
+    return { text, chunks, finishReason, modelEffective, error: msg };
   }
 }
 
