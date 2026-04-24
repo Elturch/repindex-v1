@@ -1,16 +1,21 @@
 // Agente Rix v2 — shared LLM streaming helper (T0 engine restoration).
 //
-// Capabilities (Fase 2):
+// Capabilities (Fase 2 — REVERT auto-continuation 2026-04-24):
 //   • OpenAI Chat Completions streaming with reasoning models
 //     (o3 / o1 / gpt-5 family) → uses `reasoning_effort` and skips
 //     `temperature` (those models reject it).
 //   • Standard models (gpt-4o*, gpt-4*) keep `temperature`.
-//   • Auto-continuation: up to 4 turns when `finish_reason === "length"`.
-//     Concatenates assistant turns transparently. Global safety cap of
-//     120 000 tokens (~480k chars) on the accumulated assistant text.
+//   • SINGLE-SHOT (no auto-continuation). The previous multi-turn loop
+//     produced a cascade of `enqueue chunk failed` errors when the
+//     SSE controller was closed between turns. Single shot keeps the
+//     stream lifecycle clean. If the model truncates at 32k tokens
+//     that is acceptable for the V2 milestone; the auto-continuation
+//     pattern will be re-introduced later with a proper liveness guard.
 //   • Fallback: if the OpenAI call fails (any error, timeout, no chunks),
 //     retry ONCE with Gemini 2.5 Pro using the same system+user payload
 //     and bridge its response into onChunk so the SSE pipe stays alive.
+//   • Structured observability logs: `llm_call_start` / `llm_call_end`
+//     JSON lines so we can verify model_effective from the dashboard.
 //
 // Defaults (V1 quality contract):
 //   model = "o3", reasoning_effort = "medium", maxTokens = 32000, temp = 0.
@@ -27,10 +32,6 @@ export interface StreamOpenAIInput {
   timeoutMs?: number;
   reasoning_effort?: ReasoningEffort;
   provider?: LLMProvider;
-  /** Max auto-continuation turns when finish_reason === "length". Default 4. */
-  maxContinuations?: number;
-  /** Hard cap on accumulated assistant chars (safety net). Default ~480k. */
-  globalCharCap?: number;
   onChunk: (delta: string) => void;
   logPrefix: string;
 }
@@ -41,8 +42,10 @@ export interface StreamOpenAIResult {
   chunksCount: number;
   /** "openai" | "gemini-fallback" — useful for observability. */
   providerUsed?: string;
-  /** Number of OpenAI continuation turns used (0 = single shot). */
-  continuations?: number;
+  /** Effective model identifier reported by the upstream (or requested). */
+  modelEffective?: string;
+  /** finish_reason from the LLM ("stop" | "length" | "content_filter" | …). */
+  finishReason?: string | null;
 }
 
 /** Reasoning families that require `reasoning_effort` and reject `temperature`. */
