@@ -332,16 +332,24 @@ export const sectorRankingSkill: Skill = {
   async execute(input: SkillInput): Promise<SkillOutput> {
     const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[sectorRanking]`;
-    const sector = parsed.entities[0]?.sector_category ?? null;
+    const scopeTickers = (parsed.scope_tickers && parsed.scope_tickers.length > 0)
+      ? parsed.scope_tickers
+      : null;
+    // When explicit sub-segment tickers are present, ignore sector_category
+    // entirely (e.g. "grupos hospitalarios" must NOT load all of "Salud y
+    // Farmacéutico"). Otherwise fall back to the resolved entity sector.
+    const sector = scopeTickers ? null : (parsed.entities[0]?.sector_category ?? null);
     // Detect IBEX hint directly from the raw question (sector_ranking has
     // no resolved entity by design).
     const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
     // Detect explicit "top N" → cap N between 3 and 35.
     const topMatch = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
     const topN = topMatch ? Math.max(3, Math.min(35, parseInt(topMatch[1], 10))) : 15;
-    const scopeLabel = sector
-      ? `sector ${sector}`
-      : (ibexOnly ? "IBEX-35" : "todas las empresas cubiertas");
+    const scopeLabel = scopeTickers
+      ? `grupo seleccionado (${scopeTickers.length} empresas: ${scopeTickers.join(", ")})`
+      : sector
+        ? `sector ${sector}`
+        : (ibexOnly ? "IBEX-35" : "todas las empresas cubiertas");
 
     // Use the REQUESTED window (e.g. Q1 = 2026-01-01 → 2026-03-31) for the
     // SQL bounds, NOT the reconciled/clamped window which may collapse to a
@@ -349,7 +357,7 @@ export const sectorRankingSkill: Skill = {
     const sqlFrom = parsed.temporal.requested_from ?? parsed.temporal.from;
     const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
     console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
-    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly);
+    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0 ? renderRankingTable(ranking, models) : "_Sin datos para el período/alcance solicitado._";
