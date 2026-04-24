@@ -9,9 +9,8 @@ import {
   extractCitedSources,
   cleanUrl,
   extractDomain,
-  NOISE_DOMAINS,
-} from "../chat-intelligence-v2/datapack/citedSources.ts";
-import { normalizeUrlsFromView } from "../chat-intelligence-v2/datapack/citedSourcesView.ts";
+} from "./citedSources.ts";
+import { normalizeUrlsFromView } from "./citedSourcesView.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
