@@ -36,9 +36,9 @@ export interface PreviousContext {
   ticker: string;
   company_name: string;
   sector_category: string | null;
-  models: ModelName[];
-  temporal_from: string;
-  temporal_to: string;
+  models?: ModelName[];
+  temporal_from?: string;
+  temporal_to?: string;
 }
 
 export interface ParsedQuery {
@@ -138,6 +138,13 @@ export interface OrchestratorResponse {
   content: string;
   datapack?: DataPack;
   metadata?: ReportMetadata;
+  intent?: Intent;
+  entities?: ResolvedEntity[];
+  period_from?: string;
+  period_to?: string;
+  models_used?: ModelName[];
+  data_count?: number;
+  methodology?: Record<string, unknown>;
 }
 
 export interface ConversationMessage {
