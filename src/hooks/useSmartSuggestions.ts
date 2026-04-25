@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useRixUniverse } from '@/hooks/useRixUniverse';
+import { validateSuggestion } from '@/lib/chat/suggestionWhitelist';
 
 export interface SmartSuggestion {
   text: string;
@@ -66,6 +68,7 @@ export function useSmartSuggestions(
   const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const fetchingRef = useRef(false);
+  const { data: universe } = useRixUniverse();
 
   // Fetch vector-powered suggestions from Edge Function
   useEffect(() => {
@@ -116,10 +119,13 @@ export function useSmartSuggestions(
   const suggestions = useMemo((): SmartSuggestion[] => {
     const result: SmartSuggestion[] = [];
 
-    // Priority 0: Vector Store insights
+    // Priority 0: Vector Store insights — whitelist-filtered against the
+    // live RIX universe to drop any company that no longer has data.
     for (const vs of vectorSuggestions) {
+      const v = validateSuggestion(vs.text, universe);
+      if (!v.valid) continue;
       result.push({
-        text: vs.text,
+        text: v.text,
         type: 'vector_insight',
         icon: vs.icon,
         priority: 0,
@@ -131,8 +137,14 @@ export function useSmartSuggestions(
     const remaining = count - result.length;
     if (remaining > 0) {
       const pool = getFallbackTemplates(languageCode);
-      const shuffled = [...pool].sort(() => Math.random() - 0.5);
-      for (const text of shuffled.slice(0, remaining)) {
+      // Apply same whitelist filter to hardcoded fallbacks.
+      const validated = pool
+        .map((t) => validateSuggestion(t, universe))
+        .filter((v) => v.valid)
+        .map((v) => v.text);
+      const shuffled = [...validated].sort(() => Math.random() - 0.5);
+      for (const text of shuffled) {
+        if (result.length - vectorSuggestions.length >= remaining) break;
         if (result.some((s) => s.text === text)) continue;
         result.push({
           text,
@@ -145,7 +157,7 @@ export function useSmartSuggestions(
     }
 
     return result.sort((a, b) => a.priority - b.priority).slice(0, count);
-  }, [vectorSuggestions, languageCode, count]);
+  }, [vectorSuggestions, languageCode, count, universe]);
 
   const refresh = useCallback(() => {
     vectorCache = null;
