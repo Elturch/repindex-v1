@@ -5,6 +5,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { process as orchestratorProcess } from "./orchestrator.ts";
 import type { ConversationMessage } from "./types.ts";
 import { runAllTests } from "./tests/regression.ts";
+import { parseTemporalIntent } from "../_shared/temporalGuard.ts";
+import { parseTemporal } from "./parsers/temporalParser.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,7 +15,7 @@ const corsHeaders = {
   // Expose RIX-specific headers so the frontend can verify the effective
   // model and fallback state without parsing logs.
   "Access-Control-Expose-Headers":
-    "x-rix-model-requested, x-rix-model-effective, x-rix-fallback, x-rix-engine-version",
+    "x-rix-model-requested, x-rix-model-effective, x-rix-fallback, x-rix-engine-version, x-rix-window-reason, x-rix-snapshot-count, x-rix-window-start, x-rix-window-end",
 };
 
 function sseEncode(payload: unknown): Uint8Array {
@@ -142,6 +144,35 @@ serve(async (req: Request) => {
       effectiveQuestion,
     });
 
+    // PHASE 4 — Pre-resolve "esta semana" / "this week" temporal intent so we
+    // can surface the snapshot-aware window in the HTTP response headers
+    // (curl-friendly audit trail). This duplicates a small amount of work
+    // because the orchestrator re-parses internally, but the duplicate is
+    // ~1 SQL probe and only triggers when the user's question explicitly
+    // mentions the current week. For all other queries this branch is a
+    // no-op (intent.primary?.kind !== "current_iso_week").
+    const extraHeaders: Record<string, string> = {};
+    try {
+      const intent = parseTemporalIntent(effectiveQuestion);
+      if (intent.primary?.kind === "current_iso_week") {
+        const resolved = await parseTemporal(effectiveQuestion, supabase, null);
+        if (resolved.window_reason) {
+          extraHeaders["x-rix-window-reason"] = resolved.window_reason;
+          extraHeaders["x-rix-snapshot-count"] = String(resolved.snapshots_available ?? 0);
+          extraHeaders["x-rix-window-start"] = resolved.from;
+          extraHeaders["x-rix-window-end"] = resolved.to;
+          console.log("[RIX-V2][phase4] current-week resolver:", {
+            reason: resolved.window_reason,
+            count: resolved.snapshots_available,
+            from: resolved.from,
+            to: resolved.to,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("[RIX-V2][phase4] pre-resolve current-week failed (non-fatal):", e);
+    }
+
     // Real progressive streaming: the orchestrator → skill → streamOpenAIResponse
     // chain calls onChunk for every LLM delta. We pipe each delta into the SSE
     // controller as a {type:"chunk",text} frame, matching v1's contract. The
@@ -264,6 +295,7 @@ serve(async (req: Request) => {
               is_partial: result.datapack?.temporal?.is_partial ?? null,
               snapshots_available: result.datapack?.temporal?.snapshots_available ?? null,
               snapshots_expected: result.datapack?.temporal?.snapshots_expected ?? null,
+              window_reason: result.datapack?.temporal?.window_reason ?? null,
             },
             suggestedQuestions: [],
             drumrollQuestion: null,
@@ -296,6 +328,8 @@ serve(async (req: Request) => {
         "x-rix-model-requested": "o3",
         "x-rix-model-effective": "o3",
         "x-rix-fallback": "none",
+        // PHASE 4 — only present for "esta semana" / "this week" queries.
+        ...extraHeaders,
       },
     });
   } catch (err) {
