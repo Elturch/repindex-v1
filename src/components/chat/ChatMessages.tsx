@@ -170,7 +170,7 @@ export function ChatMessages({
                   <Button
                     key={idx}
                     variant="outline"
-                    className={`justify-start text-left h-auto whitespace-normal ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
+                    className={`w-full max-w-full min-w-0 justify-start text-left h-auto whitespace-normal break-words ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
                       suggestion.type === 'vector_insight' 
                         ? 'border-primary/30 bg-primary/5 hover:bg-primary/10' 
                         : ''
@@ -178,8 +178,8 @@ export function ChatMessages({
                     style={{ animationDelay: `${idx * 0.05}s` }}
                     onClick={() => onStarterPrompt(suggestion.text)}
                   >
-                    <span className="mr-2 text-base">{suggestion.icon}</span>
-                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1`}>
+                    <span className="mr-2 text-base shrink-0">{suggestion.icon}</span>
+                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1 min-w-0 break-words`}>
                       {suggestion.text}
                     </span>
                     {suggestion.type === 'vector_insight' && !compact && (

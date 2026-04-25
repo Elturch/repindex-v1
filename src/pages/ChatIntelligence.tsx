@@ -79,9 +79,10 @@ export default function ChatIntelligence() {
             onClick={clearConversation}
             disabled={messages.length === 0}
             className="gap-2"
+            aria-label={tr.newConversation}
           >
             <Trash2 className="h-4 w-4" />
-            {tr.newConversation}
+            <span className="hidden sm:inline">{tr.newConversation}</span>
           </Button>
         </div>
 

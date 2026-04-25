@@ -13,10 +13,11 @@ export function GlossaryDialog() {
         <Button
           variant="ghost"
           size="sm"
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 px-2 sm:px-3"
+          aria-label="Glosario"
         >
           <BookOpen className="h-4 w-4" />
-          Glosario
+          <span className="hidden sm:inline">Glosario</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
