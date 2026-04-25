@@ -152,10 +152,10 @@ export function ChatMessages({
                   size="sm"
                   onClick={refreshSuggestions}
                   disabled={suggestionsLoading}
-                  className="h-6 min-w-0 max-w-[52%] px-2 text-xs text-muted-foreground"
+                  className="h-6 shrink-0 px-2 text-xs text-muted-foreground"
                 >
                   <RefreshCw className={`h-3 w-3 mr-1 ${suggestionsLoading ? 'animate-spin' : ''}`} />
-                  <span className="min-w-0 truncate">{tr.refreshSuggestions}</span>
+                  <span className="hidden sm:inline">{tr.refreshSuggestions}</span>
                 </Button>
               )}
             </div>
@@ -172,7 +172,7 @@ export function ChatMessages({
                   <Button
                     key={idx}
                     variant="outline"
-                    className={`w-full max-w-full min-w-0 justify-start text-left h-auto whitespace-normal break-words ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
+                    className={`w-full max-w-full min-w-0 justify-start items-start overflow-hidden text-left h-auto whitespace-normal break-words ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
                       suggestion.type === 'vector_insight' 
                         ? 'border-primary/30 bg-primary/5 hover:bg-primary/10' 
                         : ''
@@ -181,21 +181,21 @@ export function ChatMessages({
                     onClick={() => onStarterPrompt(suggestion.text)}
                   >
                     <span className="mr-2 text-base shrink-0">{suggestion.icon}</span>
-                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1 min-w-0 break-words`}>
+                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1 min-w-0 break-words [overflow-wrap:anywhere]`}>
                       {suggestion.text}
                     </span>
                     {suggestion.type === 'vector_insight' && !compact && (
-                      <Badge variant="default" className="ml-2 text-[9px] shrink-0 bg-primary/20 text-primary border-0">
+                      <Badge variant="default" className="ml-2 hidden shrink-0 border-0 bg-primary/20 text-[9px] text-primary sm:inline-flex">
                         ✨ Live
                       </Badge>
                     )}
                     {suggestion.type === 'personalized' && !compact && (
-                      <Badge variant="outline" className="ml-2 text-[9px] opacity-60 shrink-0">
+                      <Badge variant="outline" className="ml-2 hidden shrink-0 text-[9px] opacity-60 sm:inline-flex">
                         {tr.historyLabel}
                       </Badge>
                     )}
                     {suggestion.type === 'discovery' && !compact && (
-                      <Badge variant="secondary" className="ml-2 text-[9px] shrink-0">
+                      <Badge variant="secondary" className="ml-2 hidden shrink-0 text-[9px] sm:inline-flex">
                         {tr.discoveryLabel}
                       </Badge>
                     )}
