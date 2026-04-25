@@ -134,7 +134,7 @@ export function ChatQueryGuide({ language, onSelectExample, onSendExample, disab
   const current = examples[index % examples.length];
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 min-w-0 w-full">
       <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{prompt}</span>
       <button
         type="button"
@@ -146,13 +146,13 @@ export function ChatQueryGuide({ language, onSelectExample, onSendExample, disab
           if (onSendExample) onSendExample(current.text);
           else onSelectExample(current.text);
         }}
-        className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+        className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-3 py-1 text-xs font-medium text-foreground hover:bg-primary/10 hover:border-primary/40 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed min-w-0 flex-1 max-w-full overflow-hidden ${
           fade ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
         }`}
         title={onSendExample ? "Enviar ejemplo" : "Rellenar input"}
       >
-        <span className="text-sm leading-none">{current.icon}</span>
-        <span className="line-clamp-1">{current.text}</span>
+        <span className="text-sm leading-none shrink-0">{current.icon}</span>
+        <span className="line-clamp-1 min-w-0 truncate">{current.text}</span>
         <span className="text-muted-foreground shrink-0 ml-1">➤</span>
       </button>
     </div>
