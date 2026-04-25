@@ -17,6 +17,7 @@ import { buildComparisonRules } from "../prompts/comparisonMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { isLazyBrutoEnabled } from "../shared/featureFlags.ts";
 import { hydrateBrutoColumns } from "../datapack/builder.ts";
+import { resolveSemanticGroup } from "../../_shared/semanticGroups.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -228,7 +229,46 @@ export const comparisonSkill: Skill = {
   async execute(input: SkillInput): Promise<SkillOutput> {
     const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[comparison]`;
-    const targets = parsed.entities.filter((e) => e.ticker && e.ticker !== "N/A");
+    let targets = parsed.entities.filter((e) => e.ticker && e.ticker !== "N/A");
+
+    // GAP 3 — Semantic group expansion.
+    // Cuando el usuario pide "compárame los supermercados" sin nombrar
+    // empresas, parsed.entities suele venir <2. Intentar expandir vía
+    // rix_semantic_groups (DB-driven, 21 grupos, 113 aliases, soporta
+    // exclusions). Prioridad: (1) parsed.scope_tickers ya poblado por
+    // orchestrator (4 hardcoded), (2) fallback DB-driven.
+    if (targets.length < 2) {
+      let scopeTickers: string[] | null =
+        (parsed.scope_tickers && parsed.scope_tickers.length > 0)
+          ? parsed.scope_tickers
+          : null;
+      if (!scopeTickers) {
+        const grp = await resolveSemanticGroup(parsed.raw_question, supabase);
+        if (grp.canonical_key && grp.issuer_ids.length > 0) {
+          const excl = new Set(grp.exclusions.map((t) => t.toUpperCase()));
+          scopeTickers = grp.issuer_ids.filter((t) => !excl.has(t.toUpperCase()));
+          console.log(`${tag} semanticGroup="${grp.canonical_key}" tickers=${scopeTickers.join(",")} excl=[${grp.exclusions.join(",")}]`);
+        }
+      }
+      if (scopeTickers && scopeTickers.length >= 2) {
+        const upper = scopeTickers.map((t) => t.toUpperCase());
+        const { data: rows } = await supabase
+          .from("repindex_root_issuers")
+          .select("ticker, issuer_name, sector_category")
+          .in("ticker", upper);
+        if (Array.isArray(rows) && rows.length >= 2) {
+          const byT = new Map<string, any>(rows.map((r: any) => [String(r.ticker).toUpperCase(), r]));
+          targets = upper.map((t) => byT.get(t)).filter(Boolean).map((r: any) => ({
+            ticker: String(r.ticker).toUpperCase(),
+            company_name: r.issuer_name,
+            sector_category: r.sector_category ?? null,
+            source: "semantic_bridge" as const,
+          }));
+          console.log(`${tag} expanded targets via semanticGroup | n=${targets.length} | tickers=${targets.map((t) => t.ticker).join(",")}`);
+        }
+      }
+    }
+
     if (targets.length < 2) {
       const msg = "Para comparar necesito al menos dos empresas resueltas. Ejemplo: 'compara ACS con FCC'.";
       try { onChunk?.(msg); } catch (_) { /* noop */ }
