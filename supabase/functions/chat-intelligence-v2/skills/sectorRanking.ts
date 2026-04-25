@@ -26,6 +26,7 @@ import {
 } from "../datapack/reportAssembler.ts";
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
+import { aggregateConsensus, type ConsensusLevel } from "../../_shared/consensusRanking.ts";
 
 /**
  * Compact summary of cited URLs for the LLM prompt only. Mirrors the helper
@@ -136,8 +137,10 @@ function semaforo(n: number | null | undefined): string {
 interface RankingRow {
   ticker: string;
   name: string;
-  rix_mean: number;
+  rix_mean: number;            // = majorityScore promediada por semana (paridad dashboard)
   obs: number;
+  consensusLevel: ConsensusLevel; // alto/medio/bajo (peor caso semanal)
+  weekly_range_avg: number;       // rango (max-min) inter-modelo promedio entre semanas
   per_model: Partial<Record<ModelName, number>>;
 }
 
@@ -189,33 +192,82 @@ async function fetchRankingRows(
 }
 
 function aggregateRanking(rows: any[], topN: number): RankingRow[] {
-  const byTicker = new Map<string, { name: string; values: number[]; per_model: Map<ModelName, number[]> }>();
+  // PARIDAD BIT-IDÉNTICA con dashboard (c2):
+  //   1) Agrupar por (ticker, semana) → aggregateConsensus por snapshot semanal
+  //      (descarta max+min si ≥4 modelos en esa semana).
+  //   2) Promediar las majorityScores semanales → rix_mean del ranking.
+  //   3) Worst-case consensusLevel entre semanas (alto < medio < bajo).
+  //   4) per_model: media simple por modelo a través de todas las semanas (informativo).
+  const byTicker = new Map<string, {
+    name: string;
+    bySnapshot: Map<string, { ticker: string; rix_score: number }[]>; // key = semana ISO
+    per_model: Map<ModelName, number[]>;
+    obsTotal: number;
+  }>();
   for (const r of rows) {
     const t = String(r["05_ticker"] ?? "").trim();
     if (!t) continue;
     const v = typeof r["09_rix_score"] === "number" ? r["09_rix_score"] : parseFloat(r["09_rix_score"]);
     if (!Number.isFinite(v)) continue;
+    const week = String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10);
     if (!byTicker.has(t)) {
-      byTicker.set(t, { name: String(r["03_target_name"] ?? t), values: [], per_model: new Map() });
+      byTicker.set(t, {
+        name: String(r["03_target_name"] ?? t),
+        bySnapshot: new Map(),
+        per_model: new Map(),
+        obsTotal: 0,
+      });
     }
     const slot = byTicker.get(t)!;
-    slot.values.push(v);
+    slot.obsTotal += 1;
+    if (!slot.bySnapshot.has(week)) slot.bySnapshot.set(week, []);
+    slot.bySnapshot.get(week)!.push({ ticker: t, rix_score: v });
     const m = normModel(r["02_model_name"]);
     if (m) {
       if (!slot.per_model.has(m)) slot.per_model.set(m, []);
       slot.per_model.get(m)!.push(v);
     }
   }
+
+  const LEVEL_RANK: Record<ConsensusLevel, number> = { alto: 0, medio: 1, bajo: 2 };
+  const RANK_LEVEL: ConsensusLevel[] = ["alto", "medio", "bajo"];
+
   const out: RankingRow[] = [];
   for (const [ticker, info] of byTicker) {
-    const mean = info.values.reduce((a, b) => a + b, 0) / Math.max(info.values.length, 1);
+    const weeklyMajority: number[] = [];
+    const weeklyRanges: number[] = [];
+    let worstLevelRank = 0;
+    for (const [, snapRows] of info.bySnapshot) {
+      const agg = aggregateConsensus(snapRows).get(ticker);
+      if (!agg) continue;
+      weeklyMajority.push(agg.majorityScore);
+      weeklyRanges.push(agg.range);
+      worstLevelRank = Math.max(worstLevelRank, LEVEL_RANK[agg.consensusLevel]);
+    }
+    if (weeklyMajority.length === 0) continue;
+    const rix_mean = weeklyMajority.reduce((a, b) => a + b, 0) / weeklyMajority.length;
+    const weekly_range_avg = weeklyRanges.reduce((a, b) => a + b, 0) / weeklyRanges.length;
     const per_model: RankingRow["per_model"] = {};
     for (const [m, vals] of info.per_model) {
       per_model[m] = vals.reduce((a, b) => a + b, 0) / vals.length;
     }
-    out.push({ ticker, name: info.name, rix_mean: mean, obs: info.values.length, per_model });
+    out.push({
+      ticker,
+      name: info.name,
+      rix_mean,
+      obs: info.obsTotal,
+      consensusLevel: RANK_LEVEL[worstLevelRank],
+      weekly_range_avg,
+      per_model,
+    });
   }
-  out.sort((a, b) => b.rix_mean - a.rix_mean);
+
+  // Sort paridad dashboard: nivel de consenso (alto→bajo) primero, luego score desc.
+  out.sort((a, b) => {
+    const ld = LEVEL_RANK[a.consensusLevel] - LEVEL_RANK[b.consensusLevel];
+    if (ld !== 0) return ld;
+    return b.rix_mean - a.rix_mean;
+  });
   return out.slice(0, topN);
 }
 
