@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { ChatLanguage } from "@/lib/chatLanguages";
+import { useRixUniverse } from "@/hooks/useRixUniverse";
+import { validateSuggestion } from "@/lib/chat/suggestionWhitelist";
 
 interface ChatQueryGuideProps {
   language: ChatLanguage;
@@ -47,7 +49,8 @@ const CATEGORIES: GuideCategory[] = [
       "Compara Iberdrola con Endesa",
       "Compara Repsol con Naturgy",
       "Compara sector Energía y Gas vs Telecomunicaciones",
-      "Compara Inditex con Puig",
+      // Same-sector (Moda y Distribución), both verified in RIX universe.
+      "Compara Inditex con Adolfo Domínguez",
     ],
   },
   {
@@ -99,21 +102,36 @@ const ALL_EXAMPLES = CATEGORIES.flatMap((cat) =>
 export function ChatQueryGuide({ language, onSelectExample, onSendExample, disabled }: ChatQueryGuideProps) {
   const lang = language.code;
   const prompt = LABEL[lang] || LABEL["en"] || LABEL["es"];
-  const [index, setIndex] = useState(() => Math.floor(Math.random() * ALL_EXAMPLES.length));
+  const { data: universe } = useRixUniverse();
+
+  // Whitelist filter: only keep examples whose company mentions are all
+  // present in the live RIX universe. Sector-only / index-only examples
+  // (no company mentions) always pass.
+  const examples = (() => {
+    const filtered = ALL_EXAMPLES
+      .map((ex) => {
+        const v = validateSuggestion(ex.text, universe);
+        return v.valid ? { icon: ex.icon, text: v.text } : null;
+      })
+      .filter((x): x is { icon: string; text: string } => x !== null);
+    return filtered.length > 0 ? filtered : ALL_EXAMPLES;
+  })();
+
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * examples.length));
   const [fade, setFade] = useState(true);
 
   useEffect(() => {
     const interval = setInterval(() => {
       setFade(false);
       setTimeout(() => {
-        setIndex((prev) => (prev + 1) % ALL_EXAMPLES.length);
+        setIndex((prev) => (prev + 1) % examples.length);
         setFade(true);
       }, 200);
     }, 6000);
     return () => clearInterval(interval);
-  }, []);
+  }, [examples.length]);
 
-  const current = ALL_EXAMPLES[index];
+  const current = examples[index % examples.length];
 
   return (
     <div className="flex items-center gap-1.5">
