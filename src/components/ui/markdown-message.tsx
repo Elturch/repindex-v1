@@ -10,6 +10,7 @@ import { technicalSheetStyles, generateTechnicalSheetHtml } from '@/lib/technica
 import { VerifiedSource, generateBibliographyHtml } from '@/lib/verifiedSourceExtractor';
 import { convertMarkdownToHtml as sharedConvertMarkdownToHtml, premiumTableStyles, emojiGridStyles } from '@/lib/markdownToHtml';
 import { generateInfoBarHtml } from '@/components/chat/ReportInfoBar';
+import { stripSourcesFromVisibleMarkdown } from '@/lib/chat/v2/visibleFilter';
 
 interface MarkdownMessageProps {
   content: string;
@@ -19,17 +20,35 @@ interface MarkdownMessageProps {
   verifiedSources?: VerifiedSource[];
   periodFrom?: string;
   periodTo?: string;
+  /**
+   * Engine that produced this message. When `'v2'`, the visible markdown is
+   * post-filtered to remove the trailing Sources/Fuentes block, URL dumps
+   * and inline `[n]` citations — V1 already hides these from the bubble.
+   * The export path always uses the raw `content`, so the downloaded PDF
+   * still contains the full Sources section.
+   */
+  agentVersion?: 'v1' | 'v2';
 }
 
-export function MarkdownMessage({ content, showDownload = false, languageCode = 'es', roleName, verifiedSources, periodFrom, periodTo }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, showDownload = false, languageCode = 'es', roleName, verifiedSources, periodFrom, periodTo, agentVersion }: MarkdownMessageProps) {
   const { toast } = useToast();
   const tr = getChatTranslations(languageCode);
+  // `cleanedContent` is the meta-commentary-free version used as the canonical
+  // payload for export (PDF/HTML download keeps Sources, by design).
   const cleanedContent = stripLlmMetaCommentary(content);
+  // `visibleContent` is what we actually render in the chat bubble. For V2 we
+  // additionally hide the Sources block so the in-app experience matches V1.
+  const visibleContent =
+    agentVersion === 'v2'
+      ? stripSourcesFromVisibleMarkdown(cleanedContent)
+      : cleanedContent;
 
   const downloadMessage = () => {
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const fileName = `repindex_respuesta_${timestamp}.html`;
 
+    // Export ALWAYS uses the unfiltered cleaned content so the PDF retains
+    // its Sources / Fuentes section regardless of `agentVersion`.
     const htmlContent = generateExportHtml(cleanedContent, tr, languageCode, roleName, verifiedSources, periodFrom, periodTo);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
