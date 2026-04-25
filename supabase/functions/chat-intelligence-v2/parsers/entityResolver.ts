@@ -6,6 +6,7 @@ import {
   type CatalogEntry,
 } from "../../_shared/inputValidator.ts";
 import { fuzzyCompanyMatch, fuzzyCompanyMatchSql } from "../../_shared/queryGuards.ts";
+import { warmSemanticHintCache } from "../../_shared/semanticHintCache.ts";
 import type { ResolvedEntity } from "../types.ts";
 
 const CATALOG_TTL_MS = 5 * 60 * 1000; // 5 min
@@ -42,6 +43,8 @@ function stripFuzzyStopWords(question: string): string {
 
 async function loadCatalog(supabase: any): Promise<CatalogEntry[]> {
   if (catalogCache && Date.now() - catalogCache.ts < CATALOG_TTL_MS) {
+    // Keep the semantic-hint cache hot alongside the catalog (no-op if fresh).
+    warmSemanticHintCache(supabase);
     return catalogCache.rows;
   }
   try {
@@ -60,6 +63,10 @@ async function loadCatalog(supabase: any): Promise<CatalogEntry[]> {
     for (const r of (data ?? [])) {
       if (r?.ticker) sectorByTicker.set(String(r.ticker).toUpperCase(), r.sector_category ?? null);
     }
+    // Fire-and-forget warm-up of the semantic-group alias hot-set so the
+    // intent classifier can recognise canonical aliases (renovables, telecos…)
+    // synchronously on subsequent calls within the same isolate.
+    warmSemanticHintCache(supabase);
     return rows;
   } catch (e) {
     console.error("[RIX-V2][entity] catalog load error:", e);
