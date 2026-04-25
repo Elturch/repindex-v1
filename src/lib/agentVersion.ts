@@ -1,6 +1,9 @@
-// Agent version selector (v1 vs v2) — preview-only A/B switch.
-// Persisted in localStorage so the choice survives reloads.
-// Production builds always use v1, regardless of localStorage state.
+// Agent version selector (v1 vs v2).
+// Default engine: v2. V1 remains available as escape hatch via:
+//   • URL param ?agent=v1
+//   • localStorage["repindex.agentVersion"] = "v1"
+//   • Preview-only UI toggle (AgentVersionToggle)
+// Persisted in localStorage so the user's choice survives reloads.
 
 export type AgentVersion = "v1" | "v2";
 
@@ -8,6 +11,22 @@ const STORAGE_KEY = "repindex.agentVersion";
 const TRAFFIC_SPLIT_KEY = "rix_traffic_split";
 const SESSION_DECISION_KEY = "repindex.agentVersion.session";
 let trafficLogged = false;
+let defaultLogged = false;
+
+/** Engine version used when no URL param, no localStorage, and no traffic split is set. */
+const DEFAULT_VERSION: AgentVersion = "v2";
+
+function logEngineDecision(version: AgentVersion, reason: string): void {
+  if (defaultLogged) return;
+  defaultLogged = true;
+  try {
+    const isDev = (import.meta as any)?.env?.DEV === true;
+    if (isDev) {
+      // eslint-disable-next-line no-console
+      console.info(`[Rix] engineVersion=${version} (${reason})`);
+    }
+  } catch { /* ignore */ }
+}
 
 /** True when running in Lovable preview, lovable.app domains, or localhost. */
 export function isPreviewEnvironment(): boolean {
@@ -48,13 +67,16 @@ export function getTrafficSplit(): number {
 }
 
 /**
- * Decide which agent version this *production* session should use, based
- * on the configured traffic split. Decision is cached in sessionStorage so
- * the same user stays on the same engine for the whole session.
+ * Decide which agent version this *production* session should use.
+ * Order:
+ *   1. Explicit traffic split (if configured > 0): random pick cached in sessionStorage.
+ *   2. Otherwise → DEFAULT_VERSION (v2).
+ * Note: URL ?agent= and localStorage overrides are handled in getAgentVersion()
+ * BEFORE this function runs, so they always win.
  */
 function decideProductionVersion(): AgentVersion {
   const split = getTrafficSplit();
-  if (split <= 0) return "v1";
+  if (split <= 0) return DEFAULT_VERSION;
   let decided: AgentVersion | null = null;
   try {
     const cached = window.sessionStorage.getItem(SESSION_DECISION_KEY);
@@ -74,24 +96,33 @@ function decideProductionVersion(): AgentVersion {
 
 /**
  * Read the active agent version.
- *  • Preview (lovable / localhost): URL ?agent=v2 wins, then localStorage
- *    toggle, then v1. Manual toggle ALWAYS prevails over traffic split.
- *  • Production: deterministic per-session pick based on getTrafficSplit().
+ * Resolution order (preview AND production):
+ *   1. URL ?agent=v1 | ?agent=v2  (escape hatch / explicit override)
+ *   2. localStorage["repindex.agentVersion"]  (user manual toggle)
+ *   3. Production traffic split (if configured)
+ *   4. DEFAULT_VERSION ("v2")
  */
 export function getAgentVersion(): AgentVersion {
-  if (typeof window === "undefined") return "v1";
-  // Production: progressive migration via traffic split.
-  if (!isPreviewEnvironment()) return decideProductionVersion();
+  if (typeof window === "undefined") return DEFAULT_VERSION;
   try {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("agent");
-    if (fromUrl === "v2" || fromUrl === "v1") return fromUrl;
+    if (fromUrl === "v2" || fromUrl === "v1") {
+      logEngineDecision(fromUrl, `escape hatch via ?agent=${fromUrl}`);
+      return fromUrl;
+    }
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === "v2" || stored === "v1") return stored;
+    if (stored === "v2" || stored === "v1") {
+      logEngineDecision(stored, "user preference (localStorage)");
+      return stored;
+    }
   } catch {
     /* ignore */
   }
-  return "v1";
+  // No explicit override → production may apply traffic split, otherwise default.
+  const resolved = !isPreviewEnvironment() ? decideProductionVersion() : DEFAULT_VERSION;
+  logEngineDecision(resolved, "default");
+  return resolved;
 }
 
 /** Persist the agent version choice. Triggers a custom event so listeners refresh. */
