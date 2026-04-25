@@ -313,7 +313,16 @@ export async function process(
   // resolveEntity(question) below will run as if this were a fresh turn.
   // Any other client (curl, mobile, MCP, 3rd party) gets the same
   // protection because the rule lives in the orchestrator.
-  const explicitOverride = isFollowup === false && previousContext === null;
+  //
+  // IMPORTANT: index.ts coerces missing fields to defaults
+  //   `isFollowup = body?.isFollowup === true`     → false when omitted
+  //   `previousContext = body?.previousContext || null` → null when omitted
+  // so the (false + null) combo alone is indistinguishable from a fresh
+  // first turn. The override signal is only meaningful when there IS
+  // conversation history to override against; otherwise there is nothing
+  // to skip and no risk of cross-turn contamination.
+  const explicitOverride =
+    isFollowup === false && previousContext === null && history.length > 0;
   if (explicitOverride) {
     console.log(`${logPrefix} [orchestrator] override detected, skipping history entity extraction`);
   }
