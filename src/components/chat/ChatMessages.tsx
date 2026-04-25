@@ -126,17 +126,19 @@ export function ChatMessages({
 
   if (messages.length === 0) {
     return (
-      <ScrollArea className={`${scrollHeight} pr-4`}>
+      <ScrollArea className={`${scrollHeight} w-full max-w-full min-w-0 overflow-x-hidden pr-0 sm:pr-4`}>
         <VectorStoreWarning />
-        <div className="flex flex-col items-center justify-start h-full pt-4 pb-2">
-          <div className="text-center space-y-2 mb-[100px]">
+        <div className="flex h-full w-full min-w-0 max-w-full flex-col items-center justify-start overflow-x-hidden pt-4 pb-2">
+          <div className="mb-[100px] w-full min-w-0 max-w-full space-y-2 px-2 text-center sm:px-0">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
-            <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
+            <h3 className={`${compact ? 'text-base' : 'text-xl sm:text-2xl md:text-3xl'} mx-auto max-w-full text-balance break-words font-semibold [overflow-wrap:anywhere]`}>
+              {tr.startConversation}
+            </h3>
           </div>
           
-          <div className="w-full space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+          <div className="w-full min-w-0 max-w-full space-y-2 overflow-x-hidden">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <p className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
                 {tr.suggestions}
                 {hasPersonalized && (
                   <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
@@ -150,10 +152,10 @@ export function ChatMessages({
                   size="sm"
                   onClick={refreshSuggestions}
                   disabled={suggestionsLoading}
-                  className="text-xs text-muted-foreground h-6 px-2"
+                  className="h-6 min-w-0 max-w-[52%] px-2 text-xs text-muted-foreground"
                 >
                   <RefreshCw className={`h-3 w-3 mr-1 ${suggestionsLoading ? 'animate-spin' : ''}`} />
-                  {tr.refreshSuggestions}
+                  <span className="min-w-0 truncate">{tr.refreshSuggestions}</span>
                 </Button>
               )}
             </div>
