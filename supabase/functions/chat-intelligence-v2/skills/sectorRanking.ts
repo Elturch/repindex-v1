@@ -167,8 +167,9 @@ async function fetchRankingRows(
       scopeQ = scopeQ.eq("sector_category", sector);
     }
     if (ibexOnly) {
-      // IBEX membership uses ibex_status='active' (130 active issuers).
-      scopeQ = scopeQ.eq("ibex_status", "active");
+      // IBEX-35 membership: filter by canonical family code (35 issuers).
+      // NOT ibex_status (that field flags sweep coverage, ~130 active issuers).
+      scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
     }
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
