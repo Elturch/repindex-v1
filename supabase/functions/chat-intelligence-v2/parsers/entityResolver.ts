@@ -23,6 +23,26 @@ const FUZZY_STOP_WORDS = new Set<string>([
   "explicame", "explícame", "resume", "resumeme", "resúmeme",
 ]);
 
+// BUG B fix — Conversational follow-ups WITHOUT a brand mention. When the
+// question matches one of these patterns AND has no capitalised brand-shaped
+// token, resolveEntity must return null so the orchestrator's inheritance
+// path can take over (sticky entity from previous turn). Without this
+// guard, "¿qué tal este trimestre?" was fuzzy-matching to CIE Automotive.
+const CONVERSATIONAL_FOLLOWUP_RE =
+  /^[¿¡\s]*(?:y\s+|pero\s+|ahora\s+)?(?:qu[eé]\s+tal|c[oó]mo\s+(?:va|le\s+va|est[aá])|c[uoó]m[oa]\s+anda|y\s+ahora|y\s+esto|y\s+eso|y\s+entonces|expl[ií]came(?:lo)?|cu[eé]ntame(?:lo)?\s*(?:m[aá]s)?|dim[ée]lo|d[ií]melo|y\s+su\b|y\s+sus\b|y\s+el\s+|y\s+la\s+|y\s+los\s+|y\s+las\s+|profundiza|amp?l[ií]a|extiend?e|contin[uú]a|sigue|m[aá]s\s+detalles?)\b/i;
+const HAS_CAPITALISED_BRAND_RE = /\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b|\b[A-Z]{3,}\b/;
+
+function isPureConversationalFollowup(question: string): boolean {
+  if (!question) return false;
+  const t = question.trim();
+  // Short queries (<=10 words) that match the cue regex AND lack a
+  // brand-shaped capitalised token are treated as pure follow-ups.
+  const wc = t.split(/\s+/).filter(Boolean).length;
+  if (wc === 0 || wc > 10) return false;
+  if (HAS_CAPITALISED_BRAND_RE.test(t)) return false;
+  return CONVERSATIONAL_FOLLOWUP_RE.test(t);
+}
+
 function stripFuzzyStopWords(question: string): string {
   if (!question) return question;
   const tokens = question.split(/(\s+)/);
@@ -128,6 +148,16 @@ export async function resolveEntity(
   supabase: any,
 ): Promise<ResolvedEntity | null> {
   if (!question || !question.trim()) return null;
+
+  // BUG B fix — pure conversational follow-ups must NOT trigger fuzzy
+  // matching (which falsely produced CIE for "¿qué tal este trimestre?").
+  // Returning null here lets the orchestrator's inheritance fallback adopt
+  // the sticky entity from the previous turn.
+  if (isPureConversationalFollowup(question)) {
+    console.log(`[RIX-V2][entity] conversational follow-up detected, skipping resolution: "${question.slice(0, 60)}"`);
+    return null;
+  }
+
   const catalog = await loadCatalog(supabase);
 
   // (1) Shared resolver — covers exact + fuzzy + foreign + ambiguous.

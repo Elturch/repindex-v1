@@ -9,6 +9,7 @@ import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/ch
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
 import { getAgentVersion, getEdgeFunctionName, type AgentVersion } from "@/lib/agentVersion";
+import { detectsExplicitNewEntity, expandComparisonFollowup } from "@/lib/stickyEntityOverride";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -854,7 +855,33 @@ export function ChatProvider({ children }: ChatProviderProps) {
         console.warn('[ChatContext] normalize-query failed, using original:', normErr);
       }
 
-      const previousContextPayload = followupActive && lastQueryContextRef.current
+      // BUG C — expand "y comparado con X" into "compara <sticky> vs X"
+      // BEFORE the override check, so the rewritten query bypasses the
+      // override path (we WANT to keep both entities together).
+      const comparisonExpansion = followupActive
+        ? expandComparisonFollowup(question, lastQueryContextRef.current?.company ?? null)
+        : null;
+      if (comparisonExpansion) {
+        console.log(`[ChatContext] sticky COMPARISON expansion: "${question}" → "${comparisonExpansion}"`);
+        normalizedQuestion = comparisonExpansion;
+      }
+
+      // BUG A — explicit new entity overrides sticky (drops previousContext).
+      const explicitOverride = detectsExplicitNewEntity(
+        question,
+        lastQueryContextRef.current?.company ?? null,
+      );
+      if (followupActive && explicitOverride.override) {
+        console.log(
+          `[ChatContext] sticky OVERRIDE: new entity "${explicitOverride.candidate}" detected → dropping previousContext`,
+        );
+      }
+      // When we expanded a comparison OR detected an explicit override,
+      // drop sticky so the BE resolves the new query from scratch.
+      const stickyActive =
+        followupActive && !explicitOverride.override && !comparisonExpansion;
+
+      const previousContextPayload = stickyActive && lastQueryContextRef.current
         ? {
             ...lastQueryContextRef.current,
             entity: lastQueryContextRef.current.company,
@@ -935,7 +962,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               streamMode: true, // Enable streaming in edge function
               // PHASE 1.8 — Conversational memory for short follow-ups.
               previousContext: previousContextPayload,
-              isFollowup: followupActive,
+              isFollowup: stickyActive,
             }),
             signal: v2AbortController?.signal,
           }
@@ -1180,7 +1207,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           streamMode: false,
           // PHASE 1.8 — Conversational memory for short follow-ups.
           previousContext: previousContextPayload,
-          isFollowup: followupActive,
+          isFollowup: stickyActive,
         }, timeoutMs) as { data: any; error: Error | null };
 
         if (error) throw error;
