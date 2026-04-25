@@ -27,6 +27,7 @@ import {
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
 import { aggregateConsensus, type ConsensusLevel } from "../../_shared/consensusRanking.ts";
+import { resolveSemanticGroup } from "../../_shared/semanticGroups.ts";
 
 /**
  * Compact summary of cited URLs for the LLM prompt only. Mirrors the helper
