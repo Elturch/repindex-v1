@@ -448,9 +448,22 @@ export const sectorRankingSkill: Skill = {
   async execute(input: SkillInput): Promise<SkillOutput> {
     const { parsed, supabase, logPrefix, onChunk } = input;
     const tag = `${logPrefix}[sectorRanking]`;
-    const scopeTickers = (parsed.scope_tickers && parsed.scope_tickers.length > 0)
-      ? parsed.scope_tickers
-      : null;
+    // GAP 3 — Resolución de grupos canónicos.
+    // Prioridad: (1) scope_tickers ya poblado por orchestrator (4 hardcoded),
+    //            (2) fallback DB-driven a rix_semantic_groups (21 grupos)
+    //                con soporte de exclusions.
+    let scopeTickers: string[] | null =
+      (parsed.scope_tickers && parsed.scope_tickers.length > 0)
+        ? parsed.scope_tickers
+        : null;
+    if (!scopeTickers) {
+      const grp = await resolveSemanticGroup(parsed.raw_question, supabase);
+      if (grp.canonical_key && grp.issuer_ids.length > 0) {
+        const excl = new Set(grp.exclusions.map((t) => t.toUpperCase()));
+        scopeTickers = grp.issuer_ids.filter((t) => !excl.has(t.toUpperCase()));
+        console.log(`[RIX-V2][sectorRanking] semanticGroup fallback="${grp.canonical_key}" tickers=${scopeTickers.join(",")} excl=[${grp.exclusions.join(",")}]`);
+      }
+    }
     // When explicit sub-segment tickers are present, ignore sector_category
     // entirely (e.g. "grupos hospitalarios" must NOT load all of "Salud y
     // Farmacéutico"). Otherwise fall back to the resolved entity sector.
