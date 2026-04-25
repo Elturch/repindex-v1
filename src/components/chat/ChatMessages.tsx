@@ -126,17 +126,19 @@ export function ChatMessages({
 
   if (messages.length === 0) {
     return (
-      <ScrollArea className={`${scrollHeight} pr-4`}>
+      <ScrollArea className={`${scrollHeight} w-full max-w-full min-w-0 overflow-x-hidden pr-0 sm:pr-4`}>
         <VectorStoreWarning />
-        <div className="flex flex-col items-center justify-start h-full pt-4 pb-2">
-          <div className="text-center space-y-2 mb-[100px]">
+        <div className="flex h-full w-full min-w-0 max-w-full flex-col items-center justify-start overflow-x-hidden pt-4 pb-2">
+          <div className="mb-[100px] w-full min-w-0 max-w-full space-y-2 px-2 text-center sm:px-0">
             <Sparkles className={`${compact ? 'h-8 w-8' : 'h-12 w-12'} mx-auto text-primary opacity-70`} />
-            <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>{tr.startConversation}</h3>
+            <h3 className={`${compact ? 'text-base' : 'text-xl sm:text-2xl md:text-3xl'} mx-auto max-w-full text-balance break-words font-semibold [overflow-wrap:anywhere]`}>
+              {tr.startConversation}
+            </h3>
           </div>
           
-          <div className="w-full space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+          <div className="w-full min-w-0 max-w-full space-y-2 overflow-x-hidden">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <p className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
                 {tr.suggestions}
                 {hasPersonalized && (
                   <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
@@ -150,10 +152,10 @@ export function ChatMessages({
                   size="sm"
                   onClick={refreshSuggestions}
                   disabled={suggestionsLoading}
-                  className="text-xs text-muted-foreground h-6 px-2"
+                  className="h-6 shrink-0 px-2 text-xs text-muted-foreground"
                 >
                   <RefreshCw className={`h-3 w-3 mr-1 ${suggestionsLoading ? 'animate-spin' : ''}`} />
-                  {tr.refreshSuggestions}
+                  <span className="hidden sm:inline">{tr.refreshSuggestions}</span>
                 </Button>
               )}
             </div>
@@ -170,7 +172,7 @@ export function ChatMessages({
                   <Button
                     key={idx}
                     variant="outline"
-                    className={`w-full max-w-full min-w-0 justify-start text-left h-auto whitespace-normal break-words ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
+                    className={`w-full max-w-full min-w-0 justify-start items-start overflow-hidden text-left h-auto whitespace-normal break-words ${compact ? 'py-2 px-3' : 'py-3 px-4'} hover:bg-accent group animate-fade-in ${
                       suggestion.type === 'vector_insight' 
                         ? 'border-primary/30 bg-primary/5 hover:bg-primary/10' 
                         : ''
@@ -179,21 +181,21 @@ export function ChatMessages({
                     onClick={() => onStarterPrompt(suggestion.text)}
                   >
                     <span className="mr-2 text-base shrink-0">{suggestion.icon}</span>
-                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1 min-w-0 break-words`}>
+                    <span className={`${compact ? 'text-xs leading-tight' : 'text-sm'} flex-1 min-w-0 break-words [overflow-wrap:anywhere]`}>
                       {suggestion.text}
                     </span>
                     {suggestion.type === 'vector_insight' && !compact && (
-                      <Badge variant="default" className="ml-2 text-[9px] shrink-0 bg-primary/20 text-primary border-0">
+                      <Badge variant="default" className="ml-2 hidden shrink-0 border-0 bg-primary/20 text-[9px] text-primary sm:inline-flex">
                         ✨ Live
                       </Badge>
                     )}
                     {suggestion.type === 'personalized' && !compact && (
-                      <Badge variant="outline" className="ml-2 text-[9px] opacity-60 shrink-0">
+                      <Badge variant="outline" className="ml-2 hidden shrink-0 text-[9px] opacity-60 sm:inline-flex">
                         {tr.historyLabel}
                       </Badge>
                     )}
                     {suggestion.type === 'discovery' && !compact && (
-                      <Badge variant="secondary" className="ml-2 text-[9px] shrink-0">
+                      <Badge variant="secondary" className="ml-2 hidden shrink-0 text-[9px] sm:inline-flex">
                         {tr.discoveryLabel}
                       </Badge>
                     )}

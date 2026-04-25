@@ -87,7 +87,7 @@ export default function ChatIntelligence() {
         </div>
 
         {/* Chat Area */}
-        <Card className="shadow-card">
+        <Card className="min-w-0 max-w-full overflow-x-hidden shadow-card">
           <CardHeader>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
@@ -136,7 +136,7 @@ export default function ChatIntelligence() {
               )}
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0 max-w-full overflow-x-hidden">
             <ChatMessages
               messages={messages}
               isLoading={isLoading}
