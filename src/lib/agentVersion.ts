@@ -1,6 +1,9 @@
-// Agent version selector (v1 vs v2) — preview-only A/B switch.
-// Persisted in localStorage so the choice survives reloads.
-// Production builds always use v1, regardless of localStorage state.
+// Agent version selector (v1 vs v2).
+// Default engine: v2. V1 remains available as escape hatch via:
+//   • URL param ?agent=v1
+//   • localStorage["repindex.agentVersion"] = "v1"
+//   • Preview-only UI toggle (AgentVersionToggle)
+// Persisted in localStorage so the user's choice survives reloads.
 
 export type AgentVersion = "v1" | "v2";
 
