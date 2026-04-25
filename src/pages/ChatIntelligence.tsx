@@ -71,7 +71,7 @@ export default function ChatIntelligence() {
 
 
         {/* Action Buttons */}
-        <div className="flex justify-end items-center gap-2">
+        <div className="flex flex-wrap justify-end items-center gap-2">
           <AgentVersionToggle />
           <Button
             variant="outline"
@@ -88,8 +88,8 @@ export default function ChatIntelligence() {
         {/* Chat Area */}
         <Card className="shadow-card">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex-1">
                 <CardTitle className="flex items-center gap-2">
                   <Bot className="h-5 w-5" />
                   {tr.conversation}
@@ -105,7 +105,11 @@ export default function ChatIntelligence() {
                     <TooltipTrigger asChild>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 w-full sm:w-auto shrink-0"
+                          >
                             <Download className="h-4 w-4" />
                             {tr.export}
                           </Button>
