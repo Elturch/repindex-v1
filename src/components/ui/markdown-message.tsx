@@ -236,7 +236,7 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
           ),
         }}
       >
-        {cleanedContent}
+        {visibleContent}
       </ReactMarkdown>
       
       {showDownload && (
