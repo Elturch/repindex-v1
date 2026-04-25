@@ -124,6 +124,90 @@ export function extractDateFromUrl(url: string): string | null {
       return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     }
   }
+  // ?date=YYYY-MM-DD or &date=YYYY-MM-DD
+  m = url.match(/[?&]date=(20\d{2})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  return null;
+}
+
+// Map of Spanish/English short month names → 1..12
+const MONTHS_MAP: Record<string, number> = {
+  ene: 1, enero: 1, jan: 1, january: 1,
+  feb: 2, febrero: 2, february: 2,
+  mar: 3, marzo: 3, march: 3,
+  abr: 4, abril: 4, apr: 4, april: 4,
+  may: 5, mayo: 5,
+  jun: 6, junio: 6, june: 6,
+  jul: 7, julio: 7, july: 7,
+  ago: 8, agosto: 8, aug: 8, august: 8,
+  sep: 9, sept: 9, septiembre: 9, september: 9,
+  oct: 10, octubre: 10, october: 10,
+  nov: 11, noviembre: 11, november: 11,
+  dic: 12, diciembre: 12, dec: 12, december: 12,
+};
+
+/**
+ * Robust date detector for cited-source bibliographies. Attempts several
+ * representations in order:
+ *   1. ISO `YYYY-MM-DD` literal anywhere in `text`.
+ *   2. `DD/MM/YYYY` or `DD-MM-YYYY`.
+ *   3. Spanish/English natural form `8 abr 2026` / `8 de abril de 2026`.
+ *   4. Embedded date in a URL (delegates to extractDateFromUrl).
+ * Returns ISO `YYYY-MM-DD` or null.
+ *
+ * Quick sanity tests (kept inline for documentation):
+ *   "2026-04-08"                                        → "2026-04-08"
+ *   "08/04/2026"                                        → "2026-04-08"
+ *   "8 abr 2026"                                        → "2026-04-08"
+ *   "https://elpais.com/2026/04/08/foo.html"            → "2026-04-08"
+ *   "https://expansion.com/foo?utm_source=openai"       → null
+ */
+export function extractDateFromText(text: string | null | undefined, urlHint?: string): string | null {
+  if (urlHint) {
+    const fromUrl = extractDateFromUrl(urlHint);
+    if (fromUrl) return fromUrl;
+  }
+  if (!text || typeof text !== "string") return null;
+  const lc = text.toLowerCase();
+  // 1. ISO
+  let m = lc.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/);
+  if (m) {
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  // 2. DD/MM/YYYY or DD-MM-YYYY (require non-digit boundary to avoid noise)
+  m = lc.match(/(?:^|[^\d])(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})(?!\d)/);
+  if (m) {
+    const d = +m[1], mo = +m[2], y = +m[3];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  // 3. "8 abr 2026" / "8 de abril de 2026" / "april 8, 2026"
+  const monthAlt = Object.keys(MONTHS_MAP).join("|");
+  let re = new RegExp(`(\\d{1,2})\\s+(?:de\\s+)?(${monthAlt})\\.?\\s+(?:de\\s+)?(20\\d{2})`, "i");
+  m = lc.match(re);
+  if (m) {
+    const d = +m[1]; const mo = MONTHS_MAP[m[2].toLowerCase()]; const y = +m[3];
+    if (mo && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+  re = new RegExp(`(${monthAlt})\\.?\\s+(\\d{1,2}),?\\s+(20\\d{2})`, "i");
+  m = lc.match(re);
+  if (m) {
+    const mo = MONTHS_MAP[m[1].toLowerCase()]; const d = +m[2]; const y = +m[3];
+    if (mo && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
   return null;
 }
 
@@ -155,8 +239,15 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
         const domain = extractDomain(url);
         if (NOISE_DOMAINS.has(domain)) continue;
         seenInThisField.add(url);
-        const entry = map.get(url) ?? { title: null, models: new Set<string>(), detectedDate: extractDateFromUrl(url) };
+        // Use the title text as a proxy for "near-URL" context to detect
+        // dates rendered alongside the link (e.g. "El País — 8 abr 2026").
+        const entry = map.get(url) ?? {
+          title: null,
+          models: new Set<string>(),
+          detectedDate: extractDateFromText(title, url),
+        };
         if (!entry.title && title.length > 0 && title.length < 240) entry.title = title;
+        if (!entry.detectedDate) entry.detectedDate = extractDateFromText(title, url);
         entry.models.add(model);
         map.set(url, entry);
       }
@@ -168,7 +259,16 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
         if (seenInThisField.has(url)) continue;
         const domain = extractDomain(url);
         if (NOISE_DOMAINS.has(domain)) continue;
-        const entry = map.get(url) ?? { title: null, models: new Set<string>(), detectedDate: extractDateFromUrl(url) };
+        // Look at a small window of text around the URL to pick up dates
+        // rendered next to bare URLs ("Fuente: 08/04/2026 — https://...").
+        const idx = m.index;
+        const window = text.slice(Math.max(0, idx - 60), Math.min(text.length, idx + url.length + 60));
+        const entry = map.get(url) ?? {
+          title: null,
+          models: new Set<string>(),
+          detectedDate: extractDateFromText(window, url),
+        };
+        if (!entry.detectedDate) entry.detectedDate = extractDateFromText(window, url);
         entry.models.add(model);
         map.set(url, entry);
       }
@@ -242,7 +342,12 @@ export function renderCitedSourcesBlock(
       if (within) windowSources.push(s);
       else reinforcementSources.push(s);
     } else {
-      reinforcementSources.push(s);
+      // Default to "Ventana" when no date can be detected: the model
+      // cited the URL while evaluating the current window, so excluding
+      // it would unfairly under-report visible coverage. Historical
+      // (out-of-window) sources only land in "Refuerzo" when their date
+      // is BOTH parseable AND outside the window.
+      windowSources.push(s);
     }
   }
 
@@ -273,7 +378,7 @@ export function renderCitedSourcesBlock(
   }
   lines.push("");
 
-  lines.push(`**Menciones de Refuerzo** (${reinforcementSources.length})`);
+  lines.push(`**Otras Referencias (históricas)** (${reinforcementSources.length})`);
   lines.push("");
   if (reinforcementSources.length > 0) {
     for (const s of reinforcementSources) lines.push(renderSource(s));
@@ -283,4 +388,4 @@ export function renderCitedSourcesBlock(
   return lines.join("\n").trimEnd();
 }
 
-export const __test__ = { cleanUrl, extractDomain, RAW_FIELDS };
+export const __test__ = { cleanUrl, extractDomain, RAW_FIELDS, extractDateFromText };

@@ -10,19 +10,67 @@ import {
 } from "../../_shared/temporalGuard.ts";
 import type { Mode, ResolvedTemporal } from "../types.ts";
 
-const DEFAULT_WEEKS_BACK = 4;
+// Default window policy (when the user does NOT specify a period):
+//   - try MAX_WEEKS (1 trimestre, full editorial coverage),
+//   - clamp to the actual rix_runs_v2 coverage for the ticker,
+//   - never go below MIN_WEEKS.
+// The user can still force shorter windows ("última semana") because that
+// path goes through parseTemporalIntent → primary != null and skips this.
+const MAX_WEEKS = 13;
+const MIN_WEEKS = 4;
 
-function buildDefaultWindow(today: Date): TheoreticalWindow {
+function buildSyntheticDefaultWindow(today: Date, weeks: number): TheoreticalWindow {
   const end = new Date(today);
   const start = new Date(today);
-  start.setUTCDate(start.getUTCDate() - DEFAULT_WEEKS_BACK * 7);
+  start.setUTCDate(start.getUTCDate() - weeks * 7);
   return {
     start_t: toISODate(start),
     end_t: toISODate(end),
-    label: `últimas ${DEFAULT_WEEKS_BACK} semanas (por defecto)`,
+    label: `últimas ${weeks} semanas (por defecto)`,
     granularity: "weekly",
     kind: "default",
   };
+}
+
+/**
+ * Build a coverage-aware default window when the user did NOT specify a
+ * period. Asks rix_runs_v2 for the latest period_to available for the
+ * ticker (or globally) and walks MAX_WEEKS back from there. Falls back to
+ * the synthetic "today − N×7" window if the SQL probe fails.
+ */
+async function buildAdaptiveDefaultWindow(
+  supabase: any,
+  ticker: string | null,
+  today: Date,
+): Promise<TheoreticalWindow> {
+  try {
+    let q = supabase
+      .from("rix_runs_v2")
+      .select("07_period_to")
+      .order("07_period_to", { ascending: false })
+      .limit(1);
+    if (ticker) q = q.eq("05_ticker", ticker);
+    const { data } = await q;
+    const lastIso = data?.[0]?.["07_period_to"]
+      ? String(data[0]["07_period_to"]).slice(0, 10)
+      : null;
+    if (!lastIso) {
+      return buildSyntheticDefaultWindow(today, MAX_WEEKS);
+    }
+    const end = new Date(`${lastIso}T00:00:00Z`);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - MAX_WEEKS * 7);
+    return {
+      start_t: toISODate(start),
+      end_t: toISODate(end),
+      label: `cobertura completa (${MAX_WEEKS} semanas hasta ${toISODate(end)})`,
+      granularity: "weekly",
+      kind: "default_adaptive",
+    };
+  } catch (e) {
+    console.error("[RIX-V2][temporal] buildAdaptiveDefaultWindow probe failed:", e);
+    return buildSyntheticDefaultWindow(today, MAX_WEEKS);
+  }
 }
 
 function reconciledToResolved(rec: ReconciledWindow): ResolvedTemporal {
@@ -61,7 +109,9 @@ export async function parseTemporal(
 ): Promise<ResolvedTemporal> {
   const today = new Date();
   const intent = parseTemporalIntent(question, today);
-  const requested = intent.primary ?? buildDefaultWindow(today);
+  // If the user explicitly stated a period, respect it. Otherwise
+  // build a coverage-aware default (up to MAX_WEEKS = 13).
+  const requested = intent.primary ?? await buildAdaptiveDefaultWindow(supabase, ticker, today);
   let reconciled: ReconciledWindow;
   try {
     reconciled = await reconcileWindow(supabase, ticker, requested);
@@ -80,7 +130,22 @@ export async function parseTemporal(
       isComplete: false,
     };
   }
-  return reconciledToResolved(reconciled);
+  let resolved = reconciledToResolved(reconciled);
+
+  // Floor enforcement: when the user did NOT specify a period and the
+  // adaptive window returned fewer than MIN_WEEKS real snapshots, widen
+  // the window backwards until we reach MIN_WEEKS (or run out of data).
+  if (intent.primary == null && resolved.snapshots_available < MIN_WEEKS) {
+    try {
+      const widened = buildSyntheticDefaultWindow(today, MAX_WEEKS);
+      const wRec = await reconcileWindow(supabase, ticker, widened);
+      const wResolved = reconciledToResolved(wRec);
+      if (wResolved.snapshots_available > resolved.snapshots_available) {
+        resolved = wResolved;
+      }
+    } catch (_e) { /* keep original */ }
+  }
+  return resolved;
 }
 
-export const __test__ = { buildDefaultWindow, reconciledToResolved };
+export const __test__ = { buildSyntheticDefaultWindow, buildAdaptiveDefaultWindow, reconciledToResolved };
