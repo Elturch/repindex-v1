@@ -962,7 +962,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
               streamMode: true, // Enable streaming in edge function
               // PHASE 1.8 — Conversational memory for short follow-ups.
               previousContext: previousContextPayload,
-              isFollowup: followupActive,
+              isFollowup: stickyActive,
             }),
             signal: v2AbortController?.signal,
           }
@@ -1207,7 +1207,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           streamMode: false,
           // PHASE 1.8 — Conversational memory for short follow-ups.
           previousContext: previousContextPayload,
-          isFollowup: followupActive,
+          isFollowup: stickyActive,
         }, timeoutMs) as { data: any; error: Error | null };
 
         if (error) throw error;
