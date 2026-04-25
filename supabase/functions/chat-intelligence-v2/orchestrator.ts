@@ -302,14 +302,30 @@ export async function process(
   let entities: ResolvedEntity[] = [];
   let inheritedContext: PreviousContext | undefined;
 
+  // ── BUG A FIX (GAP 5 / OPCIÓN A REVISADA) ──────────────────────────
+  // When the FE detects an explicit entity-override turn, it sends BOTH
+  //   isFollowup === false  AND  previousContext === null
+  // as an unambiguous signal that the current query introduces a NEW
+  // entity which must dominate over any history-derived entity.
+  // In that case we MUST skip:
+  //   (a) the FE-previousContext inheritance branch, and
+  //   (b) the history-seed re-extraction branch.
+  // resolveEntity(question) below will run as if this were a fresh turn.
+  // Any other client (curl, mobile, MCP, 3rd party) gets the same
+  // protection because the rule lives in the orchestrator.
+  const explicitOverride = isFollowup === false && previousContext === null;
+  if (explicitOverride) {
+    console.log(`${logPrefix} [orchestrator] override detected, skipping history entity extraction`);
+  }
+
   // ── FIX: ranking-style intents must NEVER inherit a single entity from
   // history. They are sector/index-wide queries by definition. Allowing
   // inheritance pollutes the report metadata (e.g. "top 5 IBEX" showing
   // ferrovial as the entity just because it was the previous turn).
   const NO_INHERIT_INTENTS: Intent[] = ["sector_ranking", "comparison", "model_divergence"];
-  const skipInheritance = NO_INHERIT_INTENTS.includes(intent);
+  const skipInheritance = NO_INHERIT_INTENTS.includes(intent) || explicitOverride;
   if (skipInheritance) {
-    console.log(`${logPrefix} intent=${intent} → skipping all entity inheritance from history`);
+    console.log(`${logPrefix} intent=${intent} explicitOverride=${explicitOverride} → skipping all entity inheritance from history`);
   }
 
   // PRIORITY: follow-up inherits entity from previous context
