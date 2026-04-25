@@ -296,6 +296,7 @@ export function ChatMessages({
                     verifiedSources={message.metadata?.verifiedSources}
                     periodFrom={message.metadata?.methodology?.periodFrom}
                     periodTo={message.metadata?.methodology?.periodTo}
+                    agentVersion={message.agentVersion}
                   />
                   {/* Blinking cursor during streaming */}
                   {message.isStreaming && (
