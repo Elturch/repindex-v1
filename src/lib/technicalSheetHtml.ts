@@ -398,6 +398,79 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
         Esta arquitectura elimina sesgos por contexto, usuario o historial de conversación.
       </p>
 
+      <h4>Capa de Razonamiento Conversacional</h4>
+      <p>
+        Las respuestas analíticas que el sistema entrega al usuario se generan a partir 
+        de un DataPack pre-computado (datos de los 6 modelos, agregados, divergencias y 
+        métricas) sobre el que opera un modelo de razonamiento. Esta capa es independiente 
+        de la captura semanal: no introduce datos nuevos, solo interpreta los ya recogidos.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Componente</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Modelo primario</td>
+            <td>OpenAI <span class="formula">o3-2025-04-16</span> (reasoning effort: medium)</td>
+          </tr>
+          <tr>
+            <td>Modelo de fallback</td>
+            <td>Google <span class="formula">gemini-2.5-pro</span></td>
+          </tr>
+          <tr>
+            <td>Activación del fallback</td>
+            <td>Clave OpenAI ausente, error en el stream o respuesta vacía del primario</td>
+          </tr>
+          <tr>
+            <td>Temperatura</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td>Límite de salida</td>
+            <td>32.000 tokens por respuesta</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>Trazabilidad de la Respuesta</h4>
+      <p>
+        Cada respuesta expone, en sus cabeceras HTTP (vía CORS), los siguientes campos 
+        de auditoría que permiten verificar qué modelo respondió y si se activó el fallback:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Cabecera</th>
+            <th>Significado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="formula">x-rix-engine-version</span></td>
+            <td>Versión del motor conversacional (actual: <span class="formula">v2</span>)</td>
+          </tr>
+          <tr>
+            <td><span class="formula">x-rix-model-requested</span></td>
+            <td>Modelo solicitado por la aplicación</td>
+          </tr>
+          <tr>
+            <td><span class="formula">x-rix-model-effective</span></td>
+            <td>Modelo que efectivamente generó la respuesta</td>
+          </tr>
+          <tr>
+            <td><span class="formula">x-rix-fallback</span></td>
+            <td>
+              <span class="formula">none</span> si respondió el primario; 
+              identificador del fallback en caso contrario
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
       <h4>Control de Sesgo: Divergencia Inter-modelo</h4>
       <p>
         La divergencia (σ) entre 6 modelos independientes es una medida de incertidumbre epistémica. 
