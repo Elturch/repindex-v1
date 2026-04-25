@@ -30,6 +30,13 @@ export interface ResolvedTemporal {
    *  how much real data exists. Falls back to from/to if not present. */
   requested_from?: string;
   requested_to?: string;
+  /** PHASE 4 — Audit trail for the "esta semana" / "this week" resolver.
+   *  - "current_week_complete": ≥1 snapshot found inside the current ISO week.
+   *  - "current_week_partial": current week has snapshots but fewer than expected models.
+   *  - "fallback_last_complete_week": current week is empty (e.g. Saturday pre-Sunday sweep);
+   *    window resolved to the last week with snapshots.
+   *  Absent for any other temporal intent. */
+  window_reason?: "current_week_complete" | "current_week_partial" | "fallback_last_complete_week";
 }
 
 export interface PreviousContext {

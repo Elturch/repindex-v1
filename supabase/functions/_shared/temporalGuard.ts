@@ -163,6 +163,37 @@ const YEAR_RE = /\b(?:en\s+|a[nñ]o\s+)?(20\d{2})\b/;
 const YTD_RE = /\b(ytd|lo que va de a[nñ]o|lo que llevamos de(?:\s+\d{4})?|este a[nñ]o(?:\s+hasta\s+hoy)?|year\s+to\s+date|hasta\s+hoy)\b/i;
 const COMPARISON_RE = /\b(vs\.?|versus|frente a|compara(?:r|ndo)?|comparativa|interanual|year[\s\-]?over[\s\-]?year|yoy|a[nñ]o anterior|mismo per[ií]odo|mismo periodo)\b/i;
 
+// PHASE 4 — Detect explicit "current week" markers. The user is asking for
+// THIS calendar week (ISO week containing `today`). We do NOT translate to
+// a synthetic [today-N, today] window; instead we emit a tagged window so
+// the resolver (parsers/temporalParser.ts) can apply the snapshot-aware
+// fallback (current_week_complete | current_week_partial | fallback_last_complete_week).
+const CURRENT_WEEK_RE = /\b(esta\s+semana|semana\s+actual|semana\s+en\s+curso|this\s+week|current\s+week)\b/i;
+
+/** Returns the ISO week [Mon, Sun] window containing `today` (UTC). */
+function currentIsoWeekWindow(today: Date): { start: string; end: string } {
+  const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  // ISO: Monday = 1. Distance back to Monday: dow===0 → 6, else dow-1.
+  const backToMon = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(d);
+  monday.setUTCDate(monday.getUTCDate() - backToMon);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(sunday.getUTCDate() + 6);
+  return { start: toISODate(monday), end: toISODate(sunday) };
+}
+
+function currentWeekToWindow(today: Date): TheoreticalWindow {
+  const { start, end } = currentIsoWeekWindow(today);
+  return {
+    start_t: start,
+    end_t: end,
+    label: "esta semana",
+    granularity: "weekly",
+    kind: "current_iso_week",
+  };
+}
+
 function quarterToWindow(qNum: number, year: number): TheoreticalWindow {
   const startMonth = (qNum - 1) * 3 + 1;
   const endMonth = startMonth + 2;
@@ -201,6 +232,15 @@ function yearToWindow(year: number): TheoreticalWindow {
 function parseSinglePhrase(phrase: string, today: Date): TheoreticalWindow | null {
   const q = phrase.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const currentYear = today.getUTCFullYear();
+
+  // PHASE 4 — Current ISO week ("esta semana" / "this week"). Tagged with
+  // kind=current_iso_week so the resolver can apply the snapshot-aware
+  // fallback (current_week_complete | current_week_partial | fallback_last_complete_week).
+  // Strip accents already done above; CURRENT_WEEK_RE matches the
+  // accent-stripped form too.
+  if (CURRENT_WEEK_RE.test(q) || CURRENT_WEEK_RE.test(phrase)) {
+    return currentWeekToWindow(today);
+  }
 
   // Quarter (long form: "primer trimestre 2026")
   const m1 = q.match(QUARTER_RE);
