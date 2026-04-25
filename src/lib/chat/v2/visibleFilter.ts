@@ -31,14 +31,27 @@
  */
 
 const SOURCES_HEADING_RE =
-  /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:fuentes(?:\s+verificadas|\s+citadas|\s+consultadas)?|sources?|referencias|references|citations|citas|bibliograf[ií]a|bibliography)\s*[:：]?\s*(?:\*\*|__)?\s*$/i;
+  // Matches both real markdown headings ("## Fuentes") and bold-only pseudo
+  // headings ("**Fuentes citadas por los modelos de IA**") that the V2
+  // DataPack injects verbatim into the LLM payload. The trailing label is
+  // intentionally permissive so variants like "Fuentes citadas por los
+  // modelos de IA", "Sources cited", "Bibliografía consultada", etc. all
+  // count as the start of a sources block.
+  /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?\s*(?:fuentes|sources?|referencias|references|citations|citas|bibliograf[ií]a|bibliography)\b[^\n]{0,120}?(?:\*\*|__)?\s*$/i;
+
+// Sub-headings that the DataPack emits inside the sources block. We treat
+// any of these as a "still inside sources" marker so the trim heuristic can
+// recognise the tail even when the main heading has already been removed.
+const SOURCES_SUBHEADING_RE =
+  /^\s*(?:\*\*|__)?\s*(?:menciones\s+de\s+(?:ventana|refuerzo)|window\s+mentions|reinforcement\s+mentions)\b[^\n]*$/i;
 
 const TALLY_LINE_RE =
   /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*total\s*[:：]?\s*\d+\s+(?:fuentes?|sources?|referencias?|citations?)\b.*$/i;
 
-// A bullet line that is essentially "domain — url" or a bare URL.
+// A bullet line that is essentially "domain — url", a bare URL, or — for
+// the V2 DataPack — a bullet whose payload is HTML containing an <a href>.
 const URL_BULLET_RE =
-  /^\s*[-*•]\s+(?:.*?(?:https?:\/\/|www\.)[^\s)]+.*|\[\d+\][^\n]*https?:\/\/[^\s)]+.*)$/i;
+  /^\s*[-*•]\s+(?:.*?(?:https?:\/\/|www\.)[^\s)]+.*|\[\d+\][^\n]*https?:\/\/[^\s)]+.*|.*<a\s+[^>]*href=)/i;
 
 const BARE_URL_LINE_RE = /^\s*(?:https?:\/\/|www\.)[^\s)]+\s*$/i;
 
@@ -54,6 +67,11 @@ function isHeading(line: string): boolean {
 
 function isHorizontalRule(line: string): boolean {
   return /^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/.test(line);
+}
+
+/** True when the line is a bold-only pseudo heading like "**Foo**". */
+function isBoldOnlyLine(line: string): boolean {
+  return /^\s*(?:\*\*|__)[^\n*_]+(?:\*\*|__)\s*$/.test(line);
 }
 
 /**
@@ -96,7 +114,12 @@ function trimTrailingUrlDump(lines: string[]): string[] {
       URL_BULLET_RE.test(line) ||
       BARE_URL_LINE_RE.test(line) ||
       TALLY_LINE_RE.test(line) ||
-      isHorizontalRule(line)
+      isHorizontalRule(line) ||
+      SOURCES_SUBHEADING_RE.test(line) ||
+      // The DataPack's "**Fuentes citadas por los modelos de IA**" pseudo
+      // heading and its short intro paragraph also live in the tail.
+      SOURCES_HEADING_RE.test(line) ||
+      isBoldOnlyLine(line)
     ) {
       cut--;
       if (!isBlankLine(line) && !isHorizontalRule(line)) removedAny = true;
@@ -121,12 +144,19 @@ export function stripSourcesFromVisibleMarkdown(md: string): string {
   let lines = md.split(/\r?\n/);
 
   // 1) Cut any explicit Sources/Fuentes heading and everything that follows
-  //    until the next heading or EOF.
+  //    until the next heading or EOF. We also accept bold-only pseudo
+  //    headings ("**Fuentes citadas por los modelos de IA**") and the
+  //    "**Menciones de Ventana/Refuerzo**" sub-headings emitted by the
+  //    V2 DataPack — once any of them appears we assume everything that
+  //    follows is the citations block.
   const headingIdx = lines.findIndex((l) => SOURCES_HEADING_RE.test(l));
-  if (headingIdx !== -1) {
-    const endIdx = findSectionEnd(lines, headingIdx);
+  const subIdx = lines.findIndex((l) => SOURCES_SUBHEADING_RE.test(l));
+  const cutIdx =
+    headingIdx === -1 ? subIdx : subIdx === -1 ? headingIdx : Math.min(headingIdx, subIdx);
+  if (cutIdx !== -1) {
+    const endIdx = findSectionEnd(lines, cutIdx);
     // Also drop a leading horizontal rule that visually framed the section.
-    let cutStart = headingIdx;
+    let cutStart = cutIdx;
     while (
       cutStart > 0 &&
       (isBlankLine(lines[cutStart - 1]) || isHorizontalRule(lines[cutStart - 1]))
@@ -139,10 +169,17 @@ export function stripSourcesFromVisibleMarkdown(md: string): string {
   // 2) Drop any remaining tally lines wherever they appear.
   lines = lines.filter((l) => !TALLY_LINE_RE.test(l));
 
-  // 3) Trim a trailing URL-bullet dump that may survive without a heading.
+  // 3) Trim a trailing URL-bullet dump that may survive without a heading
+  //    (e.g. when the LLM rewrites the heading away but keeps the bullets).
   lines = trimTrailingUrlDump(lines);
 
-  // 4) Strip inline numeric citations from the remaining body.
+  // 4) Drop any straggler bullets that are clearly source-bullets even if
+  //    they appear mid-document — the V2 DataPack uses a very specific
+  //    "- <span>BADGE</span> <strong>domain</strong>...<a href>" shape
+  //    that is unambiguous and never appears in the analytical body.
+  lines = lines.filter((l) => !/^\s*[-*•]\s+<span\b[^>]*>[^<]*<\/span>\s+<strong\b/i.test(l));
+
+  // 5) Strip inline numeric citations from the remaining body.
   let out = lines.join("\n").replace(INLINE_CITATION_RE, "");
 
   // Collapse the runs of trailing whitespace introduced by the citation strip.
@@ -153,6 +190,7 @@ export function stripSourcesFromVisibleMarkdown(md: string): string {
 
 export const __test__ = {
   SOURCES_HEADING_RE,
+  SOURCES_SUBHEADING_RE,
   TALLY_LINE_RE,
   URL_BULLET_RE,
   BARE_URL_LINE_RE,
