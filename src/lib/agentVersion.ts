@@ -10,8 +10,14 @@ export type AgentVersion = "v1" | "v2";
 const STORAGE_KEY = "repindex.agentVersion";
 const TRAFFIC_SPLIT_KEY = "rix_traffic_split";
 const SESSION_DECISION_KEY = "repindex.agentVersion.session";
+// One-shot migration flag: when V2 became the default (2026-04-25), preview
+// testers had stale "v1" preferences in localStorage from earlier A/B sessions.
+// We clear those once so they fall through to the new default. After that,
+// any manual toggle they perform is honored normally and persists.
+const MIGRATION_FLAG_KEY = "repindex.agentVersion.migrated_2026_04_25";
 let trafficLogged = false;
 let defaultLogged = false;
+let migrationApplied = false;
 
 /** Engine version used when no URL param, no localStorage, and no traffic split is set. */
 const DEFAULT_VERSION: AgentVersion = "v2";
@@ -25,6 +31,30 @@ function logEngineDecision(version: AgentVersion, reason: string): void {
       // eslint-disable-next-line no-console
       console.info(`[Rix] engineVersion=${version} (${reason})`);
     }
+  } catch { /* ignore */ }
+}
+
+/**
+ * One-shot migration: when V2 became the default, clear stale preview-tester
+ * preferences from localStorage so users fall through to the new default.
+ * Runs at most once per browser. Only applies in preview environments
+ * (production users never saw the toggle, so nothing to migrate there).
+ */
+function applyDefaultMigrationOnce(): void {
+  if (migrationApplied) return;
+  migrationApplied = true;
+  if (typeof window === "undefined") return;
+  if (!isPreviewEnvironment()) return;
+  try {
+    const alreadyMigrated = window.localStorage.getItem(MIGRATION_FLAG_KEY);
+    if (alreadyMigrated === "1") return;
+    const stale = window.localStorage.getItem(STORAGE_KEY);
+    if (stale === "v1" || stale === "v2") {
+      window.localStorage.removeItem(STORAGE_KEY);
+      // eslint-disable-next-line no-console
+      console.info(`[Rix] Migrated stale engineVersion preference (was "${stale}") → falling through to new default v2.`);
+    }
+    window.localStorage.setItem(MIGRATION_FLAG_KEY, "1");
   } catch { /* ignore */ }
 }
 
@@ -104,6 +134,7 @@ function decideProductionVersion(): AgentVersion {
  */
 export function getAgentVersion(): AgentVersion {
   if (typeof window === "undefined") return DEFAULT_VERSION;
+  applyDefaultMigrationOnce();
   try {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("agent");
