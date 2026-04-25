@@ -592,16 +592,18 @@ export function generateBibliographyHtml(
       html += `
         <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
           ${modelBadge}
-          <span style="font-weight: 500; color: #536471;">${source.domain}</span>${dateNote}
+          <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="font-weight: 600; color: #1a73e8; text-decoration: underline; text-decoration-color: #93c5fd; text-underline-offset: 2px;">${source.domain}</a>${dateNote}
           ${source.title ? `<br><span style="color: #0f1419; margin-left: 22px;">"${source.title}"</span>` : ''}
           <br>
           <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-            color: #a16207;
-            text-decoration: none;
+            color: #1a73e8;
+            text-decoration: underline;
+            text-decoration-color: #93c5fd;
+            text-underline-offset: 2px;
             word-break: break-all;
             font-size: 10px;
             margin-left: 22px;
-          ">${source.url.length > 70 ? source.url.substring(0, 70) + '...' : source.url}</a>
+          ">↗ ${source.url.length > 70 ? source.url.substring(0, 70) + '...' : source.url}</a>
         </li>
       `;
     });
@@ -666,16 +668,18 @@ export function generateBibliographyHtml(
       html += `
         <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
           ${modelBadge}
-          <span style="font-weight: 500; color: #536471;">${source.domain}</span>${dateNote}
+          <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="font-weight: 600; color: #1a73e8; text-decoration: underline; text-decoration-color: #93c5fd; text-underline-offset: 2px;">${source.domain}</a>${dateNote}
           ${source.title ? `<br><span style="color: #0f1419; margin-left: 22px;">"${source.title}"</span>` : ''}
           <br>
           <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-            color: #6b7280;
-            text-decoration: none;
+            color: #1a73e8;
+            text-decoration: underline;
+            text-decoration-color: #93c5fd;
+            text-underline-offset: 2px;
             word-break: break-all;
             font-size: 10px;
             margin-left: 22px;
-          ">${source.url.length > 70 ? source.url.substring(0, 70) + '...' : source.url}</a>
+          ">↗ ${source.url.length > 70 ? source.url.substring(0, 70) + '...' : source.url}</a>
         </li>
       `;
     });
@@ -719,15 +723,17 @@ export function generateBibliographyHtml(
         chatGptSources.forEach(source => {
           html += `
             <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
-              <span style="font-weight: 500; color: #536471;">${source.domain}</span>
+              <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="font-weight: 600; color: #1a73e8; text-decoration: underline; text-decoration-color: #93c5fd; text-underline-offset: 2px;">${source.domain}</a>
               ${source.title ? `<br><span style="color: #0f1419;">"${source.title}"</span>` : ''}
               <br>
               <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-                color: #a16207;
-                text-decoration: none;
+                color: #1a73e8;
+                text-decoration: underline;
+                text-decoration-color: #93c5fd;
+                text-underline-offset: 2px;
                 word-break: break-all;
                 font-size: 10px;
-              ">${source.url.length > 80 ? source.url.substring(0, 80) + '...' : source.url}</a>
+              ">↗ ${source.url.length > 80 ? source.url.substring(0, 80) + '...' : source.url}</a>
             </li>
           `;
         });
@@ -762,15 +768,17 @@ export function generateBibliographyHtml(
           const citationLabel = source.citationNumber ? ` [${source.citationNumber}]` : '';
           html += `
             <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
-              <span style="font-weight: 500; color: #536471;">${source.domain}${citationLabel}</span>
+              <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="font-weight: 600; color: #1a73e8; text-decoration: underline; text-decoration-color: #93c5fd; text-underline-offset: 2px;">${source.domain}${citationLabel}</a>
               ${source.title ? `<br><span style="color: #0f1419;">"${source.title}"</span>` : ''}
               <br>
               <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-                color: #6b7280;
-                text-decoration: none;
+                color: #1a73e8;
+                text-decoration: underline;
+                text-decoration-color: #93c5fd;
+                text-underline-offset: 2px;
                 word-break: break-all;
                 font-size: 10px;
-              ">${source.url.length > 80 ? source.url.substring(0, 80) + '...' : source.url}</a>
+              ">↗ ${source.url.length > 80 ? source.url.substring(0, 80) + '...' : source.url}</a>
             </li>
           `;
         });
@@ -831,16 +839,18 @@ export function generateBibliographyHtml(
         html += `
           <li style="padding: 6px 0; border-bottom: 1px solid #f0f4f8;">
             ${modelBadge}
-            <span style="font-weight: 500; color: #536471;">${source.domain}</span>
+            <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="font-weight: 600; color: #1a73e8; text-decoration: underline; text-decoration-color: #93c5fd; text-underline-offset: 2px;">${source.domain}</a>
             ${source.title ? `<br><span style="color: #0f1419; margin-left: 22px;">"${source.title}"</span>` : ''}
             <br>
             <a href="${source.url}" target="_blank" rel="noopener noreferrer" style="
-              color: #6b7280;
-              text-decoration: none;
+              color: #1a73e8;
+              text-decoration: underline;
+              text-decoration-color: #93c5fd;
+              text-underline-offset: 2px;
               word-break: break-all;
               font-size: 10px;
               margin-left: 22px;
-            ">${source.url.length > 70 ? source.url.substring(0, 70) + '...' : source.url}</a>
+            ">↗ ${source.url.length > 70 ? source.url.substring(0, 70) + '...' : source.url}</a>
           </li>
         `;
       });
