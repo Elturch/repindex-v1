@@ -216,6 +216,61 @@ const Admin: React.FC = () => {
     lastDataLength: null,
     lastFetchAt: null,
   });
+  // Preview-only inline login (option B): shown when there is no session
+  // and we are running on a Lovable preview / localhost host.
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
+  const [isPreviewHost, setIsPreviewHost] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname;
+    setIsPreviewHost(
+      host.endsWith('.lovable.dev') ||
+        host.endsWith('.lovableproject.com') ||
+        host === 'localhost' ||
+        host === '127.0.0.1'
+    );
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setHasSession(!!data?.session);
+      setSessionChecked(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasSession(!!session);
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handlePreviewLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginSubmitting) return;
+    setLoginSubmitting(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+      if (error) {
+        toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Sesión iniciada' });
+      window.location.reload();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message ?? 'Login failed', variant: 'destructive' });
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
