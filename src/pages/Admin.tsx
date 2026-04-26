@@ -216,6 +216,61 @@ const Admin: React.FC = () => {
     lastDataLength: null,
     lastFetchAt: null,
   });
+  // Preview-only inline login (option B): shown when there is no session
+  // and we are running on a Lovable preview / localhost host.
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
+  const [isPreviewHost, setIsPreviewHost] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginSubmitting, setLoginSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname;
+    setIsPreviewHost(
+      host.endsWith('.lovable.dev') ||
+        host.endsWith('.lovableproject.com') ||
+        host === 'localhost' ||
+        host === '127.0.0.1'
+    );
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setHasSession(!!data?.session);
+      setSessionChecked(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasSession(!!session);
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handlePreviewLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginSubmitting) return;
+    setLoginSubmitting(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+      if (error) {
+        toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Sesión iniciada' });
+      window.location.reload();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message ?? 'Login failed', variant: 'destructive' });
+    } finally {
+      setLoginSubmitting(false);
+    }
+  };
+
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
@@ -959,6 +1014,58 @@ const Admin: React.FC = () => {
           </p>
         </div>
 
+        {sessionChecked && isPreviewHost && !hasSession && (
+          <div className="flex justify-center py-12">
+            <Card className="w-full max-w-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Login admin (solo preview Lovable)</CardTitle>
+                <CardDescription>
+                  Inicia sesión para acceder al panel de administración.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handlePreviewLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="preview-login-email">Email</Label>
+                    <Input
+                      id="preview-login-email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      disabled={loginSubmitting}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="preview-login-password">Password</Label>
+                    <Input
+                      id="preview-login-password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      disabled={loginSubmitting}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loginSubmitting}>
+                    {loginSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Iniciando sesión…
+                      </>
+                    ) : (
+                      'Iniciar sesión'
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {(!isPreviewHost || hasSession || !sessionChecked) && (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="inline-flex h-auto items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto mb-6 flex-wrap gap-1">
             <TabsTrigger value="overview" className="flex items-center gap-1.5 px-3 text-xs">
@@ -3077,6 +3184,7 @@ const Admin: React.FC = () => {
             <TechnicalDocPanel />
           </TabsContent>
         </Tabs>
+        )}
       </div>
     </Layout>
   );
