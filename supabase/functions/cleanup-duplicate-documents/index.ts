@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   }
 })
 
-async function cleanupRix(supabase: ReturnType<typeof createClient>, startTime: number) {
+async function cleanupRix(supabase: SupabaseClient<any>, startTime: number) {
   console.log('[cleanup-rix] Scanning...')
   const keepers = new Map<string, number>()
   let offset = 0, scanned = 0
@@ -88,7 +88,7 @@ async function cleanupRix(supabase: ReturnType<typeof createClient>, startTime: 
   return json({ target: 'rix', scanned, unique: keepers.size, deleted: totalDeleted, duration_ms: Date.now() - startTime })
 }
 
-async function cleanupNews(supabase: ReturnType<typeof createClient>, startTime: number) {
+async function cleanupNews(supabase: SupabaseClient<any>, startTime: number) {
   // Phase 1: Full scan to build keepers map
   console.log('[cleanup-news] Phase 1: Scanning all news docs...')
   const keepers = new Map<string, number>()
@@ -150,7 +150,7 @@ async function cleanupNews(supabase: ReturnType<typeof createClient>, startTime:
     }
     if (!data || data.length === 0) break
 
-    const idsToDelete = data.filter(r => !keeperIdSet.has(r.id)).map(r => r.id)
+    const idsToDelete = (data as any[]).filter(r => !keeperIdSet.has(r.id)).map(r => r.id)
     
     for (let i = 0; i < idsToDelete.length; i += 100) {
       const chunk = idsToDelete.slice(i, i + 100)

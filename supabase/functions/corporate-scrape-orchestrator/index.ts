@@ -70,7 +70,7 @@ async function ensureSweepInitialized(
   // Use upsert to handle re-initialization gracefully (ignores existing entries)
   const { error: insertError } = await supabase
     .from('corporate_scrape_progress')
-    .upsert(progressEntries, { 
+    .upsert(progressEntries as any, { 
       onConflict: 'sweep_id,ticker',
       ignoreDuplicates: true 
     });
