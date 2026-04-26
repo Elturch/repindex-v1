@@ -2022,13 +2022,45 @@ const Admin: React.FC = () => {
                             {user.email}
                             {user.client_companies && ` · ${user.client_companies.company_name}`}
                           </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Alta: {new Date(user.created_at).toLocaleString('es-ES')}
+                            {' · '}
+                            Último acceso:{' '}
+                            {user.last_sign_in_at
+                              ? new Date(user.last_sign_in_at).toLocaleString('es-ES')
+                              : '-'}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={user.is_active ? 'default' : 'secondary'}>
-                          {user.is_active ? 'Activo' : 'Inactivo'}
+                        <Badge
+                          variant={
+                            user.role === 'admin'
+                              ? 'default'
+                              : user.role === 'press'
+                                ? 'secondary'
+                                : 'outline'
+                          }
+                          className="gap-1"
+                        >
+                          <Shield className="h-3 w-3" />
+                          {user.role || 'user'}
                         </Badge>
-                        {user.is_individual && <Badge variant="outline">Particular</Badge>}
+                        <Select
+                          value={user.role || 'user'}
+                          onValueChange={(v) =>
+                            handleChangeRole(user.id, v as 'admin' | 'press' | 'user', user.email)
+                          }
+                        >
+                          <SelectTrigger className="w-[110px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">admin</SelectItem>
+                            <SelectItem value="press">press</SelectItem>
+                            <SelectItem value="user">user</SelectItem>
+                          </SelectContent>
+                        </Select>
                                     <Button 
                                       variant="ghost" 
                                       size="sm"
@@ -2058,6 +2090,37 @@ const Admin: React.FC = () => {
                                     >
                                       <MessageSquare className="h-4 w-4" />
                                     </Button>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          title="Eliminar usuario"
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Vas a eliminar permanentemente a{' '}
+                                            <strong>{user.email}</strong> de auth.users y de
+                                            user_roles. Esta acción no se puede deshacer.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDeleteUser(user.id, user.email)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            Eliminar
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
                       </div>
                     </CardContent>
                   </Card>
