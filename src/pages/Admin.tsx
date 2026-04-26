@@ -167,6 +167,7 @@ interface UserActivity {
 
 const Admin: React.FC = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   
   // Companies state
