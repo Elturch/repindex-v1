@@ -12,6 +12,17 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { 
   Building2, 
   Users, 
@@ -38,7 +49,9 @@ import {
   ChevronDown,
   ChevronUp,
   UserPlus,
-  BookOpen
+  BookOpen,
+  Trash2,
+  Shield
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -85,6 +98,9 @@ interface UserProfile {
   company_id: string | null;
   created_at: string;
   client_companies: { id: string; company_name: string } | null;
+  last_sign_in_at?: string | null;
+  email_confirmed_at?: string | null;
+  role?: 'admin' | 'press' | 'user' | null;
 }
 
 interface RoleEnrichmentAnalytic {
