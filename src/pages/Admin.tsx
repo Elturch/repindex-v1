@@ -3184,6 +3184,7 @@ const Admin: React.FC = () => {
             <TechnicalDocPanel />
           </TabsContent>
         </Tabs>
+        )}
       </div>
     </Layout>
   );
