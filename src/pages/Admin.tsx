@@ -526,8 +526,7 @@ const Admin: React.FC = () => {
       // 1) Asegurar que el cliente Supabase está autenticado antes de invocar la RPC
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData?.session) {
-        toast({ title: 'Sesión expirada', description: 'Vuelve a iniciar sesión', variant: 'destructive' });
-        navigate('/auth');
+        toast({ title: 'Sin sesión', description: 'No hay sesión activa en el preview de Lovable', variant: 'destructive' });
         return;
       }
 
@@ -539,7 +538,6 @@ const Admin: React.FC = () => {
         const code = (error as { code?: string }).code;
         if (code === '28000') {
           toast({ title: 'No autenticado', description: 'Vuelve a iniciar sesión', variant: 'destructive' });
-          navigate('/auth');
         } else if (code === '42501') {
           toast({ title: 'Acceso denegado', description: 'No tienes permisos de admin', variant: 'destructive' });
         } else {
