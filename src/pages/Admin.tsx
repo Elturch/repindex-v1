@@ -1014,6 +1014,58 @@ const Admin: React.FC = () => {
           </p>
         </div>
 
+        {sessionChecked && isPreviewHost && !hasSession && (
+          <div className="flex justify-center py-12">
+            <Card className="w-full max-w-sm">
+              <CardHeader>
+                <CardTitle className="text-lg">Login admin (solo preview Lovable)</CardTitle>
+                <CardDescription>
+                  Inicia sesión para acceder al panel de administración.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handlePreviewLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="preview-login-email">Email</Label>
+                    <Input
+                      id="preview-login-email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      disabled={loginSubmitting}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="preview-login-password">Password</Label>
+                    <Input
+                      id="preview-login-password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      disabled={loginSubmitting}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loginSubmitting}>
+                    {loginSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Iniciando sesión…
+                      </>
+                    ) : (
+                      'Iniciar sesión'
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {(!isPreviewHost || hasSession || !sessionChecked) && (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="inline-flex h-auto items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto mb-6 flex-wrap gap-1">
             <TabsTrigger value="overview" className="flex items-center gap-1.5 px-3 text-xs">
