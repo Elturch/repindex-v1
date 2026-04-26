@@ -521,8 +521,29 @@ const Admin: React.FC = () => {
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const { users } = await callAdminApi('list_users');
-      setUsers(users || []);
+      const { data, error } = await supabase.rpc('list_admin_users');
+      if (error) throw error;
+      const mapped: UserProfile[] = (data || []).map((row: any) => {
+        const meta = (row.raw_user_meta_data || {}) as Record<string, any>;
+        const fullName =
+          (meta.full_name as string | undefined) ||
+          (meta.name as string | undefined) ||
+          null;
+        return {
+          id: row.id,
+          email: row.email,
+          full_name: fullName,
+          is_individual: true,
+          is_active: !!row.email_confirmed_at,
+          company_id: null,
+          created_at: row.created_at,
+          client_companies: null,
+          last_sign_in_at: row.last_sign_in_at ?? null,
+          email_confirmed_at: row.email_confirmed_at ?? null,
+          role: (row.role as 'admin' | 'press' | 'user' | null) ?? 'user',
+        };
+      });
+      setUsers(mapped);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast({ title: 'Error', description: 'No se pudieron cargar los usuarios', variant: 'destructive' });
