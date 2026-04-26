@@ -613,8 +613,51 @@ async function resetStuckProcessingCompanies(
     .eq('status', 'processing')
     .lt('started_at', timeoutThreshold);
 
+  // ===== HUERFANOS PENDING =====
+  // Bug observado en sweep 2026-W18: 5 empresas (BBVA, ANA, FER, GIGA, EXOLUM-PRIV)
+  // quedaron en status='pending' con started_at puesto pero sin worker_id durante 17h+,
+  // probablemente por crash del worker antes de marcar 'processing'.
+  // El cleanup anterior solo miraba status='processing', así que no las recogía.
+  // Threshold conservador (30 min) para no interferir con workers que estén arrancando.
+  const orphanThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: orphanCompanies, error: orphanSelectError } = await supabase
+    .from('sweep_progress')
+    .select('id, ticker')
+    .eq('sweep_id', sweepId)
+    .eq('status', 'pending')
+    .not('started_at', 'is', null)
+    .is('worker_id', null)
+    .lt('started_at', orphanThreshold);
+
+  const orphanList = (orphanCompanies as Array<{ id: string; ticker: string }> | null) ?? [];
+  if (!orphanSelectError && orphanList.length > 0) {
+    const orphanIds = orphanList.map(c => c.id);
+    const orphanTickers = orphanList.map(c => c.ticker);
+    console.log(`[orchestrator] Found ${orphanList.length} ORPHAN pending companies: ${orphanTickers.join(', ')}`);
+
+    const { error: orphanUpdateError } = await supabase
+      .from('sweep_progress')
+      .update({
+        started_at: null,
+        worker_id: null,
+        fase: 0,
+        retry_count: 0,
+        error_message: `Orphan reset - pending without worker for 30+ minutes`,
+      })
+      .in('id', orphanIds);
+
+    if (orphanUpdateError) {
+      console.error(`[orchestrator] Error resetting orphan companies:`, orphanUpdateError);
+    } else {
+      console.log(`[orchestrator] Successfully reset ${orphanTickers.length} orphan companies`);
+    }
+  }
+
   if (selectError || !stuckCompanies || stuckCompanies.length === 0) {
-    return { count: 0, tickers: [] };
+    return {
+      count: orphanList.length,
+      tickers: orphanList.map(c => c.ticker),
+    };
   }
 
   const stuckIds = stuckCompanies.map(c => c.id);
@@ -634,11 +677,15 @@ async function resetStuckProcessingCompanies(
 
   if (updateError) {
     console.error(`[orchestrator] Error resetting stuck companies:`, updateError);
-    return { count: 0, tickers: [] };
+    return {
+      count: orphanList.length,
+      tickers: orphanList.map(c => c.ticker),
+    };
   }
 
   console.log(`[orchestrator] Successfully reset ${stuckTickers.length} stuck companies`);
-  return { count: stuckTickers.length, tickers: stuckTickers };
+  const allTickers = [...stuckTickers, ...orphanList.map(c => c.ticker)];
+  return { count: allTickers.length, tickers: allTickers };
 }
 
 // ============================================================================
