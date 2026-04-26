@@ -200,6 +200,22 @@ const Admin: React.FC = () => {
   const [savingUser, setSavingUser] = useState(false);
   const [userFilterCompany, setUserFilterCompany] = useState<string>('_all');
   const [userSearchText, setUserSearchText] = useState('');
+  // Debug visibility state for /admin Usuarios (only shown when 0 users loaded)
+  const [usersDebug, setUsersDebug] = useState<{
+    sessionUserId: string | null;
+    sessionEmail: string | null;
+    hasSession: boolean;
+    lastError: { code?: string; message?: string; details?: string; hint?: string } | null;
+    lastDataLength: number | null;
+    lastFetchAt: string | null;
+  }>({
+    sessionUserId: null,
+    sessionEmail: null,
+    hasSession: false,
+    lastError: null,
+    lastDataLength: null,
+    lastFetchAt: null,
+  });
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
