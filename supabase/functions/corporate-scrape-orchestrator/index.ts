@@ -153,7 +153,7 @@ async function getZombieCount(
   
   return {
     count: data?.length || 0,
-    tickers: data?.map(r => r.ticker) || []
+    tickers: (data as any[] | null)?.map(r => r.ticker) || []
   };
 }
 
