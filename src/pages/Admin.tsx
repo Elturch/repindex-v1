@@ -669,6 +669,48 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleChangeRole = async (
+    targetUid: string,
+    newRole: 'admin' | 'press' | 'user',
+    email: string,
+  ) => {
+    try {
+      const { error } = await supabase.rpc('admin_update_user_role', {
+        target_uid: targetUid,
+        new_role: newRole,
+      });
+      if (error) throw error;
+      toast({ title: 'Rol actualizado', description: `${email} → ${newRole}` });
+      fetchUsers();
+    } catch (error: any) {
+      toast({
+        title: 'Error al cambiar rol',
+        description: error.message || 'No se pudo actualizar el rol',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDeleteUser = async (targetUid: string, email: string) => {
+    try {
+      const { error } = await supabase.rpc('admin_delete_user', {
+        target_uid: targetUid,
+      });
+      if (error) throw error;
+      toast({ title: 'Usuario eliminado', description: email });
+      fetchUsers();
+    } catch (error: any) {
+      const msg = (error.message || '').toLowerCase();
+      let friendly = error.message || 'No se pudo eliminar el usuario';
+      if (msg.includes('cannot delete yourself')) {
+        friendly = 'No puedes eliminar tu propia cuenta.';
+      } else if (msg.includes('forbidden') && msg.includes('admin')) {
+        friendly = 'Acción no permitida: requiere rol de administrador.';
+      }
+      toast({ title: 'Error al eliminar', description: friendly, variant: 'destructive' });
+    }
+  };
+
   const openEditUser = (user: UserProfile) => {
     setEditingUser(user);
     setUserForm({
