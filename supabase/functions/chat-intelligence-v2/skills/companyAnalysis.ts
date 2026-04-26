@@ -334,14 +334,27 @@ export const companyAnalysisSkill: Skill = {
     // emit the resulting block via onChunk so the streaming client sees it.
     if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
       const MARKER = "<!--CITED_SOURCES_HERE-->";
-      if (finalContent.includes(MARKER)) {
-        finalContent = finalContent.replace(MARKER, citedSourcesFull);
+      // Tolerant matcher: o3 sometimes emits the marker with markdown decorations
+      // inside the HTML comment (e.g. "<!--**CITED**_**SOURCES**_**HERE**-->"
+      // or "<!-- CITED SOURCES HERE -->"). The strict literal substring fails
+      // in those cases and the raw comment leaks into the rendered PDF/HTML.
+      // The regex below accepts any combination of *, _, whitespace and HTML
+      // emphasis tags between the three keywords, with optional spaces inside
+      // the comment delimiters.
+      const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
+      if (finalContent.includes(MARKER) || MARKER_RE.test(finalContent)) {
+        finalContent = finalContent.includes(MARKER)
+          ? finalContent.replace(MARKER, citedSourcesFull)
+          : finalContent.replace(MARKER_RE, citedSourcesFull);
         try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
       } else {
         const tail = "\n\n" + citedSourcesFull;
         finalContent = finalContent + tail;
         try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
+      // Final safety net: scrub any residual variants of the marker that may
+      // still be present (e.g. duplicates emitted by the LLM).
+      finalContent = finalContent.replace(MARKER_RE, "").replace(MARKER, "");
     }
 
     // 6. Inject the final content as the FIRST pre-rendered "table"
