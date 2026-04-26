@@ -1911,6 +1911,44 @@ const Admin: React.FC = () => {
               </div>
             </div>
 
+            {/* Debug panel: only visible when 0 users loaded (diagnóstico de RPC list_admin_users) */}
+            {users.length === 0 && !loadingUsers && (
+              <Card className="mb-4 border-destructive/50 bg-destructive/5">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Debug: 0 usuarios cargados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs font-mono space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">session:</span>{' '}
+                    {usersDebug.hasSession
+                      ? `${usersDebug.sessionUserId ?? '(no id)'} / ${usersDebug.sessionEmail ?? '(no email)'}`
+                      : 'null'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">data?.length:</span>{' '}
+                    {usersDebug.lastDataLength === null ? 'undefined' : String(usersDebug.lastDataLength)}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">last fetch:</span>{' '}
+                    {usersDebug.lastFetchAt ?? '(nunca)'}
+                  </div>
+                  <div className="pt-1 border-t border-destructive/20">
+                    <span className="text-muted-foreground">RPC list_admin_users error:</span>
+                    {usersDebug.lastError ? (
+                      <pre className="mt-1 whitespace-pre-wrap break-all">
+                        {`code:    ${usersDebug.lastError.code ?? '(none)'}\nmessage: ${usersDebug.lastError.message ?? '(none)'}\ndetails: ${usersDebug.lastError.details ?? '(none)'}\nhint:    ${usersDebug.lastError.hint ?? '(none)'}`}
+                      </pre>
+                    ) : (
+                      <span className="ml-1">sin error</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3 mb-4">
               <Select value={userFilterCompany} onValueChange={setUserFilterCompany}>
