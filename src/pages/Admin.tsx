@@ -539,16 +539,40 @@ const Admin: React.FC = () => {
     try {
       // 1) Asegurar que el cliente Supabase está autenticado antes de invocar la RPC
       const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData?.session?.user ?? null;
+      setUsersDebug((prev) => ({
+        ...prev,
+        hasSession: !!sessionData?.session,
+        sessionUserId: sessionUser?.id ?? null,
+        sessionEmail: sessionUser?.email ?? null,
+        lastFetchAt: new Date().toISOString(),
+      }));
       if (!sessionData?.session) {
         toast({ title: 'Sin sesión', description: 'No hay sesión activa en el preview de Lovable', variant: 'destructive' });
+        setUsersDebug((prev) => ({
+          ...prev,
+          lastError: { code: 'NO_SESSION', message: 'No hay sesión activa en el preview de Lovable' },
+          lastDataLength: null,
+        }));
         return;
       }
 
       const { data, error } = await supabase.rpc('list_admin_users');
+      console.log('[admin/users] list_admin_users raw response:', {
+        error: error ? JSON.stringify(error) : null,
+        data,
+        dataLength: Array.isArray(data) ? data.length : undefined,
+      });
 
       // 2) Capturar y mostrar el error real de la RPC sin estado vacío silencioso
       if (error) {
         console.error('list_admin_users RPC error:', error);
+        const e = error as { code?: string; message?: string; details?: string; hint?: string };
+        setUsersDebug((prev) => ({
+          ...prev,
+          lastError: { code: e.code, message: e.message, details: e.details, hint: e.hint },
+          lastDataLength: Array.isArray(data) ? data.length : null,
+        }));
         const code = (error as { code?: string }).code;
         if (code === '28000') {
           toast({ title: 'No autenticado', description: 'Vuelve a iniciar sesión', variant: 'destructive' });
@@ -583,8 +607,17 @@ const Admin: React.FC = () => {
       // 3) Set users on success + log
       setUsers(mapped);
       console.info('admin users loaded', mapped.length);
+      setUsersDebug((prev) => ({
+        ...prev,
+        lastError: null,
+        lastDataLength: Array.isArray(data) ? data.length : 0,
+      }));
     } catch (error: any) {
       console.error('Error fetching users:', error);
+      setUsersDebug((prev) => ({
+        ...prev,
+        lastError: { code: 'EXCEPTION', message: error?.message ?? String(error) },
+      }));
       toast({ title: 'Error', description: error?.message ?? 'No se pudieron cargar los usuarios', variant: 'destructive' });
     } finally {
       setLoadingUsers(false);
