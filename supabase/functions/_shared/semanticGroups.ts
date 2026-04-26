@@ -1,6 +1,6 @@
 // supabase/functions/_shared/semanticGroups.ts
 // Shared semantic-group resolver — DB-driven (rix_semantic_groups).
-// Réplica literal de deprecated-chat-intelligence/index.ts:1366-1430.
+// Réplica literal de _deprecated_chat-intelligence/index.ts:1366-1430.
 // Cache 5 min · word-boundary match · longest-alias-wins · exclusions soportadas.
 // Invocado desde skills/sectorRanking.ts y skills/comparison.ts.
 // NO debe ser invocado desde orchestrator.ts ni datapack/builder.ts.
