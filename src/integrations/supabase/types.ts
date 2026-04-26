@@ -3662,6 +3662,11 @@ export type Database = {
       }
     }
     Functions: {
+      admin_delete_user: { Args: { target_uid: string }; Returns: undefined }
+      admin_update_user_role: {
+        Args: { new_role: string; target_uid: string }
+        Returns: undefined
+      }
       buscar_contexto_similar: {
         Args: {
           limit_results?: number
@@ -3716,6 +3721,19 @@ export type Database = {
       increment_article_views: {
         Args: { article_slug: string }
         Returns: undefined
+      }
+      is_admin: { Args: { check_uid?: string }; Returns: boolean }
+      list_admin_users: {
+        Args: never
+        Returns: {
+          created_at: string
+          email: string
+          email_confirmed_at: string
+          id: string
+          last_sign_in_at: string
+          raw_user_meta_data: Json
+          role: string
+        }[]
       }
       match_documents: {
         Args: { filter?: Json; match_count?: number; query_embedding: string }

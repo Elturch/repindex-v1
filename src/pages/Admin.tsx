@@ -12,6 +12,17 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { 
   Building2, 
   Users, 
@@ -38,7 +49,9 @@ import {
   ChevronDown,
   ChevronUp,
   UserPlus,
-  BookOpen
+  BookOpen,
+  Trash2,
+  Shield
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
@@ -85,6 +98,9 @@ interface UserProfile {
   company_id: string | null;
   created_at: string;
   client_companies: { id: string; company_name: string } | null;
+  last_sign_in_at?: string | null;
+  email_confirmed_at?: string | null;
+  role?: 'admin' | 'press' | 'user' | null;
 }
 
 interface RoleEnrichmentAnalytic {
@@ -505,8 +521,29 @@ const Admin: React.FC = () => {
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const { users } = await callAdminApi('list_users');
-      setUsers(users || []);
+      const { data, error } = await supabase.rpc('list_admin_users');
+      if (error) throw error;
+      const mapped: UserProfile[] = (data || []).map((row: any) => {
+        const meta = (row.raw_user_meta_data || {}) as Record<string, any>;
+        const fullName =
+          (meta.full_name as string | undefined) ||
+          (meta.name as string | undefined) ||
+          null;
+        return {
+          id: row.id,
+          email: row.email,
+          full_name: fullName,
+          is_individual: true,
+          is_active: !!row.email_confirmed_at,
+          company_id: null,
+          created_at: row.created_at,
+          client_companies: null,
+          last_sign_in_at: row.last_sign_in_at ?? null,
+          email_confirmed_at: row.email_confirmed_at ?? null,
+          role: (row.role as 'admin' | 'press' | 'user' | null) ?? 'user',
+        };
+      });
+      setUsers(mapped);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast({ title: 'Error', description: 'No se pudieron cargar los usuarios', variant: 'destructive' });
@@ -629,6 +666,48 @@ const Admin: React.FC = () => {
       toast({ title: 'Magic Link enviado', description: `Enlace enviado a ${email}` });
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleChangeRole = async (
+    targetUid: string,
+    newRole: 'admin' | 'press' | 'user',
+    email: string,
+  ) => {
+    try {
+      const { error } = await supabase.rpc('admin_update_user_role', {
+        target_uid: targetUid,
+        new_role: newRole,
+      });
+      if (error) throw error;
+      toast({ title: 'Rol actualizado', description: `${email} → ${newRole}` });
+      fetchUsers();
+    } catch (error: any) {
+      toast({
+        title: 'Error al cambiar rol',
+        description: error.message || 'No se pudo actualizar el rol',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDeleteUser = async (targetUid: string, email: string) => {
+    try {
+      const { error } = await supabase.rpc('admin_delete_user', {
+        target_uid: targetUid,
+      });
+      if (error) throw error;
+      toast({ title: 'Usuario eliminado', description: email });
+      fetchUsers();
+    } catch (error: any) {
+      const msg = (error.message || '').toLowerCase();
+      let friendly = error.message || 'No se pudo eliminar el usuario';
+      if (msg.includes('cannot delete yourself')) {
+        friendly = 'No puedes eliminar tu propia cuenta.';
+      } else if (msg.includes('forbidden') && msg.includes('admin')) {
+        friendly = 'Acción no permitida: requiere rol de administrador.';
+      }
+      toast({ title: 'Error al eliminar', description: friendly, variant: 'destructive' });
     }
   };
 
@@ -1943,13 +2022,45 @@ const Admin: React.FC = () => {
                             {user.email}
                             {user.client_companies && ` · ${user.client_companies.company_name}`}
                           </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Alta: {new Date(user.created_at).toLocaleString('es-ES')}
+                            {' · '}
+                            Último acceso:{' '}
+                            {user.last_sign_in_at
+                              ? new Date(user.last_sign_in_at).toLocaleString('es-ES')
+                              : '-'}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={user.is_active ? 'default' : 'secondary'}>
-                          {user.is_active ? 'Activo' : 'Inactivo'}
+                        <Badge
+                          variant={
+                            user.role === 'admin'
+                              ? 'default'
+                              : user.role === 'press'
+                                ? 'secondary'
+                                : 'outline'
+                          }
+                          className="gap-1"
+                        >
+                          <Shield className="h-3 w-3" />
+                          {user.role || 'user'}
                         </Badge>
-                        {user.is_individual && <Badge variant="outline">Particular</Badge>}
+                        <Select
+                          value={user.role || 'user'}
+                          onValueChange={(v) =>
+                            handleChangeRole(user.id, v as 'admin' | 'press' | 'user', user.email)
+                          }
+                        >
+                          <SelectTrigger className="w-[110px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">admin</SelectItem>
+                            <SelectItem value="press">press</SelectItem>
+                            <SelectItem value="user">user</SelectItem>
+                          </SelectContent>
+                        </Select>
                                     <Button 
                                       variant="ghost" 
                                       size="sm"
@@ -1979,6 +2090,37 @@ const Admin: React.FC = () => {
                                     >
                                       <MessageSquare className="h-4 w-4" />
                                     </Button>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          title="Eliminar usuario"
+                                          className="text-destructive hover:text-destructive"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Vas a eliminar permanentemente a{' '}
+                                            <strong>{user.email}</strong> de auth.users y de
+                                            user_roles. Esta acción no se puede deshacer.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDeleteUser(user.id, user.email)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            Eliminar
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
                       </div>
                     </CardContent>
                   </Card>
