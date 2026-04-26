@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,7 +21,7 @@ function getCurrentSweepId(): string {
 // ============================================================================
 
 async function ensureSweepInitialized(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string
 ): Promise<{ initialized: boolean; totalCompanies: number }> {
   // Check if sweep already exists
@@ -70,7 +70,7 @@ async function ensureSweepInitialized(
   // Use upsert to handle re-initialization gracefully (ignores existing entries)
   const { error: insertError } = await supabase
     .from('corporate_scrape_progress')
-    .upsert(progressEntries, { 
+    .upsert(progressEntries as any, { 
       onConflict: 'sweep_id,ticker',
       ignoreDuplicates: true 
     });
@@ -91,7 +91,7 @@ async function ensureSweepInitialized(
 // ============================================================================
 
 async function resetStuckProcessing(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string,
   timeoutMinutes: number = 5
 ): Promise<{ count: number; tickers: string[] }> {
@@ -138,7 +138,7 @@ async function resetStuckProcessing(
 // ============================================================================
 
 async function getZombieCount(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string,
   timeoutMinutes: number = 10
 ): Promise<{ count: number; tickers: string[] }> {
@@ -162,7 +162,7 @@ async function getZombieCount(
 // ============================================================================
 
 async function getNextPending(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string
 ): Promise<{ id: string; ticker: string; issuer_name: string; website: string } | null> {
   const { data, error } = await supabase
@@ -186,7 +186,7 @@ async function getNextPending(
 // ============================================================================
 
 async function processCompany(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   company: { id: string; ticker: string; issuer_name: string; website: string },
   supabaseUrl: string,
   serviceKey: string,
@@ -270,7 +270,7 @@ async function processCompany(
 const RETRYABLE_RESULT_TYPES = ['error_timeout', 'error_rate_limit', 'error_website_down', 'error_parsing'];
 
 async function maybeInsertContinueTrigger(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string,
   status: { pending: number; processing: number; failed: number }
 ): Promise<{ action: string | null; reason: string }> {
@@ -338,7 +338,7 @@ async function maybeInsertContinueTrigger(
 // ============================================================================
 
 async function getSweepStatus(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string
 ): Promise<{
   total: number;
@@ -370,7 +370,7 @@ async function getSweepStatus(
 // ============================================================================
 
 async function discoverWebsitesIncremental(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient<any>,
   sweepId: string,
   firecrawlApiKey: string,
   limit: number = 3
