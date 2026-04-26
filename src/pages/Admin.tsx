@@ -200,6 +200,22 @@ const Admin: React.FC = () => {
   const [savingUser, setSavingUser] = useState(false);
   const [userFilterCompany, setUserFilterCompany] = useState<string>('_all');
   const [userSearchText, setUserSearchText] = useState('');
+  // Debug visibility state for /admin Usuarios (only shown when 0 users loaded)
+  const [usersDebug, setUsersDebug] = useState<{
+    sessionUserId: string | null;
+    sessionEmail: string | null;
+    hasSession: boolean;
+    lastError: { code?: string; message?: string; details?: string; hint?: string } | null;
+    lastDataLength: number | null;
+    lastFetchAt: string | null;
+  }>({
+    sessionUserId: null,
+    sessionEmail: null,
+    hasSession: false,
+    lastError: null,
+    lastDataLength: null,
+    lastFetchAt: null,
+  });
   const [userForm, setUserForm] = useState({
     email: '',
     full_name: '',
@@ -523,16 +539,40 @@ const Admin: React.FC = () => {
     try {
       // 1) Asegurar que el cliente Supabase está autenticado antes de invocar la RPC
       const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData?.session?.user ?? null;
+      setUsersDebug((prev) => ({
+        ...prev,
+        hasSession: !!sessionData?.session,
+        sessionUserId: sessionUser?.id ?? null,
+        sessionEmail: sessionUser?.email ?? null,
+        lastFetchAt: new Date().toISOString(),
+      }));
       if (!sessionData?.session) {
         toast({ title: 'Sin sesión', description: 'No hay sesión activa en el preview de Lovable', variant: 'destructive' });
+        setUsersDebug((prev) => ({
+          ...prev,
+          lastError: { code: 'NO_SESSION', message: 'No hay sesión activa en el preview de Lovable' },
+          lastDataLength: null,
+        }));
         return;
       }
 
       const { data, error } = await supabase.rpc('list_admin_users');
+      console.log('[admin/users] list_admin_users raw response:', {
+        error: error ? JSON.stringify(error) : null,
+        data,
+        dataLength: Array.isArray(data) ? data.length : undefined,
+      });
 
       // 2) Capturar y mostrar el error real de la RPC sin estado vacío silencioso
       if (error) {
         console.error('list_admin_users RPC error:', error);
+        const e = error as { code?: string; message?: string; details?: string; hint?: string };
+        setUsersDebug((prev) => ({
+          ...prev,
+          lastError: { code: e.code, message: e.message, details: e.details, hint: e.hint },
+          lastDataLength: Array.isArray(data) ? data.length : null,
+        }));
         const code = (error as { code?: string }).code;
         if (code === '28000') {
           toast({ title: 'No autenticado', description: 'Vuelve a iniciar sesión', variant: 'destructive' });
@@ -567,8 +607,17 @@ const Admin: React.FC = () => {
       // 3) Set users on success + log
       setUsers(mapped);
       console.info('admin users loaded', mapped.length);
+      setUsersDebug((prev) => ({
+        ...prev,
+        lastError: null,
+        lastDataLength: Array.isArray(data) ? data.length : 0,
+      }));
     } catch (error: any) {
       console.error('Error fetching users:', error);
+      setUsersDebug((prev) => ({
+        ...prev,
+        lastError: { code: 'EXCEPTION', message: error?.message ?? String(error) },
+      }));
       toast({ title: 'Error', description: error?.message ?? 'No se pudieron cargar los usuarios', variant: 'destructive' });
     } finally {
       setLoadingUsers(false);
@@ -1861,6 +1910,44 @@ const Admin: React.FC = () => {
                 </Button>
               </div>
             </div>
+
+            {/* Debug panel: only visible when 0 users loaded (diagnóstico de RPC list_admin_users) */}
+            {users.length === 0 && !loadingUsers && (
+              <Card className="mb-4 border-destructive/50 bg-destructive/5">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Debug: 0 usuarios cargados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-xs font-mono space-y-1">
+                  <div>
+                    <span className="text-muted-foreground">session:</span>{' '}
+                    {usersDebug.hasSession
+                      ? `${usersDebug.sessionUserId ?? '(no id)'} / ${usersDebug.sessionEmail ?? '(no email)'}`
+                      : 'null'}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">data?.length:</span>{' '}
+                    {usersDebug.lastDataLength === null ? 'undefined' : String(usersDebug.lastDataLength)}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">last fetch:</span>{' '}
+                    {usersDebug.lastFetchAt ?? '(nunca)'}
+                  </div>
+                  <div className="pt-1 border-t border-destructive/20">
+                    <span className="text-muted-foreground">RPC list_admin_users error:</span>
+                    {usersDebug.lastError ? (
+                      <pre className="mt-1 whitespace-pre-wrap break-all">
+                        {`code:    ${usersDebug.lastError.code ?? '(none)'}\nmessage: ${usersDebug.lastError.message ?? '(none)'}\ndetails: ${usersDebug.lastError.details ?? '(none)'}\nhint:    ${usersDebug.lastError.hint ?? '(none)'}`}
+                      </pre>
+                    ) : (
+                      <span className="ml-1">sin error</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3 mb-4">
