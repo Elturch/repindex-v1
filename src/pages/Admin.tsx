@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -166,6 +167,7 @@ interface UserActivity {
 
 const Admin: React.FC = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   
   // Companies state
@@ -521,9 +523,32 @@ const Admin: React.FC = () => {
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
+      // 1) Asegurar que el cliente Supabase está autenticado antes de invocar la RPC
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session) {
+        toast({ title: 'Sesión expirada', description: 'Vuelve a iniciar sesión', variant: 'destructive' });
+        navigate('/auth');
+        return;
+      }
+
       const { data, error } = await supabase.rpc('list_admin_users');
-      if (error) throw error;
-      const mapped: UserProfile[] = (data || []).map((row: any) => {
+
+      // 2) Capturar y mostrar el error real de la RPC sin estado vacío silencioso
+      if (error) {
+        console.error('list_admin_users RPC error:', error);
+        const code = (error as { code?: string }).code;
+        if (code === '28000') {
+          toast({ title: 'No autenticado', description: 'Vuelve a iniciar sesión', variant: 'destructive' });
+          navigate('/auth');
+        } else if (code === '42501') {
+          toast({ title: 'Acceso denegado', description: 'No tienes permisos de admin', variant: 'destructive' });
+        } else {
+          toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        }
+        return;
+      }
+
+      const mapped: UserProfile[] = (data ?? []).map((row: any) => {
         const meta = (row.raw_user_meta_data || {}) as Record<string, any>;
         const fullName =
           (meta.full_name as string | undefined) ||
@@ -543,10 +568,12 @@ const Admin: React.FC = () => {
           role: (row.role as 'admin' | 'press' | 'user' | null) ?? 'user',
         };
       });
+      // 3) Set users on success + log
       setUsers(mapped);
-    } catch (error) {
+      console.info('admin users loaded', mapped.length);
+    } catch (error: any) {
       console.error('Error fetching users:', error);
-      toast({ title: 'Error', description: 'No se pudieron cargar los usuarios', variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message ?? 'No se pudieron cargar los usuarios', variant: 'destructive' });
     } finally {
       setLoadingUsers(false);
     }

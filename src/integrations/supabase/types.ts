@@ -3726,12 +3726,13 @@ export type Database = {
       list_admin_users: {
         Args: never
         Returns: {
+          company_id: string
           created_at: string
           email: string
           email_confirmed_at: string
+          full_name: string
           id: string
           last_sign_in_at: string
-          raw_user_meta_data: Json
           role: string
         }[]
       }
