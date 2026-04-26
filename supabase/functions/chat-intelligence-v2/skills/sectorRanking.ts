@@ -580,14 +580,23 @@ export const sectorRankingSkill: Skill = {
     // logic used by companyAnalysis.ts to keep section 8 fully populated.
     if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
       const MARKER = "<!--CITED_SOURCES_HERE-->";
-      if (finalContent.includes(MARKER)) {
-        finalContent = finalContent.replace(MARKER, citedSourcesFull);
+      // Tolerant matcher: o3 occasionally emits the marker with markdown
+      // decorations inside the comment (e.g. <!--**CITED**_**SOURCES**_**HERE**-->),
+      // which fails the strict literal substring check and leaks the raw
+      // comment into the rendered HTML/PDF.
+      const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
+      if (finalContent.includes(MARKER) || MARKER_RE.test(finalContent)) {
+        finalContent = finalContent.includes(MARKER)
+          ? finalContent.replace(MARKER, citedSourcesFull)
+          : finalContent.replace(MARKER_RE, citedSourcesFull);
         try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
       } else {
         const tail = "\n\n" + citedSourcesFull;
         finalContent = finalContent + tail;
         try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
+      // Final safety net: scrub residual variants of the marker if any survived.
+      finalContent = finalContent.replace(MARKER_RE, "").replace(MARKER, "");
     }
 
     return {
