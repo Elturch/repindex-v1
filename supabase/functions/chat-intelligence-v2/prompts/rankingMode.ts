@@ -2,7 +2,7 @@
 // Activa reglas para informes de ranking sectorial / por índice.
 // El informe debe igualar la profundidad narrativa de companyAnalysis:
 // análisis empresa-por-empresa, divergencias, recomendaciones accionables
-// y bibliografía con URLs reales (marker <!--CITED_SOURCES_HERE-->).
+// y bibliografía con URLs reales (marker <!--CITEDSOURCESHERE-->).
 
 export interface RankingPromptInput {
   scopeLabel: string;       // "sector Energía", "IBEX-35", etc.
@@ -56,7 +56,7 @@ Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
 Distribuye las recomendaciones cubriendo idealmente todas las empresas del alcance, no solo el líder.
 
 ## 8. Fuentes citadas por los modelos de IA
-Escribe SOLO 2-3 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). Termina la sección con la línea EXACTA \`<!--CITED_SOURCES_HERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
+Escribe SOLO 2-3 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). Termina la sección con la línea EXACTA \`<!--CITEDSOURCESHERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
 
 ## 9. Ficha metodológica
 Período (declarando solicitado vs disponible si difieren), número de modelos efectivamente usados, observaciones totales, semanas únicas, divergencia inter-modelo (σ).

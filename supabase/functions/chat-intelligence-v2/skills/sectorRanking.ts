@@ -32,7 +32,7 @@ import { resolveSemanticGroup } from "../../_shared/semanticGroups.ts";
 /**
  * Compact summary of cited URLs for the LLM prompt only. Mirrors the helper
  * in companyAnalysis.ts: full bibliography is appended AFTER streaming via
- * the <!--CITED_SOURCES_HERE--> marker, so we never blow OpenAI 400 limits.
+ * the <!--CITEDSOURCESHERE--> marker, so we never blow OpenAI 400 limits.
  */
 function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>): string {
   if (report.totalUrls === 0) return "";
@@ -44,7 +44,7 @@ function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>
     `- Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos`,
     `- Top 10 dominios: ${topDomains}`,
     "",
-    "INSTRUCCIÓN SECCIÓN 8: NO listes URLs a mano. Escribe 2-3 frases introductorias y termina con la línea exacta `<!--CITED_SOURCES_HERE-->`. El sistema sustituirá ese marcador por la bibliografía completa.",
+    "INSTRUCCIÓN SECCIÓN 8: NO listes URLs a mano. Escribe 2-3 frases introductorias y termina con la línea exacta `<!--CITEDSOURCESHERE-->`. El sistema sustituirá ese marcador por la bibliografía completa.",
   ].join("\n");
 }
 
@@ -408,7 +408,7 @@ function buildUserMessageWithAssembler(
     "",
     citedSourcesSummary,
     "",
-    "Sigue ESTRICTAMENTE la estructura de 9 secciones definida en el system prompt (MODO RANKING). No omitas la sección 3 (análisis empresa por empresa) ni la 7 (5+ recomendaciones específicas). Termina la sección 8 con el marcador <!--CITED_SOURCES_HERE--> en su propia línea.",
+    "Sigue ESTRICTAMENTE la estructura de 9 secciones definida en el system prompt (MODO RANKING). No omitas la sección 3 (análisis empresa por empresa) ni la 7 (5+ recomendaciones específicas). Termina la sección 8 con el marcador <!--CITEDSOURCESHERE--> en su propia línea.",
     "",
     "RESUMEN COMPACTO PARA REFERENCIA:",
     compact,
@@ -575,16 +575,16 @@ export const sectorRankingSkill: Skill = {
           return fb;
         })();
 
-    // Substitute <!--CITED_SOURCES_HERE--> with the full bibliography. If the
+    // Substitute <!--CITEDSOURCESHERE--> with the full bibliography. If the
     // LLM omitted the marker, append the block at the end. Mirrors the same
     // logic used by companyAnalysis.ts to keep section 8 fully populated.
     if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
-      const MARKER = "<!--CITED_SOURCES_HERE-->";
+      const MARKER = "<!--CITEDSOURCESHERE-->";
       // Tolerant matcher: o3 occasionally emits the marker with markdown
       // decorations inside the comment (e.g. <!--**CITED**_**SOURCES**_**HERE**-->),
       // which fails the strict literal substring check and leaks the raw
       // comment into the rendered HTML/PDF.
-      const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
+      const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
       if (finalContent.includes(MARKER) || MARKER_RE.test(finalContent)) {
         finalContent = finalContent.includes(MARKER)
           ? finalContent.replace(MARKER, citedSourcesFull)
