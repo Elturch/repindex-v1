@@ -41,7 +41,7 @@ NO te saltes ninguna empresa. Si hay 6 empresas, hay 6 mini-perfiles.
 Inserta literalmente el bloque [MODEL_BREAKDOWN_TABLE] del DataPack. Comenta qué modelo es más optimista/pesimista en este alcance y por qué la divergencia importa para la lectura del sector.
 
 ## 5. Tendencias del sector / grupo
-Inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE]. Identifica: (a) empresas con tendencia alcista clara, (b) empresas en deterioro, (c) métricas que mejoran o empeoran transversalmente en el grupo. Cifras obligatorias (delta_period).
+Inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE] COPIANDO TODAS SUS FILAS sin excepción (no resumas, no abrevies con '...', no recortes el final aunque haya muchas semanas). PROHIBIDO truncar, abreviar con '...' o resumir filas: la tabla debe aparecer íntegra tal como se entrega pre-renderizada. En la prosa NUNCA uses la palabra 'snapshots'; di 'semanas observadas'. Identifica: (a) empresas con tendencia alcista clara, (b) empresas en deterioro, (c) métricas que mejoran o empeoran transversalmente en el grupo. Cifras obligatorias (delta_period).
 
 ## 6. Divergencias inter-modelo
 Inserta literalmente el bloque [DIVERGENCE_BLOCK]. Identifica las 3 empresas con MAYOR rango (max-min) y explica POR QUÉ los modelos disienten (sesgo de fuentes, tipo de cobertura). Las divergencias > 20 pts deben listarse explícitamente.
