@@ -272,7 +272,11 @@ function aggregateRanking(rows: any[], topN: number): RankingRow[] {
   return out.slice(0, topN);
 }
 
-function renderRankingTable(rows: RankingRow[], models: ModelName[]): string {
+function renderRankingTable(
+  rows: RankingRow[],
+  models: ModelName[],
+  coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean },
+): string {
   const head = ["#", "Empresa", "RIX medio", ...models, "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
@@ -285,12 +289,22 @@ function renderRankingTable(rows: RankingRow[], models: ModelName[]): string {
     ];
     return `| ${cells.join(" | ")} |`;
   });
+  // Footnote metodológico: aclara que RIX medio = promedio del consenso semanal
+  // (bloque mayoritario) sobre el periodo, y avisa de divergencia esperada vs.
+  // el snapshot puntual del Dashboard. Si la cobertura es parcial añade el
+  // contraste observadas/esperadas, alineado con el banner de cobertura.
+  const partialSuffix = coverage.isPartial && coverage.weeksExpected > coverage.weeksCount
+    ? ` (de ${coverage.weeksExpected} esperadas)`
+    : "";
+  const footnote = `*RIX medio = promedio del consenso semanal (bloque mayoritario: descarta la IA más optimista y la más pesimista cuando hay ≥4 modelos) sobre las ${coverage.weeksCount} semanas observadas${partialSuffix}. Puede diferir del snapshot puntual del Dashboard ("qué consensúan las IAs HOY").*`;
   return [
     "**Ranking por RIX medio (con desglose por modelo)**",
     "",
     `| ${head.join(" | ")} |`,
     `| ${sep} |`,
     ...lines,
+    "",
+    footnote,
   ].join("\n");
 }
 
@@ -519,7 +533,13 @@ export const sectorRankingSkill: Skill = {
     console.log(`${tag} temporal recompute | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (real weeks in rows=${realWeeksCount}, expected=${parsed.temporal.snapshots_expected})`);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
-    const table = ranking.length > 0 ? renderRankingTable(ranking, models) : "_Sin datos para el período/alcance solicitado._";
+    const table = ranking.length > 0
+      ? renderRankingTable(ranking, models, {
+          weeksCount: effectiveTemporal.snapshots_available,
+          weeksExpected: effectiveTemporal.snapshots_expected,
+          isPartial: effectiveTemporal.is_partial,
+        })
+      : "_Sin datos para el período/alcance solicitado._";
 
     const datapack: DataPack = {
       entity: parsed.entities[0] ?? { ticker: "N/A", company_name: scopeLabel, sector_category: sector, source: "exact" },
