@@ -26,7 +26,7 @@ ESTRUCTURA OBLIGATORIA (SECCIONES, EN ORDEN EXACTO):
 5-7 frases que incluyan: (a) tamaño del grupo (${topN} empresas, ${weeksCount} semanas, ${modelsCount} modelos), (b) RIX medio del grupo y rango (max-min), (c) líder y farolillo rojo con sus tickers y RIX, (d) tendencia general (alcista/bajista/estable) con dato cuantitativo, (e) hallazgo más relevante del período.
 
 ## 2. Ranking del grupo
-Inserta literalmente la tabla pre-renderizada de ranking. Antes: 1 párrafo de lectura ("la cabeza la ocupa X con Y, mientras la cola la cierra Z..."). Después: 1 párrafo destacando el spread RIX max-min y el bloque mayoritario.
+Inserta literalmente la tabla pre-renderizada de ranking. Antes: 1 párrafo de lectura ("la cabeza la ocupa X con Y, mientras la cola la cierra Z..."). Después: 1 párrafo destacando el spread RIX max-min y el bloque mayoritario. CRÍTICO: tras la tabla del ranking del grupo, reproduce literalmente y sin modificar la línea en cursiva que comienza con \`*RIX medio = promedio del consenso semanal*\` y termina con la palabra HOY entre comillas. Esta nota metodológica debe aparecer SOLO debajo de la tabla del ranking del grupo, NO en otras tablas del informe.
 
 ## 3. Análisis empresa por empresa (CRÍTICO — sección más extensa)
 Para CADA UNA de las ${topN} empresas del ranking, redacta un mini-perfil de 4-6 frases con esta estructura fija:
