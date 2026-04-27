@@ -487,6 +487,36 @@ export const sectorRankingSkill: Skill = {
     const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
     console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
     const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    // TAREA -1.D — Recompute temporal coverage from the REAL fetched rows.
+    // `parsed.temporal.snapshots_available` comes from reconcileWindow which
+    // applies a 2000-row LIMIT and can collapse to 2 weeks for large groups
+    // (e.g. IBEX-35: 35 × 6 × 13 ≈ 2730 rows). The ranking SQL has no such
+    // limit and returns the full window, so we trust `rows` as ground truth.
+    // We DO NOT mutate parsed.temporal in-place to avoid side-effects on
+    // other consumers; we build a local `effectiveTemporal` and pass it
+    // explicitly to the 3 prompt builders that read coverage metadata.
+    const prevSnapshotsAvailable = parsed.temporal.snapshots_available;
+    const realWeekKeys = new Set<string>();
+    for (const r of rows) {
+      const periodTo = r["07_period_to"] ?? r["07_period_from"];
+      if (typeof periodTo === "string" && periodTo.length >= 10) {
+        realWeekKeys.add(periodTo.slice(0, 10));
+      }
+    }
+    const realWeeksCount = realWeekKeys.size;
+    const effectiveTemporal = realWeeksCount > 0
+      ? {
+          ...parsed.temporal,
+          snapshots_available: realWeeksCount,
+          coverage_ratio: parsed.temporal.snapshots_expected > 0
+            ? realWeeksCount / parsed.temporal.snapshots_expected
+            : parsed.temporal.coverage_ratio,
+          is_partial: parsed.temporal.snapshots_expected > 0
+            ? realWeeksCount < parsed.temporal.snapshots_expected
+            : parsed.temporal.is_partial,
+        }
+      : parsed.temporal;
+    console.log(`${tag} temporal recompute | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (real weeks in rows=${realWeeksCount}, expected=${parsed.temporal.snapshots_expected})`);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0 ? renderRankingTable(ranking, models) : "_Sin datos para el período/alcance solicitado._";
@@ -518,21 +548,21 @@ export const sectorRankingSkill: Skill = {
     }
 
     const systemPrompt = [
-      buildCoverageBanner(parsed.temporal),
+      buildCoverageBanner(effectiveTemporal),
       buildBasePrompt({ languageName: "español" }),
       buildAntiHallucinationRules(),
       parsed.mode === "period"
-        ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: parsed.temporal.snapshots_available, requestedLabel: parsed.temporal.requested_label })
+        ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: effectiveTemporal.snapshots_available, requestedLabel: effectiveTemporal.requested_label })
         : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
-      buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: parsed.temporal.snapshots_available, modelsCount: models.length }),
+      buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length }),
       buildCoverageRules({
         requested: models,
         withData: models,
         missing: [],
-        snapshotsExpected: parsed.temporal.snapshots_expected,
-        snapshotsAvailable: parsed.temporal.snapshots_available,
-        coverageRatio: parsed.temporal.coverage_ratio,
-        isPartial: parsed.temporal.is_partial,
+        snapshotsExpected: effectiveTemporal.snapshots_expected,
+        snapshotsAvailable: effectiveTemporal.snapshots_available,
+        coverageRatio: effectiveTemporal.coverage_ratio,
+        isPartial: effectiveTemporal.is_partial,
       }),
     ].filter(Boolean).join("\n\n");
 
