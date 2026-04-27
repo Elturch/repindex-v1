@@ -2,7 +2,7 @@
 // Activa reglas para informes de ranking sectorial / por índice.
 // El informe debe igualar la profundidad narrativa de companyAnalysis:
 // análisis empresa-por-empresa, divergencias, recomendaciones accionables
-// y bibliografía con URLs reales (marker <!--CITED_SOURCES_HERE-->).
+// y bibliografía con URLs reales (marker <!--CITEDSOURCESHERE-->).
 
 export interface RankingPromptInput {
   scopeLabel: string;       // "sector Energía", "IBEX-35", etc.
@@ -41,7 +41,7 @@ NO te saltes ninguna empresa. Si hay 6 empresas, hay 6 mini-perfiles.
 Inserta literalmente el bloque [MODEL_BREAKDOWN_TABLE] del DataPack. Comenta qué modelo es más optimista/pesimista en este alcance y por qué la divergencia importa para la lectura del sector.
 
 ## 5. Tendencias del sector / grupo
-Inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE]. Identifica: (a) empresas con tendencia alcista clara, (b) empresas en deterioro, (c) métricas que mejoran o empeoran transversalmente en el grupo. Cifras obligatorias (delta_period).
+Inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE] COPIANDO TODAS SUS FILAS sin excepción (no resumas, no abrevies con '...', no recortes el final aunque haya muchas semanas). PROHIBIDO truncar, abreviar con '...' o resumir filas: la tabla debe aparecer íntegra tal como se entrega pre-renderizada. En la prosa NUNCA uses la palabra 'snapshots'; di 'semanas observadas'. Identifica: (a) empresas con tendencia alcista clara, (b) empresas en deterioro, (c) métricas que mejoran o empeoran transversalmente en el grupo. Cifras obligatorias (delta_period).
 
 ## 6. Divergencias inter-modelo
 Inserta literalmente el bloque [DIVERGENCE_BLOCK]. Identifica las 3 empresas con MAYOR rango (max-min) y explica POR QUÉ los modelos disienten (sesgo de fuentes, tipo de cobertura). Las divergencias > 20 pts deben listarse explícitamente.
@@ -56,7 +56,7 @@ Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
 Distribuye las recomendaciones cubriendo idealmente todas las empresas del alcance, no solo el líder.
 
 ## 8. Fuentes citadas por los modelos de IA
-Escribe SOLO 2-3 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). Termina la sección con la línea EXACTA \`<!--CITED_SOURCES_HERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
+Escribe SOLO 2-3 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). Termina la sección con la línea EXACTA \`<!--CITEDSOURCESHERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
 
 ## 9. Ficha metodológica
 Período (declarando solicitado vs disponible si difieren), número de modelos efectivamente usados, observaciones totales, semanas únicas, divergencia inter-modelo (σ).

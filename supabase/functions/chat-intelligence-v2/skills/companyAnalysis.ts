@@ -47,7 +47,7 @@ function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>
     `- Top 10 dominios por número de fuentes: ${topDomains}`,
     "",
     "INSTRUCCIÓN ESPECIAL SECCIÓN 8: NO intentes listar las URLs. Escribe únicamente un párrafo introductorio (2-3 frases) sobre la procedencia de las fuentes (ej. 'Las IAs citaron N URLs de M medios, con dominio principal en prensa económica española...') y termina la sección con la línea exacta:",
-    "<!--CITED_SOURCES_HERE-->",
+    "<!--CITEDSOURCESHERE-->",
     "El sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y URLs clicables.",
   ].join("\n");
 }
@@ -145,7 +145,7 @@ function buildUserMessage(question: string, datapack: DataPack): string {
       "  (c) DEBEN incluir KPI cuantitativo: valor actual + target numérico + horizonte temporal (ej: 'SIM actual 38.6 → target 52-55 si se consigue cobertura adicional en 3 medios Tier 1 durante el próximo trimestre').",
       "  (d) Priorizadas por impacto real (alto / medio / bajo) basándose en los datos del período.",
       "  (e) Acción concreta: verbo de acción + entregable + plazo (ej: 'publicar dossier ESG auditado en Q2 2026').",
-      "## 8. Fuentes citadas por los modelos de IA — escribe SOLO un párrafo introductorio (2-3 frases) usando los totales del 'Resumen de fuentes citadas' que aparece más abajo (cuántas URLs únicas, cuántos medios, qué dominios dominan). Termina la sección con la línea EXACTA `<!--CITED_SOURCES_HERE-->` en su propia línea y NADA más después. NO intentes listar las URLs individuales: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs manualmente, serán eliminadas.",
+      "## 8. Fuentes citadas por los modelos de IA — escribe SOLO un párrafo introductorio (2-3 frases) usando los totales del 'Resumen de fuentes citadas' que aparece más abajo (cuántas URLs únicas, cuántos medios, qué dominios dominan). Termina la sección con la línea EXACTA `<!--CITEDSOURCESHERE-->` en su propia línea y NADA más después. NO intentes listar las URLs individuales: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs manualmente, serán eliminadas.",
       "## 9. Ficha Metodológica + Cierre Ejecutivo — esta sección tiene DOS partes OBLIGATORIAS, en este orden:\n  PARTE A — Ficha de datos (1 párrafo seco): período (declarando solicitado vs disponible si difieren), modelos efectivamente usados, observaciones totales, semanas únicas, divergencia inter-modelo (incluye literalmente [DIVERGENCE_BLOCK]).\n  PARTE B — Cierre ejecutivo OBLIGATORIO (1 párrafo separado de 3-4 frases, tono ejecutivo, SIEMPRE presente incluso si no hay divergencias): debe sintetizar (a) robustez del dataset y nivel de confianza del informe, (b) UNA recomendación accionable de máxima prioridad para esta empresa derivada del análisis (con métrica + acción + horizonte), (c) próximo barrido recomendado o señal a vigilar. PROHIBIDO omitir esta parte B; PROHIBIDO fundirla con la ficha en el mismo párrafo.",
       "",
       "BLOQUES PRE-RENDERIZADOS (cópialos tal cual donde corresponda):",
@@ -333,7 +333,7 @@ export const companyAnalysisSkill: Skill = {
     // If the LLM forgot the marker, append the block at the end. Either way,
     // emit the resulting block via onChunk so the streaming client sees it.
     if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
-      const MARKER = "<!--CITED_SOURCES_HERE-->";
+      const MARKER = "<!--CITEDSOURCESHERE-->";
       // Tolerant matcher: o3 sometimes emits the marker with markdown decorations
       // inside the HTML comment (e.g. "<!--**CITED**_**SOURCES**_**HERE**-->"
       // or "<!-- CITED SOURCES HERE -->"). The strict literal substring fails
@@ -341,7 +341,7 @@ export const companyAnalysisSkill: Skill = {
       // The regex below accepts any combination of *, _, whitespace and HTML
       // emphasis tags between the three keywords, with optional spaces inside
       // the comment delimiters.
-      const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
+      const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
       if (finalContent.includes(MARKER) || MARKER_RE.test(finalContent)) {
         finalContent = finalContent.includes(MARKER)
           ? finalContent.replace(MARKER, citedSourcesFull)
