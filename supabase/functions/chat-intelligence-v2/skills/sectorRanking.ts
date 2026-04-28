@@ -626,28 +626,31 @@ export const sectorRankingSkill: Skill = {
           return fb;
         })();
 
-    // Substitute <!--CITEDSOURCESHERE--> with the full bibliography. If the
-    // LLM omitted the marker, append the block at the end. Mirrors the same
-    // logic used by companyAnalysis.ts to keep section 8 fully populated.
-    if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
+    // P1-A — ALWAYS substitute the cited-sources marker, even when there are
+    // no verifiable URLs. Previously the entire substitution was skipped when
+    // citedSourcesFull was empty, which left the literal marker in the output
+    // for sector-wide queries with 0 aggregated URLs (Banca regression).
+    {
       const MARKER = "<!--CITEDSOURCESHERE-->";
-      // Tolerant matcher: o3 occasionally emits the marker with markdown
-      // decorations inside the comment (e.g. <!--**CITED**_**SOURCES**_**HERE**-->),
-      // which fails the strict literal substring check and leaks the raw
-      // comment into the rendered HTML/PDF.
       const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
-      if (finalContent.includes(MARKER) || MARKER_RE.test(finalContent)) {
+      const hasUrls = !!(citedSourcesFull && citedSourcesFull.trim().length > 0);
+      const replacement = hasUrls
+        ? citedSourcesFull
+        : "_No hay fuentes verificables en este período._";
+      const markerPresent = finalContent.includes(MARKER) || MARKER_RE.test(finalContent);
+      if (markerPresent) {
         finalContent = finalContent.includes(MARKER)
-          ? finalContent.replace(MARKER, citedSourcesFull)
-          : finalContent.replace(MARKER_RE, citedSourcesFull);
-        try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
-      } else {
-        const tail = "\n\n" + citedSourcesFull;
+          ? finalContent.replace(MARKER, replacement)
+          : finalContent.replace(MARKER_RE, replacement);
+        try { onChunk?.("\n\n" + replacement); } catch (_) { /* noop */ }
+      } else if (hasUrls) {
+        const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
         try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
       // Final safety net: scrub residual variants of the marker if any survived.
-      finalContent = finalContent.replace(MARKER_RE, "").replace(MARKER, "");
+      finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
+      console.log(`${tag} cited_sources_substitution | hasUrls=${hasUrls} markerPresent=${markerPresent}`);
     }
 
     // P1-A — append canonical Sec.7 if the LLM omitted it.

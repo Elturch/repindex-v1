@@ -36,6 +36,8 @@ const SECTION_7_RE = /(^|\n)\s*##\s*7\.|Recomendaciones\s+priorizadas/i;
 const CITED_SOURCES_RE = /Fuentes\s+citadas|Referencias\s+citadas|Bibliograf[íi]a|##\s*8\./i;
 const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
 const MARKER_LITERAL = "<!--CITEDSOURCESHERE-->";
+// P1-A — LLM hallucinated disclaimer that bypasses our cited-sources block.
+const FAKE_SOURCES_RE = /dato\s+no\s+disponible[^.\n]{0,40}URLs?/i;
 
 // P1-C — Exported scrub helper used by the orchestrator as a defence-in-depth
 // safety net AFTER the skill returns. Idempotent: returns the same string when
@@ -83,6 +85,14 @@ export function validateSkillOutput(
       level: "error",
       code: "MARKER_LEAK",
       message: "Cited-sources marker leaked to final output (replacement failed).",
+    });
+  }
+
+  if (FAKE_SOURCES_RE.test(safe)) {
+    issues.push({
+      level: "error",
+      code: "FAKE_SOURCES_DISCLAIMER",
+      message: "Skill output contains hallucinated 'dato no disponible URLs' disclaimer instead of the cited-sources block.",
     });
   }
 
