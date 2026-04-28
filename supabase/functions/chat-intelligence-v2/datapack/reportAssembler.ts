@@ -165,3 +165,34 @@ export function buildPreRenderedSection(skillPrimaryTable: string, blocks: strin
 }
 
 export const __test__ = { SECTIONS_BY_SKILL };
+
+/**
+ * P1-A — Cross-skill safety net for the canonical
+ * "## 7. Recomendaciones priorizadas" section. Pure function, no I/O.
+ *
+ * If `finalContent` already contains a Section 7 (matched by the canonical
+ * regex shared with outputGuard), this is a no-op. Otherwise it appends
+ * `## 7. Recomendaciones priorizadas` followed by the deterministic
+ * `renderRecommendationsBlock(metrics)` output (KPI actual → target +
+ * acciones), and returns the new content plus the appended tail so the
+ * caller can stream it via `onChunk`.
+ *
+ * If `metrics` is empty (skill produced no aggregable numeric data, e.g.
+ * 0 observations fallback), the function is a silent no-op so the
+ * outputGuard MISSING_SECTION_7 warning still surfaces correctly.
+ *
+ * Idempotent: invoking it twice on the same input returns the same content.
+ */
+export function ensureSection7(
+  finalContent: string,
+  metrics: MetricAggregation[],
+): { content: string; appended: boolean; tail: string } {
+  const HAS_S7 = /(^|\n)\s*##\s*7\.|Recomendaciones\s+priorizadas/i.test(finalContent);
+  if (HAS_S7) return { content: finalContent, appended: false, tail: "" };
+  const block = renderRecommendationsBlock(metrics);
+  if (!block || block.trim().length === 0) {
+    return { content: finalContent, appended: false, tail: "" };
+  }
+  const tail = "\n\n## 7. Recomendaciones priorizadas\n\n" + block;
+  return { content: finalContent + tail, appended: true, tail };
+}
