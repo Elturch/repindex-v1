@@ -21,6 +21,7 @@ import {
   metricsFromRows,
   renderMethodologyFooter,
   selectBlocks,
+  ensureSection7,
 } from "../datapack/reportAssembler.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
@@ -299,13 +300,20 @@ export const modelDivergenceSkill: Skill = {
       temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
     });
-    const finalContent = fullText && fullText.trim().length > 0
+    let finalContent = fullText && fullText.trim().length > 0
       ? fullText
       : (() => {
           const fb = `**Divergencia inter-modelo · ${entity.ticker}**\n\n${table}\n\n_Síntesis no disponible (${error ?? "sin texto"})._`;
           try { onChunk?.(fb); } catch (_) { /* noop */ }
           return fb;
         })();
+
+    // P1-A — append canonical Sec.7 if the LLM omitted it.
+    {
+      const _s7 = ensureSection7(finalContent, metricsFromRows(workingRows));
+      finalContent = _s7.content;
+      if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
+    }
 
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },

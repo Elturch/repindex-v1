@@ -18,6 +18,7 @@ import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { isLazyBrutoEnabled } from "../shared/featureFlags.ts";
 import { hydrateBrutoColumns } from "../datapack/builder.ts";
 import { resolveSemanticGroup } from "../../_shared/semanticGroups.ts";
+import { ensureSection7, metricsFromRows } from "../datapack/reportAssembler.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -350,13 +351,20 @@ export const comparisonSkill: Skill = {
       temperature: 0,
       onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
     });
-    const finalContent = fullText && fullText.trim().length > 0
+    let finalContent = fullText && fullText.trim().length > 0
       ? fullText
       : (() => {
           const fb = `**Comparación**\n\n${table}\n\n_Síntesis no disponible (${error ?? "sin texto"})._`;
           try { onChunk?.(fb); } catch (_) { /* noop */ }
           return fb;
         })();
+
+    // P1-A — append canonical Sec.7 if the LLM omitted it.
+    {
+      const _s7 = ensureSection7(finalContent, metricsFromRows(rowsPerEntity.flat()));
+      finalContent = _s7.content;
+      if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
+    }
 
     return {
       datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },

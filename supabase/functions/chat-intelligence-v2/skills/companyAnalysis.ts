@@ -28,6 +28,7 @@ import {
 } from "../datapack/competitiveContext.ts";
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
+import { ensureSection7 } from "../datapack/reportAssembler.ts";
 
 /**
  * Build a COMPACT summary of cited sources for the LLM prompt only.
@@ -329,18 +330,11 @@ export const companyAnalysisSkill: Skill = {
       try { onChunk?.(finalContent); } catch (_) { /* noop */ }
     }
 
-    // Safety net: si el LLM truncó antes de la sección 7 (Recomendaciones),
-    // append simétrico replicando la rama else de citedSources más abajo.
-    // Detecta ausencia de la sección 7 / "Recomendaciones priorizadas" en el
-    // contenido emitido y la añade al final usando el bloque canónico.
-    const HAS_SECTION_7 = /(^|\n)\s*##\s*7\.|Recomendaciones\s+priorizadas/i.test(finalContent);
-    if (!HAS_SECTION_7) {
-      const recsBlock = renderRecommendationsBlock(datapack.metrics);
-      if (recsBlock && recsBlock.trim().length > 0) {
-        const tail = "\n\n## 7. Recomendaciones priorizadas\n\n" + recsBlock;
-        finalContent = finalContent + tail;
-        try { onChunk?.(tail); } catch (_) { /* noop */ }
-      }
+    // P1-A — cross-skill canonical Sec.7 safety net.
+    {
+      const _s7 = ensureSection7(finalContent, datapack.metrics);
+      finalContent = _s7.content;
+      if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }
 
     // Substitute the placeholder with the full cited-sources bibliography.

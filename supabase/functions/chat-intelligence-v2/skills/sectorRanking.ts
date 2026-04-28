@@ -23,6 +23,7 @@ import {
   metricsFromRows,
   renderMethodologyFooter,
   selectBlocks,
+  ensureSection7,
 } from "../datapack/reportAssembler.ts";
 import { computeDivergenceStats } from "../datapack/divergenceStats.ts";
 import { extractCitedSources, renderCitedSourcesBlock } from "../datapack/citedSources.ts";
@@ -647,6 +648,13 @@ export const sectorRankingSkill: Skill = {
       }
       // Final safety net: scrub residual variants of the marker if any survived.
       finalContent = finalContent.replace(MARKER_RE, "").replace(MARKER, "");
+    }
+
+    // P1-A — append canonical Sec.7 if the LLM omitted it.
+    {
+      const _s7 = ensureSection7(finalContent, metricsFromRows(rows));
+      finalContent = _s7.content;
+      if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }
 
     return {
