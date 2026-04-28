@@ -682,6 +682,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return;
     }
 
+    // Hunk 1 — Guard contra escrituras anónimas en chat_intelligence_sessions.
+    // Bloquea el envío si AuthContext aún no resolvió o la sesión expiró.
+    if (!currentUserId) {
+      console.error('[ChatContext] Aborting sendMessage: no authenticated user');
+      toast({
+        title: "Sesión no válida",
+        description: "Vuelve a iniciar sesión para continuar.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const useStreaming = options?.useStreaming ?? true; // Default to streaming mode
 
     setIsLoading(true);
