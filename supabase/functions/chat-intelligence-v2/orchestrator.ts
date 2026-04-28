@@ -21,7 +21,7 @@ import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
-import { validateSkillOutput, summarizeValidation } from "./guards/outputGuard.ts";
+import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker } from "./guards/outputGuard.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 import { sectorRankingSkill } from "./skills/sectorRanking.ts";
 import { comparisonSkill } from "./skills/comparison.ts";
@@ -607,6 +607,21 @@ export async function process(
     content = await synthesize(systemPrompt, skillOut.datapack, question);
     // Stub path didn't stream — emit once so the SSE pipe has something.
     try { onChunk?.(content); } catch (_) { /* noop */ }
+  }
+
+  // P1-C — Defence-in-depth: scrub any residual <!--CITEDSOURCESHERE--> marker
+  // (literal or LLM-decorated) from BOTH `content` and the corresponding
+  // pre_rendered_tables[0] so neither path leaks the comment to the SSE.
+  {
+    const c = scrubCitedSourcesMarker(content);
+    if (c.scrubbed) {
+      console.warn(`[outputGuard] marker_scrubbed_post_skill skill=${skill.name}`);
+      content = c.text;
+      if (skillOut.datapack.pre_rendered_tables.length > 0) {
+        const t0 = scrubCitedSourcesMarker(skillOut.datapack.pre_rendered_tables[0]);
+        skillOut.datapack.pre_rendered_tables[0] = t0.text;
+      }
+    }
   }
 
   // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
