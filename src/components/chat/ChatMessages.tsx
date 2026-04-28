@@ -64,8 +64,8 @@ export function ChatMessages({
     // appended by the skill post-stream. Abort cleanly with a toast.
     if (message.isStreaming) {
       toast({
-        title: tr.pdfExportBlockedTitle ?? "Informe en generación",
-        description: tr.pdfExportBlockedDesc ?? "Espera a que termine de generarse para descargar el informe.",
+        title: "Informe en generación",
+        description: "Espera a que termine de generarse para descargar el informe.",
       });
       return;
     }
