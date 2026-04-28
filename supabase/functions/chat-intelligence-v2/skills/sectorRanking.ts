@@ -107,7 +107,92 @@ function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: numb
 }
 
 const RANKING_SELECT =
-  "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from";
+  "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from, 07_period_to, " +
+  // P1-C.1 — 8 dimension scores so Sec.3 ("análisis empresa por empresa")
+  // can show strongest/weakest per ticker (parity with single-entity).
+  // Columns are taken from datapack/builder.ts FULL_SELECT (single source
+  // of truth for dimension naming). aggregateRanking does NOT read these,
+  // so the ranking RIX values remain bit-identical.
+  "23_nvm_score, 26_drm_score, 29_sim_score, 32_rmm_score, " +
+  "35_cem_score, 38_gam_score, 41_dcm_score, 44_cxm_score";
+
+// P1-C.1 — Per-company dimension aggregation for Sec.3 of sector reports.
+// For each (ticker, dimension), compute the mean across all (model × week)
+// rows. Mirrors what computePeriodAggregation does for a single entity but
+// partitioned per ticker. Pure function — no SQL, no I/O. Identifies
+// strongest (max) and weakest (min) dimension per ticker.
+const DIMENSION_COLS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"|"CEM"|"GAM"|"DCM"|"CXM" }> = [
+  { key: "23_nvm_score", metric: "NVM" },
+  { key: "26_drm_score", metric: "DRM" },
+  { key: "29_sim_score", metric: "SIM" },
+  { key: "32_rmm_score", metric: "RMM" },
+  { key: "35_cem_score", metric: "CEM" },
+  { key: "38_gam_score", metric: "GAM" },
+  { key: "41_dcm_score", metric: "DCM" },
+  { key: "44_cxm_score", metric: "CXM" },
+];
+
+function buildPerCompanyDimensionsBlock(
+  rows: any[],
+  logTag: string,
+): { block: string; tickersWithDims: number; tickersWithoutDims: number } {
+  const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
+  for (const r of rows) {
+    const t = String(r["05_ticker"] ?? "").trim();
+    if (!t) continue;
+    const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), dims: new Map() };
+    for (const { key, metric } of DIMENSION_COLS) {
+      const raw = r[key];
+      const v = typeof raw === "number" ? raw : parseFloat(raw);
+      if (!Number.isFinite(v)) continue;
+      if (!slot.dims.has(metric)) slot.dims.set(metric, []);
+      slot.dims.get(metric)!.push(v);
+    }
+    byTicker.set(t, slot);
+  }
+  if (byTicker.size === 0) {
+    return { block: "", tickersWithDims: 0, tickersWithoutDims: 0 };
+  }
+  const lines: string[] = [
+    "**MÉTRICAS DIMENSIONALES POR EMPRESA (úsalas LITERALMENTE en la sección 3 'análisis empresa por empresa'):**",
+    "Para cada empresa: usa los 8 valores reales y declara explícitamente la métrica más fuerte (max) y la más débil (min) calculadas más abajo. PROHIBIDO escribir 'dato no disponible' si la dimensión tiene un valor numérico aquí.",
+    "",
+    "| Empresa | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM | Más fuerte | Más débil |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
+  ];
+  let withDims = 0;
+  let withoutDims = 0;
+  for (const [ticker, info] of byTicker) {
+    const means: Record<string, number> = {};
+    let dimsPresent = 0;
+    for (const { metric } of DIMENSION_COLS) {
+      const arr = info.dims.get(metric);
+      if (arr && arr.length > 0) {
+        means[metric] = arr.reduce((a, b) => a + b, 0) / arr.length;
+        dimsPresent += 1;
+      }
+    }
+    if (dimsPresent === 0) {
+      withoutDims += 1;
+      console.log(`${logTag} sector_path=true | ticker=${ticker} | dims_present=0 | fallback=DATA_UNAVAILABLE`);
+      continue;
+    }
+    withDims += 1;
+    const cells = DIMENSION_COLS.map(({ metric }) => fmt(means[metric]));
+    const present = Object.entries(means);
+    let strongest = present[0];
+    let weakest = present[0];
+    for (const e of present) {
+      if (e[1] > strongest[1]) strongest = e;
+      if (e[1] < weakest[1]) weakest = e;
+    }
+    const strongestLabel = `${strongest[0]} (${fmt(strongest[1])})`;
+    const weakestLabel = `${weakest[0]} (${fmt(weakest[1])})`;
+    lines.push(`| ${info.name} (${ticker}) | ${cells.join(" | ")} | ${strongestLabel} | ${weakestLabel} |`);
+    console.log(`${logTag} sector_path=true | ticker=${ticker} | dims_present=${dimsPresent} | strongest=${strongestLabel} | weakest=${weakestLabel}`);
+  }
+  return { block: lines.join("\n"), tickersWithDims: withDims, tickersWithoutDims: withoutDims };
+}
 
 // P1-A.2 — separate, heavier SELECT used ONLY to aggregate raw response
 // columns (URLs) for sector-wide citations. Kept distinct from RANKING_SELECT
@@ -446,6 +531,7 @@ function buildUserMessageWithAssembler(
   competitiveContext: string,
   citedSourcesSummary: string,
   perCompanySources: string,
+  perCompanyDimensions: string,
 ): string {
   const metrics = metricsFromRows(rawRows);
   const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", competitiveContext });
@@ -478,6 +564,8 @@ function buildUserMessageWithAssembler(
     "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
     "",
     buildPreRenderedSection(rankingTable, blocks, methodology),
+    "",
+    perCompanyDimensions,
     "",
     perCompanySources,
     "",
@@ -562,6 +650,9 @@ export const sectorRankingSkill: Skill = {
     const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
     console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
     const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    // P1-C.1 — forensic log for dimension propagation in sector path.
+    const _uniqTickers = new Set(rows.map((r) => r["05_ticker"]).filter(Boolean)).size;
+    console.log(`[RIX-V2][companyAnalysis] dimension_metrics_fetched | tickers=${_uniqTickers} | rows=${rows.length} | window=${sqlFrom}→${sqlTo}`);
     // TAREA -1.D — Recompute temporal coverage from the REAL fetched rows.
     // `parsed.temporal.snapshots_available` comes from reconcileWindow which
     // applies a 2000-row LIMIT and can collapse to 2 weeks for large groups
@@ -672,6 +763,7 @@ export const sectorRankingSkill: Skill = {
       competitiveContext,
       citedSourcesSummary,
       perCompanySources,
+      buildPerCompanyDimensionsBlock(rows, `[RIX-V2][companyAnalysis]`).block,
     );
     // P1-A.2 — Buffer the LLM output instead of streaming raw chunks. The
     // marker substitution happens AFTER the LLM finishes, so streaming raw
