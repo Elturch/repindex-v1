@@ -212,6 +212,47 @@ async function fetchRankingRows(
   return all;
 }
 
+// P1-A.2 — Fetch raw response columns for sector scope so we can aggregate
+// cited URLs across ALL companies in the leaderboard (not just the seed
+// entity). Uses the same scope filters as fetchRankingRows but with the
+// heavier SOURCE_SELECT projection. Capped at 5 pages × 1000 = 5k rows
+// (≈ 130 issuers × 6 models × 13 weeks max for IBEX-35).
+async function fetchSectorSourceRows(
+  supabase: any,
+  fromISO: string,
+  toISO: string,
+  sector: string | null,
+  ibexOnly: boolean,
+  scopeTickers?: string[] | null,
+): Promise<any[]> {
+  let q = supabase
+    .from("rix_runs_v2")
+    .select(SOURCE_SELECT)
+    .gte("06_period_from", fromISO)
+    .lte("06_period_from", toISO);
+  if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
+    const upper = scopeTickers.map((t) => String(t).toUpperCase());
+    q = q.in("05_ticker", upper);
+  } else if ((sector && sector.trim().length > 0) || ibexOnly) {
+    let scopeQ = supabase.from("repindex_root_issuers").select("ticker");
+    if (sector && sector.trim().length > 0) scopeQ = scopeQ.eq("sector_category", sector);
+    if (ibexOnly) scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
+    const { data: tks } = await scopeQ;
+    const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
+    if (list.length > 0) q = q.in("05_ticker", list);
+  }
+  const all: any[] = [];
+  for (let p = 0; p < 8; p++) {
+    const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
+    if (error) { console.error("[RIX-V2][sectorRanking] sourceRows", error.message); break; }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < 1000) break;
+  }
+  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0}`);
+  return all;
+}
+
 function aggregateRanking(rows: any[], topN: number): RankingRow[] {
   // PARIDAD BIT-IDÉNTICA con dashboard (c2):
   //   1) Agrupar por (ticker, semana) → aggregateConsensus por snapshot semanal
