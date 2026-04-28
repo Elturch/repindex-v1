@@ -109,6 +109,25 @@ function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: numb
 const RANKING_SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from";
 
+// P1-A.2 — separate, heavier SELECT used ONLY to aggregate raw response
+// columns (URLs) for sector-wide citations. Kept distinct from RANKING_SELECT
+// so the ranking aggregation stays cheap (12k+ rows) and we only pull the
+// raw text columns once per sweep window.
+const SOURCE_SELECT = [
+  "05_ticker",
+  "03_target_name",
+  "06_period_from",
+  "07_period_to",
+  "batch_execution_date",
+  "20_res_gpt_bruto",
+  "21_res_perplex_bruto",
+  "22_res_gemini_bruto",
+  "23_res_deepseek_bruto",
+  "respuesta_bruto_claude",
+  "respuesta_bruto_grok",
+  "respuesta_bruto_qwen",
+].join(", ");
+
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
   ["perplexity", "Perplexity"],
