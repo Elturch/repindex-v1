@@ -340,29 +340,27 @@ export const companyAnalysisSkill: Skill = {
     // Substitute the placeholder with the full cited-sources bibliography.
     // If the LLM forgot the marker, append the block at the end. Either way,
     // emit the resulting block via onChunk so the streaming client sees it.
-    if (citedSourcesFull && citedSourcesFull.trim().length > 0) {
+    // P1-A — Always substitute the marker. See sectorRanking.ts for rationale.
+    {
       const MARKER = "<!--CITEDSOURCESHERE-->";
-      // Tolerant matcher: o3 sometimes emits the marker with markdown decorations
-      // inside the HTML comment (e.g. "<!--**CITED**_**SOURCES**_**HERE**-->"
-      // or "<!-- CITED SOURCES HERE -->"). The strict literal substring fails
-      // in those cases and the raw comment leaks into the rendered PDF/HTML.
-      // The regex below accepts any combination of *, _, whitespace and HTML
-      // emphasis tags between the three keywords, with optional spaces inside
-      // the comment delimiters.
       const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
-      if (finalContent.includes(MARKER) || MARKER_RE.test(finalContent)) {
+      const hasUrls = !!(citedSourcesFull && citedSourcesFull.trim().length > 0);
+      const replacement = hasUrls
+        ? citedSourcesFull
+        : "_No hay fuentes verificables en este período._";
+      const markerPresent = finalContent.includes(MARKER) || MARKER_RE.test(finalContent);
+      if (markerPresent) {
         finalContent = finalContent.includes(MARKER)
-          ? finalContent.replace(MARKER, citedSourcesFull)
-          : finalContent.replace(MARKER_RE, citedSourcesFull);
-        try { onChunk?.("\n\n" + citedSourcesFull); } catch (_) { /* noop */ }
-      } else {
-        const tail = "\n\n" + citedSourcesFull;
+          ? finalContent.replace(MARKER, replacement)
+          : finalContent.replace(MARKER_RE, replacement);
+        try { onChunk?.("\n\n" + replacement); } catch (_) { /* noop */ }
+      } else if (hasUrls) {
+        const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
         try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
-      // Final safety net: scrub any residual variants of the marker that may
-      // still be present (e.g. duplicates emitted by the LLM).
-      finalContent = finalContent.replace(MARKER_RE, "").replace(MARKER, "");
+      finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
+      console.log(`${tag} cited_sources_substitution | hasUrls=${hasUrls} markerPresent=${markerPresent}`);
     }
 
     // 6. Inject the final content as the FIRST pre-rendered "table"
