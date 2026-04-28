@@ -109,6 +109,25 @@ function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: numb
 const RANKING_SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from";
 
+// P1-A.2 — separate, heavier SELECT used ONLY to aggregate raw response
+// columns (URLs) for sector-wide citations. Kept distinct from RANKING_SELECT
+// so the ranking aggregation stays cheap (12k+ rows) and we only pull the
+// raw text columns once per sweep window.
+const SOURCE_SELECT = [
+  "05_ticker",
+  "03_target_name",
+  "06_period_from",
+  "07_period_to",
+  "batch_execution_date",
+  "20_res_gpt_bruto",
+  "21_res_perplex_bruto",
+  "22_res_gemini_bruto",
+  "23_res_deepseek_bruto",
+  "respuesta_bruto_claude",
+  "respuesta_bruto_grok",
+  "respuesta_bruto_qwen",
+].join(", ");
+
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
   ["perplexity", "Perplexity"],
@@ -190,6 +209,47 @@ async function fetchRankingRows(
     if (data.length < 1000) break;
   }
   console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"} | scope_tickers=${scopeTickers?.length ?? 0}`);
+  return all;
+}
+
+// P1-A.2 — Fetch raw response columns for sector scope so we can aggregate
+// cited URLs across ALL companies in the leaderboard (not just the seed
+// entity). Uses the same scope filters as fetchRankingRows but with the
+// heavier SOURCE_SELECT projection. Capped at 5 pages × 1000 = 5k rows
+// (≈ 130 issuers × 6 models × 13 weeks max for IBEX-35).
+async function fetchSectorSourceRows(
+  supabase: any,
+  fromISO: string,
+  toISO: string,
+  sector: string | null,
+  ibexOnly: boolean,
+  scopeTickers?: string[] | null,
+): Promise<any[]> {
+  let q = supabase
+    .from("rix_runs_v2")
+    .select(SOURCE_SELECT)
+    .gte("06_period_from", fromISO)
+    .lte("06_period_from", toISO);
+  if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
+    const upper = scopeTickers.map((t) => String(t).toUpperCase());
+    q = q.in("05_ticker", upper);
+  } else if ((sector && sector.trim().length > 0) || ibexOnly) {
+    let scopeQ = supabase.from("repindex_root_issuers").select("ticker");
+    if (sector && sector.trim().length > 0) scopeQ = scopeQ.eq("sector_category", sector);
+    if (ibexOnly) scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
+    const { data: tks } = await scopeQ;
+    const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
+    if (list.length > 0) q = q.in("05_ticker", list);
+  }
+  const all: any[] = [];
+  for (let p = 0; p < 8; p++) {
+    const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
+    if (error) { console.error("[RIX-V2][sectorRanking] sourceRows", error.message); break; }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < 1000) break;
+  }
+  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0}`);
   return all;
 }
 
@@ -588,13 +648,17 @@ export const sectorRankingSkill: Skill = {
     ].filter(Boolean).join("\n\n");
 
     const competitiveContext = await buildCompetitiveContextBlock(supabase, ranking);
-    // Cited sources (real URLs from raw-response columns). Pre-rendered as a
-    // markdown block; appended AFTER streaming via the marker substitution.
-    const citedSourcesReport = extractCitedSources(rows);
+    // P1-A.2 — Aggregate cited URLs across the FULL sector scope by issuing
+    // a second SQL with the heavy raw-response columns. RANKING_SELECT is too
+    // narrow (no raw text), so the previous extractCitedSources(rows) always
+    // yielded 0 URLs in sector reports. We now call fetchSectorSourceRows()
+    // and feed those rows into extractCitedSources/renderCitedSourcesBlock.
+    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    const citedSourcesReport = extractCitedSources(sourceRows);
     const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
     const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
-    const perCompanySources = buildPerCompanySourceList(rows);
-    console.log(`${tag} cited sources | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
+    const perCompanySources = buildPerCompanySourceList(sourceRows);
+    console.log(`${tag} sector cited sources | source_rows=${sourceRows.length} | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
 
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
@@ -609,22 +673,23 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
     );
+    // P1-A.2 — Buffer the LLM output instead of streaming raw chunks. The
+    // marker substitution happens AFTER the LLM finishes, so streaming raw
+    // chunks would leak the literal `<!--CITEDSOURCESHERE-->` to the UI
+    // before we get a chance to replace it. We emit the sanitized
+    // finalContent in a single onChunk call below.
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "o3",
       reasoning_effort: "medium",
       maxTokens: 32000,
       temperature: 0,
-      onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
+      onChunk: (_d) => { /* buffered: do not stream raw LLM output */ },
     });
 
     let finalContent = fullText && fullText.trim().length > 0
       ? fullText
-      : (() => {
-          const fb = `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
-          try { onChunk?.(fb); } catch (_) { /* noop */ }
-          return fb;
-        })();
+      : `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
 
     // P1-A — ALWAYS substitute the cited-sources marker, even when there are
     // no verifiable URLs. Previously the entire substitution was skipped when
@@ -642,11 +707,9 @@ export const sectorRankingSkill: Skill = {
         finalContent = finalContent.includes(MARKER)
           ? finalContent.replace(MARKER, replacement)
           : finalContent.replace(MARKER_RE, replacement);
-        try { onChunk?.("\n\n" + replacement); } catch (_) { /* noop */ }
       } else if (hasUrls) {
         const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
-        try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
       // Final safety net: scrub residual variants of the marker if any survived.
       finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
@@ -657,8 +720,12 @@ export const sectorRankingSkill: Skill = {
     {
       const _s7 = ensureSection7(finalContent, metricsFromRows(rows));
       finalContent = _s7.content;
-      if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }
+
+    // P1-A.2 — Emit the fully-sanitized finalContent as a single chunk
+    // (post-marker, post-Sec7). This is the ONLY place where chunks reach
+    // the UI for the sector path, guaranteeing no marker leak in stream.
+    try { onChunk?.(finalContent); } catch (_) { /* noop */ }
 
     return {
       datapack: {

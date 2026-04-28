@@ -20,6 +20,7 @@ export interface OutputValidationResult {
     hasSection7: boolean;
     hasCitedSources: boolean;
     hasMarkerLeak: boolean;
+    hasLiteralMarkerLeak: boolean;
   };
 }
 
@@ -64,7 +65,13 @@ export function validateSkillOutput(
 
   const hasSection7 = SECTION_7_RE.test(safe);
   const hasCitedSources = CITED_SOURCES_RE.test(safe);
-  const hasMarkerLeak = safe.includes(MARKER_LITERAL) || MARKER_RE.test(safe);
+  // P1-A.2 — Split marker detection into two signals:
+  //   • hasLiteralMarkerLeak  → exact "<!--CITEDSOURCESHERE-->" survived
+  //     (substitution code did not run).  ERROR: MARKER_NOT_STRIPPED.
+  //   • hasMarkerLeak         → tolerant regex catches typo'd / formatted
+  //     variants (e.g. wrapped in <strong>).  ERROR: MARKER_LEAK.
+  const hasLiteralMarkerLeak = safe.includes(MARKER_LITERAL);
+  const hasMarkerLeak = hasLiteralMarkerLeak || MARKER_RE.test(safe);
 
   if (length === 0) {
     issues.push({
@@ -80,11 +87,17 @@ export function validateSkillOutput(
     });
   }
 
-  if (hasMarkerLeak) {
+  if (hasLiteralMarkerLeak) {
+    issues.push({
+      level: "error",
+      code: "MARKER_NOT_STRIPPED",
+      message: "Literal cited-sources marker '<!--CITEDSOURCESHERE-->' present in final output (substitution skipped).",
+    });
+  } else if (hasMarkerLeak) {
     issues.push({
       level: "error",
       code: "MARKER_LEAK",
-      message: "Cited-sources marker leaked to final output (replacement failed).",
+      message: "Cited-sources marker variant leaked to final output (tolerant regex match).",
     });
   }
 
@@ -116,7 +129,7 @@ export function validateSkillOutput(
   return {
     ok,
     issues,
-    meta: { length, hasSection7, hasCitedSources, hasMarkerLeak },
+    meta: { length, hasSection7, hasCitedSources, hasMarkerLeak, hasLiteralMarkerLeak },
   };
 }
 
