@@ -650,7 +650,12 @@ export const sectorRankingSkill: Skill = {
     }
 
     return {
-      datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
+      datapack: {
+        ...datapack,
+        pre_rendered_tables: [finalContent, table],
+        // P0-1 — Structured cited-sources report for SSE done metadata.
+        cited_sources_report: citedSourcesReport,
+      },
       prompt_modules: modules,
       metadata: buildMetadata(ranking, rows, sqlFrom, sqlTo, models),
     };

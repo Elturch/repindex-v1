@@ -21,6 +21,7 @@ import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
+import { validateSkillOutput, summarizeValidation } from "./guards/outputGuard.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 import { sectorRankingSkill } from "./skills/sectorRanking.ts";
 import { comparisonSkill } from "./skills/comparison.ts";
@@ -606,6 +607,28 @@ export async function process(
     content = await synthesize(systemPrompt, skillOut.datapack, question);
     // Stub path didn't stream — emit once so the SSE pipe has something.
     try { onChunk?.(content); } catch (_) { /* noop */ }
+  }
+
+  // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
+  // canonical Section 7 + Cited Sources (companyAnalysis, sectorRanking) are
+  // checked stricter; others only get the basic empty/marker-leak checks.
+  try {
+    const requiresFullSchema =
+      skill.name === "companyAnalysis" || skill.name === "sectorRanking";
+    const validation = validateSkillOutput(content, {
+      requireSection7: requiresFullSchema,
+      requireCitedSources: requiresFullSchema,
+    });
+    if (validation.issues.length > 0) {
+      console.warn(summarizeValidation(skill.name, validation));
+      for (const issue of validation.issues) {
+        console.warn(`[outputGuard] ${skill.name} ${issue.level} ${issue.code}: ${issue.message}`);
+      }
+    } else {
+      console.log(summarizeValidation(skill.name, validation));
+    }
+  } catch (guardErr) {
+    console.warn("[outputGuard] failed (non-fatal):", guardErr);
   }
 
   // 11. Response

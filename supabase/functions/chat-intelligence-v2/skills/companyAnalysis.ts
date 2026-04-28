@@ -376,6 +376,9 @@ export const companyAnalysisSkill: Skill = {
     const enrichedDatapack: DataPack = {
       ...datapack,
       pre_rendered_tables: [finalContent, ...datapack.pre_rendered_tables],
+      // P0-1 — Structured cited-sources report for SSE done metadata.
+      // index.ts adapts this to VerifiedSource[] (PDF bibliography input).
+      cited_sources_report: citedSourcesReport,
     };
 
     return {

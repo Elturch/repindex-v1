@@ -55,6 +55,20 @@ export function ChatMessages({
   const showPreviewSignals = isPreviewEnvironment();
 
   const downloadMessage = (message: Message) => {
+    // P0-2 — Defense in depth: even though the Download button is hidden
+    // during streaming (`!message.isStreaming` guard ~line 364) and
+    // MarkdownMessage receives `showDownload={false}`, any future call
+    // site (keyboard shortcut, programmatic invocation, nested button)
+    // MUST NOT capture a partial snapshot of `message.content` before
+    // Section 7 (Recomendaciones) and the cited-sources tail are
+    // appended by the skill post-stream. Abort cleanly with a toast.
+    if (message.isStreaming) {
+      toast({
+        title: "Informe en generación",
+        description: "Espera a que termine de generarse para descargar el informe.",
+      });
+      return;
+    }
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const roleName = message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined;
     const htmlContent = generateExportHtml(
