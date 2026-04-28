@@ -23,6 +23,7 @@ import {
   selectBlocks,
   ensureSection7,
 } from "../datapack/reportAssembler.ts";
+import { extractCitedSources } from "../datapack/citedSources.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -315,8 +316,16 @@ export const modelDivergenceSkill: Skill = {
       if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }
 
+    // P1-B — populate cited_sources_report so index.ts/verifiedSourcesAdapter
+    // can ship VerifiedSource[] in SSE done.metadata for the PDF bibliography.
+    const _divergenceCited = extractCitedSources(workingRows);
+
     return {
-      datapack: { ...datapack, pre_rendered_tables: [finalContent, table] },
+      datapack: {
+        ...datapack,
+        pre_rendered_tables: [finalContent, table],
+        cited_sources_report: _divergenceCited,
+      },
       prompt_modules: ["base", "antiHallucination", "divergenceMode"],
       metadata: buildMetadata(aggs, parsed.temporal.from, parsed.temporal.to, sigmaRix),
     };
