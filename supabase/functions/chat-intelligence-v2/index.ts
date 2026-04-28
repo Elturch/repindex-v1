@@ -7,6 +7,8 @@ import type { ConversationMessage } from "./types.ts";
 import { runAllTests } from "./tests/regression.ts";
 import { parseTemporalIntent } from "../_shared/temporalGuard.ts";
 import { parseTemporal } from "./parsers/temporalParser.ts";
+import { toVerifiedSources } from "./datapack/verifiedSourcesAdapter.ts";
+import type { CitedSourcesReport } from "./datapack/citedSources.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -296,6 +298,15 @@ serve(async (req: Request) => {
               snapshots_available: result.datapack?.temporal?.snapshots_available ?? null,
               snapshots_expected: result.datapack?.temporal?.snapshots_expected ?? null,
               window_reason: result.datapack?.temporal?.window_reason ?? null,
+              // P0-1 — Structured verifiedSources for the FE bibliography
+              // (PDF/HTML export). Empty array when the active skill did
+              // not produce a CitedSourcesReport (e.g. comparison /
+              // modelDivergence today — pending P1 unification).
+              verifiedSources: toVerifiedSources(
+                result.datapack?.cited_sources_report as CitedSourcesReport | undefined,
+                result.datapack?.temporal?.from,
+                result.datapack?.temporal?.to,
+              ),
             },
             suggestedQuestions: [],
             drumrollQuestion: null,
