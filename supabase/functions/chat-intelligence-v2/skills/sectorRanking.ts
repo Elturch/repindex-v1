@@ -648,13 +648,17 @@ export const sectorRankingSkill: Skill = {
     ].filter(Boolean).join("\n\n");
 
     const competitiveContext = await buildCompetitiveContextBlock(supabase, ranking);
-    // Cited sources (real URLs from raw-response columns). Pre-rendered as a
-    // markdown block; appended AFTER streaming via the marker substitution.
-    const citedSourcesReport = extractCitedSources(rows);
+    // P1-A.2 — Aggregate cited URLs across the FULL sector scope by issuing
+    // a second SQL with the heavy raw-response columns. RANKING_SELECT is too
+    // narrow (no raw text), so the previous extractCitedSources(rows) always
+    // yielded 0 URLs in sector reports. We now call fetchSectorSourceRows()
+    // and feed those rows into extractCitedSources/renderCitedSourcesBlock.
+    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    const citedSourcesReport = extractCitedSources(sourceRows);
     const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
     const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
-    const perCompanySources = buildPerCompanySourceList(rows);
-    console.log(`${tag} cited sources | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
+    const perCompanySources = buildPerCompanySourceList(sourceRows);
+    console.log(`${tag} sector cited sources | source_rows=${sourceRows.length} | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
 
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
@@ -669,22 +673,23 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
     );
+    // P1-A.2 — Buffer the LLM output instead of streaming raw chunks. The
+    // marker substitution happens AFTER the LLM finishes, so streaming raw
+    // chunks would leak the literal `<!--CITEDSOURCESHERE-->` to the UI
+    // before we get a chance to replace it. We emit the sanitized
+    // finalContent in a single onChunk call below.
     const { fullText, error } = await streamOpenAIResponse({
       systemPrompt, userMessage, logPrefix: tag,
       model: "o3",
       reasoning_effort: "medium",
       maxTokens: 32000,
       temperature: 0,
-      onChunk: (d) => { try { onChunk?.(d); } catch (_) { /* noop */ } },
+      onChunk: (_d) => { /* buffered: do not stream raw LLM output */ },
     });
 
     let finalContent = fullText && fullText.trim().length > 0
       ? fullText
-      : (() => {
-          const fb = `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
-          try { onChunk?.(fb); } catch (_) { /* noop */ }
-          return fb;
-        })();
+      : `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
 
     // P1-A — ALWAYS substitute the cited-sources marker, even when there are
     // no verifiable URLs. Previously the entire substitution was skipped when
@@ -702,11 +707,9 @@ export const sectorRankingSkill: Skill = {
         finalContent = finalContent.includes(MARKER)
           ? finalContent.replace(MARKER, replacement)
           : finalContent.replace(MARKER_RE, replacement);
-        try { onChunk?.("\n\n" + replacement); } catch (_) { /* noop */ }
       } else if (hasUrls) {
         const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
-        try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
       // Final safety net: scrub residual variants of the marker if any survived.
       finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
@@ -717,8 +720,12 @@ export const sectorRankingSkill: Skill = {
     {
       const _s7 = ensureSection7(finalContent, metricsFromRows(rows));
       finalContent = _s7.content;
-      if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }
+
+    // P1-A.2 — Emit the fully-sanitized finalContent as a single chunk
+    // (post-marker, post-Sec7). This is the ONLY place where chunks reach
+    // the UI for the sector path, guaranteeing no marker leak in stream.
+    try { onChunk?.(finalContent); } catch (_) { /* noop */ }
 
     return {
       datapack: {
