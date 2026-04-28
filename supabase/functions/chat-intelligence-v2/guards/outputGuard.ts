@@ -37,6 +37,20 @@ const CITED_SOURCES_RE = /Fuentes\s+citadas|Referencias\s+citadas|Bibliograf[íi
 const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
 const MARKER_LITERAL = "<!--CITEDSOURCESHERE-->";
 
+// P1-C — Exported scrub helper used by the orchestrator as a defence-in-depth
+// safety net AFTER the skill returns. Idempotent: returns the same string when
+// no marker is present. Only matches inside HTML comment delimiters, so plain
+// narrative text containing the words CITED/SOURCES is NEVER altered.
+export const MARKER_RE_TOLERANT = MARKER_RE;
+export function scrubCitedSourcesMarker(text: string | null | undefined): { text: string; scrubbed: boolean } {
+  const safe = (text ?? "").toString();
+  if (!safe.includes(MARKER_LITERAL) && !MARKER_RE.test(safe)) {
+    return { text: safe, scrubbed: false };
+  }
+  const cleaned = safe.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER_LITERAL).join("");
+  return { text: cleaned, scrubbed: cleaned !== safe };
+}
+
 export function validateSkillOutput(
   content: string | null | undefined,
   opts: OutputValidationOptions = {},
