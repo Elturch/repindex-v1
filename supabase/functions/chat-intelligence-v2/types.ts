@@ -102,6 +102,15 @@ export interface DataPack {
   pre_rendered_tables: string[];
   period_summary?: { rix_mean: number; rix_trend: string; strongest: MetricName; weakest: MetricName; most_volatile: MetricName };
   consensus?: { ranking_position: number; total_companies: number; divergence: number };
+  /**
+   * P0-1 — Optional structured cited-sources report attached by skills that
+   * compute it (companyAnalysis, sectorRanking). Consumed by index.ts to
+   * emit the `verifiedSources` field in the SSE `done` metadata so the
+   * frontend bibliography renderer (PDF/HTML export) has structured data.
+   * Typed as `unknown` here to avoid pulling the datapack module into the
+   * shared types file; the consumer casts to CitedSourcesReport.
+   */
+  cited_sources_report?: unknown;
 }
 
 export interface SkillInput {
