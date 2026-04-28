@@ -318,8 +318,8 @@ export const companyAnalysisSkill: Skill = {
       userMessage,
       logPrefix: tag,
       model: "o3",
-      reasoning_effort: "medium",
-      maxTokens: 32000,
+      reasoning_effort: "low",
+      maxTokens: 48000,
       temperature: 0,
       onChunk: (delta) => { try { onChunk?.(delta); } catch (_) { /* noop */ } },
     });
@@ -327,6 +327,20 @@ export const companyAnalysisSkill: Skill = {
     if (!finalContent || finalContent.trim().length === 0) {
       finalContent = buildFallbackContent(datapack, error);
       try { onChunk?.(finalContent); } catch (_) { /* noop */ }
+    }
+
+    // Safety net: si el LLM truncó antes de la sección 7 (Recomendaciones),
+    // append simétrico replicando la rama else de citedSources más abajo.
+    // Detecta ausencia de la sección 7 / "Recomendaciones priorizadas" en el
+    // contenido emitido y la añade al final usando el bloque canónico.
+    const HAS_SECTION_7 = /(^|\n)\s*##\s*7\.|Recomendaciones\s+priorizadas/i.test(finalContent);
+    if (!HAS_SECTION_7) {
+      const recsBlock = renderRecommendationsBlock(datapack.metrics);
+      if (recsBlock && recsBlock.trim().length > 0) {
+        const tail = "\n\n## 7. Recomendaciones priorizadas\n\n" + recsBlock;
+        finalContent = finalContent + tail;
+        try { onChunk?.(tail); } catch (_) { /* noop */ }
+      }
     }
 
     // Substitute the placeholder with the full cited-sources bibliography.
