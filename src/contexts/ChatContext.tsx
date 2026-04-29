@@ -775,6 +775,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Step 3 — declared outside try so the finally block can clear the v2
     // safety timeout regardless of where the failure happened.
     let v2AbortTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    // P2-A — hoisted so the catch block can classify the abort vector.
+    let v2AbortReason: 'client_timeout' | 'manual' | null = null;
+    let __metricsChunks = 0;
 
     try {
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
@@ -915,14 +918,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // assistant message right before we mark it complete (preview-only UI).
       const __metricsStart = performance.now();
       let __metricsFirstChunkAt: number | null = null;
-      let __metricsChunks = 0;
 
       // v2 calls get an extra 90s safety timeout so a hung stream triggers
       // the fallback rather than spinning forever. v1 keeps current behavior.
       const v2AbortController =
         effectiveAgentVersion === 'v2' ? new AbortController() : null;
+      // P2-A: track the reason the abort fired (declared above try-scope)
+      // so the catch block can distinguish a client-side safety timeout
+      // (V2 just slow) from a real backend failure.
       v2AbortTimeoutId = v2AbortController
-        ? setTimeout(() => v2AbortController.abort(), 90000)
+        ? setTimeout(() => {
+            v2AbortReason = 'client_timeout';
+            v2AbortController.abort();
+          }, 90000)
         : null;
 
       console.log('[FE-BE]', {
@@ -1308,11 +1316,45 @@ export function ChatProvider({ children }: ChatProviderProps) {
         });
       }
 
-      // Step 3 — automatic v1 fallback: if v2 was the failed attempt and we
-      // are NOT already in a fallback retry, warn the user and re-invoke
-      // sendMessage forcing v1. The toggle stays on v2 (UX requirement).
+      // P2-A — surgical fallback guard. Classify the failure into one of 5
+      // vectors and only fall back to V1 when the V2 backend actually died.
+      // Client-side safety timeouts and empty streams after a client abort
+      // must NOT silently downgrade to V1 (that was the spurious "V1
+      // (FALLBACK)" warning users saw on slow sectorial reports).
+      const isAbortErr =
+        error instanceof Error &&
+        (error.name === 'AbortError' ||
+          /aborted|AbortError/i.test(error.message ?? ''));
+      const isClientTimeoutAbort =
+        isAbortErr && v2AbortReason === 'client_timeout';
+      const isEmptyStreamAfterAbort =
+        isAbortErr && __metricsChunks === 0;
+      let fallbackVector:
+        | 'client_timeout'
+        | 'empty_stream_after_abort'
+        | 'manual_abort'
+        | 'http_or_backend_error'
+        | 'unknown' = 'unknown';
+      if (isClientTimeoutAbort) fallbackVector = 'client_timeout';
+      else if (isEmptyStreamAfterAbort) fallbackVector = 'empty_stream_after_abort';
+      else if (isAbortErr) fallbackVector = 'manual_abort';
+      else if (error) fallbackVector = 'http_or_backend_error';
+      const blockFallback =
+        fallbackVector === 'client_timeout' ||
+        fallbackVector === 'empty_stream_after_abort' ||
+        fallbackVector === 'manual_abort';
       const shouldFallback =
-        getAgentVersion() === 'v2' && !forceV1FallbackRef.current;
+        getAgentVersion() === 'v2' &&
+        !forceV1FallbackRef.current &&
+        !blockFallback;
+      console.log('[RIX-V2][fallback-decision]', {
+        vector: fallbackVector,
+        blockFallback,
+        shouldFallback,
+        agentVersion: getAgentVersion(),
+        v2AbortReason,
+        chunks: __metricsChunks,
+      });
       if (shouldFallback) {
         console.warn(
           '[ChatContext] v2 failed, retrying with v1 fallback. Original error:',
@@ -1329,6 +1371,17 @@ export function ChatProvider({ children }: ChatProviderProps) {
         } finally {
           forceV1FallbackRef.current = false;
         }
+        return;
+      }
+      if (blockFallback && getAgentVersion() === 'v2') {
+        toast({
+          title: 'V2 lento o sin respuesta',
+          description:
+            fallbackVector === 'client_timeout'
+              ? 'El informe V2 superó el tiempo máximo del cliente. Reintenta o cambia a V1 manualmente.'
+              : 'V2 se interrumpió antes de devolver datos. Reintenta o cambia a V1 manualmente.',
+          variant: 'destructive',
+        });
         return;
       }
 
