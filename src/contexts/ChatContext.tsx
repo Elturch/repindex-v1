@@ -921,8 +921,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // the fallback rather than spinning forever. v1 keeps current behavior.
       const v2AbortController =
         effectiveAgentVersion === 'v2' ? new AbortController() : null;
+      // P2-A: track the reason the abort fired so the catch block can
+      // distinguish a client-side safety timeout (V2 just slow) from a real
+      // backend failure. Without this, every slow sectorial report was being
+      // mis-routed into the V1 fallback.
+      let v2AbortReason: 'client_timeout' | 'manual' | null = null;
       v2AbortTimeoutId = v2AbortController
-        ? setTimeout(() => v2AbortController.abort(), 90000)
+        ? setTimeout(() => {
+            v2AbortReason = 'client_timeout';
+            v2AbortController.abort();
+          }, 90000)
         : null;
 
       console.log('[FE-BE]', {
