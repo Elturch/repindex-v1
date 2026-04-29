@@ -775,6 +775,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     // Step 3 — declared outside try so the finally block can clear the v2
     // safety timeout regardless of where the failure happened.
     let v2AbortTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    // P2-A — hoisted so the catch block can classify the abort vector.
+    let v2AbortReason: 'client_timeout' | 'manual' | null = null;
+    let __metricsChunks = 0;
 
     try {
       const role = options?.roleId ? getRoleById(options.roleId) : undefined;
@@ -915,17 +918,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // assistant message right before we mark it complete (preview-only UI).
       const __metricsStart = performance.now();
       let __metricsFirstChunkAt: number | null = null;
-      let __metricsChunks = 0;
 
       // v2 calls get an extra 90s safety timeout so a hung stream triggers
       // the fallback rather than spinning forever. v1 keeps current behavior.
       const v2AbortController =
         effectiveAgentVersion === 'v2' ? new AbortController() : null;
-      // P2-A: track the reason the abort fired so the catch block can
-      // distinguish a client-side safety timeout (V2 just slow) from a real
-      // backend failure. Without this, every slow sectorial report was being
-      // mis-routed into the V1 fallback.
-      let v2AbortReason: 'client_timeout' | 'manual' | null = null;
+      // P2-A: track the reason the abort fired (declared above try-scope)
+      // so the catch block can distinguish a client-side safety timeout
+      // (V2 just slow) from a real backend failure.
       v2AbortTimeoutId = v2AbortController
         ? setTimeout(() => {
             v2AbortReason = 'client_timeout';
