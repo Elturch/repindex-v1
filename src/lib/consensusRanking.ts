@@ -1,13 +1,15 @@
 /**
- * Shared consensus ranking algorithm — single source of truth.
+ * Shared consensus DESCRIPTOR — single source of truth.
  * Used by useLandingTopFives (home/landing) and Dashboard.
  *
- * Rules:
+ * Rules (NEW — anti-mediana, never average across AIs):
  *  - Group rows by ticker.
- *  - Compute the "majority block score":
- *      • If >= 4 models, drop the highest and lowest, average the rest.
- *      • Otherwise, plain average.
- *  - Compute "consensus level" from the score range (max - min):
+ *  - Expose min, max, range and a qualitative consensus level.
+ *  - NO trim-mean. NO single "RIX number". The caller must show the
+ *    range or pick a specific model — never collapse 6 different AIs
+ *    into one synthetic score.
+ *
+ *  Consensus level (from max − min):
  *      • <= 10  → "alto"
  *      • <= 20  → "medio"
  *      •  > 20  → "bajo"
@@ -22,7 +24,8 @@ export interface ConsensusInput {
 
 export interface ConsensusAggregate {
   ticker: string;
-  majorityScore: number;
+  min: number;
+  max: number;
   consensusLevel: ConsensusLevel;
   range: number;
   modelsCount: number;
@@ -35,8 +38,8 @@ export function classifyConsensus(range: number): ConsensusLevel {
 }
 
 /**
- * Group rows by ticker and produce one consensus aggregate per ticker.
- * Generic so callers can preserve their own row metadata via mergeMeta.
+ * Group rows by ticker and produce one consensus DESCRIPTOR per ticker
+ * (min/max/range + qualitative level). Never returns an aggregated score.
  */
 export function aggregateConsensus<T extends ConsensusInput>(
   rows: T[]
@@ -55,14 +58,13 @@ export function aggregateConsensus<T extends ConsensusInput>(
       .filter((s): s is number => typeof s === "number" && !isNaN(s));
     if (scores.length === 0) continue;
     const sorted = [...scores].sort((a, b) => a - b);
-    const range = sorted[sorted.length - 1] - sorted[0];
-    let majorityScores = sorted;
-    if (sorted.length >= 4) majorityScores = sorted.slice(1, -1);
-    const majorityScore =
-      majorityScores.reduce((a, b) => a + b, 0) / majorityScores.length;
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const range = max - min;
     result.set(ticker, {
       ticker,
-      majorityScore,
+      min,
+      max,
       consensusLevel: classifyConsensus(range),
       range,
       modelsCount: scores.length,
@@ -74,8 +76,8 @@ export function aggregateConsensus<T extends ConsensusInput>(
 const LEVEL_ORDER: Record<ConsensusLevel, number> = { alto: 0, medio: 1, bajo: 2 };
 
 /**
- * Comparator — sort by consensus level (alto → bajo) then by majority score.
- * `asc` flips the score direction (used for "bottom" rankings).
+ * Comparator — sort by consensus level (alto → bajo) then by tighter range.
+ * `asc` flips: alto last, looser range first (used for "worst consensus").
  */
 export function compareConsensus(
   a: ConsensusAggregate,
@@ -83,6 +85,16 @@ export function compareConsensus(
   asc = false
 ): number {
   const cDiff = LEVEL_ORDER[a.consensusLevel] - LEVEL_ORDER[b.consensusLevel];
-  if (cDiff !== 0) return cDiff;
-  return asc ? a.majorityScore - b.majorityScore : b.majorityScore - a.majorityScore;
+  if (cDiff !== 0) return asc ? -cDiff : cDiff;
+  // Tighter range first (better agreement) when desc; widest first when asc.
+  return asc ? b.range - a.range : a.range - b.range;
+}
+
+/**
+ * Helper for UI: render "min–max" or just the single value if min===max.
+ */
+export function formatRange(agg: { min: number; max: number } | null | undefined): string {
+  if (!agg) return "—";
+  if (agg.min === agg.max) return `${Math.round(agg.min)}`;
+  return `${Math.round(agg.min)}–${Math.round(agg.max)}`;
 }
