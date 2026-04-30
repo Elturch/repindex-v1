@@ -70,7 +70,7 @@ const TechnicalDocPanel: React.FC = () => {
               </CardHeader>
               <CardContent className="text-sm">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {['Pregunta', 'Categorización', 'Detección empresas', 'Carga unificada (rix_runs + rix_runs_v2)', 'Construcción contexto', 'LLM', 'Respuesta'].map((step, i) => (
+                  {['Pregunta', 'Categorización', 'Detección empresas', 'Carga datos (rix_runs_v2)', 'Construcción contexto', 'LLM', 'Respuesta'].map((step, i) => (
                     <React.Fragment key={step}>
                       <Badge variant="secondary" className="text-xs">{step}</Badge>
                       {i < 6 && <ArrowRight className="h-3 w-3 text-muted-foreground" />}
@@ -186,7 +186,7 @@ const TechnicalDocPanel: React.FC = () => {
                   <Badge variant="secondary">auto_generate_newsroom</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Tablas involucradas: <code className="bg-muted px-1 rounded">sweep_progress</code>, <code className="bg-muted px-1 rounded">rix_runs_v2</code>, <code className="bg-muted px-1 rounded">rix_trends</code>
+                  Tablas involucradas: <code className="bg-muted px-1 rounded">sweep_progress</code>, <code className="bg-muted px-1 rounded">rix_runs_v2</code> (única fuente de verdad; <code>rix_runs</code> y <code>rix_trends</code> deprecadas)
                 </p>
               </CardContent>
             </Card>
