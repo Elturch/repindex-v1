@@ -18,6 +18,7 @@ const Login: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
   const [savingLead, setSavingLead] = useState(false);
+  const [devLoading, setDevLoading] = useState(false);
   const [leadSaveResult, setLeadSaveResult] = useState<{
     type: 'consent' | 'no_consent';
     isCorporateEmail?: boolean;
@@ -28,7 +29,8 @@ const Login: React.FC = () => {
 
   // In dev/preview mode, skip login entirely and go to dashboard
   useEffect(() => {
-    if (isDevOrPreview()) {
+    // If in dev/preview AND no DEV button env configured, fall back to old behavior
+    if (isDevOrPreview() && !import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL) {
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
       navigate(from, { replace: true });
       return;
@@ -40,6 +42,50 @@ const Login: React.FC = () => {
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate, location]);
+
+  const handleDevLogin = useCallback(async () => {
+    setDevLoading(true);
+    setErrorMessage('');
+    try {
+      const devEmail = import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL as string | undefined;
+      const devSecret = import.meta.env.VITE_DEV_PREVIEW_LOGIN_SECRET as string | undefined;
+      if (!devEmail || !devSecret) {
+        setErrorMessage('Faltan VITE_DEV_PREVIEW_LOGIN_EMAIL / VITE_DEV_PREVIEW_LOGIN_SECRET');
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke('dev-preview-login', {
+        body: {
+          email: devEmail,
+          secret: devSecret,
+          redirect_to: `${window.location.origin}/chat`,
+        },
+      });
+      if (error || !data?.ok) {
+        setErrorMessage(`Dev login failed: ${data?.error || error?.message || 'unknown'}`);
+        return;
+      }
+      // Extract tokens from action_link fragment and setSession
+      const url = new URL(data.action_link);
+      const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
+      const access_token = hash.get('access_token');
+      const refresh_token = hash.get('refresh_token');
+      if (!access_token || !refresh_token) {
+        // Fallback: navigate the browser to the action_link to let Supabase handle the session
+        window.location.href = data.action_link;
+        return;
+      }
+      const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token });
+      if (setErr) {
+        setErrorMessage(`setSession failed: ${setErr.message}`);
+        return;
+      }
+      navigate('/chat', { replace: true });
+    } catch (e) {
+      setErrorMessage(`Dev login exception: ${(e as Error).message}`);
+    } finally {
+      setDevLoading(false);
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +205,34 @@ const Login: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {leadSaveResult ? (
+            {isDevOrPreview() && import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL ? (
+              <div className="text-center py-6 space-y-4">
+                <div className="text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
+                  Dev / Preview only
+                </div>
+                <Button
+                  onClick={handleDevLogin}
+                  disabled={devLoading}
+                  className="w-full"
+                >
+                  {devLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <span className="mr-2">🔓</span>
+                  )}
+                  Login as {String(import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL)}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Sesión Supabase real vía edge function whitelisted. No disponible en producción.
+                </p>
+                {errorMessage && (
+                  <div className="flex items-center gap-2 text-destructive text-sm justify-center bg-destructive/10 p-2 rounded">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+              </div>
+            ) : leadSaveResult ? (
               <div className="text-center py-6">
                 <div className={`mx-auto w-12 h-12 ${leadSaveResult.type === 'consent' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'} rounded-full flex items-center justify-center mb-4`}>
                   {leadSaveResult.type === 'consent' ? (
