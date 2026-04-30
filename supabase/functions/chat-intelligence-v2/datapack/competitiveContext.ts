@@ -94,9 +94,12 @@ export async function buildCompetitiveContext(
   const grouped = groupByTickerAndWeek(data ?? []);
   if (grouped.size === 0) return empty;
 
-  // PARIDAD BIT-IDÉNTICA con dashboard (c2):
-  // Por cada (ticker, semana): aggregateConsensus → majorityScore + range + level.
-  // Luego promediar majorityScores semanales y rangos; worst-case level entre semanas.
+  // ANTI-MEDIANA: por cada (ticker, semana) extraemos min/max/range/level
+  // del consenso (sin promediar entre IAs). El periodo expone:
+  //   rix_min = mínimo histórico observado
+  //   rix_max = máximo histórico observado
+  //   range   = dispersión inter-modelo media
+  //   level   = peor caso semanal (alto < medio < bajo)
   const LEVEL_RANK: Record<ConsensusLevel, number> = { alto: 0, medio: 1, bajo: 2 };
   const RANK_LEVEL: ConsensusLevel[] = ["alto", "medio", "bajo"];
   const rows: CompetitiveRow[] = [];
