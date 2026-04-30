@@ -2,18 +2,18 @@ import { supabase } from "@/integrations/supabase/client";
 
 type GetLatestRixTrendWeeksOptions = {
   desired?: number;
-  /** PostgREST default limit is 1000; use a larger page size to span weeks. */
   pageSize?: number;
-  /** Safety bound to avoid unbounded pagination. */
   maxPages?: number;
 };
 
 /**
- * Returns the latest unique `batch_week` values from `rix_trends`.
+ * FASE 1 — V2-only. Returns the latest unique `batch_execution_date` values
+ * (Sunday-anchored) from `rix_runs_v2`, formatted as `YYYY-MM-DD`. The
+ * legacy `rix_trends` table has been retired for the agent stack.
  *
- * Why pagination?
- * `rix_trends` contains ~1000+ rows per week, so a naive select() may only return
- * one week due to PostgREST's default 1000 row limit.
+ * Why pagination? rix_runs_v2 has ~1050 rows per week (175 tickers × 6 IAs),
+ * so a naive select() may only return one week due to PostgREST's 1000
+ * row default.
  */
 export async function getLatestRixTrendWeeks(
   opts: GetLatestRixTrendWeeksOptions = {},
@@ -28,18 +28,20 @@ export async function getLatestRixTrendWeeks(
   for (let page = 0; page < maxPages && weeks.length < desired; page++) {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
-      .from("rix_trends")
-      .select("batch_week")
-      .order("batch_week", { ascending: false })
+      .from("rix_runs_v2")
+      .select("batch_execution_date")
+      .order("batch_execution_date", { ascending: false })
       .range(from, to);
 
     if (error) throw error;
     if (!data || data.length === 0) break;
 
     for (const row of data) {
-      const w = row.batch_week;
-      if (!w) continue;
-      if (!weeks.includes(w)) weeks.push(w);
+      const d = (row as { batch_execution_date: string | null }).batch_execution_date;
+      if (!d) continue;
+      // Normalize to YYYY-MM-DD
+      const dateOnly = String(d).slice(0, 10);
+      if (!weeks.includes(dateOnly)) weeks.push(dateOnly);
       if (weeks.length >= desired) break;
     }
 
