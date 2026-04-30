@@ -73,6 +73,19 @@ export interface AssembleInput {
   /** Period dates — drive Window vs Reinforcement classification of cited sources. */
   periodFrom?: string | null;
   periodTo?: string | null;
+  /** ANTI-MEDIANA — submetrics_range del period_summary. Único source para
+   *  tabla principal (mode=period) y recomendaciones. Si no llega, la
+   *  tabla degrada a snapshot-only y las recomendaciones se omiten. */
+  submetricsRange?: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  >;
+  /** Rango RIX global del periodo (para la primera fila de la tabla). */
+  rixRangeSummary?: {
+    rix_min?: number | null;
+    rix_max?: number | null;
+    rix_consensus_level?: "alto" | "medio" | "bajo" | "n/d";
+  };
 }
 
 /**
@@ -82,12 +95,18 @@ export interface AssembleInput {
  */
 export function assembleReport(input: AssembleInput): AssembledReport {
   const citedSourcesReport = extractCitedSources(input.raw_rows);
+  const periodSummary = {
+    submetrics_range: input.submetricsRange,
+    rix_min: input.rixRangeSummary?.rix_min ?? null,
+    rix_max: input.rixRangeSummary?.rix_max ?? null,
+    rix_consensus_level: input.rixRangeSummary?.rix_consensus_level ?? "n/d" as const,
+  };
   return {
-    kpiTable: input.metrics.length > 0 ? renderPeriodKpiTable(input.metrics, input.mode) : "",
+    kpiTable: input.metrics.length > 0 ? renderPeriodKpiTable(input.metrics, input.mode, periodSummary) : "",
     modelBreakdown: renderModelBreakdownTable(input.raw_rows),
     temporalEvolution: renderTemporalEvolutionTable(input.raw_rows),
     divergenceStats: renderDivergenceBlock(input.raw_rows),
-    recommendations: renderRecommendationsBlock(input.metrics),
+    recommendations: renderRecommendationsBlock(input.metrics, input.submetricsRange),
     competitiveContext: input.competitiveContext ?? "",
     citedSources: renderCitedSourcesBlock(citedSourcesReport, input.periodFrom, input.periodTo),
     citedSourcesReport,
@@ -186,10 +205,14 @@ export const __test__ = { SECTIONS_BY_SKILL };
 export function ensureSection7(
   finalContent: string,
   metrics: MetricAggregation[],
+  submetricsRange?: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  >,
 ): { content: string; appended: boolean; tail: string } {
   const HAS_S7 = /(^|\n)\s*##\s*7\.|Recomendaciones\s+priorizadas/i.test(finalContent);
   if (HAS_S7) return { content: finalContent, appended: false, tail: "" };
-  const block = renderRecommendationsBlock(metrics);
+  const block = renderRecommendationsBlock(metrics, submetricsRange);
   if (!block || block.trim().length === 0) {
     return { content: finalContent, appended: false, tail: "" };
   }
