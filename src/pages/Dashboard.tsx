@@ -55,7 +55,16 @@ export function Dashboard() {
   const navigate = useNavigate();
   
   const { data: rixRuns, isLoading, error } = useUnifiedRixRuns({
-    modelFilter: aiFilter === "comparison" ? "all" : aiFilter,
+    // CONSENSUS MODE necesita las 6 IAs por ticker para calcular min/max real.
+    // Si filtramos por una IA, el "rango" colapsa a un único valor y el nivel
+    // de consenso se vuelve "Alto" falso. Forzamos 'all' cuando rankingMode
+    // === 'consensus', independientemente de lo que el toggle de IA muestre.
+    modelFilter:
+      rankingMode === "consensus"
+        ? "all"
+        : aiFilter === "comparison"
+        ? "all"
+        : aiFilter,
     companyFilter,
     sectorFilter,
     ibexFamilyFilter,
