@@ -611,33 +611,18 @@ ${generalDocs.slice(0, 5).map((d: any) => {
 
 
 // ============================================================================
-// FETCH WEEKLY DATA FROM RIX_TRENDS
+// FETCH WEEKLY DATA FROM RIX_RUNS_V2 (vía shim — rix_trends DEPRECATED)
 // ============================================================================
 async function fetchWeeklyData(supabase: any) {
-  // Get the most recent week
-  const { data: weeks } = await supabase
-    .from('rix_trends')
-    .select('batch_week')
-    .order('batch_week', { ascending: false })
-    .limit(1);
-
-  if (!weeks?.length) return null;
-
-  const currentWeek = weeks[0].batch_week;
-  const previousWeek = new Date(currentWeek);
-  previousWeek.setDate(previousWeek.getDate() - 7);
-
-  const { data: currentData } = await supabase
-    .from('rix_trends')
-    .select('*')
-    .eq('batch_week', currentWeek);
-
-  const { data: previousData } = await supabase
-    .from('rix_trends')
-    .select('*')
-    .eq('batch_week', previousWeek.toISOString().split('T')[0]);
-
-  return processWeeklyData(currentData || [], previousData || [], currentWeek);
+  const { getAvailableWeeksV2, fetchTrendShimByWeek } = await import("../_shared/rixV2TrendShim.ts");
+  const weeks = await getAvailableWeeksV2(supabase);
+  if (!weeks.length) return null;
+  const currentWeek = weeks[0];
+  // Si V2 sólo tiene una semana, previousData = [] (estado vacío controlado).
+  const previousWeek = weeks[1] ?? null;
+  const currentData = await fetchTrendShimByWeek(supabase, currentWeek);
+  const previousData = previousWeek ? await fetchTrendShimByWeek(supabase, previousWeek) : [];
+  return processWeeklyData(currentData, previousData, currentWeek);
 }
 
 
