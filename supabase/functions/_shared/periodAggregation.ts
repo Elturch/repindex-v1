@@ -34,7 +34,13 @@ export interface PeriodSummary {
   mode: "period" | "snapshot";
   weeks_count: number;
   weeks: string[];                  // sorted ascending YYYY-MM-DD
-  rix_mean: number | null;
+  // ANTI-MEDIANA: ya NO promediamos entre IAs distintas.
+  // Exponemos rango inter-modelo y matriz por IA del periodo.
+  rix_min: number | null;
+  rix_max: number | null;
+  rix_range: number | null;
+  rix_consensus_level: "alto" | "medio" | "bajo" | "n/d";
+  rix_by_model: Record<string, number | null>;  // ej: { ChatGPT: 68, "Google Gemini": 79, ... }
   rix_first: number | null;
   rix_last: number | null;
   rix_delta: number | null;
@@ -60,6 +66,13 @@ const METRIC_COLUMNS: Array<{ key: string; col: string }> = [
   { key: "DCM", col: "41_dcm_score" },
   { key: "CXM", col: "44_cxm_score" },
 ];
+
+function classifyConsensusRange(range: number | null): "alto" | "medio" | "bajo" | "n/d" {
+  if (range == null) return "n/d";
+  if (range <= 10) return "alto";
+  if (range <= 20) return "medio";
+  return "bajo";
+}
 
 function snapshotKey(r: RawRunRow): string | null {
   const d = r.batch_execution_date || r["07_period_to"] || r["06_period_from"];
@@ -172,11 +185,36 @@ export function computePeriodAggregation(rows: RawRunRow[]): PeriodAggregationRe
 
   const rix = period_aggregation["RIX"];
 
+  // ANTI-MEDIANA: matriz RIX por IA (media intra-modelo entre semanas).
+  // NO mezclamos puntuaciones de IAs distintas en un único número.
+  const rix_by_model: Record<string, number | null> = {};
+  const modelBuckets = new Map<string, number[]>();
+  for (const r of rows || []) {
+    const model = String(r["02_model_name"] ?? "").trim();
+    if (!model) continue;
+    const v = toNum(r["09_rix_score"]);
+    if (v == null) continue;
+    if (!modelBuckets.has(model)) modelBuckets.set(model, []);
+    modelBuckets.get(model)!.push(v);
+  }
+  for (const [model, vals] of modelBuckets) {
+    rix_by_model[model] = round1(mean(vals));
+  }
+  const modelScores = Object.values(rix_by_model).filter((v): v is number => v != null);
+  const rix_min = modelScores.length ? Math.min(...modelScores) : null;
+  const rix_max = modelScores.length ? Math.max(...modelScores) : null;
+  const rix_range = rix_min != null && rix_max != null ? round1(rix_max - rix_min) : null;
+  const rix_consensus_level = classifyConsensusRange(rix_range);
+
   const period_summary: PeriodSummary = {
     mode,
     weeks_count,
     weeks,
-    rix_mean: rix?.mean ?? null,
+    rix_min: round1(rix_min),
+    rix_max: round1(rix_max),
+    rix_range,
+    rix_consensus_level,
+    rix_by_model,
     rix_first: rix?.first_week_value ?? null,
     rix_last: rix?.last_week_value ?? null,
     rix_delta: rix?.delta_period ?? null,
@@ -207,6 +245,22 @@ export function renderPeriodAggregationBlock(result: PeriodAggregationResult): s
     return String(n);
   };
 
+  // Matriz RIX por IA — nueva headline anti-mediana.
+  const MODEL_ORDER = ["ChatGPT", "Google Gemini", "Grok", "Deepseek", "Perplexity", "Qwen"];
+  const matrixCells: string[] = [];
+  for (const m of MODEL_ORDER) {
+    const v = ps.rix_by_model[m];
+    if (v != null) matrixCells.push(`${m} ${v}`);
+  }
+  // Append cualquier modelo no listado (defensivo, por si cambian nombres).
+  for (const [m, v] of Object.entries(ps.rix_by_model)) {
+    if (MODEL_ORDER.includes(m)) continue;
+    if (v != null) matrixCells.push(`${m} ${v}`);
+  }
+  const matrixLine = matrixCells.length
+    ? `RIX por IA: ${matrixCells.join(" · ")} → rango ${fmt(ps.rix_range)}, consenso ${ps.rix_consensus_level}.`
+    : `RIX por IA: sin datos suficientes.`;
+
   const rows = ["RIX", "NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"]
     .map((k) => pa[k])
     .filter(Boolean)
@@ -218,7 +272,9 @@ export function renderPeriodAggregationBlock(result: PeriodAggregationResult): s
   return [
     "═══ AGREGACIÓN TEMPORAL DEL PERÍODO (PHASE 1.19a) ═══",
     `Modo: PERÍODO (no snapshot). Semanas agregadas: ${ps.weeks_count} (${rangeStart} → ${rangeEnd}).`,
-    `RIX medio del período: ${fmt(ps.rix_mean)} | Inicio→Fin: ${fmt(ps.rix_first)} → ${fmt(ps.rix_last)} | Delta período: ${sign(ps.rix_delta)} | Tendencia: ${ps.rix_trend}.`,
+    matrixLine,
+    `Rango global del periodo: ${fmt(ps.rix_min)}–${fmt(ps.rix_max)} | Consenso narrativo: ${ps.rix_consensus_level} (rango ≤10 alto · ≤20 medio · >20 bajo).`,
+    `Inicio→Fin (referencia, NO promediar entre IAs): ${fmt(ps.rix_first)} → ${fmt(ps.rix_last)} | Delta: ${sign(ps.rix_delta)} | Tendencia: ${ps.rix_trend}.`,
     ps.strongest_metric ? `Métrica más fuerte (mayor media): ${ps.strongest_metric}.` : "",
     ps.weakest_metric ? `Métrica más débil (menor media): ${ps.weakest_metric}.` : "",
     ps.most_volatile ? `Métrica más volátil (mayor sd): ${ps.most_volatile}.` : "",
@@ -228,16 +284,16 @@ export function renderPeriodAggregationBlock(result: PeriodAggregationResult): s
     "|---|---|---|---|---|---|---|",
     rows,
     "",
-    "REGLA DE AGREGACIÓN TEMPORAL (INQUEBRANTABLE):",
-    "1. PROHIBIDO decir \"esta semana\", \"cierra la semana\" o describir KPIs como si fueran de una semana puntual.",
-    "2. Usa SIEMPRE expresiones de período: \"durante el período\", \"en promedio durante el trimestre\", \"la media del período fue X\".",
-    "3. El dato principal de cada métrica es la MEDIA del período, NO el valor de la última semana.",
-    "4. El delta relevante es INICIO→FIN del período (delta_period), NO última semana vs. penúltima.",
-    "5. Menciona la tendencia con la magnitud: \"pasó de X a Y (delta Z en N semanas)\".",
+    "REGLAS (INQUEBRANTABLES):",
+    "1. ANTI-MEDIANA: NUNCA promedies puntuaciones de IAs distintas en un único número RIX.",
+    "   El headline DEBE exponer la matriz por IA y el rango (ej: 'GPT 68 · Gemini 79 · ... → rango 18, consenso medio').",
+    "2. PROHIBIDO decir \"esta semana\", \"cierra la semana\" o describir KPIs como si fueran de una semana puntual.",
+    "3. Usa expresiones de período: \"durante el período\", \"en promedio durante el trimestre\".",
+    "4. La media intra-IA por sub-métrica (columna MEDIA PERÍODO en la tabla) sí se reporta como referencia POR IA, no como verdad agregada cross-modelo.",
+    "5. El delta relevante es INICIO→FIN del período (delta_period), NO última semana vs. penúltima.",
     "6. Para métricas con volatilidad alta (sd > 5), señálalo explícitamente como inestable.",
-    "7. El Titular-Respuesta debe reflejar el período completo, no una semana suelta. Ejemplo: \"Ferrovial en Q1 2026: RIX medio de 64,5 con tendencia estable (+2 en 10 semanas)\".",
-    "8. La tabla principal de KPIs DEBE usar las columnas: INDICADOR | MEDIA PERÍODO | INICIO → FIN | DELTA PERÍODO | MIN | MAX. NO uses la cabecera \"VALOR / DELTA SEMANA PREVIA\".",
-    "9. La tabla de evolución semanal (snapshot por snapshot) se mantiene como sección complementaria.",
+    "7. Sección analítica obligatoria: párrafo de consenso narrativo (\"Las IAs coinciden en X dominios, divergen en Y. Consenso narrativo: alto/medio/bajo.\").",
+    "8. La tabla de evolución semanal (snapshot por snapshot) se mantiene como sección complementaria.",
     "═══════════════════════════════════════════════════════",
   ].filter(Boolean).join("\n");
 }
