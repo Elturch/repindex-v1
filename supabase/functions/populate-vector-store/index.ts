@@ -148,72 +148,12 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     let v1PendingEstimate = 0;
     let v2PendingEstimate = 0;
 
-    // FASE 1 — rix_runs DEPRECATED. Bloque V1 desactivado por completo.
-    // Mantenemos contadores a 0 para no romper la respuesta del endpoint.
-    if (false && (sourceFilter === 'all' || sourceFilter === 'rix_v1')) {
-      console.log('Scanning rix_runs (V1) for pending docs...');
-
-      const { count: v1Count } = await supabaseClient
-        .from('rix_runs')
-        .select('id', { count: 'exact', head: true })
-        .not('10_resumen', 'is', null);
-
-      v1Total = v1Count || 0;
-      totalRuns += v1Total;
-      console.log(`V1 total records: ${v1Total}, indexed: ${rixV1IndexedInitial}`);
-
-      v1PendingEstimate = Math.max(0, v1Total - rixV1IndexedInitial);
-      // ALWAYS scan at least one page even if estimate is 0.
-      // The estimate can be wrong when indexed > source (e.g. deleted/modified source records).
-      const v1ForceOneScan = v1PendingEstimate === 0;
-      if (v1ForceOneScan) {
-        v1PendingEstimate = 1; // Force entry into the scan loop for at least one page
-        console.log('V1 pending estimate is 0 — will scan one page to verify.');
-      }
-
-      let v1Offset = 0;
-      const v1BatchSize = 200;
-      let v1Scanned = 0;
-
-      while (v1PendingEstimate > 0 && rixBatchToProcess.length < BATCH_SIZE) {
-        const { data: rixBatch, error: rixError } = await supabaseClient
-          .from('rix_runs')
-          .select('*')
-          .not('10_resumen', 'is', null)
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(v1Offset, v1Offset + v1BatchSize - 1);
-
-        if (rixError) {
-          console.error('Error fetching rix_runs:', rixError);
-          throw rixError;
-        }
-
-        if (!rixBatch || rixBatch.length === 0) break;
-
-        v1Scanned += rixBatch.length;
-
-        const indexedIds = await getIndexedRixRunIds(rixBatch.map((r: any) => r.id));
-
-        for (const r of rixBatch) {
-          if (!indexedIds.has(r.id)) {
-            pendingFoundV1++;
-            if (rixBatchToProcess.length < BATCH_SIZE) {
-              rixBatchToProcess.push({ ...r, _source_table: 'rix_runs' });
-            }
-          }
-          if (rixBatchToProcess.length >= BATCH_SIZE) break;
-        }
-
-        if (rixBatch.length < v1BatchSize) break;
-        v1Offset += v1BatchSize;
-      }
-      // If we forced a scan and found nothing, reset estimate to 0
-      if (v1ForceOneScan && pendingFoundV1 === 0) {
-        v1PendingEstimate = 0;
-      }
-      console.log(`V1: scanned ${v1Scanned}, pending found ${pendingFoundV1}, batch size now ${rixBatchToProcess.length}`);
-    }
+    // FASE 1 — rix_runs (V1) DEPRECATED y ELIMINADO del scan.
+    // Tabla congelada 2026-01-25. Sin escritor. Sin lector activo.
+    // Mantenemos `v1Total`, `v1PendingEstimate` y `pendingFoundV1` a 0 para
+    // no romper el contrato de respuesta del endpoint (FE sigue leyendo
+    // esos campos). No se invoca a `getIndexedRixRunIds` para V1 nunca más.
+    void sourceFilter; // silencia warning sobre rama 'rix_v1' obsoleta
 
     // Fetch from rix_runs_v2 (V2)
     if (sourceFilter === 'all' || sourceFilter === 'rix_v2') {
