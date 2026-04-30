@@ -2066,7 +2066,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     link.href = url;
     link.download = `informe_repindex_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.html`;
     link.rel = 'noopener';
-    link.style.display = 'none';
+    link.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
