@@ -311,15 +311,20 @@ export function extractCitedSources(rows: any[]): CitedSourcesReport {
 
 /**
  * Pre-renderiza la sección "Fuentes citadas por los modelos de IA" en
- * Markdown. Cada URL aparece individualmente con badge del modelo, dominio,
- * título y enlace clicable. Se separan en "Menciones de Ventana" (fechas
- * dentro del período analizado) y "Menciones de Refuerzo" (históricas o
- * sin fecha). NO se aplica límite de URLs — si hay 99, se muestran las 99.
+ * Markdown como RESUMEN COMPACTO (top-N dominios) en el cuerpo del
+ * informe. La bibliografía exhaustiva (URL por URL) vive ÚNICAMENTE en
+ * el Anexo final (renderizado por el FE a partir de cited_sources_report).
+ *
+ * Histórico (pre 2026-04-30): el bloque listaba las 3.643 URLs una por una,
+ * inflando el PDF de un informe sectorial Banca a ~700KB. GAP-2/GAP-5:
+ * top-30 dominios con badges de modelos + nota redirigiendo al Anexo.
  *
  * @param report   Output de extractCitedSources
  * @param periodFrom ISO date inicio del período analizado (opcional)
  * @param periodTo   ISO date fin del período analizado (opcional)
  */
+const TOP_DOMAINS_INLINE = 30;
+
 export function renderCitedSourcesBlock(
   report: CitedSourcesReport,
   periodFrom?: string | null,
@@ -327,64 +332,39 @@ export function renderCitedSourcesBlock(
 ): string {
   if (report.totalUrls === 0) return "";
 
-  const fromTs = periodFrom ? Date.parse(periodFrom) : NaN;
-  const toTs = periodTo ? Date.parse(periodTo) : NaN;
-  const hasWindow = Number.isFinite(fromTs) && Number.isFinite(toTs);
-
-  // Clasificación temporal de cada fuente
-  const windowSources: CitedSource[] = [];
-  const reinforcementSources: CitedSource[] = [];
-  for (const s of report.sources) {
-    if (hasWindow && s.detectedDate) {
-      const ts = Date.parse(s.detectedDate);
-      // Ventana extendida ±3 días para tolerar zonas horarias
-      const within = Number.isFinite(ts) && ts >= fromTs - 3 * 86400000 && ts <= toTs + 3 * 86400000;
-      if (within) windowSources.push(s);
-      else reinforcementSources.push(s);
-    } else {
-      // Default to "Ventana" when no date can be detected: the model
-      // cited the URL while evaluating the current window, so excluding
-      // it would unfairly under-report visible coverage. Historical
-      // (out-of-window) sources only land in "Refuerzo" when their date
-      // is BOTH parseable AND outside the window.
-      windowSources.push(s);
-    }
-  }
+  // periodFrom / periodTo se mantienen en la firma por compat. Ya no se
+  // usan para clasificar Ventana/Refuerzo en el cuerpo (el Anexo final
+  // mantiene esa clasificación detallada).
+  void periodFrom; void periodTo;
 
   const lines: string[] = [
     "**Fuentes citadas por los modelos de IA**",
     "",
-    "Todas las fuentes listadas han sido extraídas directamente de las respuestas brutas de los modelos de IA. No se ha añadido, inventado ni modificado ninguna URL.",
+    `Las **${report.totalUrls} URLs únicas** detectadas proceden de **${report.totalDomains} medios distintos** y han sido extraídas directamente de las respuestas brutas de los modelos de IA (sin invención).`,
+    "",
+    `A continuación, los **${Math.min(TOP_DOMAINS_INLINE, report.totalDomains)} medios con más cobertura** (medidos por nº de modelos que los citan). El listado completo URL por URL está disponible en el **Anexo: Referencias Citadas por las IAs** al final del informe.`,
     "",
   ];
 
-  const renderSource = (s: CitedSource): string => {
-    const badges = s.models
+  // Resumen compacto top-N por dominio (ya viene ordenado por nº modelos desc).
+  const topDomains = report.byDomain.slice(0, TOP_DOMAINS_INLINE);
+  for (const d of topDomains) {
+    const badges = d.models
       .map((m) => {
         const letter = MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?";
         const color = MODEL_BADGE_COLOR[m] ?? "#6b7280";
         return `<span style="background-color:${color};color:white;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:bold;margin-right:2px;display:inline-block;line-height:1.2">${letter}</span>`;
       })
       .join("");
-    const title = (s.title && s.title.trim().length > 0) ? s.title : s.domain;
-    const dateLabel = s.detectedDate ? ` <span style="color:#6b7280;font-size:11px">(${s.detectedDate})</span>` : "";
-    return `- ${badges} <strong>${s.domain}</strong>${dateLabel}<br><a href="${s.url}" target="_blank" rel="noopener noreferrer">${title}</a><br><a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.url}</a>`;
-  };
-
-  lines.push(`**Menciones de Ventana** (${windowSources.length})`);
-  lines.push("");
-  if (windowSources.length > 0) {
-    for (const s of windowSources) lines.push(renderSource(s));
+    lines.push(`- ${badges} **${d.domain}** — ${d.sources.length} URL${d.sources.length === 1 ? "" : "s"} citadas por ${d.models.length} modelo${d.models.length === 1 ? "" : "s"}`);
   }
   lines.push("");
-
-  lines.push(`**Otras Referencias (históricas)** (${reinforcementSources.length})`);
-  lines.push("");
-  if (reinforcementSources.length > 0) {
-    for (const s of reinforcementSources) lines.push(renderSource(s));
+  if (report.totalDomains > TOP_DOMAINS_INLINE) {
+    const remainingDomains = report.totalDomains - TOP_DOMAINS_INLINE;
+    const topUrlCount = topDomains.reduce((acc, d) => acc + d.sources.length, 0);
+    const remainingUrls = report.totalUrls - topUrlCount;
+    lines.push(`_Otros **${remainingDomains} medios** con **${remainingUrls} URLs** adicionales se detallan en el Anexo final._`);
   }
-  lines.push("");
-  lines.push(`Total: ${report.totalUrls} fuentes únicas de ${report.totalDomains} medios distintos`);
   return lines.join("\n").trimEnd();
 }
 
