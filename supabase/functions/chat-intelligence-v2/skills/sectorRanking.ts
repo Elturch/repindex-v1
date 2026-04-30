@@ -268,7 +268,10 @@ function semaforo(n: number | null | undefined): string {
 interface RankingRow {
   ticker: string;
   name: string;
-  rix_mean: number;            // = majorityScore promediada por semana (paridad dashboard)
+  // ANTI-MEDIANA: ya NO promediamos puntuaciones entre IAs.
+  // Exponemos el rango (min..max) inter-modelo y el peor caso semanal.
+  rix_min: number;             // mínimo del consenso semanal a través del periodo
+  rix_max: number;             // máximo del consenso semanal a través del periodo
   obs: number;
   consensusLevel: ConsensusLevel; // alto/medio/bajo (peor caso semanal)
   weekly_range_avg: number;       // rango (max-min) inter-modelo promedio entre semanas
@@ -364,12 +367,12 @@ async function fetchSectorSourceRows(
 }
 
 function aggregateRanking(rows: any[], topN: number): RankingRow[] {
-  // PARIDAD BIT-IDÉNTICA con dashboard (c2):
-  //   1) Agrupar por (ticker, semana) → aggregateConsensus por snapshot semanal
-  //      (descarta max+min si ≥4 modelos en esa semana).
-  //   2) Promediar las majorityScores semanales → rix_mean del ranking.
+  // ANTI-MEDIANA (paridad dashboard nuevo modelo):
+  //   1) Agrupar por (ticker, semana) → aggregateConsensus expone min/max/range/level
+  //      por snapshot semanal (NO promediamos entre IAs).
+  //   2) rix_min = mínimo del periodo, rix_max = máximo del periodo.
   //   3) Worst-case consensusLevel entre semanas (alto < medio < bajo).
-  //   4) per_model: media simple por modelo a través de todas las semanas (informativo).
+  //   4) per_model: valor por modelo (media intra-modelo entre semanas, informativo).
   const byTicker = new Map<string, {
     name: string;
     bySnapshot: Map<string, { ticker: string; rix_score: number }[]>; // key = semana ISO
@@ -406,18 +409,21 @@ function aggregateRanking(rows: any[], topN: number): RankingRow[] {
 
   const out: RankingRow[] = [];
   for (const [ticker, info] of byTicker) {
-    const weeklyMajority: number[] = [];
+    const weeklyMins: number[] = [];
+    const weeklyMaxs: number[] = [];
     const weeklyRanges: number[] = [];
     let worstLevelRank = 0;
     for (const [, snapRows] of info.bySnapshot) {
       const agg = aggregateConsensus(snapRows).get(ticker);
       if (!agg) continue;
-      weeklyMajority.push(agg.majorityScore);
+      weeklyMins.push(agg.min);
+      weeklyMaxs.push(agg.max);
       weeklyRanges.push(agg.range);
       worstLevelRank = Math.max(worstLevelRank, LEVEL_RANK[agg.consensusLevel]);
     }
-    if (weeklyMajority.length === 0) continue;
-    const rix_mean = weeklyMajority.reduce((a, b) => a + b, 0) / weeklyMajority.length;
+    if (weeklyMins.length === 0) continue;
+    const rix_min = Math.min(...weeklyMins);
+    const rix_max = Math.max(...weeklyMaxs);
     const weekly_range_avg = weeklyRanges.reduce((a, b) => a + b, 0) / weeklyRanges.length;
     const per_model: RankingRow["per_model"] = {};
     for (const [m, vals] of info.per_model) {
@@ -426,7 +432,8 @@ function aggregateRanking(rows: any[], topN: number): RankingRow[] {
     out.push({
       ticker,
       name: info.name,
-      rix_mean,
+      rix_min,
+      rix_max,
       obs: info.obsTotal,
       consensusLevel: RANK_LEVEL[worstLevelRank],
       weekly_range_avg,
@@ -434,11 +441,11 @@ function aggregateRanking(rows: any[], topN: number): RankingRow[] {
     });
   }
 
-  // Sort paridad dashboard: nivel de consenso (alto→bajo) primero, luego score desc.
+  // Sort: nivel de consenso (alto→bajo) primero, luego rango más estrecho primero.
   out.sort((a, b) => {
     const ld = LEVEL_RANK[a.consensusLevel] - LEVEL_RANK[b.consensusLevel];
     if (ld !== 0) return ld;
-    return b.rix_mean - a.rix_mean;
+    return a.weekly_range_avg - b.weekly_range_avg;
   });
   return out.slice(0, topN);
 }
@@ -448,28 +455,27 @@ function renderRankingTable(
   models: ModelName[],
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean },
 ): string {
-  const head = ["#", "Empresa", "RIX medio", ...models, "Obs."];
+  const head = ["#", "Empresa", "RIX rango", "Consenso", ...models, "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
       String(i + 1),
       `${r.name} (${r.ticker})`,
-      `${semaforo(r.rix_mean)} ${fmt(r.rix_mean)}`,
+      `${fmt(r.rix_min)}–${fmt(r.rix_max)}`,
+      r.consensusLevel,
       ...models.map((m) => fmt(r.per_model[m])),
       String(r.obs),
     ];
     return `| ${cells.join(" | ")} |`;
   });
-  // Footnote metodológico: aclara que RIX medio = promedio del consenso semanal
-  // (bloque mayoritario) sobre el periodo, y avisa de divergencia esperada vs.
-  // el snapshot puntual del Dashboard. Si la cobertura es parcial añade el
-  // contraste observadas/esperadas, alineado con el banner de cobertura.
+  // Footnote metodológico: ANTI-MEDIANA. Exponemos rango inter-modelo
+  // (no promediamos entre IAs distintas).
   const partialSuffix = coverage.isPartial && coverage.weeksExpected > coverage.weeksCount
     ? ` (de ${coverage.weeksExpected} esperadas)`
     : "";
-  const footnote = `*RIX medio = promedio del consenso semanal (bloque mayoritario: descarta la IA más optimista y la más pesimista cuando hay ≥4 modelos) sobre las ${coverage.weeksCount} semanas observadas${partialSuffix}. Puede diferir del snapshot puntual del Dashboard ("qué consensúan las IAs HOY").*`;
+  const footnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs durante las ${coverage.weeksCount} semanas observadas${partialSuffix}. NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
   return [
-    "**Ranking por RIX medio (con desglose por modelo)**",
+    "**Ranking por consenso entre IAs (con desglose por modelo)**",
     "",
     `| ${head.join(" | ")} |`,
     `| ${sep} |`,
@@ -509,12 +515,13 @@ async function buildCompetitiveContextBlock(
   const lines: string[] = [
     "**Contexto competitivo — distribución sectorial del top**",
     "",
-    "| Sector | Empresas en el top | Tickers | RIX medio del grupo |",
+    "| Sector | Empresas en el top | Tickers | RIX rango del grupo |",
     "|---|---|---|---|",
   ];
   for (const [sector, list] of sortedSectors) {
-    const groupAvg = list.reduce((a, r) => a + r.rix_mean, 0) / list.length;
-    lines.push(`| ${sector} | ${list.length} | ${list.map((r) => r.ticker).join(", ")} | ${fmt(groupAvg)} |`);
+    const groupMin = Math.min(...list.map((r) => r.rix_min));
+    const groupMax = Math.max(...list.map((r) => r.rix_max));
+    lines.push(`| ${sector} | ${list.length} | ${list.map((r) => r.ticker).join(", ")} | ${fmt(groupMin)}–${fmt(groupMax)} |`);
   }
   const dominant = sortedSectors[0];
   if (dominant && dominant[1].length >= 2) {
@@ -524,7 +531,7 @@ async function buildCompetitiveContextBlock(
 }
 
 function buildUserMessage(question: string, scope: string, table: string, rows: RankingRow[]): string {
-  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
+  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (consenso ${r.consensusLevel})`).join("\n");
   return [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
@@ -572,7 +579,7 @@ function buildUserMessageWithAssembler(
       ? `${divergence.level} (σ inter-modelo = ${(Math.round(divergence.sigma * 10) / 10)} pts, snapshot ${divergence.snapshot_date ?? "n/d"})`
       : "no calculable",
   });
-  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
+  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (consenso ${r.consensusLevel})`).join("\n");
   return [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
@@ -610,8 +617,10 @@ function buildMetadata(
   toISO: string,
   models: ModelName[],
 ): ReportMetadata {
-  const rixs = ranking.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
-  const range = rixs.length ? Math.max(...rixs) - Math.min(...rixs) : 0;
+  // Rango global del ranking = max(rix_max) - min(rix_min) entre las empresas listadas.
+  const mins = ranking.map((r) => r.rix_min).filter((n) => Number.isFinite(n));
+  const maxs = ranking.map((r) => r.rix_max).filter((n) => Number.isFinite(n));
+  const range = mins.length && maxs.length ? Math.max(...maxs) - Math.min(...mins) : 0;
   const uniqueWeeks = new Set(
     rawRows.map((r) => String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10)).filter(Boolean),
   ).size;

@@ -16,6 +16,8 @@ interface TopCompany {
   ai: string;
   consensusLevel?: "alto" | "medio" | "bajo";
   range?: number;
+  rix_min?: number;
+  rix_max?: number;
 }
 
 interface TopByAI {
@@ -30,7 +32,8 @@ interface ConsensusRow {
   company_name: string;
   ibex_family_code: string | null;
   is_traded: boolean | null;
-  majorityScore: number;
+  min: number;
+  max: number;
   consensusLevel: "alto" | "medio" | "bajo";
   range: number;
   modelsCount: number;
@@ -62,16 +65,16 @@ function buildConsensusRows(
     const scores = items.map(i => i.rix_score).filter(s => typeof s === "number");
     if (scores.length === 0) continue;
     const sorted = [...scores].sort((a, b) => a - b);
-    const range = sorted[sorted.length - 1] - sorted[0];
-    let majorityScores = sorted;
-    if (sorted.length >= 4) majorityScores = sorted.slice(1, -1);
-    const majorityScore = majorityScores.reduce((a, b) => a + b, 0) / majorityScores.length;
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const range = max - min;
     result.push({
       ticker,
       company_name: items[0].company_name,
       ibex_family_code: items[0].ibex_family_code ?? null,
       is_traded: items[0].is_traded ?? null,
-      majorityScore,
+      min,
+      max,
       consensusLevel: classifyConsensus(range),
       range,
       modelsCount: scores.length,
@@ -84,8 +87,9 @@ function sortByConsensus(rows: ConsensusRow[], asc = false): ConsensusRow[] {
   const order = { alto: 0, medio: 1, bajo: 2 } as const;
   return [...rows].sort((a, b) => {
     const cDiff = order[a.consensusLevel] - order[b.consensusLevel];
-    if (cDiff !== 0) return cDiff;
-    return asc ? a.majorityScore - b.majorityScore : b.majorityScore - a.majorityScore;
+    if (cDiff !== 0) return asc ? -cDiff : cDiff;
+    // Tighter range first (better agreement) when desc; widest when asc.
+    return asc ? b.range - a.range : a.range - b.range;
   });
 }
 
@@ -93,10 +97,13 @@ function consensusToTopCompany(r: ConsensusRow): TopCompany {
   return {
     empresa: r.company_name,
     ticker: r.ticker,
-    rix: r.majorityScore,
+    // No promediamos: usamos el mínimo como cota conservadora visible.
+    rix: r.min,
     ai: "Consenso 6 IAs",
     consensusLevel: r.consensusLevel,
     range: r.range,
+    rix_min: r.min,
+    rix_max: r.max,
   };
 }
 
@@ -258,7 +265,8 @@ export function useLandingTopFives(
                 return {
                   ...consensusToTopCompany(curr),
                   ibex_family_code: curr.ibex_family_code,
-                  change: curr.majorityScore - prev.majorityScore,
+                  // Cambio del mínimo (cota conservadora) entre semanas.
+                  change: curr.min - prev.min,
                 };
               })
               .filter(Boolean) as (TopCompany & { ibex_family_code: string | null; change: number })[];

@@ -194,15 +194,30 @@ function buildUserMessage(question: string, datapack: DataPack): string {
     : "TABLAS PRE-RENDERIZADAS: (ninguna — datos insuficientes)";
 
   const summary = datapack.period_summary
-    ? [
-      "",
-      "RESUMEN DEL PERÍODO:",
-      `• RIX medio: ${datapack.period_summary.rix_mean}`,
-      `• Tendencia RIX: ${datapack.period_summary.rix_trend}`,
-      `• Métrica más fuerte: ${datapack.period_summary.strongest}`,
-      `• Métrica más débil: ${datapack.period_summary.weakest}`,
-      `• Métrica más volátil: ${datapack.period_summary.most_volatile}`,
-    ].join("\n")
+    ? (() => {
+      const ps = datapack.period_summary!;
+      const ORDER = ["ChatGPT", "Google Gemini", "Grok", "Deepseek", "Perplexity", "Qwen"];
+      const cells: string[] = [];
+      for (const m of ORDER) {
+        const v = ps.rix_by_model[m];
+        if (v != null) cells.push(`${m} ${v}`);
+      }
+      for (const [m, v] of Object.entries(ps.rix_by_model)) {
+        if (ORDER.includes(m)) continue;
+        if (v != null) cells.push(`${m} ${v}`);
+      }
+      const matrix = cells.length ? cells.join(" · ") : "sin datos";
+      const range = ps.rix_range != null ? `rango ${ps.rix_range}` : "rango n/d";
+      return [
+        "",
+        "RESUMEN DEL PERÍODO (ANTI-MEDIANA — NO promediar entre IAs):",
+        `• RIX por IA: ${matrix} → ${range}, consenso ${ps.rix_consensus_level}.`,
+        `• Tendencia RIX (referencia): ${ps.rix_trend}`,
+        `• Métrica más fuerte: ${ps.strongest}`,
+        `• Métrica más débil: ${ps.weakest}`,
+        `• Métrica más volátil: ${ps.most_volatile}`,
+      ].join("\n");
+    })()
     : "";
 
   return [head, tables, summary].join("\n");

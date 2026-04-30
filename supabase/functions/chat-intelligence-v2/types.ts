@@ -100,7 +100,18 @@ export interface DataPack {
   metrics: MetricAggregation[];
   raw_rows: any[];
   pre_rendered_tables: string[];
-  period_summary?: { rix_mean: number; rix_trend: string; strongest: MetricName; weakest: MetricName; most_volatile: MetricName };
+  period_summary?: {
+    // ANTI-MEDIANA: matriz por IA + rango. NO promediamos entre modelos.
+    rix_by_model: Record<string, number | null>;
+    rix_min: number | null;
+    rix_max: number | null;
+    rix_range: number | null;
+    rix_consensus_level: "alto" | "medio" | "bajo" | "n/d";
+    rix_trend: string;
+    strongest: MetricName;
+    weakest: MetricName;
+    most_volatile: MetricName;
+  };
   consensus?: { ranking_position: number; total_companies: number; divergence: number };
   /**
    * P0-1 — Optional structured cited-sources report attached by skills that

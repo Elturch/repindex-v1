@@ -22,7 +22,9 @@ function semaforo(score: number): string {
 export interface CompetitiveRow {
   ticker: string;
   company_name: string;
-  rix_mean: number;        // = majorityScore promediada por semana
+  // ANTI-MEDIANA: rango inter-modelo (no promediamos entre IAs).
+  rix_min: number;
+  rix_max: number;
   range: number;           // rango (max-min) inter-modelo promedio entre semanas
   consensus: ConsensusLevel;
   rank: number;
@@ -92,40 +94,47 @@ export async function buildCompetitiveContext(
   const grouped = groupByTickerAndWeek(data ?? []);
   if (grouped.size === 0) return empty;
 
-  // PARIDAD BIT-IDÉNTICA con dashboard (c2):
-  // Por cada (ticker, semana): aggregateConsensus → majorityScore + range + level.
-  // Luego promediar majorityScores semanales y rangos; worst-case level entre semanas.
+  // ANTI-MEDIANA: por cada (ticker, semana) extraemos min/max/range/level
+  // del consenso (sin promediar entre IAs). El periodo expone:
+  //   rix_min = mínimo histórico observado
+  //   rix_max = máximo histórico observado
+  //   range   = dispersión inter-modelo media
+  //   level   = peor caso semanal (alto < medio < bajo)
   const LEVEL_RANK: Record<ConsensusLevel, number> = { alto: 0, medio: 1, bajo: 2 };
   const RANK_LEVEL: ConsensusLevel[] = ["alto", "medio", "bajo"];
   const rows: CompetitiveRow[] = [];
   for (const [ticker, { name, bySnapshot }] of grouped) {
-    const weeklyMajority: number[] = [];
+    const weeklyMins: number[] = [];
+    const weeklyMaxs: number[] = [];
     const weeklyRanges: number[] = [];
     let worstLevelRank = 0;
     for (const [, snapRows] of bySnapshot) {
       const agg = aggregateConsensus(snapRows).get(ticker);
       if (!agg) continue;
-      weeklyMajority.push(agg.majorityScore);
+      weeklyMins.push(agg.min);
+      weeklyMaxs.push(agg.max);
       weeklyRanges.push(agg.range);
       worstLevelRank = Math.max(worstLevelRank, LEVEL_RANK[agg.consensusLevel]);
     }
-    if (weeklyMajority.length === 0) continue;
-    const rix_mean = weeklyMajority.reduce((a, b) => a + b, 0) / weeklyMajority.length;
+    if (weeklyMins.length === 0) continue;
+    const rix_min = Math.min(...weeklyMins);
+    const rix_max = Math.max(...weeklyMaxs);
     const range = weeklyRanges.reduce((a, b) => a + b, 0) / weeklyRanges.length;
     rows.push({
       ticker,
       company_name: name,
-      rix_mean,
+      rix_min,
+      rix_max,
       range,
       consensus: RANK_LEVEL[worstLevelRank],
       rank: 0,
     });
   }
-  // Sort paridad dashboard: consenso (alto→bajo) primero, luego score desc.
+  // Sort: consenso (alto→bajo) primero, luego rango más estrecho primero.
   rows.sort((a, b) => {
     const ld = LEVEL_RANK[a.consensus] - LEVEL_RANK[b.consensus];
     if (ld !== 0) return ld;
-    return b.rix_mean - a.rix_mean;
+    return a.range - b.range;
   });
   rows.forEach((r, i) => { r.rank = i + 1; });
 
@@ -146,7 +155,7 @@ export function renderCompetitiveContextTable(ctx: CompetitiveContext, entityTic
   const body = ctx.table
     .map((r) => {
       const marker = r.ticker === entityTicker ? " ⬅︎" : "";
-      return `| #${r.rank} | ${r.company_name} (${r.ticker})${marker} | ${semaforo(r.rix_mean)} ${fmt(r.rix_mean)} | ${fmt(r.range)} | ${r.consensus} |`;
+      return `| #${r.rank} | ${r.company_name} (${r.ticker})${marker} | ${fmt(r.rix_min)}–${fmt(r.rix_max)} | ${fmt(r.range)} | ${r.consensus} |`;
     })
     .join("\n");
   const header = ctx.entity_rank
@@ -155,7 +164,7 @@ export function renderCompetitiveContextTable(ctx: CompetitiveContext, entityTic
   return [
     header,
     "",
-    "| Ranking | Empresa | RIX (consenso) | Δ inter-modelo | Consenso |",
+    "| Ranking | Empresa | RIX rango | Δ inter-modelo (avg) | Consenso |",
     "|---|---|---|---|---|",
     body,
   ].join("\n");

@@ -23,7 +23,8 @@ export interface ConsensusInput {
 
 export interface ConsensusAggregate {
   ticker: string;
-  majorityScore: number;
+  min: number;
+  max: number;
   consensusLevel: ConsensusLevel;
   range: number;
   modelsCount: number;
@@ -52,14 +53,13 @@ export function aggregateConsensus<T extends ConsensusInput>(
       .filter((s): s is number => typeof s === "number" && !isNaN(s));
     if (scores.length === 0) continue;
     const sorted = [...scores].sort((a, b) => a - b);
-    const range = sorted[sorted.length - 1] - sorted[0];
-    let majorityScores = sorted;
-    if (sorted.length >= 4) majorityScores = sorted.slice(1, -1);
-    const majorityScore =
-      majorityScores.reduce((a, b) => a + b, 0) / majorityScores.length;
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const range = max - min;
     result.set(ticker, {
       ticker,
-      majorityScore,
+      min,
+      max,
       consensusLevel: classifyConsensus(range),
       range,
       modelsCount: scores.length,
@@ -80,8 +80,12 @@ export function compareConsensus(
   asc = false,
 ): number {
   const cDiff = LEVEL_ORDER[a.consensusLevel] - LEVEL_ORDER[b.consensusLevel];
-  if (cDiff !== 0) return cDiff;
-  return asc
-    ? a.majorityScore - b.majorityScore
-    : b.majorityScore - a.majorityScore;
+  if (cDiff !== 0) return asc ? -cDiff : cDiff;
+  return asc ? b.range - a.range : a.range - b.range;
+}
+
+export function formatRange(agg: { min: number; max: number } | null | undefined): string {
+  if (!agg) return "—";
+  if (agg.min === agg.max) return `${Math.round(agg.min)}`;
+  return `${Math.round(agg.min)}–${Math.round(agg.max)}`;
 }
