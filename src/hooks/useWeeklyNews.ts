@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { fetchTrendShimByWeek, getAvailableWeeksV2 } from "@/lib/rixV2TrendShim";
 
 export interface WeeklyNewsData {
   weekLabel: string;
@@ -58,34 +58,18 @@ export function useWeeklyNews() {
   return useQuery({
     queryKey: ["weekly-news-data"],
     queryFn: async (): Promise<WeeklyNewsData> => {
-      // Get the two most recent weeks
-      const { data: weeks, error: weeksError } = await supabase
-        .from("rix_trends")
-        .select("batch_week")
-        .order("batch_week", { ascending: false })
-        .limit(1);
+      // FASE 1 — Fuente única: rix_runs_v2 (vía shim).
+      // Si V2 sólo tiene una semana, previousData queda vacío y los movers
+      // simplemente serán [] (estado vacío controlado, NUNCA fallback a legacy).
+      const availableWeeks = await getAvailableWeeksV2();
+      if (availableWeeks.length === 0) throw new Error("No data available");
 
-      if (weeksError) throw weeksError;
-      if (!weeks || weeks.length === 0) throw new Error("No data available");
+      const currentWeek = availableWeeks[0];
+      // Buscamos la semana V2 más cercana a -7d real (no asumimos cadencia exacta)
+      const previousWeek = availableWeeks[1] ?? null;
 
-      const currentWeek = weeks[0].batch_week;
-      const previousWeek = format(subDays(new Date(currentWeek), 7), 'yyyy-MM-dd');
-
-      // Fetch current week data
-      const { data: currentData, error: currentError } = await supabase
-        .from("rix_trends")
-        .select("*")
-        .eq("batch_week", currentWeek);
-
-      if (currentError) throw currentError;
-
-      // Fetch previous week data
-      const { data: previousData, error: previousError } = await supabase
-        .from("rix_trends")
-        .select("*")
-        .eq("batch_week", previousWeek);
-
-      if (previousError) throw previousError;
+      const currentData = await fetchTrendShimByWeek(currentWeek);
+      const previousData = previousWeek ? await fetchTrendShimByWeek(previousWeek) : [];
 
       // Build lookup for previous week
       const previousLookup = new Map<string, number>();
