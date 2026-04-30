@@ -1648,8 +1648,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const link = document.createElement('a');
     link.href = url;
     link.download = generateFileName('txt');
+    link.rel = 'noopener';
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 100);
 
     toast({
       title: "Conversación exportada",
@@ -1671,8 +1677,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const link = document.createElement('a');
     link.href = url;
     link.download = generateFileName('json');
+    link.rel = 'noopener';
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 100);
 
     toast({
       title: "Conversación exportada",
@@ -2053,8 +2065,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     const link = document.createElement('a');
     link.href = url;
     link.download = `informe_repindex_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.html`;
+    link.rel = 'noopener';
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 100);
 
     toast({
       title: "Informe exportado",
