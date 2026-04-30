@@ -1049,48 +1049,6 @@ export function Dashboard() {
                             </TableCell>
                           );
                         })}
-                          ) : (
-                            <div className="flex items-center justify-center gap-1">
-                              <span className="text-lg font-bold text-primary">
-                                {rixRun.displayRixScore ?? rixRun.rix_score ?? 0}
-                              </span>
-                              {rixRun.trend && (
-                                <span className={cn(
-                                  "text-sm",
-                                  rixRun.trend === "up" ? "text-good" : rixRun.trend === "down" ? "text-insufficient" : "text-muted-foreground"
-                                )}>
-                                  {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        {metrics.map((metric) => {
-                          const score = (rixRun as any)[metric.scoreKey];
-                          const categoria = (rixRun as any)[metric.categoryKey];
-                          const isInvalid = rixRun.isDataInvalid;
-                          const metricTrend = rixRun.metricTrends?.[metric.key as keyof typeof rixRun.metricTrends];
-                          
-                          return (
-                            <TableCell key={metric.key} className="text-center">
-                              <div className="flex items-center justify-center gap-0.5">
-                                <div className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                                  isInvalid ? 'bg-muted/20 text-muted-foreground' : getCategoryColor(categoria)
-                                }`}>
-                                  {score || 0}
-                                </div>
-                                {metricTrend && (
-                                  <span className={cn(
-                                    "text-xs",
-                                    metricTrend === "up" ? "text-good" : metricTrend === "down" ? "text-insufficient" : "text-muted-foreground"
-                                  )}>
-                                    {metricTrend === "up" ? "↑" : metricTrend === "down" ? "↓" : "→"}
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-                          );
-                        })}
                         <TableCell className="text-xs">
                           {rixRun.repindex_root_issuers?.ibex_family_code || "N/A"}
                         </TableCell>
