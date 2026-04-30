@@ -72,10 +72,15 @@ export function renderTemporalEvolutionTable(rows: any[]): string {
   return [
     "**Evolución temporal — RIX por snapshot semanal**",
     "",
-    "| Fecha | RIX (media inter-modelo) | Δ vs semana previa | Filas |",
+    "| Fecha | RIX medio semanal | Δ vs semana previa | Filas |",
     "|---|---|---|---|",
     body,
   ].join("\n");
 }
+
+// Nota: "RIX medio semanal" = promedio de los modelos disponibles ESA semana,
+// distinto del rango inter-modelo del periodo (anti-mediana) usado en la
+// tabla principal y en el ranking. Se mantiene aquí porque la evolución
+// temporal necesita un único valor por semana para visualizar la tendencia.
 
 export const __test__ = { fmt, sign, semaforo, computeTemporalEvolution };

@@ -183,7 +183,7 @@ export function renderEvolutionTable(rows: any[]): string {
   return [
     "**Evolución semanal del RIX**",
     "",
-    "| Semana | RIX (media inter-modelo) | Modelos con dato |",
+    "| Semana | RIX medio semanal | Modelos con dato |",
     "|---|---|---|",
     body,
   ].join("\n");

@@ -608,7 +608,11 @@ function buildUserMessageWithAssembler(
     "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
     "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
     "",
-    buildPreRenderedSection(rankingTable, blocks, methodology),
+    buildPreRenderedSection(
+      `<PRE_RENDERED_RANKING_TABLE>\n${rankingTable}\n</PRE_RENDERED_RANKING_TABLE>`,
+      blocks,
+      methodology,
+    ),
     "",
     perCompanyDimensions,
     "",
@@ -829,6 +833,25 @@ export const sectorRankingSkill: Skill = {
     let finalContent = fullText && fullText.trim().length > 0
       ? fullText
       : `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
+
+    // Bug A — scrub: si el LLM copió los delimitadores literales o regeneró
+    // el footnote viejo ("RIX medio = promedio del consenso semanal ... HOY"),
+    // sustituimos por el footnote canónico anti-mediana.
+    {
+      const before = finalContent;
+      // 1) Quitar delimitadores literales si el LLM los emitió.
+      finalContent = finalContent
+        .replace(/<\/?PRE_RENDERED_RANKING_TABLE>\s*/g, "");
+      // 2) Reemplazar footnote viejo en cursiva (variantes con/sin "Fecha de cálculo: HOY").
+      const OLD_FOOTNOTE_RE = /\*RIX medio\s*=\s*promedio[^*\n]*?(?:HOY[^*\n]*?)?\*/gi;
+      const canonicalFootnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs durante las semanas observadas. NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
+      finalContent = finalContent.replace(OLD_FOOTNOTE_RE, canonicalFootnote);
+      // 3) Safety net: literal "Fecha de cálculo: \"HOY\"" sin envolver.
+      finalContent = finalContent.replace(/Fecha de cálculo:\s*"?HOY"?\.?/gi, "");
+      if (before !== finalContent) {
+        console.log(`${tag} ranking_footnote_scrub | applied`);
+      }
+    }
 
     // P1-A — ALWAYS substitute the cited-sources marker, even when there are
     // no verifiable URLs. Previously the entire substitution was skipped when
