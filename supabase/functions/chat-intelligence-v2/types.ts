@@ -111,6 +111,13 @@ export interface DataPack {
     strongest: MetricName;
     weakest: MetricName;
     most_volatile: MetricName;
+    /** ANTI-MEDIANA SUB-MÉTRICAS: única fuente para tabla principal y
+     *  recomendaciones. Modelo→Submétrica→valor (media intra-modelo). */
+    submetrics_by_model?: Record<string, Record<string, number | null>>;
+    submetrics_range?: Record<
+      string,
+      { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+    >;
   };
   consensus?: { ranking_position: number; total_companies: number; divergence: number };
   /**

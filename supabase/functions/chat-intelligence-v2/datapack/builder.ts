@@ -285,12 +285,14 @@ export async function buildDataPack(
       strongest: (agg.period_summary.strongest_metric ?? "RIX") as MetricName,
       weakest: (agg.period_summary.weakest_metric ?? "RIX") as MetricName,
       most_volatile: (agg.period_summary.most_volatile ?? "RIX") as MetricName,
+      submetrics_by_model: agg.period_summary.submetrics_by_model ?? {},
+      submetrics_range: agg.period_summary.submetrics_range ?? {},
     }
     : undefined;
 
   // Pre-renderizar tablas (todas en markdown, NUNCA las genera el LLM — constraint #9)
   const preRendered: string[] = [];
-  if (metrics.length > 0) preRendered.push(renderPeriodKpiTable(metrics, parsed.mode));
+  if (metrics.length > 0) preRendered.push(renderPeriodKpiTable(metrics, parsed.mode, periodSummary));
   if (workingRows.length > 0) preRendered.push(renderModelTable(workingRows));
   if (parsed.mode === "period" && workingRows.length > 1) {
     preRendered.push(renderEvolutionTable(workingRows));
