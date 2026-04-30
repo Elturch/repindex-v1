@@ -932,7 +932,7 @@ export function Dashboard() {
                             )}
                           </div>
                         </TableCell>
-                        {aiFilter === "all" && (
+                        {aiFilter === "all" && rankingMode === "score" && (
                           <TableCell className="text-center">
                             {(() => {
                               const modelInfo = getModelInfo(rixRun.model_name || '');
@@ -948,6 +948,38 @@ export function Dashboard() {
                             })()}
                           </TableCell>
                         )}
+                        {rankingMode === "consensus" && (() => {
+                          const cons = (rixRun as unknown as Record<string, unknown>).__consensus as ConsensusAggregate | null | undefined;
+                          const level = cons?.consensusLevel ?? null;
+                          const colorClass = level === "alto"
+                            ? "bg-good/15 text-good"
+                            : level === "medio"
+                              ? "bg-needs-improvement/15 text-needs-improvement"
+                              : level === "bajo"
+                                ? "bg-insufficient/15 text-insufficient"
+                                : "bg-muted/20 text-muted-foreground";
+                          return (
+                            <TableCell className="text-center">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className={cn("inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium capitalize", colorClass)}>
+                                    {level ?? "—"}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-xs">
+                                  <p className="text-xs">
+                                    {cons
+                                      ? `${cons.modelsCount} IAs · rango ${cons.range} pts (min ${Math.round(cons.min)}, max ${Math.round(cons.max)})`
+                                      : "Sin datos suficientes"}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground mt-1">
+                                    Alto ≤10 · Medio ≤20 · Bajo &gt;20
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TableCell>
+                          );
+                        })()}
                         <TableCell className="text-center">
                           {rixRun.isDataInvalid ? (
                             <div className="flex items-center justify-center gap-1">
@@ -956,6 +988,67 @@ export function Dashboard() {
                                 Datos Obsoletos
                               </span>
                             </div>
+                          ) : rankingMode === "consensus" ? (() => {
+                            const cons = (rixRun as unknown as Record<string, unknown>).__consensus as ConsensusAggregate | null | undefined;
+                            return (
+                              <span className="text-base font-bold text-primary tabular-nums">
+                                {formatRange(cons)}
+                              </span>
+                            );
+                          })() : (
+                            <div className="flex items-center justify-center gap-1">
+                              <span className="text-lg font-bold text-primary">
+                                {rixRun.displayRixScore ?? rixRun.rix_score ?? 0}
+                              </span>
+                              {rixRun.trend && (
+                                <span className={cn(
+                                  "text-sm",
+                                  rixRun.trend === "up" ? "text-good" : rixRun.trend === "down" ? "text-insufficient" : "text-muted-foreground"
+                                )}>
+                                  {rixRun.trend === "up" ? "↑" : rixRun.trend === "down" ? "↓" : "→"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
+                        {metrics.map((metric) => {
+                          const isInvalid = rixRun.isDataInvalid;
+                          if (rankingMode === "consensus") {
+                            const range = (rixRun as unknown as Record<string, unknown>)[`${metric.key}_range`] as { min: number; max: number } | null | undefined;
+                            return (
+                              <TableCell key={metric.key} className="text-center">
+                                <div className={cn(
+                                  "px-1.5 py-0.5 rounded text-xs font-medium tabular-nums",
+                                  isInvalid ? "bg-muted/20 text-muted-foreground" : "bg-muted/40 text-foreground"
+                                )}>
+                                  {formatRange(range)}
+                                </div>
+                              </TableCell>
+                            );
+                          }
+                          const score = (rixRun as any)[metric.scoreKey];
+                          const categoria = (rixRun as any)[metric.categoryKey];
+                          const metricTrend = rixRun.metricTrends?.[metric.key as keyof typeof rixRun.metricTrends];
+                          return (
+                            <TableCell key={metric.key} className="text-center">
+                              <div className="flex items-center justify-center gap-0.5">
+                                <div className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                  isInvalid ? 'bg-muted/20 text-muted-foreground' : getCategoryColor(categoria)
+                                }`}>
+                                  {score || 0}
+                                </div>
+                                {metricTrend && (
+                                  <span className={cn(
+                                    "text-xs",
+                                    metricTrend === "up" ? "text-good" : metricTrend === "down" ? "text-insufficient" : "text-muted-foreground"
+                                  )}>
+                                    {metricTrend === "up" ? "↑" : metricTrend === "down" ? "↓" : "→"}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                          );
+                        })}
                           ) : (
                             <div className="flex items-center justify-center gap-1">
                               <span className="text-lg font-bold text-primary">
