@@ -38,13 +38,13 @@ Para CADA UNA de las ${topN} empresas del ranking, redacta un mini-perfil de 4-6
 NO te saltes ninguna empresa. Si hay 6 empresas, hay 6 mini-perfiles.
 
 ## 4. Visión por modelo de IA
-Inserta literalmente el bloque [MODEL_BREAKDOWN_TABLE] del DataPack. Comenta qué modelo es más optimista/pesimista en este alcance y por qué la divergencia importa para la lectura del sector.
+Redacta 4-6 frases analizando, a partir de los datos brutos del DataPack (puntuaciones por modelo de cada empresa), qué modelo es más optimista y cuál más pesimista en este alcance, con cifras concretas (ej. "Gemini promedia 68 vs Grok 52, gap de 16 pts"). Explica por qué la divergencia importa para la lectura del sector (sesgo de fuentes, cobertura, ponderación de métricas). NO inventes una tabla pre-renderizada: trabaja con los valores ya disponibles en el contexto.
 
 ## 5. Tendencias del sector / grupo
-Inserta literalmente la tabla [TEMPORAL_EVOLUTION_TABLE] COPIANDO TODAS SUS FILAS sin excepción (no resumas, no abrevies con '...', no recortes el final aunque haya muchas semanas). PROHIBIDO truncar, abreviar con '...' o resumir filas: la tabla debe aparecer íntegra tal como se entrega pre-renderizada. En la prosa NUNCA uses la palabra 'snapshots'; di 'semanas observadas'. Identifica: (a) empresas con tendencia alcista clara, (b) empresas en deterioro, (c) métricas que mejoran o empeoran transversalmente en el grupo. Cifras obligatorias (delta_period).
+Redacta 6-10 frases sobre la evolución temporal del grupo usando los deltas y series semanales presentes en el DataPack. En la prosa NUNCA uses la palabra 'snapshots'; di 'semanas observadas'. Identifica: (a) empresas con tendencia alcista clara, (b) empresas en deterioro, (c) métricas que mejoran o empeoran transversalmente en el grupo. Cifras obligatorias (delta_period con signo y magnitud por empresa relevante). Si procede, construye una pequeña tabla markdown propia con columnas Empresa | RIX inicio | RIX fin | Δ período, limitada a las empresas con movimiento más significativo.
 
 ## 6. Divergencias inter-modelo
-Inserta literalmente el bloque [DIVERGENCE_BLOCK]. Identifica las 3 empresas con MAYOR rango (max-min) y explica POR QUÉ los modelos disienten (sesgo de fuentes, tipo de cobertura). Las divergencias > 20 pts deben listarse explícitamente.
+A partir de las puntuaciones por modelo del DataPack, identifica las 3 empresas con MAYOR rango (max-min) y explica POR QUÉ los modelos disienten (sesgo de fuentes, tipo de cobertura). Las divergencias > 20 pts deben listarse explícitamente con la cifra exacta y los modelos extremos (ej. "ENG: ChatGPT 78 vs Qwen 51, rango 27"). Cierra con 1 frase sobre qué dimensión (NVM/SIM/DRM/RMM/CEM/GAM/DCM) concentra más desacuerdo en el grupo.
 
 ## 7. Recomendaciones estratégicas accionables (MÍNIMO 5, ESPECÍFICAS POR EMPRESA)
 Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
