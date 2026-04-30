@@ -608,7 +608,11 @@ function buildUserMessageWithAssembler(
     "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
     "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
     "",
-    buildPreRenderedSection(rankingTable, blocks, methodology),
+    buildPreRenderedSection(
+      `<PRE_RENDERED_RANKING_TABLE>\n${rankingTable}\n</PRE_RENDERED_RANKING_TABLE>`,
+      blocks,
+      methodology,
+    ),
     "",
     perCompanyDimensions,
     "",
