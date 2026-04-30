@@ -78,6 +78,25 @@ serve(async (req: Request) => {
     const effectiveQuestion = originalQuestion || question;
     const sessionId = (body?.session_id || body?.sessionId || "").toString().trim();
     const conversationId = (body?.conversationId || body?.conversation_id || "").toString().trim();
+
+    // ── TEMP DIAGNOSTIC LOG (anti-mediana rollout verification) ──
+    // Confirms which Supabase project, which build, and which semantic
+    // branch is executing in production at runtime. Remove once prod
+    // parity with preview is confirmed.
+    try {
+      const _supaUrl = Deno.env.get("SUPABASE_URL") ?? "n/a";
+      const _projectRef = (_supaUrl.match(/https?:\/\/([^.]+)\./)?.[1]) ?? "n/a";
+      const _origin = req.headers.get("origin") ?? req.headers.get("referer") ?? "n/a";
+      console.log(
+        `[RIX-V2][DIAG] engine_version=anti-mediana-v1 ` +
+        `consensus_mode=on prompt_version=v2.range-based ` +
+        `datapack_version=v2.rix_by_model ` +
+        `project_ref=${_projectRef} supabase_url=${_supaUrl} ` +
+        `origin=${_origin} ts=${new Date().toISOString()} ` +
+        `q="${(originalQuestion || question).slice(0, 80)}"`,
+      );
+    } catch (_e) { /* never block on diagnostics */ }
+
     const conversationHistory: ConversationMessage[] = Array.isArray(body?.conversation_history)
       ? body.conversation_history
       : Array.isArray(body?.conversationHistory)
