@@ -279,21 +279,15 @@ serve(async (req: Request) => {
       48_precio_accion
     `;
 
-    // Fetch from both tables in parallel (same column names)
-    const [v1DataRaw, v2DataRaw] = await Promise.all([
-      fetchAllPaginated(supabase, 'rix_runs', columns, [
-        { column: '48_precio_accion', op: 'not.is', value: null },
-        { column: '48_precio_accion', op: 'neq', value: 'NC' },
-        { column: '09_rix_score', op: 'not.is', value: null },
-      ]),
-      fetchAllPaginated(supabase, 'rix_runs_v2', columns, [
-        { column: '48_precio_accion', op: 'not.is', value: null },
-        { column: '48_precio_accion', op: 'neq', value: 'NC' },
-        { column: '09_rix_score', op: 'not.is', value: null },
-      ]),
+    // FASE 1 — rix_runs DEPRECATED. Sólo leemos rix_runs_v2.
+    const v1DataRaw: any[] = [];
+    const v2DataRaw = await fetchAllPaginated(supabase, 'rix_runs_v2', columns, [
+      { column: '48_precio_accion', op: 'not.is', value: null },
+      { column: '48_precio_accion', op: 'neq', value: 'NC' },
+      { column: '09_rix_score', op: 'not.is', value: null },
     ]);
 
-    console.log(`[rix-regression] Fetched ${v1DataRaw.length} from rix_runs, ${v2DataRaw.length} from rix_runs_v2`);
+    console.log(`[rix-regression] Fetched ${v2DataRaw.length} from rix_runs_v2 (rix_runs deprecated)`);
 
     // =============================================================================
     // STEP 2: Unify and deduplicate with V2 priority

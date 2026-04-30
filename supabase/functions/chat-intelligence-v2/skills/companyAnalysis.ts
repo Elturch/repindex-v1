@@ -43,12 +43,49 @@ function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>
   const topDomains = report.byDomain.slice(0, 10)
     .map((d) => `${d.domain} (${d.sources.length})`)
     .join(", ");
+
+  // FASE 2 — Overlap de fuentes por IA (consenso vs exclusividad).
+  // Reutilizamos byDomain.models (ya viene calculado en citedSources.ts):
+  //   sharedDomains: dominios citados por ≥2 modelos → consenso narrativo.
+  //   exclusiveDomains: dominios citados por una sola IA → señal de sesgo
+  //   o de cobertura única de ese modelo.
+  const sharedDomains = report.byDomain.filter((d) => d.models.length >= 2);
+  const exclusiveByModel = new Map<string, string[]>();
+  for (const d of report.byDomain) {
+    if (d.models.length === 1) {
+      const m = d.models[0];
+      const arr = exclusiveByModel.get(m) ?? [];
+      arr.push(d.domain);
+      exclusiveByModel.set(m, arr);
+    }
+  }
+  const topShared = sharedDomains
+    .slice(0, 6)
+    .map((d) => `${d.domain} [${d.models.join("+")}]`)
+    .join(", ");
+  const exclusiveSummary = Array.from(exclusiveByModel.entries())
+    .map(([model, doms]) => `${model}: ${doms.slice(0, 3).join(", ")}${doms.length > 3 ? ` (+${doms.length - 3})` : ""}`)
+    .join(" | ");
+  const sharedPct = report.totalDomains > 0
+    ? Math.round((sharedDomains.length / report.totalDomains) * 100)
+    : 0;
+
   return [
     "**Resumen de fuentes citadas (para narrativa, NO copies este bloque):**",
     `- Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos`,
     `- Top 10 dominios por número de fuentes: ${topDomains}`,
     "",
-    "INSTRUCCIÓN ESPECIAL SECCIÓN 8: NO intentes listar las URLs. Escribe únicamente un párrafo introductorio (2-3 frases) sobre la procedencia de las fuentes (ej. 'Las IAs citaron N URLs de M medios, con dominio principal en prensa económica española...') y termina la sección con la línea exacta:",
+    "**Overlap de fuentes por IA (consenso narrativo entre modelos):**",
+    `- Dominios compartidos por ≥2 IAs: ${sharedDomains.length}/${report.totalDomains} (${sharedPct}% de consenso de fuente)`,
+    `- Top 6 dominios con MAYOR coincidencia (con qué IAs los comparten): ${topShared || "(ninguno)"}`,
+    `- Dominios EXCLUSIVOS por IA (citados por una sola IA — posible sesgo o cobertura única): ${exclusiveSummary || "(ninguno)"}`,
+    "",
+    "INSTRUCCIÓN ESPECIAL SECCIÓN 8: NO intentes listar las URLs. Escribe un párrafo introductorio (3-5 frases) que OBLIGATORIAMENTE mencione:",
+    "  (a) cuántas URLs únicas y cuántos medios distintos,",
+    "  (b) los 2-3 dominios con MAYOR coincidencia entre IAs (citando explícitamente qué IAs comparten cada uno),",
+    "  (c) al menos 1 dominio EXCLUSIVO por IA y qué IA lo cita en solitario, interpretando si refleja sesgo del modelo o cobertura única,",
+    "  (d) el porcentaje de consenso de fuente (% de dominios compartidos por ≥2 IAs) y qué implica para la fiabilidad de la narrativa.",
+    "Termina la sección con la línea exacta:",
     "<!--CITEDSOURCESHERE-->",
     "El sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y URLs clicables.",
   ].join("\n");

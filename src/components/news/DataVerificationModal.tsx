@@ -3,9 +3,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/integrations/supabase/client";
 import { ExternalLink, CheckCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { MiniBarChart, MiniLineChart } from "./MiniCharts";
+import {
+  fetchTrendShimByCompanyMatch,
+  getAvailableWeeksV2,
+} from "@/lib/rixV2TrendShim";
 
 interface CompanyData {
   company_name: string;
@@ -44,35 +47,20 @@ export function DataVerificationModal({ isOpen, onClose, companies, headline, ca
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Get the latest week's data for the mentioned companies
-      const { data: latestWeek } = await supabase
-        .from("rix_trends")
-        .select("batch_week")
-        .order("batch_week", { ascending: false })
-        .limit(1);
-
-      const currentWeek = latestWeek?.[0]?.batch_week;
-
+      // FASE 1 — Fuente única: rix_runs_v2 vía shim.
+      const weeks = await getAvailableWeeksV2();
+      const currentWeek = weeks[0];
       if (currentWeek) {
-        // Search for companies by partial name match
-        const companyQueries = companies.map(async (company) => {
-          const { data } = await supabase
-            .from("rix_trends")
-            .select("*")
-            .eq("batch_week", currentWeek)
-            .ilike("company_name", `%${company}%`);
-          return data || [];
-        });
-
-        const results = await Promise.all(companyQueries);
-        const allData = results.flat();
-        
-        // Remove duplicates
-        const uniqueData = allData.filter((item, index, self) =>
-          index === self.findIndex((t) => t.company_name === item.company_name && t.model_name === item.model_name)
+        const matches = await fetchTrendShimByCompanyMatch(currentWeek, companies);
+        const uniqueData = matches.filter((item, index, self) =>
+          index ===
+          self.findIndex(
+            (t) => t.company_name === item.company_name && t.model_name === item.model_name
+          )
         );
-
         setData(uniqueData);
+      } else {
+        setData([]);
       }
     } catch (error) {
       console.error("Error fetching verification data:", error);

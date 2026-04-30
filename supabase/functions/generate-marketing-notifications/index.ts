@@ -327,11 +327,18 @@ function getStaticNotification(type: string, personaName: string): { title: stri
 // Get weekly highlights from database
 async function getWeeklyHighlights(supabase: any): Promise<any> {
   try {
-    const { data: trends } = await supabase
-      .from("rix_trends")
-      .select("company_name, rix_score")
-      .order("batch_week", { ascending: false })
-      .limit(50);
+    // FASE 1 — Fuente única: rix_runs_v2 vía shim.
+    const { getAvailableWeeksV2, fetchTrendShimByWeek } = await import("../_shared/rixV2TrendShim.ts");
+    const weeks = await getAvailableWeeksV2(supabase);
+    let trends: { company_name: string; rix_score: number }[] = [];
+    if (weeks.length) {
+      const rows = await fetchTrendShimByWeek(supabase, weeks[0]);
+      // Top movers = top 50 por rix_score
+      trends = rows
+        .map((r) => ({ company_name: r.company_name, rix_score: r.rix_score }))
+        .sort((a, b) => b.rix_score - a.rix_score)
+        .slice(0, 50);
+    }
 
     const { data: news } = await supabase
       .from("weekly_news")

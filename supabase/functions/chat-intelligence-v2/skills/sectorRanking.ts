@@ -40,12 +40,37 @@ function buildCitedSourcesSummary(report: ReturnType<typeof extractCitedSources>
   const topDomains = report.byDomain.slice(0, 10)
     .map((d) => `${d.domain} (${d.sources.length})`)
     .join(", ");
+  // FASE 2 — Overlap de fuentes por IA en informes sectoriales.
+  const sharedDomains = report.byDomain.filter((d) => d.models.length >= 2);
+  const exclusiveByModel = new Map<string, string[]>();
+  for (const d of report.byDomain) {
+    if (d.models.length === 1) {
+      const m = d.models[0];
+      const arr = exclusiveByModel.get(m) ?? [];
+      arr.push(d.domain);
+      exclusiveByModel.set(m, arr);
+    }
+  }
+  const topShared = sharedDomains.slice(0, 6)
+    .map((d) => `${d.domain} [${d.models.join("+")}]`)
+    .join(", ");
+  const exclusiveSummary = Array.from(exclusiveByModel.entries())
+    .map(([model, doms]) => `${model}: ${doms.slice(0, 3).join(", ")}${doms.length > 3 ? ` (+${doms.length - 3})` : ""}`)
+    .join(" | ");
+  const sharedPct = report.totalDomains > 0
+    ? Math.round((sharedDomains.length / report.totalDomains) * 100)
+    : 0;
   return [
     "**Resumen de fuentes citadas (para narrativa, NO copies este bloque):**",
     `- Total: ${report.totalUrls} URLs únicas de ${report.totalDomains} medios distintos`,
     `- Top 10 dominios: ${topDomains}`,
     "",
-    "INSTRUCCIÓN SECCIÓN 8: NO listes URLs a mano. Escribe 2-3 frases introductorias y termina con la línea exacta `<!--CITEDSOURCESHERE-->`. El sistema sustituirá ese marcador por la bibliografía completa.",
+    "**Overlap de fuentes por IA (consenso narrativo entre modelos):**",
+    `- Dominios compartidos por ≥2 IAs: ${sharedDomains.length}/${report.totalDomains} (${sharedPct}% de consenso de fuente)`,
+    `- Top 6 dominios con MAYOR coincidencia: ${topShared || "(ninguno)"}`,
+    `- Dominios EXCLUSIVOS por IA: ${exclusiveSummary || "(ninguno)"}`,
+    "",
+    "INSTRUCCIÓN SECCIÓN 8: NO listes URLs a mano. Escribe 3-4 frases introductorias que mencionen los dominios con MAYOR coincidencia entre IAs (citando qué IAs los comparten) y al menos un dominio EXCLUSIVO por IA. Termina con la línea exacta `<!--CITEDSOURCESHERE-->`. El sistema sustituirá ese marcador por la bibliografía completa.",
   ].join("\n");
 }
 

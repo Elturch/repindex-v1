@@ -53,7 +53,8 @@ export function useVectorStoreStatusV2() {
         rixV2TotalResult,
         newsTotalResult,
       ] = await Promise.all([
-        supabase.from('rix_runs').select('id', { count: 'exact', head: true }),
+        // FASE 1 — rix_runs DEPRECATED. Devolvemos count=0 sin tocar la tabla.
+        Promise.resolve({ count: 0 } as { count: number }),
         supabase.from('rix_runs_v2').select('id', { count: 'exact', head: true }),
         supabase.from('corporate_news').select('id', { count: 'exact', head: true }),
       ]);

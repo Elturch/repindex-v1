@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SkillResult } from "./shared";
+import { format } from "date-fns";
 
 export interface CompanyEvolutionInput {
   ticker: string;
@@ -34,18 +35,22 @@ export async function skillGetCompanyEvolution(
     const pageSize = 1500;
     const maxPages = 5;
 
-    let allData: Record<string, unknown>[] = [];
+    let allData: { batch_week: string; model_name: string; rix_score: number | null; stock_price: number | null; company_name: string }[] = [];
     const seenWeeks = new Set<string>();
 
+    // FASE 1 — Fuente única: rix_runs_v2. Si V2 no tiene historia suficiente,
+    // devolvemos lo que haya (estado vacío controlado, NUNCA fallback a legacy).
     for (let page = 0; page < maxPages; page++) {
       const from = page * pageSize;
       const to = from + pageSize - 1;
 
       const { data, error } = await supabase
-        .from("rix_trends")
-        .select("batch_week,model_name,rix_score,stock_price,company_name")
-        .eq("ticker", params.ticker)
-        .order("batch_week", { ascending: false })
+        .from("rix_runs_v2")
+        .select(
+          '"02_model_name","03_target_name","09_rix_score","51_rix_score_adjusted","48_precio_accion",batch_execution_date'
+        )
+        .eq("05_ticker", params.ticker)
+        .order("batch_execution_date", { ascending: false })
         .range(from, to);
 
       if (error) {
@@ -53,10 +58,29 @@ export async function skillGetCompanyEvolution(
       }
       if (!data || data.length === 0) break;
 
-      for (const row of data as Record<string, unknown>[]) {
-        const week = String(row.batch_week ?? "");
+      for (const raw of data as any[]) {
+        const batch = raw.batch_execution_date;
+        if (!batch) continue;
+        const week = format(new Date(batch), "yyyy-MM-dd");
+        const model = raw["02_model_name"];
+        const rix = raw["51_rix_score_adjusted"] ?? raw["09_rix_score"];
+        if (!model || rix === null || rix === undefined) continue;
+        // Stock price normalization (heurística simple sin contexto histórico).
+        let stockPrice: number | null = null;
+        if (raw["48_precio_accion"] !== null && raw["48_precio_accion"] !== undefined) {
+          const n = Number(String(raw["48_precio_accion"]).replace(/[^0-9.\-]/g, ""));
+          if (Number.isFinite(n) && n > 0) {
+            stockPrice = n >= 100000 ? n / 100000 : n >= 10000 ? n / 1000 : n >= 1000 ? n / 100 : n;
+          }
+        }
         seenWeeks.add(week);
-        allData.push(row);
+        allData.push({
+          batch_week: week,
+          model_name: String(model),
+          rix_score: Number(rix),
+          stock_price: stockPrice,
+          company_name: String(raw["03_target_name"] || params.ticker),
+        });
       }
 
       if (data.length < pageSize || seenWeeks.size >= weeksBack) break;
@@ -71,16 +95,16 @@ export async function skillGetCompanyEvolution(
     const weekSet = new Set(sortedWeeks);
 
     const evolution: EvolutionPoint[] = allData
-      .filter((row) => weekSet.has(String(row.batch_week ?? "")))
+      .filter((row) => weekSet.has(row.batch_week))
       .map((row) => ({
-        batch_week: String(row.batch_week ?? ""),
-        model_name: String(row.model_name ?? ""),
-        rix_score: row.rix_score as number | null,
-        stock_price: row.stock_price as number | null,
+        batch_week: row.batch_week,
+        model_name: row.model_name,
+        rix_score: row.rix_score,
+        stock_price: row.stock_price,
       }))
       .sort((a, b) => a.batch_week.localeCompare(b.batch_week));
 
-    const companyName = String(allData[0].company_name ?? params.ticker);
+    const companyName = allData[0].company_name || params.ticker;
 
     return {
       success: true,

@@ -295,16 +295,9 @@ serve(async (req) => {
       rixScores = v2Scores || [];
       console.log(`[Sales Intelligence] Found ${rixScores.length} RIX v2 records`);
 
-      // Fallback to legacy rix_runs if needed
+      // FASE 1 — rix_runs DEPRECATED. Sin fallback a legacy.
       if (rixScores.length === 0) {
-        const { data: legacyScores } = await supabase
-          .from('rix_runs')
-          .select('*')
-          .eq('05_ticker', ticker)
-          .order('batch_execution_date', { ascending: false })
-          .limit(16);
-        rixScores = legacyScores || [];
-        console.log(`[Sales Intelligence] Fallback to ${rixScores.length} legacy RIX records`);
+        console.log(`[Sales Intelligence] No RIX v2 data for ${ticker} (legacy fallback removed)`);
       }
     }
 
