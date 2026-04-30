@@ -21,6 +21,7 @@ import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { renderModelBreakdownTable } from "../datapack/modelBreakdown.ts";
 import { renderTemporalEvolutionTable } from "../datapack/temporalEvolution.ts";
 import { renderDivergenceBlock } from "../datapack/divergenceStats.ts";
+import { renderDimensionDivergenceBlock } from "../datapack/dimensionDivergence.ts";
 import { renderRecommendationsBlock } from "../datapack/recommendations.ts";
 import {
   buildCompetitiveContext,
@@ -251,6 +252,7 @@ export const companyAnalysisSkill: Skill = {
     const modelBreakdown = renderModelBreakdownTable(datapack.raw_rows);
     const temporalEvo = renderTemporalEvolutionTable(datapack.raw_rows);
     const divergence = renderDivergenceBlock(datapack.raw_rows);
+    const dimensionDivergence = renderDimensionDivergenceBlock(datapack.raw_rows);
     const recommendations = renderRecommendationsBlock(datapack.metrics);
     const competitiveTable = renderCompetitiveContextTable(competitive, datapack.entity.ticker);
     // Cited sources (real URLs from the 8 raw-response columns). Pre-rendered
@@ -277,6 +279,7 @@ export const companyAnalysisSkill: Skill = {
       recommendations,
       citedSourcesSummary,
       divergence,
+      dimensionDivergence,
     ].filter((s) => s && s.trim().length > 0);
     datapack = { ...datapack, pre_rendered_tables: enrichedTables };
 
