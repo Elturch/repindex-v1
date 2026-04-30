@@ -305,7 +305,13 @@ export const companyAnalysisSkill: Skill = {
     const temporalEvo = renderTemporalEvolutionTable(datapack.raw_rows);
     const divergence = renderDivergenceBlock(datapack.raw_rows);
     const dimensionDivergence = renderDimensionDivergenceBlock(datapack.raw_rows);
-    const recommendations = renderRecommendationsBlock(datapack.metrics);
+    // ANTI-MEDIANA: la sección 7 lee del MISMO objeto que la tabla principal
+    // (submetrics_range). Garantiza que tabla y recomendaciones nunca
+    // muestren números distintos para el mismo KPI.
+    const recommendations = renderRecommendationsBlock(
+      datapack.metrics,
+      datapack.period_summary?.submetrics_range,
+    );
     const competitiveTable = renderCompetitiveContextTable(competitive, datapack.entity.ticker);
     // Cited sources (real URLs from the 8 raw-response columns). Pre-rendered
     // as a markdown block; also returned structurally so the FE can show it
@@ -387,7 +393,11 @@ export const companyAnalysisSkill: Skill = {
 
     // P1-A — cross-skill canonical Sec.7 safety net.
     {
-      const _s7 = ensureSection7(finalContent, datapack.metrics);
+      const _s7 = ensureSection7(
+        finalContent,
+        datapack.metrics,
+        datapack.period_summary?.submetrics_range,
+      );
       finalContent = _s7.content;
       if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }

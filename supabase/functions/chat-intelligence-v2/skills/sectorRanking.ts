@@ -566,7 +566,19 @@ function buildUserMessageWithAssembler(
   perCompanyDimensions: string,
 ): string {
   const metrics = metricsFromRows(rawRows);
-  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", competitiveContext });
+  const _aggForReco = computePeriodAggregation(rawRows);
+  const report = assembleReport({
+    raw_rows: rawRows,
+    metrics,
+    mode: "period",
+    competitiveContext,
+    submetricsRange: _aggForReco.period_summary.submetrics_range,
+    rixRangeSummary: {
+      rix_min: _aggForReco.period_summary.rix_min,
+      rix_max: _aggForReco.period_summary.rix_max,
+      rix_consensus_level: _aggForReco.period_summary.rix_consensus_level,
+    },
+  });
   const blocks = selectBlocks(report, "sectorRanking");
   const divergence = computeDivergenceStats(rawRows);
   const uniqueWeeks = new Set(
@@ -844,7 +856,12 @@ export const sectorRankingSkill: Skill = {
 
     // P1-A — append canonical Sec.7 if the LLM omitted it.
     {
-      const _s7 = ensureSection7(finalContent, metricsFromRows(rows));
+      const _s7Agg = computePeriodAggregation(rows);
+      const _s7 = ensureSection7(
+        finalContent,
+        metricsFromRows(rows),
+        _s7Agg.period_summary.submetrics_range,
+      );
       finalContent = _s7.content;
     }
 
