@@ -48,6 +48,16 @@ export interface PeriodSummary {
   strongest_metric: string | null;  // metric with highest mean
   weakest_metric: string | null;    // metric with lowest mean
   most_volatile: string | null;     // metric with highest sd
+  // ANTI-MEDIANA SUB-MÉTRICAS: matriz Modelo→Valor por cada submétrica
+  // (NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM). Calculada como media intra-modelo
+  // entre semanas — NUNCA mezcla puntuaciones de IAs distintas.
+  // Es la ÚNICA fuente de verdad para tabla principal y recomendaciones.
+  submetrics_by_model: Record<string, Record<string, number | null>>;
+  // Rango inter-modelo por submétrica derivado de submetrics_by_model.
+  submetrics_range: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  >;
 }
 
 export interface PeriodAggregationResult {
@@ -206,6 +216,40 @@ export function computePeriodAggregation(rows: RawRunRow[]): PeriodAggregationRe
   const rix_range = rix_min != null && rix_max != null ? round1(rix_max - rix_min) : null;
   const rix_consensus_level = classifyConsensusRange(rix_range);
 
+  // ANTI-MEDIANA SUB-MÉTRICAS: matriz Modelo→Submétrica→valor (media
+  // intra-modelo entre semanas, sin mezclar IAs). Reaprovecha el
+  // algoritmo del bloque RIX por IA pero por cada columna de submétrica.
+  const submetrics_by_model: Record<string, Record<string, number | null>> = {};
+  const submetrics_range: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  > = {};
+  for (const { key, col } of METRIC_COLUMNS.slice(1)) {
+    const buckets = new Map<string, number[]>();
+    for (const r of rows || []) {
+      const model = String(r["02_model_name"] ?? "").trim();
+      if (!model) continue;
+      const v = toNum(r[col]);
+      if (v == null) continue;
+      if (!buckets.has(model)) buckets.set(model, []);
+      buckets.get(model)!.push(v);
+    }
+    const byModel: Record<string, number | null> = {};
+    for (const [model, vals] of buckets) {
+      byModel[model] = round1(mean(vals));
+    }
+    submetrics_by_model[key] = byModel;
+    const scores = Object.values(byModel).filter((v): v is number => v != null);
+    if (scores.length === 0) {
+      submetrics_range[key] = { min: null, max: null, range: null, level: "n/d" };
+    } else {
+      const mn = Math.min(...scores);
+      const mx = Math.max(...scores);
+      const rng = round1(mx - mn);
+      submetrics_range[key] = { min: round1(mn), max: round1(mx), range: rng, level: classifyConsensusRange(rng) };
+    }
+  }
+
   const period_summary: PeriodSummary = {
     mode,
     weeks_count,
@@ -222,6 +266,8 @@ export function computePeriodAggregation(rows: RawRunRow[]): PeriodAggregationRe
     strongest_metric: strongest,
     weakest_metric: weakest,
     most_volatile: mostVol,
+    submetrics_by_model,
+    submetrics_range,
   };
 
   return { period_summary, period_aggregation };
