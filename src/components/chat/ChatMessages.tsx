@@ -87,13 +87,14 @@ export function ChatMessages({
     link.href = url;
     link.download = `repindex_informe_${timestamp}.html`;
     link.rel = 'noopener';
+    link.target = '_blank';
     link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
       if (link.parentNode) link.parentNode.removeChild(link);
       URL.revokeObjectURL(url);
-    }, 100);
+    }, 60000);
     toast({ title: tr.pdfExported, description: tr.pdfExportedDesc });
   };
   

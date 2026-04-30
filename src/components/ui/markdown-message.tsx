@@ -56,8 +56,15 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
     const link = document.createElement('a');
     link.href = url;
     link.download = fileName;
+    link.rel = 'noopener';
+    link.target = '_blank';
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 60000);
 
     toast({
       title: tr.pdfExported,
