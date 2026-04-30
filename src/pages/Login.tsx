@@ -18,7 +18,6 @@ const Login: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
   const [savingLead, setSavingLead] = useState(false);
-  const [devLoading, setDevLoading] = useState(false);
   const [leadSaveResult, setLeadSaveResult] = useState<{
     type: 'consent' | 'no_consent';
     isCorporateEmail?: boolean;
@@ -29,8 +28,7 @@ const Login: React.FC = () => {
 
   // In dev/preview mode, skip login entirely and go to dashboard
   useEffect(() => {
-    // If in dev/preview AND no DEV button env configured, fall back to old behavior
-    if (isDevOrPreview() && !import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL) {
+    if (isDevOrPreview()) {
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
       navigate(from, { replace: true });
       return;
@@ -42,50 +40,6 @@ const Login: React.FC = () => {
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate, location]);
-
-  const handleDevLogin = useCallback(async () => {
-    setDevLoading(true);
-    setErrorMessage('');
-    try {
-      const devEmail = import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL as string | undefined;
-      const devSecret = import.meta.env.VITE_DEV_PREVIEW_LOGIN_SECRET as string | undefined;
-      if (!devEmail || !devSecret) {
-        setErrorMessage('Faltan VITE_DEV_PREVIEW_LOGIN_EMAIL / VITE_DEV_PREVIEW_LOGIN_SECRET');
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke('dev-preview-login', {
-        body: {
-          email: devEmail,
-          secret: devSecret,
-          redirect_to: `${window.location.origin}/chat`,
-        },
-      });
-      if (error || !data?.ok) {
-        setErrorMessage(`Dev login failed: ${data?.error || error?.message || 'unknown'}`);
-        return;
-      }
-      // Extract tokens from action_link fragment and setSession
-      const url = new URL(data.action_link);
-      const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
-      const access_token = hash.get('access_token');
-      const refresh_token = hash.get('refresh_token');
-      if (!access_token || !refresh_token) {
-        // Fallback: navigate the browser to the action_link to let Supabase handle the session
-        window.location.href = data.action_link;
-        return;
-      }
-      const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token });
-      if (setErr) {
-        setErrorMessage(`setSession failed: ${setErr.message}`);
-        return;
-      }
-      navigate('/chat', { replace: true });
-    } catch (e) {
-      setErrorMessage(`Dev login exception: ${(e as Error).message}`);
-    } finally {
-      setDevLoading(false);
-    }
-  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
