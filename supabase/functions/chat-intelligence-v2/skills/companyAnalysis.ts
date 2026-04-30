@@ -355,7 +355,12 @@ export const companyAnalysisSkill: Skill = {
           : finalContent.replace(MARKER_RE, replacement);
         try { onChunk?.("\n\n" + replacement); } catch (_) { /* noop */ }
       } else if (hasUrls) {
-        const tail = "\n\n" + replacement;
+        // GAP-1 — Si el LLM omitió la Sec.8 entera, prefija un H2 canónico
+        // antes del bloque para que el informe respete la estructura de 9
+        // secciones aunque el modelo se haya saltado la cabecera.
+        const HAS_S8_HEADER = /(^|\n)\s*##\s*8\.\s*Fuentes/i.test(finalContent);
+        const headerPrefix = HAS_S8_HEADER ? "" : "\n\n## 8. Fuentes citadas por los modelos de IA\n\n";
+        const tail = headerPrefix + (HAS_S8_HEADER ? "\n\n" : "") + replacement;
         finalContent = finalContent + tail;
         try { onChunk?.(tail); } catch (_) { /* noop */ }
       }
