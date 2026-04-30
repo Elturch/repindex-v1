@@ -74,7 +74,18 @@ export interface DataPack {
   metrics: MetricAggregation[]; // en mode=period: agregados; en mode=snapshot: valor unico
   raw_rows: any[]; // datos crudos para tabla de evolucion semanal
   pre_rendered_tables: string[]; // tablas markdown ya generadas
-  period_summary?: { rix_mean: number; rix_trend: string; strongest: MetricName; weakest: MetricName; most_volatile: MetricName };
+  period_summary?: {
+    // ANTI-MEDIANA: matriz por IA + rango (no promediamos entre modelos).
+    rix_by_model: Record<string, number | null>;
+    rix_min: number | null;
+    rix_max: number | null;
+    rix_range: number | null;
+    rix_consensus_level: "alto" | "medio" | "bajo" | "n/d";
+    rix_trend: string;
+    strongest: MetricName;
+    weakest: MetricName;
+    most_volatile: MetricName;
+  };
   consensus?: { ranking_position: number; total_companies: number; divergence: number };
 }
 
