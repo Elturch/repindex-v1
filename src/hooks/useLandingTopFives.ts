@@ -3,6 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { AIModelOption } from "@/contexts/LandingAIModelContext";
 import { getLatestRixTrendWeeks } from "@/lib/getLatestRixTrendWeeks";
 
+// FASE 1 — V2-only. Reads from `rix_runs_v2` (Sunday-anchored). Legacy
+// `rix_trends` retired. If V2 has fewer than 2 weeks of history, the
+// movers blocks degrade gracefully (empty arrays, no error).
+
 export type RankingMode = "score" | "consensus";
 
 interface TopCompany {
@@ -21,7 +25,6 @@ interface TopByAI {
   perplexity: TopCompany[];
 }
 
-// === CONSENSUS HELPERS ===
 interface ConsensusRow {
   ticker: string;
   company_name: string;
@@ -49,24 +52,19 @@ function buildConsensusRows(
     is_traded?: boolean | null;
   }>
 ): ConsensusRow[] {
-  // Group by ticker
   const grouped = new Map<string, typeof rows>();
   for (const r of rows) {
     if (!grouped.has(r.ticker)) grouped.set(r.ticker, []);
     grouped.get(r.ticker)!.push(r);
   }
-
   const result: ConsensusRow[] = [];
   for (const [ticker, items] of grouped) {
     const scores = items.map(i => i.rix_score).filter(s => typeof s === "number");
     if (scores.length === 0) continue;
     const sorted = [...scores].sort((a, b) => a - b);
     const range = sorted[sorted.length - 1] - sorted[0];
-    // Majority block: drop top and bottom outliers when 4+ models, then average
     let majorityScores = sorted;
-    if (sorted.length >= 4) {
-      majorityScores = sorted.slice(1, -1);
-    }
+    if (sorted.length >= 4) majorityScores = sorted.slice(1, -1);
     const majorityScore = majorityScores.reduce((a, b) => a + b, 0) / majorityScores.length;
     result.push({
       ticker,
@@ -102,71 +100,133 @@ function consensusToTopCompany(r: ConsensusRow): TopCompany {
   };
 }
 
+// Fetch all V2 rows for one batch (Sunday-anchored execution date), join repindex.
+async function fetchV2WeekEnriched(
+  batchDateISO: string,
+  issuersMap: Map<string, { name: string; ibexCode: string | null; isTraded: boolean }>,
+): Promise<Array<{
+  company_name: string;
+  ticker: string;
+  rix_score: number;
+  model_name: string;
+  ibex_family_code: string | null;
+  is_traded: boolean;
+}>> {
+  // batchDateISO is YYYY-MM-DD. Match the full Sunday day window.
+  const dayStart = `${batchDateISO}T00:00:00Z`;
+  const nextDay = new Date(batchDateISO);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  const dayEnd = nextDay.toISOString();
+
+  const all: any[] = [];
+  const PAGE = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("rix_runs_v2")
+      .select(`"05_ticker","02_model_name","09_rix_score","51_rix_score_adjusted","52_cxm_excluded","03_target_name",batch_execution_date`)
+      .gte("batch_execution_date", dayStart)
+      .lt("batch_execution_date", dayEnd)
+      .or('analysis_completed_at.not.is.null,09_rix_score.not.is.null')
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+
+  return all
+    .map((r: any) => {
+      const ticker = r["05_ticker"];
+      const meta = issuersMap.get(ticker);
+      if (!meta) return null;
+      const score = r["52_cxm_excluded"] ? r["51_rix_score_adjusted"] : r["09_rix_score"];
+      if (score === null || score === undefined) return null;
+      return {
+        company_name: r["03_target_name"] || meta.name,
+        ticker,
+        rix_score: score,
+        model_name: r["02_model_name"],
+        ibex_family_code: meta.ibexCode,
+        is_traded: meta.isTraded,
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+}
+
 export function useLandingTopFives(
   selectedModel: AIModelOption = "ChatGPT",
   mode: RankingMode = "score"
 ) {
   return useQuery({
-    queryKey: ["landing-top-fives", selectedModel, mode],
+    queryKey: ["landing-top-fives-v2only", selectedModel, mode],
     queryFn: async () => {
       const latestWeeks = await getLatestRixTrendWeeks({ desired: 2 });
-      if (!latestWeeks || latestWeeks.length === 0) throw new Error("No data available");
+
+      const empty: TopByAI = { chatgpt: [], deepseek: [], gemini: [], perplexity: [] };
+      const emptyResult = {
+        latestWeek: null as string | null,
+        selectedModel,
+        mode,
+        topByAI: empty,
+        topIbex: [] as TopCompany[],
+        bottomIbex: [] as TopCompany[],
+        ibexMoversUp: [] as TopCompany[],
+        ibexMoversDown: [] as TopCompany[],
+        topTraded: [] as TopCompany[],
+        topUntraded: [] as TopCompany[],
+        topOverall: [] as TopCompany[],
+        bottomOverall: [] as TopCompany[],
+        topMoversUp: [] as TopCompany[],
+        topMoversDown: [] as TopCompany[],
+      };
+
+      if (!latestWeeks || latestWeeks.length === 0) return emptyResult;
 
       const latestWeek = latestWeeks[0];
       const previousWeek = latestWeeks.length > 1 ? latestWeeks[1] : null;
 
+      // Pre-load issuers master once
+      const { data: issuersData } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker, issuer_name, ibex_family_code, cotiza_en_bolsa");
+      const issuersMap = new Map<string, { name: string; ibexCode: string | null; isTraded: boolean }>();
+      (issuersData || []).forEach(i => {
+        issuersMap.set(i.ticker, {
+          name: i.issuer_name ?? i.ticker,
+          ibexCode: i.ibex_family_code ?? null,
+          isTraded: !!i.cotiza_en_bolsa,
+        });
+      });
+
+      const currentRows = await fetchV2WeekEnriched(latestWeek, issuersMap);
+      if (currentRows.length === 0) return { ...emptyResult, latestWeek };
+
       const topByAI: TopByAI = { chatgpt: [], deepseek: [], gemini: [], perplexity: [] };
 
-      // Top 5 by each AI model (kept for backwards compatibility)
+      // Top 5 by each of the 4 legacy-named buckets (kept for backwards compat)
       for (const model of ["ChatGPT", "Deepseek", "Google Gemini", "Perplexity"]) {
-        const { data } = await supabase
-          .from("rix_trends")
-          .select("company_name, ticker, rix_score, model_name")
-          .eq("batch_week", latestWeek)
-          .eq("model_name", model)
-          .order("rix_score", { ascending: false })
-          .limit(5);
-
-        if (data) {
-          let key: keyof TopByAI;
-          const normalizedModel = model.toLowerCase().replace(" ", "");
-          if (normalizedModel === "googlegemini") key = "gemini";
-          else if (normalizedModel === "chatgpt") key = "chatgpt";
-          else if (normalizedModel === "deepseek") key = "deepseek";
-          else key = "perplexity";
-          topByAI[key] = data.map(d => ({
-            empresa: d.company_name,
-            ticker: d.ticker,
-            rix: d.rix_score,
-            ai: d.model_name,
-          }));
-        }
+        const filtered = currentRows
+          .filter(r => r.model_name === model)
+          .sort((a, b) => b.rix_score - a.rix_score)
+          .slice(0, 5);
+        let key: keyof TopByAI;
+        const norm = model.toLowerCase().replace(" ", "");
+        if (norm === "googlegemini") key = "gemini";
+        else if (norm === "chatgpt") key = "chatgpt";
+        else if (norm === "deepseek") key = "deepseek";
+        else key = "perplexity";
+        topByAI[key] = filtered.map(d => ({
+          empresa: d.company_name,
+          ticker: d.ticker,
+          rix: d.rix_score,
+          ai: d.model_name,
+        }));
       }
 
-      // ===========================================================
-      // CONSENSUS MODE — fetch ALL models for the week, group, sort
-      // ===========================================================
+      // ============== CONSENSUS MODE ==============
       if (mode === "consensus") {
-        // Fetch all rows for latest week (paginated to bypass 1000 row default)
-        const fetchAllForWeek = async (week: string) => {
-          const all: any[] = [];
-          let from = 0;
-          const PAGE = 1000;
-          while (true) {
-            const { data, error } = await supabase
-              .from("rix_trends")
-              .select("company_name, ticker, rix_score, model_name, ibex_family_code, is_traded")
-              .eq("batch_week", week)
-              .range(from, from + PAGE - 1);
-            if (error || !data || data.length === 0) break;
-            all.push(...data);
-            if (data.length < PAGE) break;
-            from += PAGE;
-          }
-          return all;
-        };
-
-        const currentRows = await fetchAllForWeek(latestWeek);
         const consensus = buildConsensusRows(currentRows);
 
         const ibexRows = consensus.filter(r => r.ibex_family_code === "IBEX-35");
@@ -181,35 +241,34 @@ export function useLandingTopFives(
         const topTraded = sortByConsensus(tradedNonIbex).slice(0, 5).map(consensusToTopCompany);
         const topUntraded = sortByConsensus(untradedRows).slice(0, 5).map(consensusToTopCompany);
 
-        // Movers — compare consensus majority scores week-over-week
         let topMoversUp: TopCompany[] = [];
         let topMoversDown: TopCompany[] = [];
         let ibexMoversUp: TopCompany[] = [];
         let ibexMoversDown: TopCompany[] = [];
 
         if (previousWeek) {
-          const previousRows = await fetchAllForWeek(previousWeek);
-          const prevConsensus = buildConsensusRows(previousRows);
-          const prevMap = new Map(prevConsensus.map(r => [r.ticker, r]));
-
-          const changes = consensus
-            .map(curr => {
-              const prev = prevMap.get(curr.ticker);
-              if (!prev) return null;
-              return {
-                ...consensusToTopCompany(curr),
-                ibex_family_code: curr.ibex_family_code,
-                change: curr.majorityScore - prev.majorityScore,
-              };
-            })
-            .filter(Boolean) as (TopCompany & { ibex_family_code: string | null; change: number })[];
-
-          const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX-35");
-          ibexMoversUp = [...ibexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
-          ibexMoversDown = [...ibexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
-          const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35");
-          topMoversUp = [...nonIbexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
-          topMoversDown = [...nonIbexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
+          const previousRows = await fetchV2WeekEnriched(previousWeek, issuersMap);
+          if (previousRows.length > 0) {
+            const prevConsensus = buildConsensusRows(previousRows);
+            const prevMap = new Map(prevConsensus.map(r => [r.ticker, r]));
+            const changes = consensus
+              .map(curr => {
+                const prev = prevMap.get(curr.ticker);
+                if (!prev) return null;
+                return {
+                  ...consensusToTopCompany(curr),
+                  ibex_family_code: curr.ibex_family_code,
+                  change: curr.majorityScore - prev.majorityScore,
+                };
+              })
+              .filter(Boolean) as (TopCompany & { ibex_family_code: string | null; change: number })[];
+            const ibexChanges = changes.filter(c => c.ibex_family_code === "IBEX-35");
+            ibexMoversUp = [...ibexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
+            ibexMoversDown = [...ibexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
+            const nonIbexChanges = changes.filter(c => c.ibex_family_code !== "IBEX-35");
+            topMoversUp = [...nonIbexChanges].sort((a, b) => b.change - a.change).slice(0, 5);
+            topMoversDown = [...nonIbexChanges].sort((a, b) => a.change - b.change).slice(0, 5);
+          }
         }
 
         return {
@@ -230,63 +289,27 @@ export function useLandingTopFives(
         };
       }
 
-      // ===========================================================
-      // SCORE MODE (default) — original behaviour, filtered by model
-      // ===========================================================
-      const { data: topIbex } = await supabase
-        .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-        .eq("batch_week", latestWeek)
-        .eq("ibex_family_code", "IBEX-35")
-        .eq("model_name", selectedModel)
-        .order("rix_score", { ascending: false })
-        .limit(5);
+      // ============== SCORE MODE ==============
+      const byModel = currentRows.filter(r => r.model_name === selectedModel);
 
-      const { data: bottomIbex } = await supabase
-        .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-        .eq("batch_week", latestWeek)
-        .eq("ibex_family_code", "IBEX-35")
-        .eq("model_name", selectedModel)
-        .order("rix_score", { ascending: true })
-        .limit(5);
-
-      const { data: topTraded } = await supabase
-        .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, is_traded, ibex_family_code")
-        .eq("batch_week", latestWeek)
-        .eq("is_traded", true)
-        .neq("ibex_family_code", "IBEX-35")
-        .eq("model_name", selectedModel)
-        .order("rix_score", { ascending: false })
-        .limit(5);
-
-      const { data: topUntraded } = await supabase
-        .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, is_traded")
-        .eq("batch_week", latestWeek)
-        .eq("is_traded", false)
-        .eq("model_name", selectedModel)
-        .order("rix_score", { ascending: false })
-        .limit(5);
-
-      const { data: topOverall } = await supabase
-        .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-        .eq("batch_week", latestWeek)
-        .neq("ibex_family_code", "IBEX-35")
-        .eq("model_name", selectedModel)
-        .order("rix_score", { ascending: false })
-        .limit(5);
-
-      const { data: bottomOverall } = await supabase
-        .from("rix_trends")
-        .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-        .eq("batch_week", latestWeek)
-        .neq("ibex_family_code", "IBEX-35")
-        .eq("model_name", selectedModel)
-        .order("rix_score", { ascending: true })
-        .limit(5);
+      const topIbex = byModel
+        .filter(r => r.ibex_family_code === "IBEX-35")
+        .sort((a, b) => b.rix_score - a.rix_score).slice(0, 5);
+      const bottomIbex = byModel
+        .filter(r => r.ibex_family_code === "IBEX-35")
+        .sort((a, b) => a.rix_score - b.rix_score).slice(0, 5);
+      const topTraded = byModel
+        .filter(r => r.is_traded === true && r.ibex_family_code !== "IBEX-35")
+        .sort((a, b) => b.rix_score - a.rix_score).slice(0, 5);
+      const topUntraded = byModel
+        .filter(r => r.is_traded === false)
+        .sort((a, b) => b.rix_score - a.rix_score).slice(0, 5);
+      const topOverall = byModel
+        .filter(r => r.ibex_family_code !== "IBEX-35")
+        .sort((a, b) => b.rix_score - a.rix_score).slice(0, 5);
+      const bottomOverall = byModel
+        .filter(r => r.ibex_family_code !== "IBEX-35")
+        .sort((a, b) => a.rix_score - b.rix_score).slice(0, 5);
 
       let topMoversUp: TopCompany[] = [];
       let topMoversDown: TopCompany[] = [];
@@ -294,22 +317,12 @@ export function useLandingTopFives(
       let ibexMoversDown: TopCompany[] = [];
 
       if (previousWeek) {
-        const { data: currentData } = await supabase
-          .from("rix_trends")
-          .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-          .eq("batch_week", latestWeek)
-          .eq("model_name", selectedModel);
-
-        const { data: previousData } = await supabase
-          .from("rix_trends")
-          .select("company_name, ticker, rix_score, model_name, ibex_family_code")
-          .eq("batch_week", previousWeek)
-          .eq("model_name", selectedModel);
-
-        if (currentData && previousData) {
-          const changes = currentData
+        const previousRows = await fetchV2WeekEnriched(previousWeek, issuersMap);
+        const prevByModel = previousRows.filter(r => r.model_name === selectedModel);
+        if (prevByModel.length > 0) {
+          const changes = byModel
             .map(curr => {
-              const prev = previousData.find(p => p.ticker === curr.ticker);
+              const prev = prevByModel.find(p => p.ticker === curr.ticker);
               if (!prev) return null;
               return {
                 empresa: curr.company_name,
@@ -331,19 +344,22 @@ export function useLandingTopFives(
         }
       }
 
+      const toTC = (rows: typeof byModel): TopCompany[] =>
+        rows.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name }));
+
       return {
         latestWeek,
         selectedModel,
         mode,
         topByAI,
-        topIbex: topIbex?.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name })) || [],
-        bottomIbex: bottomIbex?.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name })) || [],
+        topIbex: toTC(topIbex),
+        bottomIbex: toTC(bottomIbex),
         ibexMoversUp,
         ibexMoversDown,
-        topTraded: topTraded?.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name })) || [],
-        topUntraded: topUntraded?.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name })) || [],
-        topOverall: topOverall?.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name })) || [],
-        bottomOverall: bottomOverall?.map(d => ({ empresa: d.company_name, ticker: d.ticker, rix: d.rix_score, ai: d.model_name })) || [],
+        topTraded: toTC(topTraded),
+        topUntraded: toTC(topUntraded),
+        topOverall: toTC(topOverall),
+        bottomOverall: toTC(bottomOverall),
         topMoversUp,
         topMoversDown,
       };
