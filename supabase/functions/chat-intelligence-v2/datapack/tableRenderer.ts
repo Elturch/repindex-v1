@@ -4,6 +4,22 @@
 // _shared/periodAggregation.ts (renderPeriodAggregationBlock).
 import type { MetricAggregation, Mode } from "../types.ts";
 
+/** Subset of DataPack.period_summary used by the KPI table renderer when
+ *  rendering the anti-mediana view (mode=period). Optional so existing
+ *  callers that omit it keep working with a sensible (degraded) header. */
+export interface KpiTablePeriodSummary {
+  submetrics_by_model?: Record<string, Record<string, number | null>>;
+  submetrics_range?: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  >;
+  rix_by_model?: Record<string, number | null>;
+  rix_min?: number | null;
+  rix_max?: number | null;
+  rix_range?: number | null;
+  rix_consensus_level?: "alto" | "medio" | "bajo" | "n/d";
+}
+
 const METRIC_LABEL: Record<string, string> = {
   RIX: "RIX (índice global)",
   NVM: "NVM · Calidad de la Narrativa",
@@ -34,12 +50,31 @@ function semaforo(score: number | null | undefined): string {
   return "🔴";
 }
 
+/** Render "min–max" or "n/d". Single source of truth for range cells. */
+function fmtRange(r: { min: number | null; max: number | null } | undefined | null): string {
+  if (!r || r.min == null || r.max == null) return "n/d";
+  if (r.min === r.max) return fmt(r.min);
+  return `${fmt(r.min)}–${fmt(r.max)}`;
+}
+
+function consensusBadge(level: "alto" | "medio" | "bajo" | "n/d" | undefined): string {
+  if (!level || level === "n/d") return "n/d";
+  if (level === "alto") return "🟢 alto";
+  if (level === "medio") return "🟡 medio";
+  return "🔴 bajo";
+}
+
 /**
  * Tabla principal de KPIs.
- * - mode=period: MEDIA / INICIO→FIN / DELTA / MIN / MAX / VOLATILIDAD
+ * - mode=period (anti-mediana): RANGO POR IA / CONSENSO / INICIO→FIN / Δ / VOLATILIDAD
+ *   Usa submetrics_range del period_summary (matriz por IA, NUNCA media cross-modelo).
  * - mode=snapshot: VALOR / TENDENCIA (delta vs primera semana del rango)
  */
-export function renderPeriodKpiTable(metrics: MetricAggregation[], mode: Mode): string {
+export function renderPeriodKpiTable(
+  metrics: MetricAggregation[],
+  mode: Mode,
+  periodSummary?: KpiTablePeriodSummary,
+): string {
   if (!metrics.length) return "";
 
   if (mode === "snapshot") {
@@ -58,17 +93,34 @@ export function renderPeriodKpiTable(metrics: MetricAggregation[], mode: Mode): 
     ].join("\n");
   }
 
+  // ANTI-MEDIANA — modo período: NO se reporta una "media" cross-modelo
+  // como verdad agregada. Cada KPI muestra el RANGO inter-IA (min–max)
+  // y un nivel cualitativo de CONSENSO derivado del rango. La columna
+  // Inicio→Fin / Δ se mantiene como referencia temporal del consenso
+  // semanal medio (intra-período), claramente etiquetada.
+  const sm = periodSummary?.submetrics_range ?? {};
+  const rxRange =
+    periodSummary && periodSummary.rix_min != null && periodSummary.rix_max != null
+      ? { min: periodSummary.rix_min, max: periodSummary.rix_max }
+      : null;
+  const rxLevel = periodSummary?.rix_consensus_level ?? "n/d";
   const rows = metrics
-    .map(
-      (m) =>
-        `| ${semaforo(m.mean)} ${METRIC_LABEL[m.metric] ?? m.metric} | ${fmt(m.mean)} | ${fmt(m.first_week)} → ${fmt(m.last_week)} | ${sign(m.delta_period)} | ${fmt(m.min)} | ${fmt(m.max)} | ${fmt(m.volatility)} |`,
-    )
+    .map((m) => {
+      const isRix = m.metric === "RIX";
+      const range = isRix ? rxRange : sm[m.metric] ?? null;
+      const level = isRix ? rxLevel : sm[m.metric]?.level ?? "n/d";
+      // semáforo basado en mid-range (min+max)/2 para señal visual rápida
+      const mid = range && range.min != null && range.max != null ? (range.min + range.max) / 2 : null;
+      return `| ${semaforo(mid)} ${METRIC_LABEL[m.metric] ?? m.metric} | ${fmtRange(range)} | ${consensusBadge(level)} | ${fmt(m.first_week)} → ${fmt(m.last_week)} | ${sign(m.delta_period)} | ${fmt(m.volatility)} |`;
+    })
     .join("\n");
   return [
-    "**Tabla principal — KPIs del período**",
+    "**Tabla principal — KPIs del período (anti-mediana, por IA)**",
     "",
-    "| Indicador | Media | Inicio → Fin | Δ período | Min | Max | Volatilidad (sd) |",
-    "|---|---|---|---|---|---|---|",
+    "_Cada celda 'Rango por IA' muestra min–max entre los 6 modelos. Nunca se promedia entre IAs._",
+    "",
+    "| Indicador | Rango por IA | Consenso | Inicio → Fin (referencia) | Δ período | Volatilidad (sd) |",
+    "|---|---|---|---|---|---|",
     rows,
   ].join("\n");
 }
@@ -137,4 +189,4 @@ export function renderEvolutionTable(rows: any[]): string {
   ].join("\n");
 }
 
-export const __test__ = { fmt, sign, semaforo };
+export const __test__ = { fmt, sign, semaforo, fmtRange, consensusBadge };

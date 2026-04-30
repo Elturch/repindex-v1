@@ -140,6 +140,17 @@ export async function buildCompetitiveContext(
 
   const entityRank = rows.find((r) => r.ticker === entity.ticker)?.rank ?? null;
 
+  // BUG 1 endurecimiento: si hay <2 comparables válidos (excluyendo la
+  // propia empresa), omitimos la sección. Mejor vacío explícito que
+  // peers inventados de un sector mal clasificado.
+  const validPeers = rows.filter((r) => r.ticker !== entity.ticker).length;
+  if (validPeers < 2) {
+    console.warn(
+      `[RIX-V2][competitive] insufficient peers for ${entity.ticker} (sector="${entity.sector_category}", peers=${validPeers}) — section omitted`,
+    );
+    return empty;
+  }
+
   // Top N + asegurar que la entidad analizada esté presente.
   let table = rows.slice(0, topN);
   if (entityRank && entityRank > topN) {

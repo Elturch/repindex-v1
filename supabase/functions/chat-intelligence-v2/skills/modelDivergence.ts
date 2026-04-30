@@ -24,6 +24,7 @@ import {
   ensureSection7,
 } from "../datapack/reportAssembler.ts";
 import { extractCitedSources } from "../datapack/citedSources.ts";
+import { computePeriodAggregation } from "../../_shared/periodAggregation.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -178,7 +179,20 @@ function buildUserMessageWithAssembler(
   models: string[],
 ): string {
   const metrics = metricsFromRows(rawRows);
-  const report = assembleReport({ raw_rows: rawRows, metrics, mode: "period", periodFrom: fromISO, periodTo: toISO });
+  const _aggForReco = computePeriodAggregation(rawRows);
+  const report = assembleReport({
+    raw_rows: rawRows,
+    metrics,
+    mode: "period",
+    periodFrom: fromISO,
+    periodTo: toISO,
+    submetricsRange: _aggForReco.period_summary.submetrics_range,
+    rixRangeSummary: {
+      rix_min: _aggForReco.period_summary.rix_min,
+      rix_max: _aggForReco.period_summary.rix_max,
+      rix_consensus_level: _aggForReco.period_summary.rix_consensus_level,
+    },
+  });
   const blocks = selectBlocks(report, "modelDivergence");
   const methodology = renderMethodologyFooter({
     fromISO, toISO, models, observationsCount: rawRows.length,
@@ -311,7 +325,12 @@ export const modelDivergenceSkill: Skill = {
 
     // P1-A — append canonical Sec.7 if the LLM omitted it.
     {
-      const _s7 = ensureSection7(finalContent, metricsFromRows(workingRows));
+      const _s7Agg = computePeriodAggregation(workingRows);
+      const _s7 = ensureSection7(
+        finalContent,
+        metricsFromRows(workingRows),
+        _s7Agg.period_summary.submetrics_range,
+      );
       finalContent = _s7.content;
       if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }

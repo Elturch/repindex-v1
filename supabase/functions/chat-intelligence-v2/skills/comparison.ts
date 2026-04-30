@@ -20,6 +20,7 @@ import { hydrateBrutoColumns } from "../datapack/builder.ts";
 import { resolveSemanticGroup } from "../../_shared/semanticGroups.ts";
 import { ensureSection7, metricsFromRows } from "../datapack/reportAssembler.ts";
 import { extractCitedSources } from "../datapack/citedSources.ts";
+import { computePeriodAggregation } from "../../_shared/periodAggregation.ts";
 
 function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
   if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
@@ -362,7 +363,13 @@ export const comparisonSkill: Skill = {
 
     // P1-A — append canonical Sec.7 if the LLM omitted it.
     {
-      const _s7 = ensureSection7(finalContent, metricsFromRows(rowsPerEntity.flat()));
+      const _allRows = rowsPerEntity.flat();
+      const _s7Agg = computePeriodAggregation(_allRows);
+      const _s7 = ensureSection7(
+        finalContent,
+        metricsFromRows(_allRows),
+        _s7Agg.period_summary.submetrics_range,
+      );
       finalContent = _s7.content;
       if (_s7.appended) { try { onChunk?.(_s7.tail); } catch (_) { /* noop */ } }
     }
