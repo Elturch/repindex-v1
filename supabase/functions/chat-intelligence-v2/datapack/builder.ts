@@ -276,7 +276,11 @@ export async function buildDataPack(
 
   const periodSummary = metrics.length > 0
     ? {
-      rix_mean: agg.period_summary.rix_mean ?? 0,
+      rix_by_model: agg.period_summary.rix_by_model ?? {},
+      rix_min: agg.period_summary.rix_min,
+      rix_max: agg.period_summary.rix_max,
+      rix_range: agg.period_summary.rix_range,
+      rix_consensus_level: agg.period_summary.rix_consensus_level,
       rix_trend: agg.period_summary.rix_trend,
       strongest: (agg.period_summary.strongest_metric ?? "RIX") as MetricName,
       weakest: (agg.period_summary.weakest_metric ?? "RIX") as MetricName,
