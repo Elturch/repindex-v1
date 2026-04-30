@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,26 +54,28 @@ export function ChatMessages({
   // v1 vs v2 side by side; production users never see them.
   const showPreviewSignals = isPreviewEnvironment();
 
-  const exportHtmlByMessageIndex = useMemo(() => {
-    const cache = new Map<number, string>();
-    messages.forEach((message, index) => {
-      if (message.role !== 'assistant' || message.isStreaming) return;
-      const roleName = message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined;
-      cache.set(index, generateExportHtml(
-        message.content,
-        tr,
-        languageCode,
-        roleName,
-        message.metadata?.verifiedSources,
-        message.metadata?.methodology?.periodFrom,
-        message.metadata?.methodology?.periodTo,
-        message.metadata?.reportContext as Record<string, unknown> | undefined,
-      ));
-    });
-    return cache;
-  }, [messages, tr, languageCode]);
+  const triggerBlobDownload = (blob: Blob, filename: string) => {
+    try {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.rel = 'noopener';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 1000);
+      return true;
+    } catch (err) {
+      console.error('[ChatMessages] download failed', err);
+      return false;
+    }
+  };
 
-  const downloadMessage = (message: Message, prebuiltHtml?: string) => {
+  const downloadMessage = (message: Message) => {
     // P0-2 — Defense in depth: even though the Download button is hidden
     // during streaming (`!message.isStreaming` guard ~line 364) and
     // MarkdownMessage receives `showDownload={false}`, any future call
@@ -90,7 +92,7 @@ export function ChatMessages({
     }
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const roleName = message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined;
-    const htmlContent = prebuiltHtml ?? generateExportHtml(
+    const htmlContent = generateExportHtml(
       message.content,
       tr,
       languageCode,
@@ -101,20 +103,16 @@ export function ChatMessages({
       message.metadata?.reportContext as Record<string, unknown> | undefined,
     );
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `repindex_informe_${timestamp}.html`;
-    link.rel = 'noopener';
-    link.target = '_blank';
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      if (link.parentNode) link.parentNode.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 60000);
-    toast({ title: tr.pdfExported, description: tr.pdfExportedDesc });
+    const ok = triggerBlobDownload(blob, `repindex_informe_${timestamp}.html`);
+    if (ok) {
+      toast({ title: tr.pdfExported, description: tr.pdfExportedDesc });
+    } else {
+      toast({
+        title: 'Error al descargar',
+        description: 'El navegador bloqueó la descarga. Intenta de nuevo.',
+        variant: 'destructive',
+      });
+    }
   };
   
   // Smart suggestions with live data and personalization
@@ -406,7 +404,7 @@ export function ChatMessages({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => downloadMessage(message, exportHtmlByMessageIndex.get(idx))}
+                    onClick={() => downloadMessage(message)}
                     className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
                   >
                     <Download className="h-3.5 w-3.5" />

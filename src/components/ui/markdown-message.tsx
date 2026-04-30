@@ -52,24 +52,28 @@ export function MarkdownMessage({ content, showDownload = false, languageCode = 
     const htmlContent = generateExportHtml(cleanedContent, tr, languageCode, roleName, verifiedSources, periodFrom, periodTo);
 
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.rel = 'noopener';
-    link.target = '_blank';
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      if (link.parentNode) link.parentNode.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 60000);
-
-    toast({
-      title: tr.pdfExported,
-      description: tr.pdfExportedDesc,
-    });
+    try {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.rel = 'noopener';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 1000);
+      toast({ title: tr.pdfExported, description: tr.pdfExportedDesc });
+    } catch (err) {
+      console.error('[MarkdownMessage] download failed', err);
+      toast({
+        title: 'Error al descargar',
+        description: 'El navegador bloqueó la descarga. Intenta de nuevo.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
