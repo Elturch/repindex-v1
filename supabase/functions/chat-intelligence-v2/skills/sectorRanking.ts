@@ -579,7 +579,7 @@ function buildUserMessageWithAssembler(
       ? `${divergence.level} (σ inter-modelo = ${(Math.round(divergence.sigma * 10) / 10)} pts, snapshot ${divergence.snapshot_date ?? "n/d"})`
       : "no calculable",
   });
-  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_mean)}`).join("\n");
+  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (consenso ${r.consensusLevel})`).join("\n");
   return [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
@@ -617,8 +617,10 @@ function buildMetadata(
   toISO: string,
   models: ModelName[],
 ): ReportMetadata {
-  const rixs = ranking.map((r) => r.rix_mean).filter((n) => Number.isFinite(n));
-  const range = rixs.length ? Math.max(...rixs) - Math.min(...rixs) : 0;
+  // Rango global del ranking = max(rix_max) - min(rix_min) entre las empresas listadas.
+  const mins = ranking.map((r) => r.rix_min).filter((n) => Number.isFinite(n));
+  const maxs = ranking.map((r) => r.rix_max).filter((n) => Number.isFinite(n));
+  const range = mins.length && maxs.length ? Math.max(...maxs) - Math.min(...mins) : 0;
   const uniqueWeeks = new Set(
     rawRows.map((r) => String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10)).filter(Boolean),
   ).size;
