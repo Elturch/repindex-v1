@@ -22,6 +22,23 @@ function semaforo(score: number): string {
   return "🔴";
 }
 
+/**
+ * Normaliza una fecha YYYY-MM-DD al lunes ISO de su semana.
+ * Evita que period_from caídos en martes/miércoles aparezcan como filas
+ * sueltas en la tabla de evolución temporal (ej. 2026-01-18 dom y
+ * 2026-01-19 lun deben colapsarse en la misma semana ISO).
+ */
+function toIsoMonday(dateStr: string): string {
+  if (!dateStr || dateStr.length < 10) return dateStr;
+  const d = new Date(`${dateStr.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  // getUTCDay(): 0=domingo, 1=lunes, ..., 6=sábado.
+  const dow = d.getUTCDay();
+  const diffToMonday = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + diffToMonday);
+  return d.toISOString().slice(0, 10);
+}
+
 export interface TemporalEvolutionRow {
   snapshot_date: string;
   rix_avg: number;
@@ -34,8 +51,11 @@ export function computeTemporalEvolution(rows: any[]): TemporalEvolutionRow[] {
   const byWeek = new Map<string, number[]>();
   for (const r of rows) {
     // Prefer 06_period_from (semantic week) over batch_execution_date (run date).
-    const w = String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10);
-    if (!w) continue;
+    const raw = String(r["06_period_from"] ?? r.batch_execution_date ?? "").slice(0, 10);
+    if (!raw) continue;
+    // Colapsa días sueltos a la semana ISO (lunes) para evitar filas
+    // separadas cuando period_from cae a mitad de semana.
+    const w = toIsoMonday(raw);
     const v = typeof r["09_rix_score"] === "number"
       ? r["09_rix_score"]
       : parseFloat(r["09_rix_score"]);
@@ -83,4 +103,4 @@ export function renderTemporalEvolutionTable(rows: any[]): string {
 // tabla principal y en el ranking. Se mantiene aquí porque la evolución
 // temporal necesita un único valor por semana para visualizar la tendencia.
 
-export const __test__ = { fmt, sign, semaforo, computeTemporalEvolution };
+export const __test__ = { fmt, sign, semaforo, computeTemporalEvolution, toIsoMonday };
