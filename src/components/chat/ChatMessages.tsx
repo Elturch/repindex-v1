@@ -61,7 +61,7 @@ export function ChatMessages({
       link.href = url;
       link.download = filename;
       link.rel = 'noopener';
-      link.style.display = 'none';
+      link.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
       document.body.appendChild(link);
       link.click();
       setTimeout(() => {
