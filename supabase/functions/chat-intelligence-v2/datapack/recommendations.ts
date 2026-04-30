@@ -59,23 +59,50 @@ function fmt(n: number | null | undefined): string {
 export interface Recommendation {
   priority: Priority;
   metric: MetricName;
-  current: number;
+  /** Rango actual inter-IA (min–max). Reemplaza a "current: number"
+   *  para honrar la regla anti-mediana: nunca un único número agregado. */
+  range_min: number | null;
+  range_max: number | null;
+  /** Nivel cualitativo derivado del rango: alto / medio / bajo. */
+  consensus_level: "alto" | "medio" | "bajo" | "n/d";
+  /** Target = max + 5 (sube el techo, no la media). */
   target: number;
   actions: string[];
 }
 
-/** Pick the 3 weakest metrics (excluding the global RIX) and build recs. */
-export function computeRecommendations(metrics: MetricAggregation[]): Recommendation[] {
+/**
+ * Pick the 3 weakest metrics (excluding the global RIX) and build recs.
+ *
+ * ANTI-MEDIANA — única fuente de verdad: el `submetrics_range` calculado
+ * por periodAggregation. NO usamos `MetricAggregation.mean` (que mezcla
+ * IAs intra-semana). Si no llega `submetricsRange` (legacy caller), la
+ * función degrada a [] y el bloque queda vacío en vez de inventar números.
+ */
+export function computeRecommendations(
+  metrics: MetricAggregation[],
+  submetricsRange?: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  >,
+): Recommendation[] {
+  if (!submetricsRange) return [];
+  // Ranking por techo (max) — la métrica con peor techo es la más débil
+  // sin necesidad de promediar entre IAs.
   const candidates = metrics
-    .filter((m) => m.metric !== "RIX" && Number.isFinite(m.mean))
-    .sort((a, b) => a.mean - b.mean)
+    .filter((m) => m.metric !== "RIX")
+    .map((m) => ({ m, r: submetricsRange[m.metric] }))
+    .filter((x) => x.r && x.r.max != null)
+    .sort((a, b) => (a.r!.max as number) - (b.r!.max as number))
     .slice(0, 3);
-  return candidates.map((m) => {
-    const target = Math.min(100, Math.round(m.mean + 15));
+  return candidates.map(({ m, r }) => {
+    const target = Math.min(100, Math.round((r!.max as number) + 5));
+    // Prioridad basada en techo: si el max ya es bajo, urgencia alta.
     return {
-      priority: priorityFromScore(m.mean),
+      priority: priorityFromScore(r!.max as number),
       metric: m.metric,
-      current: Math.round(m.mean * 10) / 10,
+      range_min: r!.min,
+      range_max: r!.max,
+      consensus_level: r!.level,
       target,
       actions: ACTIONS[m.metric] ?? [],
     };
@@ -83,15 +110,25 @@ export function computeRecommendations(metrics: MetricAggregation[]): Recommenda
 }
 
 /** Render a markdown block with the prioritized recommendations. */
-export function renderRecommendationsBlock(metrics: MetricAggregation[]): string {
-  const recs = computeRecommendations(metrics);
+export function renderRecommendationsBlock(
+  metrics: MetricAggregation[],
+  submetricsRange?: Record<
+    string,
+    { min: number | null; max: number | null; range: number | null; level: "alto" | "medio" | "bajo" | "n/d" }
+  >,
+): string {
+  const recs = computeRecommendations(metrics, submetricsRange);
   if (recs.length === 0) return "";
-  const lines: string[] = ["**Recomendaciones priorizadas**", ""];
+  const lines: string[] = ["**Recomendaciones priorizadas (anti-mediana)**", ""];
   recs.forEach((r, i) => {
     const icon = r.priority === "Alta" ? "🔴" : r.priority === "Media" ? "🟡" : "🟢";
+    const rangeTxt =
+      r.range_min != null && r.range_max != null && r.range_min !== r.range_max
+        ? `${fmt(r.range_min)}–${fmt(r.range_max)}`
+        : fmt(r.range_max ?? r.range_min);
     lines.push(
       `**${i + 1}. ${icon} Prioridad ${r.priority} — ${r.metric}**`,
-      `• Valor actual: ${fmt(r.current)} → Target: ${r.target}`,
+      `• Rango actual por IA: ${rangeTxt} · Consenso: ${r.consensus_level} → Target (techo): ${r.target}`,
       ...r.actions.map((a) => `• ${a}`),
       "",
     );
