@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,7 +54,26 @@ export function ChatMessages({
   // v1 vs v2 side by side; production users never see them.
   const showPreviewSignals = isPreviewEnvironment();
 
-  const downloadMessage = (message: Message) => {
+  const exportHtmlByMessageIndex = useMemo(() => {
+    const cache = new Map<number, string>();
+    messages.forEach((message, index) => {
+      if (message.role !== 'assistant' || message.isStreaming) return;
+      const roleName = message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined;
+      cache.set(index, generateExportHtml(
+        message.content,
+        tr,
+        languageCode,
+        roleName,
+        message.metadata?.verifiedSources,
+        message.metadata?.methodology?.periodFrom,
+        message.metadata?.methodology?.periodTo,
+        message.metadata?.reportContext as Record<string, unknown> | undefined,
+      ));
+    });
+    return cache;
+  }, [messages, tr, languageCode]);
+
+  const downloadMessage = (message: Message, prebuiltHtml?: string) => {
     // P0-2 — Defense in depth: even though the Download button is hidden
     // during streaming (`!message.isStreaming` guard ~line 364) and
     // MarkdownMessage receives `showDownload={false}`, any future call
@@ -71,7 +90,7 @@ export function ChatMessages({
     }
     const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
     const roleName = message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined;
-    const htmlContent = generateExportHtml(
+    const htmlContent = prebuiltHtml ?? generateExportHtml(
       message.content,
       tr,
       languageCode,
@@ -313,7 +332,7 @@ export function ChatMessages({
                   )}
                 <MarkdownMessage 
                     content={message.content} 
-                    showDownload={!message.isStreaming}
+                    showDownload={false}
                     languageCode={languageCode}
                     roleName={message.metadata?.enrichedFromRole ? getRoleById(message.metadata.enrichedFromRole)?.name : undefined}
                     verifiedSources={message.metadata?.verifiedSources}
@@ -387,7 +406,7 @@ export function ChatMessages({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => downloadMessage(message)}
+                    onClick={() => downloadMessage(message, exportHtmlByMessageIndex.get(idx))}
                     className="h-7 px-2 gap-1 text-muted-foreground hover:text-foreground"
                   >
                     <Download className="h-3.5 w-3.5" />
