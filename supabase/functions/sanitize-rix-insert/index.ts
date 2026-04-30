@@ -321,9 +321,11 @@ serve(async (req) => {
         console.log(`Inserting sanitized record for: ${cleanRecord['03_target_name']} (ticker: ${cleanRecord['05_ticker']})`);
         console.log(`CXM: score=${cleanRecord['44_cxm_score']}, excluded=${cleanRecord['52_cxm_excluded']}`);
         
-        // Insert into database
+        // FASE 1 — rix_runs DEPRECATED. Pipeline legacy de Make.com desactivado.
+        // Cualquier insert se redirige a rix_runs_v2 para preservar continuidad
+        // de datos si alguna integración externa sigue llamando a esta función.
         const { data, error } = await supabaseClient
-          .from('rix_runs')
+          .from('rix_runs_v2')
           .insert(cleanRecord)
           .select('id, "03_target_name", "05_ticker", "09_rix_score", "52_cxm_excluded"');
         
