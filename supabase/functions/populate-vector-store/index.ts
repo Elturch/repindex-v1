@@ -148,8 +148,9 @@ async function processVectorStore(includeRawResponses: boolean, sourceFilter: So
     let v1PendingEstimate = 0;
     let v2PendingEstimate = 0;
 
-    // Fetch from rix_runs (V1)
-    if (sourceFilter === 'all' || sourceFilter === 'rix_v1') {
+    // FASE 1 — rix_runs DEPRECATED. Bloque V1 desactivado por completo.
+    // Mantenemos contadores a 0 para no romper la respuesta del endpoint.
+    if (false && (sourceFilter === 'all' || sourceFilter === 'rix_v1')) {
       console.log('Scanning rix_runs (V1) for pending docs...');
 
       const { count: v1Count } = await supabaseClient
