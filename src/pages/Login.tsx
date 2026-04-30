@@ -205,7 +205,34 @@ const Login: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {leadSaveResult ? (
+            {isDevOrPreview() && import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL ? (
+              <div className="text-center py-6 space-y-4">
+                <div className="text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400 font-semibold">
+                  Dev / Preview only
+                </div>
+                <Button
+                  onClick={handleDevLogin}
+                  disabled={devLoading}
+                  className="w-full"
+                >
+                  {devLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <span className="mr-2">🔓</span>
+                  )}
+                  Login as {String(import.meta.env.VITE_DEV_PREVIEW_LOGIN_EMAIL)}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Sesión Supabase real vía edge function whitelisted. No disponible en producción.
+                </p>
+                {errorMessage && (
+                  <div className="flex items-center gap-2 text-destructive text-sm justify-center bg-destructive/10 p-2 rounded">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+              </div>
+            ) : leadSaveResult ? (
               <div className="text-center py-6">
                 <div className={`mx-auto w-12 h-12 ${leadSaveResult.type === 'consent' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'} rounded-full flex items-center justify-center mb-4`}>
                   {leadSaveResult.type === 'consent' ? (
