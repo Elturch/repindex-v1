@@ -612,8 +612,8 @@ export function Dashboard() {
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
                   <p className="text-xs">
-                    Prioriza empresas con menor dispersión entre los 6 modelos de IA.
-                    Es el mismo criterio que usa el Agente Rix.
+                    No mezclamos puntuaciones de IAs distintas. Mostramos rango (min–max)
+                    y nivel de coincidencia entre los 6 modelos.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -822,21 +822,25 @@ export function Dashboard() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-48">Empresa</TableHead>
-                      {aiFilter === "all" && (
+                      {aiFilter === "all" && rankingMode === "score" && (
                         <TableHead className="text-center w-24">Modelo IA</TableHead>
+                      )}
+                      {rankingMode === "consensus" && (
+                        <TableHead className="text-center w-24">Consenso</TableHead>
                       )}
                       <TableHead 
                         className={cn(
-                          "text-center cursor-pointer hover:bg-muted/50 transition-colors",
+                          "text-center transition-colors",
+                          rankingMode === "score" && "cursor-pointer hover:bg-muted/50",
                           sortConfig.key === 'rix' && "bg-primary/10 text-primary"
                         )}
-                        onClick={() => handleSort('rix')}
+                        onClick={() => rankingMode === "score" && handleSort('rix')}
                       >
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <div className="flex items-center justify-center gap-1">
                               <span className={cn(sortConfig.key === 'rix' && "font-bold")}>RIX</span>
-                              {sortConfig.key === 'rix' ? (
+                              {rankingMode === "score" && sortConfig.key === 'rix' ? (
                                 <span className="flex items-center gap-0.5">
                                   {sortConfig.direction === 'desc' ? 
                                     <ArrowDown className="h-3 w-3 text-primary" /> : 
@@ -844,14 +848,18 @@ export function Dashboard() {
                                   }
                                   <X className="h-3 w-3 text-muted-foreground hover:text-destructive ml-0.5" />
                                 </span>
-                              ) : (
+                              ) : rankingMode === "score" ? (
                                 <ArrowUpDown className="h-3 w-3 opacity-30" />
-                              )}
+                              ) : null}
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="max-w-xs">
                             <p className="font-semibold">Índice Reputacional</p>
-                            <p className="text-xs text-muted-foreground">Puntuación global (0-100)</p>
+                            <p className="text-xs text-muted-foreground">
+                              {rankingMode === "consensus"
+                                ? "Rango min–max entre los 6 modelos (no se promedia)"
+                                : "Puntuación global (0-100)"}
+                            </p>
                           </TooltipContent>
                         </Tooltip>
                       </TableHead>
@@ -862,16 +870,17 @@ export function Dashboard() {
                           <TableHead 
                             key={metric.key} 
                             className={cn(
-                              "text-center w-16 cursor-pointer hover:bg-muted/50 transition-colors",
+                              "text-center w-16 transition-colors",
+                              rankingMode === "score" && "cursor-pointer hover:bg-muted/50",
                               isActive && "bg-primary/10 text-primary"
                             )}
-                            onClick={() => handleSort(metric.key as typeof sortConfig.key)}
+                            onClick={() => rankingMode === "score" && handleSort(metric.key as typeof sortConfig.key)}
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <div className="flex items-center justify-center gap-1">
                                   <span className={cn(isActive && "font-bold")}>{metric.label}</span>
-                                  {isActive ? (
+                                  {rankingMode === "score" && isActive ? (
                                     <span className="flex items-center gap-0.5">
                                       {sortConfig.direction === 'desc' ? 
                                         <ArrowDown className="h-3 w-3 text-primary" /> : 
@@ -879,9 +888,9 @@ export function Dashboard() {
                                       }
                                       <X className="h-3 w-3 text-muted-foreground hover:text-destructive ml-0.5" />
                                     </span>
-                                  ) : (
+                                  ) : rankingMode === "score" ? (
                                     <ArrowUpDown className="h-3 w-3 opacity-30" />
-                                  )}
+                                  ) : null}
                                 </div>
                               </TooltipTrigger>
                               <TooltipContent side="bottom" className="max-w-xs">
@@ -890,6 +899,7 @@ export function Dashboard() {
                                   Peso: {metricDef ? Math.round(metricDef.weight * 100) : 0}%
                                   {metricDef?.inverseScoring && " · Puntuación inversa"}
                                   {metric.label === "CXM" && " · Solo cotizadas"}
+                                  {rankingMode === "consensus" && " · Rango min–max"}
                                 </p>
                               </TooltipContent>
                             </Tooltip>
