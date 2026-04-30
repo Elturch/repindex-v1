@@ -11,7 +11,7 @@ import ConsolidationAnalysis from "@/components/ConsolidationAnalysis";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { aggregateConsensus, compareConsensus, type ConsensusLevel } from "@/lib/consensusRanking";
+import { aggregateConsensus, compareConsensus, formatRange, type ConsensusAggregate } from "@/lib/consensusRanking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,16 @@ export function Dashboard() {
     ibexFamilyFilter,
     weeksToLoad: 6
   });
+
+  // SEMÁNTICA NUEVA — modo "Por IA": NO mezclamos AIs. Si el usuario no
+  // selecciona una IA (aiFilter==="all"), forzamos Gemini por defecto
+  // (el modelo con mejor cobertura). Solo el modo "Consenso" puede operar
+  // sobre las 6 IAs a la vez (mostrando rangos, no medias).
+  useEffect(() => {
+    if (rankingMode === "score" && aiFilter === "all") {
+      setAIFilter("Google Gemini");
+    }
+  }, [rankingMode, aiFilter]);
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
@@ -233,18 +243,19 @@ export function Dashboard() {
       );
     }
 
-    // CONSENSUS MODE — group by ticker across all 6 models in current batch,
-    // collapse to ONE row per ticker (consensus single-row), then sort by
-    // consensus level + majority block score. Mirrors the agent Rix output.
+    // CONSENSUS MODE — group by ticker across all 6 models in current batch.
+    // We DO NOT average scores across AIs. We expose min–max range per RIX
+    // and per sub-metric, plus a qualitative consensus level (alto/medio/bajo).
     if (rankingMode === "consensus") {
-      const consensusMap = aggregateConsensus(
+      // RIX descriptor por ticker (min/max/range/level) — sin promediar.
+      const rixDescriptors = aggregateConsensus(
         filteredByBatch.map(r => ({
           ticker: (r.repindex_root_issuers?.ticker || r.ticker || "") as string,
           rix_score: (r.displayRixScore ?? r.rix_score) as number | null,
         }))
       );
 
-      // Group rows per ticker
+      // Agrupar por ticker y construir descriptor por sub-métrica.
       const byTicker = new Map<string, typeof filteredByBatch>();
       for (const r of filteredByBatch) {
         const t = (r.repindex_root_issuers?.ticker || r.ticker || "") as string;
@@ -253,45 +264,34 @@ export function Dashboard() {
         byTicker.get(t)!.push(r);
       }
 
-      // Average a numeric metric across rows (ignoring null/0-as-missing).
-      const avg = (vals: Array<number | null | undefined>): number | null => {
-        const nums = vals.filter((v): v is number => typeof v === "number" && !isNaN(v));
-        if (nums.length === 0) return null;
-        return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
-      };
-
       const METRIC_KEYS = ["nvm", "drm", "sim", "rmm", "cem", "gam", "dcm", "cxm"] as const;
 
-      // Collapse each ticker into a single representative row carrying the consensus values.
-      const collapsed = Array.from(byTicker.entries()).map(([ticker, rows]) => {
-        const agg = consensusMap.get(ticker);
-        // Pick the row whose own score is closest to the majority score as the "carrier".
-        const target = agg?.majorityScore ?? 0;
-        const carrier = [...rows].sort((a, b) => {
-          const sa = a.displayRixScore ?? a.rix_score ?? 0;
-          const sb = b.displayRixScore ?? b.rix_score ?? 0;
-          return Math.abs(sa - target) - Math.abs(sb - target);
-        })[0];
+      const subMetricRange = (
+        rows: typeof filteredByBatch,
+        scoreField: string,
+      ): { min: number; max: number } | null => {
+        const nums = rows
+          .map(r => (r as unknown as Record<string, unknown>)[scoreField] as number | null | undefined)
+          .filter((v): v is number => typeof v === "number" && !isNaN(v));
+        if (nums.length === 0) return null;
+        return { min: Math.min(...nums), max: Math.max(...nums) };
+      };
 
-        // Build a synthetic row: keep carrier metadata, override score + per-metric averages.
+      // Construir filas de consenso (una por ticker) — exponen rangos.
+      const collapsed = Array.from(byTicker.entries()).map(([ticker, rows]) => {
+        const agg = rixDescriptors.get(ticker);
+        const carrier = rows[0];
         const synthetic: typeof carrier = { ...carrier };
-        synthetic.displayRixScore = agg ? Math.round(agg.majorityScore) : carrier.displayRixScore;
-        synthetic.rix_score = synthetic.displayRixScore;
+        // Marcamos modo consenso para que el render sepa pintar rangos.
         synthetic.model_name = "Consenso IAs";
         synthetic.metricTrends = {};
-        const syntheticBag = synthetic as unknown as Record<string, unknown>;
+        synthetic.id = `consensus-${ticker}`;
+        const bag = synthetic as unknown as Record<string, unknown>;
+        bag.__consensus = agg ?? null;
         for (const key of METRIC_KEYS) {
           const scoreField = `${key}_score`;
-          const catField = `${key}_categoria`;
-          const consensusScore = avg(
-            rows.map((r) => (r as unknown as Record<string, unknown>)[scoreField] as number | null),
-          );
-          syntheticBag[scoreField] = consensusScore;
-          // Reuse the carrier's category to keep color coding consistent
-          syntheticBag[catField] = (carrier as unknown as Record<string, unknown>)[catField];
+          bag[`${key}_range`] = subMetricRange(rows, scoreField);
         }
-        // Stable id so React keys don't collide with original per-model rows
-        synthetic.id = `consensus-${ticker}`;
         return synthetic;
       });
 
@@ -300,16 +300,17 @@ export function Dashboard() {
         if (!a.isDataInvalid && b.isDataInvalid) return -1;
         const tA = (a.repindex_root_issuers?.ticker || a.ticker || "") as string;
         const tB = (b.repindex_root_issuers?.ticker || b.ticker || "") as string;
-        const cA = consensusMap.get(tA);
-        const cB = consensusMap.get(tB);
+        const cA = rixDescriptors.get(tA);
+        const cB = rixDescriptors.get(tB);
         if (cA && cB) {
           const cmp = compareConsensus(cA, cB, sortConfig.direction === "asc");
           if (cmp !== 0) return cmp;
         } else if (cA && !cB) return -1;
         else if (!cA && cB) return 1;
-        const sA = a.displayRixScore ?? a.rix_score ?? 0;
-        const sB = b.displayRixScore ?? b.rix_score ?? 0;
-        return sortConfig.direction === "asc" ? sA - sB : sB - sA;
+        // Tiebreaker alfabético por nombre.
+        const nA = (a.target_name || tA).toString();
+        const nB = (b.target_name || tB).toString();
+        return nA.localeCompare(nB);
       });
     }
 
@@ -646,8 +647,8 @@ export function Dashboard() {
         <div className="text-center -mt-2">
           <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
             {rankingMode === "consensus"
-              ? "Ranking por consenso entre 6 IAs · RIX bloque mayoritario"
-              : `Ranking por puntuación RIX${aiFilter !== "all" && aiFilter !== "comparison" ? ` (${aiFilter})` : ""}`}
+              ? "Vista por consenso — rango y nivel de coincidencia entre IAs (no se promedia)"
+              : `Vista por IA — valores individuales por modelo${aiFilter !== "all" && aiFilter !== "comparison" ? ` (${aiFilter})` : ""}`}
           </Badge>
         </div>
 
