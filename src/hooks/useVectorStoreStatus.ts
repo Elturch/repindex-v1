@@ -21,7 +21,8 @@ export function useVectorStoreStatus() {
       try {
         const [docsResult, runsResult] = await Promise.all([
           supabase.from('documents').select('id', { count: 'exact', head: true }),
-          supabase.from('rix_runs').select('id', { count: 'exact', head: true }),
+          // FASE 1 — rix_runs DEPRECATED. Contamos sobre rix_runs_v2.
+          supabase.from('rix_runs_v2').select('id', { count: 'exact', head: true }),
         ]);
 
         const documentsCount = docsResult.count || 0;
