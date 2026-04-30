@@ -67,15 +67,16 @@ export default function ConsolidationAnalysis() {
   const { data: availableWeeks } = useQuery({
     queryKey: ['available-weeks'],
     queryFn: async () => {
+      // FASE 1 — Fuente única: rix_runs_v2.
       const { data, error } = await supabase
-        .from('rix_runs')
+        .from('rix_runs_v2')
         .select('"06_period_from", "07_period_to"')
         .order('"06_period_from"', { ascending: false });
 
       if (error) throw error;
 
       const uniqueWeeks = new Map<string, { start: string; end: string }>();
-      data.forEach((row: any) => {
+      (data || []).forEach((row: any) => {
         const key = `${row["06_period_from"]}_${row["07_period_to"]}`;
         if (!uniqueWeeks.has(key)) {
           uniqueWeeks.set(key, {
