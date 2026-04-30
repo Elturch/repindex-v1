@@ -151,16 +151,10 @@ Deno.serve(async (req) => {
           console.error(`[verify-ibex-composition] Error updating issuer ${change.ticker}:`, updateError)
         }
 
-        // 4b. Update rix_trends
+        // 4b. FASE 1 — rix_trends DEPRECATED (sin escritor desde DROP TRIGGER
+        // sync_rix_trends). El IBEX family code vive ahora únicamente en
+        // repindex_root_issuers (ya actualizado arriba).
         const tickerBase = change.ticker.replace('.MC', '')
-        const { error: trendError } = await supabase
-          .from('rix_trends')
-          .update({ ibex_family_code: change.new_ibex_family_code })
-          .or(`ticker.eq.${change.ticker},ticker.eq.${tickerBase}`)
-
-        if (trendError) {
-          console.error(`[verify-ibex-composition] Error updating rix_trends for ${change.ticker}:`, trendError)
-        }
 
         // 4c. Update Vector Store metadata
         // Note: documents table has restrictive RLS, but service_role bypasses it
