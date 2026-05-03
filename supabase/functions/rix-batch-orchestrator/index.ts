@@ -955,7 +955,7 @@ async function processCronTriggers(
     try {
       if (trigger.action === 'repair_analysis') {
         console.log(`[cron_triggers] Processing repair_analysis trigger ${trigger.id}`);
-        
+        const tParams = (trigger.params as any) || {};
         // Llamada server-to-server a rix-analyze-v2 (sin extensiones bloqueando)
         const response = await fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
           method: 'POST',
@@ -963,9 +963,12 @@ async function processCronTriggers(
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${serviceKey}`,
           },
-          body: JSON.stringify({ 
-            action: 'reprocess_pending', 
-            batch_size: (trigger.params as any)?.batch_size || 2 
+          body: JSON.stringify({
+            action: 'reprocess_pending',
+            batch_size: tParams.batch_size || 2,
+            // P1: propagar filtros de modelo al worker
+            only_models: tParams.only_models,
+            exclude_models: tParams.exclude_models,
           }),
           // Evita dejar el trigger en "processing" por timeout de la plataforma
           // (si el análisis GPT-5 se alarga demasiado).
