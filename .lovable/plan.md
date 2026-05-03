@@ -1,51 +1,34 @@
-## Objetivo
+He comprobado que el mecanismo nuevo sí puede crear sesión en mi navegador de prueba: `dev-preview-session` devuelve 200, `supabase.auth.setSession` se ejecuta y `ChatContext` pasa a `isAuthenticated: true` con el usuario `maturci@gmail.com`.
 
-Tener sesión Supabase válida **siempre abierta por defecto** en Lovable Preview, sin que tengas que escribir email ni password ni pulsar magic link. Solo abrir `/chat` y funcionar.
+Pero en tu sesión concreta aparece todavía `Failed to fetch` y luego `no authenticated user`. Eso apunta a que la primera carga del Preview está usando una versión antigua/cacheada o que el auto-login falla silenciosamente antes de que `AuthProvider` actualice el estado.
 
-## Idea clave
+Plan de corrección:
 
-En vez de `signInWithPassword` (requiere conocer y mantener una contraseña), usamos el **service role** desde una edge function para generar tokens de sesión del admin y dárselos al navegador. El frontend hace `supabase.auth.setSession(...)` y queda logueado. Cero contraseñas en cliente, cero env vars que tú tengas que mantener.
+1. Hacer el auto-login más robusto en frontend
+   - Llamar a `dev-preview-session` con los mismos headers que espera Supabase Functions: `apikey`, `Content-Type` y `x-client-info`.
+   - Usar fallback con `supabase.functions.invoke('dev-preview-session')` si el `fetch` directo falla.
+   - Tras `setSession`, validar con `supabase.auth.getUser()` que la sesión quedó realmente materializada.
+   - Emitir logs claros: inicio, origen, status HTTP, tokens recibidos, usuario final.
 
-## Componentes
+2. Eliminar la carrera con `AuthProvider`
+   - Añadir una señal global de “dev session ready”.
+   - Hacer que `AuthProvider` espere a esa promesa en Preview antes de decidir que no hay usuario.
+   - Esto evita que `ChatContext` arranque con `user: null` y bloquee el envío aunque la sesión llegue milisegundos después.
 
-### 1. Edge function `dev-preview-session` (nueva)
+3. Endurecer CORS del Edge Function
+   - Incluir todos los headers habituales del SDK actual: `authorization`, `apikey`, `content-type`, `x-client-info`, `x-supabase-*`.
+   - Mantener la allowlist estricta de orígenes de Preview/local.
+   - No habilitarlo para `repindex.ai` ni dominios publicados.
 
-- **Pública** (verify_jwt = false), pero con allowlist estricta de Origin:
-  - `http://localhost:*`
-  - `https://id-preview--bc807963-c063-4e58-b3fe-21a2a28cd8bf.lovable.app`
-  - Cualquier otro Origin → 403.
-- Usa `SUPABASE_SERVICE_ROLE_KEY` (ya disponible en edge runtime).
-- Email del admin de preview hardcodeado en el código de la función (no es secreto, es solo el identificador del usuario; el poder está en el service role, no en el email). Sugerencia: el mismo que ya usas tú.
-- Flujo:
-  1. `supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email: ADMIN_EMAIL })` → devuelve `hashed_token`.
-  2. `supabaseAdmin.auth.verifyOtp({ token_hash, type: 'magiclink' })` → devuelve `session` con `access_token` y `refresh_token`.
-  3. Responde `{ access_token, refresh_token }` al cliente.
+4. Añadir fallback manual de recuperación en Preview
+   - Si el auto-login falla, mostrar un estado claro en `/chat`: “Inicializando sesión de Preview…” o un botón “Reintentar sesión de Preview”.
+   - No redirigir a login ni permitir que el usuario escriba mientras no exista `currentUserId` real.
 
-### 2. `src/lib/devAutoLogin.ts` (nuevo)
+5. Verificar de nuevo la consulta solicitada
+   - Abrir `/chat` en Preview.
+   - Confirmar en consola que la sesión se establece.
+   - Ejecutar: `dame el top 5 del ibex-35 de esta semana`.
+   - Confirmar que ya no aparece `no authenticated user`.
+   - Extraer y mostrarte el header y los 5 resultados visibles.
 
-- Export `ensureDevSession()`.
-- Si `isDevOrPreview()` y no hay sesión activa (`supabase.auth.getSession()` vacío):
-  - `fetch` a la edge function `dev-preview-session`.
-  - `supabase.auth.setSession({ access_token, refresh_token })`.
-- Idempotente: si ya hay sesión, no hace nada.
-
-### 3. Hook en `src/main.tsx` (o `App.tsx`)
-
-- Antes de renderizar (o en un `useEffect` de nivel raíz), `await ensureDevSession()`.
-- Mostrar un splash mínimo mientras se resuelve (≈300 ms en local).
-
-### 4. Guardas
-
-- En **producción** (`repindex.ai`, `repindex-v1.lovable.app`) la función ni se llama (gate por `isDevOrPreview()` en cliente) y además devolvería 403 por allowlist de Origin. Doble cinturón.
-- Memoria del proyecto se actualiza con esta excepción de seguridad documentada.
-
-## Detalles técnicos
-
-- Allowlist de Origin con regex en la función: `/^https:\/\/id-preview--[a-z0-9-]+\.lovable\.app$/` y `/^http:\/\/localhost(:\d+)?$/`.
-- CORS headers solo para esos orígenes.
-- El admin email se lee de `Deno.env.get('DEV_PREVIEW_ADMIN_EMAIL')` con fallback hardcodeado, por si quieres rotarlo sin redeploy.
-- No se persiste nada nuevo en DB. Reutiliza el flujo OTP de Supabase end-to-end.
-
-## Lo que necesito de ti
-
-Una sola decisión: **qué email usar como "admin de preview"**. Propongo el tuyo de admin actual (el que ya tiene rol en `user_profiles`). Si me lo confirmas, implemento todo en un único paso, sin pedirte nada más.
+No tocaré la autenticación de producción. El cambio queda limitado a Preview/local mediante `isDevOrPreview()` y el allowlist del Edge Function.
