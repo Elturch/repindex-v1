@@ -452,7 +452,7 @@ function aggregateRanking(rows: any[], topN: number): RankingRow[] {
 function renderRankingTable(
   rows: RankingRow[],
   models: ModelName[],
-  coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean },
+  coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
 ): string {
   const head = ["#", "Empresa", "RIX rango", "Consenso", ...models, "Obs."];
   const sep = head.map(() => "---").join(" | ");
@@ -470,9 +470,11 @@ function renderRankingTable(
   // Footnote metodológico: ANTI-MEDIANA. Exponemos rango inter-modelo
   // (no promediamos entre IAs distintas).
   const partialSuffix = coverage.isPartial && coverage.weeksExpected > coverage.weeksCount
-    ? ` (de ${coverage.weeksExpected} esperadas)`
+    ? ` (de ${coverage.weeksExpected} esperados)`
     : "";
-  const footnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs durante las ${coverage.weeksCount} semanas observadas${partialSuffix}. NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
+  const unit = coverage.isSnapshot ? "modelos" : "semanas";
+  const verb = coverage.isSnapshot ? "respondieron" : "observadas";
+  const footnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs (${coverage.weeksCount} ${unit} ${verb}${partialSuffix}). NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
   return [
     "**Ranking por consenso entre IAs (con desglose por modelo)**",
     "",
