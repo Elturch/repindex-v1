@@ -287,12 +287,16 @@ async function fetchRankingRows(
   ibexOnly: boolean,
   scopeTickers?: string[] | null,
 ): Promise<any[]> {
+  // PHASE 5 — Align filter to SWEEP axis (07_period_to = Sunday).
+  // Snapshot (from===to) → eq; period → range, both on 07_period_to.
+  const isSnapshot = fromISO === toISO;
   let q = supabase
     .from("rix_runs_v2")
     .select(RANKING_SELECT)
-    .gte("06_period_from", fromISO)
-    .lte("06_period_from", toISO)
     .not("09_rix_score", "is", null);
+  q = isSnapshot
+    ? q.eq("07_period_to", fromISO)
+    : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
   // PRIORITY: explicit scope_tickers (sub-segment) override sector/ibex.
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
@@ -339,11 +343,12 @@ async function fetchSectorSourceRows(
   ibexOnly: boolean,
   scopeTickers?: string[] | null,
 ): Promise<any[]> {
-  let q = supabase
-    .from("rix_runs_v2")
-    .select(SOURCE_SELECT)
-    .gte("06_period_from", fromISO)
-    .lte("06_period_from", toISO);
+  // PHASE 5 — Align filter to SWEEP axis (07_period_to).
+  const isSnapshot = fromISO === toISO;
+  let q = supabase.from("rix_runs_v2").select(SOURCE_SELECT);
+  q = isSnapshot
+    ? q.eq("07_period_to", fromISO)
+    : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
     q = q.in("05_ticker", upper);
