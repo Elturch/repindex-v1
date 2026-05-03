@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { ensureDevSession } from '@/lib/devAutoLogin';
+import { isDevOrPreview } from '@/lib/env';
 
 // Extend Window interface for GTM dataLayer
 declare global {
@@ -165,19 +167,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     );
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // THEN check for existing session (and, in Preview, wait for the
+    // auto-login to finish before deciding the user is anonymous).
+    const init = async () => {
+      if (isDevOrPreview()) {
+        try { await ensureDevSession(); } catch { /* noop */ }
+      }
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
-      
       if (session?.user) {
-        fetchProfile(session.user.id).finally(() => {
-          setIsLoading(false);
-        });
-      } else {
-        setIsLoading(false);
+        await fetchProfile(session.user.id);
       }
-    });
+      setIsLoading(false);
+    };
+    init();
 
     return () => subscription.unsubscribe();
   }, []);
