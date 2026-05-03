@@ -2561,16 +2561,27 @@ const {
             .maybeSingle();
           
           if (!existingTrigger) {
-            const { error: insertError } = await supabase.from('cron_triggers').insert({
-              action: 'repair_analysis',
-              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2 },
-              status: 'pending',
-            });
+            // P1: aislamos Qwen (~195s) en su propio trigger con batch_size=1
+            // para que su única llamada quede dentro del IDLE_TIMEOUT 150s del
+            // runtime Edge Supabase (no configurable). Los otros 5 modelos
+            // siguen en batch_size=2 (≤120s).
+            const { error: insertError } = await supabase.from('cron_triggers').insert([
+              {
+                action: 'repair_analysis',
+                params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2, exclude_models: ['Qwen'] },
+                status: 'pending',
+              },
+              {
+                action: 'repair_analysis',
+                params: { sweep_id: sweepId, count: analyzableCount, batch_size: 1, only_models: ['Qwen'] },
+                status: 'pending',
+              },
+            ]);
             if (insertError) {
               console.error(`[${triggerMode}] Failed inserting repair_analysis trigger:`, insertError);
             } else {
-              triggersInserted.push('repair_analysis');
-              console.log(`[${triggerMode}] Inserted repair_analysis trigger for ${analyzableCount} analyzable records`);
+              triggersInserted.push('repair_analysis_no_qwen', 'repair_analysis_qwen_only');
+              console.log(`[${triggerMode}] Inserted 2 repair_analysis triggers (Qwen aislado) for ${analyzableCount} analyzable records`);
             }
           } else {
             console.log(`[${triggerMode}] repair_analysis trigger already pending (id: ${existingTrigger.id})`);
