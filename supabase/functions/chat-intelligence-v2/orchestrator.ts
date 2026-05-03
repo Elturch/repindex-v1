@@ -55,6 +55,35 @@ const SECTOR_KEYWORD_MAP: Array<{ re: RegExp; sector: string }> = [
   { re: /\b(inmobiliari[oa]s?|socimi)\b/i, sector: "Inmobiliaria" },
 ];
 
+// Sprint 1 Fix 2 — Thesaurus de sinónimos que mapean a MÚLTIPLES
+// sector_category. Cuando el usuario dice "energía" o "retail" debemos
+// consolidar varios sector_category de la BD, no quedarnos con uno solo.
+// Tiene prioridad sobre SECTOR_KEYWORD_MAP cuando hay match.
+const MULTI_SECTOR_THESAURUS: Array<{ re: RegExp; sectors: string[]; label: string }> = [
+  { re: /\benerg[ií]a\b/i, sectors: ["Energía y Gas", "Petróleo y Energía"], label: "energía" },
+  { re: /\bretail\b|\bgran\s+consumo\b/i, sectors: ["Moda y Distribución", "Distribución", "Alimentación", "Consumo"], label: "retail" },
+];
+
+async function detectMultiSectorTickers(question: string, supabase: any, limit = 15): Promise<string[] | null> {
+  for (const { re, sectors, label } of MULTI_SECTOR_THESAURUS) {
+    if (!re.test(question)) continue;
+    try {
+      const { data, error } = await supabase
+        .from("repindex_root_issuers")
+        .select("ticker")
+        .in("sector_category", sectors)
+        .limit(200);
+      if (error || !Array.isArray(data) || data.length === 0) return null;
+      const tickers = data.map((r: any) => String(r.ticker).toUpperCase()).filter(Boolean).slice(0, limit);
+      console.log(`[RIX-V2][orch] multiSectorThesaurus | label="${label}" | sectors=[${sectors.join(",")}] | tickers=${tickers.length}`);
+      return tickers;
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+
 function detectSectorCategory(question: string): string | null {
   for (const { re, sector } of SECTOR_KEYWORD_MAP) {
     if (re.test(question)) return sector;
