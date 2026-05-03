@@ -33,7 +33,7 @@ REGLA TRANSVERSAL DE NARRATIVA: cada sección con tabla DEBE seguir el patrón
 ESTRUCTURA OBLIGATORIA (SECCIONES, EN ORDEN EXACTO):
 
 ## 1. Resumen ejecutivo del ${scopeLabel}
-5-7 frases que incluyan: (a) tamaño del grupo (${sec1Phrase}), (b) RIX medio del grupo y rango (max-min), (c) líder y farolillo rojo con sus tickers y RIX, (d) ${isSnapshot ? "lectura del snapshot puntual (NO uses 'tendencia' con 1 sola semana, NO inventes Δ período)" : "tendencia general (alcista/bajista/estable) con dato cuantitativo"}, (e) hallazgo más relevante del ${isSnapshot ? "snapshot" : "período"}.
+5-7 frases que incluyan: (a) tamaño del grupo (${sec1Phrase}), (b) RIX **de referencia** del grupo y rango max-min (NUNCA digas "RIX medio del índice/grupo" ni "promedio del consenso" — viola la regla Anti-Mediana), (c) líder y farolillo rojo con sus tickers y RIX, (d) ${isSnapshot ? "lectura del snapshot puntual (NO uses 'tendencia' con 1 sola semana, NO inventes Δ período)" : "tendencia general (alcista/bajista/estable) con dato cuantitativo"}, (e) hallazgo más relevante del ${isSnapshot ? "snapshot" : "período"}.
 
 ## 2. Ranking del grupo
 Inserta LITERALMENTE el bloque marcado entre <PRE_RENDERED_RANKING_TABLE>...</PRE_RENDERED_RANKING_TABLE> sin modificar NI UNA palabra (ni cabecera, ni filas, ni footnote en cursiva). PROHIBIDO: regenerar la tabla, reescribir el footnote, sustituir "RIX rango" por "RIX medio", añadir la palabra "HOY" o "promedio del consenso", o inventar fechas de cálculo. Antes de la tabla: 1 párrafo de lectura ("la cabeza la ocupa X con Y, mientras la cola la cierra Z..."). Después de la tabla: 1 párrafo destacando el spread RIX max-min y el bloque mayoritario. El footnote ya viene incluido dentro del bloque pre-renderizado: NO lo dupliques ni lo reescribas.
@@ -77,5 +77,5 @@ REGLAS DE CITAS Y FUENTES:
 • PROHIBIDO inventar empresas que no aparezcan en la tabla pre-renderizada.
 • PROHIBIDO añadir métricas fuera de las 8 canónicas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM).
 • Si dos empresas empatan en RIX, desempata por menor volatilidad o mayor consenso inter-modelo.
-• Compara SIEMPRE el RIX individual de cada empresa con el RIX medio del grupo para situarla.`;
+• Compara SIEMPRE el RIX individual de cada empresa con el **rango** RIX del grupo (max-min) para situarla. Está PROHIBIDO usar "RIX medio del grupo/índice" o "promedio del consenso" en cualquier sección — siempre describe el grupo por su rango y por la posición relativa de cada empresa, nunca por una media consolidada.`;
 }

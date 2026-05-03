@@ -41,6 +41,18 @@ const OFF_TOPIC_REPLY =
 const INJECTION_REPLY =
   "Solo respondo a consultas sobre reputaci\u00f3n algor\u00edtmica de empresas espa\u00f1olas cotizadas. \u00bfQu\u00e9 compa\u00f1\u00eda o sector te interesa analizar?";
 
+// Sprint 1 Fix 3 — IBEX families that RepIndex does NOT cover today.
+// Detect them BEFORE skill dispatch and reject with a canonical message
+// instead of letting the LLM fabricate a ranking.
+const UNSUPPORTED_FAMILY_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  { re: /\bibex\s*top\s*dividendo\b/i, label: "IBEX Top Dividendo" },
+  { re: /\bibex\s*growth\b/i, label: "IBEX Growth" },
+  { re: /\bbme\s*growth\b/i, label: "BME Growth" },
+];
+
+const UNSUPPORTED_FAMILY_REPLY = (label: string) =>
+  `La familia "${label}" no está cubierta actualmente por RepIndex. Mi universo de análisis es el IBEX-35 y el mercado continuo español. ¿Quieres que te muestre el ranking equivalente en el IBEX-35?`;
+
 export function checkInput(question: string): GuardResult {
   const q = (question ?? "").trim();
   if (!q) return { pass: false, reply: WELCOME_REPLY };
@@ -57,7 +69,11 @@ export function checkInput(question: string): GuardResult {
     if (re.test(q)) return { pass: false, reply: OFF_TOPIC_REPLY };
   }
 
+  for (const { re, label } of UNSUPPORTED_FAMILY_PATTERNS) {
+    if (re.test(q)) return { pass: false, reply: UNSUPPORTED_FAMILY_REPLY(label) };
+  }
+
   return { pass: true };
 }
 
-export const __test__ = { OFF_TOPIC_PATTERNS, INJECTION_PATTERNS, GREETING_PATTERNS };
+export const __test__ = { OFF_TOPIC_PATTERNS, INJECTION_PATTERNS, GREETING_PATTERNS, UNSUPPORTED_FAMILY_PATTERNS };

@@ -39,6 +39,8 @@ const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:
 const MARKER_LITERAL = "<!--CITEDSOURCESHERE-->";
 // P1-A — LLM hallucinated disclaimer that bypasses our cited-sources block.
 const FAKE_SOURCES_RE = /dato\s+no\s+disponible[^.\n]{0,40}URLs?/i;
+// Sprint 1 Fix 1 — Anti-mediana detector (Core rule violation).
+const ANTI_MEDIANA_RE = /\bRIX\s+medio\s+del\s+(?:[ií]ndice|grupo|sector|conjunto|consenso)\b|\b(?:promedio|media)\s+(?:del\s+)?(?:consenso|[ií]ndice|IBEX(?:[-\s]?35)?)\b/i;
 
 // P1-C — Exported scrub helper used by the orchestrator as a defence-in-depth
 // safety net AFTER the skill returns. Idempotent: returns the same string when
@@ -106,6 +108,14 @@ export function validateSkillOutput(
       level: "error",
       code: "FAKE_SOURCES_DISCLAIMER",
       message: "Skill output contains hallucinated 'dato no disponible URLs' disclaimer instead of the cited-sources block.",
+    });
+  }
+
+  if (ANTI_MEDIANA_RE.test(safe)) {
+    issues.push({
+      level: "warning",
+      code: "CONSOLIDATED_AVERAGE",
+      message: "Output uses a consolidated average — violates the Anti-Mediana Core rule. Use 'RIX de referencia' + range (max-min) instead.",
     });
   }
 

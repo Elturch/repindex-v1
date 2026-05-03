@@ -1,51 +1,64 @@
-# Plan: Batería QA RIX v2 — 54 queries
 
-## Decisiones tomadas
-- **Concurrencia:** 3 curl paralelos (~37 min total)
-- **Auth:** Anónimo (anon key) — refleja el peor caso de cliente nuevo
-- **Disparo:** Adelante sin listado verbatim previo (criterio AI)
-- **Modo:** Híbrido — 49 queries via curl SSE + 5 manuales en /chat
+# Sprint 1 — Fixes bloqueantes QA 2026-05-03
 
-## Ejecución (al aprobar paso a build mode)
+Resultado QA: 45/50 automatizadas + 5/5 manuales pasan a primera vista, pero hay **14 fallos cualitativos** que violan reglas Core de RepIndex (anti-mediana, sectores, familias, alias). Este sprint los cierra antes de seguir.
 
-### Bloque 1 — Inventario y preparación (2 min)
-- Confirmar endpoint `/chat-intelligence-v2` operativo con 1 ping
-- Generar fichero `/tmp/qa_queries.json` con las 49 queries automatizables agrupadas en 10 bloques temáticos
+## Alcance (4 fixes)
 
-### Bloque 2 — Ejecución batería automatizada (37 min)
-- Script bash con 3 workers paralelos consumiendo la cola
-- Cada query: payload SSE → captura full response → extrae header coverage, lista entidades, métricas, banners de error
-- Timeout 90s por query, 3 reintentos en caso de 5xx
-- Output incremental a `/mnt/documents/qa_battery_2026-05-03.csv` con columnas: `block, id, query, expected_class, actual_summary, pass_fail, failure_class, snippet`
+### Fix 1 — Sanitizer anti-mediana
+**Problema:** Las queries B1-01..03 (rankings IBEX-35) devuelven frases como *"el RIX medio del índice es 57,5"*. Viola Core rule **Anti-Mediana**: nunca usar promedio agregado, siempre comparar los 6 modelos.
 
-### Bloque 3 — Validación manual (usuario, 5 min)
-Te paso 5 queries para ejecutar tú en `/chat` (las que requieren contexto de sesión real):
-1. `top 5 IBEX-35 esta semana` → header debe decir "5 sobre 35 posibles"
-2. `evolución Inditex últimas 4 semanas`
-3. `divergencia entre modelos para Iberdrola`
-4. `top 3 banca y energía comparadas`
-5. `top 5 IBEX Growth` → debe responder "no disponible en BD"
+**Qué hacer:** Añadir un guard en `supabase/functions/chat-intelligence-v2/guards/` (o el outputGuard existente) que detecte por regex frases tipo `RIX medio|promedio del índice|media del IBEX` y las reescriba o marque `WARNING:CONSOLIDATED_AVERAGE` para que el LLM las regenere comparando los 6 modelos.
 
-### Bloque 4 — Triage e informe (10 min)
-- Clasificación de fallos por las 8 clases definidas (`IDENTIFY_INDEX`, `IDENTIFY_SECTOR`, `IDENTIFY_ENTITY`, `WINDOW_RESOLUTION`, `COVERAGE_BANNER`, `HALLUCINATION`, `SILENT_EMPTY`, `WRONG_COUNT`, más cualquier emergente)
-- Tabla resumen: bloque × clase × count
-- Lista priorizada de fixes propuestos (sin ejecutar) con ubicación archivo:línea sospechosa
-- Si <5 fallos críticos → propuesta fix individual; si ≥5 → propuesta de refactor por categoría
+### Fix 2 — Thesaurus de subsectores
+**Problema:** Query *"top energía"* devuelve sólo 2 empresas de "Petróleo y Energía" e ignora las 15 de "Energía y Gas". El resolver de sectores no consolida sinónimos.
 
-### Bloque 5 — Entregables
-- `/mnt/documents/qa_battery_2026-05-03.csv` (datos crudos)
-- `/mnt/documents/qa_report_2026-05-03.md` (informe ejecutivo)
-- Mensaje final con: % pass, top 5 fallos críticos, propuesta de fixes ordenada
+**Qué hacer:** Crear/extender un mapa en `supabase/functions/_shared/semanticGroups.ts` (o un nuevo `sectorResolver.ts`) con sinónimos:
+- `energía` → `["Energía y Gas", "Petróleo y Energía"]`
+- `banca` → `["Banca y Servicios Financieros"]`
+- `retail` → `["Moda y Distribución", "Consumo"]`
 
-## Restricciones (respetadas)
-- Cero writes en BD salvo fallo crítico de invariante (poco probable)
-- Documents intacto, W17 paso 2 pausado, ranking AVG-Gemini pausado
-- Backup `repindex_root_issuers_backup_20260503` no se toca
-- Guardrail invariante IBEX-35=35 sigue activo
-- No se aplican fixes de catálogo (consolidación sectores) hasta ver fallos reales
+Aplicar el mapa antes del filtro SQL en las skills de ranking sectorial.
 
-## Tiempo total estimado
-~55 min (37 batería + 5 manuales paralelas + 10 triage + 3 buffer)
+### Fix 3 — Familias inexistentes (BME Growth, IBEX Top Dividendo)
+**Problema:** Query *"top 5 IBEX Top Dividendo"* inventa un ranking en vez de rechazar. *"top 5 IBEX Growth"* tampoco está catalogado.
 
-## Tras aprobación
-Arranco directamente con bloque 1 y te aviso cuando tengas que ejecutar las 5 manuales mientras yo proceso el triage.
+**Qué hacer:** Añadir códigos de familia conocida a la lista canónica con flag `NOT_AVAILABLE`:
+- `BME-GROWTH` → respuesta canónica "Familia no cubierta por RepIndex actualmente"
+- `IBEX-TOP-DIVIDENDO` → idem
+
+Que el intent classifier los detecte y devuelva mensaje estándar en vez de pasar al LLM.
+
+### Fix 4 — Alias "Caixa" → CABK
+**Problema:** *"analiza Caixa"* no resuelve, mientras "SAN", "ITX", "BBV", "Iberdorla" (con typo) sí. Falta entrada en el resolver de entidades.
+
+**Qué hacer:** Añadir `"caixa" → "CABK"` (CaixaBank) al diccionario de alias del entity resolver, junto con variantes habituales (`la caixa`, `caixabank`).
+
+## Detalles técnicos
+
+- Archivos a tocar (estimado, a confirmar al abrir):
+  - `supabase/functions/chat-intelligence-v2/guards/outputGuard.ts` (Fix 1)
+  - `supabase/functions/_shared/semanticGroups.ts` (Fix 2)
+  - `supabase/functions/chat-intelligence-v2/skills/skillInterpretQuery.ts` o equivalente (Fix 3)
+  - Resolver de entidades en `chat-intelligence-v2` (Fix 4)
+- Sin cambios de schema en BD. Sin migraciones.
+- Sin tocar `repindex_root_issuers`, `rix_runs_v2`, ni vector store.
+
+## Validación tras los fixes
+
+Re-ejecutar las **6 queries afectadas** del subset crítico:
+1. `top 5 IBEX-35 esta semana` → no debe aparecer "RIX medio"
+2. `top energía` → debe consolidar 17 empresas (15+2)
+3. `top retail` → debe consolidar Moda y Consumo
+4. `top 5 IBEX Top Dividendo` → debe rechazar limpiamente
+5. `top 5 IBEX Growth` → debe rechazar limpiamente
+6. `analiza Caixa` → debe resolver a CaixaBank
+
+Si las 6 pasan, Sprint 1 cerrado. Sprint 2 (calidad: comparativas sector vs sector, naming en rankings, delta_filter, etc.) y Sprint 3 (cosmético) quedan para próximas iteraciones.
+
+## Tiempo estimado
+~6h de trabajo de implementación + 30 min validación.
+
+## Lo que NO se toca
+- Documents, W17 step 2, AVG-Gemini ranking, `repindex_root_issuers_backup_20260503`.
+- Ninguna escritura a BD en producción.
