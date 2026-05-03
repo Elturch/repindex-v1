@@ -43,3 +43,36 @@ export function buildCoverageBanner(t: CoverageBannerInput): string {
 
 // Re-export under the legacy parameter shape for in-place call-site swap.
 export const __test__ = { buildCoverageBanner };
+
+/**
+ * C — Fallback COUNT(*) probe. Before any skill returns "Sin datos…"
+ * we ask rix_runs_v2 how many rows actually exist for the window and
+ * (optional) ticker / sector. If count > 0 the skill almost certainly
+ * dropped rows during scope/intent resolution → we surface that to
+ * the operator log AND embed the figure in the user-facing fallback
+ * so the answer is honest ("hay N filas crudas pero ninguna casa con
+ * el alcance pedido"). Returns -1 on probe error.
+ */
+export interface ProbeFilters {
+  fromISO: string; // YYYY-MM-DD inclusive
+  toISO: string;   // YYYY-MM-DD inclusive
+  ticker?: string | null;
+  tickers?: string[] | null;
+}
+
+export async function probeRowsCount(supabase: any, f: ProbeFilters): Promise<number> {
+  try {
+    let q = supabase
+      .from("rix_runs_v2")
+      .select("05_ticker", { count: "exact", head: true })
+      .gte("07_period_to", `${f.fromISO}T00:00:00Z`)
+      .lte("07_period_to", `${f.toISO}T23:59:59Z`);
+    if (f.ticker) q = q.eq("05_ticker", f.ticker);
+    if (f.tickers && f.tickers.length) q = q.in("05_ticker", f.tickers);
+    const { count, error } = await q;
+    if (error) return -1;
+    return typeof count === "number" ? count : 0;
+  } catch (_e) {
+    return -1;
+  }
+}
