@@ -108,7 +108,10 @@ function mean(xs: number[]): number | null {
 }
 
 function stddev(xs: number[]): number | null {
-  if (xs.length < 2) return xs.length === 1 ? 0 : null;
+  // F — Volatility is undefined for ≤1 weekly observations. Returning 0
+  // misled the LLM into reading "perfect stability" on a single snapshot.
+  // Renderers display "n/a (≥2 snapshots)" for null.
+  if (xs.length < 2) return null;
   const m = mean(xs)!;
   const variance = xs.reduce((acc, x) => acc + (x - m) ** 2, 0) / xs.length;
   return Math.sqrt(variance);
