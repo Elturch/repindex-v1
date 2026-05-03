@@ -8,6 +8,7 @@ import {
   type TheoreticalWindow,
   type ReconciledWindow,
 } from "../../_shared/temporalGuard.ts";
+import { resolveLastClosedSunday, formatSundayLabel } from "../../_shared/sundayResolver.ts";
 import type { Mode, ResolvedTemporal } from "../types.ts";
 
 // Default window policy (when the user does NOT specify a period):
@@ -98,19 +99,11 @@ function reconciledToResolved(rec: ReconciledWindow): ResolvedTemporal {
 
 /**
  * PHASE 4 — Snapshot-aware resolver for the "esta semana" / "this week"
- * intent. The user asks for the CURRENT calendar (ISO) week, but on days
- * before the Sunday cron the week may be empty — in which case we fall back
- * to the last week with at least one snapshot.
- *
- * Probes `rix_runs_v2` for `07_period_to` rows in [requested.start_t,
- * requested.end_t] for the given ticker (or globally). Branches:
- *   a. ≥1 snapshot inside the current ISO week →
- *      window = [first snapshot, last snapshot] in that week.
- *      reason = "current_week_complete" (n_models ≥ EXPECTED) or
- *               "current_week_partial".
- *   b. zero snapshots in the current ISO week →
- *      window = [last_period_to, last_period_to] (one snapshot week).
- *      reason = "fallback_last_complete_week".
+ * intent. PHASE 5 — Delegates to the canonical Sunday resolver
+ * (_shared/sundayResolver.ts) which aligns the window to the SWEEP axis
+ * (Sunday = 07_period_to) instead of the ISO Monday-Sunday week. This
+ * fixes the off-by-one that previously dropped the current week's row
+ * (period_from = previous Sunday) from the [Mon..Sun] range.
  */
 async function resolveCurrentWeekWindow(
   supabase: any,
@@ -118,117 +111,42 @@ async function resolveCurrentWeekWindow(
   requested: TheoreticalWindow,
   today: Date,
 ): Promise<{ resolved: ResolvedTemporal; reason: ResolvedTemporal["window_reason"] }> {
-  const TABLE = "rix_runs_v2";
-  // Probe snapshots inside the current ISO week.
-  let qIn = supabase
-    .from(TABLE)
-    .select(`07_period_to, 02_model_name`)
-    .gte("07_period_to", requested.start_t)
-    .lte("07_period_to", requested.end_t);
-  if (ticker) qIn = qIn.eq("05_ticker", ticker);
-  let inRows: Array<{ "07_period_to": string; "02_model_name": string }> = [];
+  const closed = await resolveLastClosedSunday(supabase, today);
+  // Probe how many of the 6 models have a row on that exact Sunday
+  // (snapshot puntual, NO rango lunes-domingo).
+  let qModels = supabase
+    .from("rix_runs_v2")
+    .select("02_model_name")
+    .eq("07_period_to", closed.sundayISO);
+  if (ticker) qModels = qModels.eq("05_ticker", ticker);
+  let nModels = 0;
   try {
-    const { data } = await qIn;
-    inRows = Array.isArray(data) ? data : [];
-  } catch (_e) { /* treat as empty */ }
+    const { data } = await qModels;
+    const set = new Set<string>();
+    for (const r of (data ?? [])) set.add(String(r["02_model_name"] ?? ""));
+    nModels = set.size;
+  } catch (_e) { /* nModels stays 0 */ }
 
-  // Group snapshots by period_to (one ISO week may have ≤1 distinct
-  // period_to value, but be defensive).
-  const byDate = new Map<string, Set<string>>();
-  for (const r of inRows) {
-    const d = String(r["07_period_to"] ?? "").slice(0, 10);
-    if (!d) continue;
-    if (!byDate.has(d)) byDate.set(d, new Set());
-    byDate.get(d)!.add(String(r["02_model_name"] ?? ""));
-  }
-
-  if (byDate.size > 0) {
-    const dates = Array.from(byDate.keys()).sort();
-    const start = dates[0];
-    const end = dates[dates.length - 1];
-    const totalModels = Array.from(byDate.values()).reduce(
-      (max, s) => Math.max(max, s.size),
-      0,
-    );
-    const reason: ResolvedTemporal["window_reason"] =
-      totalModels >= EXPECTED_MODELS_PER_SNAPSHOT
+  const reason: ResolvedTemporal["window_reason"] = closed.sweepInProgress
+    ? "fallback_last_complete_week"
+    : (nModels >= EXPECTED_MODELS_PER_SNAPSHOT
         ? "current_week_complete"
-        : "current_week_partial";
-    const resolved: ResolvedTemporal = {
-      from: start,
-      to: end,
-      requested_label: "esta semana",
-      snapshots_expected: EXPECTED_MODELS_PER_SNAPSHOT,
-      snapshots_available: totalModels,
-      coverage_ratio: Number(Math.min(1, totalModels / EXPECTED_MODELS_PER_SNAPSHOT).toFixed(3)),
-      is_partial: totalModels < EXPECTED_MODELS_PER_SNAPSHOT,
-      requested_from: requested.start_t,
-      requested_to: requested.end_t,
-      window_reason: reason,
-    };
-    return { resolved, reason };
-  }
+        : "current_week_partial");
 
-  // Fallback: current ISO week is empty (typical Saturday pre-Sunday-sweep
-  // case). Find the most recent period_to STRICTLY BEFORE the current ISO
-  // week and use it as a one-week snapshot window.
-  let qLast = supabase
-    .from(TABLE)
-    .select(`07_period_to, 02_model_name`)
-    .lt("07_period_to", requested.start_t)
-    .order("07_period_to", { ascending: false })
-    .limit(50);
-  if (ticker) qLast = qLast.eq("05_ticker", ticker);
-  let lastRows: Array<{ "07_period_to": string; "02_model_name": string }> = [];
-  try {
-    const { data } = await qLast;
-    lastRows = Array.isArray(data) ? data : [];
-  } catch (_e) { /* keep empty */ }
-
-  if (lastRows.length === 0) {
-    // No data at all — degrade gracefully to an empty current-week window.
-    return {
-      resolved: {
-        from: requested.start_t,
-        to: requested.end_t,
-        requested_label: "esta semana",
-        snapshots_expected: EXPECTED_MODELS_PER_SNAPSHOT,
-        snapshots_available: 0,
-        coverage_ratio: 0,
-        is_partial: true,
-        requested_from: requested.start_t,
-        requested_to: requested.end_t,
-        window_reason: "fallback_last_complete_week",
-      },
-      reason: "fallback_last_complete_week",
-    };
-  }
-
-  // Group by date, pick the most recent date with the most models.
-  const lastByDate = new Map<string, Set<string>>();
-  for (const r of lastRows) {
-    const d = String(r["07_period_to"] ?? "").slice(0, 10);
-    if (!d) continue;
-    if (!lastByDate.has(d)) lastByDate.set(d, new Set());
-    lastByDate.get(d)!.add(String(r["02_model_name"] ?? ""));
-  }
-  const sortedDates = Array.from(lastByDate.keys()).sort().reverse();
-  const targetDate = sortedDates[0];
-  const nModels = lastByDate.get(targetDate)?.size ?? 0;
   return {
     resolved: {
-      from: targetDate,
-      to: targetDate,
-      requested_label: "esta semana → última semana cerrada",
+      from: closed.sundayISO,
+      to: closed.sundayISO,
+      requested_label: formatSundayLabel(closed.sundayISO, closed.sweepInProgress),
       snapshots_expected: EXPECTED_MODELS_PER_SNAPSHOT,
       snapshots_available: nModels,
       coverage_ratio: Number(Math.min(1, nModels / EXPECTED_MODELS_PER_SNAPSHOT).toFixed(3)),
       is_partial: nModels < EXPECTED_MODELS_PER_SNAPSHOT,
-      requested_from: requested.start_t,
-      requested_to: requested.end_t,
-      window_reason: "fallback_last_complete_week",
+      requested_from: closed.sundayISO,
+      requested_to: closed.sundayISO,
+      window_reason: reason,
     },
-    reason: "fallback_last_complete_week",
+    reason,
   };
 }
 

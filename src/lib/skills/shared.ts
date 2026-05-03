@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveLastClosedSunday } from "./sundayResolver";
 
 // ── Shared result type ──────────────────────────────────────────────
 export interface SkillResult<T = unknown> {
@@ -32,61 +33,20 @@ export async function getLatestValidSunday(
     };
   }
 
+  // PHASE 5 — Delegate to canonical sundayResolver (uses 07_period_to with
+  // ≥180 rows floor). Same algorithm runs in Deno via
+  // supabase/functions/_shared/sundayResolver.ts.
   try {
-    // Get the last 10 distinct batch_execution_date values, ordered desc
-    const { data, error } = await supabase
-      .from("rix_runs_v2")
-      .select("batch_execution_date")
-      .order("batch_execution_date", { ascending: false })
-      .limit(2000);
-
-    if (error) {
-      return { success: false, error: `getLatestValidSunday query failed: ${error.message}` };
+    const r = await resolveLastClosedSunday(supabase);
+    if (r.source === "fallback_calendar" && r.rowsAvailable === 0) {
+      return { success: false, error: "No Sunday with ≥180 rows in rix_runs_v2" };
     }
-    if (!data || data.length === 0) {
-      return { success: false, error: "No rix_runs_v2 records found" };
-    }
-
-    // Group by date and count, filtering for Sundays with >=180 records
-    const dateCounts = new Map<string, number>();
-    for (const row of data) {
-      const raw = row.batch_execution_date;
-      if (!raw) continue;
-      const d = new Date(raw);
-      const dateKey = d.toISOString().split("T")[0];
-      dateCounts.set(dateKey, (dateCounts.get(dateKey) || 0) + 1);
-    }
-
-    // Sort dates descending
-    const sortedDates = Array.from(dateCounts.entries()).sort(
-      (a, b) => b[0].localeCompare(a[0])
-    );
-
-    for (const [dateStr, count] of sortedDates) {
-      const d = new Date(dateStr + "T00:00:00Z");
-      if (d.getUTCDay() === 0 && count >= 180) {
-        cachedSunday = { date: dateStr, fetched_at: Date.now() };
-        return {
-          success: true,
-          data: dateStr,
-          meta: { batch_date: dateStr, rows_returned: count, execution_ms: Date.now() - start },
-        };
-      }
-    }
-
-    // Fallback: return most recent date with >= 180 records regardless of day
-    for (const [dateStr, count] of sortedDates) {
-      if (count >= 180) {
-        cachedSunday = { date: dateStr, fetched_at: Date.now() };
-        return {
-          success: true,
-          data: dateStr,
-          meta: { batch_date: dateStr, rows_returned: count, execution_ms: Date.now() - start },
-        };
-      }
-    }
-
-    return { success: false, error: "No batch_execution_date found with >= 180 records" };
+    cachedSunday = { date: r.sundayISO, fetched_at: Date.now() };
+    return {
+      success: true,
+      data: r.sundayISO,
+      meta: { batch_date: r.sundayISO, rows_returned: r.rowsAvailable, execution_ms: Date.now() - start },
+    };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return { success: false, error: `getLatestValidSunday exception: ${msg}` };
