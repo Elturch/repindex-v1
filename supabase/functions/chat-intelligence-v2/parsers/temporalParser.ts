@@ -8,6 +8,7 @@ import {
   type TheoreticalWindow,
   type ReconciledWindow,
 } from "../../_shared/temporalGuard.ts";
+import { resolveLastClosedSunday, formatSundayLabel } from "../../_shared/sundayResolver.ts";
 import type { Mode, ResolvedTemporal } from "../types.ts";
 
 // Default window policy (when the user does NOT specify a period):
