@@ -1792,6 +1792,90 @@ export type Database = {
         }
         Relationships: []
       }
+      repindex_root_issuers_backup_20260503: {
+        Row: {
+          backup_created_at: string | null
+          cotiza_en_bolsa: boolean | null
+          counter: number | null
+          created_at: string | null
+          exclude_terms: Json | null
+          fase: number | null
+          geography: string[] | null
+          ibex_family_category: string | null
+          ibex_family_code: string | null
+          ibex_status: string | null
+          include_terms: Json | null
+          issuer_id: string | null
+          issuer_name: string | null
+          languages: string[] | null
+          notes: string | null
+          prueba: string | null
+          sample_query: string | null
+          sector_category: string | null
+          source_hint: string | null
+          source_segment_detail: string | null
+          status: string | null
+          subsector: string | null
+          ticker: string | null
+          verified_competitors: Json | null
+          website: string | null
+        }
+        Insert: {
+          backup_created_at?: string | null
+          cotiza_en_bolsa?: boolean | null
+          counter?: number | null
+          created_at?: string | null
+          exclude_terms?: Json | null
+          fase?: number | null
+          geography?: string[] | null
+          ibex_family_category?: string | null
+          ibex_family_code?: string | null
+          ibex_status?: string | null
+          include_terms?: Json | null
+          issuer_id?: string | null
+          issuer_name?: string | null
+          languages?: string[] | null
+          notes?: string | null
+          prueba?: string | null
+          sample_query?: string | null
+          sector_category?: string | null
+          source_hint?: string | null
+          source_segment_detail?: string | null
+          status?: string | null
+          subsector?: string | null
+          ticker?: string | null
+          verified_competitors?: Json | null
+          website?: string | null
+        }
+        Update: {
+          backup_created_at?: string | null
+          cotiza_en_bolsa?: boolean | null
+          counter?: number | null
+          created_at?: string | null
+          exclude_terms?: Json | null
+          fase?: number | null
+          geography?: string[] | null
+          ibex_family_category?: string | null
+          ibex_family_code?: string | null
+          ibex_status?: string | null
+          include_terms?: Json | null
+          issuer_id?: string | null
+          issuer_name?: string | null
+          languages?: string[] | null
+          notes?: string | null
+          prueba?: string | null
+          sample_query?: string | null
+          sector_category?: string | null
+          source_hint?: string | null
+          source_segment_detail?: string | null
+          status?: string | null
+          subsector?: string | null
+          ticker?: string | null
+          verified_competitors?: Json | null
+          website?: string | null
+        }
+        Relationships: []
+      }
       repindex_root_issuers_backup_20260504: {
         Row: {
           backup_taken_at: string | null

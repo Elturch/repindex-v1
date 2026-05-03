@@ -308,6 +308,12 @@ async function fetchRankingRows(
     }
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
+    if (ibexOnly) {
+      try {
+        const { assertIbex35Invariant } = await import("../../_shared/ibexInvariant.ts");
+        await assertIbex35Invariant(supabase, "sectorRanking.fetchRankingRows");
+      } catch (_) { /* non-blocking */ }
+    }
     if (list.length > 0) q = q.in("05_ticker", list);
   }
   const all: any[] = [];
@@ -351,6 +357,12 @@ async function fetchSectorSourceRows(
     if (ibexOnly) scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
+    if (ibexOnly) {
+      try {
+        const { assertIbex35Invariant } = await import("../../_shared/ibexInvariant.ts");
+        await assertIbex35Invariant(supabase, "sectorRanking.fetchSectorSourceRows");
+      } catch (_) { /* non-blocking */ }
+    }
     if (list.length > 0) q = q.in("05_ticker", list);
   }
   const all: any[] = [];
