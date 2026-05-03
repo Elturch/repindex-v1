@@ -610,11 +610,13 @@ async function analyzeQuality(supabase: any, forcedSweepId?: string): Promise<An
   // 5. Insertar reportes de calidad (upsert para evitar duplicados)
   let insertedReports = 0
   if (reportsToInsert.length > 0) {
-    console.log(`[analyze] Inserting ${reportsToInsert.length} quality reports...`)
-    
+    const { unique, deduped } = dedupeReports(reportsToInsert)
+    if (deduped > 0) console.warn(`[analyze] Deduped ${deduped} duplicate reports`)
+    console.log(`[analyze] Inserting ${unique.length} quality reports...`)
+
     const { error: insertError } = await supabase
       .from('data_quality_reports')
-      .upsert(reportsToInsert, { 
+      .upsert(unique, {
         onConflict: 'sweep_id,ticker,model_name',
         ignoreDuplicates: false 
       })
@@ -622,7 +624,7 @@ async function analyzeQuality(supabase: any, forcedSweepId?: string): Promise<An
     if (insertError) {
       console.error('[analyze] Error inserting reports:', insertError.message)
     } else {
-      insertedReports = reportsToInsert.length
+      insertedReports = unique.length
     }
   }
 
