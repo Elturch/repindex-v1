@@ -795,7 +795,7 @@ export const sectorRankingSkill: Skill = {
       parsed.mode === "period"
         ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: effectiveTemporal.snapshots_available, requestedLabel: effectiveTemporal.requested_label })
         : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
-      buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length }),
+      buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length, isSnapshot: isSnapshotMode }),
       buildCoverageRules({
         requested: models,
         withData: models,
@@ -804,6 +804,7 @@ export const sectorRankingSkill: Skill = {
         snapshotsAvailable: effectiveTemporal.snapshots_available,
         coverageRatio: effectiveTemporal.coverage_ratio,
         isPartial: effectiveTemporal.is_partial,
+        isSnapshot: isSnapshotMode,
       }),
     ].filter(Boolean).join("\n\n");
 
