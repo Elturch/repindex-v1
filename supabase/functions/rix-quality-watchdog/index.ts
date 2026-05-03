@@ -276,7 +276,7 @@ Deno.serve(async (req) => {
       
       // Si auto_repair está activo y hay inválidos, triggear reparación
       if (autoRepair && result.invalidFound > 0) {
-        console.log(`[sanitize] Auto-repair triggered for ${result.invalidFound} invalid responses`)
+        console.log(`[sanitize] Auto-repair gated; invalidFound=${result.invalidFound}, force=${body.force === true} → inserting repair_invalid_responses trigger`)
         // Insert trigger for server-side repair
         await supabase.from('cron_triggers').insert({
           action: 'repair_invalid_responses',
