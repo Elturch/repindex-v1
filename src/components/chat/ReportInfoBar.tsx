@@ -127,7 +127,13 @@ export function ReportInfoBar({ context, compact = false, languageCode = "es" }:
       {hasDateRange && (
         <span className="flex items-center gap-1">
           <Calendar className="h-3 w-3 shrink-0" />
-          {periodLabel}: {formatDate(context.date_from, languageCode)} – {formatDate(context.date_to, languageCode)}
+          {/* PHASE 5 — Snapshot dominical (date_from === date_to): usa el
+              label canónico del Dashboard "Semana del D MMM YYYY". Si la
+              ventana es un periodo (Q1, mes…), conserva el "Período: …–…". */}
+          {context.date_from && context.date_to && context.date_from.slice(0,10) === context.date_to.slice(0,10)
+            ? <>{context.temporal_window_requested?.label || `${languageCode === "en" ? "Week of" : "Semana del"} ${formatDate(context.date_from, languageCode)}`}</>
+            : <>{periodLabel}: {formatDate(context.date_from, languageCode)} – {formatDate(context.date_to, languageCode)}</>
+          }
           {context.timezone && !compact && (
             <span className="opacity-60">({context.timezone.split(" ")[0]})</span>
           )}
