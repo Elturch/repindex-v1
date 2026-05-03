@@ -255,7 +255,10 @@ Deno.serve(async (req) => {
     const action = body.action || 'analyze'
     const sweepId = body.sweep_id // Opcional: forzar un sweep específico
     const maxRepairs = body.max_repairs || 10 // Límite de reparaciones por invocación
-    const autoRepair = body.auto_repair || false // Si true, repara automáticamente después de sanitizar
+    // Capa 3: gate doble. auto_repair sólo se activa si se pasa explícitamente
+    // auto_repair=true Y force=true. El CRON queda neutralizado por defecto;
+    // sólo invocaciones manuales explícitas pueden disparar la cadena de repair.
+    const autoRepair = body.auto_repair === true && body.force === true
 
     console.log(`[rix-quality-watchdog] Action: ${action}, sweepId: ${sweepId || 'latest'}`)
 
