@@ -37,6 +37,13 @@ function fmt(n: number | null | undefined): string {
   return Math.round(n * 10) / 10 + "";
 }
 
+/** F — Volatility cell. Null/undefined ⇒ explicit "n/a (≥2 snapshots)" so
+ *  the LLM cannot misread a single-snapshot run as "perfect stability". */
+function fmtVolatility(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "n/a (≥2 snapshots)";
+  return Math.round(n * 10) / 10 + "";
+}
+
 function sign(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "n/d";
   if (n > 0) return `+${fmt(n)}`;
@@ -111,7 +118,7 @@ export function renderPeriodKpiTable(
       const level = isRix ? rxLevel : sm[m.metric]?.level ?? "n/d";
       // semáforo basado en mid-range (min+max)/2 para señal visual rápida
       const mid = range && range.min != null && range.max != null ? (range.min + range.max) / 2 : null;
-      return `| ${semaforo(mid)} ${METRIC_LABEL[m.metric] ?? m.metric} | ${fmtRange(range)} | ${consensusBadge(level)} | ${fmt(m.first_week)} → ${fmt(m.last_week)} | ${sign(m.delta_period)} | ${fmt(m.volatility)} |`;
+      return `| ${semaforo(mid)} ${METRIC_LABEL[m.metric] ?? m.metric} | ${fmtRange(range)} | ${consensusBadge(level)} | ${fmt(m.first_week)} → ${fmt(m.last_week)} | ${sign(m.delta_period)} | ${fmtVolatility(m.volatility)} |`;
     })
     .join("\n");
   return [
@@ -189,4 +196,4 @@ export function renderEvolutionTable(rows: any[]): string {
   ].join("\n");
 }
 
-export const __test__ = { fmt, sign, semaforo, fmtRange, consensusBadge };
+export const __test__ = { fmt, sign, semaforo, fmtRange, consensusBadge, fmtVolatility };
