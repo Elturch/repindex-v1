@@ -23,6 +23,37 @@ const FUZZY_STOP_WORDS = new Set<string>([
   "explicame", "explícame", "resume", "resumeme", "resúmeme",
 ]);
 
+// Sprint 1 Fix 4 — Hardcoded alias map. Resolves common informal forms
+// that the catalog ILIKE / fuzzy paths miss (e.g. "Caixa" doesn't fuzzy-
+// match "CaixaBank, S.A." reliably). Keys are normalised lowercase
+// (no accents). Values are canonical { ticker, name } pairs that already
+// exist in repindex_root_issuers.
+const HARDCODED_ALIAS_MAP: Record<string, { ticker: string; name: string }> = {
+  "caixa": { ticker: "CABK", name: "CaixaBank" },
+  "la caixa": { ticker: "CABK", name: "CaixaBank" },
+  "caixabank": { ticker: "CABK", name: "CaixaBank" },
+};
+
+function normaliseAliasKey(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tryHardcodedAlias(question: string): { ticker: string; name: string } | null {
+  const norm = " " + normaliseAliasKey(question) + " ";
+  // Sort longer aliases first to prefer "la caixa" over "caixa".
+  const keys = Object.keys(HARDCODED_ALIAS_MAP).sort((a, b) => b.length - a.length);
+  for (const k of keys) {
+    if (norm.includes(" " + k + " ")) return HARDCODED_ALIAS_MAP[k];
+  }
+  return null;
+}
+
 // BUG B fix — Conversational follow-ups WITHOUT a brand mention. When the
 // question matches one of these patterns AND has no capitalised brand-shaped
 // token, resolveEntity must return null so the orchestrator's inheritance
@@ -159,6 +190,16 @@ export async function resolveEntity(
   }
 
   const catalog = await loadCatalog(supabase);
+
+  // Sprint 1 Fix 4 — Hardcoded alias short-circuit (highest priority).
+  // Runs BEFORE the shared resolver so common informal names like
+  // "Caixa" / "la caixa" reliably resolve to CABK without depending on
+  // pg_trgm fuzzy distance.
+  const aliasHit = tryHardcodedAlias(question);
+  if (aliasHit) {
+    console.log(`[RIX-V2][entity] hardcoded alias hit → ${aliasHit.ticker}`);
+    return buildEntity(aliasHit.ticker, aliasHit.name, "exact");
+  }
 
   // (1) Shared resolver — covers exact + fuzzy + foreign + ambiguous.
   const v1 = sharedResolveEntity(question, catalog);
