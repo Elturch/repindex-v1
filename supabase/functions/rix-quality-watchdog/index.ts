@@ -20,6 +20,23 @@ function normalizeModelName(name: string): string {
   return MODEL_ALIASES[name] || name
 }
 
+// ============ DEDUPE HELPER ============
+// Defensa en profundidad: garantiza que un mismo (sweep_id, ticker, model_name)
+// no se intente upsertar dos veces en el mismo batch. La Capa 1 ya impide que
+// se generen duplicados, pero este filtro nos protege de futuras regresiones
+// y deja un log explícito si alguna vez vuelven a aparecer.
+function dedupeReports(reports: any[]): { unique: any[]; deduped: number } {
+  const seen = new Set<string>()
+  const unique: any[] = []
+  for (const r of reports) {
+    const key = `${r.sweep_id}|${r.ticker}|${r.model_name}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(r)
+  }
+  return { unique, deduped: reports.length - unique.length }
+}
+
 // Columnas de respuesta bruta por modelo (usando canonical names)
 const MODEL_RAW_COLUMNS: Record<string, string> = {
   'ChatGPT': '20_res_gpt_bruto',
