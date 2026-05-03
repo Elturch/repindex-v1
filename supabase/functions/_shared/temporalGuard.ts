@@ -170,6 +170,19 @@ const COMPARISON_RE = /\b(vs\.?|versus|frente a|compara(?:r|ndo)?|comparativa|in
 // fallback (current_week_complete | current_week_partial | fallback_last_complete_week).
 const CURRENT_WEEK_RE = /\b(esta\s+semana|semana\s+actual|semana\s+en\s+curso|this\s+week|current\s+week)\b/i;
 
+// A.1 — "semana pasada" / "última semana" / "last week". Resolves to the
+// PRIOR ISO week [Mon..Sun] (one full week before currentIsoWeekWindow).
+// Tagged kind="last_iso_week" so resolver snaps to the closed Sunday.
+const LAST_WEEK_RE = /\b(semana\s+pasada|[uú]ltima\s+semana|la\s+semana\s+anterior|last\s+week|previous\s+week)\b/i;
+
+// A.2 — Explicit ISO date "YYYY-MM-DD". Treated as a punctual snapshot
+// (start_t === end_t). Anchors the report to that exact Sunday.
+const ISO_DATE_RE = /\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/;
+
+// A.3 — Explicit ISO date range "del YYYY-MM-DD al YYYY-MM-DD" or
+// "YYYY-MM-DD a YYYY-MM-DD" / "YYYY-MM-DD ... YYYY-MM-DD".
+const ISO_RANGE_RE = /\b(20\d{2}-\d{2}-\d{2})\s*(?:al?|a|hasta|-|—|–|→|to)\s*(20\d{2}-\d{2}-\d{2})\b/i;
+
 /** Returns the ISO week [Mon, Sun] window containing `today` (UTC). */
 function currentIsoWeekWindow(today: Date): { start: string; end: string } {
   const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -191,6 +204,19 @@ function currentWeekToWindow(today: Date): TheoreticalWindow {
     label: "esta semana",
     granularity: "weekly",
     kind: "current_iso_week",
+  };
+}
+
+function lastWeekToWindow(today: Date): TheoreticalWindow {
+  const { start, end } = currentIsoWeekWindow(today);
+  const prevStart = parseISODate(start); prevStart.setUTCDate(prevStart.getUTCDate() - 7);
+  const prevEnd = parseISODate(end); prevEnd.setUTCDate(prevEnd.getUTCDate() - 7);
+  return {
+    start_t: toISODate(prevStart),
+    end_t: toISODate(prevEnd),
+    label: "semana pasada",
+    granularity: "weekly",
+    kind: "last_iso_week",
   };
 }
 
@@ -232,6 +258,29 @@ function yearToWindow(year: number): TheoreticalWindow {
 function parseSinglePhrase(phrase: string, today: Date): TheoreticalWindow | null {
   const q = phrase.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const currentYear = today.getUTCFullYear();
+
+  // A.3 — Explicit ISO range BEFORE single ISO date (otherwise ISO_DATE_RE
+  // would consume only the first half).
+  const mRange = phrase.match(ISO_RANGE_RE);
+  if (mRange) {
+    const a = mRange[1]; const b = mRange[2];
+    const start_t = a <= b ? a : b;
+    const end_t = a <= b ? b : a;
+    return { start_t, end_t, label: `${start_t} → ${end_t}`, granularity: "weekly", kind: "explicit_range" };
+  }
+
+  // A.2 — Bare ISO date "YYYY-MM-DD" → punctual snapshot.
+  const mIso = phrase.match(ISO_DATE_RE);
+  if (mIso) {
+    const iso = `${mIso[1]}-${mIso[2]}-${mIso[3]}`;
+    return { start_t: iso, end_t: iso, label: `snapshot ${iso}`, granularity: "weekly", kind: "explicit_date" };
+  }
+
+  // A.1 — Last week ("semana pasada"). Check BEFORE current-week regex
+  // since "última semana" could be ambiguous; LAST_WEEK_RE is stricter.
+  if (LAST_WEEK_RE.test(q) || LAST_WEEK_RE.test(phrase)) {
+    return lastWeekToWindow(today);
+  }
 
   // PHASE 4 — Current ISO week ("esta semana" / "this week"). Tagged with
   // kind=current_iso_week so the resolver can apply the snapshot-aware
