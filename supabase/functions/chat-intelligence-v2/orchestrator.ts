@@ -62,6 +62,8 @@ const SECTOR_KEYWORD_MAP: Array<{ re: RegExp; sector: string }> = [
 const MULTI_SECTOR_THESAURUS: Array<{ re: RegExp; sectors: string[]; label: string }> = [
   { re: /\benerg[ií]a\b/i, sectors: ["Energía y Gas", "Petróleo y Energía"], label: "energía" },
   { re: /\bretail\b|\bgran\s+consumo\b/i, sectors: ["Moda y Distribución", "Distribución", "Alimentación", "Consumo"], label: "retail" },
+  { re: /\bbanca\b|\bbancos?\b|\bfinanciero?s?\b/i, sectors: ["Banca y Servicios Financieros"], label: "banca" },
+  { re: /\binmobiliari[oa]s?\b|\bsocimi(?:s)?\b/i, sectors: ["Inmobiliaria", "SOCIMI"], label: "inmobiliario" },
 ];
 
 async function detectMultiSectorTickers(question: string, supabase: any, limit = 15): Promise<string[] | null> {
@@ -474,6 +476,22 @@ export async function process(
   if (subsegmentTickers && subsegmentTickers.length > 0) {
     parsed.scope_tickers = subsegmentTickers;
     console.log(`${logPrefix} sub-segment scope tickers attached to parsed | tickers=${subsegmentTickers.join(",")}`);
+  }
+
+  // Sprint 1 Fix 2 — Multi-sector thesaurus: when query mentions a broad
+  // keyword like "energía" or "retail" that maps to MULTIPLE sector_category
+  // values, inject the union of tickers as scope_tickers. Only applies when
+  // no subsegment already filled scope_tickers.
+  if (!parsed.scope_tickers || parsed.scope_tickers.length === 0) {
+    const multiSectorTickers = await detectMultiSectorTickers(question, supabase, 15);
+    if (multiSectorTickers && multiSectorTickers.length > 0) {
+      parsed.scope_tickers = multiSectorTickers;
+      if (parsed.intent !== "sector_ranking" && parsed.intent !== "comparison") {
+        console.log(`${logPrefix} multi-sector thesaurus → forcing sector_ranking (was=${parsed.intent})`);
+        parsed.intent = "sector_ranking";
+      }
+      console.log(`${logPrefix} multi-sector thesaurus scope attached | tickers=${multiSectorTickers.length}`);
+    }
   }
 
   // 2b. Intent priority override: if a single concrete entity is resolved,
