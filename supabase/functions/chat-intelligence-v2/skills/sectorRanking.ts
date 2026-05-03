@@ -711,27 +711,35 @@ export const sectorRankingSkill: Skill = {
     // other consumers; we build a local `effectiveTemporal` and pass it
     // explicitly to the 3 prompt builders that read coverage metadata.
     const prevSnapshotsAvailable = parsed.temporal.snapshots_available;
+    // Snapshot puntual (from===to) ⇒ snapshots_expected semantics is
+    // "modelos esperados (6)", NOT "semanas". Count DISTINCT MODELS so the
+    // banner / footnote / prompts report 6/6 models, not 1/6 weeks.
+    const isSnapshotMode = parsed.temporal.from === parsed.temporal.to;
     const realWeekKeys = new Set<string>();
+    const realModelKeys = new Set<string>();
     for (const r of rows) {
       const periodTo = r["07_period_to"] ?? r["07_period_from"];
       if (typeof periodTo === "string" && periodTo.length >= 10) {
         realWeekKeys.add(periodTo.slice(0, 10));
       }
+      const m = r["02_model_name"];
+      if (typeof m === "string" && m.length > 0) realModelKeys.add(m);
     }
     const realWeeksCount = realWeekKeys.size;
-    const effectiveTemporal = realWeeksCount > 0
+    const realObservedCount = isSnapshotMode ? realModelKeys.size : realWeeksCount;
+    const effectiveTemporal = realObservedCount > 0
       ? {
           ...parsed.temporal,
-          snapshots_available: realWeeksCount,
+          snapshots_available: realObservedCount,
           coverage_ratio: parsed.temporal.snapshots_expected > 0
-            ? realWeeksCount / parsed.temporal.snapshots_expected
+            ? Math.min(1, realObservedCount / parsed.temporal.snapshots_expected)
             : parsed.temporal.coverage_ratio,
           is_partial: parsed.temporal.snapshots_expected > 0
-            ? realWeeksCount < parsed.temporal.snapshots_expected
+            ? realObservedCount < parsed.temporal.snapshots_expected
             : parsed.temporal.is_partial,
         }
       : parsed.temporal;
-    console.log(`${tag} temporal recompute | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (real weeks in rows=${realWeeksCount}, expected=${parsed.temporal.snapshots_expected})`);
+    console.log(`${tag} temporal recompute | mode=${isSnapshotMode ? "snapshot" : "period"} | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (weeks=${realWeeksCount}, models=${realModelKeys.size}, expected=${parsed.temporal.snapshots_expected})`);
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0
