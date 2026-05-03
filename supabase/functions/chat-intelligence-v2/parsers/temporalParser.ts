@@ -150,6 +150,64 @@ async function resolveCurrentWeekWindow(
   };
 }
 
+/**
+ * AJUSTE 4 — Snapshot-aware resolver for explicit punctual dates and
+ * "semana pasada" / explicit-date queries. Snaps the requested ISO date
+ * to the matching Sunday in rix_runs_v2 (07_period_to) — if no row
+ * exists exactly that day, falls back to the last Sunday <= the date
+ * for which any snapshot exists. Sets `snapshots_expected = 6` (models),
+ * NOT weeks. coverageBanner uses `from === to` to render the banner in
+ * "modelos" units.
+ */
+async function resolveSnapshotByDate(
+  supabase: any,
+  ticker: string | null,
+  isoTarget: string,
+): Promise<ResolvedTemporal> {
+  // Find the most recent Sunday (07_period_to) <= isoTarget that has data.
+  let qDate = supabase
+    .from("rix_runs_v2")
+    .select("07_period_to")
+    .lte("07_period_to", `${isoTarget}T23:59:59Z`)
+    .order("07_period_to", { ascending: false })
+    .limit(1);
+  if (ticker) qDate = qDate.eq("05_ticker", ticker);
+  let snappedSunday = isoTarget;
+  try {
+    const { data } = await qDate;
+    if (data?.[0]?.["07_period_to"]) {
+      snappedSunday = String(data[0]["07_period_to"]).slice(0, 10);
+    }
+  } catch (_e) { /* keep isoTarget as-is */ }
+
+  // Count distinct models with data on that exact Sunday.
+  let qModels = supabase
+    .from("rix_runs_v2")
+    .select("02_model_name")
+    .eq("07_period_to", snappedSunday);
+  if (ticker) qModels = qModels.eq("05_ticker", ticker);
+  let nModels = 0;
+  try {
+    const { data } = await qModels;
+    const set = new Set<string>();
+    for (const r of (data ?? [])) set.add(String(r["02_model_name"] ?? ""));
+    nModels = set.size;
+  } catch (_e) { /* nModels stays 0 */ }
+
+  return {
+    from: snappedSunday,
+    to: snappedSunday,
+    requested_label: `Snapshot ${snappedSunday}`,
+    snapshots_expected: EXPECTED_MODELS_PER_SNAPSHOT,
+    snapshots_available: nModels,
+    coverage_ratio: Number(Math.min(1, nModels / EXPECTED_MODELS_PER_SNAPSHOT).toFixed(3)),
+    is_partial: nModels < EXPECTED_MODELS_PER_SNAPSHOT,
+    requested_from: snappedSunday,
+    requested_to: snappedSunday,
+    window_reason: nModels >= EXPECTED_MODELS_PER_SNAPSHOT ? "current_week_complete" : "current_week_partial",
+  };
+}
+
 export function inferMode(temporal: ResolvedTemporal): Mode {
   return (temporal.snapshots_available || 0) > 1 ? "period" : "snapshot";
 }
@@ -174,6 +232,16 @@ export async function parseTemporal(
   if (intent.primary?.kind === "current_iso_week") {
     const { resolved } = await resolveCurrentWeekWindow(supabase, ticker, intent.primary, today);
     return resolved;
+  }
+
+  // A.1 — "semana pasada": snap to the closed Sunday of the prior ISO week.
+  if (intent.primary?.kind === "last_iso_week") {
+    return await resolveSnapshotByDate(supabase, ticker, intent.primary.end_t);
+  }
+
+  // A.2 — Explicit ISO date: snap to that Sunday (or last <= it with data).
+  if (intent.primary?.kind === "explicit_date") {
+    return await resolveSnapshotByDate(supabase, ticker, intent.primary.start_t);
   }
 
   // If the user explicitly stated a period, respect it. Otherwise
