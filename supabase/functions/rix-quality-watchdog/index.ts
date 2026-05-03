@@ -349,23 +349,34 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
   const weekStart = latestRun['06_period_from']
   console.log(`[sanitize] Analyzing sweep: ${sweepId}, week: ${weekStart}`)
 
-  // 2. Obtener todos los registros de la semana con respuestas brutas
-  const { data: records, error: recordsError } = await supabase
-    .from('rix_runs_v2')
-    .select(`
-      id,
-      "02_model_name",
-      "05_ticker",
-      "20_res_gpt_bruto",
-      "21_res_perplex_bruto",
-      "22_res_gemini_bruto",
-      "23_res_deepseek_bruto",
-      respuesta_bruto_grok,
-      respuesta_bruto_qwen
-    `)
-    .eq('batch_execution_date', sweepId)
-    .range(0, 9999) // Capa 1: evita el truncamiento default de 1.000 filas
-
+  // 2. Obtener TODOS los registros del sweep con respuestas brutas.
+  // Paginación explícita: Supabase tiene db.max_rows=1000 server-side y
+  // .range(0,9999) no lo sortea. Iteramos en páginas de 1000.
+  const PAGE = 1000
+  const records: any[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error: pageErr } = await supabase
+      .from('rix_runs_v2')
+      .select(`
+        id,
+        "02_model_name",
+        "05_ticker",
+        "20_res_gpt_bruto",
+        "21_res_perplex_bruto",
+        "22_res_gemini_bruto",
+        "23_res_deepseek_bruto",
+        respuesta_bruto_grok,
+        respuesta_bruto_qwen
+      `)
+      .eq('batch_execution_date', sweepId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (pageErr) throw new Error(`Error fetching records: ${pageErr.message}`)
+    if (!page || page.length === 0) break
+    records.push(...page)
+    if (page.length < PAGE) break
+  }
+  const recordsError: any = null
   if (recordsError) throw new Error(`Error fetching records: ${recordsError.message}`)
   if (!records || records.length === 0) {
     return {
