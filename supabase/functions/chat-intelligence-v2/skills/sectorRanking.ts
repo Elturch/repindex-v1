@@ -749,6 +749,7 @@ export const sectorRankingSkill: Skill = {
           weeksCount: effectiveTemporal.snapshots_available,
           weeksExpected: effectiveTemporal.snapshots_expected,
           isPartial: effectiveTemporal.is_partial,
+          isSnapshot: isSnapshotMode,
         })
       : "_Sin datos para el período/alcance solicitado._";
 
