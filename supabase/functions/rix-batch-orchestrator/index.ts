@@ -1218,7 +1218,10 @@ async function processCronTriggers(
           },
           body: JSON.stringify({ 
             action: 'sanitize',
-            auto_repair: triggerParams?.auto_repair ?? true  // Auto-repair por defecto
+            // Capa 3: el CRON nunca debe auto-reparar.
+            // El watchdog ahora exige auto_repair=true Y force=true.
+            // Aquí pasamos sólo auto_repair sin force → quedará gateado.
+            auto_repair: triggerParams?.auto_repair ?? false
           }),
         });
 
