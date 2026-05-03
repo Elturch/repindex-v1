@@ -11,16 +11,20 @@ export interface CoverageRulesInput {
   snapshotsAvailable: number;
   coverageRatio: number;      // 0..1
   isPartial: boolean;
+  /** Snapshot puntual (from===to) ⇒ "modelos" en lugar de "snapshots". */
+  isSnapshot?: boolean;
 }
 
 export function buildCoverageRules(input: CoverageRulesInput): string {
-  const { requested, withData, missing, snapshotsExpected, snapshotsAvailable, coverageRatio, isPartial } = input;
+  const { requested, withData, missing, snapshotsExpected, snapshotsAvailable, coverageRatio, isPartial, isSnapshot } = input;
+  const unit = isSnapshot ? "modelos" : "snapshots";
+  const scope = isSnapshot ? "modelos disponibles en este snapshot" : "semanas y modelos efectivamente disponibles";
   const partialNotice = isPartial
-    ? `\nCOBERTURA PARCIAL DETECTADA (${snapshotsAvailable}/${snapshotsExpected} snapshots, ratio ${(coverageRatio * 100).toFixed(0)}%):
+    ? `\nCOBERTURA PARCIAL DETECTADA (${snapshotsAvailable}/${snapshotsExpected} ${unit}, ratio ${(coverageRatio * 100).toFixed(0)}%):
 • Declara explícitamente al inicio del informe que la cobertura es parcial.
-• Acota las conclusiones a las semanas y modelos efectivamente disponibles.
-• PROHIBIDO extrapolar tendencias a semanas no cubiertas.`
-    : "";
+• Acota las conclusiones a los ${scope}.
+• PROHIBIDO extrapolar tendencias a ${isSnapshot ? "modelos no incluidos" : "semanas no cubiertas"}.`
+    : `\nCOBERTURA COMPLETA: ${snapshotsAvailable}/${snapshotsExpected} ${unit} disponibles. PROHIBIDO afirmar que faltan modelos cuando los 6 respondieron.`;
 
   return `COBERTURA DE MODELOS (PRIORIDAD MÁXIMA, ANTI-ALUCINACIÓN):
 • Modelos solicitados: [${requested.join(", ") || "(ninguno)"}]

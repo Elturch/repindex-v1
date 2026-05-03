@@ -7,13 +7,23 @@
 export interface RankingPromptInput {
   scopeLabel: string;       // "sector Energía", "IBEX-35", etc.
   topN: number;             // tamaño del ranking
-  weeksCount: number;       // semanas agregadas
+  weeksCount: number;       // semanas agregadas (o modelos respondidos en snapshot puntual)
   modelsCount: number;      // modelos con datos en el ranking
+  /** Snapshot puntual (from===to): weeksCount es en realidad #modelos del snapshot. */
+  isSnapshot?: boolean;
 }
 
 export function buildRankingRules(input: RankingPromptInput): string {
-  const { scopeLabel, topN, weeksCount, modelsCount } = input;
-  return `MODO RANKING — INFORME COMPLETO DE SECTOR/GRUPO (alcance: ${scopeLabel} · ${topN} empresas · ${weeksCount} semanas · ${modelsCount} modelos):
+  const { scopeLabel, topN, weeksCount, modelsCount, isSnapshot } = input;
+  // Snapshot puntual ⇒ describimos un ÚNICO domingo con N modelos respondiendo.
+  // Período ⇒ describimos N semanas agregadas con M modelos.
+  const periodPhrase = isSnapshot
+    ? `1 semana (snapshot puntual) con ${weeksCount}/${modelsCount} modelos respondiendo`
+    : `${weeksCount} semanas · ${modelsCount} modelos`;
+  const sec1Phrase = isSnapshot
+    ? `${topN} empresas, snapshot puntual, ${weeksCount}/${modelsCount} modelos respondiendo`
+    : `${topN} empresas, ${weeksCount} semanas, ${modelsCount} modelos`;
+  return `MODO RANKING — INFORME COMPLETO DE SECTOR/GRUPO (alcance: ${scopeLabel} · ${topN} empresas · ${periodPhrase}):
 
 OBJETIVO: producir un INFORME EJECUTIVO COMPLETO del sector/grupo, NO un simple comentario del ranking. Profundidad equivalente a un análisis individual, pero abarcando TODAS las empresas del alcance. Mínimo 8 secciones, narrativa rica con cifras concretas.
 
@@ -23,7 +33,7 @@ REGLA TRANSVERSAL DE NARRATIVA: cada sección con tabla DEBE seguir el patrón
 ESTRUCTURA OBLIGATORIA (SECCIONES, EN ORDEN EXACTO):
 
 ## 1. Resumen ejecutivo del ${scopeLabel}
-5-7 frases que incluyan: (a) tamaño del grupo (${topN} empresas, ${weeksCount} semanas, ${modelsCount} modelos), (b) RIX medio del grupo y rango (max-min), (c) líder y farolillo rojo con sus tickers y RIX, (d) tendencia general (alcista/bajista/estable) con dato cuantitativo, (e) hallazgo más relevante del período.
+5-7 frases que incluyan: (a) tamaño del grupo (${sec1Phrase}), (b) RIX medio del grupo y rango (max-min), (c) líder y farolillo rojo con sus tickers y RIX, (d) ${isSnapshot ? "lectura del snapshot puntual (NO uses 'tendencia' con 1 sola semana, NO inventes Δ período)" : "tendencia general (alcista/bajista/estable) con dato cuantitativo"}, (e) hallazgo más relevante del ${isSnapshot ? "snapshot" : "período"}.
 
 ## 2. Ranking del grupo
 Inserta LITERALMENTE el bloque marcado entre <PRE_RENDERED_RANKING_TABLE>...</PRE_RENDERED_RANKING_TABLE> sin modificar NI UNA palabra (ni cabecera, ni filas, ni footnote en cursiva). PROHIBIDO: regenerar la tabla, reescribir el footnote, sustituir "RIX rango" por "RIX medio", añadir la palabra "HOY" o "promedio del consenso", o inventar fechas de cálculo. Antes de la tabla: 1 párrafo de lectura ("la cabeza la ocupa X con Y, mientras la cola la cierra Z..."). Después de la tabla: 1 párrafo destacando el spread RIX max-min y el bloque mayoritario. El footnote ya viene incluido dentro del bloque pre-renderizado: NO lo dupliques ni lo reescribas.
