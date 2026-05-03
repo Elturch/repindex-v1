@@ -354,6 +354,7 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
     .from('rix_runs_v2')
     .select(`
       id,
+      "02_model_name",
       "05_ticker",
       "20_res_gpt_bruto",
       "21_res_perplex_bruto",
@@ -363,6 +364,7 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
       respuesta_bruto_qwen
     `)
     .eq('batch_execution_date', sweepId)
+    .range(0, 9999) // Capa 1: evita el truncamiento default de 1.000 filas
 
   if (recordsError) throw new Error(`Error fetching records: ${recordsError.message}`)
   if (!records || records.length === 0) {
