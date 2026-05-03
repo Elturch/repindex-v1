@@ -123,14 +123,7 @@ function buildPerCompanySourceList(rows: any[]): string {
  * Build a high-priority coverage warning that the LLM MUST surface in the
  * first paragraph when the requested period is only partially covered.
  */
-function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
-  if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
-  const pct = Math.round((t.coverage_ratio ?? 0) * 100);
-  return `IMPORTANTE — COBERTURA PARCIAL (PRIORIDAD MÁXIMA):
-• El período solicitado solo dispone de datos desde ${t.from} hasta ${t.to} (${t.snapshots_available}/${t.snapshots_expected} snapshots, ~${pct}% del período pedido).
-• ABRE el informe declarando esta cobertura parcial en el primer párrafo.
-• PROHIBIDO extrapolar tendencias a las semanas no cubiertas.`;
-}
+import { buildCoverageBanner } from "../../_shared/coverageBanner.ts";
 
 const RANKING_SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from, 07_period_to, " +
