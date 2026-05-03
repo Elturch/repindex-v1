@@ -113,3 +113,6 @@ verify_jwt = false
 
 [functions.normalize-query]
 verify_jwt = false
+
+[functions.dev-preview-session]
+verify_jwt = false
