@@ -26,7 +26,7 @@ import {
 import { extractCitedSources } from "../datapack/citedSources.ts";
 import { computePeriodAggregation } from "../../_shared/periodAggregation.ts";
 
-import { buildCoverageBanner } from "../../_shared/coverageBanner.ts";
+import { buildCoverageBanner, probeRowsCount } from "../../_shared/coverageBanner.ts";
 
 const SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, " +
@@ -273,7 +273,10 @@ export const modelDivergenceSkill: Skill = {
     };
 
     if (aggs.length === 0) {
-      const fb = `**Divergencia inter-modelo · ${entity.company_name}**\n\n_Sin datos en el período ${parsed.temporal.from} → ${parsed.temporal.to}._`;
+      const probedCount = await probeRowsCount(supabase, { fromISO: parsed.temporal.from, toISO: parsed.temporal.to, ticker: entity.ticker });
+      console.log(`[RIX-V2][modelDivergence] empty fallback | probe_count=${probedCount} | ticker=${entity.ticker}`);
+      const probeNote = probedCount > 0 ? ` (probe: ${probedCount} filas crudas existen pero no encajan en el alcance pedido)` : "";
+      const fb = `**Divergencia inter-modelo · ${entity.company_name}**\n\n_Sin datos en el período ${parsed.temporal.from} → ${parsed.temporal.to}${probeNote}._`;
       try { onChunk?.(fb); } catch (_) { /* noop */ }
       return {
         datapack: { ...datapack, pre_rendered_tables: [fb] },
