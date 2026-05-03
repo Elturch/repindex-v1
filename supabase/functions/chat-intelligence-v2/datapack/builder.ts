@@ -185,19 +185,21 @@ async function fetchRows(
   console.log(
     `[RIX-V2][datapack] SQL window | ticker=${entity.ticker} | from=${fromISO} | to=${toISO} | projection=${lazy ? "LIGHT" : "FULL"} | flags=${JSON.stringify(flags)}`,
   );
+  // PHASE 5 — Align filter to SWEEP axis (07_period_to = Sunday del barrido).
+  // Snapshot puntual (from===to) → eq; periodo largo → rango; ambos sobre
+  // 07_period_to. Sustituye el filtro previo por 06_period_from que dejaba
+  // off-by-one fuera la fila del sweep dominical.
+  const isSnapshot = fromISO === toISO;
   for (let page = 0; page < 5; page++) {
-    const { data, error } = await supabase
+    let q = supabase
       .from("rix_runs_v2")
       .select(projection)
-      .eq("05_ticker", entity.ticker)
-      // BLOQUE 1 fix: filter by semantic week (06_period_from), not by run
-      // date. batch_execution_date is the date the LLM was run; period_from
-      // is the Sunday-anchored snapshot week. Using period_from aligns with
-      // sectorRanking / divergenceStats / temporalEvolution and makes Q1
-      // return the full ~13 weeks instead of ~11.
-      .gte("06_period_from", fromISO)
-      .lte("06_period_from", toISO)
-      .order("06_period_from", { ascending: false })
+      .eq("05_ticker", entity.ticker);
+    q = isSnapshot
+      ? q.eq("07_period_to", fromISO)
+      : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
+    const { data, error } = await q
+      .order("07_period_to", { ascending: false })
       .range(page * 1000, (page + 1) * 1000 - 1);
     if (error) {
       console.error("[RIX-V2][datapack] fetchRows error:", error.message);
