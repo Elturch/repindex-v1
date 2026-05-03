@@ -955,7 +955,7 @@ async function processCronTriggers(
     try {
       if (trigger.action === 'repair_analysis') {
         console.log(`[cron_triggers] Processing repair_analysis trigger ${trigger.id}`);
-        
+        const tParams = (trigger.params as any) || {};
         // Llamada server-to-server a rix-analyze-v2 (sin extensiones bloqueando)
         const response = await fetch(`${supabaseUrl}/functions/v1/rix-analyze-v2`, {
           method: 'POST',
@@ -963,9 +963,12 @@ async function processCronTriggers(
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${serviceKey}`,
           },
-          body: JSON.stringify({ 
-            action: 'reprocess_pending', 
-            batch_size: (trigger.params as any)?.batch_size || 2 
+          body: JSON.stringify({
+            action: 'reprocess_pending',
+            batch_size: tParams.batch_size || 2,
+            // P1: propagar filtros de modelo al worker
+            only_models: tParams.only_models,
+            exclude_models: tParams.exclude_models,
           }),
           // Evita dejar el trigger en "processing" por timeout de la plataforma
           // (si el análisis GPT-5 se alarga demasiado).
@@ -1218,7 +1221,10 @@ async function processCronTriggers(
           },
           body: JSON.stringify({ 
             action: 'sanitize',
-            auto_repair: triggerParams?.auto_repair ?? true  // Auto-repair por defecto
+            // Capa 3: el CRON nunca debe auto-reparar.
+            // El watchdog ahora exige auto_repair=true Y force=true.
+            // Aquí pasamos sólo auto_repair sin force → quedará gateado.
+            auto_repair: triggerParams?.auto_repair ?? false
           }),
         });
 
@@ -2558,16 +2564,27 @@ const {
             .maybeSingle();
           
           if (!existingTrigger) {
-            const { error: insertError } = await supabase.from('cron_triggers').insert({
-              action: 'repair_analysis',
-              params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2 },
-              status: 'pending',
-            });
+            // P1: aislamos Qwen (~195s) en su propio trigger con batch_size=1
+            // para que su única llamada quede dentro del IDLE_TIMEOUT 150s del
+            // runtime Edge Supabase (no configurable). Los otros 5 modelos
+            // siguen en batch_size=2 (≤120s).
+            const { error: insertError } = await supabase.from('cron_triggers').insert([
+              {
+                action: 'repair_analysis',
+                params: { sweep_id: sweepId, count: analyzableCount, batch_size: 2, exclude_models: ['Qwen'] },
+                status: 'pending',
+              },
+              {
+                action: 'repair_analysis',
+                params: { sweep_id: sweepId, count: analyzableCount, batch_size: 1, only_models: ['Qwen'] },
+                status: 'pending',
+              },
+            ]);
             if (insertError) {
               console.error(`[${triggerMode}] Failed inserting repair_analysis trigger:`, insertError);
             } else {
-              triggersInserted.push('repair_analysis');
-              console.log(`[${triggerMode}] Inserted repair_analysis trigger for ${analyzableCount} analyzable records`);
+              triggersInserted.push('repair_analysis_no_qwen', 'repair_analysis_qwen_only');
+              console.log(`[${triggerMode}] Inserted 2 repair_analysis triggers (Qwen aislado) for ${analyzableCount} analyzable records`);
             }
           } else {
             console.log(`[${triggerMode}] repair_analysis trigger already pending (id: ${existingTrigger.id})`);

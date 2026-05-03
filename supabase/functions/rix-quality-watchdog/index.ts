@@ -20,6 +20,23 @@ function normalizeModelName(name: string): string {
   return MODEL_ALIASES[name] || name
 }
 
+// ============ DEDUPE HELPER ============
+// Defensa en profundidad: garantiza que un mismo (sweep_id, ticker, model_name)
+// no se intente upsertar dos veces en el mismo batch. La Capa 1 ya impide que
+// se generen duplicados, pero este filtro nos protege de futuras regresiones
+// y deja un log explícito si alguna vez vuelven a aparecer.
+function dedupeReports(reports: any[]): { unique: any[]; deduped: number } {
+  const seen = new Set<string>()
+  const unique: any[] = []
+  for (const r of reports) {
+    const key = `${r.sweep_id}|${r.ticker}|${r.model_name}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(r)
+  }
+  return { unique, deduped: reports.length - unique.length }
+}
+
 // Columnas de respuesta bruta por modelo (usando canonical names)
 const MODEL_RAW_COLUMNS: Record<string, string> = {
   'ChatGPT': '20_res_gpt_bruto',
@@ -238,7 +255,10 @@ Deno.serve(async (req) => {
     const action = body.action || 'analyze'
     const sweepId = body.sweep_id // Opcional: forzar un sweep específico
     const maxRepairs = body.max_repairs || 10 // Límite de reparaciones por invocación
-    const autoRepair = body.auto_repair || false // Si true, repara automáticamente después de sanitizar
+    // Capa 3: gate doble. auto_repair sólo se activa si se pasa explícitamente
+    // auto_repair=true Y force=true. El CRON queda neutralizado por defecto;
+    // sólo invocaciones manuales explícitas pueden disparar la cadena de repair.
+    const autoRepair = body.auto_repair === true && body.force === true
 
     console.log(`[rix-quality-watchdog] Action: ${action}, sweepId: ${sweepId || 'latest'}`)
 
@@ -256,7 +276,7 @@ Deno.serve(async (req) => {
       
       // Si auto_repair está activo y hay inválidos, triggear reparación
       if (autoRepair && result.invalidFound > 0) {
-        console.log(`[sanitize] Auto-repair triggered for ${result.invalidFound} invalid responses`)
+        console.log(`[sanitize] Auto-repair gated; invalidFound=${result.invalidFound}, force=${body.force === true} → inserting repair_invalid_responses trigger`)
         // Insert trigger for server-side repair
         await supabase.from('cron_triggers').insert({
           action: 'repair_invalid_responses',
@@ -329,21 +349,34 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
   const weekStart = latestRun['06_period_from']
   console.log(`[sanitize] Analyzing sweep: ${sweepId}, week: ${weekStart}`)
 
-  // 2. Obtener todos los registros de la semana con respuestas brutas
-  const { data: records, error: recordsError } = await supabase
-    .from('rix_runs_v2')
-    .select(`
-      id,
-      "05_ticker",
-      "20_res_gpt_bruto",
-      "21_res_perplex_bruto",
-      "22_res_gemini_bruto",
-      "23_res_deepseek_bruto",
-      respuesta_bruto_grok,
-      respuesta_bruto_qwen
-    `)
-    .eq('batch_execution_date', sweepId)
-
+  // 2. Obtener TODOS los registros del sweep con respuestas brutas.
+  // Paginación explícita: Supabase tiene db.max_rows=1000 server-side y
+  // .range(0,9999) no lo sortea. Iteramos en páginas de 1000.
+  const PAGE = 1000
+  const records: any[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error: pageErr } = await supabase
+      .from('rix_runs_v2')
+      .select(`
+        id,
+        "02_model_name",
+        "05_ticker",
+        "20_res_gpt_bruto",
+        "21_res_perplex_bruto",
+        "22_res_gemini_bruto",
+        "23_res_deepseek_bruto",
+        respuesta_bruto_grok,
+        respuesta_bruto_qwen
+      `)
+      .eq('batch_execution_date', sweepId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (pageErr) throw new Error(`Error fetching records: ${pageErr.message}`)
+    if (!page || page.length === 0) break
+    records.push(...page)
+    if (page.length < PAGE) break
+  }
+  const recordsError: any = null
   if (recordsError) throw new Error(`Error fetching records: ${recordsError.message}`)
   if (!records || records.length === 0) {
     return {
@@ -368,54 +401,53 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
   const details: SanitizeResult['details'] = []
   let scanned = 0
 
-  // 4. Validar cada respuesta de cada modelo
+  // 4. Capa 1 — Validar SOLO la columna bruta del modelo que generó cada fila.
+  // En V2 cada fila contiene una única respuesta bruta (la del modelo en
+  // 02_model_name); las otras 5 columnas son NULL por diseño. El bucle
+  // anterior validaba las 6 → 5 falsos inválidos por fila + colisiones en
+  // (sweep_id, ticker, model_name) en el upsert.
   for (const record of records) {
     const ticker = record['05_ticker']
-    if (!ticker) continue
+    const rawModelName = record['02_model_name']
+    if (!ticker || !rawModelName) continue
 
-    for (const [model, column] of Object.entries(MODEL_RAW_COLUMNS)) {
-      const response = record[column]
-      scanned++
+    const model = normalizeModelName(rawModelName)
+    const column = MODEL_RAW_COLUMNS[model]
+    if (!column) continue // modelo desconocido, ignorar
 
-      const validation = validateResponse(response)
-
-      if (validation.isValid) {
-        byModel[model].valid++
-      } else {
-        byModel[model].invalid++
-        const errorType = validation.errorType || 'unknown'
-        byModel[model].byErrorType[errorType] = (byModel[model].byErrorType[errorType] || 0) + 1
-
-        details.push({
-          ticker,
-          model,
-          errorType,
-          reason: validation.reason || 'Unknown',
-        })
-
-        // Preparar reporte para insertar
-        reportsToInsert.push({
-          sweep_id: sweepId,
-          week_start: weekStart,
-          ticker,
-          model_name: model,
-          status: 'invalid_response',
-          error_type: errorType,
-          original_error: validation.reason,
-          repair_attempts: 0,
-        })
-      }
+    scanned++
+    const validation = validateResponse(record[column])
+    if (validation.isValid) {
+      byModel[model].valid++
+      continue
     }
+
+    byModel[model].invalid++
+    const errorType = validation.errorType || 'unknown'
+    byModel[model].byErrorType[errorType] = (byModel[model].byErrorType[errorType] || 0) + 1
+    details.push({ ticker, model, errorType, reason: validation.reason || 'Unknown' })
+    reportsToInsert.push({
+      sweep_id: sweepId,
+      week_start: weekStart,
+      ticker,
+      model_name: model,
+      status: 'invalid_response',
+      error_type: errorType,
+      original_error: validation.reason,
+      repair_attempts: 0,
+    })
   }
 
   // 5. Insertar reportes de calidad (upsert para evitar duplicados)
   let registered = 0
   if (reportsToInsert.length > 0) {
-    console.log(`[sanitize] Registering ${reportsToInsert.length} invalid responses...`)
-    
+    const { unique, deduped } = dedupeReports(reportsToInsert)
+    if (deduped > 0) console.warn(`[sanitize] Deduped ${deduped} duplicate reports`)
+    console.log(`[sanitize] Registering ${unique.length} invalid responses...`)
+
     const { error: insertError } = await supabase
       .from('data_quality_reports')
-      .upsert(reportsToInsert, { 
+      .upsert(unique, {
         onConflict: 'sweep_id,ticker,model_name',
         ignoreDuplicates: false 
       })
@@ -423,7 +455,7 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
     if (insertError) {
       console.error('[sanitize] Error inserting reports:', insertError.message)
     } else {
-      registered = reportsToInsert.length
+      registered = unique.length
     }
   }
 
@@ -589,11 +621,13 @@ async function analyzeQuality(supabase: any, forcedSweepId?: string): Promise<An
   // 5. Insertar reportes de calidad (upsert para evitar duplicados)
   let insertedReports = 0
   if (reportsToInsert.length > 0) {
-    console.log(`[analyze] Inserting ${reportsToInsert.length} quality reports...`)
-    
+    const { unique, deduped } = dedupeReports(reportsToInsert)
+    if (deduped > 0) console.warn(`[analyze] Deduped ${deduped} duplicate reports`)
+    console.log(`[analyze] Inserting ${unique.length} quality reports...`)
+
     const { error: insertError } = await supabase
       .from('data_quality_reports')
-      .upsert(reportsToInsert, { 
+      .upsert(unique, {
         onConflict: 'sweep_id,ticker,model_name',
         ignoreDuplicates: false 
       })
@@ -601,7 +635,7 @@ async function analyzeQuality(supabase: any, forcedSweepId?: string): Promise<An
     if (insertError) {
       console.error('[analyze] Error inserting reports:', insertError.message)
     } else {
-      insertedReports = reportsToInsert.length
+      insertedReports = unique.length
     }
   }
 

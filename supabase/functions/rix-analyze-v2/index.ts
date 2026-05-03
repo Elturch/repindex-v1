@@ -731,7 +731,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, record_id, batch_size = 10 } = body;
+    const { action, record_id, batch_size = 10, only_models, exclude_models } = body;
     
     // Initialize Supabase
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -740,7 +740,7 @@ serve(async (req) => {
 
     // === MODE 1: Reprocess pending records (surgical repair) ===
     if (action === 'reprocess_pending') {
-      console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${batch_size} pending records...`);
+      console.log(`[rix-analyze-v2] REPROCESS MODE: Finding up to ${batch_size} pending records... only_models=${JSON.stringify(only_models)} exclude_models=${JSON.stringify(exclude_models)}`);
       
       // CRITICAL FIX: Get the active week first (most recent period with data)
       const { data: latestWeek } = await supabase
@@ -754,7 +754,7 @@ serve(async (req) => {
       console.log(`[rix-analyze-v2] Active period detected: ${activePeriod}`);
       
       // Find records with search completed but analysis pending - FILTERED BY ACTIVE WEEK
-      const { data: pendingRecords, error: fetchError } = await supabase
+      let pendingQuery = supabase
         .from('rix_runs_v2')
         .select('*')
         .is('analysis_completed_at', null)
@@ -762,6 +762,18 @@ serve(async (req) => {
         .eq('06_period_from', activePeriod) // Only process current week's records
         .order('created_at', { ascending: true })
         .limit(batch_size);
+
+      // P1: filtros de aislamiento de modelo (Qwen vs resto)
+      if (Array.isArray(only_models) && only_models.length > 0) {
+        pendingQuery = pendingQuery.in('02_model_name', only_models);
+      }
+      if (Array.isArray(exclude_models) && exclude_models.length > 0) {
+        // .not('02_model_name', 'in', '(...)' ) — sintaxis postgrest
+        const list = exclude_models.map((m: string) => `"${m}"`).join(',');
+        pendingQuery = pendingQuery.not('02_model_name', 'in', `(${list})`);
+      }
+
+      const { data: pendingRecords, error: fetchError } = await pendingQuery;
 
       if (fetchError) {
         console.error('[rix-analyze-v2] Error fetching pending records:', fetchError);
