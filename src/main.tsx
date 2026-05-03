@@ -1,8 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
-import { ensureDevSession } from "./lib/devAutoLogin";
-
-ensureDevSession().finally(() => {
-  createRoot(document.getElementById("root")!).render(<App />);
-});
+// Auto-login for Preview is initiated inside AuthProvider so React can
+// render a loading state while the session is being established.
+createRoot(document.getElementById("root")!).render(<App />);
