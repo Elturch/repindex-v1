@@ -390,54 +390,53 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
   const details: SanitizeResult['details'] = []
   let scanned = 0
 
-  // 4. Validar cada respuesta de cada modelo
+  // 4. Capa 1 — Validar SOLO la columna bruta del modelo que generó cada fila.
+  // En V2 cada fila contiene una única respuesta bruta (la del modelo en
+  // 02_model_name); las otras 5 columnas son NULL por diseño. El bucle
+  // anterior validaba las 6 → 5 falsos inválidos por fila + colisiones en
+  // (sweep_id, ticker, model_name) en el upsert.
   for (const record of records) {
     const ticker = record['05_ticker']
-    if (!ticker) continue
+    const rawModelName = record['02_model_name']
+    if (!ticker || !rawModelName) continue
 
-    for (const [model, column] of Object.entries(MODEL_RAW_COLUMNS)) {
-      const response = record[column]
-      scanned++
+    const model = normalizeModelName(rawModelName)
+    const column = MODEL_RAW_COLUMNS[model]
+    if (!column) continue // modelo desconocido, ignorar
 
-      const validation = validateResponse(response)
-
-      if (validation.isValid) {
-        byModel[model].valid++
-      } else {
-        byModel[model].invalid++
-        const errorType = validation.errorType || 'unknown'
-        byModel[model].byErrorType[errorType] = (byModel[model].byErrorType[errorType] || 0) + 1
-
-        details.push({
-          ticker,
-          model,
-          errorType,
-          reason: validation.reason || 'Unknown',
-        })
-
-        // Preparar reporte para insertar
-        reportsToInsert.push({
-          sweep_id: sweepId,
-          week_start: weekStart,
-          ticker,
-          model_name: model,
-          status: 'invalid_response',
-          error_type: errorType,
-          original_error: validation.reason,
-          repair_attempts: 0,
-        })
-      }
+    scanned++
+    const validation = validateResponse(record[column])
+    if (validation.isValid) {
+      byModel[model].valid++
+      continue
     }
+
+    byModel[model].invalid++
+    const errorType = validation.errorType || 'unknown'
+    byModel[model].byErrorType[errorType] = (byModel[model].byErrorType[errorType] || 0) + 1
+    details.push({ ticker, model, errorType, reason: validation.reason || 'Unknown' })
+    reportsToInsert.push({
+      sweep_id: sweepId,
+      week_start: weekStart,
+      ticker,
+      model_name: model,
+      status: 'invalid_response',
+      error_type: errorType,
+      original_error: validation.reason,
+      repair_attempts: 0,
+    })
   }
 
   // 5. Insertar reportes de calidad (upsert para evitar duplicados)
   let registered = 0
   if (reportsToInsert.length > 0) {
-    console.log(`[sanitize] Registering ${reportsToInsert.length} invalid responses...`)
-    
+    const { unique, deduped } = dedupeReports(reportsToInsert)
+    if (deduped > 0) console.warn(`[sanitize] Deduped ${deduped} duplicate reports`)
+    console.log(`[sanitize] Registering ${unique.length} invalid responses...`)
+
     const { error: insertError } = await supabase
       .from('data_quality_reports')
-      .upsert(reportsToInsert, { 
+      .upsert(unique, {
         onConflict: 'sweep_id,ticker,model_name',
         ignoreDuplicates: false 
       })
@@ -445,7 +444,7 @@ async function sanitizeResponses(supabase: any, forcedSweepId?: string): Promise
     if (insertError) {
       console.error('[sanitize] Error inserting reports:', insertError.message)
     } else {
-      registered = reportsToInsert.length
+      registered = unique.length
     }
   }
 
