@@ -23,14 +23,7 @@ import {
 } from "../datapack/reportAssembler.ts";
 import { computePeriodAggregation } from "../../_shared/periodAggregation.ts";
 
-function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
-  if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
-  const pct = Math.round((t.coverage_ratio ?? 0) * 100);
-  return `IMPORTANTE — COBERTURA PARCIAL (PRIORIDAD MÁXIMA):
-• El período solicitado solo dispone de datos desde ${t.from} hasta ${t.to} (${t.snapshots_available}/${t.snapshots_expected} snapshots, ~${pct}%).
-• ABRE el informe declarando esta cobertura parcial en el primer párrafo.
-• PROHIBIDO extrapolar a semanas no cubiertas.`;
-}
+import { buildCoverageBanner, probeRowsCount } from "../../_shared/coverageBanner.ts";
 
 const SELECT = "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date";
 
@@ -234,7 +227,10 @@ export const periodEvolutionSkill: Skill = {
     };
 
     if (series.length === 0) {
-      const fb = `**Evolución · ${entity.company_name}**\n\n_Sin datos en el período ${parsed.temporal.from} → ${parsed.temporal.to}._`;
+      const probedCount = await probeRowsCount(supabase, { fromISO: parsed.temporal.from, toISO: parsed.temporal.to, ticker: entity.ticker });
+      console.log(`[RIX-V2][periodEvolution] empty fallback | probe_count=${probedCount} | ticker=${entity.ticker}`);
+      const probeNote = probedCount > 0 ? ` (probe: ${probedCount} filas crudas existen pero no encajan en el alcance pedido)` : "";
+      const fb = `**Evolución · ${entity.company_name}**\n\n_Sin datos en el período ${parsed.temporal.from} → ${parsed.temporal.to}${probeNote}._`;
       try { onChunk?.(fb); } catch (_) { /* noop */ }
       return {
         datapack: { ...datapack, pre_rendered_tables: [fb] },

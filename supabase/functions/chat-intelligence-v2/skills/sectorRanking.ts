@@ -123,14 +123,7 @@ function buildPerCompanySourceList(rows: any[]): string {
  * Build a high-priority coverage warning that the LLM MUST surface in the
  * first paragraph when the requested period is only partially covered.
  */
-function buildCoverageBanner(t: { from: string; to: string; coverage_ratio: number; is_partial: boolean; snapshots_available: number; snapshots_expected: number }): string {
-  if (!t.is_partial && t.coverage_ratio >= 0.9) return "";
-  const pct = Math.round((t.coverage_ratio ?? 0) * 100);
-  return `IMPORTANTE — COBERTURA PARCIAL (PRIORIDAD MÁXIMA):
-• El período solicitado solo dispone de datos desde ${t.from} hasta ${t.to} (${t.snapshots_available}/${t.snapshots_expected} snapshots, ~${pct}% del período pedido).
-• ABRE el informe declarando esta cobertura parcial en el primer párrafo.
-• PROHIBIDO extrapolar tendencias a las semanas no cubiertas.`;
-}
+import { buildCoverageBanner, probeRowsCount } from "../../_shared/coverageBanner.ts";
 
 const RANKING_SELECT =
   "05_ticker, 03_target_name, 02_model_name, 09_rix_score, batch_execution_date, 06_period_from, 07_period_to, " +
@@ -766,7 +759,16 @@ export const sectorRankingSkill: Skill = {
     modules.push("coverageRules");
 
     if (ranking.length === 0) {
-      const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${sqlFrom} → ${sqlTo}._`;
+      // C — Honest fallback: probe rix_runs_v2 with a raw COUNT(*) before
+      // claiming "Sin datos". Operator log + user-facing surfacing of the
+      // raw row count when the scope dropped them.
+      const probeTickers = Array.isArray(scopeTickers) && scopeTickers.length ? scopeTickers : null;
+      const probedCount = await probeRowsCount(supabase, { fromISO: sqlFrom, toISO: sqlTo, tickers: probeTickers });
+      console.log(`${tag} ranking-empty fallback | probe_count=${probedCount} | scope=${scopeLabel}`);
+      const probeNote = probedCount > 0
+        ? ` (probe: ${probedCount} filas crudas en rix_runs_v2 para ese período no encajaron en el alcance pedido)`
+        : "";
+      const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${sqlFrom} → ${sqlTo}${probeNote}._`;
       try { onChunk?.(fallback); } catch (_) { /* noop */ }
       return {
         datapack: { ...datapack, pre_rendered_tables: [fallback] },

@@ -353,8 +353,22 @@ export const companyAnalysisSkill: Skill = {
 
     // 3. If no data at all, skip the LLM call to save tokens.
     if (observations_count === 0) {
+      // C — Honest fallback: probe rix_runs_v2 with COUNT(*) before
+      // claiming "Sin datos" so the operator log shows whether the rows
+      // exist but were dropped during scope/intent resolution.
+      let probeNote = "";
+      try {
+        const { probeRowsCount } = await import("../../_shared/coverageBanner.ts");
+        const probedCount = await probeRowsCount(supabase, {
+          fromISO: datapack.temporal.from,
+          toISO: datapack.temporal.to,
+          ticker: datapack.entity.ticker,
+        });
+        console.log(`${tag} empty-observations fallback | probe_count=${probedCount} | ticker=${datapack.entity.ticker}`);
+        if (probedCount > 0) probeNote = ` (probe: ${probedCount} filas crudas existen pero no encajan en el alcance pedido)`;
+      } catch (_e) { /* probe is best-effort */ }
       const metadata = buildMetadata(datapack, 0);
-      const fallback = buildFallbackContent(datapack, undefined);
+      const fallback = buildFallbackContent(datapack, undefined) + (probeNote ? `\n\n_${probeNote.trim()}_` : "");
       // Emit the fallback as a single chunk so the stream still produces output.
       try { onChunk?.(fallback); } catch (_) { /* noop */ }
       return {

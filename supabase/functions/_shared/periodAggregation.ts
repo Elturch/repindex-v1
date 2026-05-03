@@ -108,7 +108,10 @@ function mean(xs: number[]): number | null {
 }
 
 function stddev(xs: number[]): number | null {
-  if (xs.length < 2) return xs.length === 1 ? 0 : null;
+  // F — Volatility is undefined for ≤1 weekly observations. Returning 0
+  // misled the LLM into reading "perfect stability" on a single snapshot.
+  // Renderers display "n/a (≥2 snapshots)" for null.
+  if (xs.length < 2) return null;
   const m = mean(xs)!;
   const variance = xs.reduce((acc, x) => acc + (x - m) ** 2, 0) / xs.length;
   return Math.sqrt(variance);
@@ -285,6 +288,7 @@ export function renderPeriodAggregationBlock(result: PeriodAggregationResult): s
   const rangeEnd = ps.weeks[ps.weeks.length - 1];
 
   const fmt = (n: number | null) => (n == null ? "n/d" : String(n));
+  const fmtVol = (n: number | null) => (n == null ? "n/a (≥2 snapshots)" : String(n));
   const sign = (n: number | null) => {
     if (n == null) return "n/d";
     if (n > 0) return `+${n}`;
@@ -311,7 +315,7 @@ export function renderPeriodAggregationBlock(result: PeriodAggregationResult): s
     .map((k) => pa[k])
     .filter(Boolean)
     .map((m) =>
-      `| ${m.metric} | ${fmt(m.mean)} | ${fmt(m.first_week_value)} → ${fmt(m.last_week_value)} | ${sign(m.delta_period)} | ${fmt(m.min)} | ${fmt(m.max)} | ${fmt(m.volatility)} |`,
+      `| ${m.metric} | ${fmt(m.mean)} | ${fmt(m.first_week_value)} → ${fmt(m.last_week_value)} | ${sign(m.delta_period)} | ${fmt(m.min)} | ${fmt(m.max)} | ${fmtVol(m.volatility)} |`,
     )
     .join("\n");
 
