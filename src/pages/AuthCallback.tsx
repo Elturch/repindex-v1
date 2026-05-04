@@ -37,22 +37,37 @@ const AuthCallback: React.FC = () => {
       try {
         const normalizedEmail = email.trim().toLowerCase();
 
-        // Intento 1: type 'magiclink' (correcto para generateLink({type:'magiclink'}))
+        // IMPORTANTE: el token que viene del enlace es el `hashed_token` que
+        // devuelve admin.generateLink({type:'magiclink'}). La forma correcta
+        // de verificarlo es con `token_hash` (sin email). Si pasamos `token`
+        // + `email`, Supabase intenta validarlo como OTP de 6 dígitos y
+        // siempre devuelve "Token has expired or is invalid".
         let { data, error } = await supabase.auth.verifyOtp({
-          email: normalizedEmail,
-          token,
+          token_hash: token,
           type: 'magiclink',
         });
 
-        // Fallback: type 'email' (alias moderno)
+        // Fallback con type 'email' (alias moderno) por si el link se generó
+        // como invite/recovery en versiones anteriores.
         if (error) {
           const retry = await supabase.auth.verifyOtp({
-            email: normalizedEmail,
-            token,
+            token_hash: token,
             type: 'email',
           });
           data = retry.data;
           error = retry.error;
+        }
+
+        // Último fallback legacy: token + email (por si quedan enlaces
+        // antiguos que se generaron con otro flujo).
+        if (error) {
+          const legacy = await supabase.auth.verifyOtp({
+            email: normalizedEmail,
+            token,
+            type: 'magiclink',
+          });
+          data = legacy.data;
+          error = legacy.error;
         }
 
         if (error) {
