@@ -191,6 +191,136 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_results: {
+        Row: {
+          auto_checks: Json
+          created_at: string
+          datapack: Json | null
+          error: string | null
+          family: string
+          id: string
+          latency_ms: number | null
+          metadata: Json | null
+          output: string | null
+          query_id: string
+          question: string
+          run_id: string
+        }
+        Insert: {
+          auto_checks?: Json
+          created_at?: string
+          datapack?: Json | null
+          error?: string | null
+          family: string
+          id?: string
+          latency_ms?: number | null
+          metadata?: Json | null
+          output?: string | null
+          query_id: string
+          question: string
+          run_id: string
+        }
+        Update: {
+          auto_checks?: Json
+          created_at?: string
+          datapack?: Json | null
+          error?: string | null
+          family?: string
+          id?: string
+          latency_ms?: number | null
+          metadata?: Json | null
+          output?: string | null
+          query_id?: string
+          question?: string
+          run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "audit_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_runs: {
+        Row: {
+          completed_queries: number
+          created_at: string
+          failed_queries: number
+          finished_at: string | null
+          id: string
+          notes: string | null
+          started_at: string
+          status: string
+          total_queries: number
+          triggered_by: string | null
+        }
+        Insert: {
+          completed_queries?: number
+          created_at?: string
+          failed_queries?: number
+          finished_at?: string | null
+          id?: string
+          notes?: string | null
+          started_at?: string
+          status?: string
+          total_queries?: number
+          triggered_by?: string | null
+        }
+        Update: {
+          completed_queries?: number
+          created_at?: string
+          failed_queries?: number
+          finished_at?: string | null
+          id?: string
+          notes?: string | null
+          started_at?: string
+          status?: string
+          total_queries?: number
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
+      audit_scores: {
+        Row: {
+          dimension: string
+          id: string
+          note: string | null
+          result_id: string
+          score: number
+          scored_at: string
+          scored_by: string | null
+        }
+        Insert: {
+          dimension: string
+          id?: string
+          note?: string | null
+          result_id: string
+          score: number
+          scored_at?: string
+          scored_by?: string | null
+        }
+        Update: {
+          dimension?: string
+          id?: string
+          note?: string | null
+          result_id?: string
+          score?: number
+          scored_at?: string
+          scored_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_scores_result_id_fkey"
+            columns: ["result_id"]
+            isOneToOne: false
+            referencedRelation: "audit_results"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       by_metric: {
         Row: {
           contrib_points_chatgpt: number

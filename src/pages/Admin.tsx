@@ -71,6 +71,7 @@ import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
 import TechnicalDocPanel from '@/components/admin/TechnicalDocPanel';
+import { QualityAuditPanel } from '@/components/admin/QualityAuditPanel';
 import { ApiHealthDashboard } from '@/components/admin/ApiHealthDashboard';
 import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, HeartPulse } from 'lucide-react';
 
@@ -1187,6 +1188,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="tech-docs" className="flex items-center gap-1.5 px-3 text-xs">
               <BookOpen className="h-3.5 w-3.5" />
               Docs Técnica
+            </TabsTrigger>
+            <TabsTrigger value="quality-audit" className="flex items-center gap-1.5 px-3 text-xs">
+              <HeartPulse className="h-3.5 w-3.5" />
+              Quality Audit
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -3241,6 +3246,10 @@ const Admin: React.FC = () => {
           {/* ==================== TECHNICAL DOCUMENTATION ==================== */}
           <TabsContent value="tech-docs">
             <TechnicalDocPanel />
+          </TabsContent>
+          {/* ==================== QUALITY AUDIT ==================== */}
+          <TabsContent value="quality-audit">
+            <QualityAuditPanel />
           </TabsContent>
         </Tabs>
         )}
