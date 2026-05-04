@@ -771,9 +771,19 @@ export const sectorRankingSkill: Skill = {
     // Detect IBEX hint directly from the raw question (sector_ranking has
     // no resolved entity by design).
     const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
-    // Detect explicit "top N" → cap N between 3 and 35.
+    // Detect explicit "top N" → cap N between 3 and 50. Si NO hay top
+    // explícito, el default depende del scope: scope_tickers → tamaño exacto;
+    // IBEX → 35; sector → 25; resto → 15. Antes había un cap mudo de 15
+    // que truncaba IBEX-35 a 15 empresas (bug reportado por el usuario).
     const topMatch = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
-    const topN = topMatch ? Math.max(3, Math.min(35, parseInt(topMatch[1], 10))) : 15;
+    const explicitTopN = topMatch ? Math.max(3, Math.min(50, parseInt(topMatch[1], 10))) : null;
+    const topN = explicitTopN ?? (
+      scopeTickers && scopeTickers.length > 0 ? scopeTickers.length :
+      ibexOnly ? 35 :
+      sector ? 25 :
+      15
+    );
+    console.log(`${tag} topN resolved=${topN} | explicit=${explicitTopN ?? "no"} | scope_tickers=${scopeTickers?.length ?? 0} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"}`);
     const scopeLabel = scopeTickers
       ? `grupo seleccionado (${scopeTickers.length} empresas: ${scopeTickers.join(", ")})`
       : sector
@@ -925,7 +935,7 @@ export const sectorRankingSkill: Skill = {
     // narrow (no raw text), so the previous extractCitedSources(rows) always
     // yielded 0 URLs in sector reports. We now call fetchSectorSourceRows()
     // and feed those rows into extractCitedSources/renderCitedSourcesBlock.
-    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers, dbModelFilter);
     const citedSourcesReport = extractCitedSources(sourceRows);
     const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
     const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
