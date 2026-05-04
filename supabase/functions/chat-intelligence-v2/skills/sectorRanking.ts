@@ -757,7 +757,15 @@ export const sectorRankingSkill: Skill = {
     const sqlFrom = parsed.temporal.requested_from ?? parsed.temporal.from;
     const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
     console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
-    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    // SINGLE-MODEL branch: when the user filtered to a subset (1..5 models),
+    // restrict SQL to those models so per_model / strongest / weakest reflect
+    // ONLY the requested perspective. Map v2 short labels → DB canonical
+    // names ("Gemini" → "Google Gemini").
+    const dbModelFilter = (parsed.models && parsed.models.length > 0 && parsed.models.length < 6)
+      ? parsed.models.map((m) => (m === "Gemini" ? "Google Gemini" : m))
+      : null;
+    const isSingleModel = Array.isArray(parsed.models) && parsed.models.length === 1;
+    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers, dbModelFilter);
     // P1-C.1 — forensic log for dimension propagation in sector path.
     const _uniqTickers = new Set(rows.map((r) => r["05_ticker"]).filter(Boolean)).size;
     console.log(`[RIX-V2][companyAnalysis] dimension_metrics_fetched | tickers=${_uniqTickers} | rows=${rows.length} | window=${sqlFrom}→${sqlTo}`);
@@ -802,12 +810,19 @@ export const sectorRankingSkill: Skill = {
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0
-      ? renderRankingTable(ranking, models, {
-          weeksCount: effectiveTemporal.snapshots_available,
-          weeksExpected: effectiveTemporal.snapshots_expected,
-          isPartial: effectiveTemporal.is_partial,
-          isSnapshot: isSnapshotMode,
-        })
+      ? (isSingleModel
+          ? renderSingleModelRankingTable(ranking, models[0] as ModelName, {
+              weeksCount: effectiveTemporal.snapshots_available,
+              weeksExpected: effectiveTemporal.snapshots_expected,
+              isPartial: effectiveTemporal.is_partial,
+              isSnapshot: isSnapshotMode,
+            })
+          : renderRankingTable(ranking, models, {
+              weeksCount: effectiveTemporal.snapshots_available,
+              weeksExpected: effectiveTemporal.snapshots_expected,
+              isPartial: effectiveTemporal.is_partial,
+              isSnapshot: isSnapshotMode,
+            }))
       : "_Sin datos para el período/alcance solicitado._";
 
     const datapack: DataPack = {
@@ -852,7 +867,17 @@ export const sectorRankingSkill: Skill = {
       parsed.mode === "period"
         ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: effectiveTemporal.snapshots_available, requestedLabel: effectiveTemporal.requested_label })
         : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
-      buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length, isSnapshot: isSnapshotMode }),
+      isSingleModel
+        ? buildSingleModelRankingRules({
+            scopeLabel,
+            topN: ranking.length,
+            model: String(models[0]),
+            weeksCount: effectiveTemporal.snapshots_available,
+            weeksExpected: effectiveTemporal.snapshots_expected,
+            isSnapshot: isSnapshotMode,
+            coverageRatio: effectiveTemporal.coverage_ratio,
+          })
+        : buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length, isSnapshot: isSnapshotMode }),
       buildCoverageRules({
         requested: models,
         withData: models,
