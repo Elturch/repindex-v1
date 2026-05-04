@@ -310,4 +310,4 @@ export async function resolveMultipleEntities(
   return out.slice(0, max);
 }
 
-export const __test__ = { loadCatalog, semanticBridge };
+export const __test__ = { loadCatalog, semanticBridge, tryHardcodedAlias, HARDCODED_ALIAS_MAP, normaliseAliasKey };
