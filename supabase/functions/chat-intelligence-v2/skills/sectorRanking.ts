@@ -16,6 +16,7 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
+import { buildSingleModelRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import {
   assembleReport,
@@ -279,6 +280,7 @@ async function fetchRankingRows(
   sector: string | null,
   ibexOnly: boolean,
   scopeTickers?: string[] | null,
+  modelFilter?: string[] | null,
 ): Promise<any[]> {
   // PHASE 5 — Align filter to SWEEP axis (07_period_to = Sunday).
   // Snapshot (from===to) → eq; period → range, both on 07_period_to.
@@ -290,6 +292,13 @@ async function fetchRankingRows(
   q = isSnapshot
     ? q.eq("07_period_to", fromISO)
     : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
+  // Single/partial model filter: when the user explicitly mentioned 1..5
+  // models, restrict the SQL to those rows so strongest/weakest/per_model
+  // aggregates reflect ONLY the requested perspective.
+  if (Array.isArray(modelFilter) && modelFilter.length > 0 && modelFilter.length < 6) {
+    q = q.in("02_model_name", modelFilter);
+    console.log(`[RIX-V2][sectorRanking] model filter applied | models=${modelFilter.join(",")}`);
+  }
   // PRIORITY: explicit scope_tickers (sub-segment) override sector/ibex.
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
