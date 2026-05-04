@@ -89,14 +89,14 @@ export function QualityAuditPanel() {
       .select("*")
       .eq("run_id", runId)
       .order("query_id");
-    setResults((resData ?? []) as AuditResult[]);
+    setResults(((resData ?? []) as unknown) as AuditResult[]);
     const ids = (resData ?? []).map((r: any) => r.id);
     if (ids.length > 0) {
       const { data: scoreData } = await supabase
         .from("audit_scores")
         .select("*")
         .in("result_id", ids);
-      setScores((scoreData ?? []) as AuditScore[]);
+      setScores(((scoreData ?? []) as unknown) as AuditScore[]);
     } else {
       setScores([]);
     }
@@ -158,7 +158,7 @@ export function QualityAuditPanel() {
     }
     setScores((prev) => {
       const filtered = prev.filter((s) => !(s.result_id === resultId && s.dimension === dimension));
-      return [...filtered, data as AuditScore];
+      return [...filtered, (data as unknown) as AuditScore];
     });
   }
 
