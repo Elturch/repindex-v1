@@ -18,7 +18,7 @@ export function buildDivergenceRules(input: DivergencePromptInput): string {
   1. **Resumen del consenso** — ¿hay consenso (σ <8), divergencia moderada (8-15) o alta (>15)?
   2. **Outliers** — ${highestModel} es el modelo más optimista, ${lowestModel} el más pesimista. Cuantifica el gap y explícalo por métricas.
   3. **Métricas más estables vs más volátiles** — qué dimensión genera más acuerdo y cuál más fricción entre modelos.
-  4. **Lectura ejecutiva** — qué hacer cuando los modelos no coinciden: ¿usar la mediana? ¿ponderar por SIM/DRM?
+  4. **Lectura ejecutiva** — qué hacer cuando los modelos no coinciden: priorizar el modelo con mayor SIM/DRM, exponer el rango max-min y los modelos extremos. PROHIBIDO sugerir "usar la mediana" o "promediar los 6 modelos".
 • Cada afirmación debe citar el score concreto del modelo ("DeepSeek puntúa NVM en 72, frente a Grok 54 → gap de 18").
 • PROHIBIDO promediar los 6 modelos en una sola cifra como dato principal (eso anula el análisis cruzado).
 • PROHIBIDO mencionar empresas distintas a ${ticker}.`;
