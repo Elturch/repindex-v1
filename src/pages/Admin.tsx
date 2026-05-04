@@ -886,6 +886,25 @@ const Admin: React.FC = () => {
     }
   };
 
+  const toggleUserActive = async (user: UserProfile, next: boolean) => {
+    try {
+      // Optimistic update
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_active: next } : u));
+      await callAdminApi('update_user', {
+        id: user.id,
+        full_name: user.full_name,
+        company_id: user.company_id,
+        is_active: next,
+        is_individual: user.is_individual ?? !user.company_id,
+      });
+      toast({ title: next ? 'Usuario activado' : 'Usuario desactivado', description: user.email });
+    } catch (error: any) {
+      // Rollback
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_active: !next } : u));
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
   // Company form fields JSX (inline to prevent input focus loss)
   const companyFormFieldsJSX = (isEditing: boolean) => (
     <div className="space-y-4">
@@ -1684,9 +1703,15 @@ const Admin: React.FC = () => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
-                                      {user.is_active ? 'Activo' : 'Inactivo'}
-                                    </Badge>
+                                    <div className="flex items-center gap-1.5" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                                      <Switch
+                                        checked={user.is_active}
+                                        onCheckedChange={(v) => toggleUserActive(user, v)}
+                                      />
+                                      <span className="text-xs text-muted-foreground w-12">
+                                        {user.is_active ? 'Activo' : 'Inactivo'}
+                                      </span>
+                                    </div>
                                     <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
                                       <Pencil className="h-4 w-4" />
                                     </Button>
@@ -1797,9 +1822,15 @@ const Admin: React.FC = () => {
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-xs">Particular</Badge>
-                                <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
-                                  {user.is_active ? 'Activo' : 'Inactivo'}
-                                </Badge>
+                                <div className="flex items-center gap-1.5" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                                  <Switch
+                                    checked={user.is_active}
+                                    onCheckedChange={(v) => toggleUserActive(user, v)}
+                                  />
+                                  <span className="text-xs text-muted-foreground w-12">
+                                    {user.is_active ? 'Activo' : 'Inactivo'}
+                                  </span>
+                                </div>
                                 <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
                                   <Pencil className="h-4 w-4" />
                                 </Button>
@@ -1988,9 +2019,15 @@ const Admin: React.FC = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
-                                        {user.is_active ? 'Activo' : 'Inactivo'}
-                                      </Badge>
+                                      <div className="flex items-center gap-1.5" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                                        <Switch
+                                          checked={user.is_active}
+                                          onCheckedChange={(v) => toggleUserActive(user, v)}
+                                        />
+                                        <span className="text-xs text-muted-foreground w-12">
+                                          {user.is_active ? 'Activo' : 'Inactivo'}
+                                        </span>
+                                      </div>
                                       <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
                                         <Pencil className="h-4 w-4" />
                                       </Button>
