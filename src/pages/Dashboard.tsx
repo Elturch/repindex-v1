@@ -71,15 +71,10 @@ export function Dashboard() {
     weeksToLoad: 6
   });
 
-  // SEMÁNTICA NUEVA — modo "Por IA": NO mezclamos AIs. Si el usuario no
-  // selecciona una IA (aiFilter==="all"), forzamos Gemini por defecto
-  // (el modelo con mejor cobertura). Solo el modo "Consenso" puede operar
-  // sobre las 6 IAs a la vez (mostrando rangos, no medias).
-  useEffect(() => {
-    if (rankingMode === "score" && aiFilter === "all") {
-      setAIFilter("Google Gemini");
-    }
-  }, [rankingMode, aiFilter]);
+  // En modo "Por IA" respetamos el filtro elegido por el usuario, incluido
+  // "Todos". Ya NO forzamos Gemini por defecto: la vista inicial debe ser
+  // "Todos" para no sesgar la percepción del usuario hacia un único modelo.
+  // El modo "Consenso" sigue operando sobre las 6 IAs internamente.
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
