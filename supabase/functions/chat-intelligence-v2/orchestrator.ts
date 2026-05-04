@@ -64,6 +64,15 @@ const MULTI_SECTOR_THESAURUS: Array<{ re: RegExp; sectors: string[]; label: stri
   { re: /\bretail\b|\bgran\s+consumo\b/i, sectors: ["Moda y Distribución", "Distribución", "Alimentación", "Consumo"], label: "retail" },
   { re: /\bbanca\b|\bbancos?\b|\bfinanciero?s?\b/i, sectors: ["Banca y Servicios Financieros"], label: "banca" },
   { re: /\binmobiliari[oa]s?\b|\bsocimi(?:s)?\b/i, sectors: ["Inmobiliaria", "SOCIMI"], label: "inmobiliario" },
+  // Sprint 2 — ampliación basada en sector_category reales en BD.
+  { re: /\butilities?\b|\bel[eé]ctricas?\b|\bgas[ií]stas?\b/i, sectors: ["Energía y Gas", "Petróleo y Energía"], label: "utilities" },
+  { re: /\btecnolog[íi]a\b|\btech\b|\bIT\b|\btelecos?\b|\btelecomunicaciones?\b/i, sectors: ["Telecomunicaciones y Tecnología", "Telecomunicaciones"], label: "tecnología/telecos" },
+  { re: /\bturismo\b|\bhoteles?\b|\bhoteler[ao]s?\b|\baerol[íi]neas?\b/i, sectors: ["Hoteles y Turismo", "Transporte"], label: "turismo" },
+  { re: /\bconstrucci[óo]n\b|\binfraestructuras?\b|\bconstructoras?\b/i, sectors: ["Construcción e Infraestructuras", "Construcción"], label: "construcción" },
+  { re: /\bsalud\b|\bfarma(?:c[ée]utic[oa]s?)?\b|\bbiotech\b|\bsanitari[oa]s?\b/i, sectors: ["Salud y Farmacéutico"], label: "salud/farma" },
+  { re: /\bsiderurgia\b|\bmateriales?\b|\bmaterias?\s+primas?\b|\bacero\b/i, sectors: ["Materias Primas y Siderurgia"], label: "materias primas" },
+  { re: /\bseguros?\b|\baseguradoras?\b/i, sectors: ["Seguros"], label: "seguros" },
+  { re: /\balimentaci[óo]n\b|\bagroalimentari[oa]s?\b/i, sectors: ["Alimentación", "Restauración"], label: "alimentación" },
 ];
 
 async function detectMultiSectorTickers(question: string, supabase: any, limit = 15): Promise<string[] | null> {
