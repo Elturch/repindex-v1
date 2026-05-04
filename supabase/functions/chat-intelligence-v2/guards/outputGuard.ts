@@ -39,8 +39,11 @@ const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:
 const MARKER_LITERAL = "<!--CITEDSOURCESHERE-->";
 // P1-A — LLM hallucinated disclaimer that bypasses our cited-sources block.
 const FAKE_SOURCES_RE = /dato\s+no\s+disponible[^.\n]{0,40}URLs?/i;
-// Sprint 1 Fix 1 — Anti-mediana detector (Core rule violation).
-const ANTI_MEDIANA_RE = /\bRIX\s+medio\s+del\s+(?:[ií]ndice|grupo|sector|conjunto|consenso)\b|\b(?:promedio|media)\s+(?:del\s+)?(?:consenso|[ií]ndice|IBEX(?:[-\s]?35)?)\b/i;
+// Sprint 1 Fix 1 + Sprint 2 — Anti-mediana detector (Core rule violation).
+// Captures: "RIX medio del índice/grupo/sector/conjunto/consenso",
+// "promedio/media del consenso/índice/IBEX-35",
+// "mediana del RIX", "RIX mediano", "media inter-modelo".
+const ANTI_MEDIANA_RE = /\bRIX\s+medio\s+del\s+(?:[ií]ndice|grupo|sector|conjunto|consenso)\b|\b(?:promedio|media)\s+(?:del\s+)?(?:consenso|[ií]ndice|IBEX(?:[-\s]?35)?)\b|\bmediana\s+(?:del\s+)?RIX\b|\bRIX\s+median[oa]\b|\bmedia\s+inter[-\s]?modelo\b/i;
 
 // P1-C — Exported scrub helper used by the orchestrator as a defence-in-depth
 // safety net AFTER the skill returns. Idempotent: returns the same string when
