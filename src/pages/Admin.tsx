@@ -639,26 +639,39 @@ const Admin: React.FC = () => {
         return;
       }
 
-      const mapped: UserProfile[] = (data ?? []).map((row: any) => {
-        const meta = (row.raw_user_meta_data || {}) as Record<string, any>;
-        const fullName =
-          (meta.full_name as string | undefined) ||
-          (meta.name as string | undefined) ||
-          null;
-        return {
-          id: row.id,
-          email: row.email,
-          full_name: fullName,
-          is_individual: true,
-          is_active: !!row.email_confirmed_at,
-          company_id: null,
-          created_at: row.created_at,
-          client_companies: null,
-          last_sign_in_at: row.last_sign_in_at ?? null,
-          email_confirmed_at: row.email_confirmed_at ?? null,
-          role: (row.role as 'admin' | 'press' | 'user' | null) ?? 'user',
-        };
-      });
+      const mapped: UserProfile[] = (data ?? []).map((row: any) => ({
+        id: row.id,
+        email: row.email,
+        full_name: row.full_name ?? null,
+        company_id: row.company_id ?? null,
+        is_individual: row.is_individual ?? !row.company_id,
+        is_active: row.is_active ?? false,
+        created_at: row.created_at,
+        client_companies: null,
+        last_sign_in_at: row.last_sign_in_at ?? null,
+        email_confirmed_at: row.email_confirmed_at ?? null,
+        role: (row.role as 'admin' | 'press' | 'user' | null) ?? 'user',
+      }));
+
+      // Hidratar client_companies para usuarios con company_id
+      const companyIds = Array.from(
+        new Set(mapped.map((u) => u.company_id).filter((id): id is string => !!id))
+      );
+      if (companyIds.length > 0) {
+        const { data: companiesData } = await supabase
+          .from('client_companies')
+          .select('id, company_name, plan_type')
+          .in('id', companyIds);
+        const companiesMap = new Map(
+          (companiesData ?? []).map((c: any) => [c.id, c])
+        );
+        mapped.forEach((u) => {
+          if (u.company_id && companiesMap.has(u.company_id)) {
+            u.client_companies = companiesMap.get(u.company_id) as any;
+          }
+        });
+      }
+
       // 3) Set users on success + log
       setUsers(mapped);
       console.info('admin users loaded', mapped.length);
