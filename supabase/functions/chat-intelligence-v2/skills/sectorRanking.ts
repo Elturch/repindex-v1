@@ -349,7 +349,9 @@ async function fetchRankingRows(
   }
   const all: any[] = [];
   // 13 weeks × 130 issuers × 6 models ≈ 10k rows. Use 15 pages × 1000 = 15k cap.
-  for (let p = 0; p < 15; p++) {
+  // Single-model branch: techo real ~ 130 × 14 = 1820 filas → 4 páginas sobran.
+  const maxPages = (Array.isArray(modelFilter) && modelFilter.length === 1) ? 4 : 15;
+  for (let p = 0; p < maxPages; p++) {
     const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
     if (error) { console.error("[RIX-V2][sectorRanking]", error.message); break; }
     if (!data || data.length === 0) break;
