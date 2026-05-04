@@ -508,6 +508,42 @@ function renderRankingTable(
 }
 
 /**
+ * SINGLE-MODEL render: drops "RIX rango" and "Consenso" columns; shows only
+ * the score from the requested model. Used when parsed.models.length === 1.
+ */
+function renderSingleModelRankingTable(
+  rows: RankingRow[],
+  model: ModelName,
+  coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
+): string {
+  const head = ["#", "Empresa", `RIX (${model})`, "Obs."];
+  const sep = head.map(() => "---").join(" | ");
+  const lines = rows.map((r, i) => {
+    const cells = [
+      String(i + 1),
+      `${r.name} (${r.ticker})`,
+      fmt(r.per_model[model]),
+      String(r.obs),
+    ];
+    return `| ${cells.join(" | ")} |`;
+  });
+  const partialSuffix = coverage.isPartial && coverage.weeksExpected > coverage.weeksCount
+    ? ` (de ${coverage.weeksExpected} esperados)`
+    : "";
+  const unit = coverage.isSnapshot ? "snapshot" : "semanas";
+  const footnote = `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`;
+  return [
+    `**Ranking según ${model}**`,
+    "",
+    `| ${head.join(" | ")} |`,
+    `| ${sep} |`,
+    ...lines,
+    "",
+    footnote,
+  ].join("\n");
+}
+
+/**
  * BLOQUE 3C — Competitive context: group the top-N ranking by sector,
  * highlighting which sector dominates the leaderboard. Uses the
  * sector_category field from repindex_root_issuers (fetched here, single
