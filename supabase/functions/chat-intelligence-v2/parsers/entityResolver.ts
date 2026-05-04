@@ -32,6 +32,23 @@ const HARDCODED_ALIAS_MAP: Record<string, { ticker: string; name: string }> = {
   "caixa": { ticker: "CABK", name: "CaixaBank" },
   "la caixa": { ticker: "CABK", name: "CaixaBank" },
   "caixabank": { ticker: "CABK", name: "CaixaBank" },
+  // Sprint 2 — disambiguación matriz España vs filiales LATAM/extranjeras.
+  "santander": { ticker: "SAN", name: "Banco Santander" },
+  "banco santander": { ticker: "SAN", name: "Banco Santander" },
+  "telefonica": { ticker: "TEF", name: "Telefónica" },
+  "telefónica": { ticker: "TEF", name: "Telefónica" },
+  "movistar": { ticker: "TEF", name: "Telefónica" },
+  "bbva": { ticker: "BBVA", name: "BBVA" },
+  "iberdrola": { ticker: "IBE", name: "Iberdrola" },
+  "endesa": { ticker: "ELE", name: "Endesa" },
+  "naturgy": { ticker: "NTGY", name: "Naturgy Energy Group" },
+  "repsol": { ticker: "REP", name: "Repsol" },
+  "inditex": { ticker: "ITX", name: "Inditex" },
+  "zara": { ticker: "ITX", name: "Inditex" },
+  "mapfre": { ticker: "MAP", name: "Mapfre" },
+  "ferrovial": { ticker: "FER", name: "Ferrovial" },
+  "acs": { ticker: "ACS", name: "ACS" },
+  "aena": { ticker: "AENA", name: "Aena" },
 };
 
 function normaliseAliasKey(s: string): string {
