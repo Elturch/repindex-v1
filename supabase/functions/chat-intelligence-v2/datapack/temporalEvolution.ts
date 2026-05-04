@@ -92,7 +92,7 @@ export function renderTemporalEvolutionTable(rows: any[]): string {
   return [
     "**Evolución temporal — RIX por snapshot semanal**",
     "",
-    "| Fecha | RIX medio semanal | Δ vs semana previa | Filas |",
+    "| Fecha | RIX semanal (media de modelos disponibles) | Δ vs semana previa | Filas |",
     "|---|---|---|---|",
     body,
   ].join("\n");

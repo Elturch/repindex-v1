@@ -616,7 +616,7 @@ function buildUserMessageWithAssembler(
     `• Empresas únicas analizadas: ${new Set(rawRows.map((r) => r["05_ticker"])).size}`,
     "",
     "ETIQUETADO OBLIGATORIO (no confundir):",
-    "• 'Volatilidad temporal (SD)' = dispersión semanal del RIX medio del índice (suele ser baja, ~2 pts).",
+    "• 'Volatilidad temporal (SD)' = dispersión semana a semana del RIX agregado del grupo (suele ser baja, ~2 pts). NO es 'RIX medio del índice'.",
     "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
     "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
     "",

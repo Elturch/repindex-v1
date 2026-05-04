@@ -103,7 +103,7 @@ function renderEvolutionTable(series: WeekPoint[]): string {
     return `| ${p.week} | ${semaforo(p.rix_avg)} ${fmt(p.rix_avg)} | ${i === 0 ? "—" : sign(delta)} | ${p.models_count} |`;
   });
   return [
-    "**Evolución semanal del RIX medio semanal** _(promedio de modelos disponibles cada semana; distinto del rango inter-modelo del periodo)_",
+    "**Evolución semanal del RIX** _(media de los modelos disponibles cada semana — distinto del rango inter-modelo del periodo, que es el indicador anti-mediana)_",
     "",
     "| Semana | RIX | Δ vs semana previa | Modelos |",
     "|---|---|---|---|",
