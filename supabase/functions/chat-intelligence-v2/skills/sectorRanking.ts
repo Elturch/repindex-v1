@@ -372,13 +372,18 @@ async function fetchSectorSourceRows(
   sector: string | null,
   ibexOnly: boolean,
   scopeTickers?: string[] | null,
+  modelFilter?: string[] | null,
 ): Promise<any[]> {
   // PHASE 5 — Align filter to SWEEP axis (07_period_to).
   const isSnapshot = fromISO === toISO;
-  let q = supabase.from("rix_runs_v2").select(SOURCE_SELECT);
+  const projection = buildSourceSelect(modelFilter);
+  let q = supabase.from("rix_runs_v2").select(projection);
   q = isSnapshot
     ? q.eq("07_period_to", fromISO)
     : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
+  if (Array.isArray(modelFilter) && modelFilter.length > 0 && modelFilter.length < 6) {
+    q = q.in("02_model_name", modelFilter);
+  }
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
     q = q.in("05_ticker", upper);
@@ -397,14 +402,16 @@ async function fetchSectorSourceRows(
     if (list.length > 0) q = q.in("05_ticker", list);
   }
   const all: any[] = [];
-  for (let p = 0; p < 8; p++) {
+  // Single-model: techo real ~ 35 × 14 = 490 filas → 3 páginas sobran.
+  const maxPages = (Array.isArray(modelFilter) && modelFilter.length === 1) ? 3 : 8;
+  for (let p = 0; p < maxPages; p++) {
     const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
     if (error) { console.error("[RIX-V2][sectorRanking] sourceRows", error.message); break; }
     if (!data || data.length === 0) break;
     all.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0}`);
+  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0} | model_filter=${modelFilter?.join(",") ?? "all"} | projection_cols=${projection.split(",").length}`);
   return all;
 }
 
