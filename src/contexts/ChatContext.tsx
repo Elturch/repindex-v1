@@ -1555,6 +1555,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [messages, sessionId, toast, currentUserId, language]);
 
   const clearConversation = useCallback(() => {
+    const __prevSession = sessionId;
     // Phase 4 — UX: tear down any pending loaders so the new conversation
     // doesn't inherit a stale "Consultando…" state.
     if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
@@ -1573,11 +1574,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setSessionDepthLevel('complete');
     // PHASE 1.8 — reset conversational memory
     lastQueryContextRef.current = null;
+    console.log(
+      `[ChatContext] clearConversation: rotated sessionId ${__prevSession.slice(0, 8)} → ${fresh.slice(0, 8)} (sticky context cleared)`,
+    );
     toast({
       title: "Conversación limpiada",
       description: "Se ha iniciado una nueva conversación",
     });
-  }, [toast]);
+  }, [toast, sessionId]);
 
   const loadConversation = useCallback((newSessionId: string) => {
     if (loadingIntervalRef.current) { clearInterval(loadingIntervalRef.current); loadingIntervalRef.current = null; }
