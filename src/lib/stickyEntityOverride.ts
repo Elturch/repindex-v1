@@ -19,6 +19,32 @@ const ENTITY_INTRO_RE =
 const STANDALONE_BRAND_RE =
   /^[¿\s]*([A-ZÁÉÍÓÚÑ][\wáéíóúñ.&-]{2,40})\s*[?¿.!]*\s*$/;
 
+// FRESH QUERY DETECTOR — short queries that begin with an explicit analysis
+// verb ("analiza", "dame", "ranking", "compara", "muestra", "haz", "genera",
+// "lista", "informe", "evalúa", "audita") are full new requests, NOT
+// follow-ups, even when the previous turn left a sticky context behind.
+// We use this to drop the sticky `previousContext` payload so the BE does
+// not contaminate the new report with the previous entity / scope.
+const FRESH_QUERY_VERB_RE =
+  /^[¿¡\s]*(analiza(?:r|me)?|dame|dime|muestra(?:me)?|ens[eé][nñ]ame|ranking|rank|compara(?:r|me)?|comparativa|haz(?:me)?|genera(?:me)?|crea(?:me)?|lista(?:me)?|listame|informe|reporte|eval[uú]a(?:r|me)?|audita(?:r|me)?|investiga(?:r|me)?|examina(?:r|me)?)\b/i;
+
+/**
+ * Returns true when the new question is a self-contained, fresh request
+ * that should NOT inherit any sticky context from the previous turn.
+ * Heuristic: starts with an analysis verb AND has at least one
+ * capitalised brand-like token OR a sector/index keyword.
+ */
+export function isFreshExplicitQuery(question: string): boolean {
+  if (!question) return false;
+  const q = question.trim();
+  if (!FRESH_QUERY_VERB_RE.test(q)) return false;
+  // Has a capitalised token (likely brand/sector) or an IBEX/sector keyword
+  const hasBrandish = /\b[A-ZÁÉÍÓÚÑ][\wáéíóúñ.&-]{2,}/.test(q);
+  const hasSectorKw =
+    /\b(ibex(?:[-\s]?\d+)?|sector|banca|bancos?|energ[ií]a|farma|telecos?|retail|seguros?|salud|inmobiliari[oa]s?|construcci[oó]n|automoci[oó]n|tecnol[oó]gic[oa]s?|renovables?)\b/i.test(q);
+  return hasBrandish || hasSectorKw;
+}
+
 function normalizeName(s: string): string {
   return s
     .normalize("NFD")

@@ -1,83 +1,74 @@
-## Auditoría sistemática de calidad — Agente RIX V2
+# Bug: el chat se queda "cacheado" en la primera pregunta
 
-Has marcado los 4 frentes como prioritarios y prefieres auditar antes de tocar código. La propuesta es montar una **batería de evaluación reproducible** que clasifique fallos por tipo y nos dé una matriz objetiva de dónde duele más, antes de invertir esfuerzo de refactor.
+## Síntomas reportados (Maria)
+1. La 2ª/3ª pregunta de la conversación devuelven el mismo informe que la 1ª.
+2. Al abrir una conversación nueva, sigue mostrando el contenido anterior.
 
-### Fase 1 — Diseño de la batería (sin tocar producción)
+## Lo que confirmamos en el HTML adjunto
 
-**1.1 Catálogo de 24 queries canónicas** organizadas en 6 familias, cubriendo los 4 frentes:
+Las 4 consultas reales fueron:
+1. "Analiza Ibex35 consenso entre IAs" → informe IBEX-35 completo (9 secciones).
+2. "Analiza ibex35 en gemini" → **idéntico informe IBEX-35 multi-IA** (no filtra Gemini).
+3. "por favor dame el ranking RIX de gemini de las ibex35" → informe distinto pero también de consenso.
+4. "ranking RIX ibex35 en modelo gemini" → similar a la 3.
 
-| Familia | Nº | Mide |
-|---|---|---|
-| Snapshot empresa concreta | 4 | Precisión + narrativa |
-| Periodo agregado (Q1, último mes) | 4 | Anti-mediana, doctrina temporal |
-| Ranking sectorial / IBEX | 4 | Cobertura skills, scope integrity |
-| Comparación 2-3 entidades | 4 | Competidores verificados, no fallback |
-| Divergencia / consenso entre IAs | 4 | Profundidad analítica |
-| Casos límite (out-of-scope, follow-up, ticker ambiguo, datos parciales) | 4 | Robustez + sanitización |
+Es decir: el agente **ignora el filtro "en Gemini"** y reutiliza el datapack/intent de la consulta inicial. No es caché HTTP — es contaminación de contexto.
 
-Las queries quedan versionadas en `specs/quality-audit-queries.md` con el output esperado por cada una (entidad, intent, mode, métricas clave que deben aparecer, prohibiciones).
+## Hipótesis de causa raíz (a verificar)
 
-**1.2 Rúbrica de evaluación de 7 dimensiones** (0-2 puntos cada una, total /14):
+### A. Sticky follow-up agresivo (frontend, ChatContext.tsx L716-739, L876-910)
+"Analiza ibex35 en gemini" tiene 4 palabras → `isFollowupClient` puede no dispararse, pero `previousContextPayload` se envía igual cuando hay `lastQueryContextRef` y la query no marca explícitamente "nueva entidad". El BE lo recibe como follow-up y reutiliza el alcance.
 
-1. **Grounding numérico** — ¿Los números coinciden con el DataPack? ¿Hay invenciones?
-2. **Doctrina temporal** — ¿Fechas correctas? ¿Respeta floor 2026-01-01?
-3. **Anti-mediana / multi-modelo** — ¿Compara las 6 IAs o colapsa a un promedio?
-4. **Competidores verificados** — ¿Usa solo `verified_competitors` o inventa peers?
-5. **Estructura canónica** — Headline → Diagnóstico → 6 IAs → Patrones → GEO accionable
-6. **Sanitización** — ¿Filtra jerga interna, marcadores, "mediana"?
-7. **Fiabilidad técnica** — ¿Termina sin timeout? ¿SSE limpio? ¿Tiempo razonable?
+### B. Hidratación BE desde `user_conversations.last_report_context` (index.ts L120-155)
+Cuando FE no manda previousContext, el BE lo recupera de la BD. Si la nueva conversación reutiliza un `conversationId` previo (race), inyecta el contexto IBEX-35 anterior y vuelve a generar el mismo informe.
 
-### Fase 2 — Ejecución del audit
+### C. Skill `sector_ranking` no aplica `models` filter
+La consulta "en gemini" debería forzar `models = ["Gemini"]`, pero el orchestrator quizá descarta ese filtro cuando ya hay un `previousContext` con los 6 modelos. Hay que revisar `orchestrator.ts` y `parsers/`.
 
-**2.1 Edge function nueva `quality-audit-runner`** que:
-- Lee el catálogo desde `specs/quality-audit-queries.md`
-- Llama a `chat-intelligence-v2` por cada query (modo no-stream para capturar todo el output)
-- Persiste resultados en una tabla nueva `audit_runs` (run_id, query_id, output, latency_ms, datapack_snapshot, error)
-- Espaciado: 1 query cada 5s para no saturar
+### D. "Nueva conversación cacheada"
+`clearConversation` rota `sessionId` y `conversationId=null`, pero el botón "Nueva" del UI puede no estar invocando `clearConversation` — posible confusión con `loadConversation`.
 
-**2.2 Panel admin `/admin` → pestaña "Quality Audit"**:
-- Botón "Ejecutar batería completa" (corre las 24 en background)
-- Vista por run: tabla query × dimensión con scoring manual + auto-checks
-- **Auto-checks programáticos** (no requieren leer el texto):
-  - regex prohibidas: `/mediana/i`, `/según mi conocimiento/i`, `/F[0-9]_/`
-  - presencia de las 6 IAs nombradas
-  - latencia > umbral
-  - `datapack.cited_sources_report` no vacío en intents que lo requieren
-  - `models_coverage.with_data.length === 6`
-- **Scoring manual**: campos de 0-2 + nota libre por dimensión, persistido en `audit_scores`
+## Plan de trabajo (3 pasos cortos)
 
-**2.3 Comparación entre runs**: vista de diff entre dos `run_id` para medir regresiones tras cada cambio.
+### Paso 1 — Auditoría dirigida (lectura, sin tocar nada)
+- Revisar `orchestrator.ts` para ver cómo se fusionan `previousContext.models` con los modelos parseados de la nueva pregunta.
+- Revisar el parser de modelos del BE (`parsers/`): confirmar que "en gemini" / "en modelo gemini" produce `models = ["Gemini"]` con `mode = inclusive`.
+- Revisar logs de la última ejecución (Edge Function logs) de las 4 preguntas para ver `inheritedEntity` / `inheritedSource` y `models_used`.
+- Verificar en `ChatMessages` / botón "Nueva" qué handler se ejecuta.
 
-### Fase 3 — Diagnóstico y priorización
+### Paso 2 — Fixes (estimados, ajustables tras auditoría)
 
-Tras el primer run completo:
-- Heatmap fallo × familia × dimensión
-- Top-5 patrones de fallo recurrentes
-- Backlog priorizado P0/P1/P2 con etiqueta de frente (precisión / narrativa / cobertura / fiabilidad)
+**Fix 1 — FE: no enviar `previousContext` cuando la nueva pregunta tiene una entidad/sector explícito completo** (no solo "compara con X")  
+En `ChatContext.tsx` ampliar `detectsExplicitNewEntity` para detectar también:
+- consultas que incluyen el mismo sector/entidad anterior pero **añaden un filtro de modelo nuevo** ("en gemini", "solo chatgpt", "en deepseek")
+- consultas que empiezan por verbo de acción completo ("analiza", "dame", "ranking", "compara") con sujeto explícito → tratar como nueva consulta, no follow-up.
 
-A partir de ahí decidimos **juntos** qué atacamos primero con un plan de cambios concreto. Los specs `P1-A` (unificación sección 7), `P1-B` (verifiedSources cross-skill) y `P1-C` (scrub residual) ya existen y casi seguro caerán dentro del backlog — los integramos como candidatos preexistentes en vez de inventar trabajo paralelo.
+**Fix 2 — BE: el filtro `models` de la pregunta nueva siempre gana sobre `previousContext.models`**  
+En `orchestrator.ts` (merge de contexto): si `parsed.models.length > 0` Y `parsed.models ⊊ previousContext.models`, descartar `previousContext.models` y respetar el subset pedido. Loguear el override.
 
-### Lo que NO entra en este plan
+**Fix 3 — BE: la hidratación desde `last_report_context` solo se aplica si la nueva pregunta es claramente follow-up** (`isFollowup === true` o pregunta < 6 palabras sin sujeto). Hoy se aplica siempre que falte previousContext, lo que causa contaminación cuando el FE deliberadamente no lo manda.
 
-- Refactor de `orchestrator.ts` (680 LOC) o `sectorRanking.ts` (664 LOC): es deuda real pero la atacamos solo si la auditoría demuestra que causa fallos de calidad, no por estética.
-- Cambios en prompts o skills: no tocamos nada hasta tener el primer informe del audit.
-- Nuevas skills: idem.
+**Fix 4 — UI: botón "Nueva conversación" debe llamar siempre a `clearConversation`** (verificar; si ya lo hace, descartar este fix). Añadir `console.log` de auditoría: sessionId antes/después.
 
-### Detalles técnicos
+### Paso 3 — Test manual + log
+Reproducir el escenario:
+1. "Analiza IBEX-35 consenso entre IAs" → informe multi-IA OK
+2. "Analiza IBEX-35 en gemini" → **debe** devolver informe filtrado solo Gemini (no los 6)
+3. Click "Nueva conversación" → estado completamente limpio
+4. "Ranking sector banca en deepseek" → solo DeepSeek
 
-- Tabla `audit_runs`: `id uuid pk, started_at, finished_at, git_sha text, notes text`
-- Tabla `audit_results`: `run_id fk, query_id text, output text, datapack jsonb, latency_ms int, auto_checks jsonb, error text`
-- Tabla `audit_scores`: `result_id fk, dimension text, score int (0-2), note text, scored_by text, scored_at`
-- Edge function `quality-audit-runner` con `verify_jwt = false` invocable solo desde admin (gate por header firmado)
-- Panel React en `src/components/admin/QualityAuditPanel.tsx` cargado dentro de `Admin.tsx` como tab nuevo
-- Migración SQL para las 3 tablas + RLS solo admin
+Sin migraciones de BD. Sin cambios de UI más allá del botón.
 
-### Entregable de esta primera iteración
+## Entregables
+- Cambios en `src/contexts/ChatContext.tsx` (Fix 1, Fix 4 si aplica)
+- Cambios en `supabase/functions/chat-intelligence-v2/index.ts` (Fix 3)
+- Cambios en `supabase/functions/chat-intelligence-v2/orchestrator.ts` (Fix 2)
+- Notas en `specs/` documentando la regla "models de la pregunta nueva ganan"
 
-1. Migración SQL (3 tablas + RLS)
-2. `specs/quality-audit-queries.md` con las 24 queries
-3. Edge function `quality-audit-runner`
-4. `QualityAuditPanel.tsx` en /admin
-5. Primer run ejecutado + informe inicial de hallazgos en chat
+## Tiempo estimado
+1 iteración. El usuario valida con la misma batería de 4 preguntas del informe adjunto.
 
-Tiempo estimado de la primera entrega: 1 iteración de build. El primer informe de fallos lo discutimos juntos antes de decidir qué arreglar.
+## Lo que NO hago en este plan
+- No toco la auditoría de calidad (que ya quedó en `/admin → Quality Audit`).
+- No refactorizo el orchestrator entero — solo el merge de contexto.
+- No cambio prompts ni skills de informe.
