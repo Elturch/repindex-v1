@@ -163,12 +163,16 @@ serve(async (req) => {
       console.error("[send-user-magic-link] Auto-confirm exception (non-fatal):", e);
     }
 
-    // 3. Generate RECOVERY link (more robust than magiclink: always carries type=recovery and auto-confirms on click)
-    const redirectUrl = redirect_to || "https://repindex-v1.lovable.app/dashboard";
+    // 3. Generate MAGICLINK to extract the OTP token (hashed_token).
+    //    We do NOT use the action_link Supabase returns — we wrap the token
+    //    in our own callback URL (https://repindex.ai/auth/callback) so that:
+    //      a) corporate prefetchers (Outlook/Mimecast) cannot consume the token
+    //         (verifyOtp requires POST, not GET)
+    //      b) the URL lives on our brand domain (better deliverability/trust)
+    //      c) the page calls supabase.auth.verifyOtp directly → atomic login
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: "recovery",
+      type: "magiclink",
       email: normalizedEmail,
-      options: { redirectTo: redirectUrl }
     });
 
     if (linkError) {
@@ -179,34 +183,52 @@ serve(async (req) => {
       );
     }
 
-    if (!linkData?.properties?.action_link) {
-      console.error("[send-user-magic-link] No action_link in response");
+    // Extract hashed_token (preferred). Fallback: parse from action_link if needed.
+    const props = linkData?.properties as
+      | { hashed_token?: string; action_link?: string; email_otp?: string }
+      | undefined;
+    let hashedToken = props?.hashed_token;
+
+    if (!hashedToken && props?.action_link) {
+      try {
+        const u = new URL(props.action_link);
+        hashedToken = u.searchParams.get("token") || undefined;
+      } catch (_e) {
+        // ignore
+      }
+    }
+
+    if (!hashedToken) {
+      console.error("[send-user-magic-link] No hashed_token nor parseable action_link in response", {
+        keys: props ? Object.keys(props) : null,
+      });
       return new Response(
         JSON.stringify({ success: false, error: "Error generando enlace. Inténtalo de nuevo." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const magicLink = linkData.properties.action_link;
-
-    // 4. VALIDATE the generated link contains a `type=` parameter (defensive check)
-    try {
-      const linkUrl = new URL(magicLink);
-      const linkType = linkUrl.searchParams.get("type");
-      const queryKeys = Array.from(linkUrl.searchParams.keys());
-      console.log(`[send-user-magic-link] Link validation for ${normalizedEmail}: host=${linkUrl.host}, path=${linkUrl.pathname}, type=${linkType}, queryKeys=${queryKeys.join(",")}`);
-      if (!linkType) {
-        console.error(`[send-user-magic-link] ❌ Generated link missing 'type=' param. Refusing to send.`);
-        return new Response(
-          JSON.stringify({ success: false, error: "Enlace generado inválido. Avisa al administrador." }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    // Build our own callback URL on the brand domain.
+    // Allow override via redirect_to (still wraps the same OTP token).
+    const callbackBase = (() => {
+      if (redirect_to) {
+        try {
+          const r = new URL(redirect_to);
+          return `${r.origin}/auth/callback`;
+        } catch (_e) {
+          // ignore, fall through
+        }
       }
-    } catch (e) {
-      console.error("[send-user-magic-link] Link URL parse error:", e);
-    }
+      return "https://repindex.ai/auth/callback";
+    })();
 
-    console.log(`[send-user-magic-link] Magic link generated successfully for ${normalizedEmail}`);
+    const magicLink =
+      `${callbackBase}?token=${encodeURIComponent(hashedToken)}` +
+      `&email=${encodeURIComponent(normalizedEmail)}`;
+
+    console.log(
+      `[send-user-magic-link] OTP-wrapped link generated for ${normalizedEmail}: ${callbackBase}`
+    );
 
     // 3. Send email via Resend with branded template
     const resend = new Resend(resendApiKey);

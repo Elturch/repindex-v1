@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
@@ -12,38 +12,18 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { isAuthenticated, isLoading, profile, signOut } = useAuth();
   const location = useLocation();
 
-  // Detect magic link tokens in URL — give the Supabase SDK time to process them
-  // before redirecting to /login (avoids premature redirect race condition)
-  const urlHasToken =
-    typeof window !== 'undefined' &&
-    (window.location.hash.includes('access_token=') ||
-      window.location.hash.includes('error=') ||
-      window.location.search.includes('code='));
-
-  const [waitingForToken, setWaitingForToken] = useState(urlHasToken);
-
-  useEffect(() => {
-    if (urlHasToken && !isAuthenticated) {
-      const timer = setTimeout(() => setWaitingForToken(false), 2500);
-      return () => clearTimeout(timer);
-    }
-    setWaitingForToken(false);
-  }, [urlHasToken, isAuthenticated]);
-
   // In Preview/development, allow access without authentication
   if (isDevOrPreview()) {
     return <>{children}</>;
   }
 
-  // Show loading spinner while checking auth or while processing magic link token
-  if (isLoading || (waitingForToken && !isAuthenticated)) {
+  // Show loading spinner while checking existing session
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">
-            {urlHasToken ? 'Procesando acceso...' : 'Verificando acceso...'}
-          </p>
+          <p className="text-muted-foreground">Verificando acceso...</p>
         </div>
       </div>
     );
