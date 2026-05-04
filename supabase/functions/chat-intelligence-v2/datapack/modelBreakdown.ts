@@ -71,9 +71,9 @@ export function renderModelBreakdownTable(rows: any[]): string {
     )
     .join("\n");
   return [
-    "**Visión por modelo de IA — RIX medio del período**",
+    "**Visión por modelo de IA — RIX por modelo en el período (media intra-modelo a través de las semanas)**",
     "",
-    "| Ranking | Modelo | RIX medio por modelo | Filas |",
+    "| Ranking | Modelo | RIX intra-modelo (media semanas) | Filas |",
     "|---|---|---|---|",
     body,
   ].join("\n");
