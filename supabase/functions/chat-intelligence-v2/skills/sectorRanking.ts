@@ -218,12 +218,14 @@ function buildPerCompanyDimensionsBlock(
 // columns (URLs) for sector-wide citations. Kept distinct from RANKING_SELECT
 // so the ranking aggregation stays cheap (12k+ rows) and we only pull the
 // raw text columns once per sweep window.
-const SOURCE_SELECT = [
+const SOURCE_META_COLS = [
   "05_ticker",
   "03_target_name",
   "06_period_from",
   "07_period_to",
   "batch_execution_date",
+] as const;
+const ALL_BRUTO_COLS = [
   "20_res_gpt_bruto",
   "21_res_perplex_bruto",
   "22_res_gemini_bruto",
@@ -231,7 +233,27 @@ const SOURCE_SELECT = [
   "respuesta_bruto_claude",
   "respuesta_bruto_grok",
   "respuesta_bruto_qwen",
-].join(", ");
+] as const;
+// Mapping DB canonical model name → bruto column. Used to project ONLY the
+// relevant raw response when the user filtered to a single model — cuts
+// payload by ~85% on single-model sector queries.
+const BRUTO_COL_BY_MODEL: Record<string, string> = {
+  "Google Gemini": "22_res_gemini_bruto",
+  "ChatGPT": "20_res_gpt_bruto",
+  "Perplexity": "21_res_perplex_bruto",
+  "DeepSeek": "23_res_deepseek_bruto",
+  "Claude": "respuesta_bruto_claude",
+  "Grok": "respuesta_bruto_grok",
+  "Qwen": "respuesta_bruto_qwen",
+};
+const SOURCE_SELECT = [...SOURCE_META_COLS, ...ALL_BRUTO_COLS].join(", ");
+function buildSourceSelect(modelFilter?: string[] | null): string {
+  if (Array.isArray(modelFilter) && modelFilter.length === 1) {
+    const col = BRUTO_COL_BY_MODEL[modelFilter[0]];
+    if (col) return [...SOURCE_META_COLS, col].join(", ");
+  }
+  return SOURCE_SELECT;
+}
 
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
