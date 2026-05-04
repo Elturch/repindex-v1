@@ -120,7 +120,18 @@ serve(async (req: Request) => {
     // FASE A — Hydrate previousContext from `user_conversations.last_report_context`
     // when the FE didn't ship one (cold reload, conversation re-open from the
     // sidebar). This replaces the legacy regex-over-assistant-text fallback.
-    if (!previousContext?.entity && (conversationId || sessionId)) {
+    //
+    // CACHE-BUG FIX (2026-05-04): only hydrate when this turn is clearly a
+    // follow-up (`isFollowup === true`). When the FE deliberately omits
+    // previousContext for a brand-new question (e.g. "Analiza IBEX35 en
+    // gemini" after a previous IBEX35 multi-IA report), hydrating from DB
+    // re-injected the previous entity/sector and the orchestrator returned
+    // the same report regardless of the new model filter ("en gemini").
+    if (
+      isFollowup &&
+      !previousContext?.entity &&
+      (conversationId || sessionId)
+    ) {
       try {
         const lookup = supabase
           .from("user_conversations")
@@ -147,11 +158,18 @@ serve(async (req: Request) => {
               : null,
             source: "user_conversations.last_report_context",
           };
-          console.log("[RIX-V2] hydrated previousContext from user_conversations:", previousContext.entity);
+          console.log(
+            "[RIX-V2] hydrated previousContext from user_conversations (isFollowup=true):",
+            previousContext.entity,
+          );
         }
       } catch (lookupErr) {
         console.warn("[RIX-V2] last_report_context lookup failed (non-fatal):", lookupErr);
       }
+    } else if (!previousContext?.entity && (conversationId || sessionId)) {
+      console.log(
+        "[RIX-V2] skipping last_report_context hydration (isFollowup=false) — fresh query path",
+      );
     }
 
     console.log("[RIX-V2] Request received", {
