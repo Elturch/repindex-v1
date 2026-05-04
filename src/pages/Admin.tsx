@@ -886,6 +886,25 @@ const Admin: React.FC = () => {
     }
   };
 
+  const toggleUserActive = async (user: UserProfile, next: boolean) => {
+    try {
+      // Optimistic update
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_active: next } : u));
+      await callAdminApi('update_user', {
+        id: user.id,
+        full_name: user.full_name,
+        company_id: user.company_id,
+        is_active: next,
+        is_individual: user.is_individual ?? !user.company_id,
+      });
+      toast({ title: next ? 'Usuario activado' : 'Usuario desactivado', description: user.email });
+    } catch (error: any) {
+      // Rollback
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_active: !next } : u));
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
   // Company form fields JSX (inline to prevent input focus loss)
   const companyFormFieldsJSX = (isEditing: boolean) => (
     <div className="space-y-4">
