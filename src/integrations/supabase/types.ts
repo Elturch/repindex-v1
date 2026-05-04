@@ -3900,6 +3900,8 @@ export type Database = {
           email_confirmed_at: string
           full_name: string
           id: string
+          is_active: boolean
+          is_individual: boolean
           last_sign_in_at: string
           role: string
         }[]
