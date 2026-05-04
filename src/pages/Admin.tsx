@@ -1188,6 +1188,10 @@ const Admin: React.FC = () => {
               <BookOpen className="h-3.5 w-3.5" />
               Docs Técnica
             </TabsTrigger>
+            <TabsTrigger value="quality-audit" className="flex items-center gap-1.5 px-3 text-xs">
+              <HeartPulse className="h-3.5 w-3.5" />
+              Quality Audit
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
             <div className="flex justify-between items-center mb-4">
