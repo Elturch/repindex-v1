@@ -71,6 +71,7 @@ import { PipelineAlertsPanel } from '@/components/admin/PipelineAlertsPanel';
 import { InterestedLeadsPanel } from '@/components/admin/InterestedLeadsPanel';
 import { SalesIntelligencePanel } from '@/components/admin/SalesIntelligencePanel';
 import TechnicalDocPanel from '@/components/admin/TechnicalDocPanel';
+import { QualityAuditPanel } from '@/components/admin/QualityAuditPanel';
 import { ApiHealthDashboard } from '@/components/admin/ApiHealthDashboard';
 import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, HeartPulse } from 'lucide-react';
 
@@ -3245,6 +3246,10 @@ const Admin: React.FC = () => {
           {/* ==================== TECHNICAL DOCUMENTATION ==================== */}
           <TabsContent value="tech-docs">
             <TechnicalDocPanel />
+          </TabsContent>
+          {/* ==================== QUALITY AUDIT ==================== */}
+          <TabsContent value="quality-audit">
+            <QualityAuditPanel />
           </TabsContent>
         </Tabs>
         )}
