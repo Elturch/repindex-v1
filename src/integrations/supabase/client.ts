@@ -13,9 +13,10 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-    // CRITICAL: magic links generated via admin.generateLink return tokens in URL hash (#access_token=...)
-    // detectSessionInUrl + implicit flow are required to process them automatically on landing
-    detectSessionInUrl: true,
-    flowType: 'implicit',
+    // El login se finaliza explícitamente en /auth/callback vía verifyOtp.
+    // No queremos que el SDK procese ningún hash/code automáticamente,
+    // ni que el cliente arrastre el flowType implicit (frágil con prefetch).
+    detectSessionInUrl: false,
+    flowType: 'pkce',
   }
 });

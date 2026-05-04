@@ -21,6 +21,7 @@ import WeeklyNews from "./pages/WeeklyNews";
 import NewsArticleDetail from "./pages/NewsArticleDetail";
 import NewsArchive from "./pages/NewsArchive";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import MyDocuments from "./pages/MyDocuments";
 import MyConversations from "./pages/MyConversations";
 import UserProfile from "./pages/UserProfile";
@@ -62,6 +63,7 @@ const App = () => (
                 <Route path="/reclamacoes" element={<ComplaintsForm />} />
                 <Route path="/cualificacion/:token" element={<Qualification />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
                 
                 {/* Protected routes */}
                 <Route path="/dashboard" element={
