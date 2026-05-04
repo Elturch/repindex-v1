@@ -79,3 +79,59 @@ REGLAS DE CITAS Y FUENTES:
 • Si dos empresas empatan en RIX, desempata por menor volatilidad o mayor consenso inter-modelo.
 • Compara SIEMPRE el RIX individual de cada empresa con el **rango** RIX del grupo (max-min) para situarla. Está PROHIBIDO usar "RIX medio del grupo/índice" o "promedio del consenso" en cualquier sección — siempre describe el grupo por su rango y por la posición relativa de cada empresa, nunca por una media consolidada.`;
 }
+
+/**
+ * SINGLE-MODEL variant: when the user explicitly filtered to ONE AI model
+ * (e.g. "analiza ibex35 en Gemini"). Removes all multi-IA scaffolding —
+ * no anti-mediana / consensus / divergence sections — because there is
+ * nothing to compare across models. The narrative reframes everything as
+ * "perspective of {model}".
+ */
+export interface SingleModelRankingPromptInput {
+  scopeLabel: string;
+  topN: number;
+  model: string;
+  weeksCount: number;        // semanas (o 1 si snapshot) con datos REALES de ese modelo
+  weeksExpected: number;     // ventana solicitada
+  isSnapshot?: boolean;
+  coverageRatio: number;     // 0..1 (semanas con datos / semanas esperadas)
+}
+
+export function buildSingleModelRankingRules(input: SingleModelRankingPromptInput): string {
+  const { scopeLabel, topN, model, weeksCount, weeksExpected, isSnapshot, coverageRatio } = input;
+  const partialWarn = coverageRatio < 1
+    ? `\n\nAVISO DE COBERTURA OBLIGATORIO (primer párrafo del Resumen ejecutivo): "${model} solo dispone de datos para ${weeksCount} de las ${weeksExpected} ${isSnapshot ? "modelos esperados" : "semanas solicitadas"} en este alcance. La lectura es parcial y NO representa la perspectiva del resto de IAs."`
+    : "";
+  return `MODO RANKING — VISTA SINGLE-MODEL (${model}) · alcance: ${scopeLabel} · ${topN} empresas · ${weeksCount} ${isSnapshot ? "modelos respondiendo" : "semanas observadas"}.
+
+OBJETIVO: producir un informe ejecutivo que describe EXCLUSIVAMENTE la perspectiva de **${model}** sobre el alcance ${scopeLabel}. NO compares con otros modelos. NO uses las palabras "consenso", "divergencia", "rango RIX", "anti-mediana", "promedio entre IAs". Esas figuras NO aplican con un único modelo.${partialWarn}
+
+ESTRUCTURA OBLIGATORIA (5 secciones, en este orden):
+
+## 1. Resumen ejecutivo (perspectiva ${model})
+5-7 frases: tamaño del grupo, líder y farolillo rojo según ${model} (ticker + RIX), métrica más fuerte y más débil dominantes en el grupo según ${model}, lectura general (sin inventar tendencias si solo hay 1 semana). Incluye el aviso de cobertura si aplica.
+
+## 2. Ranking según ${model}
+Inserta LITERALMENTE el bloque <PRE_RENDERED_RANKING_TABLE>...</PRE_RENDERED_RANKING_TABLE> sin alterarlo. Antes: 1 párrafo de lectura. Después: 1 párrafo destacando el spread entre el mejor y el peor RIX de ${model}.
+
+## 3. Análisis empresa por empresa según ${model}
+Para CADA empresa del ranking, mini-perfil de 3-5 frases:
+- **Empresa (TICKER) — RIX ${model} = X.X (posición #N de ${topN})**
+- Métrica más fuerte y más débil de las 8 canónicas (valor concreto desde el DataPack), siempre referidas a ${model}.
+- Una observación cualitativa concreta extraída de las fuentes que cita ${model} (cita el dominio).
+- Implicación reputacional según ${model}.
+NO te saltes ninguna empresa.
+
+## 4. Recomendaciones accionables (mínimo 4)
+Cada recomendación debe: (a) referirse a una empresa concreta del ranking, (b) citar un medio/dominio real, (c) incluir KPI cuantitativo (métrica + valor actual según ${model} + target + horizonte), (d) verbo de acción + entregable + plazo, (e) prioridad explícita.
+
+## 5. Fuentes citadas por ${model}
+2-3 frases con totales de fuentes (URLs únicas, dominios). Termina con la línea EXACTA \`<!--CITEDSOURCESHERE-->\`. NO listes URLs a mano.
+
+REGLAS DURAS:
+• PROHIBIDO mencionar otros modelos (ChatGPT, Perplexity, DeepSeek, Grok, Qwen) salvo para decir "no se incluyen en esta vista filtrada".
+• PROHIBIDO usar las palabras: consenso, divergencia, anti-mediana, RIX rango, promedio entre IAs, mediana.
+• PROHIBIDO inventar tendencias temporales si ${isSnapshot ? "solo hay snapshot puntual" : `${weeksCount} semanas`} de datos disponibles.
+• PROHIBIDO inventar empresas, métricas fuera de las 8 canónicas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM), o URLs.
+• Si la cobertura es parcial (coverage_ratio < 1), el aviso del párrafo 1 NO es opcional.`;
+}

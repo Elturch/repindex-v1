@@ -16,6 +16,7 @@ import { buildPeriodRules } from "../prompts/periodMode.ts";
 import { buildSnapshotRules } from "../prompts/snapshotMode.ts";
 import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
+import { buildSingleModelRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import {
   assembleReport,
@@ -279,6 +280,7 @@ async function fetchRankingRows(
   sector: string | null,
   ibexOnly: boolean,
   scopeTickers?: string[] | null,
+  modelFilter?: string[] | null,
 ): Promise<any[]> {
   // PHASE 5 — Align filter to SWEEP axis (07_period_to = Sunday).
   // Snapshot (from===to) → eq; period → range, both on 07_period_to.
@@ -290,6 +292,13 @@ async function fetchRankingRows(
   q = isSnapshot
     ? q.eq("07_period_to", fromISO)
     : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
+  // Single/partial model filter: when the user explicitly mentioned 1..5
+  // models, restrict the SQL to those rows so strongest/weakest/per_model
+  // aggregates reflect ONLY the requested perspective.
+  if (Array.isArray(modelFilter) && modelFilter.length > 0 && modelFilter.length < 6) {
+    q = q.in("02_model_name", modelFilter);
+    console.log(`[RIX-V2][sectorRanking] model filter applied | models=${modelFilter.join(",")}`);
+  }
   // PRIORITY: explicit scope_tickers (sub-segment) override sector/ibex.
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
@@ -489,6 +498,42 @@ function renderRankingTable(
   const footnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs (${coverage.weeksCount} ${unit} ${verb}${partialSuffix}). NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
   return [
     "**Ranking por consenso entre IAs (con desglose por modelo)**",
+    "",
+    `| ${head.join(" | ")} |`,
+    `| ${sep} |`,
+    ...lines,
+    "",
+    footnote,
+  ].join("\n");
+}
+
+/**
+ * SINGLE-MODEL render: drops "RIX rango" and "Consenso" columns; shows only
+ * the score from the requested model. Used when parsed.models.length === 1.
+ */
+function renderSingleModelRankingTable(
+  rows: RankingRow[],
+  model: ModelName,
+  coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
+): string {
+  const head = ["#", "Empresa", `RIX (${model})`, "Obs."];
+  const sep = head.map(() => "---").join(" | ");
+  const lines = rows.map((r, i) => {
+    const cells = [
+      String(i + 1),
+      `${r.name} (${r.ticker})`,
+      fmt(r.per_model[model]),
+      String(r.obs),
+    ];
+    return `| ${cells.join(" | ")} |`;
+  });
+  const partialSuffix = coverage.isPartial && coverage.weeksExpected > coverage.weeksCount
+    ? ` (de ${coverage.weeksExpected} esperados)`
+    : "";
+  const unit = coverage.isSnapshot ? "snapshot" : "semanas";
+  const footnote = `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`;
+  return [
+    `**Ranking según ${model}**`,
     "",
     `| ${head.join(" | ")} |`,
     `| ${sep} |`,
@@ -712,7 +757,15 @@ export const sectorRankingSkill: Skill = {
     const sqlFrom = parsed.temporal.requested_from ?? parsed.temporal.from;
     const sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to;
     console.log(`${tag} SQL window | requested=${sqlFrom}→${sqlTo} | reconciled=${parsed.temporal.from}→${parsed.temporal.to}`);
-    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    // SINGLE-MODEL branch: when the user filtered to a subset (1..5 models),
+    // restrict SQL to those models so per_model / strongest / weakest reflect
+    // ONLY the requested perspective. Map v2 short labels → DB canonical
+    // names ("Gemini" → "Google Gemini").
+    const dbModelFilter = (parsed.models && parsed.models.length > 0 && parsed.models.length < 6)
+      ? parsed.models.map((m) => (m === "Gemini" ? "Google Gemini" : m))
+      : null;
+    const isSingleModel = Array.isArray(parsed.models) && parsed.models.length === 1;
+    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers, dbModelFilter);
     // P1-C.1 — forensic log for dimension propagation in sector path.
     const _uniqTickers = new Set(rows.map((r) => r["05_ticker"]).filter(Boolean)).size;
     console.log(`[RIX-V2][companyAnalysis] dimension_metrics_fetched | tickers=${_uniqTickers} | rows=${rows.length} | window=${sqlFrom}→${sqlTo}`);
@@ -757,12 +810,19 @@ export const sectorRankingSkill: Skill = {
     const ranking = aggregateRanking(rows, topN);
     const models = parsed.models;
     const table = ranking.length > 0
-      ? renderRankingTable(ranking, models, {
-          weeksCount: effectiveTemporal.snapshots_available,
-          weeksExpected: effectiveTemporal.snapshots_expected,
-          isPartial: effectiveTemporal.is_partial,
-          isSnapshot: isSnapshotMode,
-        })
+      ? (isSingleModel
+          ? renderSingleModelRankingTable(ranking, models[0] as ModelName, {
+              weeksCount: effectiveTemporal.snapshots_available,
+              weeksExpected: effectiveTemporal.snapshots_expected,
+              isPartial: effectiveTemporal.is_partial,
+              isSnapshot: isSnapshotMode,
+            })
+          : renderRankingTable(ranking, models, {
+              weeksCount: effectiveTemporal.snapshots_available,
+              weeksExpected: effectiveTemporal.snapshots_expected,
+              isPartial: effectiveTemporal.is_partial,
+              isSnapshot: isSnapshotMode,
+            }))
       : "_Sin datos para el período/alcance solicitado._";
 
     const datapack: DataPack = {
@@ -807,7 +867,17 @@ export const sectorRankingSkill: Skill = {
       parsed.mode === "period"
         ? buildPeriodRules({ fromISO: sqlFrom, toISO: sqlTo, weeksCount: effectiveTemporal.snapshots_available, requestedLabel: effectiveTemporal.requested_label })
         : buildSnapshotRules({ weekFromISO: sqlFrom, weekToISO: sqlTo }),
-      buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length, isSnapshot: isSnapshotMode }),
+      isSingleModel
+        ? buildSingleModelRankingRules({
+            scopeLabel,
+            topN: ranking.length,
+            model: String(models[0]),
+            weeksCount: effectiveTemporal.snapshots_available,
+            weeksExpected: effectiveTemporal.snapshots_expected,
+            isSnapshot: isSnapshotMode,
+            coverageRatio: effectiveTemporal.coverage_ratio,
+          })
+        : buildRankingRules({ scopeLabel, topN: ranking.length, weeksCount: effectiveTemporal.snapshots_available, modelsCount: models.length, isSnapshot: isSnapshotMode }),
       buildCoverageRules({
         requested: models,
         withData: models,
