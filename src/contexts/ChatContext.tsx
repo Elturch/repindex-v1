@@ -9,7 +9,7 @@ import { ChatLanguage, getSavedLanguage, saveLanguagePreference } from "@/lib/ch
 import { technicalSheetStyles, generateTechnicalSheetHtml } from "@/lib/technicalSheetHtml";
 import { VerifiedSource, generateBibliographyHtml } from "@/lib/verifiedSourceExtractor";
 import { getAgentVersion, getEdgeFunctionName, type AgentVersion } from "@/lib/agentVersion";
-import { detectsExplicitNewEntity, expandComparisonFollowup } from "@/lib/stickyEntityOverride";
+import { detectsExplicitNewEntity, expandComparisonFollowup, isFreshExplicitQuery } from "@/lib/stickyEntityOverride";
 
 // Constants for edge function invocation with extended timeout
 const SUPABASE_URL = "https://jzkjykmrwisijiqlwuua.supabase.co";
@@ -891,10 +891,22 @@ export function ChatProvider({ children }: ChatProviderProps) {
           `[ChatContext] sticky OVERRIDE: new entity "${explicitOverride.candidate}" detected → dropping previousContext`,
         );
       }
+      // CACHE-BUG FIX — when the new question starts with an analysis verb
+      // and explicitly names a brand/sector ("Analiza IBEX35 en gemini",
+      // "Ranking sector banca en deepseek"), treat it as a fresh request
+      // and drop the sticky payload so the BE doesn't reuse the previous
+      // datapack/intent. This is the most common cause of "the chat keeps
+      // answering the first question" reported by users.
+      const freshQuery = isFreshExplicitQuery(question);
+      if (freshQuery && followupActive) {
+        console.log(
+          `[ChatContext] FRESH-QUERY override: "${question.slice(0, 80)}" → dropping previousContext`,
+        );
+      }
       // When we expanded a comparison OR detected an explicit override,
       // drop sticky so the BE resolves the new query from scratch.
       const stickyActive =
-        followupActive && !explicitOverride.override && !comparisonExpansion;
+        followupActive && !explicitOverride.override && !comparisonExpansion && !freshQuery;
 
       const previousContextPayload = stickyActive && lastQueryContextRef.current
         ? {
