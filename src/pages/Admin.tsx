@@ -2328,6 +2328,15 @@ const Admin: React.FC = () => {
                             <SelectItem value="user">user</SelectItem>
                           </SelectContent>
                         </Select>
+                        <div className="flex items-center gap-2 shrink-0" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                          <Switch
+                            checked={user.is_active}
+                            onCheckedChange={(v) => toggleUserActive(user, v)}
+                          />
+                          <Badge variant={user.is_active ? 'default' : 'destructive'} className="text-xs min-w-[72px] justify-center">
+                            {user.is_active ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </div>
                                     <Button 
                                       variant="ghost" 
                                       size="sm"
