@@ -750,3 +750,5 @@ function mapDivergenceToEN(level: string | null | undefined): "low" | "medium" |
   if (s === "high" || s === "alto" || s === "alta") return "high";
   return "unknown";
 }
+// Test-only exports (do not import in production paths).
+export const __test__ = { MULTI_SECTOR_THESAURUS, SECTOR_KEYWORD_MAP, detectSectorCategory };
