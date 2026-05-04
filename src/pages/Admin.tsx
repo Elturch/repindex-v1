@@ -1703,9 +1703,15 @@ const Admin: React.FC = () => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
-                                      {user.is_active ? 'Activo' : 'Inactivo'}
-                                    </Badge>
+                                    <div className="flex items-center gap-1.5" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                                      <Switch
+                                        checked={user.is_active}
+                                        onCheckedChange={(v) => toggleUserActive(user, v)}
+                                      />
+                                      <span className="text-xs text-muted-foreground w-12">
+                                        {user.is_active ? 'Activo' : 'Inactivo'}
+                                      </span>
+                                    </div>
                                     <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
                                       <Pencil className="h-4 w-4" />
                                     </Button>
@@ -1816,9 +1822,15 @@ const Admin: React.FC = () => {
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-xs">Particular</Badge>
-                                <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
-                                  {user.is_active ? 'Activo' : 'Inactivo'}
-                                </Badge>
+                                <div className="flex items-center gap-1.5" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                                  <Switch
+                                    checked={user.is_active}
+                                    onCheckedChange={(v) => toggleUserActive(user, v)}
+                                  />
+                                  <span className="text-xs text-muted-foreground w-12">
+                                    {user.is_active ? 'Activo' : 'Inactivo'}
+                                  </span>
+                                </div>
                                 <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
                                   <Pencil className="h-4 w-4" />
                                 </Button>
@@ -2007,9 +2019,15 @@ const Admin: React.FC = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <Badge variant={user.is_active ? 'default' : 'secondary'} className="text-xs">
-                                        {user.is_active ? 'Activo' : 'Inactivo'}
-                                      </Badge>
+                                      <div className="flex items-center gap-1.5" title={user.is_active ? 'Activo' : 'Inactivo'}>
+                                        <Switch
+                                          checked={user.is_active}
+                                          onCheckedChange={(v) => toggleUserActive(user, v)}
+                                        />
+                                        <span className="text-xs text-muted-foreground w-12">
+                                          {user.is_active ? 'Activo' : 'Inactivo'}
+                                        </span>
+                                      </div>
                                       <Button variant="ghost" size="sm" onClick={() => openEditUser(user)} title="Editar usuario">
                                         <Pencil className="h-4 w-4" />
                                       </Button>
