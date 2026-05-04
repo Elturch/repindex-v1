@@ -218,12 +218,14 @@ function buildPerCompanyDimensionsBlock(
 // columns (URLs) for sector-wide citations. Kept distinct from RANKING_SELECT
 // so the ranking aggregation stays cheap (12k+ rows) and we only pull the
 // raw text columns once per sweep window.
-const SOURCE_SELECT = [
+const SOURCE_META_COLS = [
   "05_ticker",
   "03_target_name",
   "06_period_from",
   "07_period_to",
   "batch_execution_date",
+] as const;
+const ALL_BRUTO_COLS = [
   "20_res_gpt_bruto",
   "21_res_perplex_bruto",
   "22_res_gemini_bruto",
@@ -231,7 +233,27 @@ const SOURCE_SELECT = [
   "respuesta_bruto_claude",
   "respuesta_bruto_grok",
   "respuesta_bruto_qwen",
-].join(", ");
+] as const;
+// Mapping DB canonical model name → bruto column. Used to project ONLY the
+// relevant raw response when the user filtered to a single model — cuts
+// payload by ~85% on single-model sector queries.
+const BRUTO_COL_BY_MODEL: Record<string, string> = {
+  "Google Gemini": "22_res_gemini_bruto",
+  "ChatGPT": "20_res_gpt_bruto",
+  "Perplexity": "21_res_perplex_bruto",
+  "DeepSeek": "23_res_deepseek_bruto",
+  "Claude": "respuesta_bruto_claude",
+  "Grok": "respuesta_bruto_grok",
+  "Qwen": "respuesta_bruto_qwen",
+};
+const SOURCE_SELECT = [...SOURCE_META_COLS, ...ALL_BRUTO_COLS].join(", ");
+function buildSourceSelect(modelFilter?: string[] | null): string {
+  if (Array.isArray(modelFilter) && modelFilter.length === 1) {
+    const col = BRUTO_COL_BY_MODEL[modelFilter[0]];
+    if (col) return [...SOURCE_META_COLS, col].join(", ");
+  }
+  return SOURCE_SELECT;
+}
 
 const MODEL_NAME_MAP: Array<[string, ModelName]> = [
   ["chatgpt", "ChatGPT"], ["gpt", "ChatGPT"], ["openai", "ChatGPT"],
@@ -327,7 +349,9 @@ async function fetchRankingRows(
   }
   const all: any[] = [];
   // 13 weeks × 130 issuers × 6 models ≈ 10k rows. Use 15 pages × 1000 = 15k cap.
-  for (let p = 0; p < 15; p++) {
+  // Single-model branch: techo real ~ 130 × 14 = 1820 filas → 4 páginas sobran.
+  const maxPages = (Array.isArray(modelFilter) && modelFilter.length === 1) ? 4 : 15;
+  for (let p = 0; p < maxPages; p++) {
     const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
     if (error) { console.error("[RIX-V2][sectorRanking]", error.message); break; }
     if (!data || data.length === 0) break;
@@ -350,13 +374,18 @@ async function fetchSectorSourceRows(
   sector: string | null,
   ibexOnly: boolean,
   scopeTickers?: string[] | null,
+  modelFilter?: string[] | null,
 ): Promise<any[]> {
   // PHASE 5 — Align filter to SWEEP axis (07_period_to).
   const isSnapshot = fromISO === toISO;
-  let q = supabase.from("rix_runs_v2").select(SOURCE_SELECT);
+  const projection = buildSourceSelect(modelFilter);
+  let q = supabase.from("rix_runs_v2").select(projection);
   q = isSnapshot
     ? q.eq("07_period_to", fromISO)
     : q.gte("07_period_to", fromISO).lte("07_period_to", toISO);
+  if (Array.isArray(modelFilter) && modelFilter.length > 0 && modelFilter.length < 6) {
+    q = q.in("02_model_name", modelFilter);
+  }
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
     q = q.in("05_ticker", upper);
@@ -375,14 +404,16 @@ async function fetchSectorSourceRows(
     if (list.length > 0) q = q.in("05_ticker", list);
   }
   const all: any[] = [];
-  for (let p = 0; p < 8; p++) {
+  // Single-model: techo real ~ 35 × 14 = 490 filas → 3 páginas sobran.
+  const maxPages = (Array.isArray(modelFilter) && modelFilter.length === 1) ? 3 : 8;
+  for (let p = 0; p < maxPages; p++) {
     const { data, error } = await q.range(p * 1000, (p + 1) * 1000 - 1);
     if (error) { console.error("[RIX-V2][sectorRanking] sourceRows", error.message); break; }
     if (!data || data.length === 0) break;
     all.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0}`);
+  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0} | model_filter=${modelFilter?.join(",") ?? "all"} | projection_cols=${projection.split(",").length}`);
   return all;
 }
 
@@ -742,9 +773,19 @@ export const sectorRankingSkill: Skill = {
     // Detect IBEX hint directly from the raw question (sector_ranking has
     // no resolved entity by design).
     const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
-    // Detect explicit "top N" → cap N between 3 and 35.
+    // Detect explicit "top N" → cap N between 3 and 50. Si NO hay top
+    // explícito, el default depende del scope: scope_tickers → tamaño exacto;
+    // IBEX → 35; sector → 25; resto → 15. Antes había un cap mudo de 15
+    // que truncaba IBEX-35 a 15 empresas (bug reportado por el usuario).
     const topMatch = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
-    const topN = topMatch ? Math.max(3, Math.min(35, parseInt(topMatch[1], 10))) : 15;
+    const explicitTopN = topMatch ? Math.max(3, Math.min(50, parseInt(topMatch[1], 10))) : null;
+    const topN = explicitTopN ?? (
+      scopeTickers && scopeTickers.length > 0 ? scopeTickers.length :
+      ibexOnly ? 35 :
+      sector ? 25 :
+      15
+    );
+    console.log(`${tag} topN resolved=${topN} | explicit=${explicitTopN ?? "no"} | scope_tickers=${scopeTickers?.length ?? 0} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"}`);
     const scopeLabel = scopeTickers
       ? `grupo seleccionado (${scopeTickers.length} empresas: ${scopeTickers.join(", ")})`
       : sector
@@ -896,7 +937,7 @@ export const sectorRankingSkill: Skill = {
     // narrow (no raw text), so the previous extractCitedSources(rows) always
     // yielded 0 URLs in sector reports. We now call fetchSectorSourceRows()
     // and feed those rows into extractCitedSources/renderCitedSourcesBlock.
-    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers);
+    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers, dbModelFilter);
     const citedSourcesReport = extractCitedSources(sourceRows);
     const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
     const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
