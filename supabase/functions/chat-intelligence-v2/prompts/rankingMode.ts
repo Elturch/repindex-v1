@@ -99,9 +99,16 @@ export interface SingleModelRankingPromptInput {
 
 export function buildSingleModelRankingRules(input: SingleModelRankingPromptInput): string {
   const { scopeLabel, topN, model, weeksCount, weeksExpected, isSnapshot, coverageRatio } = input;
-  const partialWarn = coverageRatio < 1
-    ? `\n\nAVISO DE COBERTURA OBLIGATORIO (primer párrafo del Resumen ejecutivo): "${model} solo dispone de datos para ${weeksCount} de las ${weeksExpected} ${isSnapshot ? "modelos esperados" : "semanas solicitadas"} en este alcance. La lectura es parcial y NO representa la perspectiva del resto de IAs."`
-    : "";
+  // Copy separado snapshot vs período. NUNCA mezclar "modelos" y "semanas"
+  // en la misma frase: el LLM lo confunde y produce "1 de las 14 modelos
+  // esperados". Cada variante es una frase entera independiente.
+  let partialWarn = "";
+  if (coverageRatio < 1) {
+    const sentence = isSnapshot
+      ? `${model} es 1 de los 6 modelos posibles para este snapshot puntual. Esta vista omite los otros 5 modelos.`
+      : `${model} cubrió ${weeksCount} de las ${weeksExpected} semanas de la ventana solicitada. El resto de IAs no se incluyen en esta vista filtrada.`;
+    partialWarn = `\n\nAVISO DE COBERTURA OBLIGATORIO (primer párrafo del Resumen ejecutivo, frase literal): "${sentence}"`;
+  }
   return `MODO RANKING — VISTA SINGLE-MODEL (${model}) · alcance: ${scopeLabel} · ${topN} empresas · ${weeksCount} ${isSnapshot ? "modelos respondiendo" : "semanas observadas"}.
 
 OBJETIVO: producir un informe ejecutivo que describe EXCLUSIVAMENTE la perspectiva de **${model}** sobre el alcance ${scopeLabel}. NO compares con otros modelos. NO uses las palabras "consenso", "divergencia", "rango RIX", "anti-mediana", "promedio entre IAs". Esas figuras NO aplican con un único modelo.${partialWarn}
@@ -133,5 +140,7 @@ REGLAS DURAS:
 • PROHIBIDO usar las palabras: consenso, divergencia, anti-mediana, RIX rango, promedio entre IAs, mediana.
 • PROHIBIDO inventar tendencias temporales si ${isSnapshot ? "solo hay snapshot puntual" : `${weeksCount} semanas`} de datos disponibles.
 • PROHIBIDO inventar empresas, métricas fuera de las 8 canónicas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM), o URLs.
+• PROHIBIDO usar la expresión "modelos esperados" cuando la ventana sea de varias semanas (${isSnapshot ? "snapshot" : "period"} actual). En periodo siempre se habla de "semanas", nunca de "modelos".
+• PROHIBIDO confundir "número de modelos" con "número de empresas" o "número de semanas". Cada magnitud tiene su unidad propia.
 • Si la cobertura es parcial (coverage_ratio < 1), el aviso del párrafo 1 NO es opcional.`;
 }
