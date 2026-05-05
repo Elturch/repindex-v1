@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User } from "lucide-react";
+import { Sun, Moon, Bot, LayoutDashboard, TrendingUp, Newspaper, FileText, MessagesSquare, LogOut, Building2, Menu, User, FileBarChart2 } from "lucide-react";
 import repindexLogoText from "@/assets/repindex-logo-text-source.png";
 import { useTheme } from "next-themes";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -35,6 +35,7 @@ interface HeaderProps {
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, protected: true },
   { path: "/chat", label: "Agente Rix", icon: Bot, protected: true },
+  { path: "/informes", label: "Informes RIX", icon: FileBarChart2, protected: true },
   { path: "/market-evolution", label: "Evolución", icon: TrendingUp, protected: true },
   { path: "/noticias", label: "Newsroom", icon: Newspaper, protected: false },
 ];
