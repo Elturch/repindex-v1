@@ -1,103 +1,217 @@
-# Por qué el informe sigue mal y plan de corrección
 
-## Diagnóstico del informe que has subido
+# Informes RIX — módulo paralelo con filtros bidireccionales y salida idéntica a Agente RIX V2
 
-Pregunta: "analiza ibex35 en Gemini" → ventana 2026-02-01→2026-05-03 (14 semanas), 1 modelo (Gemini), 476 observaciones.
+## 1. Confirmación clave
 
-Tres defectos visibles, todos en `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts`:
+**Sí**, los 11 filtros funcionan **juntos o por separado**, con **cascada bidireccional** (descendente clásica + ascendente auto-fill). Y **el informe final es exactamente el mismo formato que produce hoy Agente RIX V2 en `/chat`**: narrativa completa, los **9 epígrafes canónicos**, tabla cross-model, recomendaciones GEO, **Fuentes verificadas** y **Bibliografía**.
 
-### 1. "Confunde modelos con empresas" — copy de cobertura mal redactado
+La única diferencia respecto al chat: el `ParsedQuery` que alimenta a las skills V2 **no se construye con LLM** a partir de texto libre; se **compila desde el estado de filtros**. Cero adivinación, cero deriva semántica, datos garantizados.
 
-El primer párrafo dice literalmente:
+---
 
-> *"Gemini solo dispone de datos para 1 de las 14 **modelos esperados** en este alcance."*
+## 2. Cómo se conecta el filtro con el motor V2 existente
 
-Es un period query (14 semanas) pero el aviso usa la palabra "modelos". El bug está en `prompts/rankingMode.ts:103` — el texto entero está mal pluralizado y mezcla unidades:
+Agente RIX V2 ya tiene el pipeline completo (lo respeta esta memoria: `agente-rix-skills-pipeline-v2`, `pdf-export-unified-engine`, `bibliography-scoping-protocol`, `cross-model-grounding-table`, `actionable-geo-recommendations`, `estructura-informe-canonica`):
 
-```ts
-`${weeksCount} de las ${weeksExpected} ${isSnapshot ? "modelos esperados" : "semanas solicitadas"}`
+```text
+ParsedQuery ──► Skill V2 (sectorRanking | companyAnalysis |
+                         comparison | divergence | evolution)
+            ──► DataPack (métricas + raw_rows + cited_sources_report)
+            ──► Prompt modules (snapshotMode | rankingMode | …)
+            ──► LLM síntesis narrativa (9 epígrafes)
+            ──► verifiedSourcesAdapter ──► Bibliography
+            ──► pdf-export-unified-engine
 ```
 
-Con `isSnapshot=false` debería salir "1 de las 14 semanas solicitadas", pero el LLM lo transcribe mal porque la frase está pegada a "perspectiva del resto de IAs" y se contagia. Hay que separar copy snapshot vs período en frases distintas y, en period, dejar claro que **son semanas, no modelos**, y que el filtro reduce los datos del modelo concreto, no de la ventana.
+El plan **NO toca** ese pipeline. Lo **reutiliza** desde una nueva ruta de entrada:
 
-### 2. "Solo da 15" — top-N por defecto está en 15, no en el tamaño real del scope
-
-`sectorRanking.ts:747`:
-```ts
-const topN = topMatch ? Math.max(3, Math.min(35, parseInt(topMatch[1], 10))) : 15;
+```text
+FilterState (UI Informes RIX)
+   │
+   ▼
+compileToParsedQuery()       ← determinista, 0 LLM
+   │
+   ▼
+execute(skill, parsed, …)    ← mismas skills V2 del chat
+   │
+   ▼
+mismo SkillOutput + mismos prompt_modules + mismo render
+   │
+   ▼
+informe idéntico al del chat (9 epígrafes + fuentes + bibliografía)
 ```
 
-Si la pregunta no contiene "top N" se aplica un cap mudo de 15. Para "analiza ibex35" el usuario espera **35 empresas** (todo el índice). Para grupos canónicos resueltos vía `scope_tickers` (p. ej. "grupos hospitalarios" con 4) el default debería ser `scope_tickers.length`. La regla correcta:
+`compileToParsedQuery(filterState): ParsedQuery` produce exactamente la struct de `supabase/functions/chat-intelligence-v2/types.ts`:
 
-- Si hay `topMatch` → respeta N (clamp 3..50).
-- Si no hay topMatch:
-  - `scope_tickers` presente → `topN = scope_tickers.length`.
-  - `ibexOnly=true` → `topN = 35`.
-  - sector → `topN = 25`.
-  - resto → `topN = 15` (mantener default actual).
+- `intent` ← Tipo de informe (filtro 0): `ranking`→`sector_ranking`, `comparativa`→`comparison`, `evolución`→`period_evolution`, `divergencia`→`model_divergence`, `perfil`→`company_analysis`, `visión general`→ se resuelve a `sector_ranking` o `company_analysis` según scope.
+- `entities` ← empresas seleccionadas (o derivadas del scope).
+- `temporal` ← ventana + granularidad → `from`, `to`, `snapshots_expected`, `snapshots_available`.
+- `models` ← chips de modelos.
+- `mode` ← `snapshot` si granularidad=snapshot, si no `period`.
+- `scope_tickers` ← cuando el usuario eligió empresas explícitas dentro de un sector/universo (respeta `data-pack-scope-integrity`).
+- `raw_question` / `effective_question` ← string sintetizada legible: *"Ranking IBEX-35 en Gemini, semanas 2026-02-01 a 2026-05-03, métrica RIXc, top 35"*. Se usa solo para logs y como fallback de los parsers (`top N`, etc.).
 
-### 3. "Sufrimos los límites de Supabase" — egreso desproporcionado
+Resultado: las skills V2 reciben un input **bien formado, validado y trazable**, y producen el mismo informe que ya hacen hoy.
 
-Para responder esta pregunta el skill hace **DOS** lecturas pesadas a `rix_runs_v2`:
+---
 
-1. `fetchRankingRows` con `RANKING_SELECT` (16 columnas) — hasta 15×1000 filas.
-2. `fetchSectorSourceRows` con `SOURCE_SELECT` que incluye los **7 columnas `*_bruto`** completas (texto largo) — hasta 8×1000 filas. En IBEX-35 × 6 modelos × 14 semanas son ~2.900 filas con payload de cientos de KB cada una. Es la fuente principal de coste y latencia.
+## 3. Filtros bidireccionales (resumen del modelo confirmado)
 
-Optimizaciones localizadas, sin tocar la lógica de la tabla:
+Los **11 filtros + filtro 0 (intención)**, cada uno con tres estados (`free` / `user-set` / `derived`):
 
-- **Aplicar el mismo `modelFilter` a `fetchSectorSourceRows`** que ya se aplica a `fetchRankingRows`. Si el usuario pidió solo Gemini, sobra leer las otras 6 columnas brutas. Pasar `dbModelFilter` y reducir `SOURCE_SELECT` a la columna bruta de ese modelo (mapping `Gemini→22_res_gemini_bruto`, `ChatGPT→20_res_gpt_bruto`, etc.). Recorte ~85% del payload de fuentes en single-model.
-- **Reducir el cap de paginación de `fetchRankingRows`** de 15 páginas a 6 páginas cuando hay `modelFilter` con 1 modelo (con 1 modelo el techo real es 35×14 = 490 filas; 6×1000 deja margen 12×).
-- **Cachear el listado de tickers de scope** (resultado de la query a `repindex_root_issuers`) entre las dos llamadas (`fetchRankingRows` + `fetchSectorSourceRows`) que hoy lo recalculan dos veces.
-- **Inyectar un `.limit(N)` explícito** en cada `range()` para que PostgREST no escanee páginas vacías cuando la última página viene corta (fix menor de eficiencia).
-
-## Cambios concretos
-
-### A. `prompts/rankingMode.ts` — fix copy single-model
-Reescribir `buildSingleModelRankingRules`:
-- Separar el aviso en dos variantes (snapshot vs period) con frases enteras independientes, sin ternario interpolado.
-- En period: "*Gemini cubrió N de M semanas de la ventana solicitada (Feb 1 → May 3). El resto de IAs no se incluyen en esta vista filtrada.*"
-- En snapshot: "*Gemini es 1 de los 6 modelos posibles para el snapshot del DD/MM. Esta vista omite los otros 5.*"
-- Añadir regla dura: "PROHIBIDO usar la palabra 'modelos esperados' al hablar de cobertura de un único modelo en una ventana de varias semanas."
-
-### B. `skills/sectorRanking.ts` — top-N adaptativo
-Modificar el bloque de `topN` (línea 746-747):
-```ts
-const topMatch = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
-const explicitN = topMatch ? Math.max(3, Math.min(50, parseInt(topMatch[1], 10))) : null;
-const topN = explicitN
-  ?? (scopeTickers ? scopeTickers.length
-    : ibexOnly ? 35
-    : sector ? 25
-    : 15);
+```text
+ 0. Tipo de informe          ← gobierna visibilidad y skill destino
+ 1. Universo / Índice        ← IBEX-35, Continuo, Custom
+ 2. Sector                   ← Banca, Telecom, Energía…
+ 3. Subsector
+ 4. Empresa / Ticker         ← multi-select
+ 5. Modelos IA               ← 1..6
+ 6. Ventana temporal         ← presets + date range
+ 7. Granularidad             ← snapshot / semanal / mensual / trimestral
+ 8. Métrica eje              ← NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM, RIXc
+ 9. Top N                    ← solo Ranking
+10. Orden                    ← desc / asc / divergencia
+11. Tipo de fuente           ← todas / regulatorias / medios / propias
 ```
 
-### C. `skills/sectorRanking.ts` — egress optimization
-1. Añadir parámetro `modelFilter` a `fetchSectorSourceRows` y proyección dinámica:
-   ```ts
-   const BRUTO_COL_BY_MODEL: Record<string,string> = {
-     "Google Gemini": "22_res_gemini_bruto",
-     "ChatGPT": "20_res_gpt_bruto",
-     "Perplexity": "21_res_perplex_bruto",
-     "DeepSeek": "23_res_deepseek_bruto",
-     "Claude": "respuesta_bruto_claude",
-     "Grok": "respuesta_bruto_grok",
-     "Qwen": "respuesta_bruto_qwen",
-   };
-   ```
-   Si `modelFilter.length===1`, `SOURCE_SELECT` solo incluye su columna bruta + las 5 columnas meta (ticker, name, period_from, period_to, batch).
-2. Pasar `dbModelFilter` a `fetchSectorSourceRows` desde el `execute()` (línea 899).
-3. Cap de paginación dinámico en `fetchRankingRows`: `MAX_PAGES = (modelFilter?.length === 1) ? 6 : 15`.
-4. Extraer la resolución de tickers de scope a un helper compartido y reutilizarla entre las dos fetchs.
+**Cascada bidireccional**:
+- Empresa → auto-fill de Sector y Universo (estado `derived`, chip "auto", botón desbloquear).
+- Sector → restringe opciones de Empresa.
+- Dos empresas de sectores distintos → Sector se vuelve multi-valor `derived` ("Banca, Telecom") y la barra superior recomienda Tipo="Comparativa".
+- Modelos=1 → oculta Tipo="Divergencia" (R12).
+- Empresa fuera de cobertura del modelo en la ventana → banner amarillo ofreciendo ajustar ventana.
 
-## Lo que NO se toca
+**Motor de coherencia** (`coherenceEngine.ts`) con 15 reglas declarativas que se evalúan en cada cambio (auto-fill, deshabilitar opciones imposibles, banners, nunca borra elección del usuario sin avisar). Reglas detalladas idénticas a la versión anterior del plan (R1–R15).
 
-- Lógica de `aggregateRanking`, `renderRankingTable`, `renderSingleModelRankingTable`.
-- Parser temporal (la ventana de 14 semanas es correcta — Gemini empezó tarde, eso no es el bug).
-- Pipeline multi-IA por defecto (siguen 6 modelos, esta rama solo afecta single-model y el default de top-N).
+---
 
-## Pruebas de aceptación
+## 4. Flujo end-to-end y garantía de "9 epígrafes + bibliografía"
 
-1. "analiza ibex35 en Gemini" → tabla con **35 empresas**, aviso "*Gemini cubrió 1 de las 14 semanas…*" (sin la palabra "modelos esperados"), egreso reducido (~1 columna bruta en lugar de 7).
-2. "analiza ibex35" (sin modelo) → 35 empresas, comportamiento multi-IA actual intacto.
-3. "top 10 ibex35 en Perplexity" → respeta N=10, single-model branch, payload single-bruto.
-4. "compara Telefónica con Cellnex" → comparison skill intacta (no toca este path).
+1. Usuario ajusta filtros en `/informes`. `FilterPanel` mantiene `FilterState`.
+2. Cada cambio dispara `coherenceEngine` → propaga derivados, deshabilita opciones, muestra avisos.
+3. `reports-preview-count` (edge function, debounce 250 ms) ejecuta solo `SELECT count(*), distinct ticker, distinct period_from, distinct model FROM rix_runs_v2 WHERE …`. Devuelve contadores y 5 filas de muestra. **No** invoca skills ni LLM.
+4. Usuario clica **"Generar informe"**.
+5. `reports-generate` (edge function nueva) hace:
+   a. `compileToParsedQuery(filterState)` → `ParsedQuery` validado.
+   b. Selecciona skill V2 (`sectorRanking | companyAnalysis | comparison | divergence | periodEvolution`) por `intent`.
+   c. `await skill.execute({ parsed, supabase, logPrefix })` → `SkillOutput { datapack, prompt_modules, metadata }` con `cited_sources_report` poblado por la skill (memoria `bibliography-scoping-protocol`).
+   d. Construye prompt de síntesis con los **mismos `prompt_modules`** que usa el chat (snapshot/period/ranking/comparison/divergence/evolution). Estructura forzada por `estructura-informe-canonica` → **9 epígrafes**:
+      1. Headline + diagnóstico
+      2. Tabla cross-model (grounding table, anti-mediana)
+      3. Análisis por modelo (6 IAs)
+      4. Patrones / consenso / divergencias
+      5. Sub-métricas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM)
+      6. Evolución / deltas
+      7. Contexto sectorial / competidores verificados
+      8. Recomendaciones GEO accionables
+      9. Cierre y metodología (con fechas exactas del datapack)
+   e. Llama LLM de síntesis (mismo modelo y mismos parámetros que el chat — memoria `estrategia-jerarquica-modelos-chat-intelligence`).
+   f. Pasa `cited_sources_report` por `verifiedSourcesAdapter.toVerifiedSources(report, period_from, period_to)` → array `VerifiedSourceWire[]` que alimenta la sección **Fuentes verificadas + Bibliografía** (mismo `verifiedSourceExtractor.ts` y `generateBibliographyHtml` que usa el PDF actual).
+   g. Persiste en `rix_reports` (id, user_id, filter_state jsonb, parsed_query jsonb, datapack jsonb, output_md, output_html, verified_sources jsonb, created_at).
+   h. Devuelve markdown + html + sources.
+6. Frontend renderiza con el **mismo componente de mensaje del chat** (`ChatMessages` reutilizable o un wrapper equivalente) para garantía visual 100% idéntica, y ofrece exportar PDF vía `pdf-export-unified-engine` ya existente.
+
+**Garantía dura**: el informe sale por las **mismas funciones de render, los mismos prompt modules, las mismas skills, el mismo adapter de bibliografía y el mismo PDF engine** que Agente RIX V2. Lo único nuevo es el origen del `ParsedQuery`.
+
+---
+
+## 5. UX (recordatorio del layout)
+
+```text
+┌──────────────────────────────────┬──────────────────────────────────┐
+│  PANEL DE FILTROS (sticky)       │  VISTA PREVIA EN VIVO            │
+│  ¿Qué quieres hacer? (chips)     │  35 empresas · 6 IA · 14 sem     │
+│  ▼ Alcance (Universo/Sector/…)   │  2.940 observaciones             │
+│  ▼ Modelos IA                    │  Muestra (5 filas)               │
+│  ▼ Tiempo (ventana + granular.)  │  ⚠️ avisos coherencia             │
+│  ▼ Métricas (eje, top N, orden)  │                                  │
+│  [Limpiar]  [Guardar vista]      │  [   Generar informe   ]         │
+└──────────────────────────────────┴──────────────────────────────────┘
+```
+
+Tras "Generar informe" la pantalla cambia a vista de informe (idéntica al chat) con botones **Exportar PDF / HTML / TXT / JSON** (mismos que `ChatIntelligence.tsx`).
+
+---
+
+## 6. Coexistencia con Agente RIX
+
+```text
+                      rix_runs_v2 (datos)
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+       skills-v2 (lib compartida importada como módulo Deno)
+              │                               │
+              ▼                               ▼
+      /chat (Agente RIX)              /informes (Informes RIX)
+      texto libre + LLM parser        filtros + compile determinista
+      (sin tocar)                     (nuevo)
+```
+
+**Cero modificaciones** a `ChatIntelligence.tsx`, `chat-intelligence-v2/index.ts`, skills, prompt modules, adapter, PDF engine, tablas `chat_*`. Solo se **importan** las skills desde la nueva edge function.
+
+Botón "Informes RIX" en `Header.tsx` junto al chat. Página `/mis-informes` con historial.
+
+---
+
+## 7. Estructura técnica nueva
+
+```text
+src/
+  pages/
+    RixReports.tsx                     ← /informes (panel + preview + render)
+    MyRixReports.tsx                   ← /mis-informes
+  components/reports/
+    FilterPanel.tsx                    ← 12 filtros con estado tri-valor
+    FilterBlock.tsx                    ← bloque colapsable
+    LivePreview.tsx                    ← contadores + sample 5 filas
+    ReportView.tsx                     ← reutiliza ChatMessages render
+    IntentChips.tsx                    ← filtro 0 destacado
+  lib/reports/
+    filterState.ts                     ← tipos FilterState + estado tri-valor
+    coherenceEngine.ts                 ← 15 reglas declarativas
+    filterDependencies.ts              ← grafo descendente + ascendente
+    compileToParsedQuery.ts            ← FilterState → ParsedQuery V2
+    filterPresets.ts                   ← "IBEX última semana", "Banca trimestre"…
+supabase/functions/
+  reports-preview-count/index.ts       ← count + sample, sin LLM
+  reports-generate/index.ts            ← importa skills v2, genera informe
+  _shared/skills-v2/                   ← (ya existe en chat-intelligence-v2)
+```
+
+Tabla nueva (migración):
+
+```sql
+create table public.rix_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  filter_state jsonb not null,
+  parsed_query jsonb not null,
+  datapack jsonb,
+  output_md text,
+  output_html text,
+  verified_sources jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.rix_reports enable row level security;
+create policy "users own reports"  on public.rix_reports for all
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+```
+
+---
+
+## 8. Fases de implementación
+
+1. **Fase 1** — `FilterPanel` + `coherenceEngine` + `LivePreview` + `reports-preview-count`. Sin generar informe. Validar UX con datos reales.
+2. **Fase 2** — `compileToParsedQuery` + `reports-generate` importando skills V2 + render con `ChatMessages` + export PDF. Output idéntico al chat.
+3. **Fase 3** — Tabla `rix_reports` + página `/mis-informes` con historial y re-export.
+4. **Fase 4** — URLs compartibles, presets guardados, métricas de adopción comparadas con chat.
+
+---
+
+## 9. Decisiones a confirmar
+
+1. **Tipo de informe por defecto**: ¿"Visión general" preseleccionado o vacío forzando elección?
+2. **Auto-fill ascendente**: ¿agresivo (al elegir empresa, sector y universo se auto-rellenan al instante, recomendado) o pasivo (sugerencia con botón "aplicar")?
+3. **Conflictos al desbloquear un derivado**: ¿bloquear "Generar" hasta resolver, o permitir generar con warning visible en el informe final?
+4. **Filtro 11 (Tipo de fuente)**: ¿incluir en MVP o dejar para Fase 4?
