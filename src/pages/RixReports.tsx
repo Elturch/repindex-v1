@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { FileBarChart2, RotateCcw, Send } from "lucide-react";
 import { Header } from "@/components/layout/Header";
@@ -13,11 +13,23 @@ import { runCoherence, CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterPanel } from "@/components/reports/FilterPanel";
 import { LivePreview } from "@/components/reports/LivePreview";
 import { compileFiltersToQuestion } from "@/lib/reports/compileQuestion";
+import { addReport, buildReportTitle } from "@/lib/reports/reportMemory";
 
 export default function RixReports() {
   const { data: companiesRaw, isLoading } = useCompanies();
   const [state, setState] = useState<FilterState>(createInitialFilterState());
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Rehydrate filters when arriving from "Editar filtros" in the viewer.
+  useEffect(() => {
+    const st = location.state as { prefilFilters?: FilterState } | null;
+    if (st?.prefilFilters) {
+      setState(st.prefilFilters);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const companies: CompanyMeta[] = useMemo(
     () =>
@@ -102,8 +114,21 @@ export default function RixReports() {
                     coherence.state,
                     companies,
                   );
-                  navigate("/chat", {
-                    state: { autoSendQuestion: question, source: "informes" },
+                  // Each report gets its own chat session so we can switch
+                  // between past reports in the viewer's memory.
+                  const newSessionId = crypto.randomUUID();
+                  const entry = addReport({
+                    title: buildReportTitle(coherence.state, companies),
+                    question,
+                    sessionId: newSessionId,
+                    filters: coherence.state,
+                  });
+                  navigate("/visor", {
+                    state: {
+                      autoSendQuestion: question,
+                      reportId: entry.id,
+                      sessionId: newSessionId,
+                    },
                   });
                 }}
               >
