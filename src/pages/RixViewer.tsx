@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChatMessages } from "@/components/chat/ChatMessages";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   listReports,
   getActiveId,
@@ -39,6 +40,8 @@ export default function RixViewer() {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const userId = user?.id ?? "";
   const autoSentRef = useRef<string | null>(null);
   // Pending send: waits until sessionId matches the report's session
   // before firing sendMessage, so the user always sees a clear
@@ -49,13 +52,19 @@ export default function RixViewer() {
     reportId: string;
   } | null>(null);
 
-  const [reports, setReports] = useState<ReportMemoryEntry[]>(() => listReports());
+  const [reports, setReports] = useState<ReportMemoryEntry[]>([]);
   const [activeId, setActiveIdState] = useState<string | null>(() => getActiveId());
 
-  const refresh = useCallback(() => {
-    setReports(listReports());
+  const refresh = useCallback(async () => {
+    if (!userId) return;
+    setReports(await listReports(userId));
     setActiveIdState(getActiveId());
-  }, []);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void refresh();
+  }, [userId, refresh]);
 
   // Step 1: Receive a freshly generated report from /informes and queue it.
   useEffect(() => {
@@ -68,7 +77,9 @@ export default function RixViewer() {
 
     setActiveId(st.reportId);
     setActiveIdState(st.reportId);
-    setReports(listReports());
+    if (userId) {
+      void listReports(userId).then(setReports);
+    }
 
     setPending({
       question: st.autoSendQuestion,
@@ -81,7 +92,7 @@ export default function RixViewer() {
 
     // Clear navigation state to avoid resends on reload/back.
     navigate(location.pathname, { replace: true, state: {} });
-  }, [location, navigate, loadConversation]);
+  }, [location, navigate, loadConversation, userId]);
 
   // Step 2: Once the chat context has actually switched to the report's
   // session, fire the compiled question. This avoids the fragile setTimeout
@@ -106,14 +117,14 @@ export default function RixViewer() {
     loadConversation(entry.sessionId);
   };
 
-  const handleRemove = (id: string) => {
-    removeReport(id);
-    refresh();
+  const handleRemove = async (id: string) => {
+    await removeReport(userId, id);
+    await refresh();
   };
 
-  const handleClearAll = () => {
-    clearAll();
-    refresh();
+  const handleClearAll = async () => {
+    await clearAll(userId);
+    await refresh();
   };
 
   const handleNew = () => navigate("/informes");
