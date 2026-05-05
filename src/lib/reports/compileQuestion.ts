@@ -54,14 +54,21 @@ export function compileFiltersToQuestion(
     parts.push("del IBEX-35");
   }
 
-  // Top N (solo ranking)
-  if (state.intent.value === "ranking") {
+  // Top N — se aplica siempre que tenga sentido (no en perfil ni cuando hay
+  // un único ticker explícito). Antes sólo se emitía en "ranking", lo que
+  // hacía que el usuario perdiera su selección de Top N al usar otros intents.
+  const singleTicker = state.tickers.value.length === 1;
+  const topNApplies =
+    state.intent.value !== "perfil" && !singleTicker;
+  if (topNApplies) {
     if (state.order.value === "asc") {
-      parts.push(`con las ${state.topN.value} peores`);
+      parts.push(`limitado a las ${state.topN.value} peores`);
     } else if (state.order.value === "divergence") {
-      parts.push(`con las ${state.topN.value} de mayor divergencia entre modelos`);
+      parts.push(
+        `limitado a las ${state.topN.value} de mayor divergencia entre modelos`,
+      );
     } else {
-      parts.push(`con las ${state.topN.value} mejores`);
+      parts.push(`limitado a las ${state.topN.value} mejores`);
     }
   }
 
