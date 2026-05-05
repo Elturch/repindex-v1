@@ -474,7 +474,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean; skipNormalization?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -672,7 +672,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
+  const sendMessage = useCallback(async (question: string, options?: { depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean; skipNormalization?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
