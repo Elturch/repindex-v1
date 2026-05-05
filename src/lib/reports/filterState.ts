@@ -55,7 +55,7 @@ export type FilterId =
   | "models"
   | "window"
   | "granularity"
-  | "axisMetric"
+  | "axisMetrics"
   | "topN"
   | "order"
   | "sourceTier";
@@ -75,7 +75,7 @@ export interface FilterState {
   models: FilterValue<ModelName[]>;
   window: FilterValue<TimeWindow>;
   granularity: FilterValue<Granularity>;
-  axisMetric: FilterValue<AxisMetric>;
+  axisMetrics: FilterValue<AxisMetric[]>;
   topN: FilterValue<number>;
   order: FilterValue<SortOrder>;
   sourceTier: FilterValue<SourceTier>;
@@ -88,6 +88,18 @@ export const ALL_MODELS: ModelName[] = [
   "DeepSeek",
   "Grok",
   "Qwen",
+];
+
+export const ALL_METRICS: AxisMetric[] = [
+  "RIXc",
+  "NVM",
+  "DRM",
+  "SIM",
+  "RMM",
+  "CEM",
+  "GAM",
+  "DCM",
+  "CXM",
 ];
 
 function defaultWindow(): TimeWindow {
@@ -113,7 +125,7 @@ export function createInitialFilterState(): FilterState {
     models: free<ModelName[]>([...ALL_MODELS]),
     window: free<TimeWindow>(defaultWindow()),
     granularity: free<Granularity>("weekly"),
-    axisMetric: free<AxisMetric>("RIXc"),
+    axisMetrics: free<AxisMetric[]>(["RIXc"]),
     topN: free<number>(10),
     order: free<SortOrder>("desc"),
     sourceTier: free<SourceTier>("all"),

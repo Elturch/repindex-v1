@@ -43,7 +43,17 @@ const UNIVERSES: { value: Universe; label: string }[] = [
   { value: "MC-OTHER", label: "MC Other" },
 ];
 
-const METRICS: AxisMetric[] = ["RIXc", "NVM", "DRM", "SIM", "RMM", "CEM", "GAM", "DCM", "CXM"];
+const METRICS: { value: AxisMetric; label: string; hint: string }[] = [
+  { value: "RIXc", label: "RIXc", hint: "Índice compuesto" },
+  { value: "NVM", label: "NVM", hint: "Visibilidad" },
+  { value: "DRM", label: "DRM", hint: "Riesgo reputacional" },
+  { value: "SIM", label: "SIM", hint: "Sentimiento" },
+  { value: "RMM", label: "RMM", hint: "Mención de marca" },
+  { value: "CEM", label: "CEM", hint: "Engagement" },
+  { value: "GAM", label: "GAM", hint: "Gobierno" },
+  { value: "DCM", label: "DCM", hint: "Diversidad" },
+  { value: "CXM", label: "CXM", hint: "Experiencia cliente" },
+];
 
 interface Props {
   state: FilterState;
@@ -333,24 +343,66 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
       </FilterBlock>
 
       {/* Métricas */}
-      <FilterBlock title="Métrica eje" origin={state.axisMetric.origin}>
-        <Select
-          value={state.axisMetric.value}
-          onValueChange={(v: AxisMetric) =>
-            setState(setFilter(state, "axisMetric", v))
-          }
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {METRICS.map((m) => (
-              <SelectItem key={m} value={m}>
-                {m}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <FilterBlock title="Métricas a analizar" origin={state.axisMetrics.origin}>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          <button
+            type="button"
+            onClick={() =>
+              setState(
+                setFilter(
+                  state,
+                  "axisMetrics",
+                  METRICS.map((m) => m.value),
+                ),
+              )
+            }
+            className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
+          >
+            Todas
+          </button>
+          <button
+            type="button"
+            onClick={() => setState(setFilter(state, "axisMetrics", ["RIXc"]))}
+            className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
+          >
+            Solo RIXc
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {METRICS.map((m) => {
+            const active = state.axisMetrics.value.includes(m.value);
+            return (
+              <button
+                key={m.value}
+                type="button"
+                title={m.hint}
+                onClick={() => {
+                  const next = active
+                    ? state.axisMetrics.value.filter((x) => x !== m.value)
+                    : [...state.axisMetrics.value, m.value];
+                  setState(
+                    setFilter(
+                      state,
+                      "axisMetrics",
+                      next.length === 0 ? ["RIXc"] : next,
+                    ),
+                  );
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-full text-xs border",
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card border-border text-foreground hover:bg-accent",
+                )}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-1.5">
+          Puedes elegir varias. Se analizarán en conjunto en el informe.
+        </p>
       </FilterBlock>
 
       {!isHidden("topN") && (
@@ -368,7 +420,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
       )}
 
       {!isHidden("order") && (
-        <FilterBlock title="Orden" origin={state.order.origin}>
+        <FilterBlock title="¿Qué quieres ver?" origin={state.order.origin}>
           <Select
             value={state.order.value}
             onValueChange={(v: SortOrder) =>
@@ -379,9 +431,9 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="desc">Descendente (mejor primero)</SelectItem>
-              <SelectItem value="asc">Ascendente (peor primero)</SelectItem>
-              <SelectItem value="divergence">Por divergencia</SelectItem>
+              <SelectItem value="desc">Los mejores (top)</SelectItem>
+              <SelectItem value="asc">Los peores (bottom)</SelectItem>
+              <SelectItem value="divergence">Los más divergentes entre IAs</SelectItem>
             </SelectContent>
           </Select>
         </FilterBlock>

@@ -23,9 +23,19 @@ export function compileFiltersToQuestion(
   };
   parts.push(intentMap[state.intent.value] ?? "Genera un informe");
 
-  // Métrica eje
-  if (state.axisMetric.value && state.intent.value !== "vision_general") {
-    parts.push(`de la métrica ${state.axisMetric.value}`);
+  // Métricas (multi)
+  if (
+    state.axisMetrics.value.length > 0 &&
+    state.intent.value !== "vision_general"
+  ) {
+    const metrics = state.axisMetrics.value;
+    if (metrics.length === 1) {
+      parts.push(`de la métrica ${metrics[0]}`);
+    } else if (metrics.length >= 9) {
+      parts.push("de todas las métricas RIX");
+    } else {
+      parts.push(`de las métricas ${metrics.join(", ")}`);
+    }
   }
 
   // Empresa(s)
@@ -46,9 +56,13 @@ export function compileFiltersToQuestion(
 
   // Top N (solo ranking)
   if (state.intent.value === "ranking") {
-    parts.push(`top ${state.topN.value}`);
-    if (state.order.value === "asc") parts.push("(peores primero)");
-    else if (state.order.value === "divergence") parts.push("ordenado por divergencia");
+    if (state.order.value === "asc") {
+      parts.push(`con las ${state.topN.value} peores`);
+    } else if (state.order.value === "divergence") {
+      parts.push(`con las ${state.topN.value} de mayor divergencia entre modelos`);
+    } else {
+      parts.push(`con las ${state.topN.value} mejores`);
+    }
   }
 
   // Temporal
