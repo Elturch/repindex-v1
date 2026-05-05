@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, ChevronsUpDown, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, normalizeText } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -40,17 +40,25 @@ export function MultiChipSelect({
   maxBadges = 4,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const toggle = (v: string) => {
     if (value.includes(v)) onChange(value.filter((x) => x !== v));
     else onChange([...value, v]);
+    setSearch("");
   };
 
   const visible = value.slice(0, maxBadges);
   const overflow = value.length - visible.length;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setSearch("");
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -87,8 +95,16 @@ export function MultiChipSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[320px] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Buscar…" />
+        <Command
+          filter={(val, q) =>
+            normalizeText(val).includes(normalizeText(q)) ? 1 : 0
+          }
+        >
+          <CommandInput
+            placeholder="Buscar…"
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
@@ -97,7 +113,7 @@ export function MultiChipSelect({
                 return (
                   <CommandItem
                     key={opt.value}
-                    value={opt.label}
+                    value={`${opt.label} ${opt.hint ?? ""}`}
                     onSelect={() => toggle(opt.value)}
                   >
                     <Check

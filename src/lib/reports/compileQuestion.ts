@@ -51,7 +51,7 @@ export function compileFiltersToQuestion(
   } else if (state.universe.value.length > 0) {
     parts.push(`del universo ${state.universe.value.join(", ")}`);
   } else {
-    parts.push("del IBEX-35");
+    parts.push("de todos los universos cotizados");
   }
 
   // Top N — se aplica siempre que tenga sentido (no en perfil ni cuando hay
