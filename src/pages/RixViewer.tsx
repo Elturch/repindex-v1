@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { FileBarChart2, Download, Pencil, Plus } from "lucide-react";
+import { FileBarChart2, Download, Pencil, Plus, Loader2 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,6 +40,14 @@ export default function RixViewer() {
   const navigate = useNavigate();
   const location = useLocation();
   const autoSentRef = useRef<string | null>(null);
+  // Pending send: waits until sessionId matches the report's session
+  // before firing sendMessage, so the user always sees a clear
+  // "Generando informe…" indicator and the request lands on the right session.
+  const [pending, setPending] = useState<{
+    question: string;
+    sessionId: string;
+    reportId: string;
+  } | null>(null);
 
   const [reports, setReports] = useState<ReportMemoryEntry[]>(() => listReports());
   const [activeId, setActiveIdState] = useState<string | null>(() => getActiveId());
@@ -49,34 +57,42 @@ export default function RixViewer() {
     setActiveIdState(getActiveId());
   }, []);
 
-  // Receive a freshly generated report from /informes:
-  // { autoSendQuestion, reportId, sessionId } in location.state.
+  // Step 1: Receive a freshly generated report from /informes and queue it.
   useEffect(() => {
     const st = location.state as
       | { autoSendQuestion?: string; reportId?: string; sessionId?: string }
       | null;
-    if (!st?.autoSendQuestion || !st?.sessionId) return;
+    if (!st?.autoSendQuestion || !st?.sessionId || !st?.reportId) return;
     if (autoSentRef.current === st.reportId) return;
-    autoSentRef.current = st.reportId ?? st.autoSendQuestion;
+    autoSentRef.current = st.reportId;
 
-    // Switch the chat context to the dedicated session for this report,
-    // then auto-send the compiled question.
-    loadConversation(st.sessionId);
-    if (st.reportId) {
-      setActiveId(st.reportId);
-      setActiveIdState(st.reportId);
-    }
+    setActiveId(st.reportId);
+    setActiveIdState(st.reportId);
     setReports(listReports());
 
-    // Defer send so loadConversation has applied the new sessionId.
-    const t = setTimeout(() => {
-      sendMessage(st.autoSendQuestion!);
-    }, 50);
+    setPending({
+      question: st.autoSendQuestion,
+      sessionId: st.sessionId,
+      reportId: st.reportId,
+    });
 
-    // Clear navigation state to avoid resends on reload.
+    // Switch chat context to the new dedicated session.
+    loadConversation(st.sessionId);
+
+    // Clear navigation state to avoid resends on reload/back.
     navigate(location.pathname, { replace: true, state: {} });
-    return () => clearTimeout(t);
-  }, [location, navigate, sendMessage, loadConversation]);
+  }, [location, navigate, loadConversation]);
+
+  // Step 2: Once the chat context has actually switched to the report's
+  // session, fire the compiled question. This avoids the fragile setTimeout
+  // and guarantees the user sees the loading state.
+  useEffect(() => {
+    if (!pending) return;
+    if (sessionId !== pending.sessionId) return;
+    const q = pending.question;
+    setPending(null);
+    sendMessage(q);
+  }, [pending, sessionId, sendMessage]);
 
   const activeReport = useMemo(
     () => reports.find((r) => r.id === activeId) ?? null,
@@ -107,8 +123,13 @@ export default function RixViewer() {
     navigate("/informes", { state: { prefilFilters: activeReport.filters } });
   };
 
+  const isGenerating = !!pending || (isLoading && messages.length === 0);
   const isEmpty =
-    !isLoading && !isLoadingHistory && messages.length === 0 && reports.length === 0;
+    !isLoading &&
+    !isLoadingHistory &&
+    !pending &&
+    messages.length === 0 &&
+    reports.length === 0;
 
   // Lightweight inline list (avoids extra component file dependency surface)
   const MemoryList = (
@@ -268,6 +289,19 @@ export default function RixViewer() {
             </div>
             <Card className="min-w-0 max-w-full overflow-x-hidden shadow-card">
               <CardContent className="pt-6 min-w-0 max-w-full overflow-x-hidden">
+                {isGenerating && (
+                  <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        Generando informe RIX…
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {loadingMessage || "Consultando los 6 modelos de IA y consolidando la narrativa V2."}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <ChatMessages
                   messages={messages}
                   isLoading={isLoading}
