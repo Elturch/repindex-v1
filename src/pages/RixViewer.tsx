@@ -91,7 +91,7 @@ export default function RixViewer() {
     if (sessionId !== pending.sessionId) return;
     const q = pending.question;
     setPending(null);
-    sendMessage(q);
+    sendMessage(q, { skipNormalization: true });
   }, [pending, sessionId, sendMessage]);
 
   const activeReport = useMemo(
