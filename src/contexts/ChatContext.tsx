@@ -1206,8 +1206,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
             return updated;
           });
 
-          // NOTE: Backend already saves to DB in streaming mode, so we skip client-side insert
-          // to avoid duplicate entries in chat_intelligence_sessions
+          // Persist assistant message so the Visor de Informes can rehydrate
+          // the full report (not just the user question) when the user
+          // re-opens it from the report memory list.
+          if (currentUserId && accumulatedContent.trim()) {
+            await supabase.from('chat_intelligence_sessions').insert({
+              session_id: sessionId,
+              role: 'assistant',
+              content: accumulatedContent,
+              suggested_questions: suggestedQuestions,
+              documents_found: finalMetadata?.documentsFound,
+              structured_data_found: finalMetadata?.structuredDataFound,
+              user_id: currentUserId,
+              conversation_id: convId,
+            });
+          }
 
           toast({
             title: "Respuesta recibida",
