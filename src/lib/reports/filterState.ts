@@ -55,7 +55,7 @@ export type FilterId =
   | "models"
   | "window"
   | "granularity"
-  | "axisMetric"
+  | "axisMetrics"
   | "topN"
   | "order"
   | "sourceTier";
