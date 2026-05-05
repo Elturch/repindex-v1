@@ -1,0 +1,113 @@
+import { useMemo, useState } from "react";
+import { Helmet } from "react-helmet-async";
+import { FileBarChart2, RotateCcw, Send } from "lucide-react";
+import { Header } from "@/components/layout/Header";
+import { Button } from "@/components/ui/button";
+import { useCompanies } from "@/hooks/useCompanies";
+import {
+  createInitialFilterState,
+  FilterState,
+} from "@/lib/reports/filterState";
+import { runCoherence, CompanyMeta } from "@/lib/reports/coherenceEngine";
+import { FilterPanel } from "@/components/reports/FilterPanel";
+import { LivePreview } from "@/components/reports/LivePreview";
+
+export default function RixReports() {
+  const { data: companiesRaw, isLoading } = useCompanies();
+  const [state, setState] = useState<FilterState>(createInitialFilterState());
+
+  const companies: CompanyMeta[] = useMemo(
+    () =>
+      (companiesRaw ?? []).map((c) => ({
+        ticker: c.ticker,
+        issuer_name: c.issuer_name,
+        sector_category: c.sector_category ?? null,
+        subsector: (c as any).subsector ?? null,
+        ibex_family_code: c.ibex_family_code ?? null,
+      })),
+    [companiesRaw],
+  );
+
+  const coherence = useMemo(
+    () => runCoherence(state, companies),
+    [state, companies],
+  );
+
+  const hasErrors = coherence.warnings.some((w) => w.level === "error");
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Helmet>
+        <title>Informes RIX | RepIndex</title>
+        <meta
+          name="description"
+          content="Genera informes RIX deterministas con 11 filtros bidireccionales. Datos garantizados, narrativa idéntica al Agente RIX."
+        />
+      </Helmet>
+      <Header />
+      <main className="container max-w-screen-2xl px-4 py-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-semibold flex items-center gap-2">
+              <FileBarChart2 className="h-6 w-6 text-primary" />
+              Informes RIX
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Filtros bidireccionales · Datapack determinista · Narrativa V2
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setState(createInitialFilterState())}
+            className="gap-1.5"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Limpiar
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
+          <aside className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1">
+            {isLoading ? (
+              <div className="text-sm text-muted-foreground">
+                Cargando catálogo de empresas…
+              </div>
+            ) : (
+              <FilterPanel
+                state={coherence.state}
+                setState={setState}
+                companies={companies}
+                hiddenFilters={coherence.hiddenFilters}
+              />
+            )}
+          </aside>
+
+          <section className="flex flex-col gap-4">
+            <LivePreview
+              state={coherence.state}
+              warnings={coherence.warnings}
+              companies={companies}
+            />
+
+            <div className="flex items-center justify-end gap-2 sticky bottom-4">
+              <Button
+                size="lg"
+                disabled={hasErrors}
+                className="gap-2 shadow-lg"
+                onClick={() => {
+                  // Fase 2: invocará reports-generate edge function.
+                  alert(
+                    "Fase 2 (en construcción): aquí se invocará la edge function reports-generate, que reutiliza skills V2 + 9 epígrafes + bibliografía.",
+                  );
+                }}
+              >
+                <Send className="h-4 w-4" />
+                Generar informe
+              </Button>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  );
+}
