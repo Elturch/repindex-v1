@@ -67,14 +67,14 @@ export async function addReport(
   if (!userId) return null;
   const { data, error } = await supabase
     .from("rix_reports")
-    .insert({
+    .insert([{
       user_id: userId,
       session_id: entry.sessionId,
       title: entry.title,
       question: entry.question,
-      filters: entry.filters as unknown as Record<string, unknown>,
-      summary: (entry.summary ?? null) as unknown as Record<string, unknown> | null,
-    })
+      filters: entry.filters as any,
+      summary: (entry.summary ?? null) as any,
+    }])
     .select("id, session_id, title, question, filters, summary, created_at")
     .single();
   if (error || !data) {
