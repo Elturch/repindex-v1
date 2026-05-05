@@ -14,6 +14,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
 import InsertRixResults from "./pages/InsertRixResults";
 import ChatIntelligence from "./pages/ChatIntelligence";
+import RixReports from "./pages/RixReports";
 import { MarketEvolution } from "./pages/MarketEvolution";
 import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
@@ -71,6 +72,9 @@ const App = () => (
                 } />
                 <Route path="/chat" element={
                   <ProtectedRoute><ChatIntelligence /></ProtectedRoute>
+                } />
+                <Route path="/informes" element={
+                  <ProtectedRoute><RixReports /></ProtectedRoute>
                 } />
                 <Route path="/market-evolution" element={
                   <ProtectedRoute><MarketEvolution /></ProtectedRoute>
