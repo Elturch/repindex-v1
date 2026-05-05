@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { FileBarChart2, RotateCcw, Send } from "lucide-react";
 import { Header } from "@/components/layout/Header";
@@ -11,10 +12,12 @@ import {
 import { runCoherence, CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterPanel } from "@/components/reports/FilterPanel";
 import { LivePreview } from "@/components/reports/LivePreview";
+import { compileFiltersToQuestion } from "@/lib/reports/compileQuestion";
 
 export default function RixReports() {
   const { data: companiesRaw, isLoading } = useCompanies();
   const [state, setState] = useState<FilterState>(createInitialFilterState());
+  const navigate = useNavigate();
 
   const companies: CompanyMeta[] = useMemo(
     () =>
@@ -95,10 +98,13 @@ export default function RixReports() {
                 disabled={hasErrors}
                 className="gap-2 shadow-lg"
                 onClick={() => {
-                  // Fase 2: invocará reports-generate edge function.
-                  alert(
-                    "Fase 2 (en construcción): aquí se invocará la edge function reports-generate, que reutiliza skills V2 + 9 epígrafes + bibliografía.",
+                  const question = compileFiltersToQuestion(
+                    coherence.state,
+                    companies,
                   );
+                  navigate("/chat", {
+                    state: { autoSendQuestion: question, source: "informes" },
+                  });
                 }}
               >
                 <Send className="h-4 w-4" />
