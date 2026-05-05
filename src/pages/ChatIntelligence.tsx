@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,9 @@ export default function ChatIntelligence() {
   } = useChatContext();
   const pageContext = usePageContext(undefined, language);
   const tr = getChatTranslations(language.code);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const autoSentRef = useRef(false);
 
   // Track prefilled text from guide clicks
   const [prefillText, setPrefillText] = useState("");
@@ -53,6 +57,17 @@ export default function ChatIntelligence() {
     });
     setIsFloatingOpen(false);
   }, [pageContext.name, pageContext.path, setPageContext, setIsFloatingOpen]);
+
+  // Auto-send: launched from /informes (Informes RIX) with a compiled question.
+  useEffect(() => {
+    const st = location.state as { autoSendQuestion?: string } | null;
+    if (!st?.autoSendQuestion || autoSentRef.current) return;
+    autoSentRef.current = true;
+    const q = st.autoSendQuestion;
+    // Clear navigation state so reload/back doesn't resend.
+    navigate(location.pathname, { replace: true, state: {} });
+    sendMessage(q);
+  }, [location, navigate, sendMessage]);
 
   const showGuide = messages.length === 0 && !isLoading && !isLoadingHistory;
 
