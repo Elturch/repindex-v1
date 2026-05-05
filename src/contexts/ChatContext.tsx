@@ -474,7 +474,7 @@ interface ChatContextType {
   isLoading: boolean;
   isLoadingHistory: boolean;
   loadingMessage: string;
-  sendMessage: (question: string, options?: { depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean }) => Promise<void>;
+  sendMessage: (question: string, options?: { depthLevel?: DepthLevel; roleId?: string; useStreaming?: boolean; skipNormalization?: boolean }) => Promise<void>;
   enrichResponse: (roleId: string, messageIndex: number) => Promise<void>;
   clearConversation: () => void;
   pageContext: PageContext | null;
@@ -672,7 +672,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     loadHistory();
   }, [sessionId]);
 
-  const sendMessage = useCallback(async (question: string, options?: { depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean }) => {
+  const sendMessage = useCallback(async (question: string, options?: { depthLevel?: 'quick' | 'complete' | 'exhaustive'; roleId?: string; useStreaming?: boolean; skipNormalization?: boolean }) => {
     if (!question.trim()) {
       toast({
         title: "Pregunta vacía",
@@ -791,7 +791,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       let normalizedQuestion = question;
       let _normalizationMeta: Record<string, unknown> | null = null;
       
+      // Deterministic compiled questions from the RIX report builder must NOT
+      // be rewritten by the LLM normalizer (it strips temporal/topN/model
+      // filters and the orchestrator then rejects with scopeGuard).
+      const skipNormalization = options?.skipNormalization === true;
       try {
+        if (skipNormalization) {
+          throw new Error('__skip_normalization__');
+        }
         const normController = new AbortController();
         const normTimeout = setTimeout(() => normController.abort(), 3500);
         
