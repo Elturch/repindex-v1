@@ -14,12 +14,15 @@ import { FilterPanel } from "@/components/reports/FilterPanel";
 import { LivePreview } from "@/components/reports/LivePreview";
 import { compileFiltersToQuestion } from "@/lib/reports/compileQuestion";
 import { addReport, buildReportTitle } from "@/lib/reports/reportMemory";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/hooks/use-toast";
 
 export default function RixReports() {
   const { data: companiesRaw, isLoading } = useCompanies();
   const [state, setState] = useState<FilterState>(createInitialFilterState());
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
   // Rehydrate filters when arriving from "Editar filtros" in the viewer.
   useEffect(() => {
@@ -109,7 +112,11 @@ export default function RixReports() {
                 size="lg"
                 disabled={hasErrors}
                 className="gap-2 shadow-lg"
-                onClick={() => {
+                onClick={async () => {
+                  if (!user?.id) {
+                    toast({ title: "Sesión requerida", description: "Inicia sesión para guardar el informe.", variant: "destructive" });
+                    return;
+                  }
                   const question = compileFiltersToQuestion(
                     coherence.state,
                     companies,
@@ -117,12 +124,16 @@ export default function RixReports() {
                   // Each report gets its own chat session so we can switch
                   // between past reports in the viewer's memory.
                   const newSessionId = crypto.randomUUID();
-                  const entry = addReport({
+                  const entry = await addReport(user.id, {
                     title: buildReportTitle(coherence.state, companies),
                     question,
                     sessionId: newSessionId,
                     filters: coherence.state,
                   });
+                  if (!entry) {
+                    toast({ title: "No se pudo guardar el informe", description: "Inténtalo de nuevo.", variant: "destructive" });
+                    return;
+                  }
                   navigate("/visor", {
                     state: {
                       autoSendQuestion: question,
