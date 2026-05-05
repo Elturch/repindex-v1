@@ -2132,6 +2132,39 @@ export type Database = {
         }
         Relationships: []
       }
+      rix_reports: {
+        Row: {
+          created_at: string
+          filters: Json
+          id: string
+          question: string
+          session_id: string
+          summary: Json | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          filters: Json
+          id?: string
+          question: string
+          session_id: string
+          summary?: Json | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          question?: string
+          session_id?: string
+          summary?: Json | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       rix_runs: {
         Row: {
           "01_run_id": string

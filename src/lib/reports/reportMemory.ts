@@ -1,13 +1,11 @@
+import { supabase } from "@/integrations/supabase/client";
 import type { FilterState } from "./filterState";
 
 /**
- * Memoria local de informes RIX cargados en el visor.
- * Persistida en localStorage. No reemplaza la persistencia del backend
- * (cada informe sigue ligado a su sessionId en chat_messages); solo
- * permite alternar entre informes recientes desde el visor.
+ * Memoria de informes RIX por usuario, persistida en Supabase (tabla `rix_reports`).
+ * El "active id" sigue en localStorage porque es estado efímero del visor.
  */
 
-const STORAGE_KEY = "rix:viewer:memory";
 const ACTIVE_KEY = "rix:viewer:activeId";
 const MAX_REPORTS = 30;
 
@@ -25,55 +23,100 @@ export interface ReportMemoryEntry {
   };
 }
 
-function safeRead(): ReportMemoryEntry[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
+interface RowShape {
+  id: string;
+  session_id: string;
+  title: string;
+  question: string;
+  filters: unknown;
+  summary: unknown;
+  created_at: string;
+}
+
+function rowToEntry(row: RowShape): ReportMemoryEntry {
+  return {
+    id: row.id,
+    createdAt: new Date(row.created_at).getTime(),
+    title: row.title,
+    question: row.question,
+    sessionId: row.session_id,
+    filters: row.filters as FilterState,
+    summary: (row.summary ?? undefined) as ReportMemoryEntry["summary"],
+  };
+}
+
+export async function listReports(userId: string): Promise<ReportMemoryEntry[]> {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("rix_reports")
+    .select("id, session_id, title, question, filters, summary, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(MAX_REPORTS);
+  if (error) {
+    console.error("[reportMemory] listReports", error);
     return [];
   }
+  return (data ?? []).map(rowToEntry);
 }
 
-function safeWrite(list: ReportMemoryEntry[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, MAX_REPORTS)));
-  } catch {
-    /* noop */
+export async function addReport(
+  userId: string,
+  entry: Omit<ReportMemoryEntry, "id" | "createdAt">,
+): Promise<ReportMemoryEntry | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("rix_reports")
+    .insert([{
+      user_id: userId,
+      session_id: entry.sessionId,
+      title: entry.title,
+      question: entry.question,
+      filters: entry.filters as any,
+      summary: (entry.summary ?? null) as any,
+    }])
+    .select("id, session_id, title, question, filters, summary, created_at")
+    .single();
+  if (error || !data) {
+    console.error("[reportMemory] addReport", error);
+    return null;
   }
-}
-
-export function listReports(): ReportMemoryEntry[] {
-  return safeRead().sort((a, b) => b.createdAt - a.createdAt);
-}
-
-export function addReport(entry: Omit<ReportMemoryEntry, "id" | "createdAt">): ReportMemoryEntry {
-  const full: ReportMemoryEntry = {
-    ...entry,
-    id: crypto.randomUUID(),
-    createdAt: Date.now(),
-  };
-  const next = [full, ...safeRead()].slice(0, MAX_REPORTS);
-  safeWrite(next);
+  const full = rowToEntry(data as RowShape);
   setActiveId(full.id);
   return full;
 }
 
-export function removeReport(id: string) {
-  safeWrite(safeRead().filter((r) => r.id !== id));
+export async function removeReport(userId: string, id: string): Promise<void> {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("rix_reports")
+    .delete()
+    .eq("user_id", userId)
+    .eq("id", id);
+  if (error) console.error("[reportMemory] removeReport", error);
   if (getActiveId() === id) setActiveId(null);
 }
 
-export function clearAll() {
-  safeWrite([]);
+export async function clearAll(userId: string): Promise<void> {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("rix_reports")
+    .delete()
+    .eq("user_id", userId);
+  if (error) console.error("[reportMemory] clearAll", error);
   setActiveId(null);
 }
 
-export function getReport(id: string): ReportMemoryEntry | null {
-  return safeRead().find((r) => r.id === id) ?? null;
+export async function getReport(userId: string, id: string): Promise<ReportMemoryEntry | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("rix_reports")
+    .select("id, session_id, title, question, filters, summary, created_at")
+    .eq("user_id", userId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return rowToEntry(data as RowShape);
 }
 
 export function getActiveId(): string | null {

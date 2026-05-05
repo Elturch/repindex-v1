@@ -1,95 +1,93 @@
-# Plan de corrección quirúrgica — /informes y /visor
+## Causa raíz
 
-## 1) Causa raíz por incidencia
+El visor usa una "memoria" en `localStorage` (`src/lib/reports/reportMemory.ts`) para recordar los informes generados. La pregunta sí se persiste en DB (cada informe tiene su `session_id` y los mensajes se guardan en `chat_intelligence_sessions`), pero **el índice de informes** (título, filtros, mapping reportId↔sessionId) vive solo en el navegador. Por eso:
 
-**A. Búsqueda no encuentra "Telefonica" → "Telefónica"**
-`MultiChipSelect` usa `cmdk` (`Command`) con su filtro por defecto, que es case-insensitive pero **accent-sensitive**. El `value` que se compara es `opt.label` (sin normalizar). Por eso "Telef" hace match (substring directa) y "Telefonica" no (la fuente tiene "ó").
+- Al cambiar de dispositivo / navegador / limpiar caché desaparece el listado.
+- Aunque la conversación esté en DB, sin ese índice no hay forma de re-localizarla como "informe".
 
-**B. Query residual al cerrar popover**
-`MultiChipSelect` no controla el valor de `CommandInput`; cuando el `Popover` se cierra, `cmdk` mantiene su estado interno de búsqueda y, al reabrir cualquier instancia (o saltar entre filtros), aparece el último texto. Además, `CommandItem` con `onSelect` puede dispararse vía Enter sobre el primer match aunque el usuario no haya navegado por la lista, por la lógica de "auto-highlight" de cmdk.
+`/informes` y `/visor` ya están detrás de `ProtectedRoute`, así que siempre hay `user_id` disponible — podemos persistir por usuario sin fricción.
 
-**C. "IBEX-35" sale aunque no se haya elegido universo**
-En `compileFiltersToQuestion` (`src/lib/reports/compileQuestion.ts`), el `else` final fuerza `"del IBEX-35"` cuando no hay universo/sector/subsector/tickers. Debe emitirse una etiqueta neutral ("de todos los universos cotizados").
+## Plan de archivos a tocar
 
-**D. Coherencia bidireccional**
-No requiere cambios. La fix B no toca `coherenceEngine.ts` ni el `FilterState`.
+1. **Migración SQL nueva**: crear tabla `rix_reports`.
+2. **`src/lib/reports/reportMemory.ts`**: convertir a capa async respaldada por Supabase (mantener mismas firmas/tipos en lo posible).
+3. **`src/pages/RixViewer.tsx`**: pasar de lectura síncrona de `localStorage` a hook async (carga inicial + refresh).
+4. **`src/pages/RixReports.tsx`**: `addReport` pasa a ser `await` y necesita `user_id` del `AuthContext`.
+5. **`src/components/reports/ReportMemoryList.tsx`** (si está en uso): adaptar al nuevo shape async. (Si no se usa, no se toca.)
 
----
+## Cambios aplicados (a aplicar tras aprobación)
 
-## 2) Archivos a tocar
+### 1. Tabla `rix_reports`
 
-1. **`src/lib/utils.ts`** — añadir `normalizeText(value: string): string` (trim + lowercase + NFD + strip diacritics). Pequeña utilidad reutilizable.
+```sql
+create table public.rix_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  session_id text not null,
+  title text not null,
+  question text not null,
+  filters jsonb not null,
+  summary jsonb,
+  created_at timestamptz not null default now()
+);
 
-2. **`src/components/reports/MultiChipSelect.tsx`** *(núcleo de A + B)*
-   - Importar `normalizeText`.
-   - Pasar `filter` custom a `<Command>`: `(value, search) => normalizeText(value).includes(normalizeText(search)) ? 1 : 0`.
-   - Incluir `ticker` (hint) en el string buscable: en `CommandItem`, usar `value={normalizeText(`${opt.label} ${opt.hint ?? ""}`)}` para que coincida tanto por nombre como por ticker, sin cambiar lo que se ve.
-   - Controlar el input: `const [search, setSearch] = useState("")`; pasar `value={search}` y `onValueChange={setSearch}` a `CommandInput`.
-   - En `onOpenChange` del `Popover`: al cerrar, `setSearch("")`. También limpiar tras cada `toggle` (selección).
-   - Sin cambios visuales.
+create index rix_reports_user_created_idx
+  on public.rix_reports (user_id, created_at desc);
 
-3. **`src/lib/reports/compileQuestion.ts`** *(C)*
-   - Reemplazar el `else { parts.push("del IBEX-35"); }` final por `parts.push("de todos los universos cotizados");` (o equivalente neutral). Mantener intacta la rama cuando `universe.value` contiene `"IBEX-35"` explícito.
+create unique index rix_reports_user_session_uidx
+  on public.rix_reports (user_id, session_id);
 
-4. *(Opcional mínimo, solo si afecta a C visualmente)* **`src/components/reports/LivePreview.tsx`** — no requiere cambios; los `Badge` no muestran universo por defecto. **No se toca.**
+alter table public.rix_reports enable row level security;
 
-No se modifica `coherenceEngine.ts`, `filterState.ts`, `FilterPanel.tsx`, `RixViewer.tsx`, `RixReports.tsx`, `ChatContext.tsx`.
-
----
-
-## 3) Detalle técnico de los cambios
-
-### `utils.ts`
-```ts
-export function normalizeText(value: string): string {
-  return (value ?? "")
-    .toString()
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
+create policy "owner can read"   on public.rix_reports for select using (auth.uid() = user_id);
+create policy "owner can insert" on public.rix_reports for insert with check (auth.uid() = user_id);
+create policy "owner can delete" on public.rix_reports for delete using (auth.uid() = user_id);
+create policy "owner can update" on public.rix_reports for update using (auth.uid() = user_id);
 ```
 
-### `MultiChipSelect.tsx` (cambios mínimos)
-- `<Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSearch(""); }}>`
-- `<Command filter={(val, q) => normalizeText(val).includes(normalizeText(q)) ? 1 : 0}>`
-- `<CommandInput value={search} onValueChange={setSearch} ... />`
-- `<CommandItem value={`${opt.label} ${opt.hint ?? ""}`} onSelect={() => { toggle(opt.value); setSearch(""); }}>`
-- Para evitar autoselección por Enter con un único residuo: como el input se limpia al cerrar y al seleccionar, el riesgo desaparece. No se modifica el comportamiento de teclado de cmdk (mantiene "highlight visible → Enter selecciona").
+### 2. `reportMemory.ts` (refactor mínimo, mismas funciones)
 
-### `compileQuestion.ts`
-```ts
-} else {
-  parts.push("de todos los universos cotizados");
-}
-```
+Reemplazar el backend `localStorage` por Supabase manteniendo nombres:
 
----
+- `listReports(userId): Promise<ReportMemoryEntry[]>` — `select * order by created_at desc limit 30`.
+- `addReport(userId, entry): Promise<ReportMemoryEntry>` — `insert ... returning *`.
+- `removeReport(userId, id): Promise<void>` — `delete eq id eq user_id`.
+- `clearAll(userId): Promise<void>` — `delete eq user_id`.
+- `getReport(userId, id)` — `select single`.
+- `getActiveId / setActiveId` — se quedan en `localStorage` (es solo UI state efímero del visor, no merece columna).
+- `buildReportTitle` — sin cambios.
 
-## 4) Riesgos y no regresiones revisadas
+El tipo `ReportMemoryEntry` se conserva (id, createdAt como timestamp ms o ISO; mapeamos `created_at` → `createdAt` al leer).
 
-- **Top N**: sin cambios en la lógica `topNApplies`. Se conserva.
-- **Bypass de normalización LLM en /visor**: sin cambios en `RixViewer.tsx` ni `ChatContext.tsx`.
-- **Estado de carga al generar**: sin cambios en `RixViewer.tsx`.
-- **Coherencia bidireccional**: sin cambios en `coherenceEngine.ts`.
-- **Búsqueda por ticker**: el `value` del `CommandItem` ahora incluye `label + hint`, así que tanto "Telefónica" como "TEF" siguen funcionando.
-- **Selectores que NO usan `MultiChipSelect`** (Granularidad, Orden, Tipo de fuente — `Select` de Radix sin buscador): no afectados.
-- **Universos múltiples explícitos** (p.ej. usuario elige `IBEX-35`): la rama `universe.value.length > 0` sigue activa antes del `else`.
+### 3. `RixViewer.tsx`
 
-Validación manual posterior:
-1. Visión general IBEX-35 (con universo seleccionado) → compila "del universo IBEX-35". OK.
-2. Visión general sin universo → "de todos los universos cotizados". OK.
-3. Ranking por sector. OK.
-4. Comparativa con 2 empresas (buscar "Telefonica" + "Bbva" sin tildes/mayúsculas). OK.
-5. Evolución 90d. OK.
-6. Divergencia con todos los modelos sin universo → ya no aparece "IBEX-35" parásito.
-7. Perfil de empresa. OK.
+- Usar `useAuth()` para obtener `user.id`.
+- Sustituir `useState(() => listReports())` por `useEffect` async + `useState<ReportMemoryEntry[]>([])` + un `loading` ligero.
+- `refresh()` pasa a `async` y vuelve a llamar a `listReports(userId)`.
+- `handleRemove` y `handleClearAll` pasan a `async` y refrescan.
+- Sin cambios visuales.
 
----
+### 4. `RixReports.tsx`
 
-## 5) Mejoras opcionales no implementadas
+- En el `onClick` del botón "Generar informe": `const entry = await addReport(user.id, {...})`.
+- Si falla la inserción, mostrar `toast` y NO navegar (evita informes huérfanos en visor).
 
-- Mostrar el universo (o "Todos los universos") como `Badge` explícito en `LivePreview` para feedback visual.
-- Aplicar `normalizeText` también al filtro de `Command` en otros componentes con buscador (p.ej. selects de admin) si existen casos análogos.
-- Añadir tests unitarios para `normalizeText` y para `compileFiltersToQuestion` en el caso "sin universo".
+### 5. `ReportMemoryList.tsx`
+
+- Si sigue en uso: aceptar `reports` por prop (ya lo hace seguramente). Si no se importa en ningún sitio, lo dejamos sin tocar.
+
+## Riesgos / regresiones revisadas
+
+- **Migración local→DB**: los informes que ya estuvieran en `localStorage` no se migran automáticamente (decisión consciente para mantener cambios mínimos). Las conversaciones siguen accesibles vía `MyConversations`. Si quieres, en una segunda iteración añadimos un *one-shot migrate* al cargar el visor.
+- **Race con auto-send**: `addReport` ahora es async; `RixReports` ya espera el click → `await` → `navigate`, sin riesgo de doble envío. El `useEffect` de auto-send en `RixViewer` no depende de la lista cargada.
+- **RLS**: políticas estrictas por `auth.uid()`; ningún acceso anónimo posible.
+- **Unicidad `(user_id, session_id)`**: previene duplicados si el usuario hace doble click.
+- **No se toca**: `ChatContext`, `compileQuestion`, `coherenceEngine`, filtros, normalización, `MultiChipSelect`, `LivePreview`, exportadores. Todo el flujo de generación intacto.
+
+## Mejoras opcionales no implementadas
+
+- Migración one-shot `localStorage → DB` la primera vez que el usuario autenticado entra al visor.
+- Renombrar informes (`update title`).
+- Marcar favoritos / archivar (columnas `is_starred`, `is_archived`).
+- Paginación más allá de 30 (hoy límite duro como en localStorage).
+- Compartir informe entre usuarios de la misma `company_id`.
