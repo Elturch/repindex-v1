@@ -101,7 +101,7 @@ export function LivePreview({ state, warnings, companies }: Props) {
             <Badge>Intent: {state.intent.value}</Badge>
             <Badge>{state.window.value.from} → {state.window.value.to}</Badge>
             <Badge>{state.granularity.value}</Badge>
-            <Badge>Eje: {state.axisMetric.value}</Badge>
+            <Badge>Métricas: {state.axisMetrics.value.join(", ")}</Badge>
           </div>
         </CardContent>
       </Card>
