@@ -1,102 +1,95 @@
-# Visor de Informes RIX (sustituye a /chat en navegación)
+# Plan de corrección quirúrgica — /informes y /visor
 
-## Concepto
+## 1) Causa raíz por incidencia
 
-`/chat` se conserva intacto técnicamente (motor V2, ChatContext, persistencia, exportaciones) pero **se oculta de la navegación**. En su lugar aparece el **Visor de Informes RIX** en la nueva ruta `/visor`, que reutiliza por dentro el mismo `ChatContext` para mostrar los informes generados desde `/informes`, con una **memoria de informes cargados** que permite alternar entre ellos sin perderlos.
+**A. Búsqueda no encuentra "Telefonica" → "Telefónica"**
+`MultiChipSelect` usa `cmdk` (`Command`) con su filtro por defecto, que es case-insensitive pero **accent-sensitive**. El `value` que se compara es `opt.label` (sin normalizar). Por eso "Telef" hace match (substring directa) y "Telefonica" no (la fuente tiene "ó").
 
-El flujo del usuario queda:
+**B. Query residual al cerrar popover**
+`MultiChipSelect` no controla el valor de `CommandInput`; cuando el `Popover` se cierra, `cmdk` mantiene su estado interno de búsqueda y, al reabrir cualquier instancia (o saltar entre filtros), aparece el último texto. Además, `CommandItem` con `onSelect` puede dispararse vía Enter sobre el primer match aunque el usuario no haya navegado por la lista, por la lógica de "auto-highlight" de cmdk.
 
-```text
-/informes  →  Construye con 11 filtros  →  [Generar informe]
-    │
-    ▼
-/visor     →  Renderiza la narrativa V2 + 9 epígrafes + bibliografía
-              Lateral: lista de informes cargados (memoria)
-              CTAs: [+ Nuevo informe] [Editar filtros] [Exportar]
+**C. "IBEX-35" sale aunque no se haya elegido universo**
+En `compileFiltersToQuestion` (`src/lib/reports/compileQuestion.ts`), el `else` final fuerza `"del IBEX-35"` cuando no hay universo/sector/subsector/tickers. Debe emitirse una etiqueta neutral ("de todos los universos cotizados").
+
+**D. Coherencia bidireccional**
+No requiere cambios. La fix B no toca `coherenceEngine.ts` ni el `FilterState`.
+
+---
+
+## 2) Archivos a tocar
+
+1. **`src/lib/utils.ts`** — añadir `normalizeText(value: string): string` (trim + lowercase + NFD + strip diacritics). Pequeña utilidad reutilizable.
+
+2. **`src/components/reports/MultiChipSelect.tsx`** *(núcleo de A + B)*
+   - Importar `normalizeText`.
+   - Pasar `filter` custom a `<Command>`: `(value, search) => normalizeText(value).includes(normalizeText(search)) ? 1 : 0`.
+   - Incluir `ticker` (hint) en el string buscable: en `CommandItem`, usar `value={normalizeText(`${opt.label} ${opt.hint ?? ""}`)}` para que coincida tanto por nombre como por ticker, sin cambiar lo que se ve.
+   - Controlar el input: `const [search, setSearch] = useState("")`; pasar `value={search}` y `onValueChange={setSearch}` a `CommandInput`.
+   - En `onOpenChange` del `Popover`: al cerrar, `setSearch("")`. También limpiar tras cada `toggle` (selección).
+   - Sin cambios visuales.
+
+3. **`src/lib/reports/compileQuestion.ts`** *(C)*
+   - Reemplazar el `else { parts.push("del IBEX-35"); }` final por `parts.push("de todos los universos cotizados");` (o equivalente neutral). Mantener intacta la rama cuando `universe.value` contiene `"IBEX-35"` explícito.
+
+4. *(Opcional mínimo, solo si afecta a C visualmente)* **`src/components/reports/LivePreview.tsx`** — no requiere cambios; los `Badge` no muestran universo por defecto. **No se toca.**
+
+No se modifica `coherenceEngine.ts`, `filterState.ts`, `FilterPanel.tsx`, `RixViewer.tsx`, `RixReports.tsx`, `ChatContext.tsx`.
+
+---
+
+## 3) Detalle técnico de los cambios
+
+### `utils.ts`
+```ts
+export function normalizeText(value: string): string {
+  return (value ?? "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 ```
 
-## Cambios
+### `MultiChipSelect.tsx` (cambios mínimos)
+- `<Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setSearch(""); }}>`
+- `<Command filter={(val, q) => normalizeText(val).includes(normalizeText(q)) ? 1 : 0}>`
+- `<CommandInput value={search} onValueChange={setSearch} ... />`
+- `<CommandItem value={`${opt.label} ${opt.hint ?? ""}`} onSelect={() => { toggle(opt.value); setSearch(""); }}>`
+- Para evitar autoselección por Enter con un único residuo: como el input se limpia al cerrar y al seleccionar, el riesgo desaparece. No se modifica el comportamiento de teclado de cmdk (mantiene "highlight visible → Enter selecciona").
 
-### 1. Navegación (`src/components/layout/Header.tsx`)
-- Ocultar el item "Chat" (no eliminar la ruta).
-- Renombrar "Informes RIX" → **"Crear informe"** (`/informes`).
-- Añadir nuevo item **"Visor de informes"** (`/visor`, icono `FileText`).
-- `/chat` sigue accesible escribiendo la URL o desde "Mis conversaciones".
-
-### 2. Nueva ruta y página `/visor` (`src/pages/RixViewer.tsx`)
-Layout de dos columnas:
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ Visor de Informes RIX            [+ Nuevo informe] [Export▾] │
-├────────────────┬─────────────────────────────────────────────┤
-│ Memoria        │  ReportInfoBar (entidad · timeframe · IAs)  │
-│ ──────────     │  ─────────────────────────────────────────  │
-│ ● Informe #3   │                                             │
-│   IBEX-35      │   [Aquí se renderiza el informe activo:    │
-│   Ranking top5 │    ChatMessages reutilizado, sin input]    │
-│   12:04        │                                             │
-│ ○ Informe #2   │   - Headline                                │
-│   Telefónica   │   - Diagnóstico                             │
-│   Comparativa  │   - 6 modelos IA                            │
-│ ○ Informe #1   │   - Patrones                                │
-│   Banca · Evo  │   - Bibliografía verificada                 │
-│                │                                             │
-│ [Limpiar mem.] │   [Editar filtros de este informe]          │
-└────────────────┴─────────────────────────────────────────────┘
+### `compileQuestion.ts`
+```ts
+} else {
+  parts.push("de todos los universos cotizados");
+}
 ```
 
-- Estado vacío: tarjeta con "Aún no has generado ningún informe" + CTA grande **"Crear informe RIX"** → `/informes`.
-- "Editar filtros" navega a `/informes` con `state.prefilFilters` para rehidratar.
-- "+ Nuevo informe" navega a `/informes` con estado limpio.
+---
 
-### 3. Memoria de informes cargados
-- Nuevo store ligero `src/lib/reports/reportMemory.ts`:
-  - `localStorage` (clave `rix:viewer:memory`), array de objetos:
-    ```ts
-    { id, createdAt, title, filters: FilterState, question: string,
-      sessionId: string, summary?: { entity, intent, window } }
-    ```
-  - API: `addReport`, `listReports`, `removeReport`, `clearAll`, `getActiveId`, `setActiveId`.
-- Cuando se genera un informe desde `/informes`:
-  - `RixReports.tsx` añade entrada a la memoria **antes** de navegar y pasa `reportId` en `state`.
-- Cuando se entra en `/visor`:
-  - Se lista la memoria en la columna izquierda (tarjetas seleccionables).
-  - Al hacer click en una tarjeta, se carga la `sessionId` correspondiente en `ChatContext` y se renderiza con `ChatMessages`.
-- "Limpiar memoria" vacía la lista local sin borrar las conversaciones del backend.
+## 4) Riesgos y no regresiones revisadas
 
-### 4. Integración con `ChatContext`
-- Reutilizar el provider y `ChatMessages` tal cual (sin tocar el motor).
-- Necesitamos exponer/usar un método para **cargar una `sessionId` existente** al cambiar de informe en la memoria. Si `ChatContext` ya soporta `setSessionId` o equivalente, se usa; si no, se añade un setter mínimo (cargar mensajes históricos de esa sesión).
-- Verificación previa antes de implementar: leer `src/contexts/ChatContext.tsx` para confirmar el método de carga de sesiones existentes.
+- **Top N**: sin cambios en la lógica `topNApplies`. Se conserva.
+- **Bypass de normalización LLM en /visor**: sin cambios en `RixViewer.tsx` ni `ChatContext.tsx`.
+- **Estado de carga al generar**: sin cambios en `RixViewer.tsx`.
+- **Coherencia bidireccional**: sin cambios en `coherenceEngine.ts`.
+- **Búsqueda por ticker**: el `value` del `CommandItem` ahora incluye `label + hint`, así que tanto "Telefónica" como "TEF" siguen funcionando.
+- **Selectores que NO usan `MultiChipSelect`** (Granularidad, Orden, Tipo de fuente — `Select` de Radix sin buscador): no afectados.
+- **Universos múltiples explícitos** (p.ej. usuario elige `IBEX-35`): la rama `universe.value.length > 0` sigue activa antes del `else`.
 
-### 5. Round-trip "Editar filtros"
-- `RixReports.tsx`:
-  - Al pulsar "Generar informe": `addReport({ filters, question, ... })` → `navigate("/visor", { state: { autoSendQuestion, reportId } })`.
-  - Al montar: si `location.state.prefilFilters` existe, `setState(prefilFilters)`.
-- `RixViewer.tsx`:
-  - Recibe `autoSendQuestion` igual que hoy hace `ChatIntelligence` y dispara `sendMessage(q)` una sola vez.
+Validación manual posterior:
+1. Visión general IBEX-35 (con universo seleccionado) → compila "del universo IBEX-35". OK.
+2. Visión general sin universo → "de todos los universos cotizados". OK.
+3. Ranking por sector. OK.
+4. Comparativa con 2 empresas (buscar "Telefonica" + "Bbva" sin tildes/mayúsculas). OK.
+5. Evolución 90d. OK.
+6. Divergencia con todos los modelos sin universo → ya no aparece "IBEX-35" parásito.
+7. Perfil de empresa. OK.
 
-### 6. `/chat` (sin cambios funcionales)
-- Se mantiene `ChatIntelligence` y la ruta `/chat`.
-- Solo deja de aparecer en el menú principal.
+---
 
-## Archivos
+## 5) Mejoras opcionales no implementadas
 
-**Nuevos**
-- `src/pages/RixViewer.tsx` — visor con memoria + render del informe activo.
-- `src/lib/reports/reportMemory.ts` — store en `localStorage`.
-- `src/components/reports/ReportMemoryList.tsx` — columna lateral.
-
-**Modificados**
-- `src/App.tsx` — añadir ruta protegida `/visor` → `RixViewer`.
-- `src/components/layout/Header.tsx` — ocultar "Chat", añadir "Visor de informes", renombrar "Informes RIX" a "Crear informe".
-- `src/pages/RixReports.tsx` — guardar en memoria + navegar a `/visor` (en lugar de `/chat`); leer `prefilFilters` al montar.
-- `src/contexts/ChatContext.tsx` — solo si no existe ya: setter público para cargar una sesión existente por `sessionId`.
-
-## Lo que NO cambia
-
-- Motor V2 (`chat-intelligence-v2`), skills, narrativa de 9 epígrafes, bibliografía.
-- `/chat` y su funcionalidad completa (queda accesible por URL).
-- `/informes` y los 11 filtros bidireccionales (solo cambia el destino del botón "Generar informe").
-- Persistencia de conversaciones en backend ni "Mis conversaciones".
+- Mostrar el universo (o "Todos los universos") como `Badge` explícito en `LivePreview` para feedback visual.
+- Aplicar `normalizeText` también al filtro de `Command` en otros componentes con buscador (p.ej. selects de admin) si existen casos análogos.
+- Añadir tests unitarios para `normalizeText` y para `compileFiltersToQuestion` en el caso "sin universo".
