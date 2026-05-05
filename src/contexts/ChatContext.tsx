@@ -791,7 +791,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       let normalizedQuestion = question;
       let _normalizationMeta: Record<string, unknown> | null = null;
       
+      // Deterministic compiled questions from the RIX report builder must NOT
+      // be rewritten by the LLM normalizer (it strips temporal/topN/model
+      // filters and the orchestrator then rejects with scopeGuard).
+      const skipNormalization = options?.skipNormalization === true;
       try {
+        if (skipNormalization) {
+          throw new Error('__skip_normalization__');
+        }
         const normController = new AbortController();
         const normTimeout = setTimeout(() => normController.abort(), 3500);
         
