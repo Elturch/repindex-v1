@@ -127,6 +127,28 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
       }));
   }, [companies, state.universe.value, state.universe.origin, state.sector.value, state.subsector.value]);
 
+  // Competidores verificados sugeridos a partir de la selección actual.
+  // Sólo usa la columna `verified_competitors` (regla anti-fallback de sector).
+  const byTicker = useMemo(
+    () => new Map(companies.map((c) => [c.ticker, c])),
+    [companies],
+  );
+  const competitorSuggestions = useMemo(() => {
+    if (state.tickers.value.length === 0) return [] as string[];
+    const selected = new Set(state.tickers.value);
+    const out = new Set<string>();
+    for (const t of state.tickers.value) {
+      const comp = byTicker.get(t)?.verified_competitors;
+      if (!Array.isArray(comp)) continue;
+      for (const c of comp) {
+        if (!c || selected.has(c)) continue;
+        if (!byTicker.has(c)) continue; // ignora tickers obsoletos
+        out.add(c);
+      }
+    }
+    return Array.from(out);
+  }, [state.tickers.value, byTicker]);
+
   return (
     <div className="flex flex-col gap-3">
       {/* Filter 0 — Intent */}
@@ -194,6 +216,42 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
           onChange={(v) => setState(setFilter(state, "tickers", v))}
           placeholder="Todas las empresas del alcance"
         />
+        {competitorSuggestions.length > 0 && (
+          <div className="mt-2 rounded-md border border-border bg-muted/40 p-2">
+            <p className="text-[11px] text-muted-foreground mb-1.5">
+              Competencia directa verificada de tu selección:
+            </p>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {competitorSuggestions.map((t) => {
+                const c = byTicker.get(t);
+                return (
+                  <span
+                    key={t}
+                    className="px-1.5 py-0.5 rounded text-[11px] border border-border bg-card text-foreground"
+                    title={c?.issuer_name ?? t}
+                  >
+                    {c?.issuer_name ?? t}{" "}
+                    <span className="text-muted-foreground">({t})</span>
+                  </span>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setState(
+                  setFilter(state, "tickers", [
+                    ...state.tickers.value,
+                    ...competitorSuggestions,
+                  ]),
+                )
+              }
+              className="px-2 py-0.5 rounded text-xs border border-primary bg-primary text-primary-foreground hover:opacity-90"
+            >
+              + Añadir competencia directa ({competitorSuggestions.length})
+            </button>
+          </div>
+        )}
       </FilterBlock>
 
       {/* Modelos IA */}

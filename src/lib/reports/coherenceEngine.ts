@@ -23,6 +23,7 @@ export interface CompanyMeta {
   sector_category: string | null;
   subsector?: string | null;
   ibex_family_code: string | null;
+  verified_competitors?: string[] | null;
 }
 
 export interface CoherenceWarning {

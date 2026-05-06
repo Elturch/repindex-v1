@@ -66,6 +66,11 @@ export default function RixReports() {
         sector_category: c.sector_category ?? null,
         subsector: (c as any).subsector ?? null,
         ibex_family_code: c.ibex_family_code ?? null,
+        verified_competitors: Array.isArray((c as any).verified_competitors)
+          ? ((c as any).verified_competitors as unknown[])
+              .map((x) => (typeof x === "string" ? x : String(x)))
+              .filter((x) => x && x.length > 0)
+          : null,
       })),
     [companiesRaw],
   );
