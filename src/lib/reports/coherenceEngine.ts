@@ -177,6 +177,43 @@ export function runCoherence(
   }
 
   // ──────────────────────────────────────────────────────────────────────
+  // R-sub-1 — Subsector → sector (auto-derive si todas las empresas del
+  // subsector pertenecen a un único sector)
+  // ──────────────────────────────────────────────────────────────────────
+  if (
+    next.subsector.value.length > 0 &&
+    next.subsector.origin === "user-set" &&
+    next.sector.origin === "free"
+  ) {
+    const sectorsForSub = unique(
+      companies
+        .filter((c) => c.subsector && next.subsector.value.includes(c.subsector))
+        .map((c) => c.sector_category)
+        .filter((s): s is string => !!s),
+    );
+    if (sectorsForSub.length === 1) {
+      next = setFilter(next, "sector", sectorsForSub, "derived", "subsector");
+    }
+  }
+
+  // R-sub-2 — Si el subsector ya no encaja con el sector user-set, limpiarlo
+  if (
+    next.subsector.value.length > 0 &&
+    next.sector.value.length > 0
+  ) {
+    const validSubs = new Set(
+      companies
+        .filter((c) => c.sector_category && next.sector.value.includes(c.sector_category))
+        .map((c) => c.subsector)
+        .filter((s): s is string => !!s),
+    );
+    const filtered = next.subsector.value.filter((s) => validSubs.has(s));
+    if (filtered.length !== next.subsector.value.length) {
+      next = setFilter(next, "subsector", filtered, filtered.length ? next.subsector.origin : "free");
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
   // R12 — Si solo hay 1 modelo, divergencia no tiene sentido
   // ──────────────────────────────────────────────────────────────────────
   if (
