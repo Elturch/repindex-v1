@@ -1,44 +1,69 @@
+# Forzar competidores verificados en Perfil (anti-fallback sectorial)
+
+## Problema
+
+En el ejemplo de MASORANGE, el bloque "Contexto Competitivo" del intent **perfil** muestra empresas como Proeduca, Izertis, Squirrel, Netex, Gigas — que **no son competidores reales** de una telco. Esto ocurre porque `buildCompetitiveContext` (en `chat-intelligence-v2/datapack/competitiveContext.ts`) consulta directamente:
+
+```text
+repindex_root_issuers WHERE sector_category = entity.sector_category LIMIT 60
+```
+
+es decir, **siempre** cae al sector entero, ignorando la columna `verified_competitors`. Esto viola dos reglas Core de memoria:
+- *Competitors*: usar **solo** `verified_competitors`, nunca fallback sectorial.
+- *competidores-verificados-estrictos-no-sector-fallback*.
+
 ## Objetivo
 
-En el Visor (`/visor`), cuando el usuario seleccione una empresa que tenga rellena la columna `verified_competitors` (competencia directa) en `repindex_root_issuers`, ofrecer un botón para **añadir esa competencia directa** a la selección de tickers de un solo clic.
-
-## Comportamiento
-
-1. Bajo el bloque "Empresa / Ticker", aparecerá una nota contextual cuando **al menos una** de las empresas seleccionadas tenga competidores verificados.
-2. La nota lista los competidores propuestos (por nombre legible si existe en el universo, ticker en su defecto), excluyendo los que ya estén seleccionados.
-3. Botón **"+ Añadir competencia directa (N)"** que añade esos tickers a `state.tickers` (origen `user-set`).
-4. Si hay varias empresas seleccionadas con competidores, se unifica el conjunto (deduplicado).
-5. Si todos los competidores ya están seleccionados, el bloque no se muestra.
-6. Si la empresa seleccionada no tiene competidores en BBDD, no aparece nada (consistente con la regla de memoria: nunca rellenar competidores por sector).
+Para el intent `company_analysis` (Perfil), el peer set debe construirse **estrictamente** desde `verified_competitors` de la entidad analizada. Si la empresa no tiene competidores verificados (o son <2), la sección se omite con un mensaje explícito en lugar de inventar peers sectoriales.
 
 ## Cambios
 
-### 1. `src/hooks/useCompanies.ts`
-- Añadir `verified_competitors?: string[] | null` al interface `Company`.
-- Incluir `verified_competitors` en el `select(...)` de Supabase.
+### 1. `supabase/functions/chat-intelligence-v2/types.ts`
+Añadir campo opcional a `ResolvedEntity`:
+```ts
+verified_competitors?: string[] | null;
+```
 
-### 2. `src/lib/reports/coherenceEngine.ts`
-- Añadir `verified_competitors?: string[] | null` al interface `CompanyMeta` (sólo tipo, sin lógica nueva — se respeta la regla anti-fallback).
+### 2. Resolver de entidades
+Localizar dónde se hidrata `ResolvedEntity` desde `repindex_root_issuers` (mismo sitio donde hoy se lee `sector_category`) y añadir `verified_competitors` al `select(...)`. Propagar al objeto resuelto, normalizando jsonb → `string[]`.
 
-### 3. `src/pages/RixReports.tsx`
-- En el mapeo de `companies → CompanyMeta` propagar el campo `verified_competitors` (Casteo: si llega como `unknown[]`/jsonb, normalizar a `string[]`).
+### 3. `supabase/functions/chat-intelligence-v2/datapack/competitiveContext.ts`
+Reescribir el paso (1) "Tickers del mismo sector":
 
-### 4. `src/components/reports/FilterPanel.tsx`
-- Tras `<FilterBlock title="Empresa / Ticker">`, calcular `competitorSuggestions`:
-  - Para cada ticker en `state.tickers.value`, leer `byTicker.get(t)?.verified_competitors`.
-  - Unión, filtrar los ya presentes en `state.tickers.value`, mantener sólo los que existan en `companies` (por si hay tickers obsoletos).
-- Si `competitorSuggestions.length > 0`, renderizar un panel compacto dentro del mismo `FilterBlock` (debajo del `MultiChipSelect`) con:
-  - Texto: "Competencia directa verificada de tu selección:"
-  - Lista chips read-only con nombre + ticker
-  - Botón `+ Añadir competencia directa (N)` que llama:
-    `setState(setFilter(state, "tickers", [...state.tickers.value, ...competitorSuggestions]))`
+- **Nueva fuente única**: `entity.verified_competitors`. Filtrar nulos/vacíos y deduplicar; **incluir siempre** el propio `entity.ticker` para que aparezca en la tabla.
+- **Sin fallback sectorial**. Eliminar la query a `repindex_root_issuers WHERE sector_category = ...`.
+- Si `verified_competitors.length === 0` o tras filtrar `validPeers < 2`, devolver un `CompetitiveContext` con flag `reason: "no_verified_competitors"` y tabla vacía.
+- Conservar intacto el resto: query a `rix_runs_v2 IN (tickers)`, agregación anti-mediana, ordenación por consenso.
 
-### 5. Sin cambios en backend
-- No se toca `chat-intelligence-v2`. El agente ya consume `verified_competitors` por su lado; aquí sólo enriquecemos la selección del usuario antes de compilar la pregunta.
-- La pregunta resultante seguirá listando empresas concretas, lo que mantiene la coherencia con la regla "nunca asumir competidores de sector".
+### 4. `renderCompetitiveContextTable`
+Cuando `ctx.table.length === 0` y `reason === "no_verified_competitors"`, devolver un bloque explícito:
+
+```text
+**Contexto competitivo sectorial — no disponible**
+
+No constan competidores verificados para {company_name} en la base de datos
+RepIndex. Conforme a la regla de competidores estrictos, no se realiza
+comparación con peers sectoriales no verificados.
+```
+
+En cualquier otro caso (peers <2 por falta de scores), mantener el comportamiento actual de omitir silenciosamente.
+
+### 5. `sectorRanking.ts` — sin cambios
+El bloque `buildCompetitiveContextBlock` de `sectorRanking` ya opera sobre el ranking precomputado y no toca `verified_competitors`; queda fuera de alcance porque el problema es exclusivo del Perfil de una sola empresa.
+
+### 6. Memoria
+Actualizar `mem://features/chat/competidores-verificados-estrictos-no-sector-fallback` con una nota: "Aplicado también a `competitiveContext.ts` del intent company_analysis. Sin fallback sectorial; mensaje explícito si no hay verified_competitors."
 
 ## Validación
 
-- Seleccionar **SAN**: aparece la barra con BBVA, CABK, SAB, BKT, UNI y botón "Añadir competencia directa (5)".
-- Click en el botón → los 5 tickers se añaden y la barra desaparece (todos presentes).
-- Seleccionar una empresa sin `verified_competitors`: no se muestra nada.
+1. **MASORANGE** (sin verified_competitors poblados, según el síntoma): el bloque "Contexto Competitivo" aparece como "no disponible" en lugar de listar 25 empresas del subsector media.
+2. **SAN** (con `verified_competitors = [BBVA, CABK, SAB, BKT, UNI]`): el bloque muestra Santander + esos 5 tickers exclusivamente, ordenados por consenso.
+3. **Empresa con verified_competitors pero sin scores en el periodo**: sección omitida sin error.
+4. Otros intents (sector_ranking, comparison, evolution) no se ven afectados.
+
+## Detalles técnicos
+
+- Tipo Postgres de `verified_competitors`: `jsonb` con array de strings (confirmado en `expand_entity_graph`).
+- No requiere migración de BD.
+- No requiere nuevos secretos.
+- Deploy: solo `chat-intelligence-v2`.

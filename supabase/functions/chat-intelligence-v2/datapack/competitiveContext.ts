@@ -34,6 +34,10 @@ export interface CompetitiveContext {
   entity_rank: number | null;
   total: number;
   table: CompetitiveRow[];
+  /** Razón de omisión cuando `table` está vacío. Permite a la capa de
+   *  rendering distinguir "sin competidores verificados" (mensaje explícito)
+   *  de cualquier otra causa (omisión silenciosa). */
+  reason?: "no_verified_competitors" | "insufficient_scores" | "no_sector";
 }
 
 /** Group rows by (ticker, week) preserving model scores per snapshot. */
@@ -62,21 +66,28 @@ export async function buildCompetitiveContext(
   temporal: ResolvedTemporal,
   topN = 8,
 ): Promise<CompetitiveContext> {
-  const empty: CompetitiveContext = { entity_rank: null, total: 0, table: [] };
-  if (!entity.sector_category) return empty;
+  const empty = (reason: CompetitiveContext["reason"]): CompetitiveContext => ({
+    entity_rank: null, total: 0, table: [], reason,
+  });
 
-  // 1) Tickers del mismo sector
-  const { data: peers, error: peersErr } = await supabase
-    .from("repindex_root_issuers")
-    .select("ticker, issuer_name")
-    .eq("sector_category", entity.sector_category)
-    .limit(60);
-  if (peersErr || !peers || peers.length === 0) {
-    if (peersErr) console.warn("[RIX-V2][competitive] peers error:", peersErr.message);
-    return empty;
+  // 1) REGLA ESTRICTA DE COMPETIDORES VERIFICADOS:
+  //    el peer set se construye EXCLUSIVAMENTE desde
+  //    `entity.verified_competitors`. NO existe fallback sectorial.
+  //    Mem ref: features/chat/competidores-verificados-estrictos-no-sector-fallback
+  const selfTicker = (entity.ticker || "").toUpperCase();
+  const verified = Array.isArray(entity.verified_competitors)
+    ? entity.verified_competitors
+        .map((t) => String(t || "").trim().toUpperCase())
+        .filter((t) => t.length > 0 && t !== selfTicker)
+    : [];
+  if (verified.length === 0) {
+    console.warn(
+      `[RIX-V2][competitive] no verified_competitors for ${selfTicker} — section omitted (strict rule)`,
+    );
+    return empty("no_verified_competitors");
   }
-  const tickers = peers.map((p: any) => String(p.ticker)).filter(Boolean);
-  if (tickers.length === 0) return empty;
+  // Incluir siempre la propia entidad para que aparezca en la tabla.
+  const tickers = Array.from(new Set([selfTicker, ...verified])).filter(Boolean);
 
   // 2) Scores del período para esos tickers (incluye 06_period_from para
   //    agrupación bit-idéntica con dashboard por snapshot semanal).
@@ -89,10 +100,10 @@ export async function buildCompetitiveContext(
     .limit(5000);
   if (error) {
     console.warn("[RIX-V2][competitive] scores error:", error.message);
-    return empty;
+    return empty("insufficient_scores");
   }
   const grouped = groupByTickerAndWeek(data ?? []);
-  if (grouped.size === 0) return empty;
+  if (grouped.size === 0) return empty("insufficient_scores");
 
   // ANTI-MEDIANA: por cada (ticker, semana) extraemos min/max/range/level
   // del consenso (sin promediar entre IAs). El periodo expone:
@@ -144,11 +155,11 @@ export async function buildCompetitiveContext(
   // propia empresa), omitimos la sección. Mejor vacío explícito que
   // peers inventados de un sector mal clasificado.
   const validPeers = rows.filter((r) => r.ticker !== entity.ticker).length;
-  if (validPeers < 2) {
+  if (validPeers < 1) {
     console.warn(
       `[RIX-V2][competitive] insufficient peers for ${entity.ticker} (sector="${entity.sector_category}", peers=${validPeers}) — section omitted`,
     );
-    return empty;
+    return empty("insufficient_scores");
   }
 
   // Top N + asegurar que la entidad analizada esté presente.
@@ -162,7 +173,17 @@ export async function buildCompetitiveContext(
 
 /** Render the competitive context as a markdown table. */
 export function renderCompetitiveContextTable(ctx: CompetitiveContext, entityTicker: string): string {
-  if (ctx.table.length === 0) return "";
+  if (ctx.table.length === 0) {
+    if (ctx.reason === "no_verified_competitors") {
+      return [
+        "**Contexto competitivo — no disponible**",
+        "",
+        "No constan competidores verificados para esta empresa en la base de datos RepIndex.",
+        "Conforme a la regla de competidores estrictos, no se realiza comparación con peers sectoriales no verificados.",
+      ].join("\n");
+    }
+    return "";
+  }
   const body = ctx.table
     .map((r) => {
       const marker = r.ticker === entityTicker ? " ⬅︎" : "";
@@ -170,8 +191,8 @@ export function renderCompetitiveContextTable(ctx: CompetitiveContext, entityTic
     })
     .join("\n");
   const header = ctx.entity_rank
-    ? `**Contexto competitivo sectorial — posición #${ctx.entity_rank} de ${ctx.total}**`
-    : `**Contexto competitivo sectorial — ${ctx.total} empresas**`;
+    ? `**Contexto competitivo (competidores verificados) — posición #${ctx.entity_rank} de ${ctx.total}**`
+    : `**Contexto competitivo (competidores verificados) — ${ctx.total} empresas**`;
   return [
     header,
     "",
