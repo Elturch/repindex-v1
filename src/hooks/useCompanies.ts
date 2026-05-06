@@ -9,6 +9,7 @@ export interface Company {
   sector_category?: string;
   subsector?: string | null;
   ibex_family_code?: string;
+  verified_competitors?: string[] | null;
 }
 
 export function useCompanies() {
@@ -17,7 +18,7 @@ export function useCompanies() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("repindex_root_issuers")
-        .select("issuer_id, issuer_name, ticker, status, sector_category, subsector, ibex_family_code")
+        .select("issuer_id, issuer_name, ticker, status, sector_category, subsector, ibex_family_code, verified_competitors")
         .order("issuer_name");
 
       if (error) {
