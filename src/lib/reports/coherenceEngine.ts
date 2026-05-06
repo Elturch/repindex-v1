@@ -117,7 +117,12 @@ export function runCoherence(
       next = setFilter(next, "subsector", inferredSubsectors, "derived", "tickers");
     }
 
-    if (next.universe.origin === "free" && inferredUniverses.length > 0) {
+    // Only derive universe if all selected tickers fall within a SINGLE universe.
+    // Otherwise leave it free to avoid filtering out companies the user expects.
+    if (
+      next.universe.origin === "free" &&
+      inferredUniverses.length === 1
+    ) {
       next = setFilter(next, "universe", inferredUniverses, "derived", "tickers");
     }
 
@@ -150,6 +155,24 @@ export function runCoherence(
     ) as Universe[];
     if (universes.length === 1) {
       next = setFilter(next, "universe", universes, "derived", "sector");
+    }
+  }
+
+  // R2b — If sector is user-set and spans multiple universes, unlock any
+  // previously derived universe so it doesn't shrink the company pool.
+  if (
+    next.sector.origin === "user-set" &&
+    next.sector.value.length > 0 &&
+    next.universe.origin === "derived"
+  ) {
+    const sectorCompanies = companies.filter(
+      (c) => c.sector_category && next.sector.value.includes(c.sector_category),
+    );
+    const universes = unique(
+      sectorCompanies.map((c) => c.ibex_family_code).filter((u): u is string => !!u),
+    );
+    if (universes.length > 1) {
+      next = setFilter(next, "universe", [], "free");
     }
   }
 
@@ -246,7 +269,7 @@ export function computeScopeSize(
 ): number {
   if (state.tickers.value.length > 0) return state.tickers.value.length;
   let pool = companies;
-  if (state.universe.value.length > 0) {
+  if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
     pool = pool.filter(
       (c) =>
         c.ibex_family_code && state.universe.value.includes(c.ibex_family_code as Universe),
@@ -271,7 +294,7 @@ export function getScopeTickers(
 ): string[] {
   if (state.tickers.value.length > 0) return state.tickers.value;
   let pool = companies;
-  if (state.universe.value.length > 0) {
+  if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
     pool = pool.filter(
       (c) =>
         c.ibex_family_code && state.universe.value.includes(c.ibex_family_code as Universe),
