@@ -40,7 +40,7 @@ export type ModelName =
 
 export type Granularity = "snapshot" | "weekly" | "monthly" | "quarterly";
 
-export type AxisMetric = "RIXc" | "NVM" | "DRM" | "SIM" | "RMM" | "CEM" | "GAM" | "DCM" | "CXM";
+export type AxisMetric = "RIX" | "NVM" | "DRM" | "SIM" | "RMM" | "CEM" | "GAM" | "DCM" | "CXM";
 
 export type SortOrder = "desc" | "asc" | "divergence";
 
@@ -91,7 +91,7 @@ export const ALL_MODELS: ModelName[] = [
 ];
 
 export const ALL_METRICS: AxisMetric[] = [
-  "RIXc",
+  "RIX",
   "NVM",
   "DRM",
   "SIM",
@@ -125,7 +125,7 @@ export function createInitialFilterState(): FilterState {
     models: free<ModelName[]>([...ALL_MODELS]),
     window: free<TimeWindow>(defaultWindow()),
     granularity: free<Granularity>("weekly"),
-    axisMetrics: free<AxisMetric[]>(["RIXc"]),
+    axisMetrics: free<AxisMetric[]>(["RIX"]),
     topN: free<number>(10),
     order: free<SortOrder>("desc"),
     sourceTier: free<SourceTier>("all"),
