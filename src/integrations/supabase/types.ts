@@ -2090,6 +2090,27 @@ export type Database = {
         }
         Relationships: []
       }
+      repindex_subsector_taxonomy: {
+        Row: {
+          created_at: string
+          description: string | null
+          sector_category: string
+          subsector: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          sector_category: string
+          subsector: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          sector_category?: string
+          subsector?: string
+        }
+        Relationships: []
+      }
       rix_composite_scores: {
         Row: {
           company_name: string
