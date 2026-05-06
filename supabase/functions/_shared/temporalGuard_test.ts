@@ -133,3 +133,57 @@ Deno.test("P0-12 · A.2 + toISODate — explicit_date round-trips to the same Su
   assertEquals(intent.primary!.start_t, "2026-04-26");
   assertEquals(toISODate(new Date("2026-04-26T00:00:00Z")), "2026-04-26");
 });
+
+Deno.test("P0-13 · A.3 — 'entre <ISO> y <ISO>' (Spanish 'y' connector) → explicit_range", () => {
+  const intent = parseTemporalIntent(
+    "Genera un informe ejecutivo del universo IBEX-35 limitado a las 10 mejores entre 2026-04-08 y 2026-05-06 con desglose semanal.",
+    TODAY,
+  );
+  assert(intent.primary, "expected primary window");
+  assertEquals(intent.primary!.kind, "explicit_range");
+  assertEquals(intent.primary!.start_t, "2026-04-08");
+  assertEquals(intent.primary!.end_t, "2026-05-06");
+});
+
+Deno.test("P0-14 · A.3 — 'desde <ISO> hasta <ISO>' → explicit_range", () => {
+  const intent = parseTemporalIntent("ranking sector banca desde 2026-01-01 hasta 2026-03-31", TODAY);
+  assert(intent.primary);
+  assertEquals(intent.primary!.kind, "explicit_range");
+  assertEquals(intent.primary!.start_t, "2026-01-01");
+  assertEquals(intent.primary!.end_t, "2026-03-31");
+});
+
+Deno.test("P0-15 · A.3 — '<ISO> to <ISO>' English connector → explicit_range", () => {
+  const intent = parseTemporalIntent("evolution Inditex 2026-04-08 to 2026-05-06", TODAY);
+  assert(intent.primary);
+  assertEquals(intent.primary!.kind, "explicit_range");
+  assertEquals(intent.primary!.start_t, "2026-04-08");
+  assertEquals(intent.primary!.end_t, "2026-05-06");
+});
+
+Deno.test("P0-16 · A.3 — '<ISO> and <ISO>' English connector → explicit_range", () => {
+  const intent = parseTemporalIntent("between 2026-04-08 and 2026-05-06", TODAY);
+  assert(intent.primary);
+  assertEquals(intent.primary!.kind, "explicit_range");
+  assertEquals(intent.primary!.start_t, "2026-04-08");
+  assertEquals(intent.primary!.end_t, "2026-05-06");
+});
+
+Deno.test("P0-17 · A.2 sanity — single ISO date stays as explicit_date (no false range match)", () => {
+  const intent = parseTemporalIntent("snapshot del 2026-04-26", TODAY);
+  assert(intent.primary);
+  assertEquals(intent.primary!.kind, "explicit_date");
+  assertEquals(intent.primary!.start_t, "2026-04-26");
+  assertEquals(intent.primary!.end_t, "2026-04-26");
+});
+
+Deno.test("P0-18 · A.3 — IBEX-35 sector ranking question with 'compara' keyword resolves the date range, not a comparison", () => {
+  const intent = parseTemporalIntent(
+    "Compara las 5 mejores empresas del subsector Grupos Hospitalarios entre 2026-04-08 y 2026-05-06.",
+    TODAY,
+  );
+  assert(intent.primary);
+  assertEquals(intent.primary!.kind, "explicit_range");
+  assertEquals(intent.primary!.start_t, "2026-04-08");
+  assertEquals(intent.primary!.end_t, "2026-05-06");
+});

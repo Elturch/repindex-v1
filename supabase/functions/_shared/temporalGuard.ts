@@ -179,9 +179,12 @@ const LAST_WEEK_RE = /\b(semana\s+pasada|[uú]ltima\s+semana|la\s+semana\s+anter
 // (start_t === end_t). Anchors the report to that exact Sunday.
 const ISO_DATE_RE = /\b(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/;
 
-// A.3 — Explicit ISO date range "del YYYY-MM-DD al YYYY-MM-DD" or
-// "YYYY-MM-DD a YYYY-MM-DD" / "YYYY-MM-DD ... YYYY-MM-DD".
-const ISO_RANGE_RE = /\b(20\d{2}-\d{2}-\d{2})\s*(?:al?|a|hasta|-|—|–|→|to)\s*(20\d{2}-\d{2}-\d{2})\b/i;
+// A.3 — Explicit ISO date range. Supports Spanish/English connectors:
+//   "del YYYY-MM-DD al YYYY-MM-DD"
+//   "desde YYYY-MM-DD hasta YYYY-MM-DD"
+//   "entre YYYY-MM-DD y YYYY-MM-DD"
+//   "YYYY-MM-DD a / al / y / and / hasta / to / - / – / — / → YYYY-MM-DD"
+const ISO_RANGE_RE = /\b(20\d{2}-\d{2}-\d{2})\s*(?:al?|a|y|and|hasta|to|-|—|–|→)\s*(20\d{2}-\d{2}-\d{2})\b/i;
 
 /** Returns the ISO week [Mon, Sun] window containing `today` (UTC). */
 function currentIsoWeekWindow(today: Date): { start: string; end: string } {
