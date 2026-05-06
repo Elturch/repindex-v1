@@ -60,9 +60,12 @@ interface Props {
   setState: (s: FilterState) => void;
   companies: CompanyMeta[];
   hiddenFilters: string[];
+  /** Última fecha de barrido canónico (YYYY-MM-DD). Si está disponible,
+   *  los presets temporales se anclan a ella en lugar de a `new Date()`. */
+  lastBatchDate?: string | null;
 }
 
-export function FilterPanel({ state, setState, companies, hiddenFilters }: Props) {
+export function FilterPanel({ state, setState, companies, hiddenFilters, lastBatchDate }: Props) {
   const isHidden = (id: string) => hiddenFilters.includes(id);
 
   // Derive available sub-options based on parent selections
@@ -295,13 +298,20 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
             <button
               key={p.id}
               type="button"
+              title={
+                lastBatchDate
+                  ? `Anclado al último barrido (${lastBatchDate})`
+                  : undefined
+              }
               onClick={() => {
-                const to = new Date();
-                const from = new Date();
-                if (p.id === "last_week") from.setDate(to.getDate() - 7);
-                else if (p.id === "last_month") from.setDate(to.getDate() - 30);
-                else if (p.id === "last_quarter") from.setDate(to.getDate() - 90);
-                else from.setMonth(0, 1);
+                // Anclar al último barrido canónico (último domingo con datos).
+                // Si aún no se ha cargado, fallback a hoy.
+                const to = lastBatchDate ? new Date(`${lastBatchDate}T00:00:00`) : new Date();
+                const from = new Date(to);
+                if (p.id === "last_week") from.setDate(to.getDate() - 6);
+                else if (p.id === "last_month") from.setDate(to.getDate() - 29);
+                else if (p.id === "last_quarter") from.setDate(to.getDate() - 89);
+                else { from.setMonth(0); from.setDate(1); }
                 setState(
                   setFilter(state, "window", {
                     preset: p.id,
