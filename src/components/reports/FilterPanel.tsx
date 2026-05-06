@@ -60,9 +60,12 @@ interface Props {
   setState: (s: FilterState) => void;
   companies: CompanyMeta[];
   hiddenFilters: string[];
+  /** Última fecha de barrido canónico (YYYY-MM-DD). Si está disponible,
+   *  los presets temporales se anclan a ella en lugar de a `new Date()`. */
+  lastBatchDate?: string | null;
 }
 
-export function FilterPanel({ state, setState, companies, hiddenFilters }: Props) {
+export function FilterPanel({ state, setState, companies, hiddenFilters, lastBatchDate }: Props) {
   const isHidden = (id: string) => hiddenFilters.includes(id);
 
   // Derive available sub-options based on parent selections
