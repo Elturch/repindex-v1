@@ -44,7 +44,7 @@ const UNIVERSES: { value: Universe; label: string }[] = [
 ];
 
 const METRICS: { value: AxisMetric; label: string; hint: string }[] = [
-  { value: "RIXc", label: "RIXc", hint: "Índice compuesto" },
+  { value: "RIX", label: "RIX", hint: "Puntuación RIX global" },
   { value: "NVM", label: "NVM", hint: "Visibilidad" },
   { value: "DRM", label: "DRM", hint: "Riesgo reputacional" },
   { value: "SIM", label: "SIM", hint: "Sentimiento" },
@@ -372,10 +372,10 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
           </button>
           <button
             type="button"
-            onClick={() => setState(setFilter(state, "axisMetrics", ["RIXc"]))}
+            onClick={() => setState(setFilter(state, "axisMetrics", ["RIX"]))}
             className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
           >
-            Solo RIXc
+            Solo RIX
           </button>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -394,7 +394,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
                     setFilter(
                       state,
                       "axisMetrics",
-                      next.length === 0 ? ["RIXc"] : next,
+                      next.length === 0 ? ["RIX"] : next,
                     ),
                   );
                 }}
