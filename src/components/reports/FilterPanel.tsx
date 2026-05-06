@@ -68,7 +68,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
   // Derive available sub-options based on parent selections
   const sectorOptions = useMemo(() => {
     let pool = companies;
-    if (state.universe.value.length > 0) {
+    if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
       pool = pool.filter(
         (c) =>
           c.ibex_family_code &&
@@ -80,7 +80,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
     )
       .sort()
       .map((s) => ({ value: s, label: s }));
-  }, [companies, state.universe.value]);
+  }, [companies, state.universe.value, state.universe.origin]);
 
   const subsectorOptions = useMemo(() => {
     let pool = companies;
@@ -98,7 +98,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
 
   const tickerOptions = useMemo(() => {
     let pool = companies;
-    if (state.universe.value.length > 0) {
+    if (state.universe.value.length > 0 && state.universe.origin === "user-set") {
       pool = pool.filter(
         (c) =>
           c.ibex_family_code &&
@@ -122,7 +122,7 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
         label: c.issuer_name,
         hint: c.ticker,
       }));
-  }, [companies, state.universe.value, state.sector.value, state.subsector.value]);
+  }, [companies, state.universe.value, state.universe.origin, state.sector.value, state.subsector.value]);
 
   return (
     <div className="flex flex-col gap-3">
