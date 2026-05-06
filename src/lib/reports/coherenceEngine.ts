@@ -269,7 +269,11 @@ export function runCoherence(
   // ──────────────────────────────────────────────────────────────────────
   if (next.intent.value === "ranking") {
     const scope = computeScopeSize(next, companies);
-    if (scope > 0 && next.topN.value > scope) {
+    if (
+      scope > 0 &&
+      next.topN.origin === "user-set" &&
+      next.topN.value > scope
+    ) {
       warnings.push({
         level: "info",
         filterId: "topN",
