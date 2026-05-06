@@ -15,6 +15,11 @@ export interface ResolvedEntity {
   company_name: string;
   sector_category: string | null;
   source: 'exact' | 'fuzzy' | 'semantic_bridge' | 'inherited';
+  /** Lista cerrada de competidores verificados extraída de
+   *  `repindex_root_issuers.verified_competitors`. Es la ÚNICA fuente válida
+   *  para construir el bloque competitivo del Perfil. Nunca se infiere por
+   *  sector/subsector. Puede ser null si la columna no se hidrató. */
+  verified_competitors?: string[] | null;
 }
 
 export interface ResolvedTemporal {
