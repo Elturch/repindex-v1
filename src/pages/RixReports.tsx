@@ -5,9 +5,11 @@ import { FileBarChart2, RotateCcw, Send } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { useCompanies } from "@/hooks/useCompanies";
+import { useLatestBatchDate } from "@/hooks/useLatestBatchDate";
 import {
   createInitialFilterState,
   FilterState,
+  setFilter,
 } from "@/lib/reports/filterState";
 import { runCoherence, CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterPanel } from "@/components/reports/FilterPanel";
@@ -19,6 +21,7 @@ import { toast } from "@/hooks/use-toast";
 
 export default function RixReports() {
   const { data: companiesRaw, isLoading } = useCompanies();
+  const { data: lastBatchDate } = useLatestBatchDate();
   const [state, setState] = useState<FilterState>(createInitialFilterState());
   const navigate = useNavigate();
   const location = useLocation();
@@ -33,6 +36,27 @@ export default function RixReports() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Cuando llega el último barrido y el usuario no ha tocado la ventana,
+  // re-anclar el preset por defecto (last_month) a esa fecha.
+  useEffect(() => {
+    if (!lastBatchDate) return;
+    if (state.window.origin !== "free") return;
+    const to = new Date(`${lastBatchDate}T00:00:00`);
+    const from = new Date(to);
+    from.setDate(to.getDate() - 29);
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    if (state.window.value.to === lastBatchDate) return; // ya anclado
+    setState((prev) =>
+      setFilter(
+        prev,
+        "window",
+        { preset: "last_month", from: iso(from), to: iso(to) },
+        "free",
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastBatchDate]);
 
   const companies: CompanyMeta[] = useMemo(
     () =>
@@ -96,6 +120,7 @@ export default function RixReports() {
                 setState={setState}
                 companies={companies}
                 hiddenFilters={coherence.hiddenFilters}
+                lastBatchDate={lastBatchDate ?? null}
               />
             )}
           </aside>
