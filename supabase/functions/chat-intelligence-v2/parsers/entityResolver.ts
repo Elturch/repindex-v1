@@ -118,7 +118,7 @@ async function loadCatalog(supabase: any): Promise<CatalogEntry[]> {
   try {
     const { data, error } = await supabase
       .from("repindex_root_issuers")
-      .select("issuer_name, ticker, sector_category")
+      .select("issuer_name, ticker, sector_category, verified_competitors")
       .limit(2000);
     if (error) throw error;
     const rows: CatalogEntry[] = (data ?? []).map((r: any) => ({
@@ -128,8 +128,20 @@ async function loadCatalog(supabase: any): Promise<CatalogEntry[]> {
     catalogCache = { ts: Date.now(), rows };
     // attach raw rows in module scope for sector lookup
     sectorByTicker.clear();
+    competitorsByTicker.clear();
     for (const r of (data ?? [])) {
-      if (r?.ticker) sectorByTicker.set(String(r.ticker).toUpperCase(), r.sector_category ?? null);
+      if (r?.ticker) {
+        const tk = String(r.ticker).toUpperCase();
+        sectorByTicker.set(tk, r.sector_category ?? null);
+        // verified_competitors viene como jsonb (array de strings) o null.
+        let vc: string[] | null = null;
+        if (Array.isArray(r.verified_competitors)) {
+          vc = r.verified_competitors
+            .map((x: unknown) => String(x ?? "").trim().toUpperCase())
+            .filter((x: string) => x.length > 0);
+        }
+        competitorsByTicker.set(tk, vc && vc.length > 0 ? vc : null);
+      }
     }
     // Fire-and-forget warm-up of the semantic-group alias hot-set so the
     // intent classifier can recognise canonical aliases (renovables, telecos…)
@@ -143,16 +155,19 @@ async function loadCatalog(supabase: any): Promise<CatalogEntry[]> {
 }
 
 const sectorByTicker = new Map<string, string | null>();
+const competitorsByTicker = new Map<string, string[] | null>();
 
 function buildEntity(
   ticker: string,
   name: string,
   source: ResolvedEntity["source"],
 ): ResolvedEntity {
+  const tk = (ticker || "").toUpperCase();
   return {
-    ticker: (ticker || "").toUpperCase(),
+    ticker: tk,
     company_name: name,
-    sector_category: sectorByTicker.get((ticker || "").toUpperCase()) ?? null,
+    sector_category: sectorByTicker.get(tk) ?? null,
+    verified_competitors: competitorsByTicker.get(tk) ?? null,
     source,
   };
 }
