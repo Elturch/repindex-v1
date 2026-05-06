@@ -411,10 +411,16 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
             type="number"
             min={1}
             max={100}
-            value={state.topN.value}
-            onChange={(e) =>
-              setState(setFilter(state, "topN", Number(e.target.value) || 10))
-            }
+            placeholder="Top N (opcional)"
+            value={state.topN.origin === "free" ? "" : state.topN.value}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") {
+                setState(setFilter(state, "topN", 10, "free"));
+              } else {
+                setState(setFilter(state, "topN", Number(raw) || 10));
+              }
+            }}
           />
         </FilterBlock>
       )}
@@ -422,15 +428,20 @@ export function FilterPanel({ state, setState, companies, hiddenFilters }: Props
       {!isHidden("order") && (
         <FilterBlock title="¿Qué quieres ver?" origin={state.order.origin}>
           <Select
-            value={state.order.value}
-            onValueChange={(v: SortOrder) =>
-              setState(setFilter(state, "order", v))
-            }
+            value={state.order.origin === "free" ? "__free__" : state.order.value}
+            onValueChange={(v) => {
+              if (v === "__free__") {
+                setState(setFilter(state, "order", "desc", "free"));
+              } else {
+                setState(setFilter(state, "order", v as SortOrder));
+              }
+            }}
           >
             <SelectTrigger>
-              <SelectValue />
+              <SelectValue placeholder="— sin restricción —" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__free__">— sin restricción —</SelectItem>
               <SelectItem value="desc">Los mejores (top)</SelectItem>
               <SelectItem value="asc">Los peores (bottom)</SelectItem>
               <SelectItem value="divergence">Los más divergentes entre IAs</SelectItem>
