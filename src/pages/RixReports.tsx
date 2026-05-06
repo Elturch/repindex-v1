@@ -141,6 +141,9 @@ export default function RixReports() {
                       sessionId: newSessionId,
                     },
                   });
+                  // Reiniciar el panel para que la próxima visita a /informes
+                  // arranque desde cero (sin Top N / orden residual).
+                  setState(createInitialFilterState());
                 }}
               >
                 <Send className="h-4 w-4" />

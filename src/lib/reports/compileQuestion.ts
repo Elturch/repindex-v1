@@ -58,8 +58,15 @@ export function compileFiltersToQuestion(
   // un único ticker explícito). Antes sólo se emitía en "ranking", lo que
   // hacía que el usuario perdiera su selección de Top N al usar otros intents.
   const singleTicker = state.tickers.value.length === 1;
+  // Sólo añadir la cláusula Top N / orden si:
+  //  - el intent es ranking (intrínseco), o
+  //  - el usuario fijó explícitamente Top N u orden.
+  const userTouched =
+    state.topN.origin === "user-set" || state.order.origin === "user-set";
   const topNApplies =
-    state.intent.value !== "perfil" && !singleTicker;
+    state.intent.value !== "perfil" &&
+    !singleTicker &&
+    (state.intent.value === "ranking" || userTouched);
   if (topNApplies) {
     if (state.order.value === "asc") {
       parts.push(`limitado a las ${state.topN.value} peores`);
