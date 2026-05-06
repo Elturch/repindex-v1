@@ -1,195 +1,93 @@
-## Normalización de subsectores con respaldo en base de datos (v2)
+## Diagnóstico confirmado por logs
 
-### Objetivo
-Cada empresa de `repindex_root_issuers` tendrá un `subsector` granular y persistido en BD. Los filtros del informe (sector → subsector → empresa) trabajarán en cascada, de forma que "Grupos Hospitalarios" devuelva exactamente las 7 empresas hospitalarias y "Cerveceras" devuelva solo cerveceras.
+Logs reales de `chat-intelligence-v2` (snapshot 2026-05-06 21:11):
 
-### Diagnóstico
-- 27 sectores actuales, solo 9 con subsector parcial.
-- Sectores críticos sin subsector: Salud (16), Construcción e Infraestructuras (26), Energía (15), Materias Primas (10), Otros Sectores (40).
-- Duplicados/cajón desastre: "Construcción" suelto, "Petróleo y Energía", "Telecomunicaciones" suelto, "Otros Sectores".
-
-### Taxonomía propuesta (ajustada según feedback)
-
-```text
-Salud y Farmacéutico
-  ├── Farmacéuticas              → Almirall, Faes Farma, Laboratorios Rovi, Reig Jofre
-  ├── Biotecnología              → Oryzon Genomics, PharmaMar, Atrys Health
-  ├── Hemoderivados              → Grifols
-  ├── Grupos Hospitalarios       → HM Hospitales, Quirónsalud, Vithas, Grupo Hospitalario HLA,
-                                    Grupo Hospiten, Viamed Salud, Ribera Salud
-  └── Servicios Médicos Especializados → Clínica Baviera
-
-Banca y Servicios Financieros
-  ├── Banca Comercial            → Santander, BBVA, CaixaBank, Sabadell, Bankinter, Unicaja
-  └── Banca de Inversión / Gestión → Alantra Partners, Renta 4 Banco
-
-Seguros (sector independiente, conservado)
-  ├── Aseguradoras Generalistas  → Mapfre, Catalana Occidente, Mutua Madrileña
-  ├── Aseguradoras Directas      → Línea Directa Aseguradora
-  └── Aseguradoras de Salud      → Sanitas
-
-Construcción e Infraestructuras  (absorbe sector "Construcción")
-  ├── Constructoras              → ACS, Ferrovial, Sacyr, FCC, OHLA, Grupo Empresarial San José,
-                                    Grupo Azvi, Acciona, Clerhp Estructuras
-  ├── Concesionarias de Infraestructura → Abertis
-  ├── Ingeniería y Servicios Industriales → Técnicas Reunidas, Elecnor
-  ├── Material Ferroviario       → CAF, Talgo
-  ├── Promotoras Residenciales   → AEDAS Homes, Neinor Homes, Metrovacesa, Realia Business,
-                                    Renta Corporación, Montebalito, Inmobiliaria del Sur
-  ├── SOCIMIs / Patrimonialistas → Merlin Properties, Inmobiliaria Colonial, Lar España,
-                                    Castellana Properties, Árima Real Estate, All Iron RE,
-                                    Uro Property Holdings, CEVASA, Libertas 7
-  ├── Inmobiliarias Diversificadas → Nyesa Valores, Urbas
-  └── PropTech                   → Idealista
-
-Energía y Gas  (absorbe "Petróleo y Energía")
-  ├── Utilities Eléctricas       → Iberdrola, Endesa, Naturgy
-  ├── Transmisión y Distribución → Redeia, Enagás
-  ├── Oil & Gas                  → Repsol, Moeve
-  ├── Logística Energética       → Exolum
-  ├── Renovables                 → Acciona Energía, Solaria, Grenergy, Audax, Ecoener,
-                                    EiDF Solar, Enerside, Holaluz, Soltec, Berkeley Energía
-  └── Biomasa y Celulosa         → Ence Energía y Celulosa
-
-Materias Primas y Siderurgia
-  ├── Acero Inoxidable           → Acerinox
-  ├── Siderurgia Integral        → ArcelorMittal
-  ├── Tubos de Acero             → Tubacex, Tubos Reunidos
-  ├── Química                    → Ercros
-  ├── Papel y Celulosa           → Iberpapel, Miquel y Costas
-  ├── Envases                    → Vidrala, Viscofan
-  └── Componentes Metálicos      → Lingotes Especiales
-
-Telecomunicaciones y Tecnología  (absorbe "Telecomunicaciones")
-  ├── Operadores Telecom         → Telefónica, Grupo MASORANGE
-  ├── Telecom Alternativos       → Parlem Telecom
-  ├── Infraestructura Telecom    → Cellnex
-  ├── Tech Viajes                → Amadeus IT
-  ├── Consultoría IT / Defensa   → Indra
-  ├── Big Tech                   → Google, Amazon, Meta
-  ├── Comunicación y PR          → LLYC
-  ├── Software y Servicios IT    → Altia, Izertis, Making Science, Seresco, Gigas Hosting,
-                                    Agile Content, Netex Learning, Substrate AI, Robot S.A.
-  ├── EdTech                     → Proeduca Altus
-  └── Media Digital              → Fever, Squirrel Media, Secuoya Content Group
-
-Hoteles y Turismo
-  ├── Hoteles                    → Meliá Hotels
-  ├── OTAs / Marketplaces Viaje  → Booking.com, Airbnb, eDreams ODIGEO
-  ├── Aerolíneas                 → IAG
-  └── Aeropuertos                → Aena
-
-Alimentación y Bebidas
-  ├── Cerveceras                 → Damm, Mahou San Miguel
-  ├── Bebidas Espumosas          → Freixenet
-  ├── Refrescos                  → Coca-Cola Europacific Partners
-  ├── Vinos                      → Bodegas Bilbaínas, Bodegas Riojanas
-  ├── Cárnicas                   → Campofrío
-  ├── Pesca                      → Nueva Pescanova, Pescanova (Nueva Pescanova)
-  ├── Aceite                     → Deoleo
-  ├── Holdings Alimentarios      → Agrolimen, Ebro Foods
-  └── Nutrición                  → Naturhouse
-
-Consumo y Distribución (fusiona "Distribución" + "Moda y Distribución")
-  ├── Retail Moda                → Inditex, Adolfo Domínguez
-  ├── Gran Distribución          → Mercadona, Eroski, El Corte Inglés, DIA
-  ├── Cosmética y Perfumería     → Puig Brands
-  └── Material Sanitario Retail  → Prim
-
-Consultoría y Auditoría
-  └── Big Four / Consultoría     → Deloitte, PwC, EY, KPMG, Accenture
-
-Defensa e Ingeniería
-  ├── Defensa                    → Escribano EM&E, Airbus
-  └── Ingeniería Avanzada / Robótica → Airtificial
-
-Automoción
-  └── Componentes Auto           → Gestamp, CIE Automotive, Grupo Antolín
-
-Logística y Transporte (fusiona "Logística" + "Transporte")
-  ├── Logística Postal           → Correos
-  ├── Distribución Tabacos       → Logista
-  └── Transporte Ferroviario     → Renfe
-
-Industria
-  ├── Materiales de Construcción → Cosentino
-  ├── Equipos Piscinas           → Fluidra
-  ├── Maquinaria                 → Nicolás Correa, Duro Felguera, GAM, Azkoyen
-  ├── Componentes Industriales   → Global Dominion, Ezentis
-  └── Textil Técnico             → Nextil
-
-Medios y Comunicación  (nuevo, sale de "Otros Sectores")
-  ├── TV / Audiovisual           → Atresmedia, MFE-MediaForEurope
-  └── Prensa                     → PRISA, Vocento
-
-Seguridad
-  └── Seguridad Privada          → Prosegur, Prosegur Cash
-
-Restauración
-  └── Comida Rápida              → Telepizza Brands  (consolidar duplicado)
-
-Servicios B2B
-  └── Inspección y Certificación → Applus Services
+```
+question: "Genera un ranking de la métrica CXM del sector Consultoría y Auditoría
+            limitado a las 10 mejores entre 2026-04-08 y 2026-05-06 con desglose semanal."
+parsed temporal | from=2026-04-05 | to=2026-04-05 | mode=period
+SQL window | requested=2026-04-05→2026-04-05 | reconciled=2026-04-05→2026-04-05
 ```
 
-### Consolidación de sectores
-1. Eliminar sector "Construcción" → fusionar en "Construcción e Infraestructuras".
-2. Eliminar "Petróleo y Energía" → fusionar en "Energía y Gas".
-3. Eliminar "Telecomunicaciones" suelto → fusionar en "Telecomunicaciones y Tecnología".
-4. Mantener "Seguros" como sector propio (incluye Mapfre, Catalana Occidente, Mutua Madrileña, Línea Directa, Sanitas).
-5. Renombrar "Alimentación" → "Alimentación y Bebidas" (incluye cerveceras, vinos, refrescos).
-6. Fusionar "Distribución" + "Moda y Distribución" → "Consumo y Distribución".
-7. Fusionar "Logística" + "Transporte" → "Logística y Transporte".
-8. Vaciar "Otros Sectores" reasignando 40 empresas.
-9. Airbus pasa a "Defensa e Ingeniería"; Airtificial también va aquí en "Ingeniería Avanzada / Robótica".
+Mismo bug que con IBEX-35: el parser temporal toma la primera fecha ISO suelta (`2026-04-08`), la trata como `explicit_date` y la "snappa" al domingo anterior (`2026-04-05`). El conector español `y` en `entre 2026-04-08 y 2026-05-06` no está en la regex `ISO_RANGE_RE`.
 
-### Cambios técnicos
+Esto ocurre con **cualquier alcance** (IBEX, sector, subsector, scope_tickers, comparativas, evoluciones) porque el parser es global. Por eso hay que arreglarlo en la capa temporal y validar transversalmente.
 
-**1. Migración SQL** (`supabase/migrations/{ts}_normalize_subsectors.sql`)
-   - Una sola transacción con ~140 `UPDATE repindex_root_issuers SET sector_category = ?, subsector = ? WHERE ticker = ?`.
-   - Tabla auxiliar opcional `repindex_subsector_taxonomy(sector_category, subsector, description)` como source-of-truth.
-   - `COMMENT ON COLUMN` documentando la taxonomía.
+## Plan
 
-**2. Hook nuevo `src/hooks/useSubsectors.ts`**
-   - `SELECT DISTINCT sector_category, subsector FROM repindex_root_issuers WHERE subsector IS NOT NULL ORDER BY sector_category, subsector`.
-   - Devuelve mapa `{ [sector]: string[] }` para alimentar el combo en cascada.
+### 1. Generalizar `ISO_RANGE_RE` en `supabase/functions/_shared/temporalGuard.ts`
 
-**3. `src/components/reports/FilterPanel.tsx`**
-   - Bloque nuevo "Subsector" tras "Sector". Opciones filtradas por `state.sector.value`.
-   - `tickerOptions` y `sectorOptions` aplican también el filtro `subsector`.
-   - Mantiene la regla previa: `universe` filtra solo cuando `origin === "user-set"`.
+Aceptar todos los conectores españoles e ingleses comunes, manteniendo los actuales:
 
-**4. `src/lib/reports/coherenceEngine.ts`**
-   - Añadir reglas:
-     - **R-sub-1**: si el usuario marca `subsector` y todas las empresas de ese subsector pertenecen a un único `sector_category`, derivar `sector` (`origin: "derived"`).
-     - **R-sub-2**: si cambia `sector` user-set y el `subsector` user-set ya no encaja, vaciar `subsector` a `free`.
-     - **R-sub-3**: `getScopeTickers` y `computeScopeSize` aplican filtro `subsector`.
-   - `subsector` ya está declarado en `FilterState` (`src/lib/reports/filterState.ts`), no requiere ampliar el tipo.
+- `entre 2026-04-08 y 2026-05-06`
+- `del 2026-04-08 al 2026-05-06`
+- `desde 2026-04-08 hasta 2026-05-06`
+- `2026-04-08 a 2026-05-06`
+- `2026-04-08 - 2026-05-06`, `– 2026-05-06`, `→ 2026-05-06`
+- `2026-04-08 to 2026-05-06`
+- `2026-04-08 and 2026-05-06`
 
-**5. `src/lib/reports/compileQuestion.ts`**
-   - Incluir el `subsector` en la pregunta compilada cuando esté presente.
+La regex se aplicará antes que `ISO_DATE_RE` (ya es así). Conservar `kind = explicit_range`.
 
-**6. `src/components/reports/LivePreview.tsx`**
-   - Mostrar chip de subsector cuando esté activo.
+### 2. Reforzar la rama `parseComparison`
 
-**7. Verificación post-migración** (lectura)
-   - `SELECT sector_category, subsector, COUNT(*) FROM repindex_root_issuers GROUP BY 1,2 ORDER BY 1,2`.
-   - Confirmar 0 NULL en `subsector` para empresas activas.
-   - Smoke-tests: "Grupos Hospitalarios" = 7, "Cerveceras" = 2, "Banca Comercial" = 6, "Seguros / Aseguradoras Generalistas" = 3.
+`parseComparison` divide por `vs / versus / frente a / contra...`. Cuando el usuario escribe `entre A y B con desglose semanal`, el `compara` no aplica, pero hoy si el reconocedor de "comparison" se dispara por la palabra `compara`, parte la frase en dos. Añadir guarda: si ambas mitades resuelven a `explicit_date` y `entre X y Y` aparece literalmente, devolver `explicit_range` y NO comparativa.
 
-### Lo que NO se toca
-- Esquema RIX (`rix_runs_v2`), edge functions de scoring.
-- `verified_competitors`.
-- Lógica de universos (`ibex_family_code`).
-- `ChatContext.tsx`, `RixViewer.tsx`.
+### 3. Pasarela defensiva en `parsers/temporalParser.ts`
 
-### Riesgos
-- Informes guardados que filtraban por sectores eliminados ("Construcción", "Otros Sectores", "Telecomunicaciones") quedarán con chip vacío al rehidratar; el usuario debe regenerar.
-- `rix_runs_v2` no usa `sector_category` → cero impacto en datos históricos.
-- Catálogos de UI (`useSectorCategories`, `useSubsectors`) recalculan desde DB automáticamente.
+Antes de invocar `parseTemporalIntent`, normalizar la frase:
 
-### Entregables
-1. Migración SQL con UPDATEs masivos + tabla taxonomía opcional.
-2. Hook `useSubsectors.ts`.
-3. Cambios en `FilterPanel.tsx`, `coherenceEngine.ts`, `compileQuestion.ts`, `LivePreview.tsx`.
-4. SQL de verificación post-migración.
+- Detectar patrón `entre <ISO> y <ISO>` y reescribirlo a `<ISO> a <ISO>` para garantizar que `ISO_RANGE_RE` lo capture incluso si una mejora futura olvida el conector `y`. Es un cinturón + tirantes.
+
+### 4. Tests de regresión transversales
+
+Añadir o ampliar `_shared/temporalGuard_test.ts` con casos:
+
+- `entre 2026-04-08 y 2026-05-06` → `explicit_range`, `2026-04-08 → 2026-05-06`.
+- `desde 2026-01-01 hasta 2026-03-31` → `explicit_range`.
+- `del 2026-02-01 al 2026-02-28` → `explicit_range`.
+- `2026-04-08 to 2026-05-06` → `explicit_range`.
+- `2026-04-08 and 2026-05-06` → `explicit_range`.
+- Sanity: una sola fecha sigue siendo `explicit_date`.
+
+### 5. Tests de regresión por intent y alcance
+
+Añadir un test ligero en `chat-intelligence-v2/parsers/temporalParser_test.ts` (creación nueva si no existe) que valide la integración con frases reales del panel de Informes:
+
+- IBEX-35: `Genera un informe ejecutivo del universo IBEX-35 limitado a las 10 mejores entre 2026-04-08 y 2026-05-06 con desglose semanal.`
+- Sector: `Genera un ranking de la métrica CXM del sector Consultoría y Auditoría limitado a las 10 mejores entre 2026-04-08 y 2026-05-06 con desglose semanal.`
+- Subsector: `Compara las 5 mejores empresas del subsector Grupos Hospitalarios entre 2026-04-08 y 2026-05-06.`
+- Comparativa multi-empresa: `Compara Iberdrola con Endesa entre 2026-04-08 y 2026-05-06.`
+- Evolución: `Analiza la evolución de Inditex entre 2026-04-08 y 2026-05-06 con desglose semanal.`
+
+Resultado esperado en todos: `requested_from = 2026-04-08`, `requested_to = 2026-05-06`, `mode = period`.
+
+### 6. Verificación en `sectorRanking` y resto de skills
+
+Confirmar (sin tocar lógica) que `sqlFrom = parsed.temporal.requested_from ?? parsed.temporal.from` y `sqlTo = parsed.temporal.requested_to ?? parsed.temporal.to` están correctamente puestos en:
+
+- `skills/sectorRanking.ts` ✓ (ya lo hace)
+- `skills/comparison.ts`
+- `skills/periodEvolution.ts`
+- `skills/modelDivergence.ts`
+- `skills/companyAnalysis.ts`
+
+Si alguna usa solo `temporal.from/to`, parchear para que use el rango requerido cuando exista. Esto evita que un futuro fallo del reconciliador vuelva a colapsar la ventana a una semana.
+
+### 7. Despliegue y validación en vivo
+
+1. Desplegar `chat-intelligence-v2` y `_shared` (compartido).
+2. Disparar curl con la pregunta IBEX-35 original y verificar en logs:
+   - `parsed temporal | from=2026-04-08 | to=2026-05-06 | mode=period`
+   - `[sectorRanking] fetched=>=800 rows | window=2026-04-08→2026-05-06 | ibexOnly=true`
+3. Repetir con el caso sector "Consultoría y Auditoría" para confirmar que también resuelve a 4 semanas.
+
+### 8. Riesgos
+
+- Falsos positivos: la palabra `y` es muy común, pero `ISO_RANGE_RE` exige dos fechas ISO completas separadas por espacios y conector. No afectará a frases sin fechas ISO.
+- Comparativas con `compara X con Y entre A y B` deben seguir funcionando: el split por `con` ocurre antes; verificaremos con un test.
+
+### Fuera de alcance
+
+- No se toca el composer del front (`compileQuestion.ts`); ya emite `entre <from> y <to>` que es el formato natural en español.
+- No se modifica el reconciliador (`reconcileWindow`) ni los límites de paginación.
