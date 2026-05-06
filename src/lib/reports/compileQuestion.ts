@@ -29,10 +29,18 @@ export function compileFiltersToQuestion(
     state.intent.value !== "vision_general"
   ) {
     const metrics = state.axisMetrics.value;
-    if (metrics.length === 1) {
+    const hasRix = metrics.includes("RIX" as any);
+    const canonical = metrics.filter((m) => m !== ("RIX" as any));
+    if (metrics.length === 1 && hasRix) {
+      parts.push("del índice RIX global");
+    } else if (metrics.length === 1) {
       parts.push(`de la métrica ${metrics[0]}`);
     } else if (metrics.length >= 9) {
       parts.push("de todas las métricas RIX");
+    } else if (hasRix && canonical.length > 0) {
+      parts.push(
+        `de las métricas ${canonical.join(", ")} incluyendo el índice RIX global`,
+      );
     } else {
       parts.push(`de las métricas ${metrics.join(", ")}`);
     }
