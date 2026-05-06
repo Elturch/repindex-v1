@@ -1,47 +1,39 @@
 ## Problema
 
-En `/informes`, los filtros **Top N** y **¿Qué quieres ver?** (orden) aparecen siempre con valores por defecto (`10` y `mejores`). Esto provoca dos efectos no deseados:
+El botón **7d** calcula `from = hoy - 7` y `to = hoy`. Hoy es miércoles 2026-05-06 y el último barrido (canónico, dominical) es 2026-05-03. Aunque el rango contiene ese domingo, dependiendo de cómo el reconciliador alinea ventanas, la consulta puede:
 
-1. Aunque el usuario no toque esos filtros, la pregunta compilada siempre añade `"limitado a las 10 mejores"` (ver `compileQuestion.ts` líneas 61-73), contaminando consultas que no lo necesitan (visión general, divergencia, etc.).
-2. Tras generar un informe, al volver al panel los campos no se reinician — el usuario arrastra elecciones residuales a la siguiente consulta.
+- colapsar a un snapshot inexistente (fechas no-domingo),
+- caer entre dos sundays sin solapar suficientes datos,
+- o devolver 0 observaciones porque el agente espera un periodo cerrado en el último barrido real.
+
+El usuario espera que **7d = la última semana con datos = el último barrido dominical**, no "los últimos 7 días naturales".
 
 ## Cambios
 
-### 1. `src/lib/reports/filterState.ts`
-- `topN` por defecto: valor lógico `10` pero `origin: "free"` (ya está) — añadir bandera para que la UI lo muestre vacío hasta que el usuario lo toque.
-- `order` por defecto: igual, mantener `"desc"` interno pero tratar como no-establecido si `origin === "free"`.
-- Confirmar que `createInitialFilterState()` deja todo como `free`.
-
-### 2. `src/lib/reports/compileQuestion.ts`
-Sólo emitir la cláusula `"limitado a las N {mejores|peores|divergentes}"` cuando:
-- `intent === "ranking"` (donde Top N es intrínseco), **o**
-- `state.topN.origin === "user-set"` o `state.order.origin === "user-set"`.
-
-En el resto de intents (visión general, comparativa, evolución, divergencia, perfil), si el usuario no fija explícitamente Top N u orden, **no** se añade la cláusula.
-
-### 3. `src/components/reports/FilterPanel.tsx`
-- **Top N**: input vacío (placeholder `"Top N (opcional)"`) cuando `origin === "free"`. Al escribir, pasa a `user-set`. Botón pequeño "limpiar" para volver a `free`.
-- **¿Qué quieres ver?**: Select con placeholder `"— sin restricción —"` cuando `origin === "free"`. Añadir opción "Sin restricción" que devuelve a `free`.
-- Mantener visibilidad por intent (sigue oculto en `perfil`, `evolucion`, etc.).
-
-### 4. `src/pages/RixReports.tsx`
-Tras generar un informe (botón "Generar informe", justo después de `navigate("/visor", …)`), resetear el estado:
+### 1. Nuevo hook `useLatestBatchDate`
+`src/hooks/useLatestBatchDate.ts` — react-query que consulta:
+```sql
+select max(batch_execution_date) from rix_runs_v2
 ```
-setState(createInitialFilterState());
-```
-Así, cuando el usuario vuelve a `/informes`, encuentra el panel limpio. La rehidratación desde "Editar filtros" del visor sigue funcionando (usa `location.state.prefilFilters`).
+Devuelve el último sunday con datos (`2026-05-03` hoy). Cache 5 min.
 
-### 5. `src/lib/reports/coherenceEngine.ts`
-Regla R10 (Top N > scope): sólo emitir el aviso si `topN.origin === "user-set"` (ya no aplica si está libre).
+### 2. `src/components/reports/FilterPanel.tsx` — recalcular presets contra `lastBatchDate`
+En lugar de partir de `new Date()` (hoy):
+- **anchor** = `lastBatchDate ?? hoy`.
+- `7d` → `from = anchor - 6`, `to = anchor`. Es decir, la semana cuyo cierre es el último barrido.
+- `30d` → `from = anchor - 29`, `to = anchor`.
+- `90d` → `from = anchor - 89`, `to = anchor`.
+- `YTD` → `from = 2026-01-01`, `to = anchor`.
 
-## Validación
+Tooltip o `title` en el botón 7d: `"Última semana con datos (cierre {anchor})"`.
 
-- Generar consulta de visión general IBEX-35 sin tocar Top N / orden → la pregunta compilada **no** debe contener `"limitado a las 10 mejores"`.
-- Generar ranking IBEX-35 sin tocar Top N → sigue aplicándose Top N por defecto (10 mejores) porque el intent lo exige.
-- Tras pulsar "Generar informe" y volver a `/informes` → panel completamente vacío (todos `free`).
-- Editar filtros desde el visor → estado rehidratado correctamente, los `user-set` se conservan.
+### 3. `createInitialFilterState()` — ventana por defecto
+Hoy parte de "últimos 28 días desde hoy". Cambiar para que, una vez cargue `lastBatchDate`, se materialice como `last_month` anclado a `anchor`. Como el hook es asíncrono, mantener default offline y, cuando `lastBatchDate` llega y el usuario no ha tocado `window` (`origin === "free"`), reemplazar la ventana automáticamente desde `RixReports.tsx` (efecto al recibir el dato).
+
+### 4. Validación
+- Pulsar 7d con `lastBatchDate = 2026-05-03` → `from = 2026-04-27`, `to = 2026-05-03`. La pregunta compilada debe incluir ese rango y el agente devolver datos del barrido del 3-may.
+- Comprobar consola/red: la respuesta del agente trae observaciones > 0 para IBEX-35.
 
 ## Fuera de alcance
-
-- Cambios en el backend / `chat-intelligence-v2`.
-- Cambios en otros filtros (modelos, ventana temporal, granularidad).
+- Lógica del reconciliador en backend.
+- Otros componentes de chat (`ReportInfoBar`) que ya usan `last_batch_date`.
