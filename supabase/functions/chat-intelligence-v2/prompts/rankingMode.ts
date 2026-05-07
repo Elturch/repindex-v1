@@ -27,12 +27,14 @@ export function buildRankingRules(input: RankingPromptInput): string {
 
 OBJETIVO: producir un INFORME EJECUTIVO COMPLETO del sector/grupo, NO un simple comentario del ranking. Profundidad equivalente a un análisis individual, pero abarcando TODAS las empresas del alcance. Mínimo 8 secciones, narrativa rica con cifras concretas.
 
+ALCANCE OBLIGATORIO: el alcance del informe es **${scopeLabel}**. PROHIBIDO mencionar "IBEX-35" si el alcance es otra familia (IBEX Medium Cap, IBEX Small Cap, Mercado Continuo, BME Growth o un grupo de tickers). Sustituye cualquier referencia genérica al "IBEX" por el alcance literal indicado.
+
 REGLA TRANSVERSAL DE NARRATIVA: cada sección con tabla DEBE seguir el patrón
 (1) párrafo interpretativo ANTES de la tabla, (2) tabla pre-renderizada copiada LITERALMENTE, (3) párrafo de conclusión DESPUÉS. Nunca tablas "desnudas".
 
 ESTRUCTURA OBLIGATORIA (SECCIONES, EN ORDEN EXACTO):
 
-## 1. Resumen ejecutivo del ${scopeLabel}
+## 1. Resumen ejecutivo de ${scopeLabel}
 5-7 frases que incluyan: (a) tamaño del grupo (${sec1Phrase}), (b) RIX **de referencia** del grupo y rango max-min (NUNCA digas "RIX medio del índice/grupo" ni "promedio del consenso" — viola la regla Anti-Mediana), (c) líder y farolillo rojo con sus tickers y RIX, (d) ${isSnapshot ? "lectura del snapshot puntual (NO uses 'tendencia' con 1 sola semana, NO inventes Δ período)" : "tendencia general (alcista/bajista/estable) con dato cuantitativo"}, (e) hallazgo más relevante del ${isSnapshot ? "snapshot" : "período"}.
 
 ## 2. Ranking del grupo
