@@ -776,27 +776,48 @@ export const sectorRankingSkill: Skill = {
     // entirely (e.g. "grupos hospitalarios" must NOT load all of "Salud y
     // Farmacéutico"). Otherwise fall back to the resolved entity sector.
     const sector = scopeTickers ? null : (parsed.entities[0]?.sector_category ?? null);
-    // Detect IBEX hint directly from the raw question (sector_ranking has
-    // no resolved entity by design).
-    const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
-    // Detect explicit "top N" → cap N between 3 and 50. Si NO hay top
-    // explícito, el default depende del scope: scope_tickers → tamaño exacto;
-    // IBEX → 35; sector → 25; resto → 15. Antes había un cap mudo de 15
-    // que truncaba IBEX-35 a 15 empresas (bug reportado por el usuario).
-    const topMatch = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
+    // Detect IBEX family code directly from the raw question. Order matters:
+    // longer / more specific codes are tested first. Falls back to null
+    // (= no family scope) if nothing matches.
+    const familyCode = detectFamilyCode(parsed.raw_question);
+    const FAMILY_DEFAULT_TOPN: Record<string, number> = {
+      "IBEX-35": 35,
+      "IBEX-MC": 21,
+      "IBEX-SC": 31,
+      "MC-OTHER": 26,
+      "BME-GROWTH": 19,
+    };
+    const FAMILY_LABEL: Record<string, string> = {
+      "IBEX-35": "IBEX-35",
+      "IBEX-MC": "IBEX Medium Cap",
+      "IBEX-SC": "IBEX Small Cap",
+      "MC-OTHER": "Mercado Continuo (otros)",
+      "BME-GROWTH": "BME Growth",
+    };
+    // Detect explicit Top N from BOTH "top N" and "limitado a las N".
+    const topMatchA = parsed.raw_question.match(/\btop\s*(\d{1,2})\b/i);
+    const topMatchB = parsed.raw_question.match(/\blimitad[oa]s?\s+(?:a\s+)?(?:las?\s+|los\s+)?(\d{1,2})\b/i);
+    const topMatch = topMatchA ?? topMatchB;
     const explicitTopN = topMatch ? Math.max(3, Math.min(50, parseInt(topMatch[1], 10))) : null;
+    // Detect order hint from natural language emitted by compileQuestion:
+    //  - "N peores" → asc
+    //  - "N de mayor divergencia" → divergence
+    //  - default → desc
+    let orderHint: OrderHint = "desc";
+    if (/\bpeores?\b/i.test(parsed.raw_question)) orderHint = "asc";
+    else if (/\bmayor\s+divergencia\b/i.test(parsed.raw_question)) orderHint = "divergence";
     const topN = explicitTopN ?? (
       scopeTickers && scopeTickers.length > 0 ? scopeTickers.length :
-      ibexOnly ? 35 :
+      familyCode ? (FAMILY_DEFAULT_TOPN[familyCode] ?? 25) :
       sector ? 25 :
       15
     );
-    console.log(`${tag} topN resolved=${topN} | explicit=${explicitTopN ?? "no"} | scope_tickers=${scopeTickers?.length ?? 0} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"}`);
+    console.log(`${tag} topN=${topN} order=${orderHint} | explicit=${explicitTopN ?? "no"} | scope_tickers=${scopeTickers?.length ?? 0} | family=${familyCode ?? "n/d"} | sector=${sector ?? "n/d"}`);
     const scopeLabel = scopeTickers
       ? `grupo seleccionado (${scopeTickers.length} empresas: ${scopeTickers.join(", ")})`
       : sector
         ? `sector ${sector}`
-        : (ibexOnly ? "IBEX-35" : "todas las empresas cubiertas");
+        : (familyCode ? FAMILY_LABEL[familyCode] ?? familyCode : "todas las empresas cubiertas");
 
     // Use the REQUESTED window (e.g. Q1 = 2026-01-01 → 2026-03-31) for the
     // SQL bounds, NOT the reconciled/clamped window which may collapse to a
@@ -812,7 +833,7 @@ export const sectorRankingSkill: Skill = {
       ? parsed.models.map((m) => (m === "Gemini" ? "Google Gemini" : m))
       : null;
     const isSingleModel = Array.isArray(parsed.models) && parsed.models.length === 1;
-    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers, dbModelFilter);
+    const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, familyCode, scopeTickers, dbModelFilter);
     // P1-C.1 — forensic log for dimension propagation in sector path.
     const _uniqTickers = new Set(rows.map((r) => r["05_ticker"]).filter(Boolean)).size;
     console.log(`[RIX-V2][companyAnalysis] dimension_metrics_fetched | tickers=${_uniqTickers} | rows=${rows.length} | window=${sqlFrom}→${sqlTo}`);
@@ -854,7 +875,7 @@ export const sectorRankingSkill: Skill = {
         }
       : parsed.temporal;
     console.log(`${tag} temporal recompute | mode=${isSnapshotMode ? "snapshot" : "period"} | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (weeks=${realWeeksCount}, models=${realModelKeys.size}, expected=${parsed.temporal.snapshots_expected})`);
-    const ranking = aggregateRanking(rows, topN);
+    const ranking = aggregateRanking(rows, topN, orderHint);
     const models = parsed.models;
     const table = ranking.length > 0
       ? (isSingleModel
@@ -943,7 +964,7 @@ export const sectorRankingSkill: Skill = {
     // narrow (no raw text), so the previous extractCitedSources(rows) always
     // yielded 0 URLs in sector reports. We now call fetchSectorSourceRows()
     // and feed those rows into extractCitedSources/renderCitedSourcesBlock.
-    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, ibexOnly, scopeTickers, dbModelFilter);
+    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, familyCode, scopeTickers, dbModelFilter);
     const citedSourcesReport = extractCitedSources(sourceRows);
     const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
     const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
