@@ -1,69 +1,60 @@
-# Forzar competidores verificados en Perfil (anti-fallback sectorial)
+# Fallos detectados en Informes RIX (universo IBEX-MC y similares)
 
-## Problema
+## Diagnóstico
 
-En el ejemplo de MASORANGE, el bloque "Contexto Competitivo" del intent **perfil** muestra empresas como Proeduca, Izertis, Squirrel, Netex, Gigas — que **no son competidores reales** de una telco. Esto ocurre porque `buildCompetitiveContext` (en `chat-intelligence-v2/datapack/competitiveContext.ts`) consulta directamente:
+Tres bugs en el backend `chat-intelligence-v2/skills/sectorRanking.ts`:
 
-```text
-repindex_root_issuers WHERE sector_category = entity.sector_category LIMIT 60
-```
+1. **Colapso de familia IBEX → siempre IBEX-35.** La detección actual es:
+   ```ts
+   const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
+   ...
+   if (ibexOnly) scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
+   ```
+   Cualquier mención a "IBEX-MC", "IBEX-SC", "MC-OTHER", "BME-GROWTH" cae en el regex y se fuerza a `IBEX-35`. Por eso el datapack devuelve 35 empresas y `2657 observaciones` aunque el filtro frontend diga `IBEX-MC` o `IBEX Small Cap`. La BD ya tiene los códigos: 35 / 21 / 31 / 26 / 19.
 
-es decir, **siempre** cae al sector entero, ignorando la columna `verified_competitors`. Esto viola dos reglas Core de memoria:
-- *Competitors*: usar **solo** `verified_competitors`, nunca fallback sectorial.
-- *competidores-verificados-estrictos-no-sector-fallback*.
+2. **`topN` ignora "limitado a las 10 peores".** El parser sólo busca `/\btop\s*(\d{1,2})\b/`. La frase compilada por el frontend es `limitado a las 10 peores`, así que `topN` cae al default de la familia (35 / 25 / 15) y el informe lista todo el universo.
 
-## Objetivo
+3. **`order` (asc/desc/divergence) no se propaga.** Aunque el frontend escribe "10 peores" / "10 mejores" / "10 de mayor divergencia", el backend siempre ordena `desc` por `09_rix_score`. Hay que extraer el orden de la misma cláusula.
 
-Para el intent `company_analysis` (Perfil), el peer set debe construirse **estrictamente** desde `verified_competitors` de la entidad analizada. Si la empresa no tiene competidores verificados (o son <2), la sección se omite con un mensaje explícito en lugar de inventar peers sectoriales.
+(Modelos sí se respetan: el flujo `dbModelFilter` mapea `Gemini → Google Gemini` y filtra SQL.)
 
 ## Cambios
 
-### 1. `supabase/functions/chat-intelligence-v2/types.ts`
-Añadir campo opcional a `ResolvedEntity`:
-```ts
-verified_competitors?: string[] | null;
-```
+### 1. `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts`
 
-### 2. Resolver de entidades
-Localizar dónde se hidrata `ResolvedEntity` desde `repindex_root_issuers` (mismo sitio donde hoy se lee `sector_category`) y añadir `verified_competitors` al `select(...)`. Propagar al objeto resuelto, normalizando jsonb → `string[]`.
+- Sustituir `ibexOnly: boolean` por `familyCode: string | null` en `fetchRankingRows` y `fetchSectorSourceRows`.
+- Detectar familia con un mapa explícito sobre `parsed.raw_question`:
+  ```
+  IBEX-35 | IBEX-MC | IBEX-SC | MC-OTHER | BME-GROWTH
+  ```
+  Aliases tolerados: "IBEX Medium Cap" → IBEX-MC, "IBEX Small Cap" → IBEX-SC, "Mercado Continuo" sin IBEX → MC-OTHER. Si no hay match, `familyCode = null`.
+- Aplicar `scopeQ.eq("ibex_family_code", familyCode)` con el valor exacto.
+- Sólo invocar `assertIbex35Invariant` cuando `familyCode === "IBEX-35"`.
+- `topN` por defecto pasa a depender del tamaño real de la familia: 35 / 21 / 31 / 26 / 19. Si `scopeTickers` o `sector` están presentes mantienen su lógica actual.
+- Añadir parser de "limitado a las N (peores|mejores|de mayor divergencia)" → `explicitTopN` y `orderHint`.
+- Pasar `orderHint` a `aggregateRanking` para invertir el orden cuando sea `asc` o aplicar el ranking por rango (`rix_max - rix_min`) cuando sea `divergence`.
+- `scopeLabel` refleja la familia detectada ("IBEX Medium Cap (21 empresas)", etc.).
 
-### 3. `supabase/functions/chat-intelligence-v2/datapack/competitiveContext.ts`
-Reescribir el paso (1) "Tickers del mismo sector":
+### 2. `supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts`
 
-- **Nueva fuente única**: `entity.verified_competitors`. Filtrar nulos/vacíos y deduplicar; **incluir siempre** el propio `entity.ticker` para que aparezca en la tabla.
-- **Sin fallback sectorial**. Eliminar la query a `repindex_root_issuers WHERE sector_category = ...`.
-- Si `verified_competitors.length === 0` o tras filtrar `validPeers < 2`, devolver un `CompetitiveContext` con flag `reason: "no_verified_competitors"` y tabla vacía.
-- Conservar intacto el resto: query a `rix_runs_v2 IN (tickers)`, agregación anti-mediana, ordenación por consenso.
+- Reemplazar las menciones hardcoded a "IBEX-35" en la sección 1 del prompt cuando el alcance no sea IBEX-35: usar `${scopeLabel}` y la cifra real de empresas.
+- Añadir regla explícita: "El alcance del informe es {familyCode}; PROHIBIDO mencionar IBEX-35 si el alcance es otra familia".
 
-### 4. `renderCompetitiveContextTable`
-Cuando `ctx.table.length === 0` y `reason === "no_verified_competitors"`, devolver un bloque explícito:
+### 3. `src/lib/reports/compileQuestion.ts`
 
-```text
-**Contexto competitivo sectorial — no disponible**
+- Cuando `state.universe.value` contenga un código de familia (IBEX-35, IBEX-MC, IBEX-SC, MC-OTHER, BME-GROWTH) usarlo literal: `del universo IBEX-MC`. (Hoy ya lo hace, validar que el string es exacto al `ibex_family_code` de BD.)
+- Mapear los labels visibles del FilterPanel ("IBEX Small Cap", "IBEX Medium Cap", "Mercado Continuo") a sus códigos canónicos antes de inyectar la frase, para que el backend reciba siempre `IBEX-SC`, `IBEX-MC`, `MC-OTHER`.
 
-No constan competidores verificados para {company_name} en la base de datos
-RepIndex. Conforme a la regla de competidores estrictos, no se realiza
-comparación con peers sectoriales no verificados.
-```
+### 4. Verificación
 
-En cualquier otro caso (peers <2 por falta de scores), mantener el comportamiento actual de omitir silenciosamente.
+- Llamar `chat-intelligence-v2` vía `supabase--curl_edge_functions` con tres preguntas:
+  - `Genera un informe ejecutivo del universo IBEX-MC limitado a las 10 peores entre 2026-02-06 y 2026-05-07 con desglose semanal.` → datapack debe mostrar 21 empresas, ranking de 10 (peores), informe sin mencionar IBEX-35.
+  - `... universo IBEX-SC limitado a las 5 mejores ...` → 31 empresas en alcance, ranking de 5 (mejores).
+  - `... universo IBEX-35 ...` → comportamiento actual intacto.
+- Revisar logs `[RIX-V2][sectorRanking]` para confirmar `family=IBEX-MC`, `topN=10`, `order=asc`.
 
-### 5. `sectorRanking.ts` — sin cambios
-El bloque `buildCompetitiveContextBlock` de `sectorRanking` ya opera sobre el ranking precomputado y no toca `verified_competitors`; queda fuera de alcance porque el problema es exclusivo del Perfil de una sola empresa.
+## Fuera de alcance
 
-### 6. Memoria
-Actualizar `mem://features/chat/competidores-verificados-estrictos-no-sector-fallback` con una nota: "Aplicado también a `competitiveContext.ts` del intent company_analysis. Sin fallback sectorial; mensaje explícito si no hay verified_competitors."
-
-## Validación
-
-1. **MASORANGE** (sin verified_competitors poblados, según el síntoma): el bloque "Contexto Competitivo" aparece como "no disponible" en lugar de listar 25 empresas del subsector media.
-2. **SAN** (con `verified_competitors = [BBVA, CABK, SAB, BKT, UNI]`): el bloque muestra Santander + esos 5 tickers exclusivamente, ordenados por consenso.
-3. **Empresa con verified_competitors pero sin scores en el periodo**: sección omitida sin error.
-4. Otros intents (sector_ranking, comparison, evolution) no se ven afectados.
-
-## Detalles técnicos
-
-- Tipo Postgres de `verified_competitors`: `jsonb` con array de strings (confirmado en `expand_entity_graph`).
-- No requiere migración de BD.
-- No requiere nuevos secretos.
-- Deploy: solo `chat-intelligence-v2`.
+- No se tocan los skills `companyAnalysis`, `companyEvolution`, `divergenceAnalysis`. Si el usuario pide "perfil del universo IBEX-MC" eso entra en sector_ranking igualmente (intent classifier lo enruta así).
+- No se modifica el `verified_competitors` ni el bloque "Contexto Competitivo" (ya resuelto en la iteración anterior).
+- No se cambia el FilterPanel UI ni los presets visibles.
