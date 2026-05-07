@@ -416,7 +416,9 @@ async function fetchSectorSourceRows(
   return all;
 }
 
-function aggregateRanking(rows: any[], topN: number): RankingRow[] {
+type OrderHint = "desc" | "asc" | "divergence";
+
+function aggregateRanking(rows: any[], topN: number, order: OrderHint = "desc"): RankingRow[] {
   // ANTI-MEDIANA (paridad dashboard nuevo modelo):
   //   1) Agrupar por (ticker, semana) → aggregateConsensus expone min/max/range/level
   //      por snapshot semanal (NO promediamos entre IAs).
@@ -491,12 +493,17 @@ function aggregateRanking(rows: any[], topN: number): RankingRow[] {
     });
   }
 
-  // Sort: nivel de consenso (alto→bajo) primero, luego rango más estrecho primero.
-  out.sort((a, b) => {
-    const ld = LEVEL_RANK[a.consensusLevel] - LEVEL_RANK[b.consensusLevel];
-    if (ld !== 0) return ld;
-    return a.weekly_range_avg - b.weekly_range_avg;
-  });
+  // Sort according to order hint:
+  //  - desc (default): mejor RIX primero (rix_max desc, luego rix_min desc).
+  //  - asc: peor RIX primero (rix_min asc).
+  //  - divergence: mayor rango inter-modelo primero (weekly_range_avg desc).
+  if (order === "asc") {
+    out.sort((a, b) => a.rix_min - b.rix_min || a.rix_max - b.rix_max);
+  } else if (order === "divergence") {
+    out.sort((a, b) => b.weekly_range_avg - a.weekly_range_avg);
+  } else {
+    out.sort((a, b) => b.rix_max - a.rix_max || b.rix_min - a.rix_min);
+  }
   return out.slice(0, topN);
 }
 
