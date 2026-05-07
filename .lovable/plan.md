@@ -1,60 +1,49 @@
-# Fallos detectados en Informes RIX (universo IBEX-MC y similares)
+## Problema
 
-## Diagnóstico
+En el panel "Métricas a analizar" (y en el chip "Solo RIXc") los usuarios sólo ven las siglas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM). Hoy hay un `title=""` HTML nativo con una palabra (p.ej. "Visibilidad"), insuficiente y poco visible. Mucha gente no sabe qué mide cada inicial.
 
-Tres bugs en el backend `chat-intelligence-v2/skills/sectorRanking.ts`:
+## Propuesta
 
-1. **Colapso de familia IBEX → siempre IBEX-35.** La detección actual es:
-   ```ts
-   const ibexOnly = /\bibex(?:[-\s]?\d+)?\b/i.test(parsed.raw_question);
-   ...
-   if (ibexOnly) scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
-   ```
-   Cualquier mención a "IBEX-MC", "IBEX-SC", "MC-OTHER", "BME-GROWTH" cae en el regex y se fuerza a `IBEX-35`. Por eso el datapack devuelve 35 empresas y `2657 observaciones` aunque el filtro frontend diga `IBEX-MC` o `IBEX Small Cap`. La BD ya tiene los códigos: 35 / 21 / 31 / 26 / 19.
+Sustituir el `title` HTML por un **tooltip enriquecido (shadcn `Tooltip`)** que aparezca al pasar el ratón sobre cada chip de métrica, con:
 
-2. **`topN` ignora "limitado a las 10 peores".** El parser sólo busca `/\btop\s*(\d{1,2})\b/`. La frase compilada por el frontend es `limitado a las 10 peores`, así que `topN` cae al default de la familia (35 / 25 / 15) y el informe lista todo el universo.
+1. **Nombre completo** de la métrica (sigla → expansión).
+2. **Descripción corta** (1 línea) de qué mide.
+3. Mismo tooltip aplicado al botón **"Solo RIXc"** y al botón **"Todas"** (con texto explicativo simple).
 
-3. **`order` (asc/desc/divergence) no se propaga.** Aunque el frontend escribe "10 peores" / "10 mejores" / "10 de mayor divergencia", el backend siempre ordena `desc` por `09_rix_score`. Hay que extraer el orden de la misma cláusula.
+Diseño visual: usa el `Tooltip` ya existente (`src/components/ui/tooltip.tsx`), respetando tokens semánticos (sin colores hardcoded).
 
-(Modelos sí se respetan: el flujo `dbModelFilter` mapea `Gemini → Google Gemini` y filtra SQL.)
+### Contenido propuesto por métrica
 
-## Cambios
+| Sigla | Nombre completo | Descripción corta |
+|---|---|---|
+| RIXc | RepIndex Composite | Índice compuesto de reputación algorítmica (agrega las 8 métricas). |
+| NVM | Narrative Visibility Metric | Cuánto aparece la entidad en respuestas de los modelos. |
+| DRM | Disagreement & Risk Metric | Riesgo reputacional y desacuerdo entre modelos. |
+| SIM | Sentiment Intensity Metric | Tono y polaridad del sentimiento generado. |
+| RMM | Reputational Mention Metric | Calidad y contexto de las menciones de marca. |
+| CEM | Citation & Evidence Metric | Engagement / evidencias citadas por los modelos. |
+| GAM | Governance Alignment Metric | Alineación con buen gobierno y ESG-G. |
+| DCM | Diversity & Coverage Metric | Diversidad de fuentes y cobertura temática. |
+| CXM | Customer Experience Metric | Experiencia de cliente percibida (sólo aplicable a empresas B2C; "N/A" en otras). |
 
-### 1. `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts`
+> Los nombres completos los confirma el usuario antes de implementar (ver Pregunta).
 
-- Sustituir `ibexOnly: boolean` por `familyCode: string | null` en `fetchRankingRows` y `fetchSectorSourceRows`.
-- Detectar familia con un mapa explícito sobre `parsed.raw_question`:
-  ```
-  IBEX-35 | IBEX-MC | IBEX-SC | MC-OTHER | BME-GROWTH
-  ```
-  Aliases tolerados: "IBEX Medium Cap" → IBEX-MC, "IBEX Small Cap" → IBEX-SC, "Mercado Continuo" sin IBEX → MC-OTHER. Si no hay match, `familyCode = null`.
-- Aplicar `scopeQ.eq("ibex_family_code", familyCode)` con el valor exacto.
-- Sólo invocar `assertIbex35Invariant` cuando `familyCode === "IBEX-35"`.
-- `topN` por defecto pasa a depender del tamaño real de la familia: 35 / 21 / 31 / 26 / 19. Si `scopeTickers` o `sector` están presentes mantienen su lógica actual.
-- Añadir parser de "limitado a las N (peores|mejores|de mayor divergencia)" → `explicitTopN` y `orderHint`.
-- Pasar `orderHint` a `aggregateRanking` para invertir el orden cuando sea `asc` o aplicar el ranking por rango (`rix_max - rix_min`) cuando sea `divergence`.
-- `scopeLabel` refleja la familia detectada ("IBEX Medium Cap (21 empresas)", etc.).
+## Archivos a tocar
 
-### 2. `supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts`
+- `src/components/reports/FilterPanel.tsx`
+  - Ampliar el array `METRICS` añadiendo `fullName` y `description`.
+  - Envolver cada chip de métrica en `<Tooltip><TooltipTrigger asChild>…</TooltipTrigger><TooltipContent>…</TooltipContent></Tooltip>`.
+  - Quitar el `title={m.hint}` (sustituido por el tooltip).
+  - Envolver también los botones "Todas" y "Solo RIXc" con su tooltip.
+  - Asegurar que existe un `<TooltipProvider>` arriba (si no, añadirlo localmente alrededor del bloque de métricas).
 
-- Reemplazar las menciones hardcoded a "IBEX-35" en la sección 1 del prompt cuando el alcance no sea IBEX-35: usar `${scopeLabel}` y la cifra real de empresas.
-- Añadir regla explícita: "El alcance del informe es {familyCode}; PROHIBIDO mencionar IBEX-35 si el alcance es otra familia".
-
-### 3. `src/lib/reports/compileQuestion.ts`
-
-- Cuando `state.universe.value` contenga un código de familia (IBEX-35, IBEX-MC, IBEX-SC, MC-OTHER, BME-GROWTH) usarlo literal: `del universo IBEX-MC`. (Hoy ya lo hace, validar que el string es exacto al `ibex_family_code` de BD.)
-- Mapear los labels visibles del FilterPanel ("IBEX Small Cap", "IBEX Medium Cap", "Mercado Continuo") a sus códigos canónicos antes de inyectar la frase, para que el backend reciba siempre `IBEX-SC`, `IBEX-MC`, `MC-OTHER`.
-
-### 4. Verificación
-
-- Llamar `chat-intelligence-v2` vía `supabase--curl_edge_functions` con tres preguntas:
-  - `Genera un informe ejecutivo del universo IBEX-MC limitado a las 10 peores entre 2026-02-06 y 2026-05-07 con desglose semanal.` → datapack debe mostrar 21 empresas, ranking de 10 (peores), informe sin mencionar IBEX-35.
-  - `... universo IBEX-SC limitado a las 5 mejores ...` → 31 empresas en alcance, ranking de 5 (mejores).
-  - `... universo IBEX-35 ...` → comportamiento actual intacto.
-- Revisar logs `[RIX-V2][sectorRanking]` para confirmar `family=IBEX-MC`, `topN=10`, `order=asc`.
+No se tocan otros filtros, ni backend, ni el chat. Sólo presentación en el FilterPanel.
 
 ## Fuera de alcance
 
-- No se tocan los skills `companyAnalysis`, `companyEvolution`, `divergenceAnalysis`. Si el usuario pide "perfil del universo IBEX-MC" eso entra en sector_ranking igualmente (intent classifier lo enruta así).
-- No se modifica el `verified_competitors` ni el bloque "Contexto Competitivo" (ya resuelto en la iteración anterior).
-- No se cambia el FilterPanel UI ni los presets visibles.
+- Tooltips en otras zonas (radar, tablas de informe, chat). Se puede hacer en una iteración posterior.
+- Cambios en el motor de informes o lógica de métricas.
+
+## Pregunta abierta
+
+Confirmar las **expansiones de las siglas** y los **textos cortos** de la tabla anterior antes de codificar (o aprobar tal cual).

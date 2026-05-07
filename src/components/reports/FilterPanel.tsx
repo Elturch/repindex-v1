@@ -34,6 +34,12 @@ import { CompanyMeta } from "@/lib/reports/coherenceEngine";
 import { FilterBlock } from "./FilterBlock";
 import { IntentChips } from "./IntentChips";
 import { MultiChipSelect } from "./MultiChipSelect";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const UNIVERSES: { value: Universe; label: string }[] = [
   { value: "IBEX-35", label: "IBEX-35" },
@@ -43,16 +49,70 @@ const UNIVERSES: { value: Universe; label: string }[] = [
   { value: "MC-OTHER", label: "MC Other" },
 ];
 
-const METRICS: { value: AxisMetric; label: string; hint: string }[] = [
-  { value: "RIX", label: "RIX", hint: "Puntuación RIX global" },
-  { value: "NVM", label: "NVM", hint: "Visibilidad" },
-  { value: "DRM", label: "DRM", hint: "Riesgo reputacional" },
-  { value: "SIM", label: "SIM", hint: "Sentimiento" },
-  { value: "RMM", label: "RMM", hint: "Mención de marca" },
-  { value: "CEM", label: "CEM", hint: "Engagement" },
-  { value: "GAM", label: "GAM", hint: "Gobierno" },
-  { value: "DCM", label: "DCM", hint: "Diversidad" },
-  { value: "CXM", label: "CXM", hint: "Experiencia cliente" },
+const METRICS: {
+  value: AxisMetric;
+  label: string;
+  fullName: string;
+  description: string;
+}[] = [
+  {
+    value: "RIX",
+    label: "RIXc",
+    fullName: "RepIndex Composite",
+    description:
+      "Índice compuesto de reputación algorítmica. Agrega las 8 métricas en una sola puntuación.",
+  },
+  {
+    value: "NVM",
+    label: "NVM",
+    fullName: "Narrative Visibility Metric",
+    description:
+      "Cuánto aparece la entidad en las respuestas de los modelos de IA.",
+  },
+  {
+    value: "DRM",
+    label: "DRM",
+    fullName: "Disagreement & Risk Metric",
+    description:
+      "Riesgo reputacional y nivel de desacuerdo entre los modelos.",
+  },
+  {
+    value: "SIM",
+    label: "SIM",
+    fullName: "Sentiment Intensity Metric",
+    description: "Tono y polaridad del sentimiento que generan los modelos.",
+  },
+  {
+    value: "RMM",
+    label: "RMM",
+    fullName: "Reputational Mention Metric",
+    description: "Calidad y contexto de las menciones de marca detectadas.",
+  },
+  {
+    value: "CEM",
+    label: "CEM",
+    fullName: "Citation & Evidence Metric",
+    description: "Evidencias y fuentes citadas por los modelos.",
+  },
+  {
+    value: "GAM",
+    label: "GAM",
+    fullName: "Governance Alignment Metric",
+    description: "Alineación con prácticas de buen gobierno y ESG-G.",
+  },
+  {
+    value: "DCM",
+    label: "DCM",
+    fullName: "Diversity & Coverage Metric",
+    description: "Diversidad de fuentes y amplitud de cobertura temática.",
+  },
+  {
+    value: "CXM",
+    label: "CXM",
+    fullName: "Customer Experience Metric",
+    description:
+      "Experiencia de cliente percibida. Solo aplica a empresas B2C; 'N/A' en el resto.",
+  },
 ];
 
 interface Props {
@@ -412,65 +472,91 @@ export function FilterPanel({ state, setState, companies, hiddenFilters, lastBat
 
       {/* Métricas */}
       <FilterBlock title="Métricas a analizar" origin={state.axisMetrics.origin}>
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          <button
-            type="button"
-            onClick={() =>
-              setState(
-                setFilter(
-                  state,
-                  "axisMetrics",
-                  METRICS.map((m) => m.value),
-                ),
-              )
-            }
-            className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
-          >
-            Todas
-          </button>
-          <button
-            type="button"
-            onClick={() => setState(setFilter(state, "axisMetrics", ["RIX"]))}
-            className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
-          >
-            Solo RIX
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {METRICS.map((m) => {
-            const active = state.axisMetrics.value.includes(m.value);
-            return (
-              <button
-                key={m.value}
-                type="button"
-                title={m.hint}
-                onClick={() => {
-                  const next = active
-                    ? state.axisMetrics.value.filter((x) => x !== m.value)
-                    : [...state.axisMetrics.value, m.value];
-                  setState(
-                    setFilter(
-                      state,
-                      "axisMetrics",
-                      next.length === 0 ? ["RIX"] : next,
-                    ),
-                  );
-                }}
-                className={cn(
-                  "px-2.5 py-1 rounded-full text-xs border",
-                  active
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border text-foreground hover:bg-accent",
-                )}
-              >
-                {m.label}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-1.5">
-          Puedes elegir varias. Se analizarán en conjunto en el informe.
-        </p>
+        <TooltipProvider delayDuration={150}>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState(
+                      setFilter(
+                        state,
+                        "axisMetrics",
+                        METRICS.map((m) => m.value),
+                      ),
+                    )
+                  }
+                  className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
+                >
+                  Todas
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                Selecciona las 9 métricas (RIXc + 8 sub-métricas).
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setState(setFilter(state, "axisMetrics", ["RIX"]))}
+                  className="px-2 py-0.5 rounded text-xs border bg-card border-border hover:bg-accent"
+                >
+                  Solo RIXc
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                Analiza únicamente el índice compuesto RIXc.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {METRICS.map((m) => {
+              const active = state.axisMetrics.value.includes(m.value);
+              return (
+                <Tooltip key={m.value}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = active
+                          ? state.axisMetrics.value.filter((x) => x !== m.value)
+                          : [...state.axisMetrics.value, m.value];
+                        setState(
+                          setFilter(
+                            state,
+                            "axisMetrics",
+                            next.length === 0 ? ["RIX"] : next,
+                          ),
+                        );
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-full text-xs border",
+                        active
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card border-border text-foreground hover:bg-accent",
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <div className="font-semibold text-xs mb-0.5">
+                      {m.label} — {m.fullName}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground leading-snug">
+                      {m.description}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Pasa el ratón sobre cada sigla para ver qué mide. Puedes elegir varias.
+          </p>
+        </TooltipProvider>
       </FilterBlock>
 
       {!isHidden("topN") && (
