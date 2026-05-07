@@ -300,7 +300,7 @@ async function fetchRankingRows(
   fromISO: string,
   toISO: string,
   sector: string | null,
-  ibexOnly: boolean,
+  familyCode: string | null,
   scopeTickers?: string[] | null,
   modelFilter?: string[] | null,
 ): Promise<any[]> {
@@ -326,20 +326,19 @@ async function fetchRankingRows(
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
     q = q.in("05_ticker", upper);
     console.log(`[RIX-V2][sectorRanking] scope_tickers applied | n=${upper.length} | tickers=${upper.join(",")}`);
-  } else if ((sector && sector.trim().length > 0) || ibexOnly) {
+  } else if ((sector && sector.trim().length > 0) || familyCode) {
     // Resolve scope filter (sector OR ibex membership) → list of tickers.
     let scopeQ = supabase.from("repindex_root_issuers").select("ticker");
     if (sector && sector.trim().length > 0) {
       scopeQ = scopeQ.eq("sector_category", sector);
     }
-    if (ibexOnly) {
-      // IBEX-35 membership: filter by canonical family code (35 issuers).
-      // NOT ibex_status (that field flags sweep coverage, ~130 active issuers).
-      scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
+    if (familyCode) {
+      // Family membership (IBEX-35, IBEX-MC, IBEX-SC, MC-OTHER, BME-GROWTH).
+      scopeQ = scopeQ.eq("ibex_family_code", familyCode);
     }
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
-    if (ibexOnly) {
+    if (familyCode === "IBEX-35") {
       try {
         const { assertIbex35Invariant } = await import("../../_shared/ibexInvariant.ts");
         await assertIbex35Invariant(supabase, "sectorRanking.fetchRankingRows");
@@ -358,7 +357,7 @@ async function fetchRankingRows(
     all.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | ibexOnly=${ibexOnly} | sector=${sector ?? "n/d"} | scope_tickers=${scopeTickers?.length ?? 0}`);
+  console.log(`[RIX-V2][sectorRanking] fetched=${all.length} rows | window=${fromISO}→${toISO} | family=${familyCode ?? "n/d"} | sector=${sector ?? "n/d"} | scope_tickers=${scopeTickers?.length ?? 0}`);
   return all;
 }
 
@@ -372,7 +371,7 @@ async function fetchSectorSourceRows(
   fromISO: string,
   toISO: string,
   sector: string | null,
-  ibexOnly: boolean,
+  familyCode: string | null,
   scopeTickers?: string[] | null,
   modelFilter?: string[] | null,
 ): Promise<any[]> {
@@ -389,13 +388,13 @@ async function fetchSectorSourceRows(
   if (Array.isArray(scopeTickers) && scopeTickers.length > 0) {
     const upper = scopeTickers.map((t) => String(t).toUpperCase());
     q = q.in("05_ticker", upper);
-  } else if ((sector && sector.trim().length > 0) || ibexOnly) {
+  } else if ((sector && sector.trim().length > 0) || familyCode) {
     let scopeQ = supabase.from("repindex_root_issuers").select("ticker");
     if (sector && sector.trim().length > 0) scopeQ = scopeQ.eq("sector_category", sector);
-    if (ibexOnly) scopeQ = scopeQ.eq("ibex_family_code", "IBEX-35");
+    if (familyCode) scopeQ = scopeQ.eq("ibex_family_code", familyCode);
     const { data: tks } = await scopeQ;
     const list = (tks ?? []).map((t: any) => t.ticker).filter(Boolean);
-    if (ibexOnly) {
+    if (familyCode === "IBEX-35") {
       try {
         const { assertIbex35Invariant } = await import("../../_shared/ibexInvariant.ts");
         await assertIbex35Invariant(supabase, "sectorRanking.fetchSectorSourceRows");
@@ -413,7 +412,7 @@ async function fetchSectorSourceRows(
     all.push(...data);
     if (data.length < 1000) break;
   }
-  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | ibexOnly=${ibexOnly} | scope_tickers=${scopeTickers?.length ?? 0} | model_filter=${modelFilter?.join(",") ?? "all"} | projection_cols=${projection.split(",").length}`);
+  console.log(`[RIX-V2][sectorRanking] source_rows=${all.length} | window=${fromISO}→${toISO} | sector=${sector ?? "n/d"} | family=${familyCode ?? "n/d"} | scope_tickers=${scopeTickers?.length ?? 0} | model_filter=${modelFilter?.join(",") ?? "all"} | projection_cols=${projection.split(",").length}`);
   return all;
 }
 
