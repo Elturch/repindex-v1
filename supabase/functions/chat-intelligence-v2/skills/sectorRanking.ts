@@ -33,6 +33,23 @@ import { resolveSemanticGroup } from "../../_shared/semanticGroups.ts";
 import { computePeriodAggregation } from "../../_shared/periodAggregation.ts";
 
 /**
+ * Detect IBEX family code from raw question. Tests longer / more specific
+ * codes first so that "IBEX-MC" is not swallowed by the generic /\bibex\b/.
+ * Returns null when no family hint is present.
+ */
+function detectFamilyCode(raw: string): string | null {
+  const q = (raw ?? "").toLowerCase();
+  // Explicit canonical codes (with or without dash, common typos).
+  if (/\bibex[-\s]?mc\b|\bibex\s+medium\s+cap\b/i.test(raw)) return "IBEX-MC";
+  if (/\bibex[-\s]?sc\b|\bibex\s+small\s+cap\b/i.test(raw)) return "IBEX-SC";
+  if (/\bmc[-\s]?other\b/i.test(raw)) return "MC-OTHER";
+  if (/\bbme[-\s]?growth\b/i.test(raw)) return "BME-GROWTH";
+  if (/\bibex[-\s]?35\b|\bibex\b/i.test(raw)) return "IBEX-35";
+  if (/\bmercado\s+continuo\b/i.test(raw)) return "MC-OTHER";
+  return null;
+}
+
+/**
  * Compact summary of cited URLs for the LLM prompt only. Mirrors the helper
  * in companyAnalysis.ts: full bibliography is appended AFTER streaming via
  * the <!--CITEDSOURCESHERE--> marker, so we never blow OpenAI 400 limits.
