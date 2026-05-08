@@ -3912,42 +3912,6 @@ export type Database = {
         }
         Relationships: []
       }
-      weekly_theme_tags: {
-        Row: {
-          confidence: number
-          created_at: string
-          model_used: string
-          rationale: string | null
-          source_count: number
-          theme: string
-          ticker: string
-          updated_at: string
-          week_start: string
-        }
-        Insert: {
-          confidence?: number
-          created_at?: string
-          model_used?: string
-          rationale?: string | null
-          source_count?: number
-          theme: string
-          ticker: string
-          updated_at?: string
-          week_start: string
-        }
-        Update: {
-          confidence?: number
-          created_at?: string
-          model_used?: string
-          rationale?: string | null
-          source_count?: number
-          theme?: string
-          ticker?: string
-          updated_at?: string
-          week_start?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       rix_runs_v2_cited_urls: {

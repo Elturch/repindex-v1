@@ -119,6 +119,3 @@ verify_jwt = false
 
 [functions.quality-audit-runner]
 verify_jwt = false
-
-[functions.classify-week-theme]
-verify_jwt = false

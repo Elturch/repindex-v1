@@ -10,8 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { signedConsensusLabel, type SignedConsensusLevel } from "@/lib/consensusRanking";
-import { AlertTriangle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -19,38 +17,9 @@ interface MiniTableProps {
   title: string;
   subtitle: string;
   icon: React.ReactNode;
-  data: Array<{
-    empresa: string;
-    ticker: string;
-    rix: number;
-    ai: string;
-    consensusLevel?: "alto" | "medio" | "bajo";
-    signedLevel?: SignedConsensusLevel;
-    themeTag?: string | null;
-    themeConfidence?: number | null;
-  }>;
+  data: Array<{ empresa: string; ticker: string; rix: number; ai: string; consensusLevel?: "alto" | "medio" | "bajo" }>;
   variant?: "success" | "danger" | "info";
   metricLabel: string;
-}
-
-const SIGNED_COLOR: Record<SignedConsensusLevel, string> = {
-  positivo: "text-excellent",
-  neutro: "text-muted-foreground",
-  crisis: "text-insufficient",
-  medio: "text-amber-600 dark:text-amber-400",
-  disenso: "text-primary",
-};
-
-const SIGNED_HINT: Record<SignedConsensusLevel, string> = {
-  positivo: "Las 6 IAs coinciden en señales positivas (RIX alto y compacto).",
-  neutro: "Coincidencia entre IAs pero en una zona neutra de RIX.",
-  crisis: "Coincidencia entre IAs sobre señales negativas. Consenso ≠ buena reputación.",
-  medio: "Acuerdo parcial entre IAs (rango 10–20).",
-  disenso: "Las IAs discrepan más de 20 puntos: requiere análisis cualitativo.",
-};
-
-function isCrisisTheme(theme?: string | null): boolean {
-  return !!theme && theme.startsWith("crisis_");
 }
 
 const MiniTable = ({ title, subtitle, icon, data, variant = "info", metricLabel }: MiniTableProps) => {
@@ -100,38 +69,10 @@ const MiniTable = ({ title, subtitle, icon, data, variant = "info", metricLabel 
           >
             <div className="flex-1 min-w-0">
               <p className="font-medium text-[11px] sm:text-sm truncate leading-tight">{item.empresa}</p>
-              <p className="text-[10px] sm:text-xs text-muted-foreground flex flex-wrap items-center gap-1">
-                <span>{item.ticker}</span>
-                {item.signedLevel && (
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className={`ml-1 cursor-help ${SIGNED_COLOR[item.signedLevel]}`}>
-                          · {signedConsensusLabel(item.signedLevel).toLowerCase()}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p className="text-xs">{SIGNED_HINT[item.signedLevel]}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-                {isCrisisTheme(item.themeTag) && (item.themeConfidence ?? 0) >= 0.7 && (
-                  <TooltipProvider delayDuration={150}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex items-center gap-0.5 text-insufficient">
-                          <AlertTriangle className="w-3 h-3" />
-                          <span className="font-medium">forzado por crisis</span>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        <p className="text-xs">
-                          Esta semana las IAs coinciden porque dominan señales de crisis ({item.themeTag?.replace("crisis_", "")}). El consenso refleja convergencia sobre lo negativo, no salud reputacional.
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">
+                {item.ticker}
+                {item.consensusLevel && (
+                  <span className="ml-1 opacity-70">· consenso {item.consensusLevel}</span>
                 )}
               </p>
             </div>

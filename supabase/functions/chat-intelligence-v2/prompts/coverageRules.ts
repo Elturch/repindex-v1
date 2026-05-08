@@ -54,17 +54,5 @@ DIVERGENCIAS (OBLIGATORIO):
 
 FICHA DE VALIDACIÓN METODOLÓGICA:
 • Cierre del informe debe declarar: número de modelos efectivamente usados,
-  número de snapshots y rango temporal exacto del DataPack.
-
-SESGO DE CONSENSO POR CRISIS (LECTURA OBLIGATORIA):
-• El término "reputación" arrastra sesgo de negatividad: las IAs convergen
-  más cuando hay crisis institucional. Por tanto, "Consenso Alto" + RIX bajo
-  NO significa "todo está bien": significa que las 6 IAs coinciden en lo malo.
-• Reinterpreta SIEMPRE el consenso con polaridad:
-  - Rango ≤10 y RIX promedio ≥60 → "Consenso positivo".
-  - Rango ≤10 y RIX promedio <40 → "Consenso de crisis" (no salud).
-  - Rango ≤10 y RIX promedio 40-60 → "Consenso neutro".
-  - Rango 10-20 → "Consenso medio". Rango >20 → "Disenso".
-• Si detectas Consenso de crisis, declárate explícito en una línea para que
-  el lector no confunda coincidencia con salud reputacional.`;
+  número de snapshots y rango temporal exacto del DataPack.`;
 }

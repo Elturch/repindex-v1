@@ -955,30 +955,19 @@ export function Dashboard() {
                         {rankingMode === "consensus" && (() => {
                           const cons = (rixRun as unknown as Record<string, unknown>).__consensus as ConsensusAggregate | null | undefined;
                           const level = cons?.consensusLevel ?? null;
-                          const signed = cons?.signedLevel ?? null;
-                          const signedColor = signed === "positivo"
-                            ? "bg-excellent/15 text-excellent"
-                            : signed === "crisis"
-                              ? "bg-insufficient/15 text-insufficient"
-                              : signed === "neutro"
-                                ? "bg-muted/20 text-muted-foreground"
-                                : signed === "medio"
-                                  ? "bg-needs-improvement/15 text-needs-improvement"
-                                  : signed === "disenso"
-                                    ? "bg-primary/15 text-primary"
-                                    : "bg-muted/20 text-muted-foreground";
-                          const signedLabel = signed === "positivo" ? "positivo"
-                            : signed === "crisis" ? "crisis"
-                            : signed === "neutro" ? "neutro"
-                            : signed === "medio" ? "medio"
-                            : signed === "disenso" ? "disenso"
-                            : (level ?? "—");
+                          const colorClass = level === "alto"
+                            ? "bg-good/15 text-good"
+                            : level === "medio"
+                              ? "bg-needs-improvement/15 text-needs-improvement"
+                              : level === "bajo"
+                                ? "bg-insufficient/15 text-insufficient"
+                                : "bg-muted/20 text-muted-foreground";
                           return (
                             <TableCell className="text-center">
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <div className={cn("inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium capitalize", signedColor)}>
-                                    {signedLabel}
+                                  <div className={cn("inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium capitalize", colorClass)}>
+                                    {level ?? "—"}
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom" className="max-w-xs">
@@ -988,7 +977,7 @@ export function Dashboard() {
                                       : "Sin datos suficientes"}
                                   </p>
                                   <p className="text-[10px] text-muted-foreground mt-1">
-                                    Positivo: 6 IAs alineadas en RIX alto · Crisis: alineadas en RIX bajo (consenso ≠ buena reputación) · Medio/Disenso: rango amplio.
+                                    Alto ≤10 · Medio ≤20 · Bajo &gt;20
                                   </p>
                                 </TooltipContent>
                               </Tooltip>
