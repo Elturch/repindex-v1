@@ -16,6 +16,42 @@
 
 export type ConsensusLevel = "alto" | "medio" | "bajo";
 
+export type SignedConsensusLevel =
+  | "positivo"
+  | "neutro"
+  | "crisis"
+  | "medio"
+  | "disenso";
+
+export const SIGNED_CONSENSUS_THRESHOLDS = {
+  rangeTight: 10,
+  rangeWide: 20,
+  meanHigh: 60,
+  meanLow: 40,
+} as const;
+
+export function classifySignedConsensus(
+  range: number,
+  mean: number,
+): SignedConsensusLevel {
+  const t = SIGNED_CONSENSUS_THRESHOLDS;
+  if (range > t.rangeWide) return "disenso";
+  if (range > t.rangeTight) return "medio";
+  if (mean >= t.meanHigh) return "positivo";
+  if (mean < t.meanLow) return "crisis";
+  return "neutro";
+}
+
+export function signedConsensusLabel(level: SignedConsensusLevel): string {
+  switch (level) {
+    case "positivo": return "Consenso positivo";
+    case "neutro": return "Consenso neutro";
+    case "crisis": return "Consenso de crisis";
+    case "medio": return "Consenso medio";
+    case "disenso": return "Disenso";
+  }
+}
+
 export interface ConsensusInput {
   ticker: string;
   rix_score: number | null | undefined;
@@ -26,6 +62,8 @@ export interface ConsensusAggregate {
   min: number;
   max: number;
   consensusLevel: ConsensusLevel;
+  signedLevel: SignedConsensusLevel;
+  mean: number;
   range: number;
   modelsCount: number;
 }
@@ -56,11 +94,14 @@ export function aggregateConsensus<T extends ConsensusInput>(
     const min = sorted[0];
     const max = sorted[sorted.length - 1];
     const range = max - min;
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
     result.set(ticker, {
       ticker,
       min,
       max,
       consensusLevel: classifyConsensus(range),
+      signedLevel: classifySignedConsensus(range, mean),
+      mean,
       range,
       modelsCount: scores.length,
     });
