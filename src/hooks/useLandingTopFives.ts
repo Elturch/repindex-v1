@@ -2,6 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AIModelOption } from "@/contexts/LandingAIModelContext";
 import { getLatestRixTrendWeeks } from "@/lib/getLatestRixTrendWeeks";
+import {
+  classifySignedConsensus,
+  SignedConsensusLevel,
+} from "@/lib/consensusRanking";
 
 // FASE 1 — V2-only. Reads from `rix_runs_v2` (Sunday-anchored). Legacy
 // `rix_trends` retired. If V2 has fewer than 2 weeks of history, the
@@ -15,6 +19,9 @@ interface TopCompany {
   rix: number;
   ai: string;
   consensusLevel?: "alto" | "medio" | "bajo";
+  signedLevel?: SignedConsensusLevel;
+  themeTag?: string | null;
+  themeConfidence?: number | null;
   range?: number;
   rix_min?: number;
   rix_max?: number;
@@ -34,7 +41,9 @@ interface ConsensusRow {
   is_traded: boolean | null;
   min: number;
   max: number;
+  mean: number;
   consensusLevel: "alto" | "medio" | "bajo";
+  signedLevel: SignedConsensusLevel;
   range: number;
   modelsCount: number;
 }
@@ -68,6 +77,7 @@ function buildConsensusRows(
     const min = sorted[0];
     const max = sorted[sorted.length - 1];
     const range = max - min;
+    const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
     result.push({
       ticker,
       company_name: items[0].company_name,
@@ -75,7 +85,9 @@ function buildConsensusRows(
       is_traded: items[0].is_traded ?? null,
       min,
       max,
+      mean,
       consensusLevel: classifyConsensus(range),
+      signedLevel: classifySignedConsensus(range, mean),
       range,
       modelsCount: scores.length,
     });
@@ -93,7 +105,11 @@ function sortByConsensus(rows: ConsensusRow[], asc = false): ConsensusRow[] {
   });
 }
 
-function consensusToTopCompany(r: ConsensusRow): TopCompany {
+function consensusToTopCompany(
+  r: ConsensusRow,
+  themeMap?: Map<string, { theme: string; confidence: number }>,
+): TopCompany {
+  const tag = themeMap?.get(r.ticker);
   return {
     empresa: r.company_name,
     ticker: r.ticker,
@@ -101,6 +117,9 @@ function consensusToTopCompany(r: ConsensusRow): TopCompany {
     rix: r.min,
     ai: "Consenso 6 IAs",
     consensusLevel: r.consensusLevel,
+    signedLevel: r.signedLevel,
+    themeTag: tag?.theme ?? null,
+    themeConfidence: tag?.confidence ?? null,
     range: r.range,
     rix_min: r.min,
     rix_max: r.max,
