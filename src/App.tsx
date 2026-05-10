@@ -8,7 +8,8 @@ import { HelmetProvider } from "react-helmet-async";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { FloatingChat } from "@/components/chat/FloatingChat";
+// FloatingChat oculto por solicitud del usuario
+// import { FloatingChat } from "@/components/chat/FloatingChat";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Dashboard } from "./pages/Dashboard";
 import { RixRunDetail } from "./pages/RixRunDetail";
@@ -108,7 +109,7 @@ const App = () => (
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
-              <FloatingChat />
+              {/* <FloatingChat /> oculto */}
             </ChatProvider>
           </AuthProvider>
         </BrowserRouter>
