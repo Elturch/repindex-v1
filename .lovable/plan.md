@@ -1,76 +1,77 @@
+## Plan: Estudio de Consenso recurrente desde /admin
 
-# Plan: Consenso de crisis — validación empírica + blindaje metodológico + exposición en producto
+Añadir un botón en el panel /admin que reproduzca el estudio empírico ya ejecutado (Fase 1) sobre `rix_runs_v2` para monitorizar, semana a semana, si la hipótesis "consenso de crisis" emerge a medida que se acumulan datos y se popula `weekly_theme_tags`.
 
-## Contexto
+### 1. Edge function `consensus-health-study` (nueva)
 
-Hipótesis del usuario: cuando una empresa concentra noticias negativas, las 6 IAs convergen más (rango inter-modelo bajo) que en semanas tranquilas. Si esto se confirma, hay que explicarlo proactivamente para que no se interprete como sesgo editorial nuestro.
+Reproduce 1:1 la lógica del script Python original, en TypeScript/Deno:
 
-La regla `signed-consensus` ya existe en memoria pero no está demostrada con datos ni expuesta al usuario final. Universo: **todas las empresas**, mismo tratamiento (no cherry-picking).
+- Lee de `rix_runs_v2`: `ticker, week_of, model, rix_score` desde `2026-01-01` hasta hoy.
+- Por (ticker, week_of) calcula: `mean`, `min`, `max`, `range = max-min`, `std`, `n_models`.
+- Filtra muestras con `n_models >= 4` (idéntico al estudio original).
+- Métricas globales:
+  - n muestras, n tickers, n semanas, semanas cubiertas
+  - Distribución por estado: `crisis` (range≤10 ∧ mean<50), `healthy` (range≤10 ∧ mean≥70), `dispersed` (range>20), `neutral` (resto) — porcentajes y conteos
+  - Mediana de `range` por banda de polaridad: `<50`, `50-65`, `≥65`
+  - Spearman ρ (mean vs range) + p-valor aproximado (z-test sobre Fisher)
+  - Test Mann-Whitney U entre bandas `<50` y `≥65` sobre `range`
+  - Top 10 casos paradigmáticos de "consenso de crisis"
+- Si `weekly_theme_tags` tiene filas en el rango: añade segmento adicional `range` segmentado por tag dominante (negativa/neutra/positiva) y repite el test. Si está vacía, lo indica explícitamente.
+- Guarda el resultado en una tabla nueva `consensus_health_studies` (snapshot histórico) y devuelve el JSON al cliente.
+- Protegida con `requireAdmin` + `logAdminAction` (patrón existente en `_shared/requireAdmin.ts`).
 
-## Fase 1 — Estudio empírico (one-off, sin tocar producto)
+### 2. Tabla `consensus_health_studies` (migración)
 
-Script Python ejecutado fuera de la app que cruza 3 fuentes ya disponibles:
+```text
+id uuid pk
+created_at timestamptz default now()
+created_by uuid (admin id)
+period_start date
+period_end date
+n_samples int
+n_tickers int
+n_weeks int
+state_distribution jsonb     -- {crisis: n/pct, healthy, dispersed, neutral}
+range_by_polarity jsonb      -- {bearish, neutral, bullish: {median, n}}
+spearman jsonb               -- {rho, p_value, n}
+mann_whitney jsonb           -- {U, p_value}
+theme_tags_available bool
+range_by_theme jsonb null    -- solo si theme tags disponibles
+top_crisis_cases jsonb       -- array de {ticker, week_of, mean, range}
+hypothesis_verdict text      -- 'refuted' | 'inconclusive' | 'supported'
+notes text null
+```
 
-- `rix_runs_v2`: 6 scores por (ticker, semana) → calcula `range = max-min`, `std`, `mean`
-- `weekly_theme_tags` (si existe) o `data_quality_reports` + `monitor_reputacional_events` → marcador de polaridad/crisis por semana
-- `parity_cited_urls_t1` o conteo de fuentes citadas → proxy de volumen mediático
+RLS: solo lectura para `admin` vía `has_role(auth.uid(),'admin')`. Sin escritura desde cliente (la edge function usa service role).
 
-**Outputs**:
-1. CSV `consenso_vs_polaridad.csv` con: ticker, week, mean_rix, range, std, n_eventos_negativos, n_fuentes_citadas, tag_dominante.
-2. PDF `estudio_consenso_crisis.pdf` con:
-   - Scatter `range` vs `mean_rix` coloreado por polaridad → debe verse cluster bajo-izquierda (RIX bajo + range bajo = consenso de crisis)
-   - Boxplot de `range` segmentado por (semana_con_evento_negativo / semana_tranquila / semana_con_evento_positivo)
-   - Test estadístico (Mann-Whitney U) sobre la diferencia de `range` entre los 3 grupos, con p-valor y tamaño de efecto
-   - Top-10 casos paradigmáticos de "consenso de crisis" detectados
-   - Conclusión: confirma o refuta la hipótesis con cifras
+### 3. UI en `src/pages/Admin.tsx`
 
-Entrega en `/mnt/documents/`. **Sin esto, las fases 2 y 3 no se ejecutan** — si los datos no respaldan la hipótesis, ajustamos el discurso.
+Nueva tarjeta dentro de la sección de monitorización (junto a `QualityAuditPanel` / `PipelineAlertsPanel`). Componente nuevo `src/components/admin/ConsensusHealthPanel.tsx`:
 
-## Fase 2 — Nota metodológica pública
+- Botón **"Ejecutar estudio de consenso"** → invoca la edge function, muestra spinner.
+- Al terminar: tarjeta con
+  - Veredicto destacado (badge: refutada / inconclusa / soportada) + comparación frente al snapshot anterior (delta de mediana de range bearish vs bullish, delta de % crisis).
+  - Tabla de distribución de estados.
+  - Mediana de `range` por banda de polaridad (3 filas).
+  - Spearman ρ y p-valor.
+  - Mann-Whitney U y p-valor.
+  - Aviso si `weekly_theme_tags` aún sin datos.
+  - Top 10 casos crisis (ticker, semana, mean, range).
+- Lista colapsable con los **últimos 10 snapshots históricos** (fecha, n muestras, % crisis, mediana range bearish, veredicto) para ver evolución temporal.
+- Sin export PDF en esta iteración (los datos quedan en BD; suficiente para revisión interna).
 
-Si la fase 1 confirma el patrón, añadir sección en `src/pages/Methodology.tsx`:
+### 4. Qué NO entra
 
-**"Tipos de consenso: por qué el acuerdo entre IAs no siempre es buena noticia"**
-- Definición de los 3 estados firmados (saludable, de crisis, disperso)
-- Por qué ocurre (saliencia informativa, asimetría de cobertura)
-- Referencia al estudio empírico de fase 1 como anexo descargable
-- Disclaimer: "RepIndex mide percepción algorítmica; cuando los inputs convergen, los outputs convergen. No introducimos polaridad — la detectamos."
+- No tocamos producto público, ni metodología expuesta, ni el cálculo del RIX.
+- No reactivamos las Fases 2/3 del plan anterior — siguen en HOLD hasta que un snapshot soporte la hipótesis.
+- No automatizamos vía CRON en esta iteración (botón manual; si más adelante interesa, se añade un cron semanal trivial sobre la misma función).
 
-Internacionalizar a los 4 idiomas via el motor i18n existente.
+### Detalles técnicos
 
-## Fase 3 — Métrica derivada en producto
-
-Exponer el **tipo de consenso** en cada informe, sin inventar datos:
-
-1. **Helper compartido** `src/lib/consensusType.ts`:
-   ```ts
-   classifyConsensus({mean, range}) → 'healthy' | 'crisis' | 'dispersed' | 'neutral'
-   // crisis: range≤10 ∧ mean<50
-   // healthy: range≤10 ∧ mean≥70
-   // dispersed: range>20
-   // neutral: resto
-   ```
-2. **UI**: badge en `ReportInfoBar.tsx` y en cabecera de tarjetas de empresa (`StoryCard`, ranking) — color semántico (rojo crisis, verde healthy, ámbar dispersed) con tooltip que enlaza a la nota metodológica.
-3. **Agente Rix**: inyectar `consensus_type` en el datapack de `chat-intelligence-v2` y añadir regla en `prompts/antiHallucination.ts` que obligue a leer el consenso con polaridad (ya está en memoria pero no codificada en prompt).
-
-## Qué NO entra en el plan
-
-- No tocamos el cálculo del RIX ni los pesos.
-- No reclasificamos histórico — la métrica se calcula on-the-fly desde `rix_runs_v2`.
-- No añadimos columnas a la BD (cálculo derivado, no almacenado).
-- No tocamos backend de barrido.
-
-## Detalles técnicos
-
-- Fase 1: script `/tmp/study_consensus.py`, usa `psql` directo si `PGHOST` está disponible, fallback a `supabase--read_query`.
-- Fase 2: edición de `Methodology.tsx` + `chatTranslations.ts` + `footerTranslations.ts` si aplica.
-- Fase 3: el helper es puro TS, sin estado. Integración no invasiva en componentes existentes. En el agente, modificar `datapack/` para inyectar el campo y `prompts/antiHallucination.ts` para forzar lectura firmada.
-- QA visual obligatorio del PDF antes de entregar (convertir páginas a imagen y revisar).
-
-## Orden de ejecución
-
-1. Fase 1 completa y entrega del PDF/CSV → revisión del usuario.
-2. Si valida, fase 2 (nota metodológica).
-3. Fase 3 (badge + integración en agente).
-
-Cada fase termina con punto de validación antes de pasar a la siguiente.
+- Spearman: ranking + Pearson sobre rangos; p-valor con aproximación normal (`z = ρ·√(n-1)`).
+- Mann-Whitney: implementación O(n log n) con ranks y corrección por empates; p-valor normal con corrección de continuidad.
+- Veredicto:
+  - `supported` si `median_range(bearish) < median_range(bullish) - 2` y `p < 0.05`.
+  - `refuted` si `median_range(bearish) >= median_range(bullish)` y `p < 0.05`.
+  - `inconclusive` en el resto.
+- La función almacena el snapshot SIEMPRE que se ejecuta para construir la serie temporal.
