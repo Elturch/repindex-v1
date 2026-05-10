@@ -26,6 +26,24 @@ interface Snapshot {
   range_by_theme: Record<string, { median: number; n: number }> | null;
   top_crisis_cases: Array<{ ticker: string; week: string; mean: number; range: number }>;
   hypothesis_verdict: 'supported' | 'refuted' | 'inconclusive';
+  metrics_breakdown?: Record<string, {
+    n_samples: number;
+    state_distribution: Record<string, { n: number; pct: number }>;
+    range_by_polarity: {
+      bearish: { median: number; n: number };
+      neutral: { median: number; n: number };
+      bullish: { median: number; n: number };
+    };
+    spearman: { rho: number | null; p_value: number | null; n: number };
+    mann_whitney: { U: number | null; p_value: number | null; n_bearish: number; n_bullish: number };
+    median_range_overall: number;
+  }> | null;
+  categorical_agreement?: Record<string, {
+    n_groups: number;
+    median_agreement_ratio: number | null;
+    mean_agreement_ratio: number | null;
+    distribution: Record<'unanimous' | 'strong' | 'weak' | 'dispersed', { n: number; pct: number }>;
+  }> | null;
 }
 
 const verdictMeta: Record<Snapshot['hypothesis_verdict'], { label: string; cls: string }> = {
@@ -186,6 +204,86 @@ export const ConsensusHealthPanel: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {latest.metrics_breakdown && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Desglose por métrica (RIX + 8 sub-métricas)</h4>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Mismo cálculo (mediana de <code>range</code> por banda de polaridad, Spearman ρ y Mann-Whitney) aplicado a cada métrica numérica devuelta por los modelos. Si el "consenso de crisis" existe, debería emerger en alguna sub-métrica aunque no en RIX.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground border-b">
+                        <th className="text-left py-1">Métrica</th>
+                        <th className="text-right py-1">n</th>
+                        <th className="text-right py-1">Med range</th>
+                        <th className="text-right py-1">Bearish</th>
+                        <th className="text-right py-1">Neutral</th>
+                        <th className="text-right py-1">Bullish</th>
+                        <th className="text-right py-1">Spearman ρ</th>
+                        <th className="text-right py-1">Spearman p</th>
+                        <th className="text-right py-1">MW p</th>
+                        <th className="text-right py-1">% crisis</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(latest.metrics_breakdown).map(([k, m]) => (
+                        <tr key={k} className="border-b last:border-0">
+                          <td className="py-1 font-mono">{k}</td>
+                          <td className="py-1 text-right tabular-nums">{m.n_samples}</td>
+                          <td className="py-1 text-right tabular-nums">{m.median_range_overall}</td>
+                          <td className="py-1 text-right tabular-nums">{m.range_by_polarity.bearish.median} <span className="text-muted-foreground">({m.range_by_polarity.bearish.n})</span></td>
+                          <td className="py-1 text-right tabular-nums">{m.range_by_polarity.neutral.median} <span className="text-muted-foreground">({m.range_by_polarity.neutral.n})</span></td>
+                          <td className="py-1 text-right tabular-nums">{m.range_by_polarity.bullish.median} <span className="text-muted-foreground">({m.range_by_polarity.bullish.n})</span></td>
+                          <td className="py-1 text-right tabular-nums">{m.spearman.rho ?? '—'}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtP(m.spearman.p_value)}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtP(m.mann_whitney.p_value)}</td>
+                          <td className="py-1 text-right tabular-nums">{m.state_distribution?.crisis?.pct ?? '—'}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {latest.categorical_agreement && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Consenso categórico entre modelos</h4>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Para cada (ticker, semana) calcula el % de modelos que coinciden en la categoría dominante (alto/medio/bajo) de cada sub-métrica. Es la señal de acuerdo más determinista, independiente de la escala 0-100.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground border-b">
+                        <th className="text-left py-1">Sub-métrica</th>
+                        <th className="text-right py-1">n grupos</th>
+                        <th className="text-right py-1">Acuerdo medio</th>
+                        <th className="text-right py-1">% unánime</th>
+                        <th className="text-right py-1">% fuerte (≥75%)</th>
+                        <th className="text-right py-1">% débil (≥50%)</th>
+                        <th className="text-right py-1">% disperso</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(latest.categorical_agreement).map(([k, c]) => (
+                        <tr key={k} className="border-b last:border-0">
+                          <td className="py-1 font-mono">{k}</td>
+                          <td className="py-1 text-right tabular-nums">{c.n_groups}</td>
+                          <td className="py-1 text-right tabular-nums">{c.mean_agreement_ratio ?? '—'}</td>
+                          <td className="py-1 text-right tabular-nums">{c.distribution.unanimous.pct}%</td>
+                          <td className="py-1 text-right tabular-nums">{c.distribution.strong.pct}%</td>
+                          <td className="py-1 text-right tabular-nums">{c.distribution.weak.pct}%</td>
+                          <td className="py-1 text-right tabular-nums">{c.distribution.dispersed.pct}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
