@@ -754,11 +754,13 @@ export type Database = {
       }
       consensus_health_studies: {
         Row: {
+          categorical_agreement: Json | null
           created_at: string
           created_by: string | null
           hypothesis_verdict: string
           id: string
           mann_whitney: Json
+          metrics_breakdown: Json | null
           n_samples: number
           n_tickers: number
           n_weeks: number
@@ -773,11 +775,13 @@ export type Database = {
           top_crisis_cases: Json
         }
         Insert: {
+          categorical_agreement?: Json | null
           created_at?: string
           created_by?: string | null
           hypothesis_verdict: string
           id?: string
           mann_whitney: Json
+          metrics_breakdown?: Json | null
           n_samples: number
           n_tickers: number
           n_weeks: number
@@ -792,11 +796,13 @@ export type Database = {
           top_crisis_cases?: Json
         }
         Update: {
+          categorical_agreement?: Json | null
           created_at?: string
           created_by?: string | null
           hypothesis_verdict?: string
           id?: string
           mann_whitney?: Json
+          metrics_breakdown?: Json | null
           n_samples?: number
           n_tickers?: number
           n_weeks?: number
