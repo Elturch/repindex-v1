@@ -752,6 +752,66 @@ export type Database = {
         }
         Relationships: []
       }
+      consensus_health_studies: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          hypothesis_verdict: string
+          id: string
+          mann_whitney: Json
+          n_samples: number
+          n_tickers: number
+          n_weeks: number
+          notes: string | null
+          period_end: string
+          period_start: string
+          range_by_polarity: Json
+          range_by_theme: Json | null
+          spearman: Json
+          state_distribution: Json
+          theme_tags_available: boolean
+          top_crisis_cases: Json
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          hypothesis_verdict: string
+          id?: string
+          mann_whitney: Json
+          n_samples: number
+          n_tickers: number
+          n_weeks: number
+          notes?: string | null
+          period_end: string
+          period_start: string
+          range_by_polarity: Json
+          range_by_theme?: Json | null
+          spearman: Json
+          state_distribution: Json
+          theme_tags_available?: boolean
+          top_crisis_cases?: Json
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          hypothesis_verdict?: string
+          id?: string
+          mann_whitney?: Json
+          n_samples?: number
+          n_tickers?: number
+          n_weeks?: number
+          notes?: string | null
+          period_end?: string
+          period_start?: string
+          range_by_polarity?: Json
+          range_by_theme?: Json | null
+          spearman?: Json
+          state_distribution?: Json
+          theme_tags_available?: boolean
+          top_crisis_cases?: Json
+        }
+        Relationships: []
+      }
       contadores: {
         Row: {
           citation_density: number
