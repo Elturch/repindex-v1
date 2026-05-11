@@ -620,6 +620,44 @@ export function Dashboard() {
                 <span className="hidden xs:inline">Qwen</span>
               </Button>
             </div>
+            {/* F2 — Popover multi-modelo */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="ml-2 whitespace-nowrap">
+                  + Comparar IA{multiModels.length > 0 ? ` (${multiModels.length})` : ""}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3 z-50 bg-background" align="end">
+                <p className="text-xs font-medium mb-2">Selecciona varias IAs</p>
+                <div className="space-y-1.5">
+                  {SELECTABLE_MODELS.map(m => {
+                    const checked = multiModels.includes(m);
+                    return (
+                      <label key={m} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setMultiModels(prev =>
+                              checked ? prev.filter(x => x !== m) : [...prev, m]
+                            );
+                          }}
+                        />
+                        {m}
+                      </label>
+                    );
+                  })}
+                </div>
+                {multiModels.length > 0 && (
+                  <Button variant="ghost" size="sm" className="mt-2 w-full" onClick={() => setMultiModels([])}>
+                    Limpiar selección
+                  </Button>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Si seleccionas ≥1 modelo, prevalece sobre el botón único de IA.
+                </p>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="flex items-center gap-3">
