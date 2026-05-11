@@ -905,7 +905,8 @@ export const sectorRankingSkill: Skill = {
     const dbModelFilter = (parsed.models && parsed.models.length > 0 && parsed.models.length < 6)
       ? parsed.models.map((m) => (m === "Gemini" ? "Google Gemini" : m))
       : null;
-    const isSingleModel = Array.isArray(parsed.models) && parsed.models.length === 1;
+    const models = parsed.models;
+    const isSingleModel = Array.isArray(models) && models.length === 1;
     const rows = await fetchRankingRows(supabase, sqlFrom, sqlTo, sector, familyCode, scopeTickers, dbModelFilter);
     // P1-C.1 — forensic log for dimension propagation in sector path.
     const _uniqTickers = new Set(rows.map((r) => r["05_ticker"]).filter(Boolean)).size;
@@ -950,14 +951,12 @@ export const sectorRankingSkill: Skill = {
         }
       : parsed.temporal;
     console.log(`${tag} temporal recompute | mode=${isSnapshotMode ? "snapshot" : "period"} | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (weeks=${realWeeksCount}, models=${realModelKeys.size}, expected=${parsed.temporal.snapshots_expected})`);
-    const isSingleModel = models.length === 1;
     const ranking = aggregateRanking(
       rows,
       topN,
       orderHint,
       isSingleModel ? (models[0] as ModelName) : undefined,
     );
-    const models = parsed.models;
     const table = ranking.length > 0
       ? (isSingleModel
           ? renderSingleModelRankingTable(ranking, models[0] as ModelName, {
