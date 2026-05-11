@@ -776,14 +776,47 @@ export function Dashboard() {
                       <CommandList>
                         <CommandEmpty>No se encontró sector.</CommandEmpty>
                         <CommandGroup>
-                          <CommandItem value="all" onSelect={() => handleSectorFilterChange("all")}>
+                          <CommandItem value="all" onSelect={() => { handleSectorFilterChange("all"); setSubsectorFilter("all"); }}>
                             <Check className={cn("mr-2 h-4 w-4", sectorFilter === "all" ? "opacity-100" : "opacity-0")} />
                             Todos los sectores
                           </CommandItem>
                           {sectorCategories?.map((sector) => (
-                            <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => handleSectorFilterChange(value)}>
+                            <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => { handleSectorFilterChange(value); setSubsectorFilter("all"); }}>
                               <Check className={cn("mr-2 h-4 w-4", sectorFilter === sector.sector_category ? "opacity-100" : "opacity-0")} />
                               {sector.sector_category}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Subsector Filter (F3) */}
+              <div className="flex items-center gap-1.5">
+                <Factory className="h-4 w-4 text-muted-foreground hidden sm:block opacity-60" />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-36 sm:w-48 justify-between text-xs sm:text-sm">
+                      {subsectorFilter === "all" ? "Todos los subsectores" : subsectorFilter}
+                      <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar subsector..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontró subsector.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="all" onSelect={() => setSubsectorFilter("all")}>
+                            <Check className={cn("mr-2 h-4 w-4", subsectorFilter === "all" ? "opacity-100" : "opacity-0")} />
+                            Todos los subsectores
+                          </CommandItem>
+                          {subsectorCategories?.map((s) => (
+                            <CommandItem key={s.subsector} value={s.subsector} onSelect={(v) => setSubsectorFilter(v)}>
+                              <Check className={cn("mr-2 h-4 w-4", subsectorFilter === s.subsector ? "opacity-100" : "opacity-0")} />
+                              {s.subsector}
                             </CommandItem>
                           ))}
                         </CommandGroup>
