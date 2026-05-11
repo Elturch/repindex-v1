@@ -4,6 +4,7 @@ import { Layout } from "@/components/layout/Layout";
 import { useUnifiedRixRuns, UnifiedRixRun } from "@/hooks/useUnifiedRixRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
+import { useSubsectorCategories } from "@/hooks/useSubsectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
@@ -38,15 +39,25 @@ import { getMetricByAcronym } from "@/lib/rixMetricsGlossary";
 
 // AI Filter type for the 6 models
 type AIFilter = "all" | "ChatGPT" | "Google Gemini" | "Perplexity" | "Deepseek" | "Grok" | "Qwen" | "comparison";
+const SELECTABLE_MODELS: Exclude<AIFilter, "all" | "comparison">[] = [
+  "ChatGPT", "Google Gemini", "Perplexity", "Deepseek", "Grok", "Qwen",
+];
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const [aiFilter, setAIFilter] = useState<AIFilter>("all");
+  // F2 — multi-modelo. Si length > 0 tiene precedencia sobre `aiFilter` para
+  // el filtrado de datos. La UI de un único botón se conserva como atajo.
+  const [multiModels, setMultiModels] = useState<AIFilter[]>([]);
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
+  const [subsectorFilter, setSubsectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
   const [batchFilter, setBatchFilter] = useState<string>("all");
+  // F1 — modo de fecha: snapshot semanal (default) o agregación por periodo.
+  const [dateMode, setDateMode] = useState<"week" | "period">("week");
+  const [periodRange, setPeriodRange] = useState<{ from: Date; to: Date } | null>(null);
   const [sortConfig, setSortConfig] = useState<{
     key: 'rix' | 'nvm' | 'drm' | 'sim' | 'rmm' | 'cem' | 'gam' | 'dcm' | 'cxm';
     direction: 'asc' | 'desc';
@@ -65,10 +76,21 @@ export function Dashboard() {
         : aiFilter === "comparison"
         ? "all"
         : aiFilter,
+    // F2 — pasamos array sólo cuando usuario eligió >0 modelos en el popover
+    // y NO estamos en modo consenso/comparación (que necesitan los 6).
+    modelFilters:
+      rankingMode === "consensus" || aiFilter === "comparison"
+        ? []
+        : multiModels.length > 0
+        ? multiModels
+        : [],
     companyFilter,
     sectorFilter,
+    subsectorFilter,
     ibexFamilyFilter,
-    weeksToLoad: 6
+    weeksToLoad: dateMode === "period" ? 26 : 6,
+    aggregationMode: dateMode === "period" && periodRange ? "period" : "snapshot",
+    dateRange: dateMode === "period" ? periodRange : null,
   });
 
   // En modo "Por IA" respetamos el filtro elegido por el usuario, incluido
@@ -77,6 +99,7 @@ export function Dashboard() {
   // El modo "Consenso" sigue operando sobre las 6 IAs internamente.
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
+  const { data: subsectorCategories } = useSubsectorCategories(sectorFilter);
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
   const { setPageContext } = useChatContext();
 
