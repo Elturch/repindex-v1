@@ -435,7 +435,12 @@ async function fetchSectorSourceRows(
 
 type OrderHint = "desc" | "asc" | "divergence";
 
-function aggregateRanking(rows: any[], topN: number, order: OrderHint = "desc"): RankingRow[] {
+function aggregateRanking(
+  rows: any[],
+  topN: number,
+  order: OrderHint = "desc",
+  singleModelKey?: ModelName,
+): RankingRow[] {
   // ANTI-MEDIANA (paridad dashboard nuevo modelo):
   //   1) Agrupar por (ticker, semana) → aggregateConsensus expone min/max/range/level
   //      por snapshot semanal (NO promediamos entre IAs).
@@ -514,7 +519,22 @@ function aggregateRanking(rows: any[], topN: number, order: OrderHint = "desc"):
   //  - desc (default): mejor RIX primero (rix_max desc, luego rix_min desc).
   //  - asc: peor RIX primero (rix_min asc).
   //  - divergence: mayor rango inter-modelo primero (weekly_range_avg desc).
-  if (order === "asc") {
+  // Single-model: ordenar por la columna VISIBLE (per_model[modelo]) para que el orden
+  // de la tabla coincida con el valor mostrado. Sin esto, multi-modelo y single-modelo
+  // usan rix_max/rix_min y el ranking parece "incoherente" frente a la columna RIX(IA).
+  if (singleModelKey) {
+    const v = (r: RankingRow) => {
+      const x = r.per_model[singleModelKey];
+      return typeof x === "number" && Number.isFinite(x) ? x : -Infinity;
+    };
+    if (order === "asc") {
+      out.sort((a, b) => (v(a) - v(b)) || (b.obs - a.obs) || a.ticker.localeCompare(b.ticker));
+    } else if (order === "divergence") {
+      out.sort((a, b) => b.weekly_range_avg - a.weekly_range_avg);
+    } else {
+      out.sort((a, b) => (v(b) - v(a)) || (b.obs - a.obs) || a.ticker.localeCompare(b.ticker));
+    }
+  } else if (order === "asc") {
     out.sort((a, b) => a.rix_min - b.rix_min || a.rix_max - b.rix_max);
   } else if (order === "divergence") {
     out.sort((a, b) => b.weekly_range_avg - a.weekly_range_avg);
@@ -902,7 +922,9 @@ export const sectorRankingSkill: Skill = {
     // Snapshot puntual (from===to) ⇒ snapshots_expected semantics is
     // "modelos esperados (6)", NOT "semanas". Count DISTINCT MODELS so the
     // banner / footnote / prompts report 6/6 models, not 1/6 weeks.
-    const isSnapshotMode = parsed.temporal.from === parsed.temporal.to;
+    // FIX: usar la ventana SQL real (sqlFrom/sqlTo), no la reconciliada que puede
+    // colapsar a una sola fecha y etiquetar como "snapshot" un periodo real.
+    const isSnapshotMode = sqlFrom === sqlTo;
     const realWeekKeys = new Set<string>();
     const realModelKeys = new Set<string>();
     for (const r of rows) {
@@ -928,7 +950,13 @@ export const sectorRankingSkill: Skill = {
         }
       : parsed.temporal;
     console.log(`${tag} temporal recompute | mode=${isSnapshotMode ? "snapshot" : "period"} | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (weeks=${realWeeksCount}, models=${realModelKeys.size}, expected=${parsed.temporal.snapshots_expected})`);
-    const ranking = aggregateRanking(rows, topN, orderHint);
+    const isSingleModel = models.length === 1;
+    const ranking = aggregateRanking(
+      rows,
+      topN,
+      orderHint,
+      isSingleModel ? (models[0] as ModelName) : undefined,
+    );
     const models = parsed.models;
     const table = ranking.length > 0
       ? (isSingleModel
