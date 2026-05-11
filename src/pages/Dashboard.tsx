@@ -723,6 +723,27 @@ export function Dashboard() {
               ? "Vista por consenso — rango y nivel de coincidencia entre IAs (no se promedia)"
               : `Vista por IA — valores individuales por modelo${aiFilter !== "all" && aiFilter !== "comparison" ? ` (${aiFilter})` : ""}`}
           </Badge>
+          {dateMode === "period" && periodRange && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-[10px] sm:text-xs">
+                Periodo agregado · {format(periodRange.from, "d MMM")} → {format(periodRange.to, "d MMM yyyy")}
+              </Badge>
+            </div>
+          )}
+          {multiModels.length > 1 && rankingMode === "score" && aiFilter !== "comparison" && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-[10px] sm:text-xs">
+                Multi-modelo · {multiModels.join(" · ")}
+              </Badge>
+            </div>
+          )}
+          {subsectorFilter !== "all" && ibexFamilyFilter !== "all" && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-[10px] sm:text-xs border-needs-improvement/50 text-needs-improvement">
+                Universo ajustado · subsector tiene precedencia sobre índice si la intersección queda vacía
+              </Badge>
+            </div>
+          )}
         </div>
 
         {/* Filters */}
