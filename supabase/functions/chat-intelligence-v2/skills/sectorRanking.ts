@@ -1043,7 +1043,7 @@ export const sectorRankingSkill: Skill = {
       models_coverage: { requested: models, with_data: models, missing: [] },
       metrics: [],
       raw_rows: rows,
-      pre_rendered_tables: [table],
+      pre_rendered_tables: [tableWithBreakdown],
     };
 
     const modules: string[] = ["base", "antiHallucination", "rankingMode"];
@@ -1116,7 +1116,7 @@ export const sectorRankingSkill: Skill = {
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
-      table,
+      tableWithBreakdown,
       ranking,
       rows,
       sqlFrom,
