@@ -637,6 +637,59 @@ function renderSingleModelRankingTable(
 }
 
 /**
+ * Weekly breakdown matrix for single-model period mode.
+ * Rows = top-N tickers (same order as the aggregate ranking).
+ * Columns = each ISO week present in `rawRows` (asc) + Media.
+ * Allows the user to cotejar each week with the dashboard cell-by-cell.
+ */
+function renderSingleModelWeeklyBreakdown(
+  rows: RankingRow[],
+  rawRows: any[],
+  model: ModelName,
+): string | null {
+  if (rows.length === 0) return null;
+  // 1) Collect distinct weeks (period_to ISO date) for THIS model only.
+  const weekSet = new Set<string>();
+  // 2) Index per (ticker, week) → score. Use 07_period_to so it matches
+  //    the dashboard's Sunday axis exactly.
+  const byTickerWeek = new Map<string, Map<string, number>>();
+  for (const r of rawRows) {
+    const m = normModel(r["02_model_name"]);
+    if (m !== model) continue;
+    const wk = String(r["07_period_to"] ?? r["06_period_from"] ?? "").slice(0, 10);
+    const t = String(r["05_ticker"] ?? "").trim();
+    const v = typeof r["09_rix_score"] === "number" ? r["09_rix_score"] : parseFloat(r["09_rix_score"]);
+    if (!wk || !t || !Number.isFinite(v)) continue;
+    weekSet.add(wk);
+    if (!byTickerWeek.has(t)) byTickerWeek.set(t, new Map());
+    byTickerWeek.get(t)!.set(wk, v);
+  }
+  if (weekSet.size < 2) return null; // only meaningful for multi-week
+  const weeks = [...weekSet].sort();
+  const head = ["#", "Empresa", ...weeks, `Media (${model})`];
+  const sep = head.map(() => "---").join(" | ");
+  const lines = rows.map((r, i) => {
+    const cells: string[] = [String(i + 1), `${r.name} (${r.ticker})`];
+    const wkMap = byTickerWeek.get(r.ticker) ?? new Map();
+    for (const w of weeks) cells.push(fmt(wkMap.get(w)));
+    cells.push(fmt(r.per_model[model]));
+    return `| ${cells.join(" | ")} |`;
+  });
+  const footnote =
+    `*Cada celda es el RIX semanal de ${model} (eje domingo, igual que el dashboard). ` +
+    `La columna "Media (${model})" replica la del ranking agregado.*`;
+  return [
+    `**Desglose semanal según ${model}**`,
+    "",
+    `| ${head.join(" | ")} |`,
+    `| ${sep} |`,
+    ...lines,
+    "",
+    footnote,
+  ].join("\n");
+}
+
+/**
  * BLOQUE 3C — Competitive context: group the top-N ranking by sector,
  * highlighting which sector dominates the leaderboard. Uses the
  * sector_category field from repindex_root_issuers (fetched here, single
@@ -973,6 +1026,15 @@ export const sectorRankingSkill: Skill = {
             }, orderHint))
       : "_Sin datos para el período/alcance solicitado._";
 
+    // Weekly breakdown: only emitted in single-model + period mode (≥2 weeks).
+    // Lets the user verify each weekly cell against the dashboard.
+    const weeklyBreakdown = (isSingleModel && !isSnapshotMode && ranking.length > 0)
+      ? renderSingleModelWeeklyBreakdown(ranking, rows, models[0] as ModelName)
+      : null;
+    const tableWithBreakdown = weeklyBreakdown
+      ? `${table}\n\n${weeklyBreakdown}`
+      : table;
+
     const datapack: DataPack = {
       entity: parsed.entities[0] ?? { ticker: "N/A", company_name: scopeLabel, sector_category: sector, source: "exact" },
       temporal: { ...parsed.temporal, from: sqlFrom, to: sqlTo },
@@ -981,7 +1043,7 @@ export const sectorRankingSkill: Skill = {
       models_coverage: { requested: models, with_data: models, missing: [] },
       metrics: [],
       raw_rows: rows,
-      pre_rendered_tables: [table],
+      pre_rendered_tables: [tableWithBreakdown],
     };
 
     const modules: string[] = ["base", "antiHallucination", "rankingMode"];
@@ -1054,7 +1116,7 @@ export const sectorRankingSkill: Skill = {
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
-      table,
+      tableWithBreakdown,
       ranking,
       rows,
       sqlFrom,
@@ -1148,7 +1210,7 @@ export const sectorRankingSkill: Skill = {
     return {
       datapack: {
         ...datapack,
-        pre_rendered_tables: [finalContent, table],
+        pre_rendered_tables: [finalContent, tableWithBreakdown],
         // P0-1 — Structured cited-sources report for SSE done metadata.
         cited_sources_report: citedSourcesReport,
       },
