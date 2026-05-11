@@ -1,53 +1,64 @@
-## Resumen del cotejo
+## Objetivo
 
-He auditado el informe que subiste (10 mejores, 4 semanas, sólo ChatGPT) contra la base de datos real. **Hay dos problemas reales que mi último parche no resolvió completamente.**
+Alinear el Dashboard con el Visor (informes) corrigiendo F1, F2, F3 y F5 — sin tocar el agente RIX ni el pipeline. Todo el cambio queda en hook + UI.
 
-### Top 10 real (IBEX-35, ChatGPT, media 2026-04-10 → 2026-05-09)
+## Alcance (lo que SÍ entra)
 
-| # | Ticker | Avg ChatGPT | Max |
-|---|---|---|---|
-| 1 | TEF  | 64,75 | 72 |
-| 2 | BBVA | 62,75 | 71 |
-| 3 | MRL  | 61,75 | 67 |
-| 4 | BKT  | 61,25 | 68 |
-| 5 | FER  | 60,75 | 67 |
-| 6 | CLNX | 60,75 | 60 |
-| 7 | SAN  | 60,50 | 65 |
-| 8 | MTS  | 60,00 | 62 |
-| 9 | SAB  | 60,00 | 63 |
-| 10 | SCYR | 59,75 | 70 |
+**F1 — Agregación por periodo (multi-semana)**
+- Nuevo modo "Periodo" en el filtro de fecha del Dashboard, además del modo actual "Semana" (snapshot). 
+- Cuando el usuario elige rango (p.ej. 2026-04-10 → 2026-05-09), el hook agrega RIX y sub-métricas con la **misma lógica que `sectorRanking.ts`**: media simple por `(ticker, model)` sobre las semanas que caen en el rango (eje domingo, `07_period_to`).
+- El modo "Semana" actual (un único `batchNumber`) queda intacto como default.
 
-### Lo que muestra tu informe
+**F2 — Multi-modelo en UI**
+- El selector actual (radio: Todos / ChatGPT / Gemini / …) pasa a soportar selección múltiple via toggles. "Todos" sigue disponible.
+- Estado interno: `aiFilter: AIFilter[]` (array) en lugar de `AIFilter` (string). Compatibilidad: si solo hay 1 modelo, el render se comporta como hoy.
+- El hook recibe `modelFilters: string[]` y filtra `02_model_name` por inclusión.
 
-| # | Ticker | RIX ChatGPT |
-|---|---|---|
-| 1 | TEF  | 64,8 ✅ |
-| 2 | BBVA | 62,8 ✅ |
-| 3 | SCYR | 59,8 ❌ (debería ser MRL 61,8) |
-| 4 | REP  | 56,3 ❌ (no entra en top 10 real) |
-| 5 | IDR  | 55,5 ❌ (no entra) |
-| 6 | BKT  | 61,3 ❌ (debería ser #4) |
-| 7 | MRL  | 61,8 ❌ (debería ser #3) |
-| 8 | FER  | 60,8 ❌ (debería ser #5) |
-| 9 | COL  | 56,5 ❌ (no entra) |
-| 10 | LOG  | 56,5 ❌ (no entra) |
+**F3 — Granularidad de subsector**
+- Nuevo filtro **Subsector** (combobox) bajo el filtro de Sector. Lee de `repindex_root_issuers.subsector` (columna ya existente en BD).
+- Hook acepta `subsectorFilter`. Cuando hay subsector elegido, el filtro de sector se respeta como ámbito superior pero el ranking/agregación se calcula sobre el subsector exacto.
 
-**Diagnóstico**: el orden y la SELECCIÓN del top 10 siguen el campo `rix_max` (pico semanal), no `per_model[ChatGPT]` (promedio visible). Coincide perfectamente con el orden por `rix_max` que devuelve la BD: TEF 72, BBVA 71, SCYR 70, REP 69, IDR 69, BKT 68, MRL 67, COL 67, FER 67, LOG 66. Es decir, mi fix llega a `aggregateRanking` pero el LLM (o un paso intermedio) está re-ordenando con la lista vieja.
+**F5 — Compatibilidad de filtros (orden de precedencia)**
+- Cuando el usuario combina IBEX-35 + un subsector que mezcla cotizadas/no-cotizadas, el Dashboard ya no devuelve vacío: aplica el subsector como filtro principal y muestra un badge "Universo ajustado: subsector tiene precedencia sobre índice" para que el usuario lo entienda.
+- Documentado con tooltip; sin cambios silenciosos.
 
-Además, la narrativa dice **"snapshot puntual"** aunque el log de orquestación reporta `mode=period` con 4 semanas reales.
+## Fuera de alcance (NO entra)
 
-### Plan correctivo
+- No tocamos `chat-intelligence-v2` ni `sectorRanking.ts`.
+- No tocamos RLS, migraciones, ni `rix_runs_v2`.
+- Modo Consenso sigue operando exactamente como hoy (sólo se le pasan los filtros nuevos).
+- Cards view se adapta de forma mínima — la prioridad es la vista Lista (es la que el usuario contrasta con el informe).
 
-1. **Re-confirmar que `singleModelKey` se pasa a `aggregateRanking` y que el `slice(topN)` ocurre tras la nueva ordenación** (revisar que `parsed.models` en el momento de la llamada tiene exactamente `["ChatGPT"]`; si `extractModelNames` no detecta el "usando solo ChatGPT" emitido por `compileQuestion`, `models.length` será 6 → singleModelKey=undefined → ordena por `rix_max`).
-2. **Forzar selección por columna visible en single-model**: si tras (1) sigue fallando, mover el sort por `per_model[singleModelKey]` también al criterio del `slice` y asegurar que las posiciones del LLM se ciñan a la tabla pre-renderizada (mismo orden, mismos tickers).
-3. **Eliminar "snapshot puntual" del prompt cuando `mode=period`**: el resumen ejecutivo y el análisis empresa-por-empresa deben heredar `effectiveTemporal` y la cadena `period_label = "media de 4 semanas (10-abr → 9-may)"`.
-4. **Test 1-semana solicitado**: ejecutar el mismo informe pidiendo `2026-05-03 → 2026-05-03` (única semana, snapshot puro, ChatGPT, IBEX-35, top 5) y cotejar con el Dashboard filtrado a esa misma semana + ChatGPT. El resultado esperado por BD es:
-   - 1. MAP 63 · 2. SCYR 63 · 3. SAB 62 · 4. CLNX 61 · 5. MRL 60.
+## Detalle técnico
 
-### Datos de cotejo del Dashboard (para tu vista lateral)
+### `src/hooks/useUnifiedRixRuns.ts`
+- `UseUnifiedRixRunsOptions`: añadir `modelFilters?: string[]`, `subsectorFilter?: string`, `dateRange?: { from: Date; to: Date } | null`, `aggregationMode?: 'snapshot' | 'period'`.
+- Mantener `modelFilter`/`sectorFilter` actuales para no romper otros consumidores; si llega `modelFilters` con length>0 tiene precedencia.
+- Nueva rama de agregación cuando `aggregationMode === 'period'`: 
+  1. Cargar todos los `rix_runs_v2` cuyo `07_period_to` ∈ `[from, to]`.
+  2. Agrupar por `(ticker, model_name)`, calcular media de `rix_score` y de cada `*_score`.
+  3. Devolver filas sintéticas con `id = 'agg-{ticker}-{model}-{from}-{to}'`, `batch_execution_date = to`.
+- En el `select` del SELECT de `repindex_root_issuers` añadir `, subsector`.
+- F5: si `ibexFamilyFilter !== 'all'` y `subsectorFilter !== 'all'` y la intersección queda vacía, emitir `aggregationOverride: 'subsector'` en el resultado y aplicar sólo el subsector.
 
-Para validar visualmente, abre el Dashboard con filtros: `Universo=IBEX-35`, `Modelos=Solo ChatGPT`, `Semana=2026-05-03`. Debe coincidir exactamente con la lista anterior. Cualquier valor distinto indica un problema en el shim del dashboard, no en el informe.
+### `src/pages/Dashboard.tsx`
+- Estado: `aiFilters: AIFilter[]` (array). Selector pasa a multi-toggle (los botones se mantienen visualmente pero permiten click acumulativo). "Todos" reinicia al array vacío + `all`.
+- Nuevo bloque de filtro de fecha con dos modos: "Semana" (Select actual) o "Periodo" (DateRangePicker con calendario rango).
+- Nuevo combobox "Subsector" alimentado por hook nuevo `useSubsectorCategories` (mismo patrón que `useSectorCategories`).
+- Badge informativo cuando F5 dispara la sobreescritura de universo.
+- `setPageContext` se actualiza con los nuevos campos para que el chat los reciba.
 
-### Alcance del cambio
+### Hook nuevo: `src/hooks/useSubsectorCategories.ts`
+- Lista distinct de `subsector` desde `repindex_root_issuers` (filtra null/empty).
+- Refleja `useSectorCategories` salvo el campo.
 
-Sólo `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts` (parámetro `singleModelKey` y prompts de narrativa). No se toca dashboard, ni `compileQuestion`, ni `coherenceEngine`, ni el motor V2 fuera de este skill.
+## Validación
+
+1. Repetir el informe **IBEX-35 · ChatGPT · 2026-04-10→2026-05-09** desde el Visor y desde el Dashboard (modo Periodo + ChatGPT seleccionado). Top 5 y media RIX deben coincidir al decimal.
+2. Snapshot de 1 semana (2026-05-03) sin cambios — debe coincidir con el informe single-week.
+3. Multi-modelo (ChatGPT + Gemini) en Dashboard: la lista debe mostrar 2 filas por ticker (una por modelo), no fusionarlas.
+4. F5: IBEX-35 + Subsector "Hospitales" → badge visible + lista no vacía.
+
+## Entregables
+
+- 1 hook modificado, 1 hook nuevo, 1 página modificada. Sin migraciones, sin cambios de edge functions.
