@@ -695,6 +695,8 @@ function buildUserMessageWithAssembler(
   citedSourcesSummary: string,
   perCompanySources: string,
   perCompanyDimensions: string,
+  orderHint: OrderHint = "desc",
+  isSingleModel = false,
 ): string {
   const metrics = metricsFromRows(rawRows);
   const _aggForReco = computePeriodAggregation(rawRows);
@@ -722,11 +724,25 @@ function buildUserMessageWithAssembler(
       ? `${divergence.level} (σ inter-modelo = ${(Math.round(divergence.sigma * 10) / 10)} pts, snapshot ${divergence.snapshot_date ?? "n/d"})`
       : "no calculable",
   });
-  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (consenso ${r.consensusLevel})`).join("\n");
+  const orderLabel =
+    orderHint === "asc"
+      ? (isSingleModel
+          ? `menor RIX medio según ${models[0]} en el periodo (peores primero)`
+          : "menor RIX máximo del periodo (peores primero)")
+      : orderHint === "divergence"
+        ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
+        : (isSingleModel
+            ? `mayor RIX medio según ${models[0]} en el periodo`
+            : "mayor RIX máximo del periodo; desempate por suelo RIX más alto");
+  const compact = isSingleModel
+    ? rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX(${models[0]})=${fmt(r.per_model[models[0] as ModelName])}`).join("\n")
+    : rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (dispersión inter-IA ${r.consensusLevel})`).join("\n");
   return [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
     `ALCANCE: ${scope}`,
+    "",
+    `CRITERIO DE ORDENACIÓN DEL RANKING (declárarlo literalmente en la sección 1 o 2): ${orderLabel}.`,
     "",
     `MÉTRICAS GLOBALES VERIFICADAS (úsalas literalmente, NO recalcules):`,
     `• Observaciones totales: ${rawRows.length}`,
@@ -734,6 +750,7 @@ function buildUserMessageWithAssembler(
     `• Empresas únicas analizadas: ${new Set(rawRows.map((r) => r["05_ticker"])).size}`,
     "",
     "ETIQUETADO OBLIGATORIO (no confundir):",
+    "• 'Dispersión entre IAs' = nivel de acuerdo de los 6 modelos en una misma semana. 'alto' significa acuerdo, NO calidad. Una empresa con dispersión 'alto' y RIX bajo = consenso negativo (las 6 IAs coinciden en lectura mala).",
     "• 'Volatilidad temporal (SD)' = dispersión semana a semana del RIX agregado del grupo (suele ser baja, ~2 pts). NO es 'RIX medio del índice'.",
     "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
     "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
