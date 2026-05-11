@@ -73,6 +73,7 @@ export interface UnifiedRixRun {
     ticker: string;
     issuer_name?: string;
     sector_category: string | null;
+    subsector?: string | null;
     ibex_family_code: string | null;
     cotiza_en_bolsa?: boolean;
   } | null;
@@ -94,6 +95,12 @@ export interface UnifiedRixRun {
     dcm?: 'up' | 'down' | 'stable';
     cxm?: 'up' | 'down' | 'stable';
   };
+  /**
+   * Marcado por la rama de agregación de periodo. Indica que la fila es
+   * sintética: media simple por (ticker, model) sobre las semanas del rango.
+   */
+  isAggregated?: boolean;
+  aggregatedWeeks?: number;
 }
 
 const V2_DASHBOARD_COLUMNS = `
