@@ -435,7 +435,12 @@ async function fetchSectorSourceRows(
 
 type OrderHint = "desc" | "asc" | "divergence";
 
-function aggregateRanking(rows: any[], topN: number, order: OrderHint = "desc"): RankingRow[] {
+function aggregateRanking(
+  rows: any[],
+  topN: number,
+  order: OrderHint = "desc",
+  singleModelKey?: ModelName,
+): RankingRow[] {
   // ANTI-MEDIANA (paridad dashboard nuevo modelo):
   //   1) Agrupar por (ticker, semana) → aggregateConsensus expone min/max/range/level
   //      por snapshot semanal (NO promediamos entre IAs).
@@ -514,7 +519,22 @@ function aggregateRanking(rows: any[], topN: number, order: OrderHint = "desc"):
   //  - desc (default): mejor RIX primero (rix_max desc, luego rix_min desc).
   //  - asc: peor RIX primero (rix_min asc).
   //  - divergence: mayor rango inter-modelo primero (weekly_range_avg desc).
-  if (order === "asc") {
+  // Single-model: ordenar por la columna VISIBLE (per_model[modelo]) para que el orden
+  // de la tabla coincida con el valor mostrado. Sin esto, multi-modelo y single-modelo
+  // usan rix_max/rix_min y el ranking parece "incoherente" frente a la columna RIX(IA).
+  if (singleModelKey) {
+    const v = (r: RankingRow) => {
+      const x = r.per_model[singleModelKey];
+      return typeof x === "number" && Number.isFinite(x) ? x : -Infinity;
+    };
+    if (order === "asc") {
+      out.sort((a, b) => (v(a) - v(b)) || (b.obs - a.obs) || a.ticker.localeCompare(b.ticker));
+    } else if (order === "divergence") {
+      out.sort((a, b) => b.weekly_range_avg - a.weekly_range_avg);
+    } else {
+      out.sort((a, b) => (v(b) - v(a)) || (b.obs - a.obs) || a.ticker.localeCompare(b.ticker));
+    }
+  } else if (order === "asc") {
     out.sort((a, b) => a.rix_min - b.rix_min || a.rix_max - b.rix_max);
   } else if (order === "divergence") {
     out.sort((a, b) => b.weekly_range_avg - a.weekly_range_avg);
