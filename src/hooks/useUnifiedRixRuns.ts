@@ -425,24 +425,103 @@ export function useUnifiedRixRuns(options: UseUnifiedRixRunsOptions = {}) {
       });
 
       let filteredData = processedRecords;
-      if (modelFilter && modelFilter !== 'all') {
+      // F2 — multi-modelo. Si llega `modelFilters` con elementos, ignora `modelFilter`.
+      const effectiveModelFilters = (modelFilters && modelFilters.length > 0
+        ? modelFilters
+        : (modelFilter && modelFilter !== 'all' ? [modelFilter] : [])
+      ).map(s => s.toLowerCase());
+      if (effectiveModelFilters.length > 0) {
         filteredData = filteredData.filter(run => {
           const modelName = run.model_name?.toLowerCase() || '';
-          return modelName.includes(modelFilter.toLowerCase());
+          return effectiveModelFilters.some(f => modelName.includes(f));
         });
       }
       if (companyFilter && companyFilter !== 'all') {
         filteredData = filteredData.filter(run => run.target_name === companyFilter);
       }
-      if (sectorFilter && sectorFilter !== 'all') {
+      // F3 — subsector tiene prioridad sobre sector si está activo.
+      const subsectorActive = subsectorFilter && subsectorFilter !== 'all';
+      if (sectorFilter && sectorFilter !== 'all' && !subsectorActive) {
         filteredData = filteredData.filter(run => run.repindex_root_issuers?.sector_category === sectorFilter);
       }
+      if (subsectorActive) {
+        filteredData = filteredData.filter(run => (run.repindex_root_issuers as any)?.subsector === subsectorFilter);
+      }
+      // F5 — si IBEX + subsector vacían el universo, el subsector tiene precedencia
+      // (ya aplicado arriba). Sólo aplicamos el filtro IBEX si NO hay colisión vacía.
       if (ibexFamilyFilter && ibexFamilyFilter !== 'all') {
+        const wouldBeEmpty = subsectorActive && filteredData.every(run => {
+          if (ibexFamilyFilter === 'no_cotizadas') return run.repindex_root_issuers?.cotiza_en_bolsa !== false;
+          return run.repindex_root_issuers?.ibex_family_code !== ibexFamilyFilter;
+        });
+        if (!wouldBeEmpty) {
         if (ibexFamilyFilter === 'no_cotizadas') {
           filteredData = filteredData.filter(run => run.repindex_root_issuers?.cotiza_en_bolsa === false);
         } else {
           filteredData = filteredData.filter(run => run.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter);
         }
+        } else {
+          console.log(`⚠️ F5 override: subsector="${subsectorFilter}" tiene precedencia sobre IBEX="${ibexFamilyFilter}" (intersección vacía)`);
+        }
+      }
+
+      // F1 — agregación por periodo. Cuando se solicita, colapsamos
+      // (ticker, model) en una única fila promediando RIX y sub-métricas
+      // sobre las semanas cuyo `period_to` cae dentro del rango. Mismo
+      // criterio que `sectorRanking.ts` del agente.
+      if (aggregationMode === 'period' && dateRange) {
+        const fromKey = format(dateRange.from, 'yyyy-MM-dd');
+        const toKey = format(dateRange.to, 'yyyy-MM-dd');
+        const inRange = filteredData.filter(r => {
+          const pt = r.period_to || r.batch_execution_date;
+          if (!pt) return false;
+          const k = format(new Date(pt), 'yyyy-MM-dd');
+          return k >= fromKey && k <= toKey;
+        });
+
+        const groups = new Map<string, UnifiedRixRun[]>();
+        for (const r of inRange) {
+          if (!r.ticker || !r.model_name) continue;
+          const k = `${r.ticker}__${r.model_name}`;
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k)!.push(r);
+        }
+
+        const SCORE_FIELDS = [
+          'rix_score', 'rix_score_adjusted', 'displayRixScore',
+          'nvm_score', 'drm_score', 'sim_score', 'rmm_score',
+          'cem_score', 'gam_score', 'dcm_score', 'cxm_score',
+        ] as const;
+
+        const aggregated: UnifiedRixRun[] = [];
+        for (const [, rows] of groups) {
+          const carrier = rows[0];
+          const synthetic: UnifiedRixRun = {
+            ...carrier,
+            id: `agg-${carrier.ticker}-${carrier.model_name}-${fromKey}-${toKey}`,
+            isAggregated: true,
+            aggregatedWeeks: rows.length,
+            metricTrends: {},
+            trend: undefined,
+            previousRixScore: undefined,
+          };
+          const bag = synthetic as unknown as Record<string, unknown>;
+          for (const f of SCORE_FIELDS) {
+            const vals = rows
+              .map(r => (r as unknown as Record<string, unknown>)[f] as number | null | undefined)
+              .filter((v): v is number => typeof v === 'number' && !isNaN(v));
+            if (vals.length > 0) {
+              bag[f] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+            } else {
+              bag[f] = null;
+            }
+          }
+          // Fechas efectivas del agregado
+          synthetic.period_from = fromKey;
+          synthetic.period_to = toKey;
+          aggregated.push(synthetic);
+        }
+        filteredData = aggregated;
       }
 
       console.log(`📊 V2-only results: ${filteredData.length} records after filters`);
