@@ -231,8 +231,12 @@ export function Dashboard() {
   const clearFilters = () => {
     setCompanyFilter("all");
     setSectorFilter("all");
+    setSubsectorFilter("all");
     setIbexFamilyFilter("all");
     setBatchFilter("all");
+    setMultiModels([]);
+    setPeriodRange(null);
+    setDateMode("week");
   };
 
   // Handle column sorting - click again on active column to reset to default
