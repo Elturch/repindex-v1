@@ -544,7 +544,7 @@ export function Dashboard() {
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
             {rixRuns?.length || 0} resultados analizados
-            {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+            {(companyFilter !== "all" || sectorFilter !== "all" || subsectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" || multiModels.length > 0 || dateMode === "period") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
           </p>
@@ -959,7 +959,7 @@ export function Dashboard() {
                 )}
               </div>
 
-              {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+              {(companyFilter !== "all" || sectorFilter !== "all" || subsectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" || multiModels.length > 0 || dateMode === "period") && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -984,7 +984,7 @@ export function Dashboard() {
 
         {!isLoading && !error && (!rixRuns || rixRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" ? "No companies found matching your filters." : 
+            {searchQuery || companyFilter !== "all" || sectorFilter !== "all" || subsectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" || multiModels.length > 0 || dateMode === "period" ? "No companies found matching your filters." : 
              aiFilter === "comparison" ? "No data available for comparison view yet." : 
              `No reputational data available for ${aiFilter}.`}
           </div>
