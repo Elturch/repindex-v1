@@ -920,13 +920,13 @@ export const sectorRankingSkill: Skill = {
               weeksExpected: effectiveTemporal.snapshots_expected,
               isPartial: effectiveTemporal.is_partial,
               isSnapshot: isSnapshotMode,
-            })
+            }, orderHint)
           : renderRankingTable(ranking, models, {
               weeksCount: effectiveTemporal.snapshots_available,
               weeksExpected: effectiveTemporal.snapshots_expected,
               isPartial: effectiveTemporal.is_partial,
               isSnapshot: isSnapshotMode,
-            }))
+            }, orderHint))
       : "_Sin datos para el período/alcance solicitado._";
 
     const datapack: DataPack = {
