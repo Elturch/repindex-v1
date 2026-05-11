@@ -528,8 +528,9 @@ function renderRankingTable(
   rows: RankingRow[],
   models: ModelName[],
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
+  orderHint: OrderHint = "desc",
 ): string {
-  const head = ["#", "Empresa", "RIX rango", "Consenso", ...models, "Obs."];
+  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
@@ -549,7 +550,17 @@ function renderRankingTable(
     : "";
   const unit = coverage.isSnapshot ? "modelos" : "semanas";
   const verb = coverage.isSnapshot ? "respondieron" : "observadas";
-  const footnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs (${coverage.weeksCount} ${unit} ${verb}${partialSuffix}). NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
+  const orderLabel =
+    orderHint === "asc"
+      ? "menor RIX máximo del periodo (peores primero)"
+      : orderHint === "divergence"
+        ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
+        : "mayor RIX máximo del periodo; desempate por suelo RIX más alto";
+  const footnote = [
+    `*Criterio de ordenación: ${orderLabel}. ${coverage.weeksCount} ${unit} ${verb}${partialSuffix}.*`,
+    `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs en el periodo. NO se promedia entre IAs.*`,
+    `*Dispersión entre IAs = cuánto se ponen de acuerdo los 6 modelos en una misma semana: alto = acuerdo (≤10 pts), medio (≤20), bajo = desacuerdo (>20). Mide consenso, NO calidad reputacional: una empresa con dispersión "alto" y RIX bajo significa que las 6 IAs coinciden en una lectura negativa.*`,
+  ].join("\n");
   return [
     "**Ranking por consenso entre IAs (con desglose por modelo)**",
     "",
@@ -569,6 +580,7 @@ function renderSingleModelRankingTable(
   rows: RankingRow[],
   model: ModelName,
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
+  orderHint: OrderHint = "desc",
 ): string {
   const head = ["#", "Empresa", `RIX (${model})`, "Obs."];
   const sep = head.map(() => "---").join(" | ");
@@ -585,7 +597,14 @@ function renderSingleModelRankingTable(
     ? ` (de ${coverage.weeksExpected} esperados)`
     : "";
   const unit = coverage.isSnapshot ? "snapshot" : "semanas";
-  const footnote = `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`;
+  const orderLabel =
+    orderHint === "asc"
+      ? `menor RIX medio según ${model} en el periodo (peores primero)`
+      : `mayor RIX medio según ${model} en el periodo; desempate por número de observaciones`;
+  const footnote = [
+    `*Criterio de ordenación: ${orderLabel}.*`,
+    `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`,
+  ].join("\n");
   return [
     `**Ranking según ${model}**`,
     "",
