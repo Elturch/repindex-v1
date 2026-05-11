@@ -922,7 +922,9 @@ export const sectorRankingSkill: Skill = {
     // Snapshot puntual (from===to) ⇒ snapshots_expected semantics is
     // "modelos esperados (6)", NOT "semanas". Count DISTINCT MODELS so the
     // banner / footnote / prompts report 6/6 models, not 1/6 weeks.
-    const isSnapshotMode = parsed.temporal.from === parsed.temporal.to;
+    // FIX: usar la ventana SQL real (sqlFrom/sqlTo), no la reconciliada que puede
+    // colapsar a una sola fecha y etiquetar como "snapshot" un periodo real.
+    const isSnapshotMode = sqlFrom === sqlTo;
     const realWeekKeys = new Set<string>();
     const realModelKeys = new Set<string>();
     for (const r of rows) {
@@ -948,7 +950,13 @@ export const sectorRankingSkill: Skill = {
         }
       : parsed.temporal;
     console.log(`${tag} temporal recompute | mode=${isSnapshotMode ? "snapshot" : "period"} | snapshots_available was=${prevSnapshotsAvailable} now=${effectiveTemporal.snapshots_available} (weeks=${realWeeksCount}, models=${realModelKeys.size}, expected=${parsed.temporal.snapshots_expected})`);
-    const ranking = aggregateRanking(rows, topN, orderHint);
+    const isSingleModel = models.length === 1;
+    const ranking = aggregateRanking(
+      rows,
+      topN,
+      orderHint,
+      isSingleModel ? (models[0] as ModelName) : undefined,
+    );
     const models = parsed.models;
     const table = ranking.length > 0
       ? (isSingleModel
