@@ -4,6 +4,7 @@ import { Layout } from "@/components/layout/Layout";
 import { useUnifiedRixRuns, UnifiedRixRun } from "@/hooks/useUnifiedRixRuns";
 import { useCompanies } from "@/hooks/useCompanies";
 import { useSectorCategories } from "@/hooks/useSectorCategories";
+import { useSubsectorCategories } from "@/hooks/useSubsectorCategories";
 import { useIbexFamilyCategories } from "@/hooks/useIbexFamilyCategories";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useProgressiveLoad } from "@/hooks/useProgressiveLoad";
@@ -38,15 +39,25 @@ import { getMetricByAcronym } from "@/lib/rixMetricsGlossary";
 
 // AI Filter type for the 6 models
 type AIFilter = "all" | "ChatGPT" | "Google Gemini" | "Perplexity" | "Deepseek" | "Grok" | "Qwen" | "comparison";
+const SELECTABLE_MODELS: Exclude<AIFilter, "all" | "comparison">[] = [
+  "ChatGPT", "Google Gemini", "Perplexity", "Deepseek", "Grok", "Qwen",
+];
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "cards">("list");
   const [aiFilter, setAIFilter] = useState<AIFilter>("all");
+  // F2 — multi-modelo. Si length > 0 tiene precedencia sobre `aiFilter` para
+  // el filtrado de datos. La UI de un único botón se conserva como atajo.
+  const [multiModels, setMultiModels] = useState<AIFilter[]>([]);
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [sectorFilter, setSectorFilter] = useState<string>("all");
+  const [subsectorFilter, setSubsectorFilter] = useState<string>("all");
   const [ibexFamilyFilter, setIbexFamilyFilter] = useState<string>("all");
   const [batchFilter, setBatchFilter] = useState<string>("all");
+  // F1 — modo de fecha: snapshot semanal (default) o agregación por periodo.
+  const [dateMode, setDateMode] = useState<"week" | "period">("week");
+  const [periodRange, setPeriodRange] = useState<{ from: Date; to: Date } | null>(null);
   const [sortConfig, setSortConfig] = useState<{
     key: 'rix' | 'nvm' | 'drm' | 'sim' | 'rmm' | 'cem' | 'gam' | 'dcm' | 'cxm';
     direction: 'asc' | 'desc';
@@ -65,10 +76,21 @@ export function Dashboard() {
         : aiFilter === "comparison"
         ? "all"
         : aiFilter,
+    // F2 — pasamos array sólo cuando usuario eligió >0 modelos en el popover
+    // y NO estamos en modo consenso/comparación (que necesitan los 6).
+    modelFilters:
+      rankingMode === "consensus" || aiFilter === "comparison"
+        ? []
+        : multiModels.length > 0
+        ? multiModels
+        : [],
     companyFilter,
     sectorFilter,
+    subsectorFilter,
     ibexFamilyFilter,
-    weeksToLoad: 6
+    weeksToLoad: dateMode === "period" ? 26 : 6,
+    aggregationMode: dateMode === "period" && periodRange ? "period" : "snapshot",
+    dateRange: dateMode === "period" ? periodRange : null,
   });
 
   // En modo "Por IA" respetamos el filtro elegido por el usuario, incluido
@@ -77,6 +99,7 @@ export function Dashboard() {
   // El modo "Consenso" sigue operando sobre las 6 IAs internamente.
   const { data: companies, isLoading: companiesLoading } = useCompanies();
   const { data: sectorCategories, isLoading: sectorsLoading } = useSectorCategories();
+  const { data: subsectorCategories } = useSubsectorCategories(sectorFilter);
   const { data: ibexFamilyCategories, isLoading: ibexLoading } = useIbexFamilyCategories();
   const { setPageContext } = useChatContext();
 
@@ -208,8 +231,12 @@ export function Dashboard() {
   const clearFilters = () => {
     setCompanyFilter("all");
     setSectorFilter("all");
+    setSubsectorFilter("all");
     setIbexFamilyFilter("all");
     setBatchFilter("all");
+    setMultiModels([]);
+    setPeriodRange(null);
+    setDateMode("week");
   };
 
   // Handle column sorting - click again on active column to reset to default
@@ -393,12 +420,16 @@ export function Dashboard() {
       dynamicData: {
         selectedCompany: companyFilter !== 'all' ? companyFilter : null,
         selectedSector: sectorFilter !== 'all' ? sectorFilter : null,
+        selectedSubsector: subsectorFilter !== 'all' ? subsectorFilter : null,
         selectedIbexFamily: ibexFamilyFilter !== 'all' ? ibexFamilyFilter : null,
         selectedAIModel: aiFilter !== 'all' ? aiFilter : null,
+        selectedAIModels: multiModels.length > 0 ? multiModels : null,
+        dateMode,
+        periodRange: periodRange ? { from: format(periodRange.from, 'yyyy-MM-dd'), to: format(periodRange.to, 'yyyy-MM-dd') } : null,
         totalResults: sortedRixRuns?.length || 0,
       }
     });
-  }, [companyFilter, sectorFilter, ibexFamilyFilter, aiFilter, sortedRixRuns?.length, setPageContext]);
+  }, [companyFilter, sectorFilter, subsectorFilter, ibexFamilyFilter, aiFilter, multiModels, dateMode, periodRange, sortedRixRuns?.length, setPageContext]);
 
   // Normalize flag names
   const normalizeFlag = (flag: string) => {
@@ -513,7 +544,7 @@ export function Dashboard() {
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
             {rixRuns?.length || 0} resultados analizados
-            {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+            {(companyFilter !== "all" || sectorFilter !== "all" || subsectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" || multiModels.length > 0 || dateMode === "period") && (
               <span className="ml-2">(con filtros aplicados)</span>
             )}
           </p>
@@ -593,6 +624,44 @@ export function Dashboard() {
                 <span className="hidden xs:inline">Qwen</span>
               </Button>
             </div>
+            {/* F2 — Popover multi-modelo */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="ml-2 whitespace-nowrap">
+                  + Comparar IA{multiModels.length > 0 ? ` (${multiModels.length})` : ""}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3 z-50 bg-background" align="end">
+                <p className="text-xs font-medium mb-2">Selecciona varias IAs</p>
+                <div className="space-y-1.5">
+                  {SELECTABLE_MODELS.map(m => {
+                    const checked = multiModels.includes(m);
+                    return (
+                      <label key={m} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setMultiModels(prev =>
+                              checked ? prev.filter(x => x !== m) : [...prev, m]
+                            );
+                          }}
+                        />
+                        {m}
+                      </label>
+                    );
+                  })}
+                </div>
+                {multiModels.length > 0 && (
+                  <Button variant="ghost" size="sm" className="mt-2 w-full" onClick={() => setMultiModels([])}>
+                    Limpiar selección
+                  </Button>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Si seleccionas ≥1 modelo, prevalece sobre el botón único de IA.
+                </p>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="flex items-center gap-3">
@@ -654,6 +723,27 @@ export function Dashboard() {
               ? "Vista por consenso — rango y nivel de coincidencia entre IAs (no se promedia)"
               : `Vista por IA — valores individuales por modelo${aiFilter !== "all" && aiFilter !== "comparison" ? ` (${aiFilter})` : ""}`}
           </Badge>
+          {dateMode === "period" && periodRange && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-[10px] sm:text-xs">
+                Periodo agregado · {format(periodRange.from, "d MMM")} → {format(periodRange.to, "d MMM yyyy")}
+              </Badge>
+            </div>
+          )}
+          {multiModels.length > 1 && rankingMode === "score" && aiFilter !== "comparison" && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-[10px] sm:text-xs">
+                Multi-modelo · {multiModels.join(" · ")}
+              </Badge>
+            </div>
+          )}
+          {subsectorFilter !== "all" && ibexFamilyFilter !== "all" && (
+            <div className="mt-1">
+              <Badge variant="outline" className="text-[10px] sm:text-xs border-needs-improvement/50 text-needs-improvement">
+                Universo ajustado · subsector tiene precedencia sobre índice si la intersección queda vacía
+              </Badge>
+            </div>
+          )}
         </div>
 
         {/* Filters */}
@@ -711,14 +801,47 @@ export function Dashboard() {
                       <CommandList>
                         <CommandEmpty>No se encontró sector.</CommandEmpty>
                         <CommandGroup>
-                          <CommandItem value="all" onSelect={() => handleSectorFilterChange("all")}>
+                          <CommandItem value="all" onSelect={() => { handleSectorFilterChange("all"); setSubsectorFilter("all"); }}>
                             <Check className={cn("mr-2 h-4 w-4", sectorFilter === "all" ? "opacity-100" : "opacity-0")} />
                             Todos los sectores
                           </CommandItem>
                           {sectorCategories?.map((sector) => (
-                            <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => handleSectorFilterChange(value)}>
+                            <CommandItem key={sector.sector_category} value={sector.sector_category} onSelect={(value) => { handleSectorFilterChange(value); setSubsectorFilter("all"); }}>
                               <Check className={cn("mr-2 h-4 w-4", sectorFilter === sector.sector_category ? "opacity-100" : "opacity-0")} />
                               {sector.sector_category}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Subsector Filter (F3) */}
+              <div className="flex items-center gap-1.5">
+                <Factory className="h-4 w-4 text-muted-foreground hidden sm:block opacity-60" />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-36 sm:w-48 justify-between text-xs sm:text-sm">
+                      {subsectorFilter === "all" ? "Todos los subsectores" : subsectorFilter}
+                      <ChevronsUpDown className="ml-1 h-3 w-3 sm:h-4 sm:w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Buscar subsector..." />
+                      <CommandList>
+                        <CommandEmpty>No se encontró subsector.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="all" onSelect={() => setSubsectorFilter("all")}>
+                            <Check className={cn("mr-2 h-4 w-4", subsectorFilter === "all" ? "opacity-100" : "opacity-0")} />
+                            Todos los subsectores
+                          </CommandItem>
+                          {subsectorCategories?.map((s) => (
+                            <CommandItem key={s.subsector} value={s.subsector} onSelect={(v) => setSubsectorFilter(v)}>
+                              <Check className={cn("mr-2 h-4 w-4", subsectorFilter === s.subsector ? "opacity-100" : "opacity-0")} />
+                              {s.subsector}
                             </CommandItem>
                           ))}
                         </CommandGroup>
@@ -768,6 +891,55 @@ export function Dashboard() {
               {/* Batch Filter */}
               <div className="flex items-center gap-1.5">
                 <CalendarDays className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                {/* F1 — toggle Semana/Periodo */}
+                <div className="flex items-center bg-muted/50 p-0.5 rounded-md mr-1">
+                  <Button
+                    variant={dateMode === "week" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setDateMode("week")}
+                  >
+                    Semana
+                  </Button>
+                  <Button
+                    variant={dateMode === "period" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setDateMode("period")}
+                  >
+                    Periodo
+                  </Button>
+                </div>
+                {dateMode === "period" ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-56 justify-between text-xs sm:text-sm">
+                        <span className="truncate">
+                          {periodRange
+                            ? `${format(periodRange.from, "d MMM")} → ${format(periodRange.to, "d MMM yyyy")}`
+                            : "Selecciona rango"}
+                        </span>
+                        <CalendarIcon className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0 z-50 bg-background" align="start">
+                      <Calendar
+                        mode="range"
+                        numberOfMonths={2}
+                        selected={periodRange ? { from: periodRange.from, to: periodRange.to } : undefined}
+                        onSelect={(range: any) => {
+                          if (range?.from && range?.to) {
+                            setPeriodRange({ from: range.from, to: range.to });
+                          } else if (range?.from) {
+                            setPeriodRange({ from: range.from, to: range.from });
+                          } else {
+                            setPeriodRange(null);
+                          }
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                ) : (
                 <Select value={batchFilter} onValueChange={handleBatchFilterChange}>
                   <SelectTrigger className="w-48 sm:w-64 text-xs sm:text-sm">
                     <SelectValue placeholder="Fecha de análisis" />
@@ -784,9 +956,10 @@ export function Dashboard() {
                     ))}
                   </SelectContent>
                 </Select>
+                )}
               </div>
 
-              {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
+              {(companyFilter !== "all" || sectorFilter !== "all" || subsectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" || multiModels.length > 0 || dateMode === "period") && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -811,7 +984,7 @@ export function Dashboard() {
 
         {!isLoading && !error && (!rixRuns || rixRuns.length === 0) && (
           <div className="text-center py-8 text-muted-foreground">
-            {searchQuery || companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" ? "No companies found matching your filters." : 
+            {searchQuery || companyFilter !== "all" || sectorFilter !== "all" || subsectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all" || multiModels.length > 0 || dateMode === "period" ? "No companies found matching your filters." : 
              aiFilter === "comparison" ? "No data available for comparison view yet." : 
              `No reputational data available for ${aiFilter}.`}
           </div>

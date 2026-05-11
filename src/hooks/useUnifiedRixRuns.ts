@@ -73,6 +73,7 @@ export interface UnifiedRixRun {
     ticker: string;
     issuer_name?: string;
     sector_category: string | null;
+    subsector?: string | null;
     ibex_family_code: string | null;
     cotiza_en_bolsa?: boolean;
   } | null;
@@ -94,6 +95,12 @@ export interface UnifiedRixRun {
     dcm?: 'up' | 'down' | 'stable';
     cxm?: 'up' | 'down' | 'stable';
   };
+  /**
+   * Marcado por la rama de agregación de periodo. Indica que la fila es
+   * sintética: media simple por (ticker, model) sobre las semanas del rango.
+   */
+  isAggregated?: boolean;
+  aggregatedWeeks?: number;
 }
 
 const V2_DASHBOARD_COLUMNS = `
@@ -236,23 +243,57 @@ async function fetchAllV2(columns: string, weeksLimit?: number) {
 
 interface UseUnifiedRixRunsOptions {
   modelFilter?: string;
+  /**
+   * Multi-modelo. Si llega con length>0 tiene precedencia sobre `modelFilter`.
+   * Cada string se compara case-insensitive contra `02_model_name`.
+   */
+  modelFilters?: string[];
   companyFilter?: string;
   sectorFilter?: string;
+  subsectorFilter?: string;
   ibexFamilyFilter?: string;
   weeksToLoad?: number;
+  /**
+   * Modo de agregación temporal:
+   *  - 'snapshot' (default): comportamiento histórico, una fila por (ticker, model, semana).
+   *  - 'period': agrega por (ticker, model) promediando todas las semanas dentro de `dateRange`.
+   *    Reproduce la lógica de `sectorRanking.ts` del agente RIX.
+   */
+  aggregationMode?: 'snapshot' | 'period';
+  dateRange?: { from: Date; to: Date } | null;
+}
+
+export interface UnifiedRixRunsMeta {
+  universeOverride?: 'subsector' | null;
+  effectiveScope?: string | null;
 }
 
 export function useUnifiedRixRuns(options: UseUnifiedRixRunsOptions = {}) {
   const {
     modelFilter = 'all',
+    modelFilters,
     companyFilter = 'all',
     sectorFilter = 'all',
+    subsectorFilter = 'all',
     ibexFamilyFilter = 'all',
-    weeksToLoad = 6
+    weeksToLoad = 6,
+    aggregationMode = 'snapshot',
+    dateRange = null,
   } = options;
 
   return useQuery({
-    queryKey: ['unified-rix-runs-v2only', modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, weeksToLoad],
+    queryKey: [
+      'unified-rix-runs-v2only',
+      modelFilter,
+      (modelFilters || []).slice().sort().join(',') || 'none',
+      companyFilter,
+      sectorFilter,
+      subsectorFilter,
+      ibexFamilyFilter,
+      weeksToLoad,
+      aggregationMode,
+      dateRange ? `${format(dateRange.from, 'yyyy-MM-dd')}_${format(dateRange.to, 'yyyy-MM-dd')}` : 'none',
+    ],
     queryFn: async (): Promise<UnifiedRixRun[]> => {
       const v2Data = await fetchAllV2(V2_DASHBOARD_COLUMNS, weeksToLoad);
 
@@ -260,7 +301,7 @@ export function useUnifiedRixRuns(options: UseUnifiedRixRunsOptions = {}) {
 
       const { data: repindexData } = await supabase
         .from("repindex_root_issuers")
-        .select("ticker, issuer_name, ibex_family_code, sector_category, cotiza_en_bolsa");
+        .select("ticker, issuer_name, ibex_family_code, sector_category, subsector, cotiza_en_bolsa");
 
       const repindexMap = new Map(
         (repindexData || []).map(item => [item.ticker, item])
@@ -384,24 +425,103 @@ export function useUnifiedRixRuns(options: UseUnifiedRixRunsOptions = {}) {
       });
 
       let filteredData = processedRecords;
-      if (modelFilter && modelFilter !== 'all') {
+      // F2 — multi-modelo. Si llega `modelFilters` con elementos, ignora `modelFilter`.
+      const effectiveModelFilters = (modelFilters && modelFilters.length > 0
+        ? modelFilters
+        : (modelFilter && modelFilter !== 'all' ? [modelFilter] : [])
+      ).map(s => s.toLowerCase());
+      if (effectiveModelFilters.length > 0) {
         filteredData = filteredData.filter(run => {
           const modelName = run.model_name?.toLowerCase() || '';
-          return modelName.includes(modelFilter.toLowerCase());
+          return effectiveModelFilters.some(f => modelName.includes(f));
         });
       }
       if (companyFilter && companyFilter !== 'all') {
         filteredData = filteredData.filter(run => run.target_name === companyFilter);
       }
-      if (sectorFilter && sectorFilter !== 'all') {
+      // F3 — subsector tiene prioridad sobre sector si está activo.
+      const subsectorActive = subsectorFilter && subsectorFilter !== 'all';
+      if (sectorFilter && sectorFilter !== 'all' && !subsectorActive) {
         filteredData = filteredData.filter(run => run.repindex_root_issuers?.sector_category === sectorFilter);
       }
+      if (subsectorActive) {
+        filteredData = filteredData.filter(run => (run.repindex_root_issuers as any)?.subsector === subsectorFilter);
+      }
+      // F5 — si IBEX + subsector vacían el universo, el subsector tiene precedencia
+      // (ya aplicado arriba). Sólo aplicamos el filtro IBEX si NO hay colisión vacía.
       if (ibexFamilyFilter && ibexFamilyFilter !== 'all') {
+        const wouldBeEmpty = subsectorActive && filteredData.every(run => {
+          if (ibexFamilyFilter === 'no_cotizadas') return run.repindex_root_issuers?.cotiza_en_bolsa !== false;
+          return run.repindex_root_issuers?.ibex_family_code !== ibexFamilyFilter;
+        });
+        if (!wouldBeEmpty) {
         if (ibexFamilyFilter === 'no_cotizadas') {
           filteredData = filteredData.filter(run => run.repindex_root_issuers?.cotiza_en_bolsa === false);
         } else {
           filteredData = filteredData.filter(run => run.repindex_root_issuers?.ibex_family_code === ibexFamilyFilter);
         }
+        } else {
+          console.log(`⚠️ F5 override: subsector="${subsectorFilter}" tiene precedencia sobre IBEX="${ibexFamilyFilter}" (intersección vacía)`);
+        }
+      }
+
+      // F1 — agregación por periodo. Cuando se solicita, colapsamos
+      // (ticker, model) en una única fila promediando RIX y sub-métricas
+      // sobre las semanas cuyo `period_to` cae dentro del rango. Mismo
+      // criterio que `sectorRanking.ts` del agente.
+      if (aggregationMode === 'period' && dateRange) {
+        const fromKey = format(dateRange.from, 'yyyy-MM-dd');
+        const toKey = format(dateRange.to, 'yyyy-MM-dd');
+        const inRange = filteredData.filter(r => {
+          const pt = r.period_to || r.batch_execution_date;
+          if (!pt) return false;
+          const k = format(new Date(pt), 'yyyy-MM-dd');
+          return k >= fromKey && k <= toKey;
+        });
+
+        const groups = new Map<string, UnifiedRixRun[]>();
+        for (const r of inRange) {
+          if (!r.ticker || !r.model_name) continue;
+          const k = `${r.ticker}__${r.model_name}`;
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k)!.push(r);
+        }
+
+        const SCORE_FIELDS = [
+          'rix_score', 'rix_score_adjusted', 'displayRixScore',
+          'nvm_score', 'drm_score', 'sim_score', 'rmm_score',
+          'cem_score', 'gam_score', 'dcm_score', 'cxm_score',
+        ] as const;
+
+        const aggregated: UnifiedRixRun[] = [];
+        for (const [, rows] of groups) {
+          const carrier = rows[0];
+          const synthetic: UnifiedRixRun = {
+            ...carrier,
+            id: `agg-${carrier.ticker}-${carrier.model_name}-${fromKey}-${toKey}`,
+            isAggregated: true,
+            aggregatedWeeks: rows.length,
+            metricTrends: {},
+            trend: undefined,
+            previousRixScore: undefined,
+          };
+          const bag = synthetic as unknown as Record<string, unknown>;
+          for (const f of SCORE_FIELDS) {
+            const vals = rows
+              .map(r => (r as unknown as Record<string, unknown>)[f] as number | null | undefined)
+              .filter((v): v is number => typeof v === 'number' && !isNaN(v));
+            if (vals.length > 0) {
+              bag[f] = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+            } else {
+              bag[f] = null;
+            }
+          }
+          // Fechas efectivas del agregado
+          synthetic.period_from = fromKey;
+          synthetic.period_to = toKey;
+          aggregated.push(synthetic);
+        }
+        filteredData = aggregated;
       }
 
       console.log(`📊 V2-only results: ${filteredData.length} records after filters`);
