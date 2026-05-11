@@ -1026,6 +1026,15 @@ export const sectorRankingSkill: Skill = {
             }, orderHint))
       : "_Sin datos para el período/alcance solicitado._";
 
+    // Weekly breakdown: only emitted in single-model + period mode (≥2 weeks).
+    // Lets the user verify each weekly cell against the dashboard.
+    const weeklyBreakdown = (isSingleModel && !isSnapshotMode && ranking.length > 0)
+      ? renderSingleModelWeeklyBreakdown(ranking, rows, models[0] as ModelName)
+      : null;
+    const tableWithBreakdown = weeklyBreakdown
+      ? `${table}\n\n${weeklyBreakdown}`
+      : table;
+
     const datapack: DataPack = {
       entity: parsed.entities[0] ?? { ticker: "N/A", company_name: scopeLabel, sector_category: sector, source: "exact" },
       temporal: { ...parsed.temporal, from: sqlFrom, to: sqlTo },
