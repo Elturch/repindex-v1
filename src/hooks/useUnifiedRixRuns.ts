@@ -243,23 +243,57 @@ async function fetchAllV2(columns: string, weeksLimit?: number) {
 
 interface UseUnifiedRixRunsOptions {
   modelFilter?: string;
+  /**
+   * Multi-modelo. Si llega con length>0 tiene precedencia sobre `modelFilter`.
+   * Cada string se compara case-insensitive contra `02_model_name`.
+   */
+  modelFilters?: string[];
   companyFilter?: string;
   sectorFilter?: string;
+  subsectorFilter?: string;
   ibexFamilyFilter?: string;
   weeksToLoad?: number;
+  /**
+   * Modo de agregación temporal:
+   *  - 'snapshot' (default): comportamiento histórico, una fila por (ticker, model, semana).
+   *  - 'period': agrega por (ticker, model) promediando todas las semanas dentro de `dateRange`.
+   *    Reproduce la lógica de `sectorRanking.ts` del agente RIX.
+   */
+  aggregationMode?: 'snapshot' | 'period';
+  dateRange?: { from: Date; to: Date } | null;
+}
+
+export interface UnifiedRixRunsMeta {
+  universeOverride?: 'subsector' | null;
+  effectiveScope?: string | null;
 }
 
 export function useUnifiedRixRuns(options: UseUnifiedRixRunsOptions = {}) {
   const {
     modelFilter = 'all',
+    modelFilters,
     companyFilter = 'all',
     sectorFilter = 'all',
+    subsectorFilter = 'all',
     ibexFamilyFilter = 'all',
-    weeksToLoad = 6
+    weeksToLoad = 6,
+    aggregationMode = 'snapshot',
+    dateRange = null,
   } = options;
 
   return useQuery({
-    queryKey: ['unified-rix-runs-v2only', modelFilter, companyFilter, sectorFilter, ibexFamilyFilter, weeksToLoad],
+    queryKey: [
+      'unified-rix-runs-v2only',
+      modelFilter,
+      (modelFilters || []).slice().sort().join(',') || 'none',
+      companyFilter,
+      sectorFilter,
+      subsectorFilter,
+      ibexFamilyFilter,
+      weeksToLoad,
+      aggregationMode,
+      dateRange ? `${format(dateRange.from, 'yyyy-MM-dd')}_${format(dateRange.to, 'yyyy-MM-dd')}` : 'none',
+    ],
     queryFn: async (): Promise<UnifiedRixRun[]> => {
       const v2Data = await fetchAllV2(V2_DASHBOARD_COLUMNS, weeksToLoad);
 
@@ -267,7 +301,7 @@ export function useUnifiedRixRuns(options: UseUnifiedRixRunsOptions = {}) {
 
       const { data: repindexData } = await supabase
         .from("repindex_root_issuers")
-        .select("ticker, issuer_name, ibex_family_code, sector_category, cotiza_en_bolsa");
+        .select("ticker, issuer_name, ibex_family_code, sector_category, subsector, cotiza_en_bolsa");
 
       const repindexMap = new Map(
         (repindexData || []).map(item => [item.ticker, item])
