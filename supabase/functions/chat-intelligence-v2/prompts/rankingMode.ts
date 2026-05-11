@@ -79,7 +79,9 @@ REGLAS DE CITAS Y FUENTES:
 • PROHIBIDO inventar empresas que no aparezcan en la tabla pre-renderizada.
 • PROHIBIDO añadir métricas fuera de las 8 canónicas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM).
 • Si dos empresas empatan en RIX, desempata por menor volatilidad o mayor consenso inter-modelo.
-• Compara SIEMPRE el RIX individual de cada empresa con el **rango** RIX del grupo (max-min) para situarla. Está PROHIBIDO usar "RIX medio del grupo/índice" o "promedio del consenso" en cualquier sección — siempre describe el grupo por su rango y por la posición relativa de cada empresa, nunca por una media consolidada.`;
+• Compara SIEMPRE el RIX individual de cada empresa con el **rango** RIX del grupo (max-min) para situarla. Está PROHIBIDO usar "RIX medio del grupo/índice" o "promedio del consenso" en cualquier sección — siempre describe el grupo por su rango y por la posición relativa de cada empresa, nunca por una media consolidada.
+• REGLA DE POLARIDAD DEL CONSENSO (obligatoria): "Dispersión entre IAs alto" significa SOLO que los 6 modelos coinciden, NO que la reputación es buena. Si una empresa tiene dispersión "alto" con RIX bajo (<50), debes etiquetarla explícitamente como **consenso negativo / consenso de crisis**. Nunca presentes "consenso alto" como noticia positiva por sí sola: combínalo siempre con el nivel del RIX.
+• En la sección 1 o 2 declara LITERALMENTE el "CRITERIO DE ORDENACIÓN DEL RANKING" tal como aparece en el mensaje del usuario. No inventes otro criterio ni omitas esta línea.`;
 }
 
 /**
