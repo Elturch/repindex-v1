@@ -1037,6 +1037,8 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
       buildPerCompanyDimensionsBlock(rows, `[RIX-V2][companyAnalysis]`).block,
+      orderHint,
+      isSingleModel,
     );
     // P1-A.2 — Buffer the LLM output instead of streaming raw chunks. The
     // marker substitution happens AFTER the LLM finishes, so streaming raw
