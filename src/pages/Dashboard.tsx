@@ -420,12 +420,16 @@ export function Dashboard() {
       dynamicData: {
         selectedCompany: companyFilter !== 'all' ? companyFilter : null,
         selectedSector: sectorFilter !== 'all' ? sectorFilter : null,
+        selectedSubsector: subsectorFilter !== 'all' ? subsectorFilter : null,
         selectedIbexFamily: ibexFamilyFilter !== 'all' ? ibexFamilyFilter : null,
         selectedAIModel: aiFilter !== 'all' ? aiFilter : null,
+        selectedAIModels: multiModels.length > 0 ? multiModels : null,
+        dateMode,
+        periodRange: periodRange ? { from: format(periodRange.from, 'yyyy-MM-dd'), to: format(periodRange.to, 'yyyy-MM-dd') } : null,
         totalResults: sortedRixRuns?.length || 0,
       }
     });
-  }, [companyFilter, sectorFilter, ibexFamilyFilter, aiFilter, sortedRixRuns?.length, setPageContext]);
+  }, [companyFilter, sectorFilter, subsectorFilter, ibexFamilyFilter, aiFilter, multiModels, dateMode, periodRange, sortedRixRuns?.length, setPageContext]);
 
   // Normalize flag names
   const normalizeFlag = (flag: string) => {
