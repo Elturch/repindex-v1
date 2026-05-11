@@ -39,6 +39,16 @@ const EVOLUTION_RE = /\b(evoluci[oó]n|evoluciona|tendencia|trayectoria|historic
 // ── Explicit AI model names (used to demote false sector_ranking) ──
 const MODEL_NAMES_RE = /\b(grok|perplexity|deepseek|deep\s*seek|chatgpt|chat\s*gpt|gpt[-\s]?\d?|gemini|qwen|claude|llama)\b/i;
 
+// "usando solo X", "según X", "con X", "filtrado por X", "only X", "using X"
+// → tratar la mención del modelo como FILTRO de un ranking, no como pregunta
+// de divergencia inter-modelo.
+const MODEL_AS_FILTER_RE =
+  /\b(usando|usa|use|using|solo|s[oó]lo|only|seg[uú]n|according\s+to|con|with|en|filtrad[oa]s?\s+por|filter(?:ed)?\s+by|para|for)\s+(?:los?\s+|las?\s+|el\s+|la\s+)?(?:modelos?\s+|ias?\s+|llms?\s+)?(?:de\s+)?(grok|perplexity|deepseek|deep\s*seek|chatgpt|chat\s*gpt|gpt[-\s]?\d?|gemini|qwen)\b/i;
+
+// Cues que SÍ son consultas de divergencia/consenso entre modelos.
+const REAL_DIVERGENCE_CUE_RE =
+  /\b(qu[eé]\s+modelo|cu[aá]l\s+modelo|qu[eé]\s+ia|cu[aá]l\s+ia|divergen|discrepan|consenso|disenso|en\s+qu[eé]\s+coinciden|diferencias?\s+entre\s+(?:ias?|modelos?|llms?))\b/i;
+
 // Crude entity counter: count of capitalised tokens that look like brands.
 function approxEntityCount(question: string): number {
   const matches = question.match(/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b|\b[A-Z]{3,}\b/g) || [];
@@ -81,9 +91,21 @@ export function classifyIntent(question: string): Intent {
   // ("which model rates X higher?"), NOT a sector ranking. Demote.
   if (RANKING_RE.test(raw)) {
     const mentionsModels = MODEL_NAMES_RE.test(raw);
-    const hasCompanyOrGroup = approxEntityCount(raw) >= 1 || SECTOR_HINT_RE.test(raw) || hasSemanticGroupAlias(raw);
-    if (mentionsModels && hasCompanyOrGroup) return "model_divergence";
-    if (SECTOR_HINT_RE.test(raw) || /\bibex/i.test(raw) || hasSemanticGroupAlias(raw)) return "sector_ranking";
+    const hasSectorOrGroup = SECTOR_HINT_RE.test(raw) || /\bibex/i.test(raw) || hasSemanticGroupAlias(raw);
+    // Solo demotar a model_divergence cuando (a) se mencionan modelos, (b)
+    // NO es claramente un filtro ("usando solo X"), y (c) hay un cue real
+    // de divergencia ("qué modelo", "consenso", "divergencia"...). Si la
+    // consulta es un ranking sectorial con un modelo como filtro, debe
+    // resolverse como sector_ranking single-model.
+    if (
+      mentionsModels &&
+      !MODEL_AS_FILTER_RE.test(raw) &&
+      REAL_DIVERGENCE_CUE_RE.test(raw) &&
+      (approxEntityCount(raw) >= 1 || hasSectorOrGroup)
+    ) {
+      return "model_divergence";
+    }
+    if (hasSectorOrGroup) return "sector_ranking";
     // "ranking" alone (no sector, no company) → default sector ranking.
     return "sector_ranking";
   }

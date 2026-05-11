@@ -528,8 +528,9 @@ function renderRankingTable(
   rows: RankingRow[],
   models: ModelName[],
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
+  orderHint: OrderHint = "desc",
 ): string {
-  const head = ["#", "Empresa", "RIX rango", "Consenso", ...models, "Obs."];
+  const head = ["#", "Empresa", "RIX rango", "Dispersión entre IAs", ...models, "Obs."];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells = [
@@ -549,7 +550,17 @@ function renderRankingTable(
     : "";
   const unit = coverage.isSnapshot ? "modelos" : "semanas";
   const verb = coverage.isSnapshot ? "respondieron" : "observadas";
-  const footnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs (${coverage.weeksCount} ${unit} ${verb}${partialSuffix}). NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
+  const orderLabel =
+    orderHint === "asc"
+      ? "menor RIX máximo del periodo (peores primero)"
+      : orderHint === "divergence"
+        ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
+        : "mayor RIX máximo del periodo; desempate por suelo RIX más alto";
+  const footnote = [
+    `*Criterio de ordenación: ${orderLabel}. ${coverage.weeksCount} ${unit} ${verb}${partialSuffix}.*`,
+    `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs en el periodo. NO se promedia entre IAs.*`,
+    `*Dispersión entre IAs = cuánto se ponen de acuerdo los 6 modelos en una misma semana: alto = acuerdo (≤10 pts), medio (≤20), bajo = desacuerdo (>20). Mide consenso, NO calidad reputacional: una empresa con dispersión "alto" y RIX bajo significa que las 6 IAs coinciden en una lectura negativa.*`,
+  ].join("\n");
   return [
     "**Ranking por consenso entre IAs (con desglose por modelo)**",
     "",
@@ -569,6 +580,7 @@ function renderSingleModelRankingTable(
   rows: RankingRow[],
   model: ModelName,
   coverage: { weeksCount: number; weeksExpected: number; isPartial: boolean; isSnapshot?: boolean },
+  orderHint: OrderHint = "desc",
 ): string {
   const head = ["#", "Empresa", `RIX (${model})`, "Obs."];
   const sep = head.map(() => "---").join(" | ");
@@ -585,7 +597,14 @@ function renderSingleModelRankingTable(
     ? ` (de ${coverage.weeksExpected} esperados)`
     : "";
   const unit = coverage.isSnapshot ? "snapshot" : "semanas";
-  const footnote = `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`;
+  const orderLabel =
+    orderHint === "asc"
+      ? `menor RIX medio según ${model} en el periodo (peores primero)`
+      : `mayor RIX medio según ${model} en el periodo; desempate por número de observaciones`;
+  const footnote = [
+    `*Criterio de ordenación: ${orderLabel}.*`,
+    `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`,
+  ].join("\n");
   return [
     `**Ranking según ${model}**`,
     "",
@@ -676,6 +695,8 @@ function buildUserMessageWithAssembler(
   citedSourcesSummary: string,
   perCompanySources: string,
   perCompanyDimensions: string,
+  orderHint: OrderHint = "desc",
+  isSingleModel = false,
 ): string {
   const metrics = metricsFromRows(rawRows);
   const _aggForReco = computePeriodAggregation(rawRows);
@@ -703,11 +724,25 @@ function buildUserMessageWithAssembler(
       ? `${divergence.level} (σ inter-modelo = ${(Math.round(divergence.sigma * 10) / 10)} pts, snapshot ${divergence.snapshot_date ?? "n/d"})`
       : "no calculable",
   });
-  const compact = rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (consenso ${r.consensusLevel})`).join("\n");
+  const orderLabel =
+    orderHint === "asc"
+      ? (isSingleModel
+          ? `menor RIX medio según ${models[0]} en el periodo (peores primero)`
+          : "menor RIX máximo del periodo (peores primero)")
+      : orderHint === "divergence"
+        ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
+        : (isSingleModel
+            ? `mayor RIX medio según ${models[0]} en el periodo`
+            : "mayor RIX máximo del periodo; desempate por suelo RIX más alto");
+  const compact = isSingleModel
+    ? rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX(${models[0]})=${fmt(r.per_model[models[0] as ModelName])}`).join("\n")
+    : rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX=${fmt(r.rix_min)}–${fmt(r.rix_max)} (dispersión inter-IA ${r.consensusLevel})`).join("\n");
   return [
     `PREGUNTA DEL USUARIO: ${question}`,
     "",
     `ALCANCE: ${scope}`,
+    "",
+    `CRITERIO DE ORDENACIÓN DEL RANKING (declárarlo literalmente en la sección 1 o 2): ${orderLabel}.`,
     "",
     `MÉTRICAS GLOBALES VERIFICADAS (úsalas literalmente, NO recalcules):`,
     `• Observaciones totales: ${rawRows.length}`,
@@ -715,6 +750,7 @@ function buildUserMessageWithAssembler(
     `• Empresas únicas analizadas: ${new Set(rawRows.map((r) => r["05_ticker"])).size}`,
     "",
     "ETIQUETADO OBLIGATORIO (no confundir):",
+    "• 'Dispersión entre IAs' = nivel de acuerdo de los 6 modelos en una misma semana. 'alto' significa acuerdo, NO calidad. Una empresa con dispersión 'alto' y RIX bajo = consenso negativo (las 6 IAs coinciden en lectura mala).",
     "• 'Volatilidad temporal (SD)' = dispersión semana a semana del RIX agregado del grupo (suele ser baja, ~2 pts). NO es 'RIX medio del índice'.",
     "• 'Dispersión inter-modelo (σ)' = desacuerdo entre modelos en una misma semana (más alta, ~8-10 pts).",
     "Etiqueta SIEMPRE qué tipo de dispersión muestras y nunca uses 'SD' y 'σ' como sinónimos.",
@@ -901,13 +937,13 @@ export const sectorRankingSkill: Skill = {
               weeksExpected: effectiveTemporal.snapshots_expected,
               isPartial: effectiveTemporal.is_partial,
               isSnapshot: isSnapshotMode,
-            })
+            }, orderHint)
           : renderRankingTable(ranking, models, {
               weeksCount: effectiveTemporal.snapshots_available,
               weeksExpected: effectiveTemporal.snapshots_expected,
               isPartial: effectiveTemporal.is_partial,
               isSnapshot: isSnapshotMode,
-            }))
+            }, orderHint))
       : "_Sin datos para el período/alcance solicitado._";
 
     const datapack: DataPack = {
@@ -1001,6 +1037,8 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
       buildPerCompanyDimensionsBlock(rows, `[RIX-V2][companyAnalysis]`).block,
+      orderHint,
+      isSingleModel,
     );
     // P1-A.2 — Buffer the LLM output instead of streaming raw chunks. The
     // marker substitution happens AFTER the LLM finishes, so streaming raw

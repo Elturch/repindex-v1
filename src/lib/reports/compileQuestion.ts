@@ -88,7 +88,13 @@ export function compileFiltersToQuestion(
   }
 
   // Temporal
-  parts.push(`entre ${state.window.value.from} y ${state.window.value.to}`);
+  if (state.window.value.preset === "ytd") {
+    parts.push(
+      `en lo que va de año (year to date, entre ${state.window.value.from} y ${state.window.value.to})`,
+    );
+  } else {
+    parts.push(`entre ${state.window.value.from} y ${state.window.value.to}`);
+  }
   if (state.granularity.value !== "snapshot") {
     const gMap: Record<string, string> = {
       weekly: "con desglose semanal",
