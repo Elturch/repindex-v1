@@ -866,6 +866,55 @@ export function Dashboard() {
               {/* Batch Filter */}
               <div className="flex items-center gap-1.5">
                 <CalendarDays className="h-4 w-4 text-muted-foreground hidden sm:block" />
+                {/* F1 — toggle Semana/Periodo */}
+                <div className="flex items-center bg-muted/50 p-0.5 rounded-md mr-1">
+                  <Button
+                    variant={dateMode === "week" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setDateMode("week")}
+                  >
+                    Semana
+                  </Button>
+                  <Button
+                    variant={dateMode === "period" ? "default" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setDateMode("period")}
+                  >
+                    Periodo
+                  </Button>
+                </div>
+                {dateMode === "period" ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-56 justify-between text-xs sm:text-sm">
+                        <span className="truncate">
+                          {periodRange
+                            ? `${format(periodRange.from, "d MMM")} → ${format(periodRange.to, "d MMM yyyy")}`
+                            : "Selecciona rango"}
+                        </span>
+                        <CalendarIcon className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0 z-50 bg-background" align="start">
+                      <Calendar
+                        mode="range"
+                        numberOfMonths={2}
+                        selected={periodRange ? { from: periodRange.from, to: periodRange.to } : undefined}
+                        onSelect={(range: any) => {
+                          if (range?.from && range?.to) {
+                            setPeriodRange({ from: range.from, to: range.to });
+                          } else if (range?.from) {
+                            setPeriodRange({ from: range.from, to: range.from });
+                          } else {
+                            setPeriodRange(null);
+                          }
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                ) : (
                 <Select value={batchFilter} onValueChange={handleBatchFilterChange}>
                   <SelectTrigger className="w-48 sm:w-64 text-xs sm:text-sm">
                     <SelectValue placeholder="Fecha de análisis" />
@@ -882,6 +931,7 @@ export function Dashboard() {
                     ))}
                   </SelectContent>
                 </Select>
+                )}
               </div>
 
               {(companyFilter !== "all" || sectorFilter !== "all" || ibexFamilyFilter !== "all" || batchFilter !== "all") && (
