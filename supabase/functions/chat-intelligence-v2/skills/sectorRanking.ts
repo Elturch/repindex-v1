@@ -386,6 +386,15 @@ function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string 
   ].join("\n");
 }
 
+// Frase canónica de unicidad para subsectores con 1 único emisor cotizado.
+// Cubre el assert A5_hotels_edge (regex acepta "subsector ... contiene/incluye ... 1 emisor"
+// y "1 único emisor cotizado"). También sirve para cualquier otro subsector con n=1.
+function buildUniquenessLine(scopeLabel: string, ranking: RankingRow[]): string {
+  if (ranking.length !== 1) return "";
+  const r = ranking[0];
+  return `**Unicidad de alcance:** El ${scopeLabel} contiene 1 único emisor cotizado: ${r.name} (${r.ticker}).`;
+}
+
 function buildDeterministicDimensionsTable(rows: any[], ranking: RankingRow[], model?: ModelName): string {
   const wanted = new Set(ranking.map((r) => r.ticker));
   const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
