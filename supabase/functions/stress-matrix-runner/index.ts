@@ -406,6 +406,21 @@ serve(async (req: Request) => {
     "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec" | "phase2-full";
   const limit = body.limit;
 
+  // Paso 2.5 — Pass-through del header de aislamiento Fase 2. Si la
+  // family es `phase2-*` el caller TIENE que enviarlo, si no abortamos
+  // el run con error claro `phase2_header_missing` (sin él los flags
+  // Fase 2 quedan OFF efectivos y el run no puede validar nada).
+  const phase2HeaderToken = (req.headers.get(PHASE2_ISOLATION_HEADER) ?? "").trim();
+  if (family.startsWith("phase2-") && phase2HeaderToken.length === 0) {
+    return new Response(JSON.stringify({
+      error: "phase2_header_missing",
+      detail: `family=${family} requires '${PHASE2_ISOLATION_HEADER}' header (Paso 2.5 isolation)`,
+    }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
   const cases = expandCases(family);
   const limited = limit ? cases.slice(0, limit) : cases;
@@ -427,11 +442,12 @@ serve(async (req: Request) => {
   // Background execution.
   // deno-lint-ignore no-explicit-any
   const er = (globalThis as any).EdgeRuntime;
+  const tokenForRun = phase2HeaderToken.length > 0 ? phase2HeaderToken : null;
   if (er?.waitUntil) {
-    er.waitUntil(runMatrix(runId, family, limit));
+    er.waitUntil(runMatrix(runId, family, limit, tokenForRun));
   } else {
     // Fallback: fire and forget.
-    runMatrix(runId, family, limit).catch((e) => console.error("[stress-runner] bg crash:", e));
+    runMatrix(runId, family, limit, tokenForRun).catch((e) => console.error("[stress-runner] bg crash:", e));
   }
 
   return new Response(JSON.stringify({
