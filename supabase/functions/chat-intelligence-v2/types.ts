@@ -176,7 +176,7 @@ export interface Skill {
 }
 
 export interface OrchestratorResponse {
-  type: 'guard_rejection' | 'llm_synthesis';
+  type: 'guard_rejection' | 'llm_synthesis' | 'scope_audit_failed';
   content: string;
   datapack?: DataPack;
   metadata?: ReportMetadata;
@@ -187,6 +187,15 @@ export interface OrchestratorResponse {
   models_used?: ModelName[];
   data_count?: number;
   methodology?: Record<string, unknown>;
+  /** Fase 1 — error estructurado cuando ScopeAuditFailed o
+   *  ScopeResolutionError abortan el pipeline antes del LLM. */
+  error?: {
+    code: 'ScopeAuditFailed' | 'ScopeResolutionError' | 'ScopedQueryError';
+    failed_assert?: 'S1' | 'S2' | 'S3' | 'S4' | 'S5' | null;
+    detail: string;
+    scope_contract?: unknown;
+    coverage_report?: unknown;
+  };
 }
 
 export interface ConversationMessage {
