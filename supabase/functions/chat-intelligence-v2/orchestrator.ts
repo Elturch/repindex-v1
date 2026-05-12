@@ -45,10 +45,18 @@ import {
   scopeFlagsSnapshot,
   isEnrichRankingSubmetricsEnabled,
   isTinyUniverseGuardEnabled,
+  isExecNarrativeEnabled,
 } from "./scope/featureFlags.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
 import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
 import { scanTinyUniverse } from "./guards/tinyUniverseGuard.ts";
+import { buildExecNarrativePrelude } from "./prompts/execNarrativePrelude.ts";
+import {
+  validateExecNarrative,
+  buildNumericCorpus,
+  type ExecNarrativeValidationResult,
+} from "./guards/execNarrativeValidator.ts";
+import { EXEC_NARRATIVE_MAX_RETRIES_V1 } from "./scope/policies/execNarrativeLimits.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
