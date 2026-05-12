@@ -9,11 +9,13 @@ import { parseTemporalIntent } from "../_shared/temporalGuard.ts";
 import { parseTemporal } from "./parsers/temporalParser.ts";
 import { toVerifiedSources } from "./datapack/verifiedSourcesAdapter.ts";
 import type { CitedSourcesReport } from "./datapack/citedSources.ts";
+import { buildHeaderContext } from "./scope/headerGate.ts";
+import { PHASE2_ISOLATION_HEADER } from "./scope/policies/phase2IsolationPolicy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version, x-repindex-stress",
   // Expose RIX-specific headers so the frontend can verify the effective
   // model and fallback state without parsing logs.
   "Access-Control-Expose-Headers":
