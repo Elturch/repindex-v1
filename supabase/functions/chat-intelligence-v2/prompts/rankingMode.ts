@@ -139,13 +139,19 @@ Para CADA empresa del ranking, mini-perfil de 3-5 frases:
 NO te saltes ninguna empresa.
 
 ## 4. Recomendaciones accionables (mínimo 4)
-Cada recomendación debe: (a) referirse a una empresa concreta del ranking, (b) citar un medio/dominio real, (c) incluir KPI cuantitativo (métrica + valor actual según ${model} + target + horizonte), (d) verbo de acción + entregable + plazo, (e) prioridad explícita.
+Cada recomendación debe: (a) referirse a una empresa concreta del ranking (ticker + nombre), (b) citar un medio/dominio real ya presente en las fuentes citadas por ${model}, (c) diagnóstico cuantificado SOLO con cifras del DataPack (métrica + valor actual según ${model} + brecha respecto al techo observado), (d) prioridad explícita (alta/media/baja).
+
+PROHIBIDO ABSOLUTO en esta sección (anti-fabricación):
+• Inventar fechas, trimestres u horizontes temporales (Q1-2027, FY-2026, AGM, "en 6 meses").
+• Inventar targets pseudo-precisos (target 45, +7,7 pts) o entregables ficticios (white papers, data-rooms, programas internos).
+• Cualquier número debe existir LITERALMENTE en el DataPack. Si no, usa lenguaje cualitativo accionable.
 
 ## 5. Fuentes citadas por ${model}
 2-3 frases con totales de fuentes (URLs únicas, dominios). Termina con la línea EXACTA \`<!--CITEDSOURCESHERE-->\`. NO listes URLs a mano.
 
 REGLAS DURAS:
-• PROHIBIDO mencionar otros modelos (ChatGPT, Perplexity, DeepSeek, Grok, Qwen) salvo para decir "no se incluyen en esta vista filtrada".
+• PROHIBIDO mencionar otros modelos (ChatGPT, Perplexity, DeepSeek, Grok, Qwen, Claude) salvo para decir "no se incluyen en esta vista filtrada". El modelo actual es ${model} y es el único válido para citar.
+• PROHIBIDO usar las frases "entre modelos", "ningún modelo coincide", "los demás modelos", "las afirmaciones de otros modelos" o cualquier referencia comparativa a IAs ausentes. Describe únicamente lo que ${model} cita y observa.
 • PROHIBIDO usar las palabras: consenso, divergencia, anti-mediana, RIX rango, promedio entre IAs, mediana.
 • PROHIBIDO inventar tendencias temporales si ${isSnapshot ? "solo hay snapshot puntual" : `${weeksCount} semanas`} de datos disponibles.
 • PROHIBIDO inventar empresas, métricas fuera de las 8 canónicas (NVM, DRM, SIM, RMM, CEM, GAM, DCM, CXM), o URLs.
