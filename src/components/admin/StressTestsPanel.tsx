@@ -737,7 +737,8 @@ export function StressTestsPanel() {
                     <TableHead>Modelo</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Δ</TableHead>
-                    <TableHead>Asserts fallados</TableHead>
+                    <TableHead className="text-primary">Asserts Fase 1 ❌</TableHead>
+                    <TableHead className="text-muted-foreground">Asserts Legacy ❌</TableHead>
                     <TableHead className="text-right">Latencia</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -763,9 +764,20 @@ export function StressTestsPanel() {
                           {k === "new" && <Badge variant="outline" className="text-[10px]">nuevo</Badge>}
                         </TableCell>
                         <TableCell className="text-xs">
-                          {(r.asserts_failed ?? []).map((a) => (
-                            <Badge key={a.id} variant="outline" className="mr-1 mb-1 text-[10px]">{a.id}</Badge>
+                          {(r.asserts_failed ?? []).filter((a) => isPhase1Assert(a.id)).map((a) => (
+                            <Badge key={a.id} className="mr-1 mb-1 text-[10px] bg-red-500/15 text-red-700 border-red-500/40 border">{a.id}</Badge>
                           ))}
+                          {(r.asserts_failed ?? []).filter((a) => isPhase1Assert(a.id)).length === 0 && (
+                            <span className="text-emerald-600 text-[10px]">✓</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {(r.asserts_failed ?? []).filter((a) => isLegacyAssert(a.id)).map((a) => (
+                            <Badge key={a.id} variant="outline" className="mr-1 mb-1 text-[10px] opacity-70">{a.id.replace(/^L:/, "")}</Badge>
+                          ))}
+                          {(r.asserts_failed ?? []).filter((a) => isLegacyAssert(a.id)).length === 0 && (
+                            <span className="text-muted-foreground text-[10px]">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right text-xs font-mono">{r.latency_ms ?? "—"}</TableCell>
                         <TableCell>
