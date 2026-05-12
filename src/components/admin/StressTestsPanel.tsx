@@ -206,6 +206,11 @@ export function StressTestsPanel() {
   const [loading, setLoading] = useState(false);
   const [drillOpen, setDrillOpen] = useState<Result | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  // Paso 2.5 — Token de aislamiento Fase 2. Vive SÓLO en useState durante
+  // la sesión del navegador. NUNCA se persiste en localStorage ni en
+  // código. El admin lo pega manualmente la primera vez por sesión.
+  const [phase2Token, setPhase2Token] = useState("");
+  const STRESS_HEADER_NAME = "x-repindex-stress" as const;
 
   const loadRuns = async () => {
     const { data, error } = await supabase
@@ -263,8 +268,22 @@ export function StressTestsPanel() {
   }, [runs, selectedRun]);
 
   const launch = async () => {
+    // Paso 2.5 — Las families `phase2-*` requieren el header de aislamiento.
+    // Sin él el runner aborta con `phase2_header_missing`. Para
+    // phase1-* / sanity / hotels-reits es opcional.
+    if (family.startsWith("phase2-") && phase2Token.trim().length === 0) {
+      toast.error("Pega el STRESS_TESTS_HEADER_TOKEN antes de lanzar una family phase2-*");
+      return;
+    }
     setLaunching(true);
-    const { data, error } = await supabase.functions.invoke("stress-matrix-runner", { body: { family } });
+    const headers: Record<string, string> = {};
+    if (phase2Token.trim().length > 0) {
+      headers[STRESS_HEADER_NAME] = phase2Token.trim();
+    }
+    const { data, error } = await supabase.functions.invoke(
+      "stress-matrix-runner",
+      { body: { family }, headers },
+    );
     setLaunching(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`Run lanzado: ${(data as any)?.total_cases} casos`);
