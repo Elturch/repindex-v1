@@ -45,6 +45,9 @@ async function isCallerAdmin(authHeader: string | null): Promise<{ ok: boolean; 
   return { ok: !!roleRow, uid };
 }
 
+const AGENT_TIMEOUT_MS = 180_000; // 3 min max per case
+const SSE_INACTIVITY_MS = 60_000;  // 60s without data = hung stream
+
 async function invokeAgent(
   caseSpec: StressCase,
 ): Promise<{ markdown: string; meta: Record<string, unknown> | null; latency_ms: number; error?: string }> {
@@ -52,9 +55,12 @@ async function invokeAgent(
   const url = `${SUPABASE_URL}/functions/v1/chat-intelligence-v2`;
   const sessionId = `stress-${caseSpec.case_id}-${Date.now()}`;
   let res: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
   try {
     res = await fetch(url, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${SERVICE_KEY}`,
@@ -69,8 +75,13 @@ async function invokeAgent(
       }),
     });
   } catch (e) {
-    return { markdown: "", meta: null, latency_ms: Date.now() - t0, error: `fetch failed: ${e}` };
+    clearTimeout(timeoutId);
+    const msg = e instanceof DOMException && e.name === "AbortError"
+      ? `fetch timeout after ${AGENT_TIMEOUT_MS}ms`
+      : `fetch failed: ${e}`;
+    return { markdown: "", meta: null, latency_ms: Date.now() - t0, error: msg };
   }
+  clearTimeout(timeoutId);
   if (!res.ok || !res.body) {
     const txt = await res.text().catch(() => "");
     return { markdown: "", meta: null, latency_ms: Date.now() - t0, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
@@ -81,31 +92,45 @@ async function invokeAgent(
   let buf = "";
   let markdown = "";
   let meta: Record<string, unknown> | null = null;
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const frame = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      if (!frame.startsWith("data:")) continue;
-      const payload = frame.replace(/^data:\s*/, "").trim();
-      if (payload === "[DONE]") continue;
-      try {
-        const obj = JSON.parse(payload);
-        if (obj?.type === "chunk" && typeof obj.text === "string") {
-          markdown += obj.text;
-        } else if (obj?.type === "done" && obj.metadata) {
-          meta = obj.metadata as Record<string, unknown>;
-        } else if (obj?.metadata === true) {
-          // intermediate metadata frame (reportContext) — keep as fallback
-          if (!meta) meta = obj as Record<string, unknown>;
-        } else if (obj?.type === "error") {
-          return { markdown, meta, latency_ms: Date.now() - t0, error: String(obj.error || "stream error") };
-        }
-      } catch { /* ignore parse errors */ }
+  let lastDataAt = Date.now();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value && value.length > 0) {
+        lastDataAt = Date.now();
+      } else if (Date.now() - lastDataAt > SSE_INACTIVITY_MS) {
+        return { markdown, meta, latency_ms: Date.now() - t0, error: `SSE inactivity timeout (>${SSE_INACTIVITY_MS}ms)` };
+      }
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        if (!frame.startsWith("data:")) continue;
+        const payload = frame.replace(/^data:\s*/, "").trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const obj = JSON.parse(payload);
+          if (obj?.type === "chunk" && typeof obj.text === "string") {
+            markdown += obj.text;
+          } else if (obj?.type === "done" && obj.metadata) {
+            meta = obj.metadata as Record<string, unknown>;
+          } else if (obj?.metadata === true) {
+            // intermediate metadata frame (reportContext) — keep as fallback
+            if (!meta) meta = obj as Record<string, unknown>;
+          } else if (obj?.type === "error") {
+            return { markdown, meta, latency_ms: Date.now() - t0, error: String(obj.error || "stream error") };
+          }
+        } catch { /* ignore parse errors */ }
+      }
+      // Also guard against inactivity between frames.
+      if (Date.now() - lastDataAt > SSE_INACTIVITY_MS) {
+        return { markdown, meta, latency_ms: Date.now() - t0, error: `SSE inactivity timeout (>${SSE_INACTIVITY_MS}ms)` };
+      }
     }
+  } catch (e) {
+    return { markdown, meta, latency_ms: Date.now() - t0, error: `SSE read error: ${e}` };
   }
   return { markdown, meta, latency_ms: Date.now() - t0 };
 }
