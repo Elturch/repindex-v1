@@ -823,6 +823,15 @@ export async function process(
       coverage_report: coverageReport,
       scope_audit: auditReport,
       flags,
+      phase2_isolation: {
+        phase2_isolation_active: headerCtx.phase2_isolation_active,
+        phase2_unlocked: headerCtx.phase2_unlocked,
+        phase2_flags_effective: {
+          enrich_ranking_submetrics: isEnrichRankingSubmetricsEnabledWithContext(headerCtx),
+          tiny_universe_guard: isTinyUniverseGuardEnabledWithContext(headerCtx),
+          exec_narrative: isExecNarrativeEnabledWithContext(headerCtx),
+        },
+      },
     });
 
     // Solo aborta cuando el flag esta activo. En modo legacy seguimos.
