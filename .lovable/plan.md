@@ -1,97 +1,61 @@
-## Análisis del primer estudio (run `d47fd0e8…`)
+## Objetivo
 
-21 casos · **0 passed / 21 failed** · 7 errors · 0 timeouts.
+Hacer que el panel de Stress Tests responda de un vistazo a la pregunta "¿esto está mejor que antes o no?", añadiendo (a) comparativa contra el run anterior y (b) un resumen ejecutivo automático del run seleccionado.
 
-Distribución de fallos por assert (cobertura horizontal: afecta a 5–7 modelos y a 3/3 subsectores → **es sistémico, no temático de hoteles**):
+## Cambios en `src/components/admin/StressTestsPanel.tsx`
 
-| Assert | Hits | Modelos | Subsectores | Lectura |
-|---|---|---|---|---|
-| A10 biblio_min | 20 | 7 | 3 | §6 vacía o sin URL por ticker rankeado |
-| A9 ranking_enrichment | 18 | 7 | 3 | Tabla de ranking pierde sub-métricas (sobre todo CXM) |
-| A2 single_model_lang | 15 | 5 | 3 | Reportes single-model usan "rix medio" / "entre modelos" |
-| A6 anti_mediana | 14 | 5 | 3 | Aparece "mediana" pese a la regla Anti-Mediana |
-| A5 hotels_edge | 7 | 7 | 1 | El agente NO declara que Hoteles tiene 1 emisor cotizado |
-| A3 anti_fabrication | 4 | 4 | 3 | Aparece "white-paper" en cuatro reportes |
+### 1. Cargar el run anterior comparable
+- Al seleccionar un run, cargar también el último run previo con la **misma `family`** (`stress_runs` ordenado por `started_at desc`, primer registro con `started_at < seleccionado.started_at`).
+- Cargar sus `stress_results` en paralelo (`prevResults`).
+- Indexar ambos resultados por clave `case_id` (incluye scope + model_filter, ya es único en la matriz).
 
-Hallazgos cualitativos al revisar respuestas crudas:
+### 2. Calcular delta por celda
+Para cada `case_id` presente en run actual o anterior, clasificar:
+- `fixed`: antes fail/error → ahora pass.
+- `regressed`: antes pass → ahora fail/error.
+- `still_failing`: fail/error en ambos.
+- `still_passing`: pass en ambos.
+- `new`: sólo existe en el actual.
+- `removed`: sólo existe en el anterior.
 
-1. **Hoteles → canonical group oculto.** El agente expande silenciosamente el subsector "Hoteles" (1 emisor: MEL) a un grupo "travel & hospitality" de 6 (BOOKING-PRIV, AIRBNB-PRIV, EDR, IAG, AENA). Rompe `verified_competitors` y `subsector strict`. Es la causa raíz de A5 y de fallos de scope cruzado.
-2. **DeepSeek single-model devuelve stub** (~250 chars, 600–800 ms): "Sin datos suficientes". Mismo período en multi-modelo trae 144 filas. Bug en el filtro de modelo (probable mismatch `deepseek` vs `deepseek-chat`/`deepseek-v3`).
-3. **Plantilla single-model heredada de multi-model**: el header "Ranking por consenso entre IAs", la columna "Dispersión entre IAs" y frases como "RIX de referencia" se imprimen aunque sólo haya 1 modelo activo.
-4. **Bibliografía**: cuando aparece, agrupa URLs sin etiquetar por ticker; cuando no aparece, el render salta §6 entera.
-5. **Tabla de ranking**: el LLM decide qué sub-métricas pinta; cuando no encuentra valores cae a "N/A textual" o las omite directamente.
+Y por **assert_id**: contar fallos en cada run y sacar `delta = fails_now − fails_prev`.
 
-## Plan de corrección (sistémico, no parche hoteles)
+### 3. Tarjeta "Resumen ejecutivo" (arriba del heatmap)
+Mostrar, en lenguaje claro y sin jerga:
+- Veredicto global de una línea: `Mejora` / `Sin cambios` / `Regresión` con icono y color, según `passed_now − passed_prev`.
+- KPIs grandes: `Pass X/Total (Δ +N)`, `Fail`, `Error`, `Latencia mediana ms (Δ)`.
+- Bloque "Qué cambió":
+  - Lista (máx 8) de casos `fixed` (verde, ✓).
+  - Lista (máx 8) de casos `regressed` (rojo, ⚠, prioridad visual).
+  - Contador `still_failing` con botón "Ver sólo los que siguen rotos" que filtra la tabla de resultados.
+- Bloque "Asserts más fallados ahora" (top 5): `assert_id`, fallos actuales, delta vs run previo (verde si bajó, rojo si subió).
+- Si no hay run previo de la misma familia: mostrar sólo KPIs absolutos con nota "Sin run previo de esta familia para comparar".
 
-### B1 · Scope strict para subsectores (raíz de A5 + scope leak)
+### 4. Heatmap con marcadores de delta
+En cada celda del heatmap añadir un pequeño badge:
+- `▲` verde si la celda pasó de fail→pass.
+- `▼` rojo si pasó de pass→fail.
+- Tooltip con "antes: pass/total · ahora: pass/total".
 
-- En `chat-intelligence-v2`, cuando el intent es `sectorRanking` y la query menciona literalmente "subsector X" / "del subsector X":
-  - Resolver scope por `repindex_root_issuers.subsector` (case-insensitive, normalizado).
-  - **Prohibir fallback automático a canonical group.** Si N=1, devolver el ranking de 1 emisor + bloque "Contexto ampliado opcional" claramente etiquetado y opt-in (no entra en el ranking).
-  - Si N=0, declarar "subsector sin emisores cotizados" sin inventar peers.
-- En `skillGetSectorComparison` añadir flag `strict_subsector: true` cuando viene de query con la palabra "subsector".
+### 5. Filtro rápido en tabla de resultados
+- Toggle group encima de la tabla: `Todos` · `Sólo fail/error` · `Sólo regresiones` · `Sólo arreglados`.
+- El filtro `regresiones` y `arreglados` usa el diff calculado en el paso 2.
 
-### B2 · Pipeline single-model (raíz de A2, A6 parcial, DeepSeek stub)
+### 6. Modal de detalle: contexto del cambio
+Añadir, sólo si hay run anterior, una línea de cabecera tipo:
+- "Estado anterior: ✅ pass" · "Estado anterior: ❌ fail (3 asserts)" · "Caso nuevo".
+Sin tocar el resto del modal.
 
-- En el orquestador, cuando `model_filter ≠ null`:
-  - Normalizar el nombre del modelo a las variantes reales en `rix_runs_v2."02_model_name"` (mapa `deepseek → deepseek-chat|deepseek-v3`, etc.). Hoy DeepSeek queda fuera del filtro y el dataset se vacía.
-  - Inyectar un **prompt-mode "single-model"** que reemplaza:
-    - "Ranking por consenso entre IAs" → `Ranking por <Modelo>`
-    - elimina columna "Dispersión entre IAs" y todas las columnas de los otros 5 modelos
-    - obliga a §5 con título `Fuentes citadas por <Modelo>`
-  - Añadir post-scrubber regex (sanitizer) que sustituya/elimine en single-model: `entre modelos|consenso multi|RIX medio|los demás modelos|promedio entre IAs|mediana`.
+## Detalles técnicos
 
-### B3 · Refuerzo Anti-Mediana global (A6)
+- Todo el cálculo es **client-side** sobre los dos arrays ya cargados; no requiere cambios en edge functions ni en el esquema.
+- Tipos: extender el tipo local `Result` con un campo derivado `diff: 'fixed'|'regressed'|'still_failing'|'still_passing'|'new'`.
+- Memoizar el diff con `useMemo` dependiendo de `[results, prevResults]`.
+- Tokens semánticos del design system (`text-emerald-600`, `text-red-600`, `bg-amber-500/20`, etc. ya en uso) — no introducir colores nuevos.
+- Sin nuevas dependencias.
 
-- Añadir a `antiHallucination.ts` regla explícita: "PROHIBIDA la palabra 'mediana' en cualquier contexto. Usar 'referencia' o 'comparar todas las puntuaciones'".
-- Añadir scrubber post-generación que reemplaza `mediana → referencia` y registra el evento en `response_meta.scrub_log[]`.
+## Fuera de alcance
 
-### B4 · Pre-render determinista de la tabla de ranking (A9)
-
-- Mover la generación del ranking a `datapack/tableRenderer.ts` (ya es la regla del proyecto). Garantizar siempre las 8 columnas NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM.
-- Para CXM aplicar la regla canónica (memoria): "N/A" si la empresa no está en CXM whitelist. Visible siempre como columna.
-
-### B5 · Bibliografía §6 garantizada por ticker (A10)
-
-- Tras ejecutar skills, builder de bibliografía recorre los `tickers_rankeados` y emite una fila por ticker con `[Issuer (TICKER)]: url1 · url2`. Si un ticker no tiene fuentes, escribir literal "Sin fuentes verificadas en el período".
-- En DeepSeek/single-model con dataset vacío: aún así emitir §6 con disclaimer.
-
-### B6 · Anti-fabricación "white-paper" + corpus extendido (A3)
-
-- Añadir a la lista negra de `antiHallucination.ts`: `white-paper, whitepaper, libro blanco, hoja de ruta, tabla de seguimiento`.
-- Scrubber registra el match y cae a "N/A".
-
-### B7 · Asserts más justos (reducir falsos positivos sin relajar la doctrina)
-
-- **A10**: aceptar coincidencia ticker O nombre del emisor en cualquier punto de §6 (no per-línea). Mantener obligatoriedad de la sección.
-- **A5**: aceptar variantes textuales adicionales de declaración de unicidad (`MEL es el único hotelero cotizado`, `1 emisor en el subsector`, etc.).
-- **A1**: tolerar dominios oficiales del emisor (cnmv.es / bolsasymercados / dominios issuer-owned) cuando el ticker no aparece en la línea pero sí el nombre.
-- A2/A3/A6/A7/A8/A9 se mantienen estrictos (son la doctrina).
-
-### B8 · Diagnóstico extra en `stress_results`
-
-- Añadir `models_in_dataset` (modelos efectivamente presentes tras filtro) y `tickers_in_dataset` al `response_meta`. Permite distinguir "el agente lo pintó mal" de "el dataset estaba vacío".
-
-### B9 · Validación
-
-1. Re-correr `family=hotels-reits` (21 casos) → objetivo ≥ 17/21 pass.
-2. Si pasa, correr `family=small` (≈100 casos) para detectar regresiones cruzadas (utilities, banca, farmacéuticas).
-3. Anotar en `mem://features/chat/...` los nuevos invariantes (single-model scrubber, scope strict, biblio garantizada).
-
-### Fuera de alcance
-
-- LLM-as-judge, auto-fix automático, cron del runner, ajustes a las skills V1 deprecadas, cambios en datasets de entrada.
-
-### Archivos previstos
-
-- `supabase/functions/chat-intelligence-v2/orchestrator.ts` (single-model branch + strict subsector flag)
-- `supabase/functions/chat-intelligence-v2/prompts/antiHallucination.ts` (mediana, white-paper)
-- `supabase/functions/chat-intelligence-v2/prompts/singleModel.ts` (nuevo, ≤80 LOC)
-- `supabase/functions/chat-intelligence-v2/datapack/tableRenderer.ts` (8 sub-métricas garantizadas)
-- `supabase/functions/chat-intelligence-v2/postprocess/scrubber.ts` (nuevo)
-- `supabase/functions/chat-intelligence-v2/postprocess/bibliographyBuilder.ts` (garantizar §6)
-- `supabase/functions/_shared/modelNameNormalizer.ts` (deepseek/qwen/grok mapping)
-- `supabase/functions/stress-matrix-runner/asserts.ts` (A10/A5/A1 más justos, sin relajar A2/A3/A6)
-- `src/lib/skills/skillGetSectorComparison.ts` (flag strict_subsector)
-
-Sin migraciones BD. Sin nuevas tablas.
+- No se cambia la lógica del runner ni los asserts.
+- No se toca la base de datos.
+- No se añade ranking detallado de asserts más allá del top 5 del resumen (puede venir en una iteración posterior si hace falta).
