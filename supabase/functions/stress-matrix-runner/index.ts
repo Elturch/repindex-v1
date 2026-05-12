@@ -235,6 +235,28 @@ async function processCase(
   //   - Esperado que A9 / A3 fallen tras congelar inyectores cosméticos
   //     (frase MEL, 8 métricas forzadas, bibliografía determinista).
   // El UI los pinta en columnas separadas (StressTestsPanel.tsx).
+  // ── CIERRE FASE 2 (Paso 2.4 — UI y mantenimiento del gating) ─────────────
+  // FASE 2 ENTREGADA en modo SHADOW: 3 flags introducidos, los 3 default OFF.
+  //   - ENRICH_RANKING_SUBMETRICS (Eje A · Paso 2.1) → assert A9.3 dinámico
+  //     con umbral SUBMETRICS_COVERAGE_MIN=0.70 (E1).
+  //   - TINY_UNIVERSE_GUARD       (Eje B · Paso 2.2) → post-validador pasivo
+  //     contra TINY_UNIVERSE_PROHIBITED_V1 (13 términos versionados, E2).
+  //   - EXEC_NARRATIVE            (Eje C · Paso 2.3) → prelude contractual
+  //     + validador estructura/trazabilidad con E3 (máx 2 reintentos).
+  // Nuevas families: phase2-tiny (B1), phase2-exec (C1+C2), phase2-full
+  // (matriz canónica de 21 celdas con prefijo `phase2-` para promover los
+  // asserts B*/C* al gating compuesto cuando los flags estén ON).
+  // GATING (gobiernan VERDE/ROJO global tras activación consciente):
+  //   - S1..S5 + SQL_DIFF (heredados Fase 1, intactos)
+  //   - B1_tiny_universe_clean  (sólo si family.startsWith("phase2-"))
+  //   - C1_exec_narrative_structure / C2_exec_narrative_traceability
+  //     (idem; con flags OFF, meta.exec_narrative=undefined → pass por
+  //     defecto, regresión cero garantizada)
+  // PROHIBIDO (heredado, no se reactiva en Fase 2):
+  //   - sanitizeFinalMarkdown, deterministicDimensionsTable,
+  //     buildTickerCitedSourcesBlock, footnote MEL, <!--CITEDSOURCESHERE-->
+  // USE_SCOPED_SKILLS y FREEZE_COSMETIC_INJECTORS sin cambios.
+  // ─────────────────────────────────────────────────────────────────────────
   const failedComposite = [
     ...sFailed.map((f: any) => ({ id: f.id, msg: f.msg })),
     ...(!sqlOk
