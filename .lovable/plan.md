@@ -1,61 +1,120 @@
-## Objetivo
+## Problema que vamos a resolver
 
-Hacer que el panel de Stress Tests responda de un vistazo a la pregunta "¿esto está mejor que antes o no?", añadiendo (a) comparativa contra el run anterior y (b) un resumen ejecutivo automático del run seleccionado.
+Ahora mismo la matriz de estrés solo dice “21/21 fallan”. Eso confirma que el sistema está roto, pero no indica cómo arreglarlo ni fuerza al agente a seguir la ruta correcta en base de datos.
 
-## Cambios en `src/components/admin/StressTestsPanel.tsx`
+El último run muestra un patrón claro:
 
-### 1. Cargar el run anterior comparable
-- Al seleccionar un run, cargar también el último run previo con la **misma `family`** (`stress_runs` ordenado por `started_at desc`, primer registro con `started_at < seleccionado.started_at`).
-- Cargar sus `stress_results` en paralelo (`prevResults`).
-- Indexar ambos resultados por clave `case_id` (incluye scope + model_filter, ya es único en la matriz).
+- `A10_biblio_min`: 18 fallos. No se está garantizando una bibliografía válida por ticker.
+- `A9_ranking_enrichment`: 18 fallos. Faltan sub-métricas canónicas en bastantes salidas.
+- `A2_single_model_lang` y `A6_anti_mediana`: 15 fallos. En vistas single-model se cuela lenguaje multi-modelo y la palabra prohibida.
+- `A5_hotels_edge`: 7 fallos. Hoteles no declara de forma estable que solo existe MEL como único emisor cotizado.
+- `A3_anti_fabrication`: 2 fallos. Siguen apareciendo entregables prohibidos.
 
-### 2. Calcular delta por celda
-Para cada `case_id` presente en run actual o anterior, clasificar:
-- `fixed`: antes fail/error → ahora pass.
-- `regressed`: antes pass → ahora fail/error.
-- `still_failing`: fail/error en ambos.
-- `still_passing`: pass en ambos.
-- `new`: sólo existe en el actual.
-- `removed`: sólo existe en el anterior.
+Además hay una causa técnica evidente: el skill `sectorRanking` todavía depende demasiado del LLM para respetar estructura, bibliografía, unicidad de alcance y sub-métricas. La herramienta de estrés debería convertir cada fallo en instrucciones de reparación, no solo en badges rojos.
 
-Y por **assert_id**: contar fallos en cada run y sacar `delta = fails_now − fails_prev`.
+## Plan de implementación
 
-### 3. Tarjeta "Resumen ejecutivo" (arriba del heatmap)
-Mostrar, en lenguaje claro y sin jerga:
-- Veredicto global de una línea: `Mejora` / `Sin cambios` / `Regresión` con icono y color, según `passed_now − passed_prev`.
-- KPIs grandes: `Pass X/Total (Δ +N)`, `Fail`, `Error`, `Latencia mediana ms (Δ)`.
-- Bloque "Qué cambió":
-  - Lista (máx 8) de casos `fixed` (verde, ✓).
-  - Lista (máx 8) de casos `regressed` (rojo, ⚠, prioridad visual).
-  - Contador `still_failing` con botón "Ver sólo los que siguen rotos" que filtra la tabla de resultados.
-- Bloque "Asserts más fallados ahora" (top 5): `assert_id`, fallos actuales, delta vs run previo (verde si bajó, rojo si subió).
-- Si no hay run previo de la misma familia: mostrar sólo KPIs absolutos con nota "Sin run previo de esta familia para comparar".
+### 1. Añadir un “plan de reparación” dentro de la herramienta de estrés
 
-### 4. Heatmap con marcadores de delta
-En cada celda del heatmap añadir un pequeño badge:
-- `▲` verde si la celda pasó de fail→pass.
-- `▼` rojo si pasó de pass→fail.
-- Tooltip con "antes: pass/total · ahora: pass/total".
+En `StressTestsPanel.tsx` añadiré una sección nueva encima de resultados:
 
-### 5. Filtro rápido en tabla de resultados
-- Toggle group encima de la tabla: `Todos` · `Sólo fail/error` · `Sólo regresiones` · `Sólo arreglados`.
-- El filtro `regresiones` y `arreglados` usa el diff calculado en el paso 2.
+- Diagnóstico agrupado por assert.
+- Severidad.
+- Causa probable.
+- Archivo/zona afectada.
+- Instrucción concreta de reparación.
+- Evidencia: casos afectados y ejemplo de mensaje.
+- Estado esperado después del arreglo.
 
-### 6. Modal de detalle: contexto del cambio
-Añadir, sólo si hay run anterior, una línea de cabecera tipo:
-- "Estado anterior: ✅ pass" · "Estado anterior: ❌ fail (3 asserts)" · "Caso nuevo".
-Sin tocar el resto del modal.
+Ejemplo práctico:
 
-## Detalles técnicos
+```text
+A10_biblio_min
+Causa: la salida final no contiene sección de fuentes detectable o no incluye ticker del ranking.
+Reparación: forzar append determinista de “Fuentes citadas” por ticker después de la síntesis LLM.
+Archivo: sectorRanking.ts, bloque cited_sources_substitution.
+Casos afectados: 18/21.
+```
 
-- Todo el cálculo es **client-side** sobre los dos arrays ya cargados; no requiere cambios en edge functions ni en el esquema.
-- Tipos: extender el tipo local `Result` con un campo derivado `diff: 'fixed'|'regressed'|'still_failing'|'still_passing'|'new'`.
-- Memoizar el diff con `useMemo` dependiendo de `[results, prevResults]`.
-- Tokens semánticos del design system (`text-emerald-600`, `text-red-600`, `bg-amber-500/20`, etc. ya en uso) — no introducir colores nuevos.
-- Sin nuevas dependencias.
+Esto hará que la herramienta sirva para avanzar, no solo para observar el desastre.
+
+### 2. Crear un mapa canónico assert -> instrucciones de reparación
+
+En frontend crearé una estructura local `ASSERT_REPAIR_PLAYBOOK` para los asserts actuales:
+
+- `A1_scope_integrity`
+- `A2_single_model_lang`
+- `A3_anti_fabrication`
+- `A4_small_n`
+- `A5_hotels_edge`
+- `A6_anti_mediana`
+- `A7_period_coherence`
+- `A8_models_coverage`
+- `A9_ranking_enrichment`
+- `A10_biblio_min`
+
+Cada entrada tendrá:
+
+- qué significa el fallo,
+- cómo detectarlo,
+- causa probable,
+- instrucciones de arreglo,
+- componentes/funciones candidatos,
+- prioridad.
+
+No tocaré base de datos para esto.
+
+### 3. Corregir el `sectorRanking` para que no dependa del LLM en checks críticos
+
+Haré que los elementos que la matriz exige salgan de forma determinista:
+
+- Siempre añadir aviso de alcance estricto cuando `scope_tickers.length <= 3`.
+- Para Hoteles, forzar frase exacta compatible con `A5`: “El subsector Hoteles contiene 1 único emisor cotizado: Meliá Hotels International (MEL).”
+- Siempre añadir tabla canónica de 8 sub-métricas cuando falte cualquiera de `NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM`.
+- Siempre añadir bloque final de “Fuentes citadas” por ticker del ranking, incluso si el LLM omitió la sección.
+- Cambiar cualquier fallback de “sin datos suficientes” para que también incluya alcance, sub-métricas y fuentes mínimas, evitando que DeepSeek rompa A9/A10 por irse al fallback.
+
+### 4. Reforzar sanitización antes de persistir y antes de auditar
+
+Ampliaré `sanitizeFinalMarkdown` para cubrir variantes que siguen escapando:
+
+- `RIX medio` en tablas/footnotes single-model.
+- `mediana` en cualquier sección.
+- “nota de prensa” y otros entregables prohibidos.
+- lenguaje multi-modelo en single-model.
+
+El objetivo es que el texto que llega al runner ya esté limpio, no solo el que se muestra al usuario final.
+
+### 5. Añadir instrucciones generadas por caso en el modal de detalle
+
+En el detalle de cada celda fallida añadiré:
+
+- “Qué falló”.
+- “Por qué probablemente falló”.
+- “Qué tocar”.
+- “Cómo comprobar que queda arreglado”.
+- fragmento de respuesta donde aparece el problema cuando sea detectable.
+
+Esto resuelve tu punto principal: si el resultado es malo, la herramienta debe producir las instrucciones para arreglarlo.
+
+### 6. Validación
+
+Después de implementar:
+
+- Ejecutaré comprobaciones estáticas sobre los ficheros modificados.
+- Revisaré el panel `/admin` para confirmar que muestra el playbook de reparación.
+- Revisaré logs/datos del último run para comprobar que el diagnóstico se agrupa bien.
+- Si procede, desplegaré la edge function modificada y dejaré listo el siguiente run de estrés para verificar que los 21 casos empiezan a pasar.
+
+## Archivos previstos
+
+- `src/components/admin/StressTestsPanel.tsx`
+- `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts`
+- `supabase/functions/chat-intelligence-v2/guards/outputGuard.ts`
 
 ## Fuera de alcance
 
-- No se cambia la lógica del runner ni los asserts.
-- No se toca la base de datos.
-- No se añade ranking detallado de asserts más allá del top 5 del resumen (puede venir en una iteración posterior si hace falta).
+- No crearé nuevas tablas.
+- No cambiaré la definición de los asserts salvo que encontremos un falso positivo claro.
+- No tocaré datos de producción.
+- No ampliaré la matriz de estrés; primero haremos que la actual sea útil y pase.

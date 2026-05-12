@@ -11,7 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Play, RefreshCw, CheckCircle2, XCircle, AlertCircle,
-  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown,
+  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -61,6 +61,103 @@ const FAMILIES = [
 const MODELS = ["multi", "gemini", "deepseek", "grok", "qwen", "perplexity", "chatgpt"];
 
 const isFail = (s: string) => s === "fail" || s === "error";
+
+// ── Playbook: cada assert mapea a una instrucción de reparación accionable.
+// Mantener corto, específico y orientado a archivo + acción concreta.
+type RepairEntry = {
+  title: string;
+  cause: string;
+  fix: string;
+  files: string[];
+  priority: "alta" | "media" | "baja";
+};
+const ASSERT_REPAIR_PLAYBOOK: Record<string, RepairEntry> = {
+  A1_scope_integrity: {
+    title: "URLs en §6 fuera de scope",
+    cause: "La bibliografía cita URLs cuyo dominio/línea no contiene ningún ticker (ni nombre) del ranking.",
+    fix: "Restringir fetchSectorSourceRows a tickers del ranking, y antes de imprimir cada URL exigir que la línea contenga el ticker o el issuer_name.",
+    files: ["supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts (cited_sources_substitution + fetchSectorSourceRows)"],
+    priority: "alta",
+  },
+  A2_single_model_lang: {
+    title: "Lenguaje multi-modelo en vista single-model",
+    cause: "La síntesis con un único modelo aún cita 'consenso multi', 'rix medio', 'los demás modelos' o promedios.",
+    fix: "Ampliar sanitizeFinalMarkdown con modelFilter activo y reforzar buildSingleModelRankingRules para prohibir esas frases también en footnotes/tablas.",
+    files: [
+      "supabase/functions/chat-intelligence-v2/guards/outputGuard.ts (SM_* regex)",
+      "supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts (buildSingleModelRankingRules)",
+    ],
+    priority: "alta",
+  },
+  A3_anti_fabrication: {
+    title: "Entregables/fechas inventadas",
+    cause: "El LLM coló términos como 'nota de prensa', 'roadshow', 'Q1-2027', 'AGM', 'target N'.",
+    fix: "Ampliar regex en sanitizeFinalMarkdown y reforzar la sección 7 del prompt para prohibir explícitamente cada término.",
+    files: [
+      "supabase/functions/chat-intelligence-v2/guards/outputGuard.ts",
+      "supabase/functions/chat-intelligence-v2/prompts/antiHallucination.ts",
+    ],
+    priority: "media",
+  },
+  A4_small_n: {
+    title: "Top-5 mencionado con N≤3",
+    cause: "El prompt no se adapta al tamaño real del subsector y el LLM dice 'top-5' aunque solo haya 1-3 emisores.",
+    fix: "En sectorRanking, sustituir 'top-5' por 'ranking completo' cuando ranking.length ≤ 3 y reforzar la regla en el prompt.",
+    files: ["supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts"],
+    priority: "media",
+  },
+  A5_hotels_edge: {
+    title: "Hoteles no declara unicidad",
+    cause: "El skill no garantiza una frase determinista declarando que el subsector tiene 1 único emisor cotizado (MEL).",
+    fix: "Inyectar antes de la sección 1 una línea canónica: 'El subsector Hoteles contiene 1 único emisor cotizado: Meliá Hotels International (MEL).' cuando ranking.length === 1.",
+    files: ["supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts (buildUniquenessLine)"],
+    priority: "alta",
+  },
+  A6_anti_mediana: {
+    title: "Aparece la palabra 'mediana'",
+    cause: "El LLM ignora la regla anti-mediana en algún párrafo o footnote.",
+    fix: "Confirmar que sanitizeFinalMarkdown se aplica al markdown persistido (orchestrator + skill) y reforzar la prohibición explícita en el prompt base.",
+    files: [
+      "supabase/functions/chat-intelligence-v2/guards/outputGuard.ts",
+      "supabase/functions/chat-intelligence-v2/prompts/antiHallucination.ts",
+    ],
+    priority: "alta",
+  },
+  A7_period_coherence: {
+    title: "Fechas previas a 2026-01-01",
+    cause: "Aparece una fecha ISO anterior al floor de datos.",
+    fix: "Validar/recortar todas las fechas en el sanitizer y asegurar que el prompt mencione el floor 2026-01-01 como límite duro.",
+    files: ["supabase/functions/chat-intelligence-v2/guards/outputGuard.ts"],
+    priority: "media",
+  },
+  A8_models_coverage: {
+    title: "Algún modelo no citado en multi-modelo",
+    cause: "Faltan referencias explícitas a uno o más de los 6 modelos en la narrativa.",
+    fix: "Forzar tabla pre-renderizada con columna por modelo (ya existe) y añadir un párrafo determinista listando los 6 modelos cuando alguno no aparece.",
+    files: ["supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts"],
+    priority: "media",
+  },
+  A9_ranking_enrichment: {
+    title: "Faltan sub-métricas canónicas",
+    cause: "La salida no incluye alguna de NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM.",
+    fix: "El skill ya añade una tabla determinista de 8 sub-métricas si falta alguna; verificar que también se aplica en el fallback 'sin datos suficientes'.",
+    files: ["supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts (buildDeterministicDimensionsTable + fallback)"],
+    priority: "alta",
+  },
+  A10_biblio_min: {
+    title: "Bibliografía sin URL por ticker",
+    cause: "No existe sección de fuentes detectable, o falta una entrada por cada ticker del ranking.",
+    fix: "Garantizar que buildTickerCitedSourcesBlock se concatena SIEMPRE al final (incluyendo fallback) con al menos website oficial por ticker.",
+    files: ["supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts (buildTickerCitedSourcesBlock)"],
+    priority: "alta",
+  },
+};
+
+const PRIORITY_COLOR: Record<RepairEntry["priority"], string> = {
+  alta: "border-red-500/40 bg-red-500/5",
+  media: "border-amber-500/40 bg-amber-500/5",
+  baja: "border-muted bg-muted/20",
+};
 
 const median = (arr: number[]) => {
   if (!arr.length) return 0;
@@ -445,6 +542,54 @@ export function StressTestsPanel() {
             </CardContent>
           </Card>
 
+          {/* PLAN DE REPARACIÓN */}
+          {summary.assertRanking.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-amber-600" />
+                  Plan de reparación accionable
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Una entrada por assert fallido, ordenadas por número de fallos. Cada bloque indica causa probable, qué tocar y dónde.
+                </p>
+                {summary.assertRanking.map((a) => {
+                  const playbook = ASSERT_REPAIR_PLAYBOOK[a.id];
+                  if (!playbook) return null;
+                  const example = (results.find((r) => (r.asserts_failed ?? []).some((x) => x.id === a.id))?.asserts_failed ?? [])
+                    .find((x) => x.id === a.id)?.msg;
+                  return (
+                    <div key={a.id} className={`rounded-lg border p-3 ${PRIORITY_COLOR[playbook.priority]}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <code className="font-mono text-xs bg-background px-2 py-0.5 rounded border">{a.id}</code>
+                          <span className="text-sm font-semibold">{playbook.title}</span>
+                          <Badge variant="outline" className="text-[10px] uppercase">{playbook.priority}</Badge>
+                        </div>
+                        <span className="text-xs text-red-600 font-semibold">{a.now} fallos</span>
+                      </div>
+                      <div className="text-xs space-y-1.5 mt-2">
+                        <div><strong>Causa probable:</strong> {playbook.cause}</div>
+                        <div><strong>Reparación:</strong> {playbook.fix}</div>
+                        <div>
+                          <strong>Archivos:</strong>
+                          <ul className="list-disc list-inside font-mono text-[11px] mt-0.5">
+                            {playbook.files.map((f) => <li key={f}>{f}</li>)}
+                          </ul>
+                        </div>
+                        {example && (
+                          <div className="text-muted-foreground"><strong>Ejemplo:</strong> {example}</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {/* HEATMAP */}
           <Card>
             <CardHeader><CardTitle>Heatmap subsector × modelo</CardTitle></CardHeader>
@@ -600,6 +745,24 @@ export function StressTestsPanel() {
                     <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/50 text-emerald-700">{a}</Badge>
                   ))}
                 </div>
+                {(drillOpen.asserts_failed ?? []).length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold flex items-center gap-1">
+                      <Wrench className="h-3 w-3" /> Cómo arreglar este caso
+                    </div>
+                    {(drillOpen.asserts_failed ?? []).map((a) => {
+                      const p = ASSERT_REPAIR_PLAYBOOK[a.id];
+                      if (!p) return null;
+                      return (
+                        <div key={a.id} className={`rounded border p-2 text-xs ${PRIORITY_COLOR[p.priority]}`}>
+                          <div className="font-semibold mb-0.5">{a.id} — {p.title}</div>
+                          <div><strong>Reparación:</strong> {p.fix}</div>
+                          <div className="font-mono text-[10px] text-muted-foreground mt-1">{p.files.join(" · ")}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {drillOpen.error_message && (
                   <div className="p-3 bg-orange-500/10 rounded text-xs">{drillOpen.error_message}</div>
                 )}

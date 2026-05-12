@@ -73,6 +73,10 @@ export interface ScrubResult { text: string; rules_fired: string[] }
 
 const MEDIANA_RE = /\bmediana\b/gi;
 const RIX_MEDIO_RE = /\bRIX\s+medio\b/gi;
+// Variantes adicionales que se cuelan en informes single-model y rankings.
+const RIX_PROMEDIO_RE = /\bRIX\s+promedio\b/gi;
+const MEDIA_GRUPO_RE = /\b(?:media|promedio)\s+(?:del|de\s+los?)\s+(?:grupo|ranking|sector|subsector|conjunto|índice|indice)\b/gi;
+const NOTA_PRENSA_SINGULAR_RE = /\bnota\s+de\s+prensa\b/gi;
 const PROMEDIO_IA_RE = /\b(promedio|media)\s+entre\s+IAs?\b/gi;
 const PROMEDIO_CONSENSO_RE = /\b(promedio|media)\s+(?:del\s+)?consenso\b/gi;
 const MEDIA_SEMANAL_RE = /\bmedia\s+semanal\b/gi;
@@ -113,6 +117,8 @@ export function sanitizeFinalMarkdown(
   // Anti-mediana (Core memory rule).
   apply(MEDIANA_RE, "referencia", "anti_mediana");
   apply(RIX_MEDIO_RE, "RIX de referencia", "rix_medio");
+  apply(RIX_PROMEDIO_RE, "RIX de referencia", "rix_promedio");
+  apply(MEDIA_GRUPO_RE, "referencia del grupo", "media_grupo");
   apply(PROMEDIO_IA_RE, "rango entre IAs", "promedio_ias");
   apply(PROMEDIO_CONSENSO_RE, "rango del consenso", "promedio_consenso");
   apply(MEDIA_SEMANAL_RE, "referencia semanal", "media_semanal");
@@ -127,6 +133,7 @@ export function sanitizeFinalMarkdown(
   apply(WEBINAR_RE, "sesión informativa", "webinar");
   apply(BRIEFING_RE, "sesión informativa", "briefing");
   apply(NOTA_PRENSA_RE, "comunicación corporativa", "nota_prensa");
+  apply(NOTA_PRENSA_SINGULAR_RE, "comunicación corporativa", "nota_prensa_sg");
   apply(MESA_REDONDA_RE, "encuentro sectorial", "mesa_redonda");
   apply(TARGET_NUM_RE, "objetivo operativo", "target_num");
   apply(TARGET_LABEL_RE, "objetivo", "target_label");
