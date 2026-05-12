@@ -390,8 +390,10 @@ export async function process(
   previousContext?: any,
   isFollowup?: boolean,
   normalizedQuestion?: string,
+  auditMeta?: { user_id?: string | null; session_id?: string | null },
 ): Promise<OrchestratorResponse> {
   const logPrefix = "[RIX-V2][orch]";
+  const __scopeStart = Date.now();
   // FASE C — `question` is ALWAYS effectiveQuestion (originalQuestion ?? normalizedQuestion).
   // index.ts guarantees this. Every parser/skill below uses `question` exclusively;
   // `normalizedQuestion` is forwarded only for display/logging.
