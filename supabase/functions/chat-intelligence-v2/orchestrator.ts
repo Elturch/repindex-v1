@@ -572,6 +572,7 @@ export async function process(
     const strict = await resolveStrictSubsector(requestedSubsector, supabase);
     if (strict.tickers.length >= 1) {
       parsed.scope_tickers = strict.tickers;
+      parsed.scope_label = `subsector ${strict.canonical ?? requestedSubsector}`;
       parsed.intent = "sector_ranking";
       strictSubsectorLabel = strict.canonical;
       strictSubsectorN = strict.tickers.length;
