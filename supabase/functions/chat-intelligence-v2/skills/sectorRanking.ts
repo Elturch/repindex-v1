@@ -312,6 +312,64 @@ interface RankingRow {
   per_model: Partial<Record<ModelName, number>>;
 }
 
+const CANONICAL_DIMENSIONS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"|"CEM"|"GAM"|"DCM"|"CXM" }> = [
+  { key: "23_nvm_score", metric: "NVM" },
+  { key: "26_drm_score", metric: "DRM" },
+  { key: "29_sim_score", metric: "SIM" },
+  { key: "32_rmm_score", metric: "RMM" },
+  { key: "35_cem_score", metric: "CEM" },
+  { key: "38_gam_score", metric: "GAM" },
+  { key: "41_dcm_score", metric: "DCM" },
+  { key: "44_cxm_score", metric: "CXM" },
+];
+
+function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string {
+  if (!scopeSize || scopeSize > 3) return "";
+  const plural = scopeSize === 1 ? "emisor cotizado" : "emisores cotizados";
+  return [
+    `**Aviso de alcance estricto — ${scopeLabel}**`,
+    "",
+    `El alcance solicitado contiene ${scopeSize} único ${plural} en la base cotizada. No se añaden peers sectoriales ni empresas externas al subsector.`,
+  ].join("\n");
+}
+
+function buildDeterministicDimensionsTable(rows: any[], ranking: RankingRow[], model?: ModelName): string {
+  const wanted = new Set(ranking.map((r) => r.ticker));
+  const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
+  const dbModel = model === "Gemini" ? "Google Gemini" : model;
+  for (const r of rows) {
+    const t = String(r["05_ticker"] ?? "").trim();
+    if (!wanted.has(t)) continue;
+    if (dbModel && normModel(r["02_model_name"]) !== model) continue;
+    const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), dims: new Map() };
+    for (const { key, metric } of CANONICAL_DIMENSIONS) {
+      const raw = r[key];
+      const v = typeof raw === "number" ? raw : parseFloat(raw);
+      if (!Number.isFinite(v)) continue;
+      if (!slot.dims.has(metric)) slot.dims.set(metric, []);
+      slot.dims.get(metric)!.push(v);
+    }
+    byTicker.set(t, slot);
+  }
+  const lines = [
+    `**Tabla canónica de 8 sub-métricas${model ? ` según ${model}` : ""}**`,
+    "",
+    "| Empresa | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |",
+    "|---|---|---|---|---|---|---|---|---|",
+  ];
+  for (const r of ranking) {
+    const slot = byTicker.get(r.ticker);
+    const cells = CANONICAL_DIMENSIONS.map(({ metric }) => {
+      const vals = slot?.dims.get(metric) ?? [];
+      if (vals.length === 0) return metric === "CXM" ? "N/A" : "n/d";
+      return fmt(vals.reduce((a, b) => a + b, 0) / vals.length);
+    });
+    lines.push(`| ${r.name} (${r.ticker}) | ${cells.join(" | ")} |`);
+  }
+  lines.push("", "*CXM se muestra siempre; cuando no hay valor estructurado aplicable, se declara N/A.*");
+  return lines.join("\n");
+}
+
 async function fetchRankingRows(
   supabase: any,
   fromISO: string,
