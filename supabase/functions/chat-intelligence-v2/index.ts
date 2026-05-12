@@ -302,6 +302,23 @@ serve(async (req: Request) => {
             methodology: resultMeta.methodology ?? null,
           }));
 
+          // Fase 2 — Eje B. Tiny universe guard warning frame. Solo se emite
+          // si TINY_UNIVERSE_GUARD=true detectó una violación (orchestrator
+          // adjuntó `tiny_universe.violation=true` a result.metadata). NO
+          // bloquea, NO reescribe; el FE puede pintarlo como banner pasivo.
+          {
+            const tu = (result.metadata as any)?.tiny_universe;
+            if (tu?.violation === true) {
+              controller.enqueue(sseEncode({
+                type: "warning",
+                warning: "tiny_universe_violation",
+                terms: tu.terms ?? [],
+                n: tu.n ?? null,
+                policy_version: tu.policy_version ?? null,
+              }));
+            }
+          }
+
           // FASE A — persist structured context for the next turn. We write
           // to user_conversations.last_report_context (JSONB). Best-effort:
           // failures must never break the SSE stream.
