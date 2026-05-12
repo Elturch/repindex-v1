@@ -46,6 +46,10 @@ type Result = {
   latency_ms: number | null;
   response_markdown: string | null;
   error_message: string | null;
+  scope_contract: any | null;
+  coverage_report: any | null;
+  scope_audit: any | null;
+  scope_validation: any | null;
 };
 
 type DiffKind = "fixed" | "regressed" | "still_failing" | "still_passing" | "new" | "removed";
@@ -207,7 +211,7 @@ export function StressTestsPanel() {
       : null;
     setPrevRun(prev);
 
-    const fields = "id,case_id,family,scope,model_filter,status,asserts_failed,asserts_passed,latency_ms,response_markdown,error_message";
+    const fields = "id,case_id,family,scope,model_filter,status,asserts_failed,asserts_passed,latency_ms,response_markdown,error_message,scope_contract,coverage_report,scope_audit,scope_validation";
 
     const [curQ, prevQ] = await Promise.all([
       supabase.from("stress_results" as any).select(fields).eq("run_id", runId).order("created_at", { ascending: true }),
