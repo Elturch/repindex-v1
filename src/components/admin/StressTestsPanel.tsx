@@ -811,15 +811,29 @@ export function StressTestsPanel() {
                         : `Estado anterior: ❌ ${prev.status} (${(prev.asserts_failed ?? []).length} asserts fallados)`}
                   </div>
                 )}
-                <div className="flex gap-2 flex-wrap">
-                  {(drillOpen.asserts_failed ?? []).map((a) => (
-                    <Badge key={a.id} variant="destructive" className="text-[11px]">
-                      {a.id}: {a.msg ?? "fail"}
-                    </Badge>
-                  ))}
-                  {(drillOpen.asserts_passed ?? []).map((a) => (
-                    <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/50 text-emerald-700">{a}</Badge>
-                  ))}
+                <div className="space-y-2">
+                  <div>
+                    <div className="text-[11px] font-semibold text-primary mb-1">FASE 1 · gating (S1–S5 + SQL_DIFF)</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {(drillOpen.asserts_failed ?? []).filter((a) => isPhase1Assert(a.id)).map((a) => (
+                        <Badge key={a.id} variant="destructive" className="text-[11px]">{a.id}: {a.msg ?? "fail"}</Badge>
+                      ))}
+                      {(drillOpen.asserts_passed ?? []).filter((a) => isPhase1Assert(a)).map((a) => (
+                        <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/50 text-emerald-700">{a}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold text-muted-foreground mb-1">LEGACY · observabilidad (no bloquea Fase 1)</div>
+                    <div className="flex gap-2 flex-wrap opacity-80">
+                      {(drillOpen.asserts_failed ?? []).filter((a) => isLegacyAssert(a.id)).map((a) => (
+                        <Badge key={a.id} variant="outline" className="text-[11px] border-amber-500/50 text-amber-700">{a.id.replace(/^L:/, "")}: {a.msg ?? "fail"}</Badge>
+                      ))}
+                      {(drillOpen.asserts_passed ?? []).filter((a) => isLegacyAssert(a)).map((a) => (
+                        <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/30 text-emerald-700/70">{a.replace(/^L:/, "")}</Badge>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 {(drillOpen.asserts_failed ?? []).length > 0 && (
                   <div className="space-y-2">
