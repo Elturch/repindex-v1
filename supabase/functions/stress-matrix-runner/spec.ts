@@ -72,7 +72,7 @@ function buildIbexQuery(family: string, weeks: number): string {
 }
 
 export function expandCases(
-  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full",
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny",
 ): StressCase[] {
   const cases: StressCase[] = [];
   const weeks = SPEC.weeks;
@@ -86,6 +86,28 @@ export function expandCases(
       cases.push({
         case_id: `${slug(sub.name)}-MULTI-${weeks}w`,
         family: "phase1-small",
+        query: buildSubsectorQuery(sub.name, weeks, null),
+        scope: sub.name,
+        scope_kind: "subsector",
+        tickers: sub.tickers,
+        n: sub.n,
+        weeks,
+        model_filter: null,
+        expected_skill: "sectorRanking",
+        issuer_names: namesFor(sub.tickers),
+      });
+    }
+    return cases;
+  }
+  // Fase 2 — Eje B. phase2-tiny reusa el subset N<=3 (idéntico a
+  // phase1-small) pero marca el family con prefijo `phase2-` para que el
+  // runner promueva B1_tiny_universe_clean al gating compuesto.
+  if (family === "phase2-tiny") {
+    const subs = SPEC.subsectors_small.filter((s) => s.n <= 3);
+    for (const sub of subs) {
+      cases.push({
+        case_id: `${slug(sub.name)}-MULTI-${weeks}w`,
+        family: "phase2-tiny",
         query: buildSubsectorQuery(sub.name, weeks, null),
         scope: sub.name,
         scope_kind: "subsector",

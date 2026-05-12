@@ -23,7 +23,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 type RunBody = {
-  family?: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full";
+  family?: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny";
   limit?: number;
 };
 
@@ -193,7 +193,19 @@ async function processCase(
   const sFailed = sResults.filter((r: any) => r && r.ok === false).map((r: any) => ({ id: r.id, msg: r.msg }));
   const sqlOk = !!scope_validation?.ok;
   const phase1Pass = sResults.length > 0 && sFailed.length === 0 && sqlOk;
-  const status: "pass" | "fail" = phase1Pass ? "pass" : "fail";
+
+  // Fase 2 — Eje B. Para families con prefijo `phase2-`, promovemos los
+  // asserts B*/C* (cuando estén disponibles) al gating compuesto. Hoy
+  // sólo B1_tiny_universe_clean. Si phase1Pass=false, no hace falta
+  // evaluar los phase2 — la celda ya falla por gating Fase 1.
+  let phase2Fails: Array<{ id: string; msg?: string }> = [];
+  const isPhase2 = caseSpec.family.startsWith("phase2-");
+  if (isPhase2) {
+    const b1 = legacyChecks.find((c) => c.id === "B1_tiny_universe_clean");
+    if (b1 && !b1.ok) phase2Fails.push({ id: b1.id, msg: b1.msg });
+  }
+  const status: "pass" | "fail" =
+    phase1Pass && phase2Fails.length === 0 ? "pass" : "fail";
 
   // ── Reclasificación oficial Fase 1 (post phase1-small 8/8 verde) ─────────
   // ── CIERRE FASE 1 (2026-05-12 21:19) ─────────────────────────────────────
@@ -220,11 +232,13 @@ async function processCase(
     ...(!sqlOk
       ? [{ id: "SQL_DIFF", msg: scope_validation?.reason ?? `${scope_validation?.diffs?.length ?? 0} divergencias` }]
       : []),
+    ...phase2Fails,
     ...failedLegacy.map((f) => ({ id: `L:${f.id}`, msg: f.msg })),
   ];
   const passedComposite = [
     ...sResults.filter((r: any) => r.ok).map((r: any) => r.id),
     ...(sqlOk ? ["SQL_DIFF"] : []),
+    ...(isPhase2 && phase2Fails.length === 0 ? ["B1_tiny_universe_clean"] : []),
     ...passedLegacy.map((id) => `L:${id}`),
   ];
 
@@ -250,7 +264,7 @@ async function processCase(
 
 async function runMatrix(
   runId: string,
-  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full",
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny",
   limit?: number,
 ) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -339,7 +353,7 @@ serve(async (req: Request) => {
 
   const body = (await req.json().catch(() => ({}))) as RunBody;
   const family = (body.family ?? "hotels-reits") as
-    "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full";
+    "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny";
   const limit = body.limit;
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
