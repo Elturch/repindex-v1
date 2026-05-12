@@ -119,3 +119,9 @@ verify_jwt = false
 
 [functions.quality-audit-runner]
 verify_jwt = false
+
+[functions.stress-matrix-runner]
+verify_jwt = false
+
+[functions.stress-matrix-report]
+verify_jwt = false
