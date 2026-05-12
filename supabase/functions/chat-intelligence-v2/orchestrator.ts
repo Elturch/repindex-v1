@@ -44,6 +44,7 @@ import {
   isUseScopedSkillsEnabled,
   scopeFlagsSnapshot,
   isEnrichRankingSubmetricsEnabled,
+  isTinyUniverseGuardEnabled,
 } from "./scope/featureFlags.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
 import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
