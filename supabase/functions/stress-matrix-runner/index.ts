@@ -153,11 +153,9 @@ async function processCase(
     }).eq("id", resultId);
     return "error";
   }
-  const legacyChecks = runAsserts({ caseSpec, markdown: out.markdown, meta: out.meta });
-  const passedLegacy = legacyChecks.filter((c) => c.ok).map((c) => c.id);
-  const failedLegacy = legacyChecks.filter((c) => !c.ok).map((c) => ({ id: c.id, msg: c.msg }));
-
   // Fase 1 — pull persisted scope audit from chat_logs by session_id.
+  // (Movido ANTES de runAsserts para que A9 reescrito en Fase 2 pueda
+  // leer coverage_report.submetrics_coverage cuando el flag esté ON.)
   const { data: logRow } = await admin
     .from("chat_logs")
     .select("scope_contract,coverage_report,scope_audit")
@@ -168,6 +166,15 @@ async function processCase(
   const scope_contract = (logRow as any)?.scope_contract ?? null;
   const coverage_report = (logRow as any)?.coverage_report ?? null;
   const scope_audit = (logRow as any)?.scope_audit ?? null;
+
+  const legacyChecks = runAsserts({
+    caseSpec,
+    markdown: out.markdown,
+    meta: out.meta,
+    coverage_report,
+  });
+  const passedLegacy = legacyChecks.filter((c) => c.ok).map((c) => c.id);
+  const failedLegacy = legacyChecks.filter((c) => !c.ok).map((c) => ({ id: c.id, msg: c.msg }));
 
   // Fase 1 — SQL bit-by-bit validator (N=5 random rows).
   let scope_validation: any = null;
