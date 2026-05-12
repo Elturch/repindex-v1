@@ -43,10 +43,14 @@ import { auditScope, ScopeAuditFailed, type ScopeAuditReport } from "./guards/sc
 import {
   isUseScopedSkillsEnabled,
   scopeFlagsSnapshot,
-  isEnrichRankingSubmetricsEnabled,
-  isTinyUniverseGuardEnabled,
-  isExecNarrativeEnabled,
+  isEnrichRankingSubmetricsEnabledWithContext,
+  isTinyUniverseGuardEnabledWithContext,
+  isExecNarrativeEnabledWithContext,
 } from "./scope/featureFlags.ts";
+import {
+  type RequestHeaderContext,
+  FAIL_CLOSED_HEADER_CONTEXT,
+} from "./scope/headerGate.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
 import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
 import { scanTinyUniverse } from "./guards/tinyUniverseGuard.ts";
@@ -405,10 +409,18 @@ export async function process(
   previousContext?: any,
   isFollowup?: boolean,
   normalizedQuestion?: string,
-  auditMeta?: { user_id?: string | null; session_id?: string | null },
+  auditMeta?: {
+    user_id?: string | null;
+    session_id?: string | null;
+    headerCtx?: RequestHeaderContext;
+  },
 ): Promise<OrchestratorResponse> {
   const logPrefix = "[RIX-V2][orch]";
   const __scopeStart = Date.now();
+  // Paso 2.5 — Header gate context. Fail-closed por defecto: si el caller
+  // no construye el contexto (test interno, llamada legacy), los 3 flags
+  // Fase 2 quedan implícitamente OFF. index.ts SIEMPRE pasa el ctx real.
+  const headerCtx: RequestHeaderContext = auditMeta?.headerCtx ?? FAIL_CLOSED_HEADER_CONTEXT;
   // FASE C — `question` is ALWAYS effectiveQuestion (originalQuestion ?? normalizedQuestion).
   // index.ts guarantees this. Every parser/skill below uses `question` exclusively;
   // `normalizedQuestion` is forwarded only for display/logging.
