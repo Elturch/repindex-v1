@@ -309,7 +309,8 @@ serve(async (req: Request) => {
   }
 
   const body = (await req.json().catch(() => ({}))) as RunBody;
-  const family = (body.family ?? "hotels-reits") as "all" | "small" | "sanity" | "hotels-reits";
+  const family = (body.family ?? "hotels-reits") as
+    "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full";
   const limit = body.limit;
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
