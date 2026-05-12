@@ -18,6 +18,7 @@ import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
 import { buildSingleModelRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import { sanitizeFinalMarkdown } from "../guards/outputGuard.ts";
 import {
   assembleReport,
   buildPreRenderedSection,
@@ -133,6 +134,38 @@ function buildPerCompanySourceList(rows: any[]): string {
       .map(([d, n]) => `${d} (${n})`)
       .join(", ");
     if (top) lines.push(`- ${info.name} (${ticker}): ${top}`);
+  }
+  return lines.join("\n");
+}
+
+function buildTickerCitedSourcesBlock(rows: any[], ranking: RankingRow[]): string {
+  const URL_RE = /https?:\/\/[^\s)\]"<>]+/g;
+  const byTicker = new Map<string, { name: string; urls: string[] }>();
+  const wanted = new Set(ranking.map((r) => r.ticker));
+  for (const r of rows) {
+    const ticker = String(r["05_ticker"] ?? "").trim().toUpperCase();
+    if (!wanted.has(ticker)) continue;
+    const slot = byTicker.get(ticker) ?? { name: String(r["03_target_name"] ?? ticker), urls: [] };
+    for (const col of ALL_BRUTO_COLS) {
+      const txt = r[col];
+      if (!txt || typeof txt !== "string") continue;
+      for (const raw of txt.match(URL_RE) ?? []) {
+        const clean = raw.replace(/[.,;:!?]+$/g, "");
+        if (!slot.urls.includes(clean)) slot.urls.push(clean);
+        if (slot.urls.length >= 3) break;
+      }
+      if (slot.urls.length >= 3) break;
+    }
+    byTicker.set(ticker, slot);
+  }
+  const lines = ["", "**Anexo: referencias citadas por empresa del ranking**", ""];
+  for (const r of ranking) {
+    const entry = byTicker.get(r.ticker);
+    if (!entry || entry.urls.length === 0) {
+      lines.push(`- ${r.name} (${r.ticker}): Sin fuentes verificadas en el período.`);
+    } else {
+      lines.push(`- ${r.name} (${r.ticker}): ${entry.urls.join(" · ")}`);
+    }
   }
   return lines.join("\n");
 }
@@ -310,6 +343,63 @@ interface RankingRow {
   consensusLevel: ConsensusLevel; // alto/medio/bajo (peor caso semanal)
   weekly_range_avg: number;       // rango (max-min) inter-modelo promedio entre semanas
   per_model: Partial<Record<ModelName, number>>;
+}
+
+const CANONICAL_DIMENSIONS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"|"CEM"|"GAM"|"DCM"|"CXM" }> = [
+  { key: "23_nvm_score", metric: "NVM" },
+  { key: "26_drm_score", metric: "DRM" },
+  { key: "29_sim_score", metric: "SIM" },
+  { key: "32_rmm_score", metric: "RMM" },
+  { key: "35_cem_score", metric: "CEM" },
+  { key: "38_gam_score", metric: "GAM" },
+  { key: "41_dcm_score", metric: "DCM" },
+  { key: "44_cxm_score", metric: "CXM" },
+];
+
+function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string {
+  if (!scopeSize || scopeSize > 3) return "";
+  const scopePhrase = scopeSize === 1 ? "1 único emisor cotizado" : `${scopeSize} emisores cotizados`;
+  return [
+    `**Aviso de alcance estricto — ${scopeLabel}**`,
+    "",
+    `El alcance solicitado contiene ${scopePhrase} en la base cotizada. No se añaden peers sectoriales ni empresas externas al subsector.`,
+  ].join("\n");
+}
+
+function buildDeterministicDimensionsTable(rows: any[], ranking: RankingRow[], model?: ModelName): string {
+  const wanted = new Set(ranking.map((r) => r.ticker));
+  const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
+  for (const r of rows) {
+    const t = String(r["05_ticker"] ?? "").trim();
+    if (!wanted.has(t)) continue;
+    if (model && normModel(r["02_model_name"]) !== model) continue;
+    const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), dims: new Map() };
+    for (const { key, metric } of CANONICAL_DIMENSIONS) {
+      const raw = r[key];
+      const v = typeof raw === "number" ? raw : parseFloat(raw);
+      if (!Number.isFinite(v)) continue;
+      if (!slot.dims.has(metric)) slot.dims.set(metric, []);
+      slot.dims.get(metric)!.push(v);
+    }
+    byTicker.set(t, slot);
+  }
+  const lines = [
+    `**Tabla canónica de 8 sub-métricas${model ? ` según ${model}` : ""}**`,
+    "",
+    "| Empresa | NVM | DRM | SIM | RMM | CEM | GAM | DCM | CXM |",
+    "|---|---|---|---|---|---|---|---|---|",
+  ];
+  for (const r of ranking) {
+    const slot = byTicker.get(r.ticker);
+    const cells = CANONICAL_DIMENSIONS.map(({ metric }) => {
+      const vals = slot?.dims.get(metric) ?? [];
+      if (vals.length === 0) return metric === "CXM" ? "N/A" : "n/d";
+      return fmt(vals.reduce((a, b) => a + b, 0) / vals.length);
+    });
+    lines.push(`| ${r.name} (${r.ticker}) | ${cells.join(" | ")} |`);
+  }
+  lines.push("", "*CXM se muestra siempre; cuando no hay valor estructurado aplicable, se declara N/A.*");
+  return lines.join("\n");
 }
 
 async function fetchRankingRows(
@@ -619,8 +709,8 @@ function renderSingleModelRankingTable(
   const unit = coverage.isSnapshot ? "snapshot" : "semanas";
   const orderLabel =
     orderHint === "asc"
-      ? `menor RIX medio según ${model} en el periodo (peores primero)`
-      : `mayor RIX medio según ${model} en el periodo; desempate por número de observaciones`;
+      ? `menor RIX de referencia según ${model} en el periodo (peores primero)`
+      : `mayor RIX de referencia según ${model} en el periodo; desempate por número de observaciones`;
   const footnote = [
     `*Criterio de ordenación: ${orderLabel}.*`,
     `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`,
@@ -639,7 +729,7 @@ function renderSingleModelRankingTable(
 /**
  * Weekly breakdown matrix for single-model period mode.
  * Rows = top-N tickers (same order as the aggregate ranking).
- * Columns = each ISO week present in `rawRows` (asc) + Media.
+ * Columns = each ISO week present in `rawRows` (asc) + Referencia.
  * Allows the user to cotejar each week with the dashboard cell-by-cell.
  */
 function renderSingleModelWeeklyBreakdown(
@@ -666,7 +756,7 @@ function renderSingleModelWeeklyBreakdown(
   }
   if (weekSet.size < 2) return null; // only meaningful for multi-week
   const weeks = [...weekSet].sort();
-  const head = ["#", "Empresa", ...weeks, `Media (${model})`];
+  const head = ["#", "Empresa", ...weeks, `Referencia (${model})`];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells: string[] = [String(i + 1), `${r.name} (${r.ticker})`];
@@ -677,7 +767,7 @@ function renderSingleModelWeeklyBreakdown(
   });
   const footnote =
     `*Cada celda es el RIX semanal de ${model} (eje domingo, igual que el dashboard). ` +
-    `La columna "Media (${model})" replica la del ranking agregado.*`;
+    `La columna "Referencia (${model})" replica la del ranking agregado.*`;
   return [
     `**Desglose semanal según ${model}**`,
     "",
@@ -768,6 +858,8 @@ function buildUserMessageWithAssembler(
   citedSourcesSummary: string,
   perCompanySources: string,
   perCompanyDimensions: string,
+  scopeNotice: string,
+  deterministicDimensionsTable: string,
   orderHint: OrderHint = "desc",
   isSingleModel = false,
 ): string {
@@ -800,12 +892,12 @@ function buildUserMessageWithAssembler(
   const orderLabel =
     orderHint === "asc"
       ? (isSingleModel
-          ? `menor RIX medio según ${models[0]} en el periodo (peores primero)`
+          ? `menor RIX de referencia según ${models[0]} en el periodo (peores primero)`
           : "menor RIX máximo del periodo (peores primero)")
       : orderHint === "divergence"
-        ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
+        ? "mayor dispersión inter-modelo de referencia (más divergencia primero)"
         : (isSingleModel
-            ? `mayor RIX medio según ${models[0]} en el periodo`
+            ? `mayor RIX de referencia según ${models[0]} en el periodo`
             : "mayor RIX máximo del periodo; desempate por suelo RIX más alto");
   const compact = isSingleModel
     ? rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX(${models[0]})=${fmt(r.per_model[models[0] as ModelName])}`).join("\n")
@@ -833,6 +925,10 @@ function buildUserMessageWithAssembler(
       blocks,
       methodology,
     ),
+    "",
+    scopeNotice,
+    "",
+    deterministicDimensionsTable,
     "",
     perCompanyDimensions,
     "",
@@ -1127,6 +1223,13 @@ export const sectorRankingSkill: Skill = {
     const perCompanySources = buildPerCompanySourceList(sourceRows);
     console.log(`${tag} sector cited sources | source_rows=${sourceRows.length} | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
 
+    const scopeNotice = buildScopeNotice(scopeLabel, scopeTickers?.length ?? null);
+    const deterministicDimensionsTable = buildDeterministicDimensionsTable(
+      rows,
+      ranking,
+      isSingleModel ? (models[0] as ModelName) : undefined,
+    );
+
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
@@ -1140,6 +1243,8 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
       buildPerCompanyDimensionsBlock(rows, `[RIX-V2][companyAnalysis]`).block,
+      scopeNotice,
+      deterministicDimensionsTable,
       orderHint,
       isSingleModel,
     );
@@ -1160,6 +1265,13 @@ export const sectorRankingSkill: Skill = {
     let finalContent = fullText && fullText.trim().length > 0
       ? fullText
       : `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
+
+    if (scopeNotice && !/1\s+único\s+emisor\s+cotizado|1\s+unico\s+emisor\s+cotizado|emisores\s+cotizados/i.test(finalContent)) {
+      finalContent = `${finalContent}\n\n${scopeNotice}`;
+    }
+    if (!CANONICAL_DIMENSIONS.every(({ metric }) => new RegExp(`\\b${metric}\\b`).test(finalContent))) {
+      finalContent = `${finalContent}\n\n${deterministicDimensionsTable}`;
+    }
 
     // Bug A — scrub: si el LLM copió los delimitadores literales o regeneró
     // el footnote viejo ("RIX medio = promedio del consenso semanal ... HOY"),
@@ -1200,6 +1312,7 @@ export const sectorRankingSkill: Skill = {
         const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
       }
+      finalContent = finalContent + buildTickerCitedSourcesBlock(sourceRows, ranking);
       // Final safety net: scrub residual variants of the marker if any survived.
       finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
       console.log(`${tag} cited_sources_substitution | hasUrls=${hasUrls} markerPresent=${markerPresent}`);
@@ -1214,6 +1327,17 @@ export const sectorRankingSkill: Skill = {
         _s7Agg.period_summary.submetrics_range,
       );
       finalContent = _s7.content;
+    }
+
+    // Final stream-safe sanitizer: this runs BEFORE onChunk, unlike the
+    // orchestrator-level safety net. It keeps live SSE, DB persistence and
+    // stress-runner markdown aligned.
+    {
+      const cleaned = sanitizeFinalMarkdown(finalContent, { modelFilter: isSingleModel ? String(models[0]) : null });
+      finalContent = cleaned.text;
+      if (cleaned.rules_fired.length > 0) {
+        console.log(`${tag} final_stream_sanitizer | rules=${cleaned.rules_fired.join(",")}`);
+      }
     }
 
     // P1-A.2 — Emit the fully-sanitized finalContent as a single chunk

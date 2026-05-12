@@ -78,6 +78,16 @@ const WHITE_PAPER_RE = /\bwhite[-\s]?paper(s)?\b/gi;
 const LIBRO_BLANCO_RE = /\blibros?\s+blancos?\b/gi;
 const DATA_ROOM_RE = /\bdata[-\s]?room(s)?\b/gi;
 const ROADSHOW_RE = /\broadshow(s)?\b/gi;
+const AGM_RE = /\bAGM\b/gi;
+const PROTOCOLO_RE = /\bprotocolo(s)?\b/gi;
+const WEBINAR_RE = /\bwebinar(s)?\b/gi;
+const BRIEFING_RE = /\bbriefing(s)?\b/gi;
+const NOTA_PRENSA_RE = /\bnota(s)?\s+de\s+prensa\b/gi;
+const MESA_REDONDA_RE = /\bmesa(s)?\s+redonda(s)?\b/gi;
+const TARGET_NUM_RE = /\btarget\s+[0-9]+(?:[\.,][0-9]+)?\b/gi;
+const PLUS_PTS_RE = /\+\d+[\.,]\d+\s*pts?\b/gi;
+const FUTURE_QUARTER_RE = /\bQ[1-4][-\s]?20\d\d\b/gi;
+const FY_RE = /\bFY[-\s]?20\d\d\b/gi;
 
 // Single-model leaks (only applied when modelFilter is set).
 const SM_ENTRE_MODELOS_RE = /\bentre\s+modelos\b/gi;
@@ -107,6 +117,16 @@ export function sanitizeFinalMarkdown(
   apply(LIBRO_BLANCO_RE, "documento técnico", "libro_blanco");
   apply(DATA_ROOM_RE, "dossier informativo", "data_room");
   apply(ROADSHOW_RE, "ronda de presentaciones", "roadshow");
+  apply(AGM_RE, "junta", "agm");
+  apply(PROTOCOLO_RE, "marco de actuación", "protocolo");
+  apply(WEBINAR_RE, "sesión informativa", "webinar");
+  apply(BRIEFING_RE, "sesión informativa", "briefing");
+  apply(NOTA_PRENSA_RE, "comunicación corporativa", "nota_prensa");
+  apply(MESA_REDONDA_RE, "encuentro sectorial", "mesa_redonda");
+  apply(TARGET_NUM_RE, "objetivo operativo", "target_num");
+  apply(PLUS_PTS_RE, "mejora cuantificada", "plus_pts");
+  apply(FUTURE_QUARTER_RE, "período futuro", "future_quarter");
+  apply(FY_RE, "ejercicio futuro", "fy_future");
 
   // Single-model: comparativo cross-model leaks.
   if (opts.modelFilter) {
