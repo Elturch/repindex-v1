@@ -260,7 +260,21 @@ serve(async (req: Request) => {
             previousContext,
             isFollowup,
             question, // FASE C — display-only; orchestrator stores it on parsed.normalized_question
+            { user_id: (body?.user_id ?? null), session_id: sessionId || null },
           );
+          // Fase 1 — error estructurado scope_audit_failed: el orchestrator
+          // ya emitio onChunk con un mensaje breve; aqui devolvemos el
+          // payload estructurado para que el FE lo pinte sin 500 generico.
+          if ((result as any).type === "scope_audit_failed") {
+            controller.enqueue(sseEncode({
+              type: "scope_audit_failed",
+              error: (result as any).error,
+              intent: (result as any).intent,
+              entities: (result as any).entities,
+            }));
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            return;
+          }
           const resultMeta = result as Record<string, any>;
           const reportContext = {
             company: resultMeta.entities?.[0]?.company_name ?? result.datapack?.entity?.company_name ?? null,
