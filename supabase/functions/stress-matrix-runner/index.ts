@@ -15,12 +15,19 @@ import { validateScopeIntegrity } from "./scopeIntegrityValidator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-repindex-stress",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+// Paso 2.5 — Header de aislamiento Fase 2. Pass-through: el runner NO
+// valida el token (lo valida chat-intelligence-v2). Si la family es
+// `phase2-*`, exigimos que el caller lo haya enviado: sin él los flags
+// Fase 2 quedan OFF efectivos y los gates 3-5 nunca podrían validarse.
+const PHASE2_ISOLATION_HEADER = "x-repindex-stress" as const;
 
 type RunBody = {
   family?: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec" | "phase2-full";
@@ -52,6 +59,7 @@ const SSE_INACTIVITY_MS = 60_000;  // 60s without data = hung stream
 async function invokeAgent(
   caseSpec: StressCase,
   sessionId: string,
+  phase2HeaderToken: string | null,
 ): Promise<{ markdown: string; meta: Record<string, unknown> | null; latency_ms: number; error?: string }> {
   const t0 = Date.now();
   const url = `${SUPABASE_URL}/functions/v1/chat-intelligence-v2`;
@@ -59,14 +67,20 @@ async function invokeAgent(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
   try {
+    const fwdHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SERVICE_KEY}`,
+      "apikey": SERVICE_KEY,
+    };
+    // Pass-through del header de aislamiento. Sólo si el caller lo trajo.
+    // NO se loguea el valor (token sensible).
+    if (phase2HeaderToken && phase2HeaderToken.length > 0) {
+      fwdHeaders[PHASE2_ISOLATION_HEADER] = phase2HeaderToken;
+    }
     res = await fetch(url, {
       method: "POST",
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${SERVICE_KEY}`,
-        "apikey": SERVICE_KEY,
-      },
+      headers: fwdHeaders,
       body: JSON.stringify({
         question: caseSpec.query,
         session_id: sessionId,
@@ -140,10 +154,11 @@ async function processCase(
   admin: ReturnType<typeof createClient>,
   resultId: string,
   caseSpec: StressCase,
+  phase2HeaderToken: string | null,
 ): Promise<"pass" | "fail" | "error"> {
   // Use a stable session id so we can fetch the persisted audit afterwards.
   const sessionId = `stress-${caseSpec.case_id}-${Date.now()}`;
-  const out = await invokeAgent(caseSpec, sessionId);
+  const out = await invokeAgent(caseSpec, sessionId, phase2HeaderToken);
   if (out.error || !out.markdown) {
     await admin.from("stress_results").update({
       status: "error",
@@ -300,6 +315,7 @@ async function runMatrix(
   runId: string,
   family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec" | "phase2-full",
   limit?: number,
+  phase2HeaderToken: string | null = null,
 ) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
   let cases = expandCases(family);
@@ -342,7 +358,7 @@ async function runMatrix(
       const rid = idByCaseId.get(c.case_id);
       if (!rid) continue;
       try {
-        const status = await processCase(admin, rid, c);
+        const status = await processCase(admin, rid, c, phase2HeaderToken);
         if (status === "pass") pass++;
         else if (status === "fail") fail++;
         else err++;
