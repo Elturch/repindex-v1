@@ -41,11 +41,21 @@ export function isTinyUniverseGuardEnabled(): boolean {
   return readBool("TINY_UNIVERSE_GUARD");
 }
 
+// Fase 2 — Eje C: relato directivo opcional (headline + TL;DR + Lectura).
+// Default OFF en producción. Cuando ON, el orchestrator inyecta el
+// prelude EXEC_NARRATIVE en el systemPrompt y aplica el validador
+// estructural + de trazabilidad numérica con E3 (máx 2 reintentos).
+// Activación consciente posterior según plan Fase 2 (E5).
+export function isExecNarrativeEnabled(): boolean {
+  return readBool("EXEC_NARRATIVE");
+}
+
 export function scopeFlagsSnapshot(): Record<string, boolean> {
   return {
     use_scoped_skills: isUseScopedSkillsEnabled(),
     freeze_cosmetic_injectors: isCosmeticInjectorsFrozen(),
     enrich_ranking_submetrics: isEnrichRankingSubmetricsEnabled(),
     tiny_universe_guard: isTinyUniverseGuardEnabled(),
+    exec_narrative: isExecNarrativeEnabled(),
   };
 }
