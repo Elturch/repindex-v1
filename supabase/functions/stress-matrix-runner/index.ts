@@ -51,10 +51,10 @@ const SSE_INACTIVITY_MS = 60_000;  // 60s without data = hung stream
 
 async function invokeAgent(
   caseSpec: StressCase,
+  sessionId: string,
 ): Promise<{ markdown: string; meta: Record<string, unknown> | null; latency_ms: number; error?: string }> {
   const t0 = Date.now();
   const url = `${SUPABASE_URL}/functions/v1/chat-intelligence-v2`;
-  const sessionId = `stress-${caseSpec.case_id}-${Date.now()}`;
   let res: Response;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
