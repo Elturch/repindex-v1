@@ -847,7 +847,22 @@ export async function process(
   }
 
   // 9. Prompt composition
-  const systemPrompt = composePrompt(skillOut.prompt_modules);
+  let systemPrompt = composePrompt(skillOut.prompt_modules);
+
+  // Fase 2 — Eje A. Slot informativo (no instructivo) de sub-métricas
+  // disponibles en el dataset entregado. Solo se añade si:
+  //   (1) ENRICH_RANKING_SUBMETRICS=true en el entorno, y
+  //   (2) tenemos coverage_report.submetrics_coverage calculado, y
+  //   (3) hay >=1 sub-métrica con cobertura >= umbral (si no, slot=null
+  //       y no se inyecta nada → comportamiento idéntico a flag OFF).
+  // Con flag OFF: NO se evalúa, NO se inyecta, NO se modifica el prompt.
+  if (isEnrichRankingSubmetricsEnabled() && coverageReport?.submetrics_coverage) {
+    const slot = buildSubmetricsAvailableSlot(coverageReport.submetrics_coverage);
+    if (slot) {
+      systemPrompt = `${systemPrompt}\n\n${slot}`;
+      console.log(`${logPrefix} prompt enriched | submetrics_slot_chars=${slot.length}`);
+    }
+  }
 
   // 10. Content: real skills deposit the LLM answer as the first pre-rendered
   //     "table" entry AND stream it via onChunk. Stub skills leave that array
