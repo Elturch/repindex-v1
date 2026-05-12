@@ -19,6 +19,7 @@ import { buildRankingRules } from "../prompts/rankingMode.ts";
 import { buildSingleModelRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
 import { sanitizeFinalMarkdown } from "../guards/outputGuard.ts";
+import { isCosmeticInjectorsFrozen } from "../scope/featureFlags.ts";
 import {
   assembleReport,
   buildPreRenderedSection,
@@ -1324,14 +1325,19 @@ export const sectorRankingSkill: Skill = {
         finalContent = `${uniqueLine}\n\n${finalContent}`;
       }
     }
-    if (!CANONICAL_DIMENSIONS.every(({ metric }) => new RegExp(`\\b${metric}\\b`).test(finalContent))) {
-      finalContent = `${finalContent}\n\n${deterministicDimensionsTable}`;
+    // Fase 1 — Inyector cosmetico congelado: relleno forzado de las 8
+    // sub-metricas canonicas. Se mantiene visible para rollback.
+    if (!isCosmeticInjectorsFrozen()) {
+      if (!CANONICAL_DIMENSIONS.every(({ metric }) => new RegExp(`\\b${metric}\\b`).test(finalContent))) {
+        finalContent = `${finalContent}\n\n${deterministicDimensionsTable}`;
+      }
     }
 
     // Bug A — scrub: si el LLM copió los delimitadores literales o regeneró
     // el footnote viejo ("RIX medio = promedio del consenso semanal ... HOY"),
     // sustituimos por el footnote canónico anti-mediana.
-    {
+    // Fase 1 — Inyector cosmetico congelado: reescritura del footnote MEL.
+    if (!isCosmeticInjectorsFrozen()) {
       const before = finalContent;
       // 1) Quitar delimitadores literales si el LLM los emitió.
       finalContent = finalContent
@@ -1351,7 +1357,11 @@ export const sectorRankingSkill: Skill = {
     // no verifiable URLs. Previously the entire substitution was skipped when
     // citedSourcesFull was empty, which left the literal marker in the output
     // for sector-wide queries with 0 aggregated URLs (Banca regression).
-    {
+    // Fase 1 — Inyector cosmetico congelado: bibliografia auto-inyectada
+    // (sustitucion del marker + bloque por ticker). Se mantiene visible
+    // para rollback. Durante la congelacion el LLM emite el output crudo,
+    // incluido cualquier marker residual; el outputGuard ya no reescribe.
+    if (!isCosmeticInjectorsFrozen()) {
       const MARKER = "<!--CITEDSOURCESHERE-->";
       const MARKER_RE = /<!--\s*[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*CITED[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*SOURCES[\s_]*<?\/?(?:strong|em|b|i)?>?[*_\s]*<?\/?(?:strong|em|b|i)?>?\s*HERE\s*<?\/?(?:strong|em|b|i)?>?[*_\s]*-->/i;
       const hasUrls = !!(citedSourcesFull && citedSourcesFull.trim().length > 0);
