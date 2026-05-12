@@ -11,6 +11,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { runAsserts, type StressCase } from "./asserts.ts";
 import { expandCases } from "./spec.ts";
+import { validateScopeIntegrity } from "./scopeIntegrityValidator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +23,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 type RunBody = {
-  family?: "all" | "small" | "sanity" | "hotels-reits";
+  family?: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full";
   limit?: number;
 };
 
@@ -50,10 +51,10 @@ const SSE_INACTIVITY_MS = 60_000;  // 60s without data = hung stream
 
 async function invokeAgent(
   caseSpec: StressCase,
+  sessionId: string,
 ): Promise<{ markdown: string; meta: Record<string, unknown> | null; latency_ms: number; error?: string }> {
   const t0 = Date.now();
   const url = `${SUPABASE_URL}/functions/v1/chat-intelligence-v2`;
-  const sessionId = `stress-${caseSpec.case_id}-${Date.now()}`;
   let res: Response;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
@@ -140,7 +141,9 @@ async function processCase(
   resultId: string,
   caseSpec: StressCase,
 ): Promise<"pass" | "fail" | "error"> {
-  const out = await invokeAgent(caseSpec);
+  // Use a stable session id so we can fetch the persisted audit afterwards.
+  const sessionId = `stress-${caseSpec.case_id}-${Date.now()}`;
+  const out = await invokeAgent(caseSpec, sessionId);
   if (out.error || !out.markdown) {
     await admin.from("stress_results").update({
       status: "error",
@@ -150,27 +153,81 @@ async function processCase(
     }).eq("id", resultId);
     return "error";
   }
-  const checks = runAsserts({ caseSpec, markdown: out.markdown, meta: out.meta });
-  const passed = checks.filter((c) => c.ok).map((c) => c.id);
-  const failed = checks.filter((c) => !c.ok).map((c) => ({ id: c.id, msg: c.msg }));
-  const status: "pass" | "fail" = failed.length === 0 ? "pass" : "fail";
+  const legacyChecks = runAsserts({ caseSpec, markdown: out.markdown, meta: out.meta });
+  const passedLegacy = legacyChecks.filter((c) => c.ok).map((c) => c.id);
+  const failedLegacy = legacyChecks.filter((c) => !c.ok).map((c) => ({ id: c.id, msg: c.msg }));
+
+  // Fase 1 — pull persisted scope audit from chat_logs by session_id.
+  const { data: logRow } = await admin
+    .from("chat_logs")
+    .select("scope_contract,coverage_report,scope_audit")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const scope_contract = (logRow as any)?.scope_contract ?? null;
+  const coverage_report = (logRow as any)?.coverage_report ?? null;
+  const scope_audit = (logRow as any)?.scope_audit ?? null;
+
+  // Fase 1 — SQL bit-by-bit validator (N=5 random rows).
+  let scope_validation: any = null;
+  if (scope_contract) {
+    try {
+      scope_validation = await validateScopeIntegrity(admin, scope_contract);
+    } catch (e) {
+      scope_validation = { ok: false, sampled: 0, rechecked: 0, diffs: [], reason: `validator threw: ${(e as Error).message}` };
+    }
+  } else {
+    scope_validation = { ok: false, sampled: 0, rechecked: 0, diffs: [], reason: "scope_contract no persistido (chat_logs vacio para session)" };
+  }
+
+  // Fase 1 — derive cell status from S1..S5 + SQL_DIFF (gating).
+  const sResults = Array.isArray(scope_audit?.results) ? scope_audit.results : [];
+  const sFailed = sResults.filter((r: any) => r && r.ok === false).map((r: any) => ({ id: r.id, msg: r.msg }));
+  const sqlOk = !!scope_validation?.ok;
+  const phase1Pass = sResults.length > 0 && sFailed.length === 0 && sqlOk;
+  const status: "pass" | "fail" = phase1Pass ? "pass" : "fail";
+
+  // Compose asserts_failed for the UI: S-asserts + SQL_DIFF first (Phase 1 gate),
+  // legacy A-asserts kept as observability (post-prefix "L:").
+  const failedComposite = [
+    ...sFailed.map((f: any) => ({ id: f.id, msg: f.msg })),
+    ...(!sqlOk
+      ? [{ id: "SQL_DIFF", msg: scope_validation?.reason ?? `${scope_validation?.diffs?.length ?? 0} divergencias` }]
+      : []),
+    ...failedLegacy.map((f) => ({ id: `L:${f.id}`, msg: f.msg })),
+  ];
+  const passedComposite = [
+    ...sResults.filter((r: any) => r.ok).map((r: any) => r.id),
+    ...(sqlOk ? ["SQL_DIFF"] : []),
+    ...passedLegacy.map((id) => `L:${id}`),
+  ];
+
   const actualSkill =
     (out.meta as any)?.questionCategory ??
     (out.meta as any)?.responseType ??
     null;
   await admin.from("stress_results").update({
     status,
-    asserts_passed: passed,
-    asserts_failed: failed,
+    asserts_passed: passedComposite,
+    asserts_failed: failedComposite,
     response_markdown: out.markdown.slice(0, 200_000),
     response_meta: out.meta as any,
     actual_skill: actualSkill,
     latency_ms: out.latency_ms,
+    scope_contract,
+    coverage_report,
+    scope_audit,
+    scope_validation,
   }).eq("id", resultId);
   return status;
 }
 
-async function runMatrix(runId: string, family: "all" | "small" | "sanity" | "hotels-reits", limit?: number) {
+async function runMatrix(
+  runId: string,
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full",
+  limit?: number,
+) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
   let cases = expandCases(family);
   if (limit && limit > 0) cases = cases.slice(0, limit);
@@ -256,7 +313,8 @@ serve(async (req: Request) => {
   }
 
   const body = (await req.json().catch(() => ({}))) as RunBody;
-  const family = (body.family ?? "hotels-reits") as "all" | "small" | "sanity" | "hotels-reits";
+  const family = (body.family ?? "hotels-reits") as
+    "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full";
   const limit = body.limit;
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
