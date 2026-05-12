@@ -22,6 +22,13 @@ export type AssertCtx = {
   caseSpec: StressCase;
   markdown: string;
   meta: Record<string, unknown> | null;
+  // Fase 2 — Eje A. coverage_report persistido en chat_logs (puede ser
+  // null si la celda no pasó por el scope rail). Cuando contiene
+  // submetrics_coverage, el assert A9 conmuta a la lógica nueva
+  // (umbral SUBMETRICS_COVERAGE_MIN). Si es null o no contiene
+  // submetrics_coverage, A9 conserva su comportamiento legacy
+  // (regresión cero).
+  coverage_report?: Record<string, unknown> | null;
 };
 
 export type AssertResult = { id: string; ok: boolean; msg?: string };
@@ -173,6 +180,34 @@ function a8_models_coverage(ctx: AssertCtx): AssertResult {
 function a9_ranking_enrichment(ctx: AssertCtx): AssertResult {
   if (ctx.caseSpec.expected_skill !== "sectorRanking") return { id: "A9_ranking_enrichment", ok: true };
   const md = ctx.markdown;
+
+  // Fase 2 — Eje A. Si el coverage_report trae submetrics_coverage,
+  // A9 cambia su semántica: solo exige las sub-métricas con cobertura
+  // >= 0.70 (SUBMETRICS_COVERAGE_MIN) en el dataset entregado al LLM.
+  // Las que están por debajo del umbral se IGNORAN: ni se exigen ni se
+  // marcan como missing. Esto convierte A9 en un assert anti-fabricación
+  // alineado con el slot del prompt (la lista de "exigibles" coincide
+  // 1:1 con la lista que vio el modelo).
+  const SUBMETRICS_COVERAGE_MIN = 0.70;
+  const sm = (ctx.coverage_report as any)?.submetrics_coverage;
+  if (sm && sm.coverage && typeof sm.coverage === "object") {
+    const required: string[] = RIX_METRICS.filter(
+      (m) => Number(sm.coverage[m] ?? 0) >= SUBMETRICS_COVERAGE_MIN,
+    );
+    if (required.length === 0) {
+      // No hay ninguna exigible (dataset muy parcial): A9 pasa por defecto.
+      return { id: "A9_ranking_enrichment", ok: true };
+    }
+    const missing = required.filter((m) => !new RegExp(`\\b${m}\\b`).test(md));
+    if (missing.length === 0) return { id: "A9_ranking_enrichment", ok: true };
+    return {
+      id: "A9_ranking_enrichment",
+      ok: false,
+      msg: `Sub-métricas exigibles ausentes (cov>=70%): ${missing.join(", ")}`,
+    };
+  }
+
+  // Comportamiento legacy (Fase 1, regresión cero cuando flag OFF):
   const missing = RIX_METRICS.filter((m) => !new RegExp(`\\b${m}\\b`).test(md));
   if (missing.length === 0) return { id: "A9_ranking_enrichment", ok: true };
   return { id: "A9_ranking_enrichment", ok: false, msg: `Sub-métricas ausentes: ${missing.join(", ")}` };
