@@ -1,64 +1,79 @@
-## Objetivo
+# Plan — Fix bugs detectados en informe IBEX-35 / ChatGPT (5 semanas)
 
-Alinear el Dashboard con el Visor (informes) corrigiendo F1, F2, F3 y F5 — sin tocar el agente RIX ni el pipeline. Todo el cambio queda en hook + UI.
+Tres bugs identificados, todos en `supabase/functions/chat-intelligence-v2`. No se toca UI ni base de datos.
 
-## Alcance (lo que SÍ entra)
+---
 
-**F1 — Agregación por periodo (multi-semana)**
-- Nuevo modo "Periodo" en el filtro de fecha del Dashboard, además del modo actual "Semana" (snapshot). 
-- Cuando el usuario elige rango (p.ej. 2026-04-10 → 2026-05-09), el hook agrega RIX y sub-métricas con la **misma lógica que `sectorRanking.ts`**: media simple por `(ticker, model)` sobre las semanas que caen en el rango (eje domingo, `07_period_to`).
-- El modo "Semana" actual (un único `batchNumber`) queda intacto como default.
+## B1 — Bibliografía cita empresas fuera del ranking (CRÍTICO)
 
-**F2 — Multi-modelo en UI**
-- El selector actual (radio: Todos / ChatGPT / Gemini / …) pasa a soportar selección múltiple via toggles. "Todos" sigue disponible.
-- Estado interno: `aiFilter: AIFilter[]` (array) en lugar de `AIFilter` (string). Compatibilidad: si solo hay 1 modelo, el render se comporta como hoy.
-- El hook recibe `modelFilters: string[]` y filtra `02_model_name` por inclusión.
+**Causa**: `fetchSectorSourceRows()` (línea 1109 de `skills/sectorRanking.ts`) trae las respuestas brutas de **todo el alcance** (IBEX-35 = 35 empresas). Cuando el `topN` efectivo es 5, las URLs de las 30 empresas restantes (Vitrinor, AENA, etc.) se cuelan en `extractCitedSources` y llegan al Anexo + al cuerpo.
 
-**F3 — Granularidad de subsector**
-- Nuevo filtro **Subsector** (combobox) bajo el filtro de Sector. Lee de `repindex_root_issuers.subsector` (columna ya existente en BD).
-- Hook acepta `subsectorFilter`. Cuando hay subsector elegido, el filtro de sector se respeta como ámbito superior pero el ranking/agregación se calcula sobre el subsector exacto.
+**Fix** en `skills/sectorRanking.ts` (≈línea 1108-1113):
+- Calcular `rankedTickers = ranking.map(r => r.ticker.toUpperCase())` antes de pedir source rows.
+- Pasar `rankedTickers` (no `scopeTickers`) a `fetchSectorSourceRows()` cuando el ranking sea estrictamente menor que el alcance solicitado (top-N explícito).
+- Añadir log: `cited_sources_scope=ranked|full | tickers=N`.
+- Mismo `rankedTickers` se usa ya en `buildPerCompanySourceList` (verificar que filtre).
 
-**F5 — Compatibilidad de filtros (orden de precedencia)**
-- Cuando el usuario combina IBEX-35 + un subsector que mezcla cotizadas/no-cotizadas, el Dashboard ya no devuelve vacío: aplica el subsector como filtro principal y muestra un badge "Universo ajustado: subsector tiene precedencia sobre índice" para que el usuario lo entienda.
-- Documentado con tooltip; sin cambios silenciosos.
+Resultado esperado: Anexo solo cita URLs de TEF/BBVA/MRL/BKT/CLNX. Total URLs caerá de ~599 a ~80-150.
 
-## Fuera de alcance (NO entra)
+---
 
-- No tocamos `chat-intelligence-v2` ni `sectorRanking.ts`.
-- No tocamos RLS, migraciones, ni `rix_runs_v2`.
-- Modo Consenso sigue operando exactamente como hoy (sólo se le pasan los filtros nuevos).
-- Cards view se adapta de forma mínima — la prioridad es la vista Lista (es la que el usuario contrasta con el informe).
+## B2 — Lenguaje multi-modelo en informe single-model
 
-## Detalle técnico
+**Causa A** (cuerpo): `renderCitedSourcesBlock()` en `datapack/citedSources.ts` siempre escribe "**N modelos** que los citan" y "Fuentes citadas por **los modelos de IA**" en plural, aunque haya 1 solo modelo.
 
-### `src/hooks/useUnifiedRixRuns.ts`
-- `UseUnifiedRixRunsOptions`: añadir `modelFilters?: string[]`, `subsectorFilter?: string`, `dateRange?: { from: Date; to: Date } | null`, `aggregationMode?: 'snapshot' | 'period'`.
-- Mantener `modelFilter`/`sectorFilter` actuales para no romper otros consumidores; si llega `modelFilters` con length>0 tiene precedencia.
-- Nueva rama de agregación cuando `aggregationMode === 'period'`: 
-  1. Cargar todos los `rix_runs_v2` cuyo `07_period_to` ∈ `[from, to]`.
-  2. Agrupar por `(ticker, model_name)`, calcular media de `rix_score` y de cada `*_score`.
-  3. Devolver filas sintéticas con `id = 'agg-{ticker}-{model}-{from}-{to}'`, `batch_execution_date = to`.
-- En el `select` del SELECT de `repindex_root_issuers` añadir `, subsector`.
-- F5: si `ibexFamilyFilter !== 'all'` y `subsectorFilter !== 'all'` y la intersección queda vacía, emitir `aggregationOverride: 'subsector'` en el resultado y aplicar sólo el subsector.
+**Fix A** en `datapack/citedSources.ts`:
+- Añadir parámetro opcional `singleModelLabel?: string` a `renderCitedSourcesBlock`.
+- Si está presente: cambiar título a `**Fuentes citadas por ${label}**`, suprimir "medidos por nº de modelos que los citan", omitir badges de modelos en cada línea (solo dominio + nº URLs).
 
-### `src/pages/Dashboard.tsx`
-- Estado: `aiFilters: AIFilter[]` (array). Selector pasa a multi-toggle (los botones se mantienen visualmente pero permiten click acumulativo). "Todos" reinicia al array vacío + `all`.
-- Nuevo bloque de filtro de fecha con dos modos: "Semana" (Select actual) o "Periodo" (DateRangePicker con calendario rango).
-- Nuevo combobox "Subsector" alimentado por hook nuevo `useSubsectorCategories` (mismo patrón que `useSectorCategories`).
-- Badge informativo cuando F5 dispara la sobreescritura de universo.
-- `setPageContext` se actualiza con los nuevos campos para que el chat los reciba.
+**Causa B** (texto fijo en `buildSingleModelRankingRules`): la regla §5 dice "Fuentes citadas por ${model}" pero el bloque sustituido (`citedSourcesFull`) introduce el texto plural. Pasar `singleModelLabel = model` desde `sectorRanking.ts` cuando `isSingleModel === true`.
 
-### Hook nuevo: `src/hooks/useSubsectorCategories.ts`
-- Lista distinct de `subsector` desde `repindex_root_issuers` (filtra null/empty).
-- Refleja `useSectorCategories` salvo el campo.
+**Causa C** (LLM): el prompt single-model ya prohíbe mencionar otros modelos pero no veta literales tipo "Ningún dominio coincide entre modelos". Añadir bullet:
+- `PROHIBIDO usar las frases "entre modelos", "ningún modelo coincide", "los demás modelos (Gemini, DeepSeek, Grok, Qwen)" o cualquier referencia a IAs ausentes; describe únicamente lo que ${model} cita.`
+
+---
+
+## B3 — Anti-fabricación en sección 4 (Recomendaciones)
+
+**Causa**: `buildSingleModelRankingRules` §4 obliga a "(c) KPI cuantitativo: métrica + valor actual + **target** + **horizonte**" y "(d) verbo + entregable + **plazo**". Esto **fuerza** al LLM a inventar fechas (`Q4-2026`, `AGM-2027`), targets pseudo-precisos (`+7,7 pts`) y entregables ficticios ("5 white papers GSMA"). Lo mismo ocurre en `buildRankingRules` §7.
+
+**Fix** en `prompts/rankingMode.ts` — reescribir las reglas de recomendaciones para alinear con `analytical-lens-and-anti-fabrication-logic`:
+
+§7 (multi-modelo) y §4 (single-model) → nueva redacción:
+- (a) ESPECÍFICA para una empresa concreta del ranking (ticker + nombre).
+- (b) Diagnóstico cuantificado: métrica + valor actual exacto del DataPack + brecha respecto al techo del grupo (max-min observado).
+- (c) Acción concreta vinculada a fuentes del DataPack (medio/dominio real ya citado).
+- (d) Prioridad explícita (alta/media/baja) según magnitud de la brecha.
+- **PROHIBIDO**: inventar fechas (`Q1-2027`, `FY-2026`, `AGM-2027`), horizontes temporales ("en 6 meses"), targets numéricos pseudo-precisos (`target 45`, `+7,7 pts`), entregables específicos no documentados ("5 white papers", "data-room", "dos consejeros ESG"), nombres de programas o protocolos.
+- **PERMITIDO**: lenguaje accionable cualitativo ("reforzar cobertura en Tier 1", "publicar dossier técnico", "abrir diálogo con analistas ESG"), priorización por brecha métrica.
+
+Añadir bullet duro al final de cada bloque:
+- `Cualquier número en una recomendación debe existir LITERALMENTE en el DataPack. Si no aparece, usa lenguaje cualitativo.`
+
+---
+
+## B4 — Cosmético
+
+En el LLM ya se pide en single-model `## 5. Fuentes citadas por ${model}`, pero al sustituir el marcador, el bloque inserta "Fuentes citadas por los modelos de IA" como subtítulo en negrita. Resuelto por **B2 Fix A** (parámetro `singleModelLabel`).
+
+---
+
+## Archivos afectados (3)
+
+1. `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts` — filtrar source rows por `rankedTickers`; pasar `singleModelLabel` a `renderCitedSourcesBlock`.
+2. `supabase/functions/chat-intelligence-v2/datapack/citedSources.ts` — parámetro opcional `singleModelLabel`; texto adaptativo singular/plural.
+3. `supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts` — reescribir §7 (multi) y §4 (single) eliminando obligación de fechas/targets/entregables; añadir veto explícito a "entre modelos" en single-model.
 
 ## Validación
 
-1. Repetir el informe **IBEX-35 · ChatGPT · 2026-04-10→2026-05-09** desde el Visor y desde el Dashboard (modo Periodo + ChatGPT seleccionado). Top 5 y media RIX deben coincidir al decimal.
-2. Snapshot de 1 semana (2026-05-03) sin cambios — debe coincidir con el informe single-week.
-3. Multi-modelo (ChatGPT + Gemini) en Dashboard: la lista debe mostrar 2 filas por ticker (una por modelo), no fusionarlas.
-4. F5: IBEX-35 + Subsector "Hospitales" → badge visible + lista no vacía.
+Reproducir el mismo informe (IBEX-35 · ChatGPT · 2026-04-10→2026-05-09):
+- B1: contar URLs del Anexo, esperar solo dominios que mencionen TEF/BBVA/MRL/BKT/CLNX. `total_urls` ≪ 599.
+- B2: buscar "entre modelos", "Gemini", "DeepSeek", "Grok", "Qwen" en cuerpo → 0 ocurrencias. Subtítulo §5 = "Fuentes citadas por ChatGPT".
+- B3: buscar `Q\d-20\d\d`, `target \d`, `+\d,\d pts`, "AGM", "FY-" en sección Recomendaciones → 0 ocurrencias.
 
-## Entregables
+## Fuera de alcance
 
-- 1 hook modificado, 1 hook nuevo, 1 página modificada. Sin migraciones, sin cambios de edge functions.
+- Dashboard / Visor (UI) — no se tocan.
+- `recommendations.ts` (bloque determinista, ya cumple anti-mediana) — no se modifica.
+- RLS, migraciones, schemas.
+- Modos multi-modelo con ≥2 IAs (no afectados por B2).
