@@ -59,6 +59,65 @@ export function scrubCitedSourcesMarker(text: string | null | undefined): { text
   return { text: cleaned, scrubbed: cleaned !== safe };
 }
 
+// ── Stress-Matrix-driven anti-fabrication scrubber ──────────────────
+// Defence-in-depth post-stream sanitizer. Replaces banned tokens with
+// neutral equivalents so the audit pipeline (stress-matrix-runner) and
+// the persisted markdown stay clean. Returns the scrubbed text + a list
+// of rules that fired (for `response_meta.scrub_log`).
+//
+// IMPORTANT: this does NOT touch the live SSE stream — that is mitigated
+// by the prompt-level rules in antiHallucination.ts and rankingMode.ts.
+// This sanitizer is the safety net for storage / audit / regression.
+
+export interface ScrubResult { text: string; rules_fired: string[] }
+
+const MEDIANA_RE = /\bmediana\b/gi;
+const RIX_MEDIO_RE = /\bRIX\s+medio\b/gi;
+const PROMEDIO_IA_RE = /\b(promedio|media)\s+entre\s+IAs?\b/gi;
+const WHITE_PAPER_RE = /\bwhite[-\s]?paper(s)?\b/gi;
+const LIBRO_BLANCO_RE = /\blibros?\s+blancos?\b/gi;
+const DATA_ROOM_RE = /\bdata[-\s]?room(s)?\b/gi;
+const ROADSHOW_RE = /\broadshow(s)?\b/gi;
+
+// Single-model leaks (only applied when modelFilter is set).
+const SM_ENTRE_MODELOS_RE = /\bentre\s+modelos\b/gi;
+const SM_CONSENSO_MULTI_RE = /\bconsenso\s+multi(?:[-\s]?modelo)?\b/gi;
+const SM_LOS_DEMAS_RE = /\blos\s+dem[aá]s\s+modelos\b/gi;
+
+export function sanitizeFinalMarkdown(
+  text: string | null | undefined,
+  opts: { modelFilter?: string | null } = {},
+): ScrubResult {
+  const fired: string[] = [];
+  let out = (text ?? "").toString();
+  if (!out) return { text: out, rules_fired: fired };
+
+  const apply = (re: RegExp, repl: string, ruleId: string) => {
+    const next = out.replace(re, repl);
+    if (next !== out) { fired.push(ruleId); out = next; }
+  };
+
+  // Anti-mediana (Core memory rule).
+  apply(MEDIANA_RE, "referencia", "anti_mediana");
+  apply(RIX_MEDIO_RE, "RIX de referencia", "rix_medio");
+  apply(PROMEDIO_IA_RE, "rango entre IAs", "promedio_ias");
+
+  // Anti-fabrication entregables.
+  apply(WHITE_PAPER_RE, "documento técnico", "white_paper");
+  apply(LIBRO_BLANCO_RE, "documento técnico", "libro_blanco");
+  apply(DATA_ROOM_RE, "dossier informativo", "data_room");
+  apply(ROADSHOW_RE, "ronda de presentaciones", "roadshow");
+
+  // Single-model: comparativo cross-model leaks.
+  if (opts.modelFilter) {
+    apply(SM_ENTRE_MODELOS_RE, "en este modelo", "sm_entre_modelos");
+    apply(SM_CONSENSO_MULTI_RE, "lectura del modelo", "sm_consenso_multi");
+    apply(SM_LOS_DEMAS_RE, "el resto de IAs (no incluidas en esta vista)", "sm_los_demas");
+  }
+
+  return { text: out, rules_fired: fired };
+}
+
 export function validateSkillOutput(
   content: string | null | undefined,
   opts: OutputValidationOptions = {},
