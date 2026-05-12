@@ -677,8 +677,8 @@ function renderSingleModelRankingTable(
   const unit = coverage.isSnapshot ? "snapshot" : "semanas";
   const orderLabel =
     orderHint === "asc"
-      ? `menor RIX medio según ${model} en el periodo (peores primero)`
-      : `mayor RIX medio según ${model} en el periodo; desempate por número de observaciones`;
+      ? `menor RIX de referencia según ${model} en el periodo (peores primero)`
+      : `mayor RIX de referencia según ${model} en el periodo; desempate por número de observaciones`;
   const footnote = [
     `*Criterio de ordenación: ${orderLabel}.*`,
     `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`,
@@ -735,7 +735,7 @@ function renderSingleModelWeeklyBreakdown(
   });
   const footnote =
     `*Cada celda es el RIX semanal de ${model} (eje domingo, igual que el dashboard). ` +
-    `La columna "Media (${model})" replica la del ranking agregado.*`;
+    `La columna "Referencia (${model})" replica la del ranking agregado.*`;
   return [
     `**Desglose semanal según ${model}**`,
     "",
