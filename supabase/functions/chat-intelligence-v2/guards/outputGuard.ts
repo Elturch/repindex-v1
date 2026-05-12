@@ -71,6 +71,19 @@ export function scrubCitedSourcesMarker(text: string | null | undefined): { text
 
 export interface ScrubResult { text: string; rules_fired: string[] }
 
+// Fase 1 — Congelacion de inyectores cosmeticos.
+// Lectura perezosa de FREEZE_COSMETIC_INJECTORS (default=true). Se evalua
+// en cada llamada para permitir toggle en caliente sin redeploy.
+function _isCosmeticInjectorsFrozen(): boolean {
+  try {
+    const raw = (Deno.env.get("FREEZE_COSMETIC_INJECTORS") ?? "").trim().toLowerCase();
+    if (raw === "") return true;
+    return !(raw === "false" || raw === "0" || raw === "off" || raw === "no");
+  } catch {
+    return true;
+  }
+}
+
 const MEDIANA_RE = /\bmediana\b/gi;
 const RIX_MEDIO_RE = /\bRIX\s+medio\b/gi;
 // Variantes adicionales que se cuelan en informes single-model y rankings.
@@ -108,6 +121,13 @@ export function sanitizeFinalMarkdown(
   const fired: string[] = [];
   let out = (text ?? "").toString();
   if (!out) return { text: out, rules_fired: fired };
+
+  // Fase 1 — Cosmetic injector frozen: devolver el texto tal cual lo emitio
+  // el LLM. Las reglas anti-mediana / anti-fabricacion / single-model leaks
+  // quedan inactivas pero VISIBLES en el repo para rollback inmediato.
+  if (_isCosmeticInjectorsFrozen()) {
+    return { text: out, rules_fired: ["__frozen_phase1__"] };
+  }
 
   const apply = (re: RegExp, repl: string, ruleId: string) => {
     const next = out.replace(re, repl);

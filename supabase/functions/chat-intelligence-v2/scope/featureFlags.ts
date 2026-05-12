@@ -13,6 +13,20 @@ export function isUseScopedSkillsEnabled(): boolean {
   return readBool("USE_SCOPED_SKILLS");
 }
 
+// Fase 1 — Congelacion de inyectores cosmeticos.
+// Default = true durante toda la Fase 1: el output del LLM sale CRUDO, sin
+// frase MEL forzada, sin tabla de 8 metricas auto-rellenada y sin bloque
+// de bibliografia auto-inyectado. Para descongelar puntualmente (debug)
+// basta con FREEZE_COSMETIC_INJECTORS=false en el entorno.
+export function isCosmeticInjectorsFrozen(): boolean {
+  const raw = (Deno.env.get("FREEZE_COSMETIC_INJECTORS") ?? "").trim().toLowerCase();
+  if (raw === "") return true; // default Fase 1
+  return !(raw === "false" || raw === "0" || raw === "off" || raw === "no");
+}
+
 export function scopeFlagsSnapshot(): Record<string, boolean> {
-  return { use_scoped_skills: isUseScopedSkillsEnabled() };
+  return {
+    use_scoped_skills: isUseScopedSkillsEnabled(),
+    freeze_cosmetic_injectors: isCosmeticInjectorsFrozen(),
+  };
 }
