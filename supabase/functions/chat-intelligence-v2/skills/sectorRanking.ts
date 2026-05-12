@@ -1237,6 +1237,8 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
       buildPerCompanyDimensionsBlock(rows, `[RIX-V2][companyAnalysis]`).block,
+      buildScopeNotice(scopeLabel, scopeTickers?.length ?? null),
+      buildDeterministicDimensionsTable(rows, ranking, isSingleModel ? (models[0] as ModelName) : undefined),
       orderHint,
       isSingleModel,
     );
@@ -1297,6 +1299,7 @@ export const sectorRankingSkill: Skill = {
         const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
       }
+      finalContent = finalContent + buildTickerCitedSourcesBlock(sourceRows, ranking);
       // Final safety net: scrub residual variants of the marker if any survived.
       finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
       console.log(`${tag} cited_sources_substitution | hasUrls=${hasUrls} markerPresent=${markerPresent}`);
@@ -1311,6 +1314,17 @@ export const sectorRankingSkill: Skill = {
         _s7Agg.period_summary.submetrics_range,
       );
       finalContent = _s7.content;
+    }
+
+    // Final stream-safe sanitizer: this runs BEFORE onChunk, unlike the
+    // orchestrator-level safety net. It keeps live SSE, DB persistence and
+    // stress-runner markdown aligned.
+    {
+      const cleaned = sanitizeFinalMarkdown(finalContent, { modelFilter: isSingleModel ? String(models[0]) : null });
+      finalContent = cleaned.text;
+      if (cleaned.rules_fired.length > 0) {
+        console.log(`${tag} final_stream_sanitizer | rules=${cleaned.rules_fired.join(",")}`);
+      }
     }
 
     // P1-A.2 — Emit the fully-sanitized finalContent as a single chunk
