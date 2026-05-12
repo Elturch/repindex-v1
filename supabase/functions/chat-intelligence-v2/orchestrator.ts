@@ -757,7 +757,13 @@ export async function process(
         strict_subsector: strictSubsectorLabel,
         sector_hint: sectorHint,
       });
-      const sq = await runScopedQuery(scopeContract, supabase);
+      // Fase 2 — Eje A. Cuando ENRICH_RANKING_SUBMETRICS=true, pedimos a
+      // runScopedQuery que rellene submetrics_coverage / submetrics_summary
+      // sobre las MISMAS filas (no añade roundtrip a DB ni cambia filtros).
+      const enrichSubmetrics = isEnrichRankingSubmetricsEnabled();
+      const sq = await runScopedQuery(scopeContract, supabase, {
+        enrich_submetrics: enrichSubmetrics,
+      });
       coverageReport = sq.coverage_report;
       auditReport = await auditScope(scopeContract, sq.rows, sq.coverage_report, supabase);
       console.log(`${logPrefix} scope rail | flag=${useScoped} | tickers=${scopeContract.tickers.length} | rows=${sq.rows.length} | audit_ok=${auditReport.ok}`);
