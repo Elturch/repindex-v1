@@ -329,6 +329,7 @@ export function renderCitedSourcesBlock(
   report: CitedSourcesReport,
   periodFrom?: string | null,
   periodTo?: string | null,
+  singleModelLabel?: string,
 ): string {
   if (report.totalUrls === 0) return "";
 
@@ -337,26 +338,36 @@ export function renderCitedSourcesBlock(
   // mantiene esa clasificación detallada).
   void periodFrom; void periodTo;
 
+  const isSingle = !!singleModelLabel;
+  const sourceLabel = isSingle ? singleModelLabel : "los modelos de IA";
+  const coverageBy = isSingle
+    ? "ordenados por nº de URLs citadas"
+    : "medidos por nº de modelos que los citan";
   const lines: string[] = [
-    "**Fuentes citadas por los modelos de IA**",
+    `**Fuentes citadas por ${sourceLabel}**`,
     "",
-    `Las **${report.totalUrls} URLs únicas** detectadas proceden de **${report.totalDomains} medios distintos** y han sido extraídas directamente de las respuestas brutas de los modelos de IA (sin invención).`,
+    `Las **${report.totalUrls} URLs únicas** detectadas proceden de **${report.totalDomains} medios distintos** y han sido extraídas directamente de las respuestas brutas ${isSingle ? `de ${sourceLabel}` : "de los modelos de IA"} (sin invención).`,
     "",
-    `A continuación, los **${Math.min(TOP_DOMAINS_INLINE, report.totalDomains)} medios con más cobertura** (medidos por nº de modelos que los citan). El listado completo URL por URL está disponible en el **Anexo: Referencias Citadas por las IAs** al final del informe.`,
+    `A continuación, los **${Math.min(TOP_DOMAINS_INLINE, report.totalDomains)} medios con más cobertura** (${coverageBy}). El listado completo URL por URL está disponible en el **Anexo: Referencias Citadas ${isSingle ? `por ${sourceLabel}` : "por las IAs"}** al final del informe.`,
     "",
   ];
 
   // Resumen compacto top-N por dominio (ya viene ordenado por nº modelos desc).
   const topDomains = report.byDomain.slice(0, TOP_DOMAINS_INLINE);
   for (const d of topDomains) {
-    const badges = d.models
-      .map((m) => {
-        const letter = MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?";
-        const color = MODEL_BADGE_COLOR[m] ?? "#6b7280";
-        return `<span style="background-color:${color};color:white;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:bold;margin-right:2px;display:inline-block;line-height:1.2">${letter}</span>`;
-      })
-      .join("");
-    lines.push(`- ${badges} **${d.domain}** — ${d.sources.length} URL${d.sources.length === 1 ? "" : "s"} citadas por ${d.models.length} modelo${d.models.length === 1 ? "" : "s"}`);
+    const badges = isSingle
+      ? ""
+      : d.models
+          .map((m) => {
+            const letter = MODEL_BADGE[m] ?? m[0]?.toUpperCase() ?? "?";
+            const color = MODEL_BADGE_COLOR[m] ?? "#6b7280";
+            return `<span style="background-color:${color};color:white;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:bold;margin-right:2px;display:inline-block;line-height:1.2">${letter}</span>`;
+          })
+          .join("");
+    const tail = isSingle
+      ? `${d.sources.length} URL${d.sources.length === 1 ? "" : "s"} citadas`
+      : `${d.sources.length} URL${d.sources.length === 1 ? "" : "s"} citadas por ${d.models.length} modelo${d.models.length === 1 ? "" : "s"}`;
+    lines.push(`- ${badges ? badges + " " : ""}**${d.domain}** — ${tail}`);
   }
   lines.push("");
   if (report.totalDomains > TOP_DOMAINS_INLINE) {
