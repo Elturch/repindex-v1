@@ -523,6 +523,7 @@ export type Database = {
       }
       chat_logs: {
         Row: {
+          coverage_report: Json | null
           created_at: string
           duration_ms: number | null
           error_message: string | null
@@ -533,11 +534,14 @@ export type Database = {
           models_used: string[] | null
           question: string
           response_type: string
+          scope_audit: Json | null
+          scope_contract: Json | null
           session_id: string | null
           ticker: string | null
           user_id: string | null
         }
         Insert: {
+          coverage_report?: Json | null
           created_at?: string
           duration_ms?: number | null
           error_message?: string | null
@@ -548,11 +552,14 @@ export type Database = {
           models_used?: string[] | null
           question: string
           response_type: string
+          scope_audit?: Json | null
+          scope_contract?: Json | null
           session_id?: string | null
           ticker?: string | null
           user_id?: string | null
         }
         Update: {
+          coverage_report?: Json | null
           created_at?: string
           duration_ms?: number | null
           error_message?: string | null
@@ -563,6 +570,8 @@ export type Database = {
           models_used?: string[] | null
           question?: string
           response_type?: string
+          scope_audit?: Json | null
+          scope_contract?: Json | null
           session_id?: string | null
           ticker?: string | null
           user_id?: string | null
@@ -3187,6 +3196,7 @@ export type Database = {
           asserts_failed: Json | null
           asserts_passed: Json | null
           case_id: string
+          coverage_report: Json | null
           created_at: string
           error_message: string | null
           expected_skill: string | null
@@ -3199,6 +3209,9 @@ export type Database = {
           response_meta: Json | null
           run_id: string
           scope: string | null
+          scope_audit: Json | null
+          scope_contract: Json | null
+          scope_validation: Json | null
           status: string
           weeks: number | null
         }
@@ -3207,6 +3220,7 @@ export type Database = {
           asserts_failed?: Json | null
           asserts_passed?: Json | null
           case_id: string
+          coverage_report?: Json | null
           created_at?: string
           error_message?: string | null
           expected_skill?: string | null
@@ -3219,6 +3233,9 @@ export type Database = {
           response_meta?: Json | null
           run_id: string
           scope?: string | null
+          scope_audit?: Json | null
+          scope_contract?: Json | null
+          scope_validation?: Json | null
           status?: string
           weeks?: number | null
         }
@@ -3227,6 +3244,7 @@ export type Database = {
           asserts_failed?: Json | null
           asserts_passed?: Json | null
           case_id?: string
+          coverage_report?: Json | null
           created_at?: string
           error_message?: string | null
           expected_skill?: string | null
@@ -3239,6 +3257,9 @@ export type Database = {
           response_meta?: Json | null
           run_id?: string
           scope?: string | null
+          scope_audit?: Json | null
+          scope_contract?: Json | null
+          scope_validation?: Json | null
           status?: string
           weeks?: number | null
         }
@@ -4210,6 +4231,33 @@ export type Database = {
           target_type?: string | null
           ticker?: string | null
           tz?: string | null
+        }
+        Relationships: []
+      }
+      v_issuer_scope: {
+        Row: {
+          ibex_family_code: string | null
+          issuer_name: string | null
+          sector_category: string | null
+          subsector: string | null
+          ticker: string | null
+          universe: string | null
+        }
+        Insert: {
+          ibex_family_code?: string | null
+          issuer_name?: string | null
+          sector_category?: string | null
+          subsector?: string | null
+          ticker?: string | null
+          universe?: never
+        }
+        Update: {
+          ibex_family_code?: string | null
+          issuer_name?: string | null
+          sector_category?: string | null
+          subsector?: string | null
+          ticker?: string | null
+          universe?: never
         }
         Relationships: []
       }

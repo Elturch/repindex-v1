@@ -1,0 +1,1 @@
+ALTER VIEW public.v_issuer_scope SET (security_invoker = true);
