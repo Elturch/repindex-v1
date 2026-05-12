@@ -45,10 +45,18 @@ import {
   scopeFlagsSnapshot,
   isEnrichRankingSubmetricsEnabled,
   isTinyUniverseGuardEnabled,
+  isExecNarrativeEnabled,
 } from "./scope/featureFlags.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
 import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
 import { scanTinyUniverse } from "./guards/tinyUniverseGuard.ts";
+import { buildExecNarrativePrelude } from "./prompts/execNarrativePrelude.ts";
+import {
+  validateExecNarrative,
+  buildNumericCorpus,
+  type ExecNarrativeValidationResult,
+} from "./guards/execNarrativeValidator.ts";
+import { EXEC_NARRATIVE_MAX_RETRIES_V1 } from "./scope/policies/execNarrativeLimits.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
@@ -833,7 +841,14 @@ export async function process(
     return { type: "guard_rejection", content: reply };
   }
   console.log(`${logPrefix} dispatching | intent=${parsed.intent} | skill=${skill.name}`);
-  const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk });
+  // Fase 2 — Eje C. Cuando EXEC_NARRATIVE=true, suprimimos el streaming
+  // del primer intento para poder reintentar (E3, máx 2 retries) sin
+  // duplicar texto en SSE. Tras validar emitimos el contenido final
+  // como un único chunk. Con flag OFF: onChunk pasa tal cual (regresión
+  // cero, comportamiento idéntico a Fase 1).
+  const execNarrativeOn = isExecNarrativeEnabled();
+  const skillOnChunk = execNarrativeOn ? undefined : onChunk;
+  const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk: skillOnChunk });
   if (collectedWarnings.length > 0) {
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
     (skillOut as any).warnings = collectedWarnings;
@@ -864,6 +879,17 @@ export async function process(
       systemPrompt = `${systemPrompt}\n\n${slot}`;
       console.log(`${logPrefix} prompt enriched | submetrics_slot_chars=${slot.length}`);
     }
+  }
+
+  // Fase 2 — Eje C. Prelude del relato directivo. Solo si EXEC_NARRATIVE=true.
+  // No inyecta cifras ni reescribe el output: solo le dice al LLM la
+  // estructura exigida (headline ≤12, 3 bullets, "Lectura:" ≤60) y la
+  // exigencia de trazabilidad numérica. El validador post-hoc se aplica
+  // sobre el markdown final con E3 (máx 2 reintentos).
+  if (execNarrativeOn) {
+    const prelude = buildExecNarrativePrelude();
+    systemPrompt = `${systemPrompt}\n\n${prelude}`;
+    console.log(`${logPrefix} prompt enriched | exec_narrative_prelude_chars=${prelude.length}`);
   }
 
   // 10. Content: real skills deposit the LLM answer as the first pre-rendered
@@ -961,6 +987,69 @@ export async function process(
     } catch (tuErr) {
       console.warn("[tinyUniverseGuard] failed (non-fatal):", tuErr);
     }
+  }
+
+  // Fase 2 — Eje C. Validador EXEC_NARRATIVE + retry loop (E3).
+  // Cuando flag ON: valida estructura (headline ≤12, 3 bullets,
+  // Lectura ≤60) y trazabilidad numérica. Si falla, reintenta el skill
+  // hasta MAX_RETRIES_V1 (=2) veces (3 intentos totales). Tras el último
+  // fallo, devuelve el output crudo del último intento y publica el
+  // detalle en metadata.exec_narrative para que index.ts emita el
+  // warning SSE estructurado y el runner aplique C1/C2.
+  // Con flag OFF: bloque entero saltado, onChunk ya streameó normal,
+  // regresión cero garantizada.
+  if (execNarrativeOn) {
+    let attempt = 1;
+    const corpus = buildNumericCorpus([
+      skillOut.datapack?.raw_rows ?? null,
+      skillOut.datapack?.pre_rendered_tables ?? null,
+      coverageReport ?? null,
+    ]);
+    let validation: ExecNarrativeValidationResult = validateExecNarrative(content, { numeric_corpus: corpus });
+    while (!validation.ok && attempt <= EXEC_NARRATIVE_MAX_RETRIES_V1) {
+      attempt++;
+      console.warn(
+        `[execNarrative] attempt=${attempt - 1} failed | ` +
+        `violations=[${validation.violations.join("|")}] | retrying`,
+      );
+      try {
+        const retryOut = await skill.execute({ parsed, supabase, logPrefix, onChunk: undefined });
+        const retryContent = retryOut.datapack?.pre_rendered_tables?.[0];
+        if (retryContent && retryContent.length > 0) {
+          content = retryContent;
+          // Persist last attempt's datapack so downstream sees latest content.
+          skillOut.datapack.pre_rendered_tables[0] = retryContent;
+        }
+      } catch (retryErr) {
+        console.warn(`[execNarrative] retry threw (non-fatal):`, retryErr);
+        break;
+      }
+      validation = validateExecNarrative(content, { numeric_corpus: corpus });
+    }
+    (skillOut.metadata as any) = {
+      ...(skillOut.metadata ?? {}),
+      exec_narrative: {
+        ok: validation.ok,
+        attempts: attempt,
+        max_attempts: EXEC_NARRATIVE_MAX_RETRIES_V1 + 1,
+        violations: validation.violations,
+        structure_ok: validation.structure_ok,
+        traceability_ok: validation.traceability_ok,
+        numbers_total: validation.numbers_total,
+        numbers_unmatched: validation.numbers_unmatched.slice(0, 10),
+        policy_version: validation.policy_version,
+      },
+    };
+    if (!validation.ok) {
+      console.warn(
+        `[execNarrative] FINAL FAIL after ${attempt} attempts | ` +
+        `violations=[${validation.violations.join("|")}] | returning raw output`,
+      );
+    } else {
+      console.log(`[execNarrative] OK on attempt ${attempt} | policy_v=${validation.policy_version}`);
+    }
+    // Single-shot stream of the final accepted (or last-attempt raw) content.
+    try { onChunk?.(content); } catch (_) { /* noop */ }
   }
 
   // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
