@@ -18,6 +18,7 @@ import { buildCoverageRules } from "../prompts/coverageRules.ts";
 import { buildRankingRules } from "../prompts/rankingMode.ts";
 import { buildSingleModelRankingRules } from "../prompts/rankingMode.ts";
 import { streamOpenAIResponse } from "../shared/streamOpenAI.ts";
+import { sanitizeFinalMarkdown } from "../guards/outputGuard.ts";
 import {
   assembleReport,
   buildPreRenderedSection,
@@ -133,6 +134,38 @@ function buildPerCompanySourceList(rows: any[]): string {
       .map(([d, n]) => `${d} (${n})`)
       .join(", ");
     if (top) lines.push(`- ${info.name} (${ticker}): ${top}`);
+  }
+  return lines.join("\n");
+}
+
+function buildTickerCitedSourcesBlock(rows: any[], ranking: RankingRow[]): string {
+  const URL_RE = /https?:\/\/[^\s)\]"<>]+/g;
+  const byTicker = new Map<string, { name: string; urls: string[] }>();
+  const wanted = new Set(ranking.map((r) => r.ticker));
+  for (const r of rows) {
+    const ticker = String(r["05_ticker"] ?? "").trim().toUpperCase();
+    if (!wanted.has(ticker)) continue;
+    const slot = byTicker.get(ticker) ?? { name: String(r["03_target_name"] ?? ticker), urls: [] };
+    for (const col of ALL_BRUTO_COLS) {
+      const txt = r[col];
+      if (!txt || typeof txt !== "string") continue;
+      for (const raw of txt.match(URL_RE) ?? []) {
+        const clean = raw.replace(/[.,;:!?]+$/g, "");
+        if (!slot.urls.includes(clean)) slot.urls.push(clean);
+        if (slot.urls.length >= 3) break;
+      }
+      if (slot.urls.length >= 3) break;
+    }
+    byTicker.set(ticker, slot);
+  }
+  const lines = ["", "**Anexo: referencias citadas por empresa del ranking**", ""];
+  for (const r of ranking) {
+    const entry = byTicker.get(r.ticker);
+    if (!entry || entry.urls.length === 0) {
+      lines.push(`- ${r.name} (${r.ticker}): Sin fuentes verificadas en el período.`);
+    } else {
+      lines.push(`- ${r.name} (${r.ticker}): ${entry.urls.join(" · ")}`);
+    }
   }
   return lines.join("\n");
 }
