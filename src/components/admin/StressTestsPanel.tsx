@@ -52,6 +52,8 @@ type DiffKind = "fixed" | "regressed" | "still_failing" | "still_passing" | "new
 type Filter = "all" | "failing" | "regressed" | "fixed";
 
 const FAMILIES = [
+  { value: "phase1-small", label: "Fase 1 · small (subsectores N≤3, multi)" },
+  { value: "phase1-full", label: "Fase 1 · full (21 celdas hotels-reits)" },
   { value: "hotels-reits", label: "Hotels + REITs (foco fallo)" },
   { value: "small", label: "Subsectores ≤5 (small)" },
   { value: "sanity", label: "Sanity IBEX" },
