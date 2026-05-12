@@ -989,6 +989,69 @@ export async function process(
     }
   }
 
+  // Fase 2 — Eje C. Validador EXEC_NARRATIVE + retry loop (E3).
+  // Cuando flag ON: valida estructura (headline ≤12, 3 bullets,
+  // Lectura ≤60) y trazabilidad numérica. Si falla, reintenta el skill
+  // hasta MAX_RETRIES_V1 (=2) veces (3 intentos totales). Tras el último
+  // fallo, devuelve el output crudo del último intento y publica el
+  // detalle en metadata.exec_narrative para que index.ts emita el
+  // warning SSE estructurado y el runner aplique C1/C2.
+  // Con flag OFF: bloque entero saltado, onChunk ya streameó normal,
+  // regresión cero garantizada.
+  if (execNarrativeOn) {
+    let attempt = 1;
+    const corpus = buildNumericCorpus([
+      skillOut.datapack?.raw_rows ?? null,
+      skillOut.datapack?.pre_rendered_tables ?? null,
+      coverageReport ?? null,
+    ]);
+    let validation: ExecNarrativeValidationResult = validateExecNarrative(content, { numeric_corpus: corpus });
+    while (!validation.ok && attempt <= EXEC_NARRATIVE_MAX_RETRIES_V1) {
+      attempt++;
+      console.warn(
+        `[execNarrative] attempt=${attempt - 1} failed | ` +
+        `violations=[${validation.violations.join("|")}] | retrying`,
+      );
+      try {
+        const retryOut = await skill.execute({ parsed, supabase, logPrefix, onChunk: undefined });
+        const retryContent = retryOut.datapack?.pre_rendered_tables?.[0];
+        if (retryContent && retryContent.length > 0) {
+          content = retryContent;
+          // Persist last attempt's datapack so downstream sees latest content.
+          skillOut.datapack.pre_rendered_tables[0] = retryContent;
+        }
+      } catch (retryErr) {
+        console.warn(`[execNarrative] retry threw (non-fatal):`, retryErr);
+        break;
+      }
+      validation = validateExecNarrative(content, { numeric_corpus: corpus });
+    }
+    (skillOut.metadata as any) = {
+      ...(skillOut.metadata ?? {}),
+      exec_narrative: {
+        ok: validation.ok,
+        attempts: attempt,
+        max_attempts: EXEC_NARRATIVE_MAX_RETRIES_V1 + 1,
+        violations: validation.violations,
+        structure_ok: validation.structure_ok,
+        traceability_ok: validation.traceability_ok,
+        numbers_total: validation.numbers_total,
+        numbers_unmatched: validation.numbers_unmatched.slice(0, 10),
+        policy_version: validation.policy_version,
+      },
+    };
+    if (!validation.ok) {
+      console.warn(
+        `[execNarrative] FINAL FAIL after ${attempt} attempts | ` +
+        `violations=[${validation.violations.join("|")}] | returning raw output`,
+      );
+    } else {
+      console.log(`[execNarrative] OK on attempt ${attempt} | policy_v=${validation.policy_version}`);
+    }
+    // Single-shot stream of the final accepted (or last-attempt raw) content.
+    try { onChunk?.(content); } catch (_) { /* noop */ }
+  }
+
   // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
   // canonical Section 7 + Cited Sources (companyAnalysis, sectorRanking) are
   // checked stricter; others only get the basic empty/marker-leak checks.
