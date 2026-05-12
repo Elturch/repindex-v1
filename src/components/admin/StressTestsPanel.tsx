@@ -60,6 +60,7 @@ const FAMILIES = [
   { value: "phase1-full", label: "Fase 1 · full (21 celdas hotels-reits)" },
   { value: "phase2-tiny", label: "Fase 2 · tiny universe (B1, flag ON)" },
   { value: "phase2-exec", label: "Fase 2 · exec narrative (C1+C2, flag ON)" },
+  { value: "phase2-full", label: "Fase 2 · full (21 celdas, B1+C1+C2 si flags ON)" },
   { value: "hotels-reits", label: "Hotels + REITs (foco fallo)" },
   { value: "small", label: "Subsectores ≤5 (small)" },
   { value: "sanity", label: "Sanity IBEX" },
