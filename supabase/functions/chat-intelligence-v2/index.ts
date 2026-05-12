@@ -260,6 +260,7 @@ serve(async (req: Request) => {
             previousContext,
             isFollowup,
             question, // FASE C — display-only; orchestrator stores it on parsed.normalized_question
+            { user_id: (body?.user_id ?? null), session_id: sessionId || null },
           );
           const resultMeta = result as Record<string, any>;
           const reportContext = {
