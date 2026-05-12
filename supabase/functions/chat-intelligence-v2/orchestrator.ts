@@ -1087,6 +1087,23 @@ export async function process(
   }
 
   // 11. Response
+  // Paso 2.5 — Telemetría de aislamiento Fase 2. Siempre presente en
+  // metadata para que (a) el frame SSE `done` la propague al FE,
+  // (b) chat_logs.scope_audit.phase2_isolation la persista, (c) el
+  // runner stress-matrix pueda auditar bidireccionalmente.
+  const phase2Telemetry = {
+    phase2_isolation_active: headerCtx.phase2_isolation_active,
+    phase2_unlocked: headerCtx.phase2_unlocked,
+    phase2_flags_effective: {
+      enrich_ranking_submetrics: isEnrichRankingSubmetricsEnabledWithContext(headerCtx),
+      tiny_universe_guard: isTinyUniverseGuardEnabledWithContext(headerCtx),
+      exec_narrative: isExecNarrativeEnabledWithContext(headerCtx),
+    },
+  } as const;
+  (skillOut.metadata as any) = {
+    ...(skillOut.metadata ?? {}),
+    ...phase2Telemetry,
+  };
   return {
     type: "llm_synthesis",
     content,
