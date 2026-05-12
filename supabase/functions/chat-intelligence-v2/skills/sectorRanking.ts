@@ -697,7 +697,7 @@ function renderSingleModelRankingTable(
 /**
  * Weekly breakdown matrix for single-model period mode.
  * Rows = top-N tickers (same order as the aggregate ranking).
- * Columns = each ISO week present in `rawRows` (asc) + Media.
+ * Columns = each ISO week present in `rawRows` (asc) + Referencia.
  * Allows the user to cotejar each week with the dashboard cell-by-cell.
  */
 function renderSingleModelWeeklyBreakdown(
@@ -724,7 +724,7 @@ function renderSingleModelWeeklyBreakdown(
   }
   if (weekSet.size < 2) return null; // only meaningful for multi-week
   const weeks = [...weekSet].sort();
-  const head = ["#", "Empresa", ...weeks, `Media (${model})`];
+  const head = ["#", "Empresa", ...weeks, `Referencia (${model})`];
   const sep = head.map(() => "---").join(" | ");
   const lines = rows.map((r, i) => {
     const cells: string[] = [String(i + 1), `${r.name} (${r.ticker})`];
@@ -863,9 +863,9 @@ function buildUserMessageWithAssembler(
           ? `menor RIX de referencia según ${models[0]} en el periodo (peores primero)`
           : "menor RIX máximo del periodo (peores primero)")
       : orderHint === "divergence"
-        ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
+        ? "mayor dispersión inter-modelo de referencia (más divergencia primero)"
         : (isSingleModel
-            ? `mayor RIX medio según ${models[0]} en el periodo`
+            ? `mayor RIX de referencia según ${models[0]} en el periodo`
             : "mayor RIX máximo del periodo; desempate por suelo RIX más alto");
   const compact = isSingleModel
     ? rows.map((r, i) => `${i + 1}. ${r.name} (${r.ticker}) RIX(${models[0]})=${fmt(r.per_model[models[0] as ModelName])}`).join("\n")
