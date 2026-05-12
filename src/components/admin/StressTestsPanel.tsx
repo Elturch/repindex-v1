@@ -551,18 +551,55 @@ export function StressTestsPanel() {
                 </div>
               )}
 
-              {/* Top asserts fallados */}
-              {summary.assertRanking.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold mb-2">Asserts más fallados ahora</div>
-                  <div className="space-y-1">
-                    {summary.assertRanking.map((a) => (
-                      <div key={a.id} className="flex items-center gap-3 text-xs">
-                        <code className="font-mono bg-muted px-2 py-0.5 rounded">{a.id}</code>
-                        <span className="text-red-600 font-semibold">{a.now} fallos</span>
-                        {prevRun && renderDelta(a.delta, true)}
+              {/* Top asserts fallados — Fase 1 (gating) vs Legacy (observabilidad) */}
+              {(summary.phase1Ranking.length > 0 || summary.legacyRanking.length > 0) && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+                    <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Badge className="bg-primary/20 text-primary text-[10px]">FASE 1 · GATING</Badge>
+                      Asserts de acotación de datos
+                    </div>
+                    {summary.phase1Ranking.length === 0 ? (
+                      <div className="text-xs text-emerald-600 font-medium">
+                        ✅ S1–S5 + SQL_DIFF en verde. Cierre Fase 1 listo.
                       </div>
-                    ))}
+                    ) : (
+                      <div className="space-y-1">
+                        {summary.phase1Ranking.map((a) => (
+                          <div key={a.id} className="flex items-center gap-3 text-xs">
+                            <code className="font-mono bg-background px-2 py-0.5 rounded border">{a.id}</code>
+                            <span className="text-red-600 font-semibold">{a.now} fallos</span>
+                            {prevRun && renderDelta(a.delta, true)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      Estos asserts gobiernan el estado VERDE/ROJO global. Bloquean el cierre de Fase 1.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-muted bg-muted/20 p-3">
+                    <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">LEGACY · OBSERVABILIDAD</Badge>
+                      Asserts narrativos (Fase 2)
+                    </div>
+                    {summary.legacyRanking.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">Sin fallos legacy registrados.</div>
+                    ) : (
+                      <div className="space-y-1">
+                        {summary.legacyRanking.map((a) => (
+                          <div key={a.id} className="flex items-center gap-3 text-xs">
+                            <code className="font-mono bg-background px-2 py-0.5 rounded border opacity-70">{a.id}</code>
+                            <span className="text-amber-700 font-semibold">{a.now} fallos</span>
+                            {prevRun && renderDelta(a.delta, true)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      Reclasificados como objetivo Fase 2. NO bloquean cierre Fase 1.
+                      Esperados tras congelar inyectores cosméticos.
+                    </p>
                   </div>
                 </div>
               )}
