@@ -40,8 +40,13 @@ import {
 } from "./scope/scopeContract.ts";
 import { runScopedQuery, ScopedQueryError, type CoverageReport } from "./data/scopedQuery.ts";
 import { auditScope, ScopeAuditFailed, type ScopeAuditReport } from "./guards/scopeAudit.ts";
-import { isUseScopedSkillsEnabled, scopeFlagsSnapshot } from "./scope/featureFlags.ts";
+import {
+  isUseScopedSkillsEnabled,
+  scopeFlagsSnapshot,
+  isEnrichRankingSubmetricsEnabled,
+} from "./scope/featureFlags.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
+import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
@@ -752,7 +757,13 @@ export async function process(
         strict_subsector: strictSubsectorLabel,
         sector_hint: sectorHint,
       });
-      const sq = await runScopedQuery(scopeContract, supabase);
+      // Fase 2 — Eje A. Cuando ENRICH_RANKING_SUBMETRICS=true, pedimos a
+      // runScopedQuery que rellene submetrics_coverage / submetrics_summary
+      // sobre las MISMAS filas (no añade roundtrip a DB ni cambia filtros).
+      const enrichSubmetrics = isEnrichRankingSubmetricsEnabled();
+      const sq = await runScopedQuery(scopeContract, supabase, {
+        enrich_submetrics: enrichSubmetrics,
+      });
       coverageReport = sq.coverage_report;
       auditReport = await auditScope(scopeContract, sq.rows, sq.coverage_report, supabase);
       console.log(`${logPrefix} scope rail | flag=${useScoped} | tickers=${scopeContract.tickers.length} | rows=${sq.rows.length} | audit_ok=${auditReport.ok}`);
@@ -836,7 +847,22 @@ export async function process(
   }
 
   // 9. Prompt composition
-  const systemPrompt = composePrompt(skillOut.prompt_modules);
+  let systemPrompt = composePrompt(skillOut.prompt_modules);
+
+  // Fase 2 — Eje A. Slot informativo (no instructivo) de sub-métricas
+  // disponibles en el dataset entregado. Solo se añade si:
+  //   (1) ENRICH_RANKING_SUBMETRICS=true en el entorno, y
+  //   (2) tenemos coverage_report.submetrics_coverage calculado, y
+  //   (3) hay >=1 sub-métrica con cobertura >= umbral (si no, slot=null
+  //       y no se inyecta nada → comportamiento idéntico a flag OFF).
+  // Con flag OFF: NO se evalúa, NO se inyecta, NO se modifica el prompt.
+  if (isEnrichRankingSubmetricsEnabled() && coverageReport?.submetrics_coverage) {
+    const slot = buildSubmetricsAvailableSlot(coverageReport.submetrics_coverage);
+    if (slot) {
+      systemPrompt = `${systemPrompt}\n\n${slot}`;
+      console.log(`${logPrefix} prompt enriched | submetrics_slot_chars=${slot.length}`);
+    }
+  }
 
   // 10. Content: real skills deposit the LLM answer as the first pre-rendered
   //     "table" entry AND stream it via onChunk. Stub skills leave that array

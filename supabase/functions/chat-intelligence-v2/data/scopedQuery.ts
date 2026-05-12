@@ -9,6 +9,10 @@
 // Devuelve un coverage_report con estructura fija (ver tipo).
 
 import { isScopeContract, type ScopeContract } from "../scope/scopeContract.ts";
+import {
+  computeSubmetricsCoverage,
+  type SubmetricsCoverage,
+} from "../scope/helpers/computeSubmetricsCoverage.ts";
 
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 20;
@@ -21,17 +25,35 @@ export interface CoverageReport {
   weeks_requested: string[];   // best-effort: semanas observadas; dataset puede tener huecos.
   weeks_returned: string[];
   missing_cells: Array<{ ticker: string; model: string; week: string }>;
+  // Fase 2 — Eje A. Cobertura por sub-métrica y media observada (sin
+  // imputación). Solo se rellena cuando el caller pasa `enrich_submetrics:
+  // true`. Cuando es undefined, los consumidores deben tratarlo como
+  // "no calculado" (no como "cobertura cero"). El flag de feature lo
+  // gobierna en orchestrator.ts.
+  submetrics_coverage?: SubmetricsCoverage;
 }
 
 export interface ScopedQueryResult<T = Record<string, unknown>> {
   rows: T[];
   coverage_report: CoverageReport;
   scope: ScopeContract;
+  // Fase 2 — Eje A. Atajo de acceso al resumen de sub-métricas. Igual
+  // que coverage_report.submetrics_coverage. Solo presente cuando el
+  // caller pasa `enrich_submetrics: true`.
+  submetrics_summary?: SubmetricsCoverage;
 }
 
 export interface ScopedQueryOptions {
   /** Columnas a seleccionar de rix_runs_v2. Si se omite usa el default minimo. */
   columns?: string;
+  /**
+   * Fase 2 — Eje A. Si true, post-procesa las filas con
+   * computeSubmetricsCoverage y rellena coverage_report.submetrics_coverage
+   * + submetrics_summary. NO modifica las filas, ni la query, ni los
+   * filtros, ni la paginación. Default: false → comportamiento idéntico
+   * a Fase 1 (regresión cero).
+   */
+  enrich_submetrics?: boolean;
 }
 
 const DEFAULT_COLUMNS =
@@ -146,6 +168,13 @@ export async function runScopedQuery<T = Record<string, unknown>>(
     weeks_returned: weeksReturned,
     missing_cells,
   };
+
+  // Fase 2 — Eje A. Enriquecimiento opt-in (flag-gated por el caller).
+  if (opts.enrich_submetrics) {
+    const sm = computeSubmetricsCoverage(allRows as any[], c);
+    coverage_report.submetrics_coverage = sm;
+    return { rows: allRows, coverage_report, scope: c, submetrics_summary: sm };
+  }
 
   return { rows: allRows, coverage_report, scope: c };
 }
