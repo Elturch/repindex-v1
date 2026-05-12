@@ -68,6 +68,20 @@ const MODELS = ["multi", "gemini", "deepseek", "grok", "qwen", "perplexity", "ch
 
 const isFail = (s: string) => s === "fail" || s === "error";
 
+// ── Fase 1 vs Legacy ────────────────────────────────────────────────
+// Asserts Fase 1 (acotación de datos): GOBIERNAN el estado pass/fail global.
+//   S1..S5 = scope_audit + SQL_DIFF = validador SQL bit a bit.
+// Asserts Legacy (narrativa): observabilidad. NO bloquean cierre Fase 1.
+//   Vienen prefijados con "L:" desde stress-matrix-runner. Reclasificados
+//   como objetivos de Fase 2 (relato directivo) tras congelar inyectores
+//   cosméticos (frase MEL, 8 métricas forzadas, bibliografía determinista).
+const PHASE1_ASSERT_IDS = new Set(["S1", "S2", "S3", "S4", "S5", "SQL_DIFF"]);
+const isPhase1Assert = (id: string) =>
+  PHASE1_ASSERT_IDS.has(id) ||
+  /^S[1-5]_/.test(id) ||
+  id === "SQL_DIFF";
+const isLegacyAssert = (id: string) => id.startsWith("L:") || /^A\d+_/.test(id);
+
 // ── Playbook: cada assert mapea a una instrucción de reparación accionable.
 // Mantener corto, específico y orientado a archivo + acción concreta.
 type RepairEntry = {
