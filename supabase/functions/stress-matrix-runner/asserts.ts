@@ -235,6 +235,27 @@ function a10_biblio_min(ctx: AssertCtx): AssertResult {
   return { id: "A10_biblio_min", ok: false, msg: `Tickers sin URL en §6: ${missing.join(", ")}` };
 }
 
+// Fase 2 — Eje B. Tiny universe clean. Solo evalúa cuando el orchestrator
+// publicó `meta.tiny_universe.applies===true` (es decir,
+// TINY_UNIVERSE_GUARD=true Y scope.tickers.length<=3). Cuando el flag
+// está OFF en el entorno de la edge function, `tiny_universe` no existe
+// → assert pasa por defecto (regresión cero garantizada en phase1-full).
+function b1_tiny_universe_clean(ctx: AssertCtx): AssertResult {
+  const tu = (ctx.meta as any)?.tiny_universe;
+  if (!tu || tu.applies !== true) {
+    return { id: "B1_tiny_universe_clean", ok: true };
+  }
+  if (tu.violation === true) {
+    const terms = Array.isArray(tu.terms) ? tu.terms.slice(0, 5).join(", ") : "";
+    return {
+      id: "B1_tiny_universe_clean",
+      ok: false,
+      msg: `Términos prohibidos N<=3 (policy v${tu.policy_version}): ${terms}`,
+    };
+  }
+  return { id: "B1_tiny_universe_clean", ok: true };
+}
+
 export function runAsserts(ctx: AssertCtx): AssertResult[] {
   return [
     a1_scope_integrity(ctx),
@@ -247,5 +268,6 @@ export function runAsserts(ctx: AssertCtx): AssertResult[] {
     a8_models_coverage(ctx),
     a9_ranking_enrichment(ctx),
     a10_biblio_min(ctx),
+    b1_tiny_universe_clean(ctx),
   ];
 }
