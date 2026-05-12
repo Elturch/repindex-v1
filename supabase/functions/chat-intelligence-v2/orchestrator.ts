@@ -931,6 +931,38 @@ export async function process(
     console.warn("[outputGuard] sanitizeFinalMarkdown failed (non-fatal):", sanErr);
   }
 
+  // Fase 2 — Eje B. Tiny universe guard (post-validador PASIVO). Solo se
+  // ejecuta cuando TINY_UNIVERSE_GUARD=true y tenemos scopeContract con
+  // <=3 tickers. NO reescribe `content`. Publica el resultado en
+  // skillOut.metadata.tiny_universe para que (a) el SSE done lo pase a
+  // index.ts y emita un frame `warning` estructurado, (b) el runner de
+  // stress-matrix lo lea desde meta para evaluar B1_tiny_universe_clean.
+  // Con flag OFF: NO se evalúa, NO se inyecta nada → comportamiento
+  // idéntico a Fase 1 (regresión cero garantizada).
+  if (isTinyUniverseGuardEnabled() && scopeContract && scopeContract.tickers.length <= 3) {
+    try {
+      const tu = scanTinyUniverse(content, scopeContract.tickers.length);
+      if (tu.applies) {
+        (skillOut.metadata as any) = {
+          ...(skillOut.metadata ?? {}),
+          tiny_universe: tu,
+        };
+        if (tu.violation) {
+          console.warn(
+            `[tinyUniverseGuard] violation skill=${skill.name} n=${tu.n} ` +
+            `terms=[${tu.terms.join(",")}] policy_v=${tu.policy_version}`,
+          );
+        } else {
+          console.log(
+            `[tinyUniverseGuard] clean skill=${skill.name} n=${tu.n} policy_v=${tu.policy_version}`,
+          );
+        }
+      }
+    } catch (tuErr) {
+      console.warn("[tinyUniverseGuard] failed (non-fatal):", tuErr);
+    }
+  }
+
   // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
   // canonical Section 7 + Cited Sources (companyAnalysis, sectorRanking) are
   // checked stricter; others only get the basic empty/marker-leak checks.
