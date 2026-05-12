@@ -826,6 +826,8 @@ function buildUserMessageWithAssembler(
   citedSourcesSummary: string,
   perCompanySources: string,
   perCompanyDimensions: string,
+  scopeNotice: string,
+  deterministicDimensionsTable: string,
   orderHint: OrderHint = "desc",
   isSingleModel = false,
 ): string {
@@ -858,7 +860,7 @@ function buildUserMessageWithAssembler(
   const orderLabel =
     orderHint === "asc"
       ? (isSingleModel
-          ? `menor RIX medio según ${models[0]} en el periodo (peores primero)`
+          ? `menor RIX de referencia según ${models[0]} en el periodo (peores primero)`
           : "menor RIX máximo del periodo (peores primero)")
       : orderHint === "divergence"
         ? "mayor dispersión inter-modelo promedio (más divergencia primero)"
@@ -891,6 +893,10 @@ function buildUserMessageWithAssembler(
       blocks,
       methodology,
     ),
+    "",
+    scopeNotice,
+    "",
+    deterministicDimensionsTable,
     "",
     perCompanyDimensions,
     "",
