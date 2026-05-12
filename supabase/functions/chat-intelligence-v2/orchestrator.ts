@@ -28,6 +28,21 @@ import { comparisonSkill } from "./skills/comparison.ts";
 import { modelDivergenceSkill } from "./skills/modelDivergence.ts";
 import { periodEvolutionSkill } from "./skills/periodEvolution.ts";
 
+// Fase 1 — Scope rail (data-acotation): construye ScopeContract, ejecuta
+// runScopedQuery, audita S1..S5 y persiste los 3 jsonb en chat_logs en
+// TODAS las ejecuciones (incluso con USE_SCOPED_SKILLS=false). Si el flag
+// esta activo y la auditoria falla, el pipeline aborta con error
+// estructurado y NUNCA llama al LLM.
+import { buildScopeFromParsed } from "./scope/buildScopeFromParsed.ts";
+import {
+  ScopeResolutionError,
+  type ScopeContract,
+} from "./scope/scopeContract.ts";
+import { runScopedQuery, ScopedQueryError, type CoverageReport } from "./data/scopedQuery.ts";
+import { auditScope, ScopeAuditFailed, type ScopeAuditReport } from "./guards/scopeAudit.ts";
+import { isUseScopedSkillsEnabled, scopeFlagsSnapshot } from "./scope/featureFlags.ts";
+import { persistChatLogAudit } from "./scope/persistAudit.ts";
+
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
 // ── Sector keyword → repindex_root_issuers.sector_category map ─────
