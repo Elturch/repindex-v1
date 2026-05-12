@@ -83,6 +83,11 @@ const isPhase1Assert = (id: string) =>
   PHASE1_ASSERT_IDS.has(id) ||
   /^S[1-5]_/.test(id) ||
   id === "SQL_DIFF";
+// ── Fase 2 asserts (gating sólo en families con prefijo `phase2-`) ──
+// B1 = tiny_universe_clean, C1 = exec_narrative_structure,
+// C2 = exec_narrative_traceability. Con los flags OFF (default),
+// estos asserts pasan por construcción y nunca aparecen aquí.
+const isPhase2Assert = (id: string) => /^[BC]\d+_/.test(id);
 const isLegacyAssert = (id: string) => id.startsWith("L:") || /^A\d+_/.test(id);
 
 // ── Playbook: cada assert mapea a una instrucción de reparación accionable.
