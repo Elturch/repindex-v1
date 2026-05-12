@@ -40,8 +40,13 @@ import {
 } from "./scope/scopeContract.ts";
 import { runScopedQuery, ScopedQueryError, type CoverageReport } from "./data/scopedQuery.ts";
 import { auditScope, ScopeAuditFailed, type ScopeAuditReport } from "./guards/scopeAudit.ts";
-import { isUseScopedSkillsEnabled, scopeFlagsSnapshot } from "./scope/featureFlags.ts";
+import {
+  isUseScopedSkillsEnabled,
+  scopeFlagsSnapshot,
+  isEnrichRankingSubmetricsEnabled,
+} from "./scope/featureFlags.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
+import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
