@@ -23,7 +23,7 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 type RunBody = {
-  family?: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny";
+  family?: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec";
   limit?: number;
 };
 
@@ -203,6 +203,14 @@ async function processCase(
   if (isPhase2) {
     const b1 = legacyChecks.find((c) => c.id === "B1_tiny_universe_clean");
     if (b1 && !b1.ok) phase2Fails.push({ id: b1.id, msg: b1.msg });
+    // Fase 2 — Eje C. Promover C1/C2 al gating compuesto sólo para
+    // families con prefijo `phase2-`. Si EXEC_NARRATIVE está OFF en el
+    // entorno de la edge function, meta.exec_narrative no existe → C1
+    // y C2 pasan por defecto (regresión cero).
+    const c1 = legacyChecks.find((c) => c.id === "C1_exec_narrative_structure");
+    if (c1 && !c1.ok) phase2Fails.push({ id: c1.id, msg: c1.msg });
+    const c2 = legacyChecks.find((c) => c.id === "C2_exec_narrative_traceability");
+    if (c2 && !c2.ok) phase2Fails.push({ id: c2.id, msg: c2.msg });
   }
   const status: "pass" | "fail" =
     phase1Pass && phase2Fails.length === 0 ? "pass" : "fail";
@@ -238,7 +246,11 @@ async function processCase(
   const passedComposite = [
     ...sResults.filter((r: any) => r.ok).map((r: any) => r.id),
     ...(sqlOk ? ["SQL_DIFF"] : []),
-    ...(isPhase2 && phase2Fails.length === 0 ? ["B1_tiny_universe_clean"] : []),
+    ...(isPhase2
+      ? legacyChecks
+          .filter((c) => /^([BC]\d+_)/.test(c.id) && c.ok)
+          .map((c) => c.id)
+      : []),
     ...passedLegacy.map((id) => `L:${id}`),
   ];
 
@@ -264,7 +276,7 @@ async function processCase(
 
 async function runMatrix(
   runId: string,
-  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny",
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec",
   limit?: number,
 ) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -353,7 +365,7 @@ serve(async (req: Request) => {
 
   const body = (await req.json().catch(() => ({}))) as RunBody;
   const family = (body.family ?? "hotels-reits") as
-    "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny";
+    "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec";
   const limit = body.limit;
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
