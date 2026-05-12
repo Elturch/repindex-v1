@@ -48,6 +48,7 @@ import {
 } from "./scope/featureFlags.ts";
 import { persistChatLogAudit } from "./scope/persistAudit.ts";
 import { buildSubmetricsAvailableSlot } from "./prompts/submetricsAvailableSlot.ts";
+import { scanTinyUniverse } from "./guards/tinyUniverseGuard.ts";
 
 console.log("[RIX-V2][orch] module loaded | companyAnalysisSkill=", companyAnalysisSkill?.name);
 
