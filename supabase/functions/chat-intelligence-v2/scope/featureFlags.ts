@@ -32,10 +32,20 @@ export function isEnrichRankingSubmetricsEnabled(): boolean {
   return readBool("ENRICH_RANKING_SUBMETRICS");
 }
 
+// Fase 2 — Eje B: tiny universe guard (post-validador pasivo).
+// Default OFF en producción. Cuando ON y scope.tickers.length<=3, escanea
+// el markdown final con la lista TINY_UNIVERSE_PROHIBITED_V1 y emite
+// warning estructurado. NO reescribe. Activación consciente posterior
+// según el plan Fase 2 (E5) con criterios objetivos de rollback.
+export function isTinyUniverseGuardEnabled(): boolean {
+  return readBool("TINY_UNIVERSE_GUARD");
+}
+
 export function scopeFlagsSnapshot(): Record<string, boolean> {
   return {
     use_scoped_skills: isUseScopedSkillsEnabled(),
     freeze_cosmetic_injectors: isCosmeticInjectorsFrozen(),
     enrich_ranking_submetrics: isEnrichRankingSubmetricsEnabled(),
+    tiny_universe_guard: isTinyUniverseGuardEnabled(),
   };
 }
