@@ -1106,9 +1106,23 @@ export const sectorRankingSkill: Skill = {
     // narrow (no raw text), so the previous extractCitedSources(rows) always
     // yielded 0 URLs in sector reports. We now call fetchSectorSourceRows()
     // and feed those rows into extractCitedSources/renderCitedSourcesBlock.
-    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, sector, familyCode, scopeTickers, dbModelFilter);
+    // B1 — Bibliography scope: when ranking is a strict top-N within a
+    // larger scope (e.g. top-5 of IBEX-35), restrict cited sources to the
+    // tickers actually present in the leaderboard. Otherwise URLs about
+    // companies outside the ranking leak into the Anexo.
+    const rankedTickers = ranking.map((r: any) => String(r.ticker).toUpperCase());
+    const fullScopeSize = Array.isArray(scopeTickers) && scopeTickers.length > 0
+      ? scopeTickers.length
+      : null;
+    const useRankedScope = rankedTickers.length > 0 && (
+      fullScopeSize == null || rankedTickers.length < fullScopeSize
+    );
+    const sourceTickers = useRankedScope ? rankedTickers : (scopeTickers ?? null);
+    console.log(`${tag} cited_sources_scope=${useRankedScope ? "ranked" : "full"} | tickers=${sourceTickers?.length ?? 0}`);
+    const sourceRows = await fetchSectorSourceRows(supabase, sqlFrom, sqlTo, useRankedScope ? null : sector, useRankedScope ? null : familyCode, sourceTickers, dbModelFilter);
     const citedSourcesReport = extractCitedSources(sourceRows);
-    const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo);
+    const singleModelLabel = isSingleModel ? String(models[0]) : undefined;
+    const citedSourcesFull = renderCitedSourcesBlock(citedSourcesReport, sqlFrom, sqlTo, singleModelLabel);
     const citedSourcesSummary = buildCitedSourcesSummary(citedSourcesReport);
     const perCompanySources = buildPerCompanySourceList(sourceRows);
     console.log(`${tag} sector cited sources | source_rows=${sourceRows.length} | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
