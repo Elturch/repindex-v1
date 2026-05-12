@@ -24,7 +24,19 @@ export interface PersistAuditInput {
   scope_contract?: ScopeContract | null;
   coverage_report?: CoverageReport | null;
   scope_audit?: ScopeAuditReport | null;
-  flags?: Record<string, boolean> | null;
+  /** Snapshot completo de flags (raw + effective). Paso 2.5. */
+  flags?: Record<string, unknown> | null;
+  /** Bloque de aislamiento Fase 2; se persiste como
+   *  `scope_audit.phase2_isolation` para auditoría. Paso 2.5. */
+  phase2_isolation?: {
+    phase2_isolation_active: boolean;
+    phase2_unlocked: boolean;
+    phase2_flags_effective: {
+      enrich_ranking_submetrics: boolean;
+      tiny_universe_guard: boolean;
+      exec_narrative: boolean;
+    };
+  } | null;
 }
 
 function safeJson(x: unknown): unknown {
@@ -38,6 +50,21 @@ function safeJson(x: unknown): unknown {
 
 export async function persistChatLogAudit(input: PersistAuditInput): Promise<void> {
   try {
+    const isolationBlock = input.phase2_isolation ?? null;
+    const auditWithExtras = input.scope_audit
+      ? {
+          ...input.scope_audit,
+          flags: input.flags ?? {},
+          phase2_isolation: isolationBlock,
+        }
+      : (input.flags || isolationBlock
+          ? {
+              flags: input.flags ?? {},
+              phase2_isolation: isolationBlock,
+              ok: null,
+              results: [],
+            }
+          : null);
     const row: Record<string, unknown> = {
       user_id: input.user_id ?? null,
       session_id: input.session_id ?? null,
@@ -50,9 +77,7 @@ export async function persistChatLogAudit(input: PersistAuditInput): Promise<voi
       error_message: input.error_message ? String(input.error_message).slice(0, 1000) : null,
       scope_contract: safeJson(input.scope_contract ?? null),
       coverage_report: safeJson(input.coverage_report ?? null),
-      scope_audit: input.scope_audit
-        ? safeJson({ ...input.scope_audit, flags: input.flags ?? {} })
-        : (input.flags ? safeJson({ flags: input.flags, ok: null, results: [] }) : null),
+      scope_audit: safeJson(auditWithExtras),
     };
     const { error } = await input.supabase.from("chat_logs").insert(row);
     if (error) {
