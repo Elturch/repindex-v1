@@ -558,11 +558,55 @@ export async function process(
   //     pre-rendered tables). Sector rankings, comparisons (>=2 entities)
   //     and model_divergence keep their dedicated skills.
   const PROMOTABLE_INTENTS: Intent[] = ["general_question", "period_evolution"];
+
+  // 2b'. STRICT SUBSECTOR — when the query mentions "subsector X" verbatim,
+  // resolve scope by `subsector` column and BYPASS the sector_category
+  // expansion. This is the canonical fix for the hotels/SOCIMI/promotoras
+  // case where 1-issuer subsectors were silently widened to a 6-ticker
+  // canonical group via SECTOR_KEYWORD_MAP. Detected here BEFORE the
+  // sector hint logic so the strict scope wins.
+  const requestedSubsector = extractRequestedSubsector(question);
+  let strictSubsectorLabel: string | null = null;
+  let strictSubsectorN: number | null = null;
+  if (requestedSubsector) {
+    const strict = await resolveStrictSubsector(requestedSubsector, supabase);
+    if (strict.tickers.length >= 1) {
+      parsed.scope_tickers = strict.tickers;
+      parsed.intent = "sector_ranking";
+      strictSubsectorLabel = strict.canonical;
+      strictSubsectorN = strict.tickers.length;
+      // Re-hydrate `entities` from these tickers so downstream skills get
+      // names + sector metadata.
+      try {
+        const { data: rows } = await supabase
+          .from("repindex_root_issuers")
+          .select("ticker, issuer_name, sector_category, subsector")
+          .in("ticker", strict.tickers);
+        if (Array.isArray(rows) && rows.length > 0) {
+          const ents: ResolvedEntity[] = rows.map((r: any) => ({
+            ticker: String(r.ticker).toUpperCase(),
+            company_name: r.issuer_name,
+            sector_category: r.sector_category,
+            source: "semantic_bridge" as ResolvedEntity["source"],
+          }));
+          parsed.entities = ents;
+          entities = ents;
+        }
+      } catch (_) { /* keep tickers-only */ }
+      console.log(
+        `${logPrefix} strictSubsector applied | label="${strictSubsectorLabel}" | n=${strictSubsectorN} | tickers=${strict.tickers.join(",")}`,
+      );
+    } else {
+      console.log(`${logPrefix} strictSubsector requested="${requestedSubsector}" but DB returned 0 — falling back to legacy sector path`);
+    }
+  }
+
   // BUG FIX: queries that mention a sector keyword (e.g. "grupos
   // hospitalarios", "bancos", "eléctricas") must NEVER be promoted to
   // company_analysis, even if a stray fuzzy entity slipped through.
   // Force sector_ranking and re-resolve entities by sector.
-  const sectorHint = detectSectorCategory(question);
+  // Skip when strict subsector already resolved scope (don't widen).
+  const sectorHint = strictSubsectorLabel ? null : detectSectorCategory(question);
   if (sectorHint) {
     if (parsed.intent !== "sector_ranking" && parsed.intent !== "comparison") {
       console.log(
@@ -727,6 +771,35 @@ export async function process(
         skillOut.datapack.pre_rendered_tables[0] = t0.text;
       }
     }
+  }
+
+  // Stress-Matrix sanitizer (Phase B post-stream). Defence-in-depth:
+  // even if the LLM ignored the prompt rules, we strip "mediana",
+  // "white-paper", "data-room", "roadshow", "RIX medio" and (in
+  // single-model context) "entre modelos" / "consenso multi" from the
+  // persisted markdown so audits and downstream consumers never see them.
+  // The live SSE has already shipped, so the prompt-level rules remain
+  // the primary defence — this is the safety net for storage + audit.
+  try {
+    const singleModel = (parsed.models?.length === 1) ? parsed.models[0] : null;
+    const sani = sanitizeFinalMarkdown(content, { modelFilter: singleModel });
+    if (sani.rules_fired.length > 0) {
+      console.warn(`[outputGuard] sanitizeFinalMarkdown skill=${skill.name} rules=[${sani.rules_fired.join(",")}]`);
+      content = sani.text;
+      if (skillOut.datapack.pre_rendered_tables.length > 0) {
+        const t0 = sanitizeFinalMarkdown(skillOut.datapack.pre_rendered_tables[0], { modelFilter: singleModel });
+        skillOut.datapack.pre_rendered_tables[0] = t0.text;
+      }
+      // Annotate metadata for the stress-matrix runner.
+      try {
+        (skillOut.metadata as any) = {
+          ...(skillOut.metadata ?? {}),
+          scrub_log: sani.rules_fired,
+        };
+      } catch (_) { /* ignore */ }
+    }
+  } catch (sanErr) {
+    console.warn("[outputGuard] sanitizeFinalMarkdown failed (non-fatal):", sanErr);
   }
 
   // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
