@@ -729,6 +729,89 @@ export async function process(
     }
   }
 
+  // ── Fase 1 — SCOPE RAIL (data-acotation) ─────────────────────────────
+  // SIEMPRE construye ScopeContract + runScopedQuery + auditScope para
+  // los intents que tocan multi-ticker. Persiste los 3 jsonb en chat_logs
+  // tanto si USE_SCOPED_SKILLS=true como si =false (trazabilidad
+  // comparativa legacy vs scoped). Con flag activo, ScopeAuditFailed o
+  // ScopeResolutionError abortan el pipeline antes del LLM con error
+  // estructurado.
+  const SCOPE_RAIL_INTENTS: Intent[] = [
+    "sector_ranking", "comparison", "model_divergence", "period_evolution",
+  ];
+  const flags = scopeFlagsSnapshot();
+  const useScoped = isUseScopedSkillsEnabled();
+  let scopeContract: ScopeContract | null = null;
+  let coverageReport: CoverageReport | null = null;
+  let auditReport: ScopeAuditReport | null = null;
+  let scopeError: { code: 'ScopeAuditFailed' | 'ScopeResolutionError' | 'ScopedQueryError'; failed_assert: 'S1'|'S2'|'S3'|'S4'|'S5'|null; detail: string } | null = null;
+
+  if (SCOPE_RAIL_INTENTS.includes(parsed.intent)) {
+    try {
+      scopeContract = await buildScopeFromParsed(parsed, supabase, {
+        strict_subsector: strictSubsectorLabel,
+        sector_hint: sectorHint,
+      });
+      const sq = await runScopedQuery(scopeContract, supabase);
+      coverageReport = sq.coverage_report;
+      auditReport = await auditScope(scopeContract, sq.rows, sq.coverage_report, supabase);
+      console.log(`${logPrefix} scope rail | flag=${useScoped} | tickers=${scopeContract.tickers.length} | rows=${sq.rows.length} | audit_ok=${auditReport.ok}`);
+      if (!auditReport.ok) {
+        const failed = auditReport.results.find((r) => !r.ok);
+        scopeError = {
+          code: 'ScopeAuditFailed',
+          failed_assert: (failed?.id as any) ?? null,
+          detail: failed?.msg ?? 'audit failed',
+        };
+      }
+    } catch (e) {
+      const err = e as Error;
+      const code = err instanceof ScopeAuditFailed ? 'ScopeAuditFailed'
+        : err instanceof ScopeResolutionError ? 'ScopeResolutionError'
+        : err instanceof ScopedQueryError ? 'ScopedQueryError'
+        : 'ScopeResolutionError';
+      scopeError = { code, failed_assert: null, detail: err.message ?? String(err) };
+      console.warn(`${logPrefix} scope rail error (${code}):`, err.message);
+    }
+
+    // Persistencia SIEMPRE (incluso flag=false). Fire-and-forget.
+    await persistChatLogAudit({
+      supabase,
+      user_id: auditMeta?.user_id ?? null,
+      session_id: auditMeta?.session_id ?? null,
+      question,
+      intent: parsed.intent,
+      ticker: parsed.entities[0]?.ticker ?? null,
+      models_used: parsed.models,
+      duration_ms: Date.now() - __scopeStart,
+      response_type: scopeError ? 'error' : 'report',
+      error_message: scopeError?.detail ?? null,
+      scope_contract: scopeContract,
+      coverage_report: coverageReport,
+      scope_audit: auditReport,
+      flags,
+    });
+
+    // Solo aborta cuando el flag esta activo. En modo legacy seguimos.
+    if (useScoped && scopeError) {
+      const reply = `[ScopeAuditFailed] ${scopeError.failed_assert ?? scopeError.code}: ${scopeError.detail}`;
+      try { onChunk?.(reply); } catch (_) { /* noop */ }
+      return {
+        type: 'scope_audit_failed',
+        content: reply,
+        intent: parsed.intent,
+        entities: parsed.entities,
+        error: {
+          code: scopeError.code,
+          failed_assert: scopeError.failed_assert,
+          detail: scopeError.detail,
+          scope_contract: scopeContract,
+          coverage_report: coverageReport,
+        },
+      };
+    }
+  }
+
   // 6-8. Skill dispatch
   const skill = selectSkill(parsed.intent);
   if (!skill) {
