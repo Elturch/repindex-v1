@@ -188,8 +188,16 @@ async function processCase(
   const phase1Pass = sResults.length > 0 && sFailed.length === 0 && sqlOk;
   const status: "pass" | "fail" = phase1Pass ? "pass" : "fail";
 
-  // Compose asserts_failed for the UI: S-asserts + SQL_DIFF first (Phase 1 gate),
-  // legacy A-asserts kept as observability (post-prefix "L:").
+  // ── Reclasificación oficial Fase 1 (post phase1-small 8/8 verde) ─────────
+  // GATING (gobiernan VERDE/ROJO global del cierre Fase 1):
+  //   - S1 tickers_in_scope, S2 models_in_scope, S3 dates_in_window,
+  //     S4 no_peer_leak, S5 coverage_report_consistent
+  //   - SQL_DIFF (validador SQL bit a bit, 10 campos × N=5 muestras)
+  // OBSERVABILIDAD (NO bloquean Fase 1, reclasificados como objetivo Fase 2):
+  //   - Legacy A1..A10 (narrativa, bibliografía, sub-métricas, anti-mediana...)
+  //   - Esperado que A9 / A3 fallen tras congelar inyectores cosméticos
+  //     (frase MEL, 8 métricas forzadas, bibliografía determinista).
+  // El UI los pinta en columnas separadas (StressTestsPanel.tsx).
   const failedComposite = [
     ...sFailed.map((f: any) => ({ id: f.id, msg: f.msg })),
     ...(!sqlOk
