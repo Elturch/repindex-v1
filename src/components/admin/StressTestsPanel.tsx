@@ -9,9 +9,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Loader2, Play, RefreshCw, CheckCircle2, XCircle, AlertCircle,
-  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, Wrench,
+  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, Wrench, KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
