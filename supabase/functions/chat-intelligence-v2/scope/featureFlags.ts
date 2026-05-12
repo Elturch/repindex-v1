@@ -24,9 +24,18 @@ export function isCosmeticInjectorsFrozen(): boolean {
   return !(raw === "false" || raw === "0" || raw === "off" || raw === "no");
 }
 
+// Fase 2 — Eje A: enriquecimiento del payload con sub-métricas disponibles.
+// Default OFF en producción. Activación consciente posterior, una vez
+// pasado phase1-full 21/21 verde y completada la ventana de observación
+// definida en el plan Fase 2 (E5).
+export function isEnrichRankingSubmetricsEnabled(): boolean {
+  return readBool("ENRICH_RANKING_SUBMETRICS");
+}
+
 export function scopeFlagsSnapshot(): Record<string, boolean> {
   return {
     use_scoped_skills: isUseScopedSkillsEnabled(),
     freeze_cosmetic_injectors: isCosmeticInjectorsFrozen(),
+    enrich_ranking_submetrics: isEnrichRankingSubmetricsEnabled(),
   };
 }
