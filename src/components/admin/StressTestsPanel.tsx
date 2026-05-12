@@ -9,9 +9,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Loader2, Play, RefreshCw, CheckCircle2, XCircle, AlertCircle,
-  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, Wrench,
+  TrendingUp, TrendingDown, Minus, ArrowUp, ArrowDown, Wrench, KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -205,6 +206,11 @@ export function StressTestsPanel() {
   const [loading, setLoading] = useState(false);
   const [drillOpen, setDrillOpen] = useState<Result | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  // Paso 2.5 — Token de aislamiento Fase 2. Vive SÓLO en useState durante
+  // la sesión del navegador. NUNCA se persiste en localStorage ni en
+  // código. El admin lo pega manualmente la primera vez por sesión.
+  const [phase2Token, setPhase2Token] = useState("");
+  const STRESS_HEADER_NAME = "x-repindex-stress" as const;
 
   const loadRuns = async () => {
     const { data, error } = await supabase
@@ -262,8 +268,22 @@ export function StressTestsPanel() {
   }, [runs, selectedRun]);
 
   const launch = async () => {
+    // Paso 2.5 — Las families `phase2-*` requieren el header de aislamiento.
+    // Sin él el runner aborta con `phase2_header_missing`. Para
+    // phase1-* / sanity / hotels-reits es opcional.
+    if (family.startsWith("phase2-") && phase2Token.trim().length === 0) {
+      toast.error("Pega el STRESS_TESTS_HEADER_TOKEN antes de lanzar una family phase2-*");
+      return;
+    }
     setLaunching(true);
-    const { data, error } = await supabase.functions.invoke("stress-matrix-runner", { body: { family } });
+    const headers: Record<string, string> = {};
+    if (phase2Token.trim().length > 0) {
+      headers[STRESS_HEADER_NAME] = phase2Token.trim();
+    }
+    const { data, error } = await supabase.functions.invoke(
+      "stress-matrix-runner",
+      { body: { family }, headers },
+    );
     setLaunching(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`Run lanzado: ${(data as any)?.total_cases} casos`);
@@ -418,6 +438,37 @@ export function StressTestsPanel() {
               <RefreshCw className="h-4 w-4" /> Refrescar
             </Button>
           </div>
+          {/* Paso 2.5 — Header de aislamiento Fase 2. Sólo en useState. */}
+          <div className="flex items-end gap-3 mt-4">
+            <div className="space-y-1 flex-1 max-w-md">
+              <label className="text-xs text-muted-foreground flex items-center gap-1">
+                <KeyRound className="h-3 w-3" /> Token aislamiento Fase 2
+                <span className="text-[10px] opacity-60">(x-repindex-stress · solo phase2-*)</span>
+              </label>
+              <Input
+                type="password"
+                value={phase2Token}
+                onChange={(e) => setPhase2Token(e.target.value)}
+                placeholder="Pega STRESS_TESTS_HEADER_TOKEN"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setPhase2Token("")}
+              disabled={phase2Token.length === 0}
+            >
+              Limpiar
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            El token vive sólo en memoria de esta pestaña. No se guarda en
+            localStorage ni se incluye en logs. Sin token, las families
+            <code className="mx-1">phase2-*</code> abortan con
+            <code className="ml-1">phase2_header_missing</code>.
+          </p>
           <p className="text-xs text-muted-foreground mt-3">
             SDD v1 · concurrencia 3 · ventana 4 semanas · asserts deterministas.
             <strong className="ml-2">hotels-reits</strong> = 3 subsectores × 7 vistas (multi + 6 modelos) ≈ 21 celdas.
