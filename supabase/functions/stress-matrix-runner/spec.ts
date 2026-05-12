@@ -72,7 +72,7 @@ function buildIbexQuery(family: string, weeks: number): string {
 }
 
 export function expandCases(
-  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec",
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full" | "phase2-tiny" | "phase2-exec" | "phase2-full",
 ): StressCase[] {
   const cases: StressCase[] = [];
   const weeks = SPEC.weeks;
@@ -147,6 +147,46 @@ export function expandCases(
   if (family === "phase1-full") {
     // Reusa la canonica hotels-reits (21 celdas).
     return expandCases("hotels-reits");
+  }
+  // Fase 2 — Paso 2.4. phase2-full = matriz canónica de 21 celdas (idéntica
+  // a phase1-full / hotels-reits) pero con prefijo `phase2-` para que el
+  // runner promueva asserts B*/C* al gating compuesto cuando los flags
+  // (TINY_UNIVERSE_GUARD, EXEC_NARRATIVE) están ON. Con los 3 flags Fase 2
+  // OFF (default), debe igualar phase1-full: 21/21 verde por construcción.
+  if (family === "phase2-full") {
+    const subs = SPEC.subsectors_small.filter((s) => SPEC.hotels_reits_focus.includes(s.name));
+    const cases: StressCase[] = [];
+    for (const sub of subs) {
+      cases.push({
+        case_id: `${slug(sub.name)}-MULTI-${weeks}w`,
+        family: "phase2-full",
+        query: buildSubsectorQuery(sub.name, weeks, null),
+        scope: sub.name,
+        scope_kind: "subsector",
+        tickers: sub.tickers,
+        n: sub.n,
+        weeks,
+        model_filter: null,
+        expected_skill: "sectorRanking",
+        issuer_names: namesFor(sub.tickers),
+      });
+      for (const m of SPEC.models_individual) {
+        cases.push({
+          case_id: `${slug(sub.name)}-${m.toUpperCase()}-${weeks}w`,
+          family: "phase2-full",
+          query: buildSubsectorQuery(sub.name, weeks, m),
+          scope: sub.name,
+          scope_kind: "subsector",
+          tickers: sub.tickers,
+          n: sub.n,
+          weeks,
+          model_filter: m,
+          expected_skill: "sectorRanking",
+          issuer_names: namesFor(sub.tickers),
+        });
+      }
+    }
+    return cases;
   }
 
   const wantSubsectors = family === "all" || family === "small" || family === "hotels-reits";
