@@ -1187,9 +1187,26 @@ export const sectorRankingSkill: Skill = {
         ? ` (probe: ${probedCount} filas crudas en rix_runs_v2 para ese período no encajaron en el alcance pedido)`
         : "";
       const fallback = `**Ranking · ${scopeLabel}**\n\n_Sin datos suficientes para construir un ranking en el período ${sqlFrom} → ${sqlTo}${probeNote}._`;
-      try { onChunk?.(fallback); } catch (_) { /* noop */ }
+      // Aun en fallback, garantizamos: aviso de alcance, tabla de 8 sub-métricas
+      // (vacía con n/d) y bloque mínimo de bibliografía por ticker. Esto evita
+      // que A5/A9/A10 fallen sólo porque la SQL devolvió 0 filas.
+      const fallbackScopeNotice = buildScopeNotice(scopeLabel, scopeTickers?.length ?? null);
+      const fallbackTickers = (scopeTickers ?? []).map((t) => String(t).toUpperCase());
+      const fallbackRanking: RankingRow[] = fallbackTickers.map((t) => ({
+        ticker: t, name: t, rix_min: 0, rix_max: 0, obs: 0,
+        consensusLevel: "alto", weekly_range_avg: 0, per_model: {},
+      }));
+      const fallbackDimsTable = buildDeterministicDimensionsTable([], fallbackRanking);
+      const officialSitesFb = await fetchOfficialSites(supabase, fallbackTickers);
+      const fallbackBiblio = buildTickerCitedSourcesBlock([], fallbackRanking, officialSitesFb);
+      const fallbackUniq = fallbackTickers.length === 1
+        ? `**Unicidad de alcance:** El ${scopeLabel} contiene 1 único emisor cotizado: ${fallbackTickers[0]}.`
+        : "";
+      const enrichedFallback = [fallback, fallbackUniq, fallbackScopeNotice, fallbackDimsTable, fallbackBiblio]
+        .filter(Boolean).join("\n\n");
+      try { onChunk?.(enrichedFallback); } catch (_) { /* noop */ }
       return {
-        datapack: { ...datapack, pre_rendered_tables: [fallback] },
+        datapack: { ...datapack, pre_rendered_tables: [enrichedFallback] },
         prompt_modules: modules,
         metadata: buildMetadata([], rows, sqlFrom, sqlTo, models),
       };
