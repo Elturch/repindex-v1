@@ -223,7 +223,11 @@ async function processCase(
   return status;
 }
 
-async function runMatrix(runId: string, family: "all" | "small" | "sanity" | "hotels-reits", limit?: number) {
+async function runMatrix(
+  runId: string,
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full",
+  limit?: number,
+) {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
   let cases = expandCases(family);
   if (limit && limit > 0) cases = cases.slice(0, limit);
