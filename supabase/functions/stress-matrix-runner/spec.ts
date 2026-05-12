@@ -71,9 +71,38 @@ function buildIbexQuery(family: string, weeks: number): string {
   return `Dame el top-5 del ${family} en las últimas ${weeks} semanas (multi-modelo)`;
 }
 
-export function expandCases(family: "all" | "small" | "sanity" | "hotels-reits"): StressCase[] {
+export function expandCases(
+  family: "all" | "small" | "sanity" | "hotels-reits" | "phase1-small" | "phase1-full",
+): StressCase[] {
   const cases: StressCase[] = [];
   const weeks = SPEC.weeks;
+
+  // Fase 1 — modos:
+  //   phase1-small = subsectores con n<=3, multi-modelo unicamente (~8 cells)
+  //   phase1-full  = matriz canonica de 21 celdas (= hotels-reits)
+  if (family === "phase1-small") {
+    const subs = SPEC.subsectors_small.filter((s) => s.n <= 3);
+    for (const sub of subs) {
+      cases.push({
+        case_id: `${slug(sub.name)}-MULTI-${weeks}w`,
+        family: "phase1-small",
+        query: buildSubsectorQuery(sub.name, weeks, null),
+        scope: sub.name,
+        scope_kind: "subsector",
+        tickers: sub.tickers,
+        n: sub.n,
+        weeks,
+        model_filter: null,
+        expected_skill: "sectorRanking",
+        issuer_names: namesFor(sub.tickers),
+      });
+    }
+    return cases;
+  }
+  if (family === "phase1-full") {
+    // Reusa la canonica hotels-reits (21 celdas).
+    return expandCases("hotels-reits");
+  }
 
   const wantSubsectors = family === "all" || family === "small" || family === "hotels-reits";
   if (wantSubsectors) {
