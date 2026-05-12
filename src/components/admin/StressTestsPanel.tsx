@@ -542,6 +542,54 @@ export function StressTestsPanel() {
             </CardContent>
           </Card>
 
+          {/* PLAN DE REPARACIÓN */}
+          {summary.assertRanking.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wrench className="h-4 w-4 text-amber-600" />
+                  Plan de reparación accionable
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Una entrada por assert fallido, ordenadas por número de fallos. Cada bloque indica causa probable, qué tocar y dónde.
+                </p>
+                {summary.assertRanking.map((a) => {
+                  const playbook = ASSERT_REPAIR_PLAYBOOK[a.id];
+                  if (!playbook) return null;
+                  const example = (results.find((r) => (r.asserts_failed ?? []).some((x) => x.id === a.id))?.asserts_failed ?? [])
+                    .find((x) => x.id === a.id)?.msg;
+                  return (
+                    <div key={a.id} className={`rounded-lg border p-3 ${PRIORITY_COLOR[playbook.priority]}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <code className="font-mono text-xs bg-background px-2 py-0.5 rounded border">{a.id}</code>
+                          <span className="text-sm font-semibold">{playbook.title}</span>
+                          <Badge variant="outline" className="text-[10px] uppercase">{playbook.priority}</Badge>
+                        </div>
+                        <span className="text-xs text-red-600 font-semibold">{a.now} fallos</span>
+                      </div>
+                      <div className="text-xs space-y-1.5 mt-2">
+                        <div><strong>Causa probable:</strong> {playbook.cause}</div>
+                        <div><strong>Reparación:</strong> {playbook.fix}</div>
+                        <div>
+                          <strong>Archivos:</strong>
+                          <ul className="list-disc list-inside font-mono text-[11px] mt-0.5">
+                            {playbook.files.map((f) => <li key={f}>{f}</li>)}
+                          </ul>
+                        </div>
+                        {example && (
+                          <div className="text-muted-foreground"><strong>Ejemplo:</strong> {example}</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {/* HEATMAP */}
           <Card>
             <CardHeader><CardTitle>Heatmap subsector × modelo</CardTitle></CardHeader>
