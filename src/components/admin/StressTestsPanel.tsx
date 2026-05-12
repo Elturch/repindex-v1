@@ -745,6 +745,24 @@ export function StressTestsPanel() {
                     <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/50 text-emerald-700">{a}</Badge>
                   ))}
                 </div>
+                {(drillOpen.asserts_failed ?? []).length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold flex items-center gap-1">
+                      <Wrench className="h-3 w-3" /> Cómo arreglar este caso
+                    </div>
+                    {(drillOpen.asserts_failed ?? []).map((a) => {
+                      const p = ASSERT_REPAIR_PLAYBOOK[a.id];
+                      if (!p) return null;
+                      return (
+                        <div key={a.id} className={`rounded border p-2 text-xs ${PRIORITY_COLOR[p.priority]}`}>
+                          <div className="font-semibold mb-0.5">{a.id} — {p.title}</div>
+                          <div><strong>Reparación:</strong> {p.fix}</div>
+                          <div className="font-mono text-[10px] text-muted-foreground mt-1">{p.files.join(" · ")}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {drillOpen.error_message && (
                   <div className="p-3 bg-orange-500/10 rounded text-xs">{drillOpen.error_message}</div>
                 )}
