@@ -562,8 +562,8 @@ export function StressTestsPanel() {
               )}
 
               {/* Top asserts fallados — Fase 1 (gating) vs Legacy (observabilidad) */}
-              {(summary.phase1Ranking.length > 0 || summary.legacyRanking.length > 0) && (
-                <div className="grid grid-cols-2 gap-4">
+              {(summary.phase1Ranking.length > 0 || summary.phase2Ranking.length > 0 || summary.legacyRanking.length > 0) && (
+                <div className="grid grid-cols-3 gap-4">
                   <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
                     <div className="text-sm font-semibold mb-2 flex items-center gap-2">
                       <Badge className="bg-primary/20 text-primary text-[10px]">FASE 1 · GATING</Badge>
@@ -586,6 +586,31 @@ export function StressTestsPanel() {
                     )}
                     <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
                       Estos asserts gobiernan el estado VERDE/ROJO global. Bloquean el cierre de Fase 1.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Badge className="bg-amber-500/20 text-amber-700 text-[10px]">FASE 2 · GATING (flags ON)</Badge>
+                      B1 / C1 / C2
+                    </div>
+                    {summary.phase2Ranking.length === 0 ? (
+                      <div className="text-xs text-emerald-600 font-medium">
+                        ✅ Sin fallos B*/C*. Con flags OFF, pasan por defecto.
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {summary.phase2Ranking.map((a) => (
+                          <div key={a.id} className="flex items-center gap-3 text-xs">
+                            <code className="font-mono bg-background px-2 py-0.5 rounded border">{a.id}</code>
+                            <span className="text-amber-700 font-semibold">{a.now} fallos</span>
+                            {prevRun && renderDelta(a.delta, true)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      Sólo bloquean en families <code>phase2-*</code>. Flags se activan vía Supabase Secrets
+                      (TINY_UNIVERSE_GUARD, EXEC_NARRATIVE). Default OFF.
                     </p>
                   </div>
                   <div className="rounded-lg border border-muted bg-muted/20 p-3">
