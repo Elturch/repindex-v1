@@ -21,7 +21,7 @@ import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
-import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker } from "./guards/outputGuard.ts";
+import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker, sanitizeFinalMarkdown } from "./guards/outputGuard.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 import { sectorRankingSkill } from "./skills/sectorRanking.ts";
 import { comparisonSkill } from "./skills/comparison.ts";
@@ -136,6 +136,55 @@ function detectSubsegmentTickers(question: string): string[] | null {
     }
   }
   return null;
+}
+
+// ── STRICT SUBSECTOR resolver ───────────────────────────────────────
+// When the user query mentions "subsector X" / "del subsector X" verbatim,
+// resolve scope by `repindex_root_issuers.subsector` column instead of
+// the broader `sector_category`. This prevents silent expansion of
+// 1-issuer subsectors (e.g. "Hoteles" → MEL only, NOT MEL + IAG + AENA
+// + canonical group fallback). Returns the literal subsector label so
+// the scope guard / prompt can declare uniqueness honestly.
+const SUBSECTOR_RE = /\bsub[-\s]?sector(?:es)?\s+(?:de\s+|del\s+|de\s+los?\s+)?([\wÁÉÍÓÚÑáéíóúñ&·/\- ]{3,80})/i;
+
+function extractRequestedSubsector(question: string): string | null {
+  const m = question.match(SUBSECTOR_RE);
+  if (!m) return null;
+  // Trim trailing connectors (en/según/multi-modelo/de las...).
+  const raw = m[1]
+    .replace(/\b(en|seg[uú]n|multi[-\s]?modelo|las?|los?|del|de|por|para|en\s+las|sobre|últimas?|ultimas?)\b.*$/i, "")
+    .replace(/[\s.·:;,–—-]+$/g, "")
+    .trim();
+  return raw.length >= 2 ? raw : null;
+}
+
+async function resolveStrictSubsector(
+  subsectorLabel: string,
+  supabase: any,
+  limit = 25,
+): Promise<{ tickers: string[]; canonical: string | null }> {
+  try {
+    // Case-insensitive match on the literal subsector column. We pull a
+    // small superset (limit=25) and rely on the skill scope filter to
+    // bound output. If nothing matches we return [] so the caller can
+    // fall back to the legacy sector_category path.
+    const { data, error } = await supabase
+      .from("repindex_root_issuers")
+      .select("ticker, subsector")
+      .ilike("subsector", subsectorLabel)
+      .limit(limit);
+    if (error || !Array.isArray(data) || data.length === 0) {
+      console.log(`[RIX-V2][orch] strictSubsector | label="${subsectorLabel}" | rows=0`);
+      return { tickers: [], canonical: null };
+    }
+    const tickers = data.map((r: any) => String(r.ticker).toUpperCase()).filter(Boolean);
+    const canonical = String(data[0]?.subsector ?? subsectorLabel);
+    console.log(`[RIX-V2][orch] strictSubsector | label="${subsectorLabel}" | canonical="${canonical}" | tickers=${tickers.length}`);
+    return { tickers, canonical };
+  } catch (e) {
+    console.error(`[RIX-V2][orch] strictSubsector error:`, e);
+    return { tickers: [], canonical: null };
+  }
 }
 
 async function autoResolveEntitiesBySector(
