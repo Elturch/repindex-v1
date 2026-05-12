@@ -841,7 +841,14 @@ export async function process(
     return { type: "guard_rejection", content: reply };
   }
   console.log(`${logPrefix} dispatching | intent=${parsed.intent} | skill=${skill.name}`);
-  const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk });
+  // Fase 2 — Eje C. Cuando EXEC_NARRATIVE=true, suprimimos el streaming
+  // del primer intento para poder reintentar (E3, máx 2 retries) sin
+  // duplicar texto en SSE. Tras validar emitimos el contenido final
+  // como un único chunk. Con flag OFF: onChunk pasa tal cual (regresión
+  // cero, comportamiento idéntico a Fase 1).
+  const execNarrativeOn = isExecNarrativeEnabled();
+  const skillOnChunk = execNarrativeOn ? undefined : onChunk;
+  const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk: skillOnChunk });
   if (collectedWarnings.length > 0) {
     skillOut.prompt_modules = Array.from(new Set([...skillOut.prompt_modules, "coverageRules"]));
     (skillOut as any).warnings = collectedWarnings;
@@ -872,6 +879,17 @@ export async function process(
       systemPrompt = `${systemPrompt}\n\n${slot}`;
       console.log(`${logPrefix} prompt enriched | submetrics_slot_chars=${slot.length}`);
     }
+  }
+
+  // Fase 2 — Eje C. Prelude del relato directivo. Solo si EXEC_NARRATIVE=true.
+  // No inyecta cifras ni reescribe el output: solo le dice al LLM la
+  // estructura exigida (headline ≤12, 3 bullets, "Lectura:" ≤60) y la
+  // exigencia de trazabilidad numérica. El validador post-hoc se aplica
+  // sobre el markdown final con E3 (máx 2 reintentos).
+  if (execNarrativeOn) {
+    const prelude = buildExecNarrativePrelude();
+    systemPrompt = `${systemPrompt}\n\n${prelude}`;
+    console.log(`${logPrefix} prompt enriched | exec_narrative_prelude_chars=${prelude.length}`);
   }
 
   // 10. Content: real skills deposit the LLM answer as the first pre-rendered
