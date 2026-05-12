@@ -189,6 +189,16 @@ async function processCase(
   const status: "pass" | "fail" = phase1Pass ? "pass" : "fail";
 
   // ── Reclasificación oficial Fase 1 (post phase1-small 8/8 verde) ─────────
+  // ── CIERRE FASE 1 (2026-05-12 21:19) ─────────────────────────────────────
+  // FASE 1 CERRADA: S1–S5 + SQL_DIFF al 100% en 29/29 celdas combinadas
+  //   - phase1-small  (2026-05-12 21:07): 8/8 pass
+  //   - phase1-full   (2026-05-12 21:19): 21/21 pass
+  // Histórico hotels-reits (misma matriz, pre-blindaje): 0/21 → 0/21 → 6/21
+  // → 21/21 tras aplicar ScopeContract + runScopedQuery + auditScope S1..S5
+  // + validador SQL bit a bit + congelación de inyectores cosméticos.
+  // USE_SCOPED_SKILLS permanece OFF en producción (modo sombra).
+  // FREEZE_COSMETIC_INJECTORS permanece ON (default Fase 1).
+  // ─────────────────────────────────────────────────────────────────────────
   // GATING (gobiernan VERDE/ROJO global del cierre Fase 1):
   //   - S1 tickers_in_scope, S2 models_in_scope, S3 dates_in_window,
   //     S4 no_peer_leak, S5 coverage_report_consistent
