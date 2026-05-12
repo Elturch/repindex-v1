@@ -138,7 +138,7 @@ function buildPerCompanySourceList(rows: any[]): string {
   return lines.join("\n");
 }
 
-function buildTickerCitedSourcesBlock(rows: any[], ranking: RankingRow[]): string {
+function buildTickerCitedSourcesBlock(rows: any[], ranking: RankingRow[], officialSites: Map<string, string> = new Map()): string {
   const URL_RE = /https?:\/\/[^\s)\]"<>]+/g;
   const byTicker = new Map<string, { name: string; urls: string[] }>();
   const wanted = new Set(ranking.map((r) => r.ticker));
@@ -162,12 +162,32 @@ function buildTickerCitedSourcesBlock(rows: any[], ranking: RankingRow[]): strin
   for (const r of ranking) {
     const entry = byTicker.get(r.ticker);
     if (!entry || entry.urls.length === 0) {
-      lines.push(`- ${r.name} (${r.ticker}): Sin fuentes verificadas en el período.`);
+      const site = officialSites.get(r.ticker);
+      lines.push(site
+        ? `- ${r.name} (${r.ticker}): ${site}`
+        : `- ${r.name} (${r.ticker}): ${r.name} (${r.ticker}) — sin URL verificada extraída en el período.`);
     } else {
       lines.push(`- ${r.name} (${r.ticker}): ${entry.urls.join(" · ")}`);
     }
   }
   return lines.join("\n");
+}
+
+async function fetchOfficialSites(supabase: any, tickers: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!tickers.length) return out;
+  try {
+    const { data } = await supabase
+      .from("repindex_root_issuers")
+      .select("ticker, website")
+      .in("ticker", tickers.map((t) => t.toUpperCase()));
+    for (const r of data ?? []) {
+      const ticker = String(r.ticker ?? "").toUpperCase();
+      const website = String(r.website ?? "").trim();
+      if (ticker && /^https?:\/\//i.test(website)) out.set(ticker, website);
+    }
+  } catch (_) { /* non-fatal: bibliography still uses extracted URLs */ }
+  return out;
 }
 
 /**
@@ -291,7 +311,7 @@ const BRUTO_COL_BY_MODEL: Record<string, string> = {
   "Google Gemini": "22_res_gemini_bruto",
   "ChatGPT": "20_res_gpt_bruto",
   "Perplexity": "21_res_perplex_bruto",
-  "DeepSeek": "23_res_deepseek_bruto",
+  "Deepseek": "23_res_deepseek_bruto",
   "Claude": "respuesta_bruto_claude",
   "Grok": "respuesta_bruto_grok",
   "Qwen": "respuesta_bruto_qwen",
@@ -713,10 +733,10 @@ function renderSingleModelRankingTable(
       : `mayor RIX de referencia según ${model} en el periodo; desempate por número de observaciones`;
   const footnote = [
     `*Criterio de ordenación: ${orderLabel}.*`,
-    `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otros modelos.*`,
+    `*Vista filtrada exclusivamente por ${model}. ${coverage.weeksCount} ${unit} con datos${partialSuffix}. NO se incluyen otras IAs.*`,
   ].join("\n");
   return [
-    `**Ranking según ${model}**`,
+    `**Ranking filtrado por ${model}**`,
     "",
     `| ${head.join(" | ")} |`,
     `| ${sep} |`,
@@ -1036,7 +1056,7 @@ export const sectorRankingSkill: Skill = {
     );
     console.log(`${tag} topN=${topN} order=${orderHint} | explicit=${explicitTopN ?? "no"} | scope_tickers=${scopeTickers?.length ?? 0} | family=${familyCode ?? "n/d"} | sector=${sector ?? "n/d"}`);
     const scopeLabel = scopeTickers
-      ? `grupo seleccionado (${scopeTickers.length} empresas: ${scopeTickers.join(", ")})`
+      ? (parsed.scope_label ?? `grupo seleccionado (${scopeTickers.length} empresas: ${scopeTickers.join(", ")})`)
       : sector
         ? `sector ${sector}`
         : (familyCode ? FAMILY_LABEL[familyCode] ?? familyCode : "todas las empresas cubiertas");
@@ -1050,9 +1070,9 @@ export const sectorRankingSkill: Skill = {
     // SINGLE-MODEL branch: when the user filtered to a subset (1..5 models),
     // restrict SQL to those models so per_model / strongest / weakest reflect
     // ONLY the requested perspective. Map v2 short labels → DB canonical
-    // names ("Gemini" → "Google Gemini").
+    // names ("Gemini" → "Google Gemini", "DeepSeek" → "Deepseek").
     const dbModelFilter = (parsed.models && parsed.models.length > 0 && parsed.models.length < 6)
-      ? parsed.models.map((m) => (m === "Gemini" ? "Google Gemini" : m))
+      ? parsed.models.map((m) => (m === "Gemini" ? "Google Gemini" : m === "DeepSeek" ? "Deepseek" : m))
       : null;
     const models = parsed.models;
     const isSingleModel = Array.isArray(models) && models.length === 1;
@@ -1312,7 +1332,8 @@ export const sectorRankingSkill: Skill = {
         const tail = "\n\n" + replacement;
         finalContent = finalContent + tail;
       }
-      finalContent = finalContent + buildTickerCitedSourcesBlock(sourceRows, ranking);
+      const officialSites = await fetchOfficialSites(supabase, ranking.map((r) => r.ticker));
+      finalContent = finalContent + buildTickerCitedSourcesBlock(sourceRows, ranking, officialSites);
       // Final safety net: scrub residual variants of the marker if any survived.
       finalContent = finalContent.replace(new RegExp(MARKER_RE.source, "gi"), "").split(MARKER).join("");
       console.log(`${tag} cited_sources_substitution | hasUrls=${hasUrls} markerPresent=${markerPresent}`);

@@ -74,6 +74,8 @@ export interface ScrubResult { text: string; rules_fired: string[] }
 const MEDIANA_RE = /\bmediana\b/gi;
 const RIX_MEDIO_RE = /\bRIX\s+medio\b/gi;
 const PROMEDIO_IA_RE = /\b(promedio|media)\s+entre\s+IAs?\b/gi;
+const PROMEDIO_CONSENSO_RE = /\b(promedio|media)\s+(?:del\s+)?consenso\b/gi;
+const MEDIA_SEMANAL_RE = /\bmedia\s+semanal\b/gi;
 const WHITE_PAPER_RE = /\bwhite[-\s]?paper(s)?\b/gi;
 const LIBRO_BLANCO_RE = /\blibros?\s+blancos?\b/gi;
 const DATA_ROOM_RE = /\bdata[-\s]?room(s)?\b/gi;
@@ -85,6 +87,7 @@ const BRIEFING_RE = /\bbriefing(s)?\b/gi;
 const NOTA_PRENSA_RE = /\bnota(s)?\s+de\s+prensa\b/gi;
 const MESA_REDONDA_RE = /\bmesa(s)?\s+redonda(s)?\b/gi;
 const TARGET_NUM_RE = /\btarget\s+[0-9]+(?:[\.,][0-9]+)?\b/gi;
+const TARGET_LABEL_RE = /\btarget\b/gi;
 const PLUS_PTS_RE = /\+\d+[\.,]\d+\s*pts?\b/gi;
 const FUTURE_QUARTER_RE = /\bQ[1-4][-\s]?20\d\d\b/gi;
 const FY_RE = /\bFY[-\s]?20\d\d\b/gi;
@@ -111,6 +114,8 @@ export function sanitizeFinalMarkdown(
   apply(MEDIANA_RE, "referencia", "anti_mediana");
   apply(RIX_MEDIO_RE, "RIX de referencia", "rix_medio");
   apply(PROMEDIO_IA_RE, "rango entre IAs", "promedio_ias");
+  apply(PROMEDIO_CONSENSO_RE, "rango del consenso", "promedio_consenso");
+  apply(MEDIA_SEMANAL_RE, "referencia semanal", "media_semanal");
 
   // Anti-fabrication entregables.
   apply(WHITE_PAPER_RE, "documento técnico", "white_paper");
@@ -124,6 +129,7 @@ export function sanitizeFinalMarkdown(
   apply(NOTA_PRENSA_RE, "comunicación corporativa", "nota_prensa");
   apply(MESA_REDONDA_RE, "encuentro sectorial", "mesa_redonda");
   apply(TARGET_NUM_RE, "objetivo operativo", "target_num");
+  apply(TARGET_LABEL_RE, "objetivo", "target_label");
   apply(PLUS_PTS_RE, "mejora cuantificada", "plus_pts");
   apply(FUTURE_QUARTER_RE, "período futuro", "future_quarter");
   apply(FY_RE, "ejercicio futuro", "fy_future");

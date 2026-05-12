@@ -80,6 +80,9 @@ export interface ParsedQuery {
    * (e.g. "grupos hospitalarios" → ['HMH','QS','HOS','HLA','VIA','VIT']).
    */
   scope_tickers?: string[];
+  /** Human-readable label for an explicit scope_tickers set. Keeps reports
+   *  honest for strict subsectors instead of falling back to "grupo seleccionado". */
+  scope_label?: string;
 }
 
 export interface MetricAggregation {
