@@ -319,6 +319,26 @@ serve(async (req: Request) => {
             }
           }
 
+          // Fase 2 — Eje C. Warning estructurado cuando EXEC_NARRATIVE=true
+          // y el validador no pasó tras MAX_RETRIES (E3). NO bloquea, NO
+          // reescribe; el FE puede pintarlo como banner pasivo y el runner
+          // de stress-matrix lo lee desde meta para C1/C2.
+          {
+            const en = (result.metadata as any)?.exec_narrative;
+            if (en && en.ok === false) {
+              controller.enqueue(sseEncode({
+                type: "warning",
+                warning: "exec_narrative_validation_failed",
+                attempts: en.attempts ?? null,
+                max_attempts: en.max_attempts ?? null,
+                violations: en.violations ?? [],
+                structure_ok: en.structure_ok ?? null,
+                traceability_ok: en.traceability_ok ?? null,
+                policy_version: en.policy_version ?? null,
+              }));
+            }
+          }
+
           // FASE A — persist structured context for the next turn. We write
           // to user_conversations.last_report_context (JSONB). Best-effort:
           // failures must never break the SSE stream.
