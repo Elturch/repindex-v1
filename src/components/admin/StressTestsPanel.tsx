@@ -68,6 +68,20 @@ const MODELS = ["multi", "gemini", "deepseek", "grok", "qwen", "perplexity", "ch
 
 const isFail = (s: string) => s === "fail" || s === "error";
 
+// ── Fase 1 vs Legacy ────────────────────────────────────────────────
+// Asserts Fase 1 (acotación de datos): GOBIERNAN el estado pass/fail global.
+//   S1..S5 = scope_audit + SQL_DIFF = validador SQL bit a bit.
+// Asserts Legacy (narrativa): observabilidad. NO bloquean cierre Fase 1.
+//   Vienen prefijados con "L:" desde stress-matrix-runner. Reclasificados
+//   como objetivos de Fase 2 (relato directivo) tras congelar inyectores
+//   cosméticos (frase MEL, 8 métricas forzadas, bibliografía determinista).
+const PHASE1_ASSERT_IDS = new Set(["S1", "S2", "S3", "S4", "S5", "SQL_DIFF"]);
+const isPhase1Assert = (id: string) =>
+  PHASE1_ASSERT_IDS.has(id) ||
+  /^S[1-5]_/.test(id) ||
+  id === "SQL_DIFF";
+const isLegacyAssert = (id: string) => id.startsWith("L:") || /^A\d+_/.test(id);
+
 // ── Playbook: cada assert mapea a una instrucción de reparación accionable.
 // Mantener corto, específico y orientado a archivo + acción concreta.
 type RepairEntry = {
@@ -285,15 +299,20 @@ export function StressTestsPanel() {
     const latNow = median(results.map((r) => r.latency_ms ?? 0).filter((n) => n > 0));
     const latPrev = median(prevResults.map((r) => r.latency_ms ?? 0).filter((n) => n > 0));
 
-    // Assert ranking
+    // Assert ranking — separado Fase 1 (gating) vs Legacy (observabilidad).
     const failsNow: Record<string, number> = {};
     const failsPrev: Record<string, number> = {};
     for (const r of results) for (const a of r.asserts_failed ?? []) failsNow[a.id] = (failsNow[a.id] ?? 0) + 1;
     for (const r of prevResults) for (const a of r.asserts_failed ?? []) failsPrev[a.id] = (failsPrev[a.id] ?? 0) + 1;
-    const assertRanking = Object.entries(failsNow)
-      .map(([id, n]) => ({ id, now: n, prev: failsPrev[id] ?? 0, delta: n - (failsPrev[id] ?? 0) }))
-      .sort((a, b) => b.now - a.now)
-      .slice(0, 5);
+    const buildRanking = (filterFn: (id: string) => boolean) =>
+      Object.entries(failsNow)
+        .filter(([id]) => filterFn(id))
+        .map(([id, n]) => ({ id, now: n, prev: failsPrev[id] ?? 0, delta: n - (failsPrev[id] ?? 0) }))
+        .sort((a, b) => b.now - a.now)
+        .slice(0, 5);
+    const phase1Ranking = buildRanking(isPhase1Assert);
+    const legacyRanking = buildRanking(isLegacyAssert);
+    const assertRanking = [...phase1Ranking, ...legacyRanking];
 
     return {
       fixed, regressed, stillFailing,
@@ -302,6 +321,8 @@ export function StressTestsPanel() {
       latNow, latDelta: latNow - latPrev,
       total: results.length,
       assertRanking,
+      phase1Ranking,
+      legacyRanking,
     };
   }, [results, prevResults, diffByCase]);
 
@@ -530,18 +551,55 @@ export function StressTestsPanel() {
                 </div>
               )}
 
-              {/* Top asserts fallados */}
-              {summary.assertRanking.length > 0 && (
-                <div>
-                  <div className="text-sm font-semibold mb-2">Asserts más fallados ahora</div>
-                  <div className="space-y-1">
-                    {summary.assertRanking.map((a) => (
-                      <div key={a.id} className="flex items-center gap-3 text-xs">
-                        <code className="font-mono bg-muted px-2 py-0.5 rounded">{a.id}</code>
-                        <span className="text-red-600 font-semibold">{a.now} fallos</span>
-                        {prevRun && renderDelta(a.delta, true)}
+              {/* Top asserts fallados — Fase 1 (gating) vs Legacy (observabilidad) */}
+              {(summary.phase1Ranking.length > 0 || summary.legacyRanking.length > 0) && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+                    <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Badge className="bg-primary/20 text-primary text-[10px]">FASE 1 · GATING</Badge>
+                      Asserts de acotación de datos
+                    </div>
+                    {summary.phase1Ranking.length === 0 ? (
+                      <div className="text-xs text-emerald-600 font-medium">
+                        ✅ S1–S5 + SQL_DIFF en verde. Cierre Fase 1 listo.
                       </div>
-                    ))}
+                    ) : (
+                      <div className="space-y-1">
+                        {summary.phase1Ranking.map((a) => (
+                          <div key={a.id} className="flex items-center gap-3 text-xs">
+                            <code className="font-mono bg-background px-2 py-0.5 rounded border">{a.id}</code>
+                            <span className="text-red-600 font-semibold">{a.now} fallos</span>
+                            {prevRun && renderDelta(a.delta, true)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      Estos asserts gobiernan el estado VERDE/ROJO global. Bloquean el cierre de Fase 1.
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-muted bg-muted/20 p-3">
+                    <div className="text-sm font-semibold mb-2 flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">LEGACY · OBSERVABILIDAD</Badge>
+                      Asserts narrativos (Fase 2)
+                    </div>
+                    {summary.legacyRanking.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">Sin fallos legacy registrados.</div>
+                    ) : (
+                      <div className="space-y-1">
+                        {summary.legacyRanking.map((a) => (
+                          <div key={a.id} className="flex items-center gap-3 text-xs">
+                            <code className="font-mono bg-background px-2 py-0.5 rounded border opacity-70">{a.id}</code>
+                            <span className="text-amber-700 font-semibold">{a.now} fallos</span>
+                            {prevRun && renderDelta(a.delta, true)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      Reclasificados como objetivo Fase 2. NO bloquean cierre Fase 1.
+                      Esperados tras congelar inyectores cosméticos.
+                    </p>
                   </div>
                 </div>
               )}
@@ -679,7 +737,8 @@ export function StressTestsPanel() {
                     <TableHead>Modelo</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Δ</TableHead>
-                    <TableHead>Asserts fallados</TableHead>
+                    <TableHead className="text-primary">Asserts Fase 1 ❌</TableHead>
+                    <TableHead className="text-muted-foreground">Asserts Legacy ❌</TableHead>
                     <TableHead className="text-right">Latencia</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -705,9 +764,20 @@ export function StressTestsPanel() {
                           {k === "new" && <Badge variant="outline" className="text-[10px]">nuevo</Badge>}
                         </TableCell>
                         <TableCell className="text-xs">
-                          {(r.asserts_failed ?? []).map((a) => (
-                            <Badge key={a.id} variant="outline" className="mr-1 mb-1 text-[10px]">{a.id}</Badge>
+                          {(r.asserts_failed ?? []).filter((a) => isPhase1Assert(a.id)).map((a) => (
+                            <Badge key={a.id} className="mr-1 mb-1 text-[10px] bg-red-500/15 text-red-700 border-red-500/40 border">{a.id}</Badge>
                           ))}
+                          {(r.asserts_failed ?? []).filter((a) => isPhase1Assert(a.id)).length === 0 && (
+                            <span className="text-emerald-600 text-[10px]">✓</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {(r.asserts_failed ?? []).filter((a) => isLegacyAssert(a.id)).map((a) => (
+                            <Badge key={a.id} variant="outline" className="mr-1 mb-1 text-[10px] opacity-70">{a.id.replace(/^L:/, "")}</Badge>
+                          ))}
+                          {(r.asserts_failed ?? []).filter((a) => isLegacyAssert(a.id)).length === 0 && (
+                            <span className="text-muted-foreground text-[10px]">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right text-xs font-mono">{r.latency_ms ?? "—"}</TableCell>
                         <TableCell>
@@ -741,15 +811,29 @@ export function StressTestsPanel() {
                         : `Estado anterior: ❌ ${prev.status} (${(prev.asserts_failed ?? []).length} asserts fallados)`}
                   </div>
                 )}
-                <div className="flex gap-2 flex-wrap">
-                  {(drillOpen.asserts_failed ?? []).map((a) => (
-                    <Badge key={a.id} variant="destructive" className="text-[11px]">
-                      {a.id}: {a.msg ?? "fail"}
-                    </Badge>
-                  ))}
-                  {(drillOpen.asserts_passed ?? []).map((a) => (
-                    <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/50 text-emerald-700">{a}</Badge>
-                  ))}
+                <div className="space-y-2">
+                  <div>
+                    <div className="text-[11px] font-semibold text-primary mb-1">FASE 1 · gating (S1–S5 + SQL_DIFF)</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {(drillOpen.asserts_failed ?? []).filter((a) => isPhase1Assert(a.id)).map((a) => (
+                        <Badge key={a.id} variant="destructive" className="text-[11px]">{a.id}: {a.msg ?? "fail"}</Badge>
+                      ))}
+                      {(drillOpen.asserts_passed ?? []).filter((a) => isPhase1Assert(a)).map((a) => (
+                        <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/50 text-emerald-700">{a}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold text-muted-foreground mb-1">LEGACY · observabilidad (no bloquea Fase 1)</div>
+                    <div className="flex gap-2 flex-wrap opacity-80">
+                      {(drillOpen.asserts_failed ?? []).filter((a) => isLegacyAssert(a.id)).map((a) => (
+                        <Badge key={a.id} variant="outline" className="text-[11px] border-amber-500/50 text-amber-700">{a.id.replace(/^L:/, "")}: {a.msg ?? "fail"}</Badge>
+                      ))}
+                      {(drillOpen.asserts_passed ?? []).filter((a) => isLegacyAssert(a)).map((a) => (
+                        <Badge key={a} variant="outline" className="text-[11px] border-emerald-500/30 text-emerald-700/70">{a.replace(/^L:/, "")}</Badge>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 {(drillOpen.asserts_failed ?? []).length > 0 && (
                   <div className="space-y-2">
