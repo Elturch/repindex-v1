@@ -1223,6 +1223,13 @@ export const sectorRankingSkill: Skill = {
     const perCompanySources = buildPerCompanySourceList(sourceRows);
     console.log(`${tag} sector cited sources | source_rows=${sourceRows.length} | total=${citedSourcesReport.totalUrls} URLs · ${citedSourcesReport.totalDomains} domains`);
 
+    const scopeNotice = buildScopeNotice(scopeLabel, scopeTickers?.length ?? null);
+    const deterministicDimensionsTable = buildDeterministicDimensionsTable(
+      rows,
+      ranking,
+      isSingleModel ? (models[0] as ModelName) : undefined,
+    );
+
     const userMessage = buildUserMessageWithAssembler(
       parsed.effective_question ?? parsed.raw_question,
       scopeLabel,
@@ -1236,8 +1243,8 @@ export const sectorRankingSkill: Skill = {
       citedSourcesSummary,
       perCompanySources,
       buildPerCompanyDimensionsBlock(rows, `[RIX-V2][companyAnalysis]`).block,
-      buildScopeNotice(scopeLabel, scopeTickers?.length ?? null),
-      buildDeterministicDimensionsTable(rows, ranking, isSingleModel ? (models[0] as ModelName) : undefined),
+      scopeNotice,
+      deterministicDimensionsTable,
       orderHint,
       isSingleModel,
     );
@@ -1258,6 +1265,13 @@ export const sectorRankingSkill: Skill = {
     let finalContent = fullText && fullText.trim().length > 0
       ? fullText
       : `**Ranking · ${scopeLabel}**\n\n${table}\n\n_No se pudo completar la síntesis (${error ?? "sin texto"})._`;
+
+    if (scopeNotice && !/1\s+único\s+emisor\s+cotizado|1\s+unico\s+emisor\s+cotizado|emisores\s+cotizados/i.test(finalContent)) {
+      finalContent = `${finalContent}\n\n${scopeNotice}`;
+    }
+    if (!CANONICAL_DIMENSIONS.every(({ metric }) => new RegExp(`\\b${metric}\\b`).test(finalContent))) {
+      finalContent = `${finalContent}\n\n${deterministicDimensionsTable}`;
+    }
 
     // Bug A — scrub: si el LLM copió los delimitadores literales o regeneró
     // el footnote viejo ("RIX medio = promedio del consenso semanal ... HOY"),
