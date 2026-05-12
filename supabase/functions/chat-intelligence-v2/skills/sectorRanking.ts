@@ -358,22 +358,21 @@ const CANONICAL_DIMENSIONS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"
 
 function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string {
   if (!scopeSize || scopeSize > 3) return "";
-  const plural = scopeSize === 1 ? "emisor cotizado" : "emisores cotizados";
+  const scopePhrase = scopeSize === 1 ? "1 único emisor cotizado" : `${scopeSize} emisores cotizados`;
   return [
     `**Aviso de alcance estricto — ${scopeLabel}**`,
     "",
-    `El alcance solicitado contiene ${scopeSize} único ${plural} en la base cotizada. No se añaden peers sectoriales ni empresas externas al subsector.`,
+    `El alcance solicitado contiene ${scopePhrase} en la base cotizada. No se añaden peers sectoriales ni empresas externas al subsector.`,
   ].join("\n");
 }
 
 function buildDeterministicDimensionsTable(rows: any[], ranking: RankingRow[], model?: ModelName): string {
   const wanted = new Set(ranking.map((r) => r.ticker));
   const byTicker = new Map<string, { name: string; dims: Map<string, number[]> }>();
-  const dbModel = model === "Gemini" ? "Google Gemini" : model;
   for (const r of rows) {
     const t = String(r["05_ticker"] ?? "").trim();
     if (!wanted.has(t)) continue;
-    if (dbModel && normModel(r["02_model_name"]) !== model) continue;
+    if (model && normModel(r["02_model_name"]) !== model) continue;
     const slot = byTicker.get(t) ?? { name: String(r["03_target_name"] ?? t), dims: new Map() };
     for (const { key, metric } of CANONICAL_DIMENSIONS) {
       const raw = r[key];
