@@ -61,11 +61,16 @@ A partir de las puntuaciones por modelo del DataPack, identifica las 3 empresas 
 ## 7. Recomendaciones estratégicas accionables (MÍNIMO 5, ESPECÍFICAS POR EMPRESA)
 Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
 (a) ESPECÍFICA para una empresa concreta del ranking (cita ticker y nombre).
-(b) Referencia un medio/dominio concreto extraído de las URLs citadas (ej. "El Confidencial cubre poco a HMH → enviar dossier a su sección de salud").
-(c) Incluye KPI cuantitativo: métrica + valor actual + target + horizonte (ej. "SIM 38 → target 52 en Q2 2026 vía 3 medios Tier 1").
-(d) Verbo de acción + entregable + plazo.
-(e) Prioridad explícita (alta/media/baja) según impacto.
+(b) Diagnóstico cuantificado SOLO con cifras presentes en el DataPack: métrica + valor actual exacto + brecha respecto al techo del grupo (max-min observado en las semanas analizadas).
+(c) Acción concreta vinculada a un medio/dominio real ya citado en las fuentes del DataPack (ej. "reforzar dossier para expansion.com").
+(d) Prioridad explícita (alta/media/baja) según magnitud de la brecha métrica.
 Distribuye las recomendaciones cubriendo idealmente todas las empresas del alcance, no solo el líder.
+
+PROHIBIDO ABSOLUTO en esta sección (anti-fabricación):
+• Inventar fechas, trimestres u horizontes temporales (Q1-2027, Q4-2026, FY-2026, AGM-2027, "en 6 meses", "en 12 meses").
+• Inventar targets numéricos pseudo-precisos (target 45, target 68, +7,7 pts, +8,7 pts).
+• Inventar entregables específicos no documentados (white papers, data-rooms, número de consejeros, programas internos, protocolos, KPIs propietarios).
+• Cualquier número en una recomendación debe existir LITERALMENTE en el DataPack. Si no aparece, usa lenguaje cualitativo accionable ("reforzar cobertura en Tier 1", "publicar dossier técnico", "abrir diálogo con analistas ESG").
 
 ## 8. Fuentes citadas por los modelos de IA
 Escribe SOLO 2-3 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). Termina la sección con la línea EXACTA \`<!--CITEDSOURCESHERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
