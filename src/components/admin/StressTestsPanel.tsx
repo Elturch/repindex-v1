@@ -438,6 +438,37 @@ export function StressTestsPanel() {
               <RefreshCw className="h-4 w-4" /> Refrescar
             </Button>
           </div>
+          {/* Paso 2.5 — Header de aislamiento Fase 2. Sólo en useState. */}
+          <div className="flex items-end gap-3 mt-4">
+            <div className="space-y-1 flex-1 max-w-md">
+              <label className="text-xs text-muted-foreground flex items-center gap-1">
+                <KeyRound className="h-3 w-3" /> Token aislamiento Fase 2
+                <span className="text-[10px] opacity-60">(x-repindex-stress · solo phase2-*)</span>
+              </label>
+              <Input
+                type="password"
+                value={phase2Token}
+                onChange={(e) => setPhase2Token(e.target.value)}
+                placeholder="Pega STRESS_TESTS_HEADER_TOKEN"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => setPhase2Token("")}
+              disabled={phase2Token.length === 0}
+            >
+              Limpiar
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            El token vive sólo en memoria de esta pestaña. No se guarda en
+            localStorage ni se incluye en logs. Sin token, las families
+            <code className="mx-1">phase2-*</code> abortan con
+            <code className="ml-1">phase2_header_missing</code>.
+          </p>
           <p className="text-xs text-muted-foreground mt-3">
             SDD v1 · concurrencia 3 · ventana 4 semanas · asserts deterministas.
             <strong className="ml-2">hotels-reits</strong> = 3 subsectores × 7 vistas (multi + 6 modelos) ≈ 21 celdas.
