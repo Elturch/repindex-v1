@@ -299,15 +299,20 @@ export function StressTestsPanel() {
     const latNow = median(results.map((r) => r.latency_ms ?? 0).filter((n) => n > 0));
     const latPrev = median(prevResults.map((r) => r.latency_ms ?? 0).filter((n) => n > 0));
 
-    // Assert ranking
+    // Assert ranking — separado Fase 1 (gating) vs Legacy (observabilidad).
     const failsNow: Record<string, number> = {};
     const failsPrev: Record<string, number> = {};
     for (const r of results) for (const a of r.asserts_failed ?? []) failsNow[a.id] = (failsNow[a.id] ?? 0) + 1;
     for (const r of prevResults) for (const a of r.asserts_failed ?? []) failsPrev[a.id] = (failsPrev[a.id] ?? 0) + 1;
-    const assertRanking = Object.entries(failsNow)
-      .map(([id, n]) => ({ id, now: n, prev: failsPrev[id] ?? 0, delta: n - (failsPrev[id] ?? 0) }))
-      .sort((a, b) => b.now - a.now)
-      .slice(0, 5);
+    const buildRanking = (filterFn: (id: string) => boolean) =>
+      Object.entries(failsNow)
+        .filter(([id]) => filterFn(id))
+        .map(([id, n]) => ({ id, now: n, prev: failsPrev[id] ?? 0, delta: n - (failsPrev[id] ?? 0) }))
+        .sort((a, b) => b.now - a.now)
+        .slice(0, 5);
+    const phase1Ranking = buildRanking(isPhase1Assert);
+    const legacyRanking = buildRanking(isLegacyAssert);
+    const assertRanking = [...phase1Ranking, ...legacyRanking];
 
     return {
       fixed, regressed, stillFailing,
@@ -316,6 +321,8 @@ export function StressTestsPanel() {
       latNow, latDelta: latNow - latPrev,
       total: results.length,
       assertRanking,
+      phase1Ranking,
+      legacyRanking,
     };
   }, [results, prevResults, diffByCase]);
 
