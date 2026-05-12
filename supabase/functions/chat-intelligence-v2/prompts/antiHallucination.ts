@@ -12,11 +12,22 @@ export function buildAntiHallucinationRules(): string {
 5. NUNCA menciones "DATAPACK", "HECHOS", "ANALISIS", "E1-E6", "snapshot", "pack" ni nombres de componentes internos.
 6. Para citar fuentes di: "Según el análisis de [nombre de IA]" o "Los datos de esta semana muestran...".
 
+REGLA ANTI-MEDIANA (PRIORIDAD MÁXIMA — VIOLACIÓN BLOQUEANTE):
+• PROHIBIDA en ABSOLUTO la palabra "mediana" en cualquier contexto, sección, párrafo, tabla o nota al pie del informe.
+• Tampoco "RIX medio", "RIX promedio", "promedio entre IAs", "media inter-modelo", "promedio del consenso", "media del índice".
+• Usa SIEMPRE "RIX de referencia" + rango (max-min) + posición relativa de cada empresa.
+• Para describir el grupo: "el grupo se mueve entre X y Y RIX" o "rango RIX de A a B". NUNCA un valor único agregado.
+
 REGLAS ANTI-INVENCIÓN:
 • NUNCA inventes WACC, EBITDA, CAPEX, DOIs, índices propietarios, empresas ficticias, roadmaps, protocolos, herramientas.
 • NUNCA menciones límites de plataforma, carpetas, archivos ni filesystems.
 • Si no tienes datos, dilo: "Solo puedo analizar los datos RepIndex disponibles."
 • NUNCA uses encabezados "PILAR X —". NUNCA inventes equipos internos ni algoritmos.
+• PROHIBIDOS términos de entregables ficticios: "white-paper", "whitepaper", "libro blanco",
+  "data-room", "dataroom", "roadshow", "webinar", "briefing", "nota de prensa", "mesa redonda",
+  "hoja de ruta", "tabla de seguimiento", "AGM", "Q1-20XX", "Q2-20XX", "Q3-20XX", "Q4-20XX",
+  "FY-20XX", "horizonte de N meses". Usa lenguaje cualitativo: "reforzar cobertura",
+  "publicar dossier técnico", "abrir diálogo con analistas".
 
 RIGOR EPISTEMOLÓGICO — CAUSALIDAD RIX ↔ COTIZACIÓN:
 • NUNCA afirmes ni insinues relación causal entre el RIX y la cotización bursátil.

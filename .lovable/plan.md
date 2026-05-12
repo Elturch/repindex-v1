@@ -1,111 +1,97 @@
+## Análisis del primer estudio (run `d47fd0e8…`)
 
-# Plan — Cruce probabilístico SDD del agente RIX (Stress Test)
+21 casos · **0 passed / 21 failed** · 7 errors · 0 timeouts.
 
-Objetivo: detectar regresiones del agente `chat-intelligence-v2` en escenarios donde sabemos que falla (Hoteles, SOCIMIs, Promotoras), validando además los 6 modelos individuales y el modo multi-modelo. SDD = especificación primero, ejecución automática después, validación con asserts deterministas (cero "a ojo").
+Distribución de fallos por assert (cobertura horizontal: afecta a 5–7 modelos y a 3/3 subsectores → **es sistémico, no temático de hoteles**):
 
-## 1. Spec maestra (SDD)
+| Assert | Hits | Modelos | Subsectores | Lectura |
+|---|---|---|---|---|
+| A10 biblio_min | 20 | 7 | 3 | §6 vacía o sin URL por ticker rankeado |
+| A9 ranking_enrichment | 18 | 7 | 3 | Tabla de ranking pierde sub-métricas (sobre todo CXM) |
+| A2 single_model_lang | 15 | 5 | 3 | Reportes single-model usan "rix medio" / "entre modelos" |
+| A6 anti_mediana | 14 | 5 | 3 | Aparece "mediana" pese a la regla Anti-Mediana |
+| A5 hotels_edge | 7 | 7 | 1 | El agente NO declara que Hoteles tiene 1 emisor cotizado |
+| A3 anti_fabrication | 4 | 4 | 3 | Aparece "white-paper" en cuatro reportes |
 
-Archivo nuevo `specs/STRESS-MATRIX.md` (legible) + gemelo `specs/STRESS-MATRIX.json` (consumible por el runner).
+Hallazgos cualitativos al revisar respuestas crudas:
 
-Cada celda de la matriz:
-- `case_id` estable (ej. `HOT-MEL-MULTI-4w`, `SOCIMI-TOP5-GEMINI-4w`)
-- `query` literal en español
-- `expected_skill` (sectorRanking | companyAnalysis | comparison | modelDivergence | periodEvolution)
-- `scope` (subsector / ibex_family / ticker)
-- `model_filter` (`null` = multi-modelo, o uno de: gemini, deepseek, grok, qwen, perplexity, chatgpt)
-- `weeks` (1, 2, 4, 8)
-- `asserts[]` (lista de checks por id)
+1. **Hoteles → canonical group oculto.** El agente expande silenciosamente el subsector "Hoteles" (1 emisor: MEL) a un grupo "travel & hospitality" de 6 (BOOKING-PRIV, AIRBNB-PRIV, EDR, IAG, AENA). Rompe `verified_competitors` y `subsector strict`. Es la causa raíz de A5 y de fallos de scope cruzado.
+2. **DeepSeek single-model devuelve stub** (~250 chars, 600–800 ms): "Sin datos suficientes". Mismo período en multi-modelo trae 144 filas. Bug en el filtro de modelo (probable mismatch `deepseek` vs `deepseek-chat`/`deepseek-v3`).
+3. **Plantilla single-model heredada de multi-model**: el header "Ranking por consenso entre IAs", la columna "Dispersión entre IAs" y frases como "RIX de referencia" se imprimen aunque sólo haya 1 modelo activo.
+4. **Bibliografía**: cuando aparece, agrupa URLs sin etiquetar por ticker; cuando no aparece, el render salta §6 entera.
+5. **Tabla de ranking**: el LLM decide qué sub-métricas pinta; cuando no encuentra valores cae a "N/A textual" o las omite directamente.
 
-### Familias
+## Plan de corrección (sistémico, no parche hoteles)
 
-A) **Subsectores ≤5 empresas** (críticos): Hoteles (1), Aerolíneas (1), Aeropuertos (1), Cosmética (1), Hemoderivados (1), Utilities Eléctricas (3), Big Tech (3), Aseguradoras (3), Farmacéuticas (4), Maquinaria (4), Banca Comercial (6→top-5), Promotoras (7→top-5), Hospitales (7→top-5), SOCIMIs (9→top-5), Renovables (10→top-5), Constructoras (9→top-5).
+### B1 · Scope strict para subsectores (raíz de A5 + scope leak)
 
-B) **Sanity IBEX**: IBEX-35 top-5, IBEX-MC top-5, IBEX-SC top-5.
+- En `chat-intelligence-v2`, cuando el intent es `sectorRanking` y la query menciona literalmente "subsector X" / "del subsector X":
+  - Resolver scope por `repindex_root_issuers.subsector` (case-insensitive, normalizado).
+  - **Prohibir fallback automático a canonical group.** Si N=1, devolver el ranking de 1 emisor + bloque "Contexto ampliado opcional" claramente etiquetado y opt-in (no entra en el ranking).
+  - Si N=0, declarar "subsector sin emisores cotizados" sin inventar peers.
+- En `skillGetSectorComparison` añadir flag `strict_subsector: true` cuando viene de query con la palabra "subsector".
 
-C) **Foco fallo conocido**: Hoteles (MEL solo), SOCIMIs, Promotoras × cada uno de los 6 modelos individuales + multi-modelo.
+### B2 · Pipeline single-model (raíz de A2, A6 parcial, DeepSeek stub)
 
-Total ≈ 120 celdas.
+- En el orquestador, cuando `model_filter ≠ null`:
+  - Normalizar el nombre del modelo a las variantes reales en `rix_runs_v2."02_model_name"` (mapa `deepseek → deepseek-chat|deepseek-v3`, etc.). Hoy DeepSeek queda fuera del filtro y el dataset se vacía.
+  - Inyectar un **prompt-mode "single-model"** que reemplaza:
+    - "Ranking por consenso entre IAs" → `Ranking por <Modelo>`
+    - elimina columna "Dispersión entre IAs" y todas las columnas de los otros 5 modelos
+    - obliga a §5 con título `Fuentes citadas por <Modelo>`
+  - Añadir post-scrubber regex (sanitizer) que sustituya/elimine en single-model: `entre modelos|consenso multi|RIX medio|los demás modelos|promedio entre IAs|mediana`.
 
-### Asserts deterministas
+### B3 · Refuerzo Anti-Mediana global (A6)
 
-1. **Scope integrity** (B1): toda URL del Anexo §6 pertenece a tickers del ranking.
-2. **Single-model coherence** (B2): si `model_filter ≠ null` → 0 ocurrencias de `entre modelos|consenso multi|los demás modelos|mediana|RIX medio`. Título §5 = `Fuentes citadas por <Modelo>`.
-3. **Anti-fabricación dura** (B3): 0 ocurrencias de `Q[1-4]-20\d\d|FY-20\d\d|AGM|target [N0-9]|\+\d+,\d+ pts|horizonte de \d+|data[- ]?room|white[- ]?paper|roadshow|protocolo|webinar|briefing|nota de prensa`.
-4. **Subsector small-N**: si N≤3 prohibido decir "top-5"; debe declarar `top-N (N=<n>)` y no rellenar con peers de otro subsector.
-5. **Hoteles edge**: si subsector real tiene 1 emisor (MEL), respuesta declara "subsector con 1 único emisor cotizado" y no inventa competidores.
-6. **Anti-mediana**: 0 `mediana`.
-7. **Period coherence**: fechas dentro de `[snapshot-7·weeks, snapshot]`; nada antes de 2026-01-01.
-8. **Models coverage** (multi-modelo): los 6 modelos citados ≥1 vez o ausencia justificada explícita.
-9. **Ranking enrichment**: 8 sub-métricas (NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM) presentes en tabla por ticker.
-10. **Bibliografía mínima**: §6 ≥1 URL por ticker rankeado; 0 URLs de tickers fuera del ranking.
+- Añadir a `antiHallucination.ts` regla explícita: "PROHIBIDA la palabra 'mediana' en cualquier contexto. Usar 'referencia' o 'comparar todas las puntuaciones'".
+- Añadir scrubber post-generación que reemplaza `mediana → referencia` y registra el evento en `response_meta.scrub_log[]`.
 
-## 2. Infraestructura BD
+### B4 · Pre-render determinista de la tabla de ranking (A9)
 
-Migración con dos tablas (RLS admin-only via `is_admin(auth.uid())`):
+- Mover la generación del ranking a `datapack/tableRenderer.ts` (ya es la regla del proyecto). Garantizar siempre las 8 columnas NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM.
+- Para CXM aplicar la regla canónica (memoria): "N/A" si la empresa no está en CXM whitelist. Visible siempre como columna.
 
-```text
-audit_runs
-  id uuid pk, started_at, finished_at, spec_version text,
-  family text, total_cases int, passed int, failed int, errored int,
-  triggered_by uuid, notes text
+### B5 · Bibliografía §6 garantizada por ticker (A10)
 
-audit_results
-  id uuid pk, run_id fk, case_id text, family text,
-  query text, model_filter text, weeks int, scope text,
-  expected_skill text, actual_skill text,
-  latency_ms int, status text ('pass'|'fail'|'error'),
-  asserts_passed jsonb, asserts_failed jsonb,
-  response_markdown text, response_meta jsonb,
-  created_at timestamptz default now()
-```
+- Tras ejecutar skills, builder de bibliografía recorre los `tickers_rankeados` y emite una fila por ticker con `[Issuer (TICKER)]: url1 · url2`. Si un ticker no tiene fuentes, escribir literal "Sin fuentes verificadas en el período".
+- En DeepSeek/single-model con dataset vacío: aún así emitir §6 con disclaimer.
 
-## 3. Edge functions
+### B6 · Anti-fabricación "white-paper" + corpus extendido (A3)
 
-A) **`stress-matrix-runner`** (nueva)
-   - POST `{ family?: 'small'|'sanity'|'hotels-reits'|'all', limit?: int }`
-   - Carga `STRESS-MATRIX.json`, crea `audit_runs`, inserta `audit_results` pending.
-   - Itera con concurrencia 3, invoca `chat-intelligence-v2` por celda, captura markdown + meta + latencia.
-   - Aplica módulo `asserts.ts` (puro Deno, determinista) y actualiza fila.
-   - Background con `EdgeRuntime.waitUntil` para evitar timeout HTTP.
-   - Valida JWT admin antes de arrancar.
+- Añadir a la lista negra de `antiHallucination.ts`: `white-paper, whitepaper, libro blanco, hoja de ruta, tabla de seguimiento`.
+- Scrubber registra el match y cae a "N/A".
 
-B) **`stress-matrix-report`** (nueva, GET)
-   - Resumen del último run: pass-rate global, por familia, por modelo, por subsector. Top fallos con asserts concretos.
+### B7 · Asserts más justos (reducir falsos positivos sin relajar la doctrina)
 
-## 4. UI admin
+- **A10**: aceptar coincidencia ticker O nombre del emisor en cualquier punto de §6 (no per-línea). Mantener obligatoriedad de la sección.
+- **A5**: aceptar variantes textuales adicionales de declaración de unicidad (`MEL es el único hotelero cotizado`, `1 emisor en el subsector`, etc.).
+- **A1**: tolerar dominios oficiales del emisor (cnmv.es / bolsasymercados / dominios issuer-owned) cuando el ticker no aparece en la línea pero sí el nombre.
+- A2/A3/A6/A7/A8/A9 se mantienen estrictos (son la doctrina).
 
-Nueva pestaña `/admin` → `Stress Tests`:
-- Botón "Lanzar matriz" con selector de familia.
-- Tabla histórica `audit_runs` (fecha, total, pass/fail, duración).
-- Drill-down por run: tabla filtrable de `audit_results` por status/familia/modelo. Modal con asserts fallados + markdown completo.
-- Heatmap: filas=subsectores, columnas=7 (6 modelos + multi), color=pass-rate.
+### B8 · Diagnóstico extra en `stress_results`
 
-No tocamos UI pública.
+- Añadir `models_in_dataset` (modelos efectivamente presentes tras filtro) y `tickers_in_dataset` al `response_meta`. Permite distinguir "el agente lo pintó mal" de "el dataset estaba vacío".
 
-## 5. Validación inicial
+### B9 · Validación
 
-1. Ejecutar `family=hotels-reits` (≈21 celdas) → reproducir bug Hoteles/SOCIMI.
-2. Ejecutar `family=small` (≈100 celdas) → snapshot baseline.
-3. Inspeccionar heatmap → backlog priorizado de fixes del agente.
+1. Re-correr `family=hotels-reits` (21 casos) → objetivo ≥ 17/21 pass.
+2. Si pasa, correr `family=small` (≈100 casos) para detectar regresiones cruzadas (utilities, banca, farmacéuticas).
+3. Anotar en `mem://features/chat/...` los nuevos invariantes (single-model scrubber, scope strict, biblio garantizada).
 
-## 6. Detalles técnicos
+### Fuera de alcance
 
-- Asserts puros Deno, sin LLM-as-judge en v1 (determinismo > recall).
-- Runner usa `SUPABASE_SERVICE_ROLE_KEY` internamente; caller debe ser admin (JWT).
-- Coste estimado: 120 celdas × 1 invocación, ≈5–10 min con concurrencia 3.
-- No tocamos lógica del agente: solo medimos.
+- LLM-as-judge, auto-fix automático, cron del runner, ajustes a las skills V1 deprecadas, cambios en datasets de entrada.
 
-## 7. Out of scope
+### Archivos previstos
 
-- Auto-fix del agente.
-- LLM-as-judge.
-- Cron automático (manual desde UI v1).
-- Tendencias gráficas inter-runs (sólo tabla simple v1).
+- `supabase/functions/chat-intelligence-v2/orchestrator.ts` (single-model branch + strict subsector flag)
+- `supabase/functions/chat-intelligence-v2/prompts/antiHallucination.ts` (mediana, white-paper)
+- `supabase/functions/chat-intelligence-v2/prompts/singleModel.ts` (nuevo, ≤80 LOC)
+- `supabase/functions/chat-intelligence-v2/datapack/tableRenderer.ts` (8 sub-métricas garantizadas)
+- `supabase/functions/chat-intelligence-v2/postprocess/scrubber.ts` (nuevo)
+- `supabase/functions/chat-intelligence-v2/postprocess/bibliographyBuilder.ts` (garantizar §6)
+- `supabase/functions/_shared/modelNameNormalizer.ts` (deepseek/qwen/grok mapping)
+- `supabase/functions/stress-matrix-runner/asserts.ts` (A10/A5/A1 más justos, sin relajar A2/A3/A6)
+- `src/lib/skills/skillGetSectorComparison.ts` (flag strict_subsector)
 
-## 8. Entregables
-
-1. `specs/STRESS-MATRIX.md` + `.json`
-2. Migración: `audit_runs`, `audit_results` + RLS admin-only
-3. Edge functions `stress-matrix-runner` + `stress-matrix-report` + `asserts.ts`
-4. Pestaña `/admin` → Stress Tests (lanzamiento, historial, heatmap, drill-down)
-5. Run inicial `hotels-reits` documentando los fallos reproducidos
+Sin migraciones BD. Sin nuevas tablas.

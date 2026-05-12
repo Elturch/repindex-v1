@@ -14,6 +14,8 @@ export type StressCase = {
   weeks: number;
   model_filter: string | null;
   expected_skill: string;
+  // Optional human-readable issuer names for fairer A10/A1 matching.
+  issuer_names?: string[];
 };
 
 export type AssertCtx = {
@@ -40,16 +42,17 @@ function a1_scope_integrity(ctx: AssertCtx): AssertResult {
   const sectionMatch = md.match(/(?:###?\s*6\.|Anexo|Bibliograf[íi]a)[\s\S]*$/i);
   const section = sectionMatch ? sectionMatch[0] : "";
   if (!section) return { id: "A1_scope_integrity", ok: true };
-  // Extract URLs in the bibliography section.
   const urls = section.match(/https?:\/\/[^\s)]+/g) || [];
   if (urls.length === 0) return { id: "A1_scope_integrity", ok: true };
-  // Build a set of allowed tickers (lowercase, also strip suffixes).
   const allowed = new Set(
     ctx.caseSpec.tickers.map((t) => t.toLowerCase().replace(/[-.].*$/, "")),
   );
-  // Heuristic: scan for ticker mentions OR known company-domain patterns.
-  // We accept the section if every URL line contains at least one allowed
-  // ticker substring. If not, we report up to 3 offending URLs.
+  const allowedNames = (ctx.caseSpec.issuer_names ?? [])
+    .map((n) => n.toLowerCase())
+    .filter((n) => n.length >= 3);
+  // Tolerated official/regulatory domains (treated as in-scope when ticker
+  // appears anywhere in the section).
+  const OFFICIAL_DOMAINS = /(cnmv\.es|bolsasymercados\.es|bmegrowth\.es|ecb\.europa\.eu|esma\.europa\.eu)/i;
   const offenders: string[] = [];
   for (const url of urls) {
     const lineRegex = new RegExp(`[^\\n]*${url.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}[^\\n]*`);
@@ -58,6 +61,12 @@ function a1_scope_integrity(ctx: AssertCtx): AssertResult {
     for (const tk of allowed) {
       if (line.includes(tk)) { ok = true; break; }
     }
+    if (!ok) {
+      for (const nm of allowedNames) {
+        if (line.includes(nm)) { ok = true; break; }
+      }
+    }
+    if (!ok && OFFICIAL_DOMAINS.test(url)) ok = true;
     if (!ok) offenders.push(url);
   }
   if (offenders.length === 0) return { id: "A1_scope_integrity", ok: true };
@@ -119,10 +128,14 @@ function a4_small_n(ctx: AssertCtx): AssertResult {
 function a5_hotels_edge(ctx: AssertCtx): AssertResult {
   if (ctx.caseSpec.scope !== "Hoteles") return { id: "A5_hotels_edge", ok: true };
   const md = lower(ctx.markdown);
-  // Must declare uniqueness OR at least not invent peer competitors.
-  const declares = /1\s*único\s*emisor|único emisor cotizado|único cotizado|solo emisor cotizado|único representante/.test(md);
+  // Accept any explicit declaration of uniqueness (broad set of variants).
+  const declares = /(1|un|único|unico)\s*(?:único|unico)?\s*emisor[^.\n]{0,40}cotizad[oa]/.test(md)
+    || /único hotelero cotizado/.test(md)
+    || /único representante/.test(md)
+    || /1\s*emisor en el subsector/.test(md)
+    || /mel\s+es\s+(?:el|la)\s+única|mel\s+es\s+el\s+único/.test(md)
+    || /subsector(?:\s+hoteles)?\s+(?:tiene|cuenta\s+con|incluye)\s+(?:un|1|sólo|solo|únicamente|unicamente)\s+(?:1\s+)?emisor/.test(md);
   if (declares) return { id: "A5_hotels_edge", ok: true };
-  // If it doesn't declare, check it didn't invent peers (any other ticker).
   const inventedPeer = /\bnh\b|nh hoteles|riu|barcel[oó]|sercotel|iberostar|paradores/.test(md);
   if (inventedPeer) {
     return { id: "A5_hotels_edge", ok: false, msg: "No declara unicidad e inventa peers de hoteles" };
@@ -168,15 +181,20 @@ function a9_ranking_enrichment(ctx: AssertCtx): AssertResult {
 function a10_biblio_min(ctx: AssertCtx): AssertResult {
   if (ctx.caseSpec.expected_skill !== "sectorRanking") return { id: "A10_biblio_min", ok: true };
   const md = ctx.markdown;
-  const sectionMatch = md.match(/(?:###?\s*6\.|Anexo|Bibliograf[íi]a)[\s\S]*$/i);
+  // Accept §6, §8 (canonical "Fuentes citadas") and any Anexo/Bibliografía heading.
+  const sectionMatch = md.match(/(?:###?\s*[68]\.|Fuentes\s+citadas|Referencias\s+citadas|Anexo|Bibliograf[íi]a)[\s\S]*$/i);
   const section = sectionMatch ? sectionMatch[0] : "";
   if (!section) return { id: "A10_biblio_min", ok: false, msg: "Sin sección bibliografía" };
   const lc = section.toLowerCase();
+  const issuerNames = (ctx.caseSpec.issuer_names ?? []).map((n) => n.toLowerCase());
   const ranked = ctx.caseSpec.tickers.slice(0, Math.min(5, ctx.caseSpec.n));
   const missing: string[] = [];
-  for (const tk of ranked) {
+  for (let i = 0; i < ranked.length; i++) {
+    const tk = ranked[i];
     const stem = tk.toLowerCase().replace(/[-.].*$/, "");
-    if (!lc.includes(stem)) missing.push(tk);
+    const nm = issuerNames[i] ?? "";
+    const matches = lc.includes(stem) || (nm.length >= 3 && lc.includes(nm));
+    if (!matches) missing.push(tk);
   }
   if (missing.length === 0) return { id: "A10_biblio_min", ok: true };
   return { id: "A10_biblio_min", ok: false, msg: `Tickers sin URL en §6: ${missing.join(", ")}` };

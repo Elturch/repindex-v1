@@ -21,7 +21,7 @@ import { parseModels, allModels } from "./parsers/modelParser.ts";
 import { checkInput } from "./guards/inputGuard.ts";
 import { checkScope } from "./guards/scopeGuard.ts";
 import { checkTemporal } from "./guards/temporalGuard.ts";
-import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker } from "./guards/outputGuard.ts";
+import { validateSkillOutput, summarizeValidation, scrubCitedSourcesMarker, sanitizeFinalMarkdown } from "./guards/outputGuard.ts";
 import { companyAnalysisSkill } from "./skills/companyAnalysis.ts";
 import { sectorRankingSkill } from "./skills/sectorRanking.ts";
 import { comparisonSkill } from "./skills/comparison.ts";
@@ -136,6 +136,55 @@ function detectSubsegmentTickers(question: string): string[] | null {
     }
   }
   return null;
+}
+
+// ── STRICT SUBSECTOR resolver ───────────────────────────────────────
+// When the user query mentions "subsector X" / "del subsector X" verbatim,
+// resolve scope by `repindex_root_issuers.subsector` column instead of
+// the broader `sector_category`. This prevents silent expansion of
+// 1-issuer subsectors (e.g. "Hoteles" → MEL only, NOT MEL + IAG + AENA
+// + canonical group fallback). Returns the literal subsector label so
+// the scope guard / prompt can declare uniqueness honestly.
+const SUBSECTOR_RE = /\bsub[-\s]?sector(?:es)?\s+(?:de\s+|del\s+|de\s+los?\s+)?([\wÁÉÍÓÚÑáéíóúñ&·/\- ]{3,80})/i;
+
+function extractRequestedSubsector(question: string): string | null {
+  const m = question.match(SUBSECTOR_RE);
+  if (!m) return null;
+  // Trim trailing connectors (en/según/multi-modelo/de las...).
+  const raw = m[1]
+    .replace(/\b(en|seg[uú]n|multi[-\s]?modelo|las?|los?|del|de|por|para|en\s+las|sobre|últimas?|ultimas?)\b.*$/i, "")
+    .replace(/[\s.·:;,–—-]+$/g, "")
+    .trim();
+  return raw.length >= 2 ? raw : null;
+}
+
+async function resolveStrictSubsector(
+  subsectorLabel: string,
+  supabase: any,
+  limit = 25,
+): Promise<{ tickers: string[]; canonical: string | null }> {
+  try {
+    // Case-insensitive match on the literal subsector column. We pull a
+    // small superset (limit=25) and rely on the skill scope filter to
+    // bound output. If nothing matches we return [] so the caller can
+    // fall back to the legacy sector_category path.
+    const { data, error } = await supabase
+      .from("repindex_root_issuers")
+      .select("ticker, subsector")
+      .ilike("subsector", subsectorLabel)
+      .limit(limit);
+    if (error || !Array.isArray(data) || data.length === 0) {
+      console.log(`[RIX-V2][orch] strictSubsector | label="${subsectorLabel}" | rows=0`);
+      return { tickers: [], canonical: null };
+    }
+    const tickers = data.map((r: any) => String(r.ticker).toUpperCase()).filter(Boolean);
+    const canonical = String(data[0]?.subsector ?? subsectorLabel);
+    console.log(`[RIX-V2][orch] strictSubsector | label="${subsectorLabel}" | canonical="${canonical}" | tickers=${tickers.length}`);
+    return { tickers, canonical };
+  } catch (e) {
+    console.error(`[RIX-V2][orch] strictSubsector error:`, e);
+    return { tickers: [], canonical: null };
+  }
 }
 
 async function autoResolveEntitiesBySector(
@@ -509,11 +558,55 @@ export async function process(
   //     pre-rendered tables). Sector rankings, comparisons (>=2 entities)
   //     and model_divergence keep their dedicated skills.
   const PROMOTABLE_INTENTS: Intent[] = ["general_question", "period_evolution"];
+
+  // 2b'. STRICT SUBSECTOR — when the query mentions "subsector X" verbatim,
+  // resolve scope by `subsector` column and BYPASS the sector_category
+  // expansion. This is the canonical fix for the hotels/SOCIMI/promotoras
+  // case where 1-issuer subsectors were silently widened to a 6-ticker
+  // canonical group via SECTOR_KEYWORD_MAP. Detected here BEFORE the
+  // sector hint logic so the strict scope wins.
+  const requestedSubsector = extractRequestedSubsector(question);
+  let strictSubsectorLabel: string | null = null;
+  let strictSubsectorN: number | null = null;
+  if (requestedSubsector) {
+    const strict = await resolveStrictSubsector(requestedSubsector, supabase);
+    if (strict.tickers.length >= 1) {
+      parsed.scope_tickers = strict.tickers;
+      parsed.intent = "sector_ranking";
+      strictSubsectorLabel = strict.canonical;
+      strictSubsectorN = strict.tickers.length;
+      // Re-hydrate `entities` from these tickers so downstream skills get
+      // names + sector metadata.
+      try {
+        const { data: rows } = await supabase
+          .from("repindex_root_issuers")
+          .select("ticker, issuer_name, sector_category, subsector")
+          .in("ticker", strict.tickers);
+        if (Array.isArray(rows) && rows.length > 0) {
+          const ents: ResolvedEntity[] = rows.map((r: any) => ({
+            ticker: String(r.ticker).toUpperCase(),
+            company_name: r.issuer_name,
+            sector_category: r.sector_category,
+            source: "semantic_bridge" as ResolvedEntity["source"],
+          }));
+          parsed.entities = ents;
+          entities = ents;
+        }
+      } catch (_) { /* keep tickers-only */ }
+      console.log(
+        `${logPrefix} strictSubsector applied | label="${strictSubsectorLabel}" | n=${strictSubsectorN} | tickers=${strict.tickers.join(",")}`,
+      );
+    } else {
+      console.log(`${logPrefix} strictSubsector requested="${requestedSubsector}" but DB returned 0 — falling back to legacy sector path`);
+    }
+  }
+
   // BUG FIX: queries that mention a sector keyword (e.g. "grupos
   // hospitalarios", "bancos", "eléctricas") must NEVER be promoted to
   // company_analysis, even if a stray fuzzy entity slipped through.
   // Force sector_ranking and re-resolve entities by sector.
-  const sectorHint = detectSectorCategory(question);
+  // Skip when strict subsector already resolved scope (don't widen).
+  const sectorHint = strictSubsectorLabel ? null : detectSectorCategory(question);
   if (sectorHint) {
     if (parsed.intent !== "sector_ranking" && parsed.intent !== "comparison") {
       console.log(
@@ -678,6 +771,35 @@ export async function process(
         skillOut.datapack.pre_rendered_tables[0] = t0.text;
       }
     }
+  }
+
+  // Stress-Matrix sanitizer (Phase B post-stream). Defence-in-depth:
+  // even if the LLM ignored the prompt rules, we strip "mediana",
+  // "white-paper", "data-room", "roadshow", "RIX medio" and (in
+  // single-model context) "entre modelos" / "consenso multi" from the
+  // persisted markdown so audits and downstream consumers never see them.
+  // The live SSE has already shipped, so the prompt-level rules remain
+  // the primary defence — this is the safety net for storage + audit.
+  try {
+    const singleModel = (parsed.models?.length === 1) ? parsed.models[0] : null;
+    const sani = sanitizeFinalMarkdown(content, { modelFilter: singleModel });
+    if (sani.rules_fired.length > 0) {
+      console.warn(`[outputGuard] sanitizeFinalMarkdown skill=${skill.name} rules=[${sani.rules_fired.join(",")}]`);
+      content = sani.text;
+      if (skillOut.datapack.pre_rendered_tables.length > 0) {
+        const t0 = sanitizeFinalMarkdown(skillOut.datapack.pre_rendered_tables[0], { modelFilter: singleModel });
+        skillOut.datapack.pre_rendered_tables[0] = t0.text;
+      }
+      // Annotate metadata for the stress-matrix runner.
+      try {
+        (skillOut.metadata as any) = {
+          ...(skillOut.metadata ?? {}),
+          scrub_log: sani.rules_fired,
+        };
+      } catch (_) { /* ignore */ }
+    }
+  } catch (sanErr) {
+    console.warn("[outputGuard] sanitizeFinalMarkdown failed (non-fatal):", sanErr);
   }
 
   // P0-3 — OutputGuard: non-blocking observability. Skills that should emit
