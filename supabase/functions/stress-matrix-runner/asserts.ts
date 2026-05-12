@@ -256,6 +256,39 @@ function b1_tiny_universe_clean(ctx: AssertCtx): AssertResult {
   return { id: "B1_tiny_universe_clean", ok: true };
 }
 
+// Fase 2 — Eje C. Estructura del relato directivo. Solo evalúa cuando el
+// orchestrator publicó `meta.exec_narrative` (es decir, EXEC_NARRATIVE=true
+// en el entorno). Con flag OFF, meta.exec_narrative no existe → assert
+// pasa por defecto (regresión cero garantizada en phase1-full).
+function c1_exec_narrative_structure(ctx: AssertCtx): AssertResult {
+  const en = (ctx.meta as any)?.exec_narrative;
+  if (!en) return { id: "C1_exec_narrative_structure", ok: true };
+  if (en.structure_ok === true) return { id: "C1_exec_narrative_structure", ok: true };
+  const v = Array.isArray(en.violations)
+    ? en.violations.filter((x: string) => !x.startsWith("untraceable_numbers")).slice(0, 5).join(", ")
+    : "";
+  return {
+    id: "C1_exec_narrative_structure",
+    ok: false,
+    msg: `Estructura inválida tras ${en.attempts ?? "?"} intentos (policy v${en.policy_version}): ${v}`,
+  };
+}
+
+// Fase 2 — Eje C. Trazabilidad numérica del relato directivo.
+function c2_exec_narrative_traceability(ctx: AssertCtx): AssertResult {
+  const en = (ctx.meta as any)?.exec_narrative;
+  if (!en) return { id: "C2_exec_narrative_traceability", ok: true };
+  if (en.traceability_ok === true) return { id: "C2_exec_narrative_traceability", ok: true };
+  const unmatched = Array.isArray(en.numbers_unmatched)
+    ? en.numbers_unmatched.slice(0, 5).join(", ")
+    : "";
+  return {
+    id: "C2_exec_narrative_traceability",
+    ok: false,
+    msg: `Cifras sin match en dataset (policy v${en.policy_version}): ${unmatched}`,
+  };
+}
+
 export function runAsserts(ctx: AssertCtx): AssertResult[] {
   return [
     a1_scope_integrity(ctx),
@@ -269,5 +302,7 @@ export function runAsserts(ctx: AssertCtx): AssertResult[] {
     a9_ranking_enrichment(ctx),
     a10_biblio_min(ctx),
     b1_tiny_universe_clean(ctx),
+    c1_exec_narrative_structure(ctx),
+    c2_exec_narrative_traceability(ctx),
   ];
 }
