@@ -1,79 +1,111 @@
-# Plan — Fix bugs detectados en informe IBEX-35 / ChatGPT (5 semanas)
 
-Tres bugs identificados, todos en `supabase/functions/chat-intelligence-v2`. No se toca UI ni base de datos.
+# Plan — Cruce probabilístico SDD del agente RIX (Stress Test)
 
----
+Objetivo: detectar regresiones del agente `chat-intelligence-v2` en escenarios donde sabemos que falla (Hoteles, SOCIMIs, Promotoras), validando además los 6 modelos individuales y el modo multi-modelo. SDD = especificación primero, ejecución automática después, validación con asserts deterministas (cero "a ojo").
 
-## B1 — Bibliografía cita empresas fuera del ranking (CRÍTICO)
+## 1. Spec maestra (SDD)
 
-**Causa**: `fetchSectorSourceRows()` (línea 1109 de `skills/sectorRanking.ts`) trae las respuestas brutas de **todo el alcance** (IBEX-35 = 35 empresas). Cuando el `topN` efectivo es 5, las URLs de las 30 empresas restantes (Vitrinor, AENA, etc.) se cuelan en `extractCitedSources` y llegan al Anexo + al cuerpo.
+Archivo nuevo `specs/STRESS-MATRIX.md` (legible) + gemelo `specs/STRESS-MATRIX.json` (consumible por el runner).
 
-**Fix** en `skills/sectorRanking.ts` (≈línea 1108-1113):
-- Calcular `rankedTickers = ranking.map(r => r.ticker.toUpperCase())` antes de pedir source rows.
-- Pasar `rankedTickers` (no `scopeTickers`) a `fetchSectorSourceRows()` cuando el ranking sea estrictamente menor que el alcance solicitado (top-N explícito).
-- Añadir log: `cited_sources_scope=ranked|full | tickers=N`.
-- Mismo `rankedTickers` se usa ya en `buildPerCompanySourceList` (verificar que filtre).
+Cada celda de la matriz:
+- `case_id` estable (ej. `HOT-MEL-MULTI-4w`, `SOCIMI-TOP5-GEMINI-4w`)
+- `query` literal en español
+- `expected_skill` (sectorRanking | companyAnalysis | comparison | modelDivergence | periodEvolution)
+- `scope` (subsector / ibex_family / ticker)
+- `model_filter` (`null` = multi-modelo, o uno de: gemini, deepseek, grok, qwen, perplexity, chatgpt)
+- `weeks` (1, 2, 4, 8)
+- `asserts[]` (lista de checks por id)
 
-Resultado esperado: Anexo solo cita URLs de TEF/BBVA/MRL/BKT/CLNX. Total URLs caerá de ~599 a ~80-150.
+### Familias
 
----
+A) **Subsectores ≤5 empresas** (críticos): Hoteles (1), Aerolíneas (1), Aeropuertos (1), Cosmética (1), Hemoderivados (1), Utilities Eléctricas (3), Big Tech (3), Aseguradoras (3), Farmacéuticas (4), Maquinaria (4), Banca Comercial (6→top-5), Promotoras (7→top-5), Hospitales (7→top-5), SOCIMIs (9→top-5), Renovables (10→top-5), Constructoras (9→top-5).
 
-## B2 — Lenguaje multi-modelo en informe single-model
+B) **Sanity IBEX**: IBEX-35 top-5, IBEX-MC top-5, IBEX-SC top-5.
 
-**Causa A** (cuerpo): `renderCitedSourcesBlock()` en `datapack/citedSources.ts` siempre escribe "**N modelos** que los citan" y "Fuentes citadas por **los modelos de IA**" en plural, aunque haya 1 solo modelo.
+C) **Foco fallo conocido**: Hoteles (MEL solo), SOCIMIs, Promotoras × cada uno de los 6 modelos individuales + multi-modelo.
 
-**Fix A** en `datapack/citedSources.ts`:
-- Añadir parámetro opcional `singleModelLabel?: string` a `renderCitedSourcesBlock`.
-- Si está presente: cambiar título a `**Fuentes citadas por ${label}**`, suprimir "medidos por nº de modelos que los citan", omitir badges de modelos en cada línea (solo dominio + nº URLs).
+Total ≈ 120 celdas.
 
-**Causa B** (texto fijo en `buildSingleModelRankingRules`): la regla §5 dice "Fuentes citadas por ${model}" pero el bloque sustituido (`citedSourcesFull`) introduce el texto plural. Pasar `singleModelLabel = model` desde `sectorRanking.ts` cuando `isSingleModel === true`.
+### Asserts deterministas
 
-**Causa C** (LLM): el prompt single-model ya prohíbe mencionar otros modelos pero no veta literales tipo "Ningún dominio coincide entre modelos". Añadir bullet:
-- `PROHIBIDO usar las frases "entre modelos", "ningún modelo coincide", "los demás modelos (Gemini, DeepSeek, Grok, Qwen)" o cualquier referencia a IAs ausentes; describe únicamente lo que ${model} cita.`
+1. **Scope integrity** (B1): toda URL del Anexo §6 pertenece a tickers del ranking.
+2. **Single-model coherence** (B2): si `model_filter ≠ null` → 0 ocurrencias de `entre modelos|consenso multi|los demás modelos|mediana|RIX medio`. Título §5 = `Fuentes citadas por <Modelo>`.
+3. **Anti-fabricación dura** (B3): 0 ocurrencias de `Q[1-4]-20\d\d|FY-20\d\d|AGM|target [N0-9]|\+\d+,\d+ pts|horizonte de \d+|data[- ]?room|white[- ]?paper|roadshow|protocolo|webinar|briefing|nota de prensa`.
+4. **Subsector small-N**: si N≤3 prohibido decir "top-5"; debe declarar `top-N (N=<n>)` y no rellenar con peers de otro subsector.
+5. **Hoteles edge**: si subsector real tiene 1 emisor (MEL), respuesta declara "subsector con 1 único emisor cotizado" y no inventa competidores.
+6. **Anti-mediana**: 0 `mediana`.
+7. **Period coherence**: fechas dentro de `[snapshot-7·weeks, snapshot]`; nada antes de 2026-01-01.
+8. **Models coverage** (multi-modelo): los 6 modelos citados ≥1 vez o ausencia justificada explícita.
+9. **Ranking enrichment**: 8 sub-métricas (NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM) presentes en tabla por ticker.
+10. **Bibliografía mínima**: §6 ≥1 URL por ticker rankeado; 0 URLs de tickers fuera del ranking.
 
----
+## 2. Infraestructura BD
 
-## B3 — Anti-fabricación en sección 4 (Recomendaciones)
+Migración con dos tablas (RLS admin-only via `is_admin(auth.uid())`):
 
-**Causa**: `buildSingleModelRankingRules` §4 obliga a "(c) KPI cuantitativo: métrica + valor actual + **target** + **horizonte**" y "(d) verbo + entregable + **plazo**". Esto **fuerza** al LLM a inventar fechas (`Q4-2026`, `AGM-2027`), targets pseudo-precisos (`+7,7 pts`) y entregables ficticios ("5 white papers GSMA"). Lo mismo ocurre en `buildRankingRules` §7.
+```text
+audit_runs
+  id uuid pk, started_at, finished_at, spec_version text,
+  family text, total_cases int, passed int, failed int, errored int,
+  triggered_by uuid, notes text
 
-**Fix** en `prompts/rankingMode.ts` — reescribir las reglas de recomendaciones para alinear con `analytical-lens-and-anti-fabrication-logic`:
+audit_results
+  id uuid pk, run_id fk, case_id text, family text,
+  query text, model_filter text, weeks int, scope text,
+  expected_skill text, actual_skill text,
+  latency_ms int, status text ('pass'|'fail'|'error'),
+  asserts_passed jsonb, asserts_failed jsonb,
+  response_markdown text, response_meta jsonb,
+  created_at timestamptz default now()
+```
 
-§7 (multi-modelo) y §4 (single-model) → nueva redacción:
-- (a) ESPECÍFICA para una empresa concreta del ranking (ticker + nombre).
-- (b) Diagnóstico cuantificado: métrica + valor actual exacto del DataPack + brecha respecto al techo del grupo (max-min observado).
-- (c) Acción concreta vinculada a fuentes del DataPack (medio/dominio real ya citado).
-- (d) Prioridad explícita (alta/media/baja) según magnitud de la brecha.
-- **PROHIBIDO**: inventar fechas (`Q1-2027`, `FY-2026`, `AGM-2027`), horizontes temporales ("en 6 meses"), targets numéricos pseudo-precisos (`target 45`, `+7,7 pts`), entregables específicos no documentados ("5 white papers", "data-room", "dos consejeros ESG"), nombres de programas o protocolos.
-- **PERMITIDO**: lenguaje accionable cualitativo ("reforzar cobertura en Tier 1", "publicar dossier técnico", "abrir diálogo con analistas ESG"), priorización por brecha métrica.
+## 3. Edge functions
 
-Añadir bullet duro al final de cada bloque:
-- `Cualquier número en una recomendación debe existir LITERALMENTE en el DataPack. Si no aparece, usa lenguaje cualitativo.`
+A) **`stress-matrix-runner`** (nueva)
+   - POST `{ family?: 'small'|'sanity'|'hotels-reits'|'all', limit?: int }`
+   - Carga `STRESS-MATRIX.json`, crea `audit_runs`, inserta `audit_results` pending.
+   - Itera con concurrencia 3, invoca `chat-intelligence-v2` por celda, captura markdown + meta + latencia.
+   - Aplica módulo `asserts.ts` (puro Deno, determinista) y actualiza fila.
+   - Background con `EdgeRuntime.waitUntil` para evitar timeout HTTP.
+   - Valida JWT admin antes de arrancar.
 
----
+B) **`stress-matrix-report`** (nueva, GET)
+   - Resumen del último run: pass-rate global, por familia, por modelo, por subsector. Top fallos con asserts concretos.
 
-## B4 — Cosmético
+## 4. UI admin
 
-En el LLM ya se pide en single-model `## 5. Fuentes citadas por ${model}`, pero al sustituir el marcador, el bloque inserta "Fuentes citadas por los modelos de IA" como subtítulo en negrita. Resuelto por **B2 Fix A** (parámetro `singleModelLabel`).
+Nueva pestaña `/admin` → `Stress Tests`:
+- Botón "Lanzar matriz" con selector de familia.
+- Tabla histórica `audit_runs` (fecha, total, pass/fail, duración).
+- Drill-down por run: tabla filtrable de `audit_results` por status/familia/modelo. Modal con asserts fallados + markdown completo.
+- Heatmap: filas=subsectores, columnas=7 (6 modelos + multi), color=pass-rate.
 
----
+No tocamos UI pública.
 
-## Archivos afectados (3)
+## 5. Validación inicial
 
-1. `supabase/functions/chat-intelligence-v2/skills/sectorRanking.ts` — filtrar source rows por `rankedTickers`; pasar `singleModelLabel` a `renderCitedSourcesBlock`.
-2. `supabase/functions/chat-intelligence-v2/datapack/citedSources.ts` — parámetro opcional `singleModelLabel`; texto adaptativo singular/plural.
-3. `supabase/functions/chat-intelligence-v2/prompts/rankingMode.ts` — reescribir §7 (multi) y §4 (single) eliminando obligación de fechas/targets/entregables; añadir veto explícito a "entre modelos" en single-model.
+1. Ejecutar `family=hotels-reits` (≈21 celdas) → reproducir bug Hoteles/SOCIMI.
+2. Ejecutar `family=small` (≈100 celdas) → snapshot baseline.
+3. Inspeccionar heatmap → backlog priorizado de fixes del agente.
 
-## Validación
+## 6. Detalles técnicos
 
-Reproducir el mismo informe (IBEX-35 · ChatGPT · 2026-04-10→2026-05-09):
-- B1: contar URLs del Anexo, esperar solo dominios que mencionen TEF/BBVA/MRL/BKT/CLNX. `total_urls` ≪ 599.
-- B2: buscar "entre modelos", "Gemini", "DeepSeek", "Grok", "Qwen" en cuerpo → 0 ocurrencias. Subtítulo §5 = "Fuentes citadas por ChatGPT".
-- B3: buscar `Q\d-20\d\d`, `target \d`, `+\d,\d pts`, "AGM", "FY-" en sección Recomendaciones → 0 ocurrencias.
+- Asserts puros Deno, sin LLM-as-judge en v1 (determinismo > recall).
+- Runner usa `SUPABASE_SERVICE_ROLE_KEY` internamente; caller debe ser admin (JWT).
+- Coste estimado: 120 celdas × 1 invocación, ≈5–10 min con concurrencia 3.
+- No tocamos lógica del agente: solo medimos.
 
-## Fuera de alcance
+## 7. Out of scope
 
-- Dashboard / Visor (UI) — no se tocan.
-- `recommendations.ts` (bloque determinista, ya cumple anti-mediana) — no se modifica.
-- RLS, migraciones, schemas.
-- Modos multi-modelo con ≥2 IAs (no afectados por B2).
+- Auto-fix del agente.
+- LLM-as-judge.
+- Cron automático (manual desde UI v1).
+- Tendencias gráficas inter-runs (sólo tabla simple v1).
+
+## 8. Entregables
+
+1. `specs/STRESS-MATRIX.md` + `.json`
+2. Migración: `audit_runs`, `audit_results` + RLS admin-only
+3. Edge functions `stress-matrix-runner` + `stress-matrix-report` + `asserts.ts`
+4. Pestaña `/admin` → Stress Tests (lanzamiento, historial, heatmap, drill-down)
+5. Run inicial `hotels-reits` documentando los fallos reproducidos

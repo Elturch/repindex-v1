@@ -1,0 +1,29 @@
+{
+  "spec_version": "v1",
+  "weeks": 4,
+  "models_individual": ["gemini", "deepseek", "grok", "qwen", "perplexity", "chatgpt"],
+  "subsectors_small": [
+    { "name": "Hoteles", "tickers": ["MEL"], "n": 1, "ibex_family": null },
+    { "name": "Aerolíneas", "tickers": ["IAG"], "n": 1, "ibex_family": null },
+    { "name": "Aeropuertos", "tickers": ["AENA"], "n": 1, "ibex_family": null },
+    { "name": "Cosmética y Perfumería", "tickers": ["PUIG"], "n": 1, "ibex_family": null },
+    { "name": "Hemoderivados", "tickers": ["GRF"], "n": 1, "ibex_family": null },
+    { "name": "Utilities Eléctricas", "tickers": ["ELE", "IBE", "NTGY"], "n": 3, "ibex_family": null },
+    { "name": "Big Tech", "tickers": ["AMAZON-PRIV", "GOOGLE-PRIV", "META-PRIV"], "n": 3, "ibex_family": null },
+    { "name": "Aseguradoras Generalistas", "tickers": ["GCO.MC", "MAP", "MUTUA-PRIV"], "n": 3, "ibex_family": null },
+    { "name": "Farmacéuticas", "tickers": ["ALM", "FAE", "RJF", "ROVI"], "n": 4, "ibex_family": null },
+    { "name": "Maquinaria", "tickers": ["AZK", "GAM", "MDF", "NEA"], "n": 4, "ibex_family": null },
+    { "name": "Banca Comercial", "tickers": ["BBVA", "BKT", "CABK", "SAB", "SAN", "UNI"], "n": 6, "ibex_family": null },
+    { "name": "Promotoras Residenciales", "tickers": ["AED", "HOME", "INSUR", "MTB", "MVC", "REN", "RLIA"], "n": 7, "ibex_family": null },
+    { "name": "Grupos Hospitalarios", "tickers": ["HLA", "HMH", "HOS", "QS", "RS", "VIA", "VIT"], "n": 7, "ibex_family": null },
+    { "name": "SOCIMIs / Patrimonialistas", "tickers": ["AIRON", "ARM", "CAST", "CEVA", "COL", "LIB7", "LRE", "MRL", "UPH"], "n": 9, "ibex_family": null },
+    { "name": "Renovables", "tickers": ["ADX", "ANE.MC", "BKY", "ECR", "EIDF", "ENS", "GRE", "HLZ", "SLR", "SOL"], "n": 10, "ibex_family": null },
+    { "name": "Constructoras", "tickers": ["ACS", "ANA", "AZVI", "CLE", "FCC-PRIV", "FER", "GSJ", "OHL", "SCYR"], "n": 9, "ibex_family": null }
+  ],
+  "sanity_groups": [
+    { "name": "IBEX-35", "ibex_family": "IBEX-35" },
+    { "name": "IBEX Medium Cap", "ibex_family": "IBEX-MC" },
+    { "name": "IBEX Small Cap", "ibex_family": "IBEX-SC" }
+  ],
+  "hotels_reits_focus": ["Hoteles", "SOCIMIs / Patrimonialistas", "Promotoras Residenciales"]
+}

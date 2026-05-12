@@ -3181,6 +3181,125 @@ export type Database = {
           },
         ]
       }
+      stress_results: {
+        Row: {
+          actual_skill: string | null
+          asserts_failed: Json | null
+          asserts_passed: Json | null
+          case_id: string
+          created_at: string
+          error_message: string | null
+          expected_skill: string | null
+          family: string
+          id: string
+          latency_ms: number | null
+          model_filter: string | null
+          query: string
+          response_markdown: string | null
+          response_meta: Json | null
+          run_id: string
+          scope: string | null
+          status: string
+          weeks: number | null
+        }
+        Insert: {
+          actual_skill?: string | null
+          asserts_failed?: Json | null
+          asserts_passed?: Json | null
+          case_id: string
+          created_at?: string
+          error_message?: string | null
+          expected_skill?: string | null
+          family: string
+          id?: string
+          latency_ms?: number | null
+          model_filter?: string | null
+          query: string
+          response_markdown?: string | null
+          response_meta?: Json | null
+          run_id: string
+          scope?: string | null
+          status?: string
+          weeks?: number | null
+        }
+        Update: {
+          actual_skill?: string | null
+          asserts_failed?: Json | null
+          asserts_passed?: Json | null
+          case_id?: string
+          created_at?: string
+          error_message?: string | null
+          expected_skill?: string | null
+          family?: string
+          id?: string
+          latency_ms?: number | null
+          model_filter?: string | null
+          query?: string
+          response_markdown?: string | null
+          response_meta?: Json | null
+          run_id?: string
+          scope?: string | null
+          status?: string
+          weeks?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stress_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "stress_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stress_runs: {
+        Row: {
+          created_at: string
+          errored: number
+          failed: number
+          family: string
+          finished_at: string | null
+          id: string
+          notes: string | null
+          passed: number
+          spec_version: string
+          started_at: string
+          status: string
+          total_cases: number
+          triggered_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          errored?: number
+          failed?: number
+          family?: string
+          finished_at?: string | null
+          id?: string
+          notes?: string | null
+          passed?: number
+          spec_version?: string
+          started_at?: string
+          status?: string
+          total_cases?: number
+          triggered_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          errored?: number
+          failed?: number
+          family?: string
+          finished_at?: string | null
+          id?: string
+          notes?: string | null
+          passed?: number
+          spec_version?: string
+          started_at?: string
+          status?: string
+          total_cases?: number
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
       sweep_progress: {
         Row: {
           completed_at: string | null

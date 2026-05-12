@@ -75,6 +75,7 @@ import { QualityAuditPanel } from '@/components/admin/QualityAuditPanel';
 import { ApiHealthDashboard } from '@/components/admin/ApiHealthDashboard';
 import { DollarSign, Radar, DatabaseBackup, Timer, AlertTriangle as AlertTriangleIcon, Target as TargetIcon, HeartPulse } from 'lucide-react';
 import { ConsensusHealthPanel } from '@/components/admin/ConsensusHealthPanel';
+import { StressTestsPanel } from '@/components/admin/StressTestsPanel';
 import { Microscope } from 'lucide-react';
 
 interface Company {
@@ -1198,6 +1199,10 @@ const Admin: React.FC = () => {
             <TabsTrigger value="consensus-study" className="flex items-center gap-1.5 px-3 text-xs">
               <Microscope className="h-3.5 w-3.5" />
               Estudio Consenso
+            </TabsTrigger>
+            <TabsTrigger value="stress-tests" className="flex items-center gap-1.5 px-3 text-xs">
+              <Radar className="h-3.5 w-3.5" />
+              Stress Tests
             </TabsTrigger>
           </TabsList>
           <TabsContent value="profiles">
@@ -3259,6 +3264,9 @@ const Admin: React.FC = () => {
           </TabsContent>
           <TabsContent value="consensus-study">
             <ConsensusHealthPanel />
+          </TabsContent>
+          <TabsContent value="stress-tests">
+            <StressTestsPanel />
           </TabsContent>
         </Tabs>
         )}
