@@ -319,8 +319,9 @@ export function StressTestsPanel() {
         .sort((a, b) => b.now - a.now)
         .slice(0, 5);
     const phase1Ranking = buildRanking(isPhase1Assert);
+    const phase2Ranking = buildRanking(isPhase2Assert);
     const legacyRanking = buildRanking(isLegacyAssert);
-    const assertRanking = [...phase1Ranking, ...legacyRanking];
+    const assertRanking = [...phase1Ranking, ...phase2Ranking, ...legacyRanking];
 
     return {
       fixed, regressed, stillFailing,
@@ -330,6 +331,7 @@ export function StressTestsPanel() {
       total: results.length,
       assertRanking,
       phase1Ranking,
+      phase2Ranking,
       legacyRanking,
     };
   }, [results, prevResults, diffByCase]);
