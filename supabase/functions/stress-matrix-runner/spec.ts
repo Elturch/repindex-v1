@@ -4,6 +4,27 @@
 
 import type { StressCase } from "./asserts.ts";
 
+// Minimal issuer-name lookup so the asserts can match §6 by either
+// ticker stem OR brand name. Kept local to avoid an extra DB roundtrip
+// per case. Only the tickers used by the spec are listed.
+const NAMES: Record<string, string> = {
+  MEL: "Meliá", IAG: "IAG", AENA: "Aena", PUIG: "Puig", GRF: "Grifols",
+  ELE: "Endesa", IBE: "Iberdrola", NTGY: "Naturgy",
+  "GCO.MC": "Catalana Occidente", MAP: "Mapfre",
+  ALM: "Almirall", FAE: "Faes", RJF: "Reig Jofre", ROVI: "Rovi",
+  AZK: "Azkoyen", GAM: "Gamesa", MDF: "Duro Felguera", NEA: "Nicolás Correa",
+  BBVA: "BBVA", BKT: "Bankinter", CABK: "CaixaBank", SAB: "Sabadell", SAN: "Santander", UNI: "Unicaja",
+  AED: "Aedas", HOME: "AvalonBay", INSUR: "Insur", MTB: "Metrovacesa", MVC: "Metrovacesa", REN: "Renta", RLIA: "Realia",
+  HLA: "HM Hospitales", HMH: "HM", HOS: "Atrys", QS: "Quirón", RS: "Rovi", VIA: "Vithas", VIT: "Vithas",
+  AIRON: "Airones", ARM: "Armanext", CAST: "Castellana", CEVA: "Cevasa", COL: "Colonial", LIB7: "Libertas", LRE: "Lar", MRL: "Merlin", UPH: "URO",
+  ADX: "Audax", "ANE.MC": "Acciona Energía", BKY: "Berkeley", ECR: "Ecoener", EIDF: "EiDF", ENS: "Ens", GRE: "Greenalia", HLZ: "Holaluz", SLR: "Solaria", SOL: "Soltec",
+  ACS: "ACS", ANA: "Acciona", AZVI: "Azvi", CLE: "Clemessy", "FCC-PRIV": "FCC", FER: "Ferrovial", GSJ: "San José", OHL: "OHLA", SCYR: "Sacyr",
+};
+
+function namesFor(tickers: string[]): string[] {
+  return tickers.map((t) => NAMES[t] ?? "").filter((n) => n.length >= 3);
+}
+
 export const SPEC = {
   spec_version: "v1",
   weeks: 4,
@@ -72,6 +93,7 @@ export function expandCases(family: "all" | "small" | "sanity" | "hotels-reits")
         weeks,
         model_filter: null,
         expected_skill: "sectorRanking",
+        issuer_names: namesFor(sub.tickers),
       });
       // 6 single-model variants (only for the focus family + hotels/REITs to bound cost)
       const wantSingles = family === "hotels-reits" || sub.name === "Hoteles";
@@ -88,6 +110,7 @@ export function expandCases(family: "all" | "small" | "sanity" | "hotels-reits")
             weeks,
             model_filter: m,
             expected_skill: "sectorRanking",
+            issuer_names: namesFor(sub.tickers),
           });
         }
       }
