@@ -766,7 +766,7 @@ export async function process(
   const SCOPE_RAIL_INTENTS: Intent[] = [
     "sector_ranking", "comparison", "model_divergence", "period_evolution",
   ];
-  const flags = scopeFlagsSnapshot();
+  const flags = scopeFlagsSnapshot(headerCtx);
   const useScoped = isUseScopedSkillsEnabled();
   let scopeContract: ScopeContract | null = null;
   let coverageReport: CoverageReport | null = null;
@@ -782,7 +782,7 @@ export async function process(
       // Fase 2 — Eje A. Cuando ENRICH_RANKING_SUBMETRICS=true, pedimos a
       // runScopedQuery que rellene submetrics_coverage / submetrics_summary
       // sobre las MISMAS filas (no añade roundtrip a DB ni cambia filtros).
-      const enrichSubmetrics = isEnrichRankingSubmetricsEnabled();
+      const enrichSubmetrics = isEnrichRankingSubmetricsEnabledWithContext(headerCtx);
       const sq = await runScopedQuery(scopeContract, supabase, {
         enrich_submetrics: enrichSubmetrics,
       });
@@ -858,7 +858,7 @@ export async function process(
   // duplicar texto en SSE. Tras validar emitimos el contenido final
   // como un único chunk. Con flag OFF: onChunk pasa tal cual (regresión
   // cero, comportamiento idéntico a Fase 1).
-  const execNarrativeOn = isExecNarrativeEnabled();
+  const execNarrativeOn = isExecNarrativeEnabledWithContext(headerCtx);
   const skillOnChunk = execNarrativeOn ? undefined : onChunk;
   const skillOut = await skill.execute({ parsed, supabase, logPrefix, onChunk: skillOnChunk });
   if (collectedWarnings.length > 0) {
@@ -885,7 +885,7 @@ export async function process(
   //   (3) hay >=1 sub-métrica con cobertura >= umbral (si no, slot=null
   //       y no se inyecta nada → comportamiento idéntico a flag OFF).
   // Con flag OFF: NO se evalúa, NO se inyecta, NO se modifica el prompt.
-  if (isEnrichRankingSubmetricsEnabled() && coverageReport?.submetrics_coverage) {
+  if (isEnrichRankingSubmetricsEnabledWithContext(headerCtx) && coverageReport?.submetrics_coverage) {
     const slot = buildSubmetricsAvailableSlot(coverageReport.submetrics_coverage);
     if (slot) {
       systemPrompt = `${systemPrompt}\n\n${slot}`;
@@ -977,7 +977,7 @@ export async function process(
   // stress-matrix lo lea desde meta para evaluar B1_tiny_universe_clean.
   // Con flag OFF: NO se evalúa, NO se inyecta nada → comportamiento
   // idéntico a Fase 1 (regresión cero garantizada).
-  if (isTinyUniverseGuardEnabled() && scopeContract && scopeContract.tickers.length <= 3) {
+  if (isTinyUniverseGuardEnabledWithContext(headerCtx) && scopeContract && scopeContract.tickers.length <= 3) {
     try {
       const tu = scanTinyUniverse(content, scopeContract.tickers.length);
       if (tu.applies) {
