@@ -415,7 +415,7 @@ export function generateTechnicalSheetHtml(options?: TechnicalSheetOptions): str
         <tbody>
           <tr>
             <td>Modelo primario</td>
-            <td>OpenAI <span class="formula">o3-2025-04-16</span> (reasoning effort: medium)</td>
+            <td>OpenAI <span class="formula">o3-2025-04-16</span> (reasoning effort: high)</td>
           </tr>
           <tr>
             <td>Modelo de fallback</td>
