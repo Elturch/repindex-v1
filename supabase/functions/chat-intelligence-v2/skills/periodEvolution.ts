@@ -259,6 +259,7 @@ export const periodEvolutionSkill: Skill = {
         rixFirst, rixLast, trend, mostVolatile: "RIX",
       }),
       NARRATIVE_QUALITY_PROMPT,
+      "ANÁLISIS CAUSAL DE VARIACIONES (obligatorio): cuando detectes variaciones semana-a-semana superiores a 10 puntos en el RIX de la empresa, NO te limites a reportar el delta. Formula hipótesis causales basadas EXCLUSIVAMENTE en los datos disponibles en el datapack: (a) qué submétrica (NVM/DRM/SIM/CEM/RMM/GAM/DCM/CXM) lideró el movimiento, (b) qué modelo o modelos de IA arrastraron el cambio (si la divergencia inter-modelo se amplió o se cerró), (c) si el datapack contiene fuentes/noticias asociadas a esa semana, menciónalas como hipótesis explicativa. PROHIBIDO inventar eventos o noticias no presentes en el datapack. Si no hay datos suficientes para hipotetizar, dilo explícitamente ('variación >10 pts sin causa atribuible en el datapack'). NUNCA dejes una variación >10 pts sin párrafo explicativo dedicado.",
     ].filter(Boolean).join("\n\n");
 
     const userMessage = buildUserMessageWithAssembler(

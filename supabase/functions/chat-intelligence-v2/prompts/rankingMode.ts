@@ -64,6 +64,7 @@ Genera AL MENOS 5 recomendaciones que cumplan TODOS los criterios:
 (b) Diagnóstico cuantificado SOLO con cifras presentes en el DataPack: métrica + valor actual exacto + brecha respecto al techo del grupo (max-min observado en las semanas analizadas).
 (c) Acción concreta vinculada a un medio/dominio real ya citado en las fuentes del DataPack (ej. "reforzar dossier para expansion.com").
 (d) Prioridad explícita (alta/media/baja) según magnitud de la brecha métrica.
+(e) ACCIONABILIDAD REAL (obligatorio): cada recomendación debe declarar de forma explícita y en una misma frase: QUIÉN actúa (área responsable: comunicación corporativa / IR / marketing / ESG / dirección general), EN QUÉ PLAZO indicativo (corto <1 mes, medio 1-3 meses, largo 3-6 meses) sin inventar fechas concretas, y QUÉ MÉTRICA DE ÉXITO se espera mover (qué submétrica del RIX debería mejorar y en qué magnitud cualitativa). Sin estos tres campos la recomendación se considera genérica y NO cumple el criterio.
 Distribuye las recomendaciones cubriendo idealmente todas las empresas del alcance, no solo el líder.
 
 PROHIBIDO ABSOLUTO en esta sección (anti-fabricación):

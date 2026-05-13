@@ -160,12 +160,15 @@ export function renderMethodologyFooter(input: {
     "",
     `• Período analizado: ${input.fromISO} → ${input.toISO}`,
     `• Modelos de IA: ${input.models.length > 0 ? input.models.join(", ") : "n/d"}`,
-    `• Observaciones (filas): ${input.observationsCount}`,
+    `• Observaciones analizadas (post-filtro, registros realmente usados en el cálculo): ${input.observationsCount}`,
     `• Semanas con datos: ${input.uniqueWeeks}`,
   ];
   if (input.divergenceLevel) {
     lines.push(`• Nivel de divergencia inter-modelo: ${input.divergenceLevel}`);
   }
+  lines.push(
+    "• Criterio de redondeo: el RIX de referencia y los valores agregados se redondean al alza al primer decimal (ceiling a 0,1 pts).",
+  );
   return lines.join("\n");
 }
 
