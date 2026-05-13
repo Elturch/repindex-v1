@@ -343,7 +343,7 @@ export const modelDivergenceSkill: Skill = {
         pre_rendered_tables: [finalContent, table],
         cited_sources_report: _divergenceCited,
       },
-      prompt_modules: ["base", "antiHallucination", "divergenceMode"],
+      prompt_modules: ["base", "antiHallucination", "divergenceMode", "narrativeQuality"],
       metadata: buildMetadata(aggs, parsed.temporal.from, parsed.temporal.to, sigmaRix),
     };
   },
