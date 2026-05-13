@@ -74,7 +74,7 @@ PROHIBIDO ABSOLUTO en esta sección (anti-fabricación):
 • Cualquier número en una recomendación debe existir LITERALMENTE en el DataPack. Si no aparece, usa lenguaje cualitativo accionable ("reforzar cobertura en Tier 1", "publicar dossier técnico", "abrir diálogo con analistas ESG").
 
 ## 8. Fuentes citadas por los modelos de IA
-Escribe SOLO 2-3 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). Termina la sección con la línea EXACTA \`<!--CITEDSOURCESHERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
+Escribe 3-5 frases introductorias usando los totales del 'Resumen de fuentes citadas' (cuántas URLs únicas, cuántos medios, dominios dominantes). NO te limites a listar medios: para las 3-5 fuentes/dominios principales conecta cada una con el análisis indicando QUÉ EMPRESA del ranking afecta y QUÉ MÉTRICA o submétrica (RIX/NVM/DRM/SIM/RMM/CEM/GAM/DCM/CXM) impacta, con el delta o valor concreto cuando sea posible. Ejemplo de formato esperado: "cincodias.elpais.com (Bankinter Q1, impacto en RMM +14 pts semana 26-abr)" o "expansion.com (Iberdrola, sostiene RIX 72 vía DRM alta)". Termina la sección con la línea EXACTA \`<!--CITEDSOURCESHERE-->\` en su propia línea y NADA más después. NO listes URLs manualmente: el sistema sustituirá ese marcador por la bibliografía completa con badges, dominios y enlaces clicables. Si listas URLs a mano serán eliminadas.
 
 ## 9. Ficha metodológica
 Período (declarando solicitado vs disponible si difieren), número de modelos efectivamente usados, observaciones totales, semanas únicas, divergencia inter-modelo (σ).
@@ -148,7 +148,7 @@ PROHIBIDO ABSOLUTO en esta sección (anti-fabricación):
 • Cualquier número debe existir LITERALMENTE en el DataPack. Si no, usa lenguaje cualitativo accionable.
 
 ## 5. Fuentes citadas por ${model}
-2-3 frases con totales de fuentes (URLs únicas, dominios). Termina con la línea EXACTA \`<!--CITEDSOURCESHERE-->\`. NO listes URLs a mano.
+3-5 frases con totales de fuentes (URLs únicas, dominios) Y, para los 3-5 dominios principales, conecta cada uno con la empresa del ranking que afecta y la métrica/submétrica impactada (ej. "cincodias.elpais.com → Bankinter, impacto en RMM +14 pts semana 26-abr"). NO te limites a listar medios. Termina con la línea EXACTA \`<!--CITEDSOURCESHERE-->\`. NO listes URLs a mano.
 
 REGLAS DURAS:
 • PROHIBIDO mencionar otros modelos (ChatGPT, Perplexity, DeepSeek, Grok, Qwen, Claude) salvo para decir "no se incluyen en esta vista filtrada". El modelo actual es ${model} y es el único válido para citar.
