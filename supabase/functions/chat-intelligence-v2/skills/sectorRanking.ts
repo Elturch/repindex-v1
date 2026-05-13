@@ -381,6 +381,18 @@ const CANONICAL_DIMENSIONS: Array<{ key: string; metric: "NVM"|"DRM"|"SIM"|"RMM"
   { key: "44_cxm_score", metric: "CXM" },
 ];
 
+// Mejora 13 — Diccionario nombre ejecutivo por acrónimo (para tabla submétricas)
+const METRIC_FULL_NAMES: Record<string, string> = {
+  NVM: "Calidad de la Narrativa",
+  DRM: "Fortaleza de Evidencia",
+  SIM: "Autoridad de Fuentes",
+  RMM: "Actualidad y Empuje Mediático",
+  CEM: "Gestión de Controversias",
+  GAM: "Percepción de Gobernanza",
+  DCM: "Coherencia Informativa",
+  CXM: "Ejecución Corporativa",
+};
+
 function buildScopeNotice(scopeLabel: string, scopeSize: number | null): string {
   if (!scopeSize || scopeSize > 3) return "";
   const scopePhrase = scopeSize === 1 ? "1 único emisor cotizado" : `${scopeSize} emisores cotizados`;
@@ -432,7 +444,8 @@ function buildPerCompanySubmetricsHtml(rows: any[]): Map<string, string> {
       const mean = arr && arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
       const valStr = mean == null ? "n/d" : (Math.round(mean * 10) / 10).toString();
       const band = mean == null ? "n/d" : bandEmoji(mean);
-      return `<tr><td style="${cellStyle}"><strong>${metric}</strong></td><td style="${cellStyle};text-align:right">${valStr}</td><td style="${cellStyle};text-align:center">${band}</td></tr>`;
+      const fullName = METRIC_FULL_NAMES[metric] ?? "";
+      return `<tr><td style="${cellStyle}">${fullName ? `${fullName} <strong>(${metric})</strong>` : `<strong>${metric}</strong>`}</td><td style="${cellStyle};text-align:right">${valStr}</td><td style="${cellStyle};text-align:center">${band}</td></tr>`;
     }).join("");
     const html =
       `<table style="font-size:0.85em;border-collapse:collapse;margin:6px 0 14px;min-width:240px">` +
