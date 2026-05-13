@@ -261,6 +261,41 @@ async function autoResolveEntitiesBySector(
       return [];
     }
 
+    // (a.bis) STRICT SUBSECTOR: when the user query mentions "subsector X"
+    //         verbatim, resolve scope by `repindex_root_issuers.subsector`
+    //         BEFORE falling back to the broad sector_category. This prevents
+    //         e.g. "del subsector Hoteles" from returning IAG/AENA/EDR.
+    const requestedSub = extractRequestedSubsector(question);
+    if (requestedSub) {
+      const strict = await resolveStrictSubsector(requestedSub, supabase, limit);
+      if (strict.tickers.length > 0) {
+        const { data: strictRows, error: strictErr } = await supabase
+          .from("repindex_root_issuers")
+          .select("issuer_name, ticker, sector_category")
+          .in("ticker", strict.tickers);
+        if (!strictErr && Array.isArray(strictRows) && strictRows.length >= 1) {
+          const byTicker = new Map<string, any>(
+            strictRows.map((r: any) => [String(r.ticker).toUpperCase(), r]),
+          );
+          const ordered: ResolvedEntity[] = strict.tickers
+            .map((t) => byTicker.get(t.toUpperCase()))
+            .filter((r: any) => r?.ticker && r?.issuer_name)
+            .slice(0, limit)
+            .map((r: any) => ({
+              ticker: String(r.ticker).toUpperCase(),
+              company_name: r.issuer_name,
+              sector_category: r.sector_category ?? sector,
+              source: "semantic_bridge" as ResolvedEntity["source"],
+            }));
+          if (ordered.length >= 1) {
+            console.log(`[RIX-V2][orch] sectorAutoResolve | sector="${sector}" | strictSubsector applied | label="${requestedSub}" | canonical="${strict.canonical}" | resolved=${ordered.length} | tickers=${ordered.map((e) => e.ticker).join(",")}`);
+            return ordered;
+          }
+        }
+        console.log(`[RIX-V2][orch] sectorAutoResolve | strictSubsector label="${requestedSub}" matched tickers but issuer_name lookup returned 0; falling through to sector fallback`);
+      }
+    }
+
     // (b) Fallback: full sector with hard cap.
     const { data, error } = await supabase
       .from("repindex_root_issuers")
