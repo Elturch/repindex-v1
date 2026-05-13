@@ -1339,17 +1339,24 @@ export const sectorRankingSkill: Skill = {
     // Bug A — scrub: si el LLM copió los delimitadores literales o regeneró
     // el footnote viejo ("RIX medio = promedio del consenso semanal ... HOY"),
     // sustituimos por el footnote canónico anti-mediana.
+    // NOTE: la eliminación del marcador <PRE_RENDERED_RANKING_TABLE> SIEMPRE
+    // se aplica (incluso con cosmetic injectors congelados), porque dejar
+    // ese tag visible en el informe es un bug crítico de presentación.
+    {
+      const beforeTag = finalContent;
+      finalContent = finalContent.replace(/<\/?PRE_RENDERED_RANKING_TABLE>\s*/g, "");
+      if (beforeTag !== finalContent) {
+        console.log(`${tag} ranking_marker_scrub | PRE_RENDERED_RANKING_TABLE removed`);
+      }
+    }
     // Fase 1 — Inyector cosmetico congelado: reescritura del footnote MEL.
     if (!isCosmeticInjectorsFrozen()) {
       const before = finalContent;
-      // 1) Quitar delimitadores literales si el LLM los emitió.
-      finalContent = finalContent
-        .replace(/<\/?PRE_RENDERED_RANKING_TABLE>\s*/g, "");
-      // 2) Reemplazar footnote viejo en cursiva (variantes con/sin "Fecha de cálculo: HOY").
+      // 1) Reemplazar footnote viejo en cursiva (variantes con/sin "Fecha de cálculo: HOY").
       const OLD_FOOTNOTE_RE = /\*RIX medio\s*=\s*promedio[^*\n]*?(?:HOY[^*\n]*?)?\*/gi;
       const canonicalFootnote = `*RIX rango = mínimo–máximo de las puntuaciones individuales de las 6 IAs durante las semanas observadas. NO se promedia entre IAs. Consenso: alto (≤10 pts dispersión) · medio (≤20) · bajo (>20).*`;
       finalContent = finalContent.replace(OLD_FOOTNOTE_RE, canonicalFootnote);
-      // 3) Safety net: literal "Fecha de cálculo: \"HOY\"" sin envolver.
+      // 2) Safety net: literal "Fecha de cálculo: \"HOY\"" sin envolver.
       finalContent = finalContent.replace(/Fecha de cálculo:\s*"?HOY"?\.?/gi, "");
       if (before !== finalContent) {
         console.log(`${tag} ranking_footnote_scrub | applied`);
