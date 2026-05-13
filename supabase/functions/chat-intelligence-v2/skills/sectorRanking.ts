@@ -611,12 +611,18 @@ function aggregateRanking(
     const weeklyMaxs: number[] = [];
     const weeklyRanges: number[] = [];
     let worstLevelRank = 0;
-    for (const [, snapRows] of info.bySnapshot) {
+    // Mejora 10 — necesitamos primera/última semana ORDENADAS por ISO key
+    // para calcular tendencia. Capturamos midpoints por semana en orden.
+    const weekKeysSorted = [...info.bySnapshot.keys()].sort();
+    const weeklyMidsOrdered: number[] = [];
+    for (const wk of weekKeysSorted) {
+      const snapRows = info.bySnapshot.get(wk)!;
       const agg = aggregateConsensus(snapRows).get(ticker);
       if (!agg) continue;
       weeklyMins.push(agg.min);
       weeklyMaxs.push(agg.max);
       weeklyRanges.push(agg.range);
+      weeklyMidsOrdered.push((agg.min + agg.max) / 2);
       worstLevelRank = Math.max(worstLevelRank, LEVEL_RANK[agg.consensusLevel]);
     }
     if (weeklyMins.length === 0) continue;
@@ -627,6 +633,14 @@ function aggregateRanking(
     for (const [m, vals] of info.per_model) {
       per_model[m] = vals.reduce((a, b) => a + b, 0) / vals.length;
     }
+    // Mejora 10 — calcular tendencia (necesita ≥2 semanas).
+    let trend: RankingRow["trend"] = "n/d";
+    if (weeklyMidsOrdered.length >= 2) {
+      const delta = weeklyMidsOrdered[weeklyMidsOrdered.length - 1] - weeklyMidsOrdered[0];
+      if (delta >= 3) trend = "↑";
+      else if (delta <= -3) trend = "↓";
+      else trend = "→";
+    }
     out.push({
       ticker,
       name: info.name,
@@ -636,6 +650,7 @@ function aggregateRanking(
       consensusLevel: RANK_LEVEL[worstLevelRank],
       weekly_range_avg,
       per_model,
+      trend,
     });
   }
 
