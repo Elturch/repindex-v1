@@ -6,6 +6,20 @@ import type { MetricAggregation, MetricName } from "../types.ts";
 
 type Priority = "Alta" | "Media" | "Baja";
 
+// Mejora 13-bis — Diccionario nombre ejecutivo por acrónimo. Sustituye
+// SIEMPRE acrónimos sueltos en titulares de recomendaciones.
+const METRIC_FULL_NAMES: Record<string, string> = {
+  RIX: "Índice de Reputación Algorítmica",
+  NVM: "Calidad de la Narrativa",
+  DRM: "Fortaleza de Evidencia",
+  SIM: "Autoridad de Fuentes",
+  RMM: "Actualidad y Empuje Mediático",
+  CEM: "Gestión de Controversias",
+  GAM: "Percepción de Gobernanza",
+  DCM: "Coherencia Informativa",
+  CXM: "Ejecución Corporativa",
+};
+
 const ACTIONS: Record<MetricName, string[]> = {
   RIX: [
     "Revisar narrativa global y reforzar coherencia inter-modelo",
@@ -126,8 +140,10 @@ export function renderRecommendationsBlock(
       r.range_min != null && r.range_max != null && r.range_min !== r.range_max
         ? `${fmt(r.range_min)}–${fmt(r.range_max)}`
         : fmt(r.range_max ?? r.range_min);
+    const fullName = METRIC_FULL_NAMES[r.metric] ?? r.metric;
+    const label = fullName === r.metric ? r.metric : `${fullName} (${r.metric})`;
     lines.push(
-      `**${i + 1}. ${icon} Prioridad ${r.priority} — ${r.metric}**`,
+      `**${i + 1}. ${icon} Prioridad ${r.priority} — ${label}**`,
       `• Rango actual por IA: ${rangeTxt} · Consenso: ${r.consensus_level} → Target (techo): ${r.target}`,
       ...r.actions.map((a) => `• ${a}`),
       "",
