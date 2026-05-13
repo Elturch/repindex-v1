@@ -445,7 +445,6 @@ function buildPerCompanySubmetricsHtml(rows: any[]): Map<string, string> {
       const valStr = mean == null ? "n/d" : (Math.round(mean * 10) / 10).toString();
       const band = mean == null ? "n/d" : bandEmoji(mean);
       const fullName = METRIC_FULL_NAMES[metric] ?? "";
-      const label = fullName ? `${fullName} (${metric})` : metric;
       return `<tr><td style="${cellStyle}">${fullName ? `${fullName} <strong>(${metric})</strong>` : `<strong>${metric}</strong>`}</td><td style="${cellStyle};text-align:right">${valStr}</td><td style="${cellStyle};text-align:center">${band}</td></tr>`;
     }).join("");
     const html =
